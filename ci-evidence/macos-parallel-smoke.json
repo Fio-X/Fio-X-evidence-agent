@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "platform": "darwin",
+  "arch": "arm64",
+  "native_tools": {
+    "mdls": true,
+    "mdfind": true,
+    "textutil": true,
+    "sips": true,
+    "qlmanage": true,
+    "sqlite3": true,
+    "curl": true,
+    "file": true,
+    "shasum": true,
+    "plutil": true
+  },
+  "scheduler": {
+    "max_observed_parallelism": 4,
+    "per_host_max": 2
+  },
+  "benchmark": {
+    "serial_ms": 212.868,
+    "parallel_ms": 80.235,
+    "speedup": 2.653,
+    "max_observed_parallelism": 6
+  }
+}
