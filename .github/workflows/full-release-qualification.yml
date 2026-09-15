@@ -137,10 +137,21 @@ jobs:
           ref: iteration-next
       - name: T18 browser CPU and WebGL capability evidence
         run: python3 scripts/test_macos_browser_capability.py
+      - name: Normalize T18 full-tree qualification for T20
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          python3 scripts/normalize_visual_qualification.py \
+            --input ci-evidence/t18-browser-capability.json \
+            --output outputs/visual-browser-qualification.json \
+            --full-release-tree-qualified
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: t18-full-tree-browser-capability
-          path: ci-evidence/t18-*
+          path: |
+            ci-evidence/t18-*
+            outputs/visual-browser-qualification.json
           if-no-files-found: error
           retention-days: 30
