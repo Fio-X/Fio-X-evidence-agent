@@ -7,11 +7,11 @@ CHECK = Path(__file__).with_name('check_source_integrity.py')
 def sha(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
-def tree(root, manifest='source-integrity.json'):
+def tree(root, ignored):
     rows = []
     for p in sorted(x for x in root.rglob('*') if x.is_file()):
         rel = p.relative_to(root).as_posix()
-        if rel == manifest or rel.startswith('excluded/') or rel == 'source.tar':
+        if rel in ignored or rel.startswith('excluded/'):
             continue
         rows.append((rel, sha(p)))
     h = hashlib.sha256()
@@ -19,43 +19,69 @@ def tree(root, manifest='source-integrity.json'):
         h.update(rel.encode() + b'\0' + digest.encode() + b'\n')
     return rows, h.hexdigest()
 
-def run(root, expect):
-    p = subprocess.run([
-        sys.executable, str(CHECK), '--root', str(root),
-        '--manifest', str(root / 'source-integrity.json')
-    ], capture_output=True, text=True)
+def run(root, expect, archive=None):
+    cmd = [sys.executable, str(CHECK), '--root', str(root), '--manifest', str(root / 'source-integrity.json')]
+    if archive is not None:
+        cmd += ['--archive', str(archive)]
+    p = subprocess.run(cmd, capture_output=True, text=True)
     assert p.returncode == expect, (p.stdout, p.stderr)
     return json.loads(p.stdout)
 
-with tempfile.TemporaryDirectory() as td:
+with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as ad:
     root = Path(td)
+    archive = Path(ad) / 'source.tar'
     (root / 'src').mkdir()
     (root / 'vendor').mkdir()
     (root / 'excluded').mkdir()
+    (root / 'ci-evidence').mkdir()
     (root / 'src/a.txt').write_text('alpha\n')
     (root / 'vendor/pinned.js').write_text('vendor\n')
     (root / 'excluded/cache.bin').write_bytes(b'x')
-    (root / 'source.tar').write_bytes(b'archive')
-    rows, digest = tree(root)
+    archive.write_bytes(b'archive')
+    evidence_rel = 'ci-evidence/source-import-verification.json'
+    ignored = {'source-integrity.json', evidence_rel}
+    rows, digest = tree(root, ignored)
     manifest = {
-        'schema_version': '1.0.0',
+        'schema_version': '2.0.0',
         'file_count': len(rows),
         'source_tree_sha256': digest,
-        'excluded_paths': ['excluded', 'source.tar'],
-        'source_archive': {'path': 'source.tar', 'sha256': sha(root / 'source.tar')},
+        'excluded_paths': ['excluded'],
+        'source_archive': {
+            'name': 'source.tar',
+            'sha256': sha(archive),
+            'verification_evidence': evidence_rel,
+        },
         'restored_vendor_hashes': {'vendor/pinned.js': sha(root / 'vendor/pinned.js')},
     }
     (root / 'source-integrity.json').write_text(json.dumps(manifest))
-    assert run(root, 0)['status'] == 'PASS'
+
+    first = run(root, 0, archive)
+    assert first['archive_verification']['mode'] == 'recomputed'
+    assert (root / evidence_rel).is_file()
+    assert run(root, 0)['archive_verification']['mode'] == 'receipt'
+
     (root / 'src/a.txt').write_text('tampered\n')
     assert run(root, 2)['status'] == 'FAIL'
     (root / 'src/a.txt').write_text('alpha\n')
     (root / 'vendor/pinned.js').write_text('tampered\n')
     assert run(root, 2)['status'] == 'FAIL'
+    (root / 'vendor/pinned.js').write_text('vendor\n')
+
+    receipt = json.loads((root / evidence_rel).read_text())
+    receipt['archive_sha256'] = '0' * 64
+    (root / evidence_rel).write_text(json.dumps(receipt))
+    assert run(root, 2)['status'] == 'FAIL'
+
+    (root / evidence_rel).unlink()
+    bad_archive = Path(ad) / 'bad.tar'
+    bad_archive.write_bytes(b'wrong')
+    assert run(root, 2, bad_archive)['status'] == 'FAIL'
 
 print(json.dumps({
     'status': 'PASS',
-    'tamper_detection': True,
+    'tree_tamper_detection': True,
     'vendor_hash_gate': True,
-    'archive_hash_gate': True,
+    'archive_recompute_gate': True,
+    'archive_receipt_gate': True,
+    'transport_not_required_in_release_tree': True,
 }))

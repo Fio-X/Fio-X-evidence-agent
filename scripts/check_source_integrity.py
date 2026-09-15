@@ -22,11 +22,11 @@ def excluded(rel: str, patterns: list[str]) -> bool:
     return False
 
 
-def tree_rows(root: Path, exclusions: list[str], manifest_rel: str) -> list[tuple[str, str]]:
+def tree_rows(root: Path, exclusions: list[str], ignored: set[str]) -> list[tuple[str, str]]:
     rows = []
     for path in sorted(p for p in root.rglob('*') if p.is_file()):
         rel = path.relative_to(root).as_posix()
-        if rel == manifest_rel or excluded(rel, exclusions):
+        if rel in ignored or excluded(rel, exclusions):
             continue
         rows.append((rel, sha256_file(path)))
     return rows
@@ -42,11 +42,67 @@ def tree_hash(rows: list[tuple[str, str]]) -> str:
     return h.hexdigest()
 
 
-def verify(root: Path, manifest_path: Path) -> dict:
+def safe_path(root: Path, rel: str) -> Path:
+    candidate = (root / rel).resolve()
+    candidate.relative_to(root.resolve())
+    return candidate
+
+
+def verify_archive(root: Path, manifest: dict, archive_override: Path | None, errors: list[str]) -> dict:
+    archive = manifest.get('source_archive') or {}
+    expected = archive.get('sha256')
+    name = archive.get('name')
+    evidence_rel = archive.get('verification_evidence')
+    if not expected or not name or not evidence_rel:
+        errors.append('source_archive requires name, sha256, and verification_evidence')
+        return {'mode': 'invalid'}
+
+    evidence_path = safe_path(root, evidence_rel)
+    if archive_override is not None:
+        if not archive_override.is_file():
+            errors.append(f'source archive missing: {archive_override}')
+            return {'mode': 'recomputed'}
+        actual = sha256_file(archive_override)
+        if actual != expected:
+            errors.append(f'source archive sha256 expected {expected}, got {actual}')
+        receipt = {
+            'schema_version': '1.0.0',
+            'status': 'PASS' if actual == expected else 'FAIL',
+            'archive_name': name,
+            'archive_sha256': actual,
+            'expected_sha256': expected,
+        }
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+        return {'mode': 'recomputed', 'actual_sha256': actual, 'evidence': evidence_rel}
+
+    if not evidence_path.is_file():
+        errors.append(f'source archive verification evidence missing: {evidence_rel}')
+        return {'mode': 'receipt'}
+    try:
+        receipt = json.loads(evidence_path.read_text())
+    except Exception as exc:
+        errors.append(f'invalid source archive verification evidence: {exc}')
+        return {'mode': 'receipt'}
+    if receipt.get('status') != 'PASS':
+        errors.append('source archive verification evidence is not PASS')
+    if receipt.get('archive_name') != name:
+        errors.append('source archive verification evidence name mismatch')
+    if receipt.get('archive_sha256') != expected or receipt.get('expected_sha256') != expected:
+        errors.append('source archive verification evidence sha256 mismatch')
+    return {'mode': 'receipt', 'evidence': evidence_rel}
+
+
+def verify(root: Path, manifest_path: Path, archive_override: Path | None = None) -> dict:
     manifest = json.loads(manifest_path.read_text())
     manifest_rel = manifest_path.relative_to(root).as_posix()
     exclusions = list(manifest.get('excluded_paths', []))
-    rows = tree_rows(root, exclusions, manifest_rel)
+    archive = manifest.get('source_archive') or {}
+    evidence_rel = archive.get('verification_evidence')
+    ignored = {manifest_rel}
+    if evidence_rel:
+        ignored.add(str(evidence_rel).replace('\\', '/'))
+    rows = tree_rows(root, exclusions, ignored)
     errors = []
     expected_count = manifest.get('file_count')
     if expected_count != len(rows):
@@ -55,33 +111,19 @@ def verify(root: Path, manifest_path: Path) -> dict:
     if manifest.get('source_tree_sha256') != actual_tree:
         errors.append(f'source_tree_sha256 expected {manifest.get("source_tree_sha256")}, got {actual_tree}')
 
-    archive = manifest.get('source_archive') or {}
-    archive_path = archive.get('path')
-    archive_sha = archive.get('sha256')
-    if bool(archive_path) != bool(archive_sha):
-        errors.append('source_archive requires both path and sha256')
-    elif archive_path:
-        candidate = (root / archive_path).resolve()
-        try:
-            candidate.relative_to(root.resolve())
-        except ValueError:
-            errors.append('source_archive path escapes root')
-        else:
-            if not candidate.is_file():
-                errors.append(f'source archive missing: {archive_path}')
-            else:
-                actual = sha256_file(candidate)
-                if actual != archive_sha:
-                    errors.append(f'source archive sha256 expected {archive_sha}, got {actual}')
+    try:
+        archive_result = verify_archive(root, manifest, archive_override, errors)
+    except ValueError:
+        errors.append('source archive verification evidence path escapes root')
+        archive_result = {'mode': 'invalid'}
 
     restored = manifest.get('restored_vendor_hashes') or {}
     if not isinstance(restored, dict):
         errors.append('restored_vendor_hashes must be an object')
     else:
         for rel, expected in sorted(restored.items()):
-            candidate = (root / rel).resolve()
             try:
-                candidate.relative_to(root.resolve())
+                candidate = safe_path(root, rel)
             except ValueError:
                 errors.append(f'vendor path escapes root: {rel}')
                 continue
@@ -98,6 +140,7 @@ def verify(root: Path, manifest_path: Path) -> dict:
         'source_tree_sha256': actual_tree,
         'excluded_paths': exclusions,
         'restored_vendor_count': len(restored) if isinstance(restored, dict) else 0,
+        'archive_verification': archive_result,
         'errors': errors,
     }
 
@@ -106,6 +149,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', default='.')
     ap.add_argument('--manifest', required=True)
+    ap.add_argument('--archive', help='transient source archive to recompute and write verification receipt')
     args = ap.parse_args()
     root = Path(args.root).resolve()
     manifest = Path(args.manifest).resolve()
@@ -113,7 +157,8 @@ def main() -> int:
         manifest.relative_to(root)
     except ValueError:
         raise SystemExit('manifest must be inside root')
-    result = verify(root, manifest)
+    archive = Path(args.archive).resolve() if args.archive else None
+    result = verify(root, manifest, archive)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result['status'] == 'PASS' else 2
 
