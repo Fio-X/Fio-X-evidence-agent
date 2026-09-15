@@ -39,10 +39,11 @@ try {
   let sameHost = 0;
   let maxSameHost = 0;
   const tasks = [
-    ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, kind: 'fetch_url', resource_class: 'network', resource_key: 'network:example.com' })),
-    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i}`, kind: 'fetch_url', resource_class: 'network', resource_key: 'network:example.org' })),
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, kind: 'fetch_url', url: `https://example.com/${i}` })),
+    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i}`, kind: 'fetch_url', url: `https://example.org/${i}` })),
   ];
   const dag = await runTaskDag(tasks, async (task) => {
+    assert.equal(task.resource_class, 'network');
     if (task.resource_key === 'network:example.com') {
       sameHost += 1;
       maxSameHost = Math.max(maxSameHost, sameHost);
@@ -65,7 +66,7 @@ try {
   for (const file of files) await localHash(file);
   const serialMs = performance.now() - serialStart;
   const parallelStart = performance.now();
-  const parallel = await runTaskDag(files.map((file, i) => ({ id: `h${i}`, kind: 'local_hash', path: file, resource_class: 'local' })), (task) => localHash(task.path), { maxConcurrency: 6, resourceLimits: { local: 6 } });
+  const parallel = await runTaskDag(files.map((file, i) => ({ id: `h${i}`, kind: 'local_hash', path: file })), (task) => localHash(task.path), { maxConcurrency: 6, resourceLimits: { local: 6 } });
   const parallelMs = performance.now() - parallelStart;
 
   console.log(JSON.stringify({
