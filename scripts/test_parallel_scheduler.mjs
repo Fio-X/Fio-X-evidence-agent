@@ -20,6 +20,22 @@ await expectReject([
   { id: 'a', depends_on: ['missing'] },
 ], /unknown dependency/i);
 
+await expectReject([
+  { id: 'absolute', write_scope: ['/artifact/out.json'] },
+], /write_scope must be relative/i);
+
+await expectReject([
+  { id: 'windows-absolute', write_scope: ['C:\\artifact\\out.json'] },
+], /write_scope must be relative/i);
+
+await expectReject([
+  { id: 'unc-absolute', write_scope: ['\\\\server\\share\\out.json'] },
+], /write_scope must be relative/i);
+
+await expectReject([
+  { id: 'traversal', write_scope: ['reports/../secret.json'] },
+], /write_scope traversal is not allowed/i);
+
 const orderTasks = [
   { id: 'slow', kind: 'local_hash' },
   { id: 'fast', kind: 'local_hash' },
@@ -77,4 +93,54 @@ await runTaskDag(Array.from({ length: 5 }, (_, i) => ({
 }, { maxConcurrency: 5, resourceLimits: { network: 5 } });
 assert.ok(maxSameHost <= 2, `per-host limit exceeded: ${maxSameHost}`);
 
-console.log(JSON.stringify({ status: 'PASS', max_same_host: maxSameHost }, null, 2));
+const normalizedScopes = {};
+const activeWriters = new Set();
+let independentWriteOverlap = false;
+await runTaskDag([
+  { id: 'child', kind: 'local_hash', write_scope: ['reports//daily/./summary.json', 'reports/daily/summary.json'] },
+  { id: 'parent', kind: 'local_hash', write_scope: ['reports/daily/'] },
+  { id: 'other', kind: 'local_hash', write_scope: ['reports/other/output.json'] },
+], async (task) => {
+  normalizedScopes[task.id] = task.write_scope;
+  if (task.id === 'parent') {
+    assert.ok(!activeWriters.has('child'), 'parent/child write scopes overlapped');
+  }
+  if (task.id === 'other' && activeWriters.has('child')) independentWriteOverlap = true;
+  activeWriters.add(task.id);
+  await new Promise((resolve) => setTimeout(resolve, task.id === 'child' ? 35 : 8));
+  activeWriters.delete(task.id);
+  return { ok: true };
+}, { maxConcurrency: 3 });
+assert.deepEqual(normalizedScopes.child, ['reports/daily/summary.json']);
+assert.deepEqual(normalizedScopes.parent, ['reports/daily']);
+assert.deepEqual(normalizedScopes.other, ['reports/other/output.json']);
+assert.equal(independentWriteOverlap, true, 'independent write scope should run in parallel');
+
+const fairnessStarts = [];
+let longKeyFinished = false;
+const fairness = await runTaskDag([
+  { id: 'a-long', kind: 'fetch_url', resource_key: 'network:a.example' },
+  { id: 'a-next', kind: 'fetch_url', resource_key: 'network:a.example' },
+  { id: 'b-ready', kind: 'fetch_url', resource_key: 'network:b.example' },
+], async (task) => {
+  fairnessStarts.push(task.id);
+  if (task.id === 'b-ready') {
+    assert.equal(longKeyFinished, false, 'ready task on another key was starved behind throttled key');
+  }
+  await new Promise((resolve) => setTimeout(resolve, task.id === 'a-long' ? 40 : 5));
+  if (task.id === 'a-long') longKeyFinished = true;
+  return { ok: true };
+}, {
+  maxConcurrency: 2,
+  resourceLimits: { network: 2 },
+  keyLimits: { 'network:a.example': 1, 'network:b.example': 1 },
+});
+assert.deepEqual(fairnessStarts.slice(0, 2), ['a-long', 'b-ready']);
+assert.deepEqual(fairness.completed, ['a-long', 'a-next', 'b-ready']);
+
+console.log(JSON.stringify({
+  status: 'PASS',
+  max_same_host: maxSameHost,
+  write_scope_normalization: true,
+  fairness_no_starvation: true,
+}, null, 2));
