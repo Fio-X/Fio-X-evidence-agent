@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "status": "TRANSPORT_PENDING",
+  "strategy": "fill-missing-preserve-hardened-head",
+  "core_text_archive": {
+    "file_count": 659,
+    "bytes": 719428,
+    "sha256": "f4b0f8c6d9493522a1c2c4279da0c74336444cf953648cfdfe77e8a1421dd4c1"
+  },
+  "upstream_hardening_archive_sha256": "13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c",
+  "restored": {
+    "plotly_3_3_1_sha256": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3",
+    "pyogrio_version": "0.12.1",
+    "natural_earth_bundle_sha256": "af470a91164be210df9b29c05db27a1e1bb6f716791670df894abcce855f3abc"
+  },
+  "excluded_generated": [
+    "fixtures/*.png",
+    "fixtures/**/*.png",
+    "bootstrap-staging",
+    "transport",
+    "target",
+    "node_modules",
+    ".newsroom",
+    "outputs",
+    "__pycache__",
+    "**/__pycache__",
+    "*.pyc",
+    "**/*.pyc"
+  ],
+  "evidence": {
+    "png_reference_scan": "32 fixture PNGs have zero references outside the legacy release manifest",
+    "svg_raster_reproducibility": "24 of 28 SVG-backed PNGs reproduced bit-for-bit with Inkscape; PNGs are excluded as generated visual outputs",
+    "transport_rule": "transport files must be deleted before source-integrity verification passes"
+  }
+}
