@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import json, subprocess, sys, tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / 'scripts' / 'normalize_visual_qualification.py'
+
+
+def run(tmp: Path, *, full_rc='PASS', cpu='PASS', browser='PASS', gpu='ACCELERATED_WEBGL'):
+    src = tmp / 'raw.json'
+    out = tmp / 'normalized.json'
+    src.write_text(json.dumps({
+        'schema_version': '1.0.0',
+        'browser_suite_status': browser,
+        'full_release_rc_status': full_rc,
+        'cpu_visual_lane': {'status': cpu},
+        'gpu_webgl': {'status': gpu},
+    }), encoding='utf-8')
+    proc = subprocess.run([sys.executable, str(SCRIPT), '--input', str(src), '--output', str(out)], cwd=ROOT, capture_output=True, text=True)
+    return proc, json.loads(out.read_text(encoding='utf-8'))
+
+
+with tempfile.TemporaryDirectory() as td:
+    base = Path(td)
+    proc, data = run(base / 'pass') if False else (None, None)
+
+    p = base / 'pass'; p.mkdir()
+    proc, data = run(p)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert data['status'] == 'PASS'
+    assert data['cpu_browser_status'] == 'PASS'
+    assert data['gpu_webgl_status'] == 'PASS'
+
+    p = base / 'capability-only'; p.mkdir()
+    proc, data = run(p, full_rc='BLOCKED_PENDING_FULL_RELEASE_TREE')
+    assert proc.returncode == 2
+    assert data['status'] == 'BLOCKED'
+    assert 'full_release_tree_qualified' in data['blockers']
+
+    p = base / 'software'; p.mkdir()
+    proc, data = run(p, gpu='SOFTWARE_WEBGL')
+    assert proc.returncode == 2
+    assert data['gpu_webgl_status'] == 'BLOCKED'
+    assert 'accelerated_webgl' in data['blockers']
+
+    p = base / 'unavailable'; p.mkdir()
+    proc, data = run(p, gpu='UNAVAILABLE')
+    assert proc.returncode == 2
+    assert data['gpu_webgl_status'] == 'UNAVAILABLE'
+
+    p = base / 'cpu-fail'; p.mkdir()
+    proc, data = run(p, cpu='FAIL')
+    assert proc.returncode == 2
+    assert data['cpu_browser_status'] == 'FAIL'
+
+print('visual qualification normalization contract: PASS')
