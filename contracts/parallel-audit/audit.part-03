@@ -1,0 +1,8 @@
+":"turn_end"}));
+        let summary = build_fixture(events);
+        assert!(summary.adaptive_replanning_observed);
+        assert!(!summary.tool_failure_recovery_observed);
+        assert!(summary.follow_up_replanning_observed);
+        assert_eq!(summary.follow_up_goals, 1);
+    }
+}
