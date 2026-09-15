@@ -1,0 +1,35 @@
+name: macOS Parallel Smoke
+
+on:
+  push:
+    branches: [import-current]
+    paths:
+      - 'runtime/pi/parallel_scheduler.mjs'
+      - 'runtime/pi/local_backend.mjs'
+      - 'scripts/macos_parallel_smoke.mjs'
+      - '.github/workflows/macos-parallel-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Run local-first and parallel smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          node scripts/macos_parallel_smoke.mjs | tee artifacts/macos-parallel-smoke.json
+      - name: Upload smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-parallel-smoke
+          path: artifacts/macos-parallel-smoke.json
