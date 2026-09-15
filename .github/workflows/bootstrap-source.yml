@@ -1,0 +1,75 @@
+name: bootstrap-source
+
+on:
+  push:
+    branches: [import-current]
+    paths:
+      - '.bootstrap/**'
+      - '.github/workflows/bootstrap-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: ${{ !contains(github.event.head_commit.message || '', '[bootstrap materialized]') }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+          components: rustfmt, clippy
+      - name: Reconstruct source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/source.b64.part-* | base64 --decode > /tmp/agentic-newsroom.tar.xz
+          tar -tJf /tmp/agentic-newsroom.tar.xz >/dev/null
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .bootstrap -exec rm -rf {} +
+          tar -xJf /tmp/agentic-newsroom.tar.xz
+      - name: Restore pinned Plotly vendor
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          tgz="$(npm pack plotly.js-dist@3.3.1 --silent)"
+          tar -xzf "$tgz"
+          test -f package/plotly.min.js
+          actual="$(shasum -a 256 package/plotly.min.js | awk '{print $1}')"
+          expected='9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3'
+          test "$actual" = "$expected" || { echo "Plotly vendor hash mismatch: $actual"; exit 2; }
+          mkdir -p "$GITHUB_WORKSPACE/runtime/pi/vendor" "$GITHUB_WORKSPACE/runtime/web/vendor"
+          cp package/plotly.min.js "$GITHUB_WORKSPACE/runtime/pi/vendor/plotly-3.3.1.min.js"
+          cp package/plotly.min.js "$GITHUB_WORKSPACE/runtime/web/vendor/plotly-3.3.1.min.js"
+      - name: Generate dependency locks
+        run: ./scripts/generate_dependency_locks.sh
+      - name: Validate imported source on macOS
+        run: |
+          node scripts/test_parallel_scheduler.mjs
+          node scripts/test_local_backend.mjs
+          node scripts/test_macos_local_backend.mjs
+          python3 scripts/check_runtime_contract.py
+          node --experimental-strip-types --check runtime/pi/newsroom.ts
+          cargo fmt --all -- --check
+          cargo check --all-targets --locked
+          cargo test --all-targets --locked
+      - name: Commit materialized source and locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No materialized changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Import macOS local-first parallel hardening [bootstrap materialized]'
+          git push origin HEAD:import-current
