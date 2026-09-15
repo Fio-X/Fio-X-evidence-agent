@@ -1,0 +1,65 @@
+{
+  "spec": {
+    "schema_version": "0.8.0",
+    "takeaway": "Complex relationship fixture.",
+    "title": "Organisational hierarchy",
+    "subtitle": "Synthetic topology fixture used to exercise deterministic complex-visual rules",
+    "alt": "A hierarchy tree shows the company, newsroom and commercial branches.",
+    "source_note": "Synthetic topology regression fixture",
+    "claim_id": "claim-complex-v08",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [],
+    "reader_task": "hierarchy",
+    "visual_family": "hierarchy",
+    "data_topology": "hierarchy",
+    "chart_type": "hierarchy_tree",
+    "node_field": "node",
+    "parent_field": "parent"
+  },
+  "rows": [
+    {
+      "node": "Company",
+      "parent": null
+    },
+    {
+      "node": "Newsroom",
+      "parent": "Company"
+    },
+    {
+      "node": "Commercial",
+      "parent": "Company"
+    },
+    {
+      "node": "Politics",
+      "parent": "Newsroom"
+    },
+    {
+      "node": "Data",
+      "parent": "Newsroom"
+    },
+    {
+      "node": "Graphics",
+      "parent": "Newsroom"
+    },
+    {
+      "node": "Sales",
+      "parent": "Commercial"
+    },
+    {
+      "node": "Subscriptions",
+      "parent": "Commercial"
+    }
+  ],
+  "lint": {
+    "schema_version": "0.8.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "f74df95a576f6a7d9d436000271c35b4dba720af43e2bedface7a1236decc434",
+    "row_count": 8
+  }
+}

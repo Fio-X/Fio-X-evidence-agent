@@ -1,0 +1,96 @@
+{
+  "spec": {
+    "schema_version": "0.8.0",
+    "takeaway": "Complex relationship fixture.",
+    "title": "The same network as a matrix",
+    "subtitle": "Synthetic topology fixture used to exercise deterministic complex-visual rules",
+    "alt": "An adjacency matrix encodes the same newsroom relationship network as cells.",
+    "source_note": "Synthetic topology regression fixture",
+    "claim_id": "claim-complex-v08",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [
+      "Data desk"
+    ],
+    "reader_task": "relationship",
+    "visual_family": "relationship",
+    "data_topology": "graph_edges",
+    "chart_type": "adjacency_matrix",
+    "source_field": "source",
+    "target_field": "target",
+    "value_field": "value"
+  },
+  "rows": [
+    {
+      "source": "Editor",
+      "target": "Data desk",
+      "value": 5
+    },
+    {
+      "source": "Editor",
+      "target": "Politics",
+      "value": 4
+    },
+    {
+      "source": "Data desk",
+      "target": "Graphics",
+      "value": 7
+    },
+    {
+      "source": "Data desk",
+      "target": "Climate",
+      "value": 3
+    },
+    {
+      "source": "Graphics",
+      "target": "Climate",
+      "value": 4
+    },
+    {
+      "source": "Politics",
+      "target": "Investigations",
+      "value": 6
+    },
+    {
+      "source": "Investigations",
+      "target": "Legal",
+      "value": 3
+    },
+    {
+      "source": "Legal",
+      "target": "Editor",
+      "value": 2
+    },
+    {
+      "source": "Climate",
+      "target": "Science",
+      "value": 5
+    },
+    {
+      "source": "Science",
+      "target": "Graphics",
+      "value": 3
+    },
+    {
+      "source": "Graphics",
+      "target": "Editor",
+      "value": 2
+    },
+    {
+      "source": "Politics",
+      "target": "Graphics",
+      "value": 3
+    }
+  ],
+  "lint": {
+    "schema_version": "0.8.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "f5870d9ba93cbdbaed0f5983f9667abb841971bba756d3a47611eeb19e67e2de",
+    "row_count": 12
+  }
+}

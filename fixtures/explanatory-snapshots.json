@@ -1,0 +1,18 @@
+{
+  "cutaway": {
+    "desktop": "7c98368d441aa5e8118f8a76fc569bc3076ca9986bc3885aad6be016e156c970",
+    "mobile": "8f9fdc1956dd5cf2c0bc57fe1c98424e89ab4c4f25365896a544db5d27c160a0"
+  },
+  "exploded": {
+    "desktop": "0b000185f35b0d575b126c7879db6f8cf7cfd77ce666aca85b5e1fca99dc9e2a",
+    "mobile": "0b861b38c2641829c682181eff26458c24e4d0f67067f6407612478718f6424f"
+  },
+  "anatomy": {
+    "desktop": "fd8830c0ce946861738971cf463c60bca6b6206742beb641653a63dbeca52205",
+    "mobile": "71dfa60a780c4fc58bcbaf16e8f6c0a26a5bceebf5fd09c04e850e951f4a8915"
+  },
+  "system": {
+    "desktop": "bd4089a5821559b2496a3d55eebff99d84e1456e5ac01b2700dae3913c23a925",
+    "mobile": "3edc12042f95c41bdefb9ffde79c5ccbc3651fb05d76ef8473b1792063c6d16e"
+  }
+}

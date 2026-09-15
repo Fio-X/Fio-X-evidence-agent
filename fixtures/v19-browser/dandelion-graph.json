@@ -1,0 +1,451 @@
+{
+  "schema_version": "0.1.0",
+  "directed": false,
+  "seed": 42,
+  "community": true,
+  "layout": {
+    "name": "radial_tree",
+    "root": "core",
+    "scale": 1.0
+  },
+  "nodes": [
+    {
+      "id": "core",
+      "label": "Core platform"
+    },
+    {
+      "id": "b1",
+      "label": "Branch 1"
+    },
+    {
+      "id": "b1-l1",
+      "label": "Leaf 1.1"
+    },
+    {
+      "id": "b1-l2",
+      "label": "Leaf 1.2"
+    },
+    {
+      "id": "b1-l3",
+      "label": "Leaf 1.3"
+    },
+    {
+      "id": "b1-l4",
+      "label": "Leaf 1.4"
+    },
+    {
+      "id": "b1-l5",
+      "label": "Leaf 1.5"
+    },
+    {
+      "id": "b2",
+      "label": "Branch 2"
+    },
+    {
+      "id": "b2-l1",
+      "label": "Leaf 2.1"
+    },
+    {
+      "id": "b2-l2",
+      "label": "Leaf 2.2"
+    },
+    {
+      "id": "b2-l3",
+      "label": "Leaf 2.3"
+    },
+    {
+      "id": "b2-l4",
+      "label": "Leaf 2.4"
+    },
+    {
+      "id": "b2-l5",
+      "label": "Leaf 2.5"
+    },
+    {
+      "id": "b3",
+      "label": "Branch 3"
+    },
+    {
+      "id": "b3-l1",
+      "label": "Leaf 3.1"
+    },
+    {
+      "id": "b3-l2",
+      "label": "Leaf 3.2"
+    },
+    {
+      "id": "b3-l3",
+      "label": "Leaf 3.3"
+    },
+    {
+      "id": "b3-l4",
+      "label": "Leaf 3.4"
+    },
+    {
+      "id": "b3-l5",
+      "label": "Leaf 3.5"
+    },
+    {
+      "id": "b4",
+      "label": "Branch 4"
+    },
+    {
+      "id": "b4-l1",
+      "label": "Leaf 4.1"
+    },
+    {
+      "id": "b4-l2",
+      "label": "Leaf 4.2"
+    },
+    {
+      "id": "b4-l3",
+      "label": "Leaf 4.3"
+    },
+    {
+      "id": "b4-l4",
+      "label": "Leaf 4.4"
+    },
+    {
+      "id": "b4-l5",
+      "label": "Leaf 4.5"
+    },
+    {
+      "id": "b5",
+      "label": "Branch 5"
+    },
+    {
+      "id": "b5-l1",
+      "label": "Leaf 5.1"
+    },
+    {
+      "id": "b5-l2",
+      "label": "Leaf 5.2"
+    },
+    {
+      "id": "b5-l3",
+      "label": "Leaf 5.3"
+    },
+    {
+      "id": "b5-l4",
+      "label": "Leaf 5.4"
+    },
+    {
+      "id": "b5-l5",
+      "label": "Leaf 5.5"
+    },
+    {
+      "id": "b6",
+      "label": "Branch 6"
+    },
+    {
+      "id": "b6-l1",
+      "label": "Leaf 6.1"
+    },
+    {
+      "id": "b6-l2",
+      "label": "Leaf 6.2"
+    },
+    {
+      "id": "b6-l3",
+      "label": "Leaf 6.3"
+    },
+    {
+      "id": "b6-l4",
+      "label": "Leaf 6.4"
+    },
+    {
+      "id": "b6-l5",
+      "label": "Leaf 6.5"
+    },
+    {
+      "id": "b7",
+      "label": "Branch 7"
+    },
+    {
+      "id": "b7-l1",
+      "label": "Leaf 7.1"
+    },
+    {
+      "id": "b7-l2",
+      "label": "Leaf 7.2"
+    },
+    {
+      "id": "b7-l3",
+      "label": "Leaf 7.3"
+    },
+    {
+      "id": "b7-l4",
+      "label": "Leaf 7.4"
+    },
+    {
+      "id": "b7-l5",
+      "label": "Leaf 7.5"
+    },
+    {
+      "id": "b8",
+      "label": "Branch 8"
+    },
+    {
+      "id": "b8-l1",
+      "label": "Leaf 8.1"
+    },
+    {
+      "id": "b8-l2",
+      "label": "Leaf 8.2"
+    },
+    {
+      "id": "b8-l3",
+      "label": "Leaf 8.3"
+    },
+    {
+      "id": "b8-l4",
+      "label": "Leaf 8.4"
+    },
+    {
+      "id": "b8-l5",
+      "label": "Leaf 8.5"
+    }
+  ],
+  "edges": [
+    {
+      "source": "core",
+      "target": "b1",
+      "weight": 3
+    },
+    {
+      "source": "b1",
+      "target": "b1-l1",
+      "weight": 1
+    },
+    {
+      "source": "b1",
+      "target": "b1-l2",
+      "weight": 1
+    },
+    {
+      "source": "b1",
+      "target": "b1-l3",
+      "weight": 1
+    },
+    {
+      "source": "b1",
+      "target": "b1-l4",
+      "weight": 1
+    },
+    {
+      "source": "b1",
+      "target": "b1-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b2",
+      "weight": 3
+    },
+    {
+      "source": "b2",
+      "target": "b2-l1",
+      "weight": 1
+    },
+    {
+      "source": "b2",
+      "target": "b2-l2",
+      "weight": 1
+    },
+    {
+      "source": "b2",
+      "target": "b2-l3",
+      "weight": 1
+    },
+    {
+      "source": "b2",
+      "target": "b2-l4",
+      "weight": 1
+    },
+    {
+      "source": "b2",
+      "target": "b2-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b3",
+      "weight": 3
+    },
+    {
+      "source": "b3",
+      "target": "b3-l1",
+      "weight": 1
+    },
+    {
+      "source": "b3",
+      "target": "b3-l2",
+      "weight": 1
+    },
+    {
+      "source": "b3",
+      "target": "b3-l3",
+      "weight": 1
+    },
+    {
+      "source": "b3",
+      "target": "b3-l4",
+      "weight": 1
+    },
+    {
+      "source": "b3",
+      "target": "b3-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b4",
+      "weight": 3
+    },
+    {
+      "source": "b4",
+      "target": "b4-l1",
+      "weight": 1
+    },
+    {
+      "source": "b4",
+      "target": "b4-l2",
+      "weight": 1
+    },
+    {
+      "source": "b4",
+      "target": "b4-l3",
+      "weight": 1
+    },
+    {
+      "source": "b4",
+      "target": "b4-l4",
+      "weight": 1
+    },
+    {
+      "source": "b4",
+      "target": "b4-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b5",
+      "weight": 3
+    },
+    {
+      "source": "b5",
+      "target": "b5-l1",
+      "weight": 1
+    },
+    {
+      "source": "b5",
+      "target": "b5-l2",
+      "weight": 1
+    },
+    {
+      "source": "b5",
+      "target": "b5-l3",
+      "weight": 1
+    },
+    {
+      "source": "b5",
+      "target": "b5-l4",
+      "weight": 1
+    },
+    {
+      "source": "b5",
+      "target": "b5-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b6",
+      "weight": 3
+    },
+    {
+      "source": "b6",
+      "target": "b6-l1",
+      "weight": 1
+    },
+    {
+      "source": "b6",
+      "target": "b6-l2",
+      "weight": 1
+    },
+    {
+      "source": "b6",
+      "target": "b6-l3",
+      "weight": 1
+    },
+    {
+      "source": "b6",
+      "target": "b6-l4",
+      "weight": 1
+    },
+    {
+      "source": "b6",
+      "target": "b6-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b7",
+      "weight": 3
+    },
+    {
+      "source": "b7",
+      "target": "b7-l1",
+      "weight": 1
+    },
+    {
+      "source": "b7",
+      "target": "b7-l2",
+      "weight": 1
+    },
+    {
+      "source": "b7",
+      "target": "b7-l3",
+      "weight": 1
+    },
+    {
+      "source": "b7",
+      "target": "b7-l4",
+      "weight": 1
+    },
+    {
+      "source": "b7",
+      "target": "b7-l5",
+      "weight": 1
+    },
+    {
+      "source": "core",
+      "target": "b8",
+      "weight": 3
+    },
+    {
+      "source": "b8",
+      "target": "b8-l1",
+      "weight": 1
+    },
+    {
+      "source": "b8",
+      "target": "b8-l2",
+      "weight": 1
+    },
+    {
+      "source": "b8",
+      "target": "b8-l3",
+      "weight": 1
+    },
+    {
+      "source": "b8",
+      "target": "b8-l4",
+      "weight": 1
+    },
+    {
+      "source": "b8",
+      "target": "b8-l5",
+      "weight": 1
+    }
+  ]
+}

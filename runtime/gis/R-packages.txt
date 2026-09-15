@@ -1,0 +1,14 @@
+sf
+ggplot2
+ggrepel
+mapsf
+tmap
+sfnetworks
+ggraph
+rayshader
+mapgl
+arrow
+quarto
+
+ggalluvial
+geosphere

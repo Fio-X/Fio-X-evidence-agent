@@ -1,0 +1,5 @@
+Analyze the supplied local World Bank renewable-energy fixture as a data-journalism quality test.
+
+First inspect the available artifact files and profile the dataset schema and reference years. Determine whether a naive ranking of countries by their latest renewable-energy-consumption share is editorially defensible. If reference periods differ, do not silently compare them as if they were simultaneous observations. Explain the precise comparability problem, compute only summaries that remain defensible, and create a chart only if its title, subtitle, source note, and caveat make the mixed-year limitation explicit. Record at least one verified claim about the data-quality issue with provenance to the local dataset and the deterministic computation used to support it.
+
+The goal is to demonstrate autonomous diagnosis of a misleading data setup, not to force a predetermined ranking.

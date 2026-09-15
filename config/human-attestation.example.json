@@ -1,0 +1,8 @@
+{
+  "schema_version": "0.1.0",
+  "passed": false,
+  "reviewer_qualification": "Describe the editor/reviewer qualification here",
+  "reviewed_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "artifact_sha256": "",
+  "notes": "This file is an example only. Final promotion requires a real signed/reviewed attestation artifact."
+}

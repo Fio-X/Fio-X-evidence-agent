@@ -1,0 +1,26 @@
+{
+  "outputs/nasa-gistemp-v14/nasa-gistemp-v14.png": {
+    "bytes": 351041,
+    "sha256": "45471b622754b0726309fd67155760d905b0be6a74b4b5f282091737e2110c97"
+  },
+  "outputs/nasa-gistemp-v14/nasa-gistemp-v14.mobile.png": {
+    "bytes": 376844,
+    "sha256": "59d939fbd7db173ae0133585b6e6182c1260e54afceffa84f8f4dad9fb237bab"
+  },
+  "outputs/nasa-gistemp-v14/nasa-gistemp-v14.alt.png": {
+    "bytes": 416900,
+    "sha256": "3e23d5902928104d5deb7a70a5aa4d8a716f2fb04784db30f58f57d33cc163c5"
+  },
+  "outputs/nasa-gistemp-v14/award-mode-status.json": {
+    "bytes": 1094,
+    "sha256": "8eeecf03f144f4f7af4e7b0d9b6b6490d69556fc746cdd7f24edb5a0afaa2dea"
+  },
+  "fixtures/external/naturalearth_lowres/SOURCE.json": {
+    "bytes": 1848,
+    "sha256": "1e4f317b754c45a5c564309308120148f2835d88a0adab579530d457ea574fd9"
+  },
+  "docs/smoke-v1.4.log": {
+    "bytes": 15450,
+    "sha256": "c469b53b0bee8daeebf9fff6235e6dedb055e3184645f91bc15cf741af8d23a0"
+  }
+}

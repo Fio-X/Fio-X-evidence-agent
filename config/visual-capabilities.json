@@ -1,0 +1,188 @@
+{
+  "schema_version": "0.2.0",
+  "intents": {
+    "interactive_sankey": {
+      "topology": [
+        "flow_edges"
+      ],
+      "requires": [
+        "interactive_sankey",
+        "responsive_html",
+        "claim_annotations"
+      ],
+      "preferred_backends": [
+        "d3_editorial",
+        "plotly_browser",
+        "echarts_interactive"
+      ]
+    },
+    "radial_network": {
+      "topology": [
+        "graph_edges",
+        "hierarchy"
+      ],
+      "analysis_stage": [
+        "networkx_graph"
+      ],
+      "requires": [
+        "radial_network",
+        "responsive_html"
+      ],
+      "preferred_backends": [
+        "d3_editorial",
+        "sigma_graphology",
+        "plotly_browser"
+      ]
+    },
+    "large_network": {
+      "topology": [
+        "graph_edges"
+      ],
+      "analysis_stage": [
+        "networkx_graph"
+      ],
+      "requires": [
+        "large_network",
+        "interactive_focus"
+      ],
+      "preferred_backends": [
+        "sigma_graphology",
+        "canvas_network",
+        "d3_editorial",
+        "plotly_browser"
+      ]
+    },
+    "large_network_overview": {
+      "topology": [
+        "graph_edges"
+      ],
+      "analysis_stage": [
+        "networkx_graph"
+      ],
+      "requires": [
+        "large_network_overview",
+        "responsive_html",
+        "claim_annotations"
+      ],
+      "preferred_backends": [
+        "canvas_network",
+        "plotly_browser",
+        "sigma_graphology"
+      ]
+    },
+    "linked_views": {
+      "topology": [
+        "tabular",
+        "geo_edges",
+        "graph_edges",
+        "flow_edges"
+      ],
+      "requires": [
+        "linked_views",
+        "responsive_html"
+      ],
+      "preferred_backends": [
+        "d3_editorial",
+        "plotly_browser",
+        "echarts_interactive"
+      ]
+    },
+    "dense_scatter": {
+      "topology": [
+        "tabular"
+      ],
+      "requires": [
+        "webgl",
+        "responsive_html"
+      ],
+      "preferred_backends": [
+        "plotly_browser",
+        "deckgl_maplibre",
+        "datashader"
+      ]
+    },
+    "scrollytelling": {
+      "topology": [
+        "tabular",
+        "flow_edges",
+        "graph_edges",
+        "geo_edges",
+        "events"
+      ],
+      "requires": [
+        "responsive_html",
+        "interaction_replay"
+      ],
+      "preferred_backends": [
+        "d3_editorial",
+        "plotly_browser"
+      ]
+    },
+    "hierarchy_treemap": {
+      "topology": [
+        "hierarchy",
+        "tabular"
+      ],
+      "requires": [
+        "treemap",
+        "responsive_html",
+        "claim_annotations"
+      ],
+      "preferred_backends": [
+        "plotly_browser",
+        "d3_editorial"
+      ]
+    },
+    "uncertainty_fan": {
+      "topology": [
+        "tabular",
+        "events"
+      ],
+      "requires": [
+        "uncertainty_band",
+        "responsive_html",
+        "claim_annotations"
+      ],
+      "preferred_backends": [
+        "plotly_browser",
+        "d3_editorial",
+        "echarts_interactive"
+      ]
+    },
+    "linked_geo_views": {
+      "topology": [
+        "geography",
+        "geo_edges",
+        "tabular"
+      ],
+      "requires": [
+        "linked_geo_views",
+        "responsive_html"
+      ],
+      "preferred_backends": [
+        "maplibre_deckgl",
+        "plotly_browser",
+        "d3_editorial"
+      ]
+    },
+    "nature_scientific_map": {
+      "topology": [
+        "geography",
+        "geo_edges"
+      ],
+      "requires": [
+        "scientific_map",
+        "physical_basemap",
+        "projection_explicit",
+        "scale_bar",
+        "responsive_html"
+      ],
+      "preferred_backends": [
+        "plotly_browser",
+        "maplibre_deckgl",
+        "pygmt_scientific",
+        "qgis_cartography"
+      ]
+    }
+  }
+}

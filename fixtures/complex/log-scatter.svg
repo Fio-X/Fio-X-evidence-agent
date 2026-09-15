@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 599" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">Income and longevity</title>
+<desc id="viz-desc">A log-scale scatter plot compares GDP per capita with life expectancy across five countries.</desc>
+<rect width="1040" height="599" fill="#ffffff"/>
+<text x="54" y="38" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#202124">Income and longevity</text>
+<text x="54" y="74" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#687076">Synthetic topology fixture used to exercise deterministic complex-visual rules</text>
+<line x1="100" y1="463" x2="930" y2="463" stroke="#d9dde1"/>
+<text x="88" y="467" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">66.7 years</text>
+<line x1="100" y1="376.5" x2="930" y2="376.5" stroke="#d9dde1"/>
+<text x="88" y="380.5" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">71.4 years</text>
+<line x1="100" y1="290" x2="930" y2="290" stroke="#d9dde1"/>
+<text x="88" y="294" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">76 years</text>
+<line x1="100" y1="203.5" x2="930" y2="203.5" stroke="#d9dde1"/>
+<text x="88" y="207.5" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">80.6 years</text>
+<line x1="100" y1="117" x2="930" y2="117" stroke="#d9dde1"/>
+<text x="88" y="121" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">85.3 years</text>
+<text x="100" y="487" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">$1.8k</text>
+<text x="307.5" y="487" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">$5.6k</text>
+<text x="515" y="487" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">$17k</text>
+<text x="722.5" y="487" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">$51k</text>
+<text x="930" y="487" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#687076">$156k</text>
+<text x="515" y="513" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="600" fill="#687076">GDP per capita</text>
+<text x="18" y="290" transform="rotate(-90 18 290)" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="600" fill="#687076">Life expectancy</text>
+<circle cx="157.24137931034474" cy="439.13793103448273" r="4" fill="#2f6f8f" opacity="0.68"/>
+<circle cx="294.11025803714256" cy="364.5689655172414" r="4" fill="#2f6f8f" opacity="0.68"/>
+<circle cx="504.1564020811785" cy="252.71551724137933" r="4" fill="#2f6f8f" opacity="0.68"/>
+<circle cx="684.5159471349947" cy="196.7887931034483" r="4" fill="#2f6f8f" opacity="0.68"/>
+<circle cx="872.7586206896552" cy="140.86206896551727" r="4" fill="#2f6f8f" opacity="0.68"/>
+<text x="930" y="513" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">log scale</text>
+<line x1="54" y1="528" x2="986" y2="528" stroke="#d9dde1" stroke-width="1"/>
+<text x="54" y="547" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#687076">Source: Synthetic topology regression fixture</text>
+</svg>

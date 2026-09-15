@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 615" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">Organisational hierarchy</title>
+<desc id="viz-desc-mobile">A hierarchy tree shows the company, newsroom and commercial branches.</desc>
+<rect width="640" height="615" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">Organisational hierarchy</text>
+<text x="32" y="67" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">Synthetic topology fixture used to exercise deterministic</text>
+<text x="32" y="87" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">complex-visual rules</text>
+<path d="M297.5,147 C297.5,237.5 135,237.5 135,328" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<path d="M297.5,147 C297.5,237.5 460,237.5 460,328" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<path d="M460,328 C460,418.5 330,418.5 330,509" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<path d="M460,328 C460,418.5 460,418.5 460,509" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<path d="M460,328 C460,418.5 590,418.5 590,509" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<path d="M135,328 C135,418.5 70,418.5 70,509" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<path d="M135,328 C135,418.5 200,418.5 200,509" fill="none" stroke="#a9afb5" stroke-width="1.5"/>
+<circle cx="70" cy="509" r="4.5" fill="#2f6f8f"/>
+<text x="70" y="525" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Sales</text>
+<circle cx="200" cy="509" r="4.5" fill="#2f6f8f"/>
+<text x="200" y="525" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Subscriptions</text>
+<circle cx="135" cy="328" r="4.5" fill="#2f6f8f"/>
+<text x="135" y="319" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Commercial</text>
+<circle cx="330" cy="509" r="4.5" fill="#2f6f8f"/>
+<text x="330" y="525" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Data</text>
+<circle cx="460" cy="509" r="4.5" fill="#2f6f8f"/>
+<text x="460" y="525" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Graphics</text>
+<circle cx="590" cy="509" r="4.5" fill="#2f6f8f"/>
+<text x="590" y="525" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Politics</text>
+<circle cx="460" cy="328" r="4.5" fill="#2f6f8f"/>
+<text x="460" y="319" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Newsroom</text>
+<circle cx="297.5" cy="147" r="4.5" fill="#2f6f8f"/>
+<text x="297.5" y="138" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="500" fill="#202124">Company</text>
+<line x1="32" y1="537" x2="608" y2="537" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="556" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: Synthetic topology regression fixture</text>
+</svg>

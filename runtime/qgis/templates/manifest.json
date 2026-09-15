@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "templates": [
+    {
+      "id": "local_explainer",
+      "file": "local_explainer.qpt",
+      "status": "PENDING_QGIS_RENDER_VALIDATION",
+      "required_layers": [
+        "primary",
+        "context"
+      ]
+    },
+    {
+      "id": "global_flow",
+      "file": "global_flow.qpt",
+      "status": "PENDING_QGIS_RENDER_VALIDATION",
+      "required_layers": [
+        "origin",
+        "destination",
+        "flow"
+      ]
+    },
+    {
+      "id": "aviation_route",
+      "file": "aviation_route.qpt",
+      "status": "PENDING_QGIS_RENDER_VALIDATION",
+      "required_layers": [
+        "trajectory",
+        "airspace",
+        "waypoints"
+      ]
+    },
+    {
+      "id": "maritime_route",
+      "file": "maritime_route.qpt",
+      "status": "PENDING_QGIS_RENDER_VALIDATION",
+      "required_layers": [
+        "trajectory",
+        "coastline",
+        "port_context"
+      ]
+    }
+  ]
+}

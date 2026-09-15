@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/graph-extraction-result.schema.json",
+  "title": "Evidence Graph Extraction Result",
+  "type": "object",
+  "required": ["schema_version", "extractor", "nodes", "edges", "communities", "claims", "provenance"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "extractor": {
+      "type": "object",
+      "required": ["name", "version", "method"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "method": {"type": "string"},
+        "config_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "type", "description", "evidence_text_unit_ids"],
+        "properties": {
+          "id": {"type": "string"}, "label": {"type": "string"}, "type": {"type": "string"},
+          "description": {"type": "string"}, "frequency": {"type": ["integer", "null"]},
+          "degree": {"type": ["integer", "null"]},
+          "evidence_text_unit_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "target", "source_label", "target_label", "description", "evidence_text_unit_ids"],
+        "properties": {
+          "id": {"type": "string"}, "source": {"type": "string"}, "target": {"type": "string"},
+          "source_label": {"type": "string"}, "target_label": {"type": "string"},
+          "description": {"type": "string"}, "weight": {"type": ["number", "null"]},
+          "combined_degree": {"type": ["integer", "null"]},
+          "evidence_text_unit_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+        },
+        "additionalProperties": false
+      }
+    },
+    "communities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "community", "level", "title", "entity_ids", "relationship_ids", "evidence_text_unit_ids"],
+        "properties": {
+          "id": {"type": "string"}, "community": {"type": "integer"}, "parent": {"type": ["integer", "null"]},
+          "children": {"type": "array", "items": {"type": "integer"}}, "level": {"type": "integer"},
+          "title": {"type": "string"}, "size": {"type": ["integer", "null"]},
+          "entity_ids": {"type": "array", "items": {"type": "string"}},
+          "relationship_ids": {"type": "array", "items": {"type": "string"}},
+          "evidence_text_unit_ids": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim_type", "description", "status", "subject_label", "source_text", "evidence_text_unit_ids"],
+        "properties": {
+          "id": {"type": "string"}, "claim_type": {"type": "string"}, "description": {"type": "string"},
+          "status": {"type": "string"}, "subject": {"type": ["string", "null"]}, "object": {"type": ["string", "null"]},
+          "subject_label": {"type": "string"}, "object_label": {"type": ["string", "null"]},
+          "start_date": {"type": ["string", "null"]}, "end_date": {"type": ["string", "null"]},
+          "source_text": {"type": "string"},
+          "evidence_text_unit_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifact", "sha256", "row_count", "format"],
+        "properties": {
+          "artifact": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "row_count": {"type": "integer", "minimum": 0}, "format": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

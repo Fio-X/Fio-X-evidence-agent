@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/runtime-manifest.schema.json",
+  "title": "Visualization Runtime Manifest",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "execution",
+    "capabilities",
+    "probes"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "version": {
+      "type": "string"
+    },
+    "execution": {
+      "enum": [
+        "native",
+        "container",
+        "browser"
+      ]
+    },
+    "target_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "probes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "name"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "command",
+              "python_module",
+              "r_package",
+              "node_package"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "version_spec": {
+            "type": "string"
+          },
+          "version_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "build": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

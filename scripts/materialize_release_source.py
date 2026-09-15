@@ -112,6 +112,9 @@ def copy_missing_from_zip(root: Path, archive: Path) -> tuple[int,int]:
             dst.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(final[rel]) as src, dst.open('wb') as out:
                 shutil.copyfileobj(src,out)
+            mode = (final[rel].external_attr >> 16) & 0o7777
+            if mode:
+                dst.chmod(mode)
             copied += 1
     return copied,preserved
 
@@ -138,6 +141,11 @@ def regenerate_v110(root: Path):
 def restore_file(src: Path, dst: Path, expected: str):
     actual=sha(src)
     if actual != expected: raise SystemExit(f'hash mismatch for {src}: expected {expected}, got {actual}')
+    if dst.exists():
+        existing = sha(dst)
+        if existing != expected:
+            raise SystemExit(f'refusing to overwrite existing hardened file: {dst}')
+        return
     dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src,dst)
     if sha(dst) != expected: raise SystemExit(f'post-copy hash mismatch: {dst}')
 

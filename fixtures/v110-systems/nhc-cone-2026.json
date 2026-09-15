@@ -1,0 +1,63 @@
+{
+  "source": "NHC 2026 operational track forecast cone",
+  "coverage": 0.6666666666666666,
+  "coverage_semantics": "empirical_historical_error",
+  "series": [
+    {
+      "horizon": 12,
+      "lower": -25,
+      "central": 0,
+      "upper": 25,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 24,
+      "lower": -39,
+      "central": 0,
+      "upper": 39,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 36,
+      "lower": -49,
+      "central": 0,
+      "upper": 49,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 48,
+      "lower": -62,
+      "central": 0,
+      "upper": 62,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 60,
+      "lower": -77,
+      "central": 0,
+      "upper": 77,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 72,
+      "lower": -95,
+      "central": 0,
+      "upper": 95,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 96,
+      "lower": -134,
+      "central": 0,
+      "upper": 134,
+      "unit": "nautical miles"
+    },
+    {
+      "horizon": 120,
+      "lower": -200,
+      "central": 0,
+      "upper": 200,
+      "unit": "nautical miles"
+    }
+  ]
+}

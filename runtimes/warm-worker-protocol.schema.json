@@ -1,0 +1,9 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://example.invalid/warm-worker-protocol.schema.json",
+  "title":"ADN warm visualization worker request",
+  "type":"object",
+  "required":["id","backend","request_path"],
+  "properties":{"id":{"type":"string"},"backend":{"type":"string"},"request_path":{"type":"string"},"op":{"enum":["render","shutdown"]}},
+  "additionalProperties":false
+}

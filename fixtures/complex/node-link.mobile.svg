@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 635" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">A newsroom relationship network</title>
+<desc id="viz-desc-mobile">A node-link network shows connections between desks and editorial functions.</desc>
+<rect width="640" height="635" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">A newsroom relationship network</text>
+<text x="32" y="67" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">Synthetic topology fixture used to exercise deterministic</text>
+<text x="32" y="87" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">complex-visual rules</text>
+<line data-role="network-edge" x1="475.6200604035354" y1="233.91388180934018" x2="475.6200604035354" y2="442.0861181906598" stroke="#a9afb5" stroke-width="2.23606797749979" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="475.6200604035354" y1="233.91388180934018" x2="320" y2="485.20000000000005" stroke="#a9afb5" stroke-width="2" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="475.6200604035354" y1="442.0861181906598" x2="320" y2="190.79999999999998" stroke="#a9afb5" stroke-width="2.6457513110645907" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="475.6200604035354" y1="442.0861181906598" x2="540.0799999999999" y2="338" stroke="#a9afb5" stroke-width="1.7320508075688772" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="320" y1="190.79999999999998" x2="540.0799999999999" y2="338" stroke="#a9afb5" stroke-width="2" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="320" y1="485.20000000000005" x2="164.37993959646465" y2="442.0861181906598" stroke="#a9afb5" stroke-width="2.449489742783178" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="164.37993959646465" y1="442.0861181906598" x2="99.92000000000002" y2="338" stroke="#a9afb5" stroke-width="1.7320508075688772" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="99.92000000000002" y1="338" x2="475.6200604035354" y2="233.91388180934018" stroke="#a9afb5" stroke-width="1.4142135623730951" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="540.0799999999999" y1="338" x2="164.3799395964646" y2="233.91388180934018" stroke="#a9afb5" stroke-width="2.23606797749979" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="164.3799395964646" y1="233.91388180934018" x2="320" y2="190.79999999999998" stroke="#a9afb5" stroke-width="1.7320508075688772" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="320" y1="190.79999999999998" x2="475.6200604035354" y2="233.91388180934018" stroke="#a9afb5" stroke-width="1.4142135623730951" stroke-opacity=".48"/>
+<line data-role="network-edge" x1="320" y1="485.20000000000005" x2="320" y2="190.79999999999998" stroke="#a9afb5" stroke-width="1.7320508075688772" stroke-opacity=".48"/>
+<circle data-role="network-node" cx="320" cy="190.79999999999998" r="12.5" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="328" y="183.79999999999998" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Graphics</text>
+<circle data-role="network-node" cx="475.6200604035354" cy="233.91388180934018" r="10.9" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="483.6200604035354" y="226.91388180934018" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Editor</text>
+<circle data-role="network-node" cx="540.0799999999999" cy="338" r="9.3" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="548.0799999999999" y="331" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Climate</text>
+<circle data-role="network-node" cx="475.6200604035354" cy="442.0861181906598" r="9.3" fill="#d1493f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="483.6200604035354" y="435.0861181906598" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="700" fill="#202124">Data desk</text>
+<circle data-role="network-node" cx="320" cy="485.20000000000005" r="9.3" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="328" y="478.20000000000005" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Politics</text>
+<circle data-role="network-node" cx="164.37993959646465" cy="442.0861181906598" r="7.7" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="156.37993959646465" y="435.0861181906598" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Investigations</text>
+<circle data-role="network-node" cx="99.92000000000002" cy="338" r="7.7" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="91.92000000000002" y="331" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Legal</text>
+<circle data-role="network-node" cx="164.3799395964646" cy="233.91388180934018" r="7.7" fill="#2f6f8f" stroke="#fff" stroke-width="1.4"/>
+<text data-role="direct-label" x="156.3799395964646" y="226.91388180934018" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="500" fill="#202124">Science</text>
+<line x1="32" y1="557" x2="608" y2="557" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="576" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: Synthetic topology regression fixture</text>
+</svg>

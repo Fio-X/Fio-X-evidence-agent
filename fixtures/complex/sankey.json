@@ -1,0 +1,104 @@
+{
+  "spec": {
+    "schema_version": "0.8.0",
+    "takeaway": "Complex relationship fixture.",
+    "title": "Energy moves from supply through transformation to end use",
+    "subtitle": "Synthetic topology fixture used to exercise deterministic complex-visual rules",
+    "alt": "A Sankey diagram traces energy from domestic production and imports through available energy, transformation and final users.",
+    "source_note": "Synthetic topology regression fixture",
+    "claim_id": "claim-complex-v08",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [
+      {
+        "type": "node",
+        "text": "Transformation is the main conversion stage",
+        "claim_id": "claim-complex-v08",
+        "match_field": "target",
+        "match_value": "Transformation"
+      }
+    ],
+    "highlight_values": [
+      "Transformation"
+    ],
+    "reader_task": "flow",
+    "visual_family": "flow",
+    "data_topology": "flow_edges",
+    "chart_type": "sankey",
+    "source_field": "source",
+    "target_field": "target",
+    "value_field": "value"
+  },
+  "rows": [
+    {
+      "source": "Domestic production",
+      "target": "Available energy",
+      "value": 72
+    },
+    {
+      "source": "Imports",
+      "target": "Available energy",
+      "value": 48
+    },
+    {
+      "source": "Available energy",
+      "target": "Transformation",
+      "value": 70
+    },
+    {
+      "source": "Available energy",
+      "target": "Direct use",
+      "value": 35
+    },
+    {
+      "source": "Available energy",
+      "target": "Losses",
+      "value": 15
+    },
+    {
+      "source": "Transformation",
+      "target": "Industry",
+      "value": 22
+    },
+    {
+      "source": "Transformation",
+      "target": "Transport",
+      "value": 18
+    },
+    {
+      "source": "Transformation",
+      "target": "Households",
+      "value": 25
+    },
+    {
+      "source": "Transformation",
+      "target": "Transformation losses",
+      "value": 5
+    },
+    {
+      "source": "Direct use",
+      "target": "Industry",
+      "value": 12
+    },
+    {
+      "source": "Direct use",
+      "target": "Transport",
+      "value": 8
+    },
+    {
+      "source": "Direct use",
+      "target": "Households",
+      "value": 15
+    }
+  ],
+  "lint": {
+    "schema_version": "0.8.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "2374921eb0f8c76149a15ecc5a64c82f9c2bf920a6611569173c2d320caf2be7",
+    "row_count": 12
+  }
+}

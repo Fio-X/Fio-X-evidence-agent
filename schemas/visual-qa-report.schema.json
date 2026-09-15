@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/visual-qa-report.schema.json",
+  "title": "Visual QA Diagnostic Report",
+  "type": "object",
+  "required": ["schema_version", "artifact", "status", "machine_role", "competition_readiness", "metrics", "hard_failures", "issues", "recommended_actions"],
+  "properties": {
+    "schema_version": {"const": "2.0.0"},
+    "artifact": {"type": "string"},
+    "status": {"enum": ["PASS", "ADVISORY", "BLOCK"]},
+    "machine_role": {"const": "diagnostic_only"},
+    "competition_readiness": {"const": "UNASSESSED"},
+    "dimensions_px": {"type": "array", "prefixItems": [{"type":"integer"},{"type":"integer"}], "minItems":2, "maxItems":2},
+    "metrics": {"type": "object", "additionalProperties": true},
+    "hard_failures": {"type": "array", "items": {"type":"string"}},
+    "issues": {"type": "array", "items": {"type":"string"}},
+    "recommended_actions": {"type": "array", "items": {"type":"string"}}
+  },
+  "additionalProperties": true
+}

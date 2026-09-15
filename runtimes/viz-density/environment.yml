@@ -1,0 +1,11 @@
+name: adn-viz-density
+channels: [conda-forge, pyviz]
+dependencies:
+  - python=3.13
+  - datashader=0.19.1
+  - dask
+  - xarray
+  - pandas
+  - pyarrow
+  - numba
+  - pillow

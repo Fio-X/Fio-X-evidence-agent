@@ -1,0 +1,34 @@
+{
+  "owid_renewables": {
+    "title": "Share of electricity generation from renewables",
+    "publisher": "Our World in Data; underlying sources include Ember (2026)",
+    "url": "https://ourworldindata.org/grapher/share-electricity-renewables",
+    "retrieved": "2026-09-13",
+    "note": "2021 selected-country values and 2025 table values transcribed from the cited OWID pages."
+  },
+  "owid_solar": {
+    "title": "Share of electricity generation from solar, 2025",
+    "publisher": "Our World in Data; underlying sources include Ember (2026)",
+    "url": "https://ourworldindata.org/grapher/electricity-mix?frequency=annual&metric=share_of_generation&source=solar",
+    "retrieved": "2026-09-13"
+  },
+  "world_bank_gdp": {
+    "title": "GDP per capita (current US$)",
+    "publisher": "World Bank, World Development Indicators",
+    "url": "https://data.worldbank.org/indicator/NY.GDP.PCAP.CD",
+    "retrieved": "2026-09-13"
+  },
+  "world_bank_life": {
+    "title": "Life expectancy at birth, total (years)",
+    "publisher": "World Bank, World Development Indicators",
+    "url": "https://data.worldbank.org/indicator/SP.DYN.LE00.IN",
+    "retrieved": "2026-09-13"
+  },
+  "eia_energy_flow_2024": {
+    "title": "U.S. energy consumption by source and sector, 2024",
+    "publisher": "U.S. Energy Information Administration",
+    "url": "https://www.eia.gov/totalenergy/data/monthly/pdf/flow/total_energy_spaghettichart_2024.pdf",
+    "retrieved": "2026-09-13",
+    "note": "Aggregate values transcribed for the v0.8 flow-regression fixture; source also cites Monthly Energy Review April 2025 tables."
+  }
+}

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 656" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">Regions are connected by bilateral flows</title>
+<desc id="viz-desc-mobile">A chord diagram shows weighted relationships among five world regions, with thicker ribbons representing larger flows.</desc>
+<rect width="640" height="656" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">Regions are connected by bilateral</text>
+<text x="32" y="65" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">flows</text>
+<path data-role="chord-ribbon" d="M481.2889980658638,336.8388950630312 Q320,352 306.45293233413355,513.4325771263547" fill="none" stroke="#2f6f8f" stroke-width="18" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M481.2889980658638,336.8388950630312 Q320,352 211.54030904682386,231.66506974971264" fill="none" stroke="#d1493f" stroke-width="16.664761795905925" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M306.45293233413355,513.4325771263547 Q320,352 211.54030904682386,231.66506974971264" fill="none" stroke="#3c7d5a" stroke-width="13.60672102833218" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M306.45293233413355,513.4325771263547 Q320,352 364.75677258303074,196.30532665517788" fill="none" stroke="#7b6ba8" stroke-width="11.451762185046332" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M364.75677258303074,196.30532665517788 Q320,352 481.2889980658638,336.8388950630312" fill="none" stroke="#b7843e" stroke-width="10.757057484009541" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M211.54030904682386,231.66506974971264 Q320,352 163.59905255697169,394.22254893919944" fill="none" stroke="#4c8a83" stroke-width="12.727922061357857" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M163.59905255697169,394.22254893919944 Q320,352 306.45293233413355,513.4325771263547" fill="none" stroke="#8c6c59" stroke-width="9.621404708847278" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-ribbon" d="M163.59905255697169,394.22254893919944 Q320,352 481.2889980658638,336.8388950630312" fill="none" stroke="#a9afb5" stroke-width="8.332380897952962" stroke-opacity=".42" stroke-linecap="round"/>
+<path data-role="chord-arc" d="M320,182 A170,170 0 0 1 410.2778909341707,207.9517358366371" fill="none" stroke="#202124" stroke-width="12"/>
+<text x="371.9399583062332" y="174.31729266156444" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.8" font-weight="500" fill="#202124">Africa</text>
+<path data-role="chord-arc" d="M413.85051205270855,210.25346075672815 A170,170 0 0 1 438.6213679671653,473.7742627224586" fill="none" stroke="#d1493f" stroke-width="12"/>
+<text x="507.1748866443358" y="337.4056313077152" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.8" font-weight="700" fill="#202124">Asia</text>
+<path data-role="chord-arc" d="M435.5402612628262,476.7014355463395 A170,170 0 0 1 185.29269000201288,455.701208445737" fill="none" stroke="#202124" stroke-width="12"/>
+<text x="304.27871159763646" y="542.3415092577449" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.8" font-weight="500" fill="#202124">Europe</text>
+<path data-role="chord-arc" d="M182.74252367957894,452.3014715452822 A170,170 0 0 1 150.91348965179932,334.40022675521567" fill="none" stroke="#202124" stroke-width="12"/>
+<text x="138.49766593031282" y="403.99900741092284" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.8" font-weight="500" fill="#202124">Latin America</text>
+<path data-role="chord-arc" d="M151.40627493409042,330.17900395489494 A170,170 0 0 1 315.7504426944988,182.05312223313055" fill="none" stroke="#202124" stroke-width="12"/>
+<text x="194.13319815310422" y="215.35205625275296" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.8" font-weight="500" fill="#202124">North America</text>
+<line x1="32" y1="578" x2="608" y2="578" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="597" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: Synthetic v0.9 regression fixture</text>
+</svg>

@@ -1,0 +1,56 @@
+v1.9.0-rc2 core additions
+
+schemas/publication-spec.schema.json
+schemas/model-spec.schema.json
+runtime/web/publication.mjs
+runtime/web/plotly_editorial.mjs
+runtime/web/d3_editorial.mjs
+runtime/web/vendor/plotly-3.3.1.min.js
+runtime/browser/browser_qa.py
+runtime/browser/networkx_analyze.py
+runtime/browser/plotly_render.py
+runtime/visual/model_spec.mjs
+runtime/visual/capability_registry.mjs
+config/visual-capabilities.json
+config/external-visual-adapters.json
+runtimes/viz-browser/manifest.json
+runtimes/viz-browser/requirements.txt
+runtimes/viz-browser/Dockerfile
+runtime/visual/backend_policy.mjs
+runtime/visual/visual_compiler_v2.mjs
+runtime/visual/runtime_registry.mjs
+runtime/visual/backend_executor.mjs
+runtime/pi/newsroom.ts
+runtime/pi/publication.mjs
+runtime/pi/plotly_editorial.mjs
+runtime/pi/d3_editorial.mjs
+runtime/pi/browser_qa.py
+runtime/pi/networkx_analyze.py
+runtime/pi/vendor/plotly-3.3.1.min.js
+skills/browser-publication/SKILL.md
+skills/plotly-editorial/SKILL.md
+skills/d3-editorial/SKILL.md
+skills/network-analysis/SKILL.md
+scripts/build_browser_publication_bundle.py
+scripts/test_browser_publication_v19.mjs
+scripts/test_advanced_visual_engines_v19.mjs
+scripts/test_webgl_fail_closed_v19.mjs
+scripts/test_d3_fail_closed_v19.mjs
+scripts/test_capability_registry_v19.mjs
+scripts/test_publication_schema_v19.py
+scripts/test_model_spec_v19.py
+scripts/test_advanced_router_v19.mjs
+fixtures/v19-browser/dandelion-graph.json
+docs/iteration-plan-v1.9.md
+docs/completion-audit-v1.9.md
+docs/test-report-v1.9.md
+runtime/pi/model_spec.mjs
+scripts/test_model_gate_v19.mjs
+
+RC2 cold advanced topology fixes
+- add hierarchy_treemap intent and Plotly radial/treemap capability declarations
+- separate compute-stage and final-renderer capability eligibility
+- require one conserved unit before conserved-flow residual validation
+- add Plotly scatter-label collision detection to Chromium QA
+- add AP/BLS/Saudi/Enbridge cold topology qualification fixtures
+- add negative label-collision browser regression

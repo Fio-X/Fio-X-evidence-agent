@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/graph-recipe-v1.schema.json",
+  "title": "GraphRecipe 1.0",
+  "type": "object",
+  "required": [
+    "graph_type",
+    "node_count",
+    "edge_count",
+    "artifact_mode"
+  ],
+  "properties": {
+    "graph_type": {
+      "enum": [
+        "directed",
+        "undirected",
+        "mixed",
+        "bipartite",
+        "spatial"
+      ]
+    },
+    "node_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "edge_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "artifact_mode": {
+      "enum": [
+        "static",
+        "interactive"
+      ]
+    },
+    "node_size": {
+      "type": "string"
+    },
+    "node_color": {
+      "type": "string"
+    },
+    "edge_width": {
+      "type": "string"
+    },
+    "edge_color": {
+      "type": "string"
+    },
+    "layout_intent": {
+      "enum": [
+        "community",
+        "hierarchy",
+        "ego",
+        "spatial",
+        "matrix",
+        "force"
+      ]
+    },
+    "focus_entities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "interaction": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    }
+  },
+  "additionalProperties": false
+}

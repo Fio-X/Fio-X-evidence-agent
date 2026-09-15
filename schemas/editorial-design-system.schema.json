@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/editorial-design-system.schema.json",
+  "title": "Editorial Design System Catalog",
+  "type": "object",
+  "required": ["schema_version", "systems"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "systems": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["id", "description", "tokens", "composition"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "description": {"type": "string", "minLength": 10},
+          "story_families": {"type": "array", "items": {"type": "string"}},
+          "tokens": {"type": "object", "required": ["background", "text", "muted", "grid", "primary", "accent"], "additionalProperties": true},
+          "composition": {"type": "object", "additionalProperties": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

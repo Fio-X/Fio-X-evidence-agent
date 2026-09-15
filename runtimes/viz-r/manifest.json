@@ -1,0 +1,66 @@
+{
+  "id": "viz-r",
+  "version": "1.26.0",
+  "execution": "container",
+  "target_versions": {
+    "R": "4.6.1"
+  },
+  "capabilities": [
+    "static_editorial",
+    "static_map",
+    "statistical_chart",
+    "static_network",
+    "spatial_network",
+    "vector_export"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "Rscript",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=4.6.1,<4.7"
+    },
+    {
+      "type": "r_package",
+      "name": "sf",
+      "required": true
+    },
+    {
+      "type": "r_package",
+      "name": "ggplot2",
+      "required": true
+    },
+    {
+      "type": "r_package",
+      "name": "mapsf",
+      "required": true
+    },
+    {
+      "type": "r_package",
+      "name": "ggraph",
+      "required": true
+    },
+    {
+      "type": "r_package",
+      "name": "sfnetworks",
+      "required": true
+    },
+    {
+      "type": "r_package",
+      "name": "ggalluvial",
+      "required": true
+    },
+    {
+      "type": "r_package",
+      "name": "geosphere",
+      "required": true
+    }
+  ],
+  "build": {
+    "definition": "Dockerfile",
+    "network_required": true
+  }
+}

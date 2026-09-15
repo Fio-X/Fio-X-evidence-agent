@@ -1,0 +1,149 @@
+{
+  "track_id": "DAL1812-ac671b-sampled",
+  "source": "xoolive/traffic readsb sample trace_full_ac671b.json",
+  "source_blob_sha": "9c610eef4b979d67d5f10ac0971a172869a3a72c",
+  "base_timestamp_epoch": 1738703622.619,
+  "sampling_note": "Selected exact samples from the upstream readsb trace. Segment 0 ends at 2155.97 s and segment 1 begins at 5043.24 s; the source trace itself has an observation gap between these points. This local fixture is a sparse editorial downsample, not the complete upstream trace.",
+  "points": [
+    {
+      "elapsed_s": 0.0,
+      "timestamp": "2025-02-04T21:13:42Z",
+      "lat": 16.777359,
+      "lon": -88.036868,
+      "altitude_ft": 32000,
+      "ground_speed_kt": 478.6,
+      "track_deg": 327.8,
+      "segment": 0
+    },
+    {
+      "elapsed_s": 1990.88,
+      "timestamp": "2025-02-04T21:46:53Z",
+      "lat": 20.896229,
+      "lon": -89.639499,
+      "altitude_ft": 32000,
+      "ground_speed_kt": 469.9,
+      "track_deg": 339.4,
+      "segment": 0
+    },
+    {
+      "elapsed_s": 2155.97,
+      "timestamp": "2025-02-04T21:49:38Z",
+      "lat": 21.225819,
+      "lon": -89.788411,
+      "altitude_ft": 32000,
+      "ground_speed_kt": 465.4,
+      "track_deg": 336.6,
+      "segment": 0
+    },
+    {
+      "elapsed_s": 5043.24,
+      "timestamp": "2025-02-04T22:37:45Z",
+      "lat": 26.890342,
+      "lon": -92.878893,
+      "altitude_ft": 34000,
+      "ground_speed_kt": null,
+      "track_deg": null,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 5056.34,
+      "timestamp": "2025-02-04T22:37:58Z",
+      "lat": 26.9179,
+      "lon": -92.890038,
+      "altitude_ft": 34000,
+      "ground_speed_kt": 479.0,
+      "track_deg": 340.0,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 6496.02,
+      "timestamp": "2025-02-04T23:01:58Z",
+      "lat": 29.919961,
+      "lon": -93.946619,
+      "altitude_ft": 35000,
+      "ground_speed_kt": 471.4,
+      "track_deg": 2.4,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 8724.31,
+      "timestamp": "2025-02-04T23:39:06Z",
+      "lat": 34.713492,
+      "lon": -93.930073,
+      "altitude_ft": 36000,
+      "ground_speed_kt": 459.0,
+      "track_deg": 359.2,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 11089.24,
+      "timestamp": "2025-02-05T00:18:31Z",
+      "lat": 39.617294,
+      "lon": -94.011801,
+      "altitude_ft": 36000,
+      "ground_speed_kt": 446.0,
+      "track_deg": 359.5,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 12844.04,
+      "timestamp": "2025-02-05T00:47:46Z",
+      "lat": 43.184044,
+      "lon": -93.586055,
+      "altitude_ft": 32650,
+      "ground_speed_kt": 462.3,
+      "track_deg": 14.3,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 13157.41,
+      "timestamp": "2025-02-05T00:53:00Z",
+      "lat": 43.796906,
+      "lon": -93.506236,
+      "altitude_ft": 26350,
+      "ground_speed_kt": 401.8,
+      "track_deg": 3.7,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 13670.48,
+      "timestamp": "2025-02-05T01:01:33Z",
+      "lat": 44.638504,
+      "lon": -93.212782,
+      "altitude_ft": 10400,
+      "ground_speed_kt": 295.1,
+      "track_deg": 355.1,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 14100.05,
+      "timestamp": "2025-02-05T01:08:42Z",
+      "lat": 44.955356,
+      "lon": -93.401273,
+      "altitude_ft": 3275,
+      "ground_speed_kt": 172.1,
+      "track_deg": 91.7,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 14248.03,
+      "timestamp": "2025-02-05T01:11:10Z",
+      "lat": 44.905452,
+      "lon": -93.275065,
+      "altitude_ft": 1025,
+      "ground_speed_kt": 144.6,
+      "track_deg": 121.7,
+      "segment": 1
+    },
+    {
+      "elapsed_s": 14323.46,
+      "timestamp": "2025-02-05T01:12:26Z",
+      "lat": 44.880993,
+      "lon": -93.218438,
+      "altitude_ft": 0,
+      "ground_speed_kt": 73.0,
+      "track_deg": 120.9,
+      "segment": 1
+    }
+  ]
+}

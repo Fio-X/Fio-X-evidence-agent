@@ -1,0 +1,84 @@
+{
+  "spec": {
+    "schema_version": "0.9.0",
+    "takeaway": "Topology-aware visual fixture",
+    "title": "Trips move through origin, mode and outcome",
+    "alt": "Parallel sets show weighted trip paths from urban and rural origins through transport mode to on-time or delayed outcomes.",
+    "source_note": "Synthetic v0.9 regression fixture",
+    "claim_id": "claim-v09-spatial",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [],
+    "reader_task": "flow",
+    "visual_family": "flow",
+    "data_topology": "categorical_flow",
+    "chart_type": "parallel_sets",
+    "dimension_fields": [
+      "origin",
+      "mode",
+      "outcome"
+    ],
+    "value_field": "value"
+  },
+  "rows": [
+    {
+      "origin": "Urban",
+      "mode": "Rail",
+      "outcome": "On time",
+      "value": 32
+    },
+    {
+      "origin": "Urban",
+      "mode": "Rail",
+      "outcome": "Delayed",
+      "value": 8
+    },
+    {
+      "origin": "Urban",
+      "mode": "Road",
+      "outcome": "On time",
+      "value": 18
+    },
+    {
+      "origin": "Urban",
+      "mode": "Road",
+      "outcome": "Delayed",
+      "value": 12
+    },
+    {
+      "origin": "Rural",
+      "mode": "Rail",
+      "outcome": "On time",
+      "value": 10
+    },
+    {
+      "origin": "Rural",
+      "mode": "Rail",
+      "outcome": "Delayed",
+      "value": 5
+    },
+    {
+      "origin": "Rural",
+      "mode": "Road",
+      "outcome": "On time",
+      "value": 16
+    },
+    {
+      "origin": "Rural",
+      "mode": "Road",
+      "outcome": "Delayed",
+      "value": 19
+    }
+  ],
+  "lint": {
+    "schema_version": "0.9.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "5c8d930c7d505f7195d3d8275a13882f2ee34a2b273d245307de2d227c0c25e6",
+    "row_count": 8
+  }
+}

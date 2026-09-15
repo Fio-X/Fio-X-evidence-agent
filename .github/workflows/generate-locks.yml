@@ -1,0 +1,28 @@
+name: generate-dependency-locks
+on:
+  workflow_dispatch:
+jobs:
+  locks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+      - name: Generate deterministic dependency locks
+        run: ./scripts/generate_dependency_locks.sh
+      - name: Verify locks
+        run: python3 scripts/verify_dependency_locks.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-locks-${{ github.sha }}
+          path: |
+            Cargo.lock
+            runtime/web/package-lock.json
+            runtime/sigma/package-lock.json
+            runtime/map/package-lock.json
+            runtime/d3/package-lock.json
+          retention-days: 14

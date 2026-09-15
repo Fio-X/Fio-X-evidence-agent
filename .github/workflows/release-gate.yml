@@ -1,0 +1,61 @@
+name: release-gate
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Release profile
+        required: true
+        default: rc
+        type: choice
+        options: [pr, rc, final]
+      provider:
+        description: Pi provider ID, required for final
+        required: false
+        type: string
+      model:
+        description: Pi model ID, required for final
+        required: false
+        type: string
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NEWSROOM_PROVIDER: ${{ inputs.provider }}
+      NEWSROOM_MODEL: ${{ inputs.model }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+      ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+      - name: Install qualification dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 basemap==2.0.0 matplotlib==3.10.8 playwright==1.57.0 plotly==6.5.2
+          python3 -m playwright install --with-deps chromium
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+      - name: Run unified gate
+        env:
+          ADN_BROWSER_ALLOW_ROOT_NO_SANDBOX: '0'
+        run: python3 scripts/release_check.py --profile '${{ inputs.profile }}' --output outputs/release-check-${{ inputs.profile }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-gate-${{ inputs.profile }}
+          path: |
+            outputs/release-check-${{ inputs.profile }}.json
+            outputs/v113-*.json
+            .newsroom/agentic-qualification
+            .newsroom/live-qualification
+          retention-days: 30

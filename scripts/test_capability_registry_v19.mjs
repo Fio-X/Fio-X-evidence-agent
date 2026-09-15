@@ -1,0 +1,14 @@
+import { capabilityIntent, externalVisualAdapterRegistry, validateCapabilityRegistry } from '../runtime/visual/capability_registry.mjs';
+const errors = validateCapabilityRegistry();
+if (errors.length) throw new Error(errors.join(' | '));
+const sankey = capabilityIntent('interactive_sankey');
+if (!sankey.requires.includes('interactive_sankey') || sankey.preferred_backends[0] !== 'd3_editorial') throw new Error('interactive_sankey registry mismatch');
+const radial = capabilityIntent('radial_network');
+if (!radial.analysis_stage?.includes('networkx_graph')) throw new Error('radial network must require deterministic analysis stage');
+const treemap = capabilityIntent('hierarchy_treemap');
+if (!treemap.requires.includes('treemap') || !treemap.preferred_backends.includes('plotly_browser')) throw new Error('hierarchy_treemap registry mismatch');
+const nature = capabilityIntent('nature_scientific_map');
+if (!nature.requires.includes('scientific_map') || !nature.requires.includes('scale_bar') || !nature.preferred_backends.includes('plotly_browser')) throw new Error('nature scientific map registry mismatch');
+const adapters = externalVisualAdapterRegistry().adapters;
+for (const name of ['gephi_toolkit','rawgraphs_models','flourish']) if (adapters[name]?.status !== 'contract_only') throw new Error(`${name} must remain contract_only until external qualification`);
+console.log(JSON.stringify({status:'PASS',intent_count:Object.keys((await import('../runtime/visual/capability_registry.mjs')).visualCapabilityRegistry().intents).length,external_adapters:Object.fromEntries(Object.entries(adapters).map(([k,v])=>[k,v.status]))},null,2));

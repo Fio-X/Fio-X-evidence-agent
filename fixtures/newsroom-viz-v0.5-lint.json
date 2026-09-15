@@ -1,0 +1,24 @@
+{
+  "bad": {
+    "schema_version": "0.4.0",
+    "passed": false,
+    "blockers": [
+      "Mixed reference periods detected (2022, 2021); separate them or explicitly justify the comparison"
+    ],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "f9ecb44aebd2f42efdd1bf2df754e96d8d851bb533262013e4bacc72b214b8e2",
+    "row_count": 11
+  },
+  "good": {
+    "schema_version": "0.4.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [
+      "Reference periods explicitly handled: 2022, 2021"
+    ],
+    "data_hash": "f9ecb44aebd2f42efdd1bf2df754e96d8d851bb533262013e4bacc72b214b8e2",
+    "row_count": 11
+  }
+}

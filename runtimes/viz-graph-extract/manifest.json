@@ -1,0 +1,52 @@
+{
+  "id": "viz-graph-extract",
+  "version": "1.26.0",
+  "execution": "container",
+  "target_versions": {
+    "python": "3.13",
+    "graphrag": "3.1.2",
+    "pyarrow": "25.0.1",
+    "pandas": "2.3.2"
+  },
+  "capabilities": [
+    "document_graph_extraction",
+    "entity_relationship_extraction",
+    "community_detection",
+    "claim_extraction",
+    "graphrag_index",
+    "evidence_graph_export"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "python3",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=3.13,<3.14"
+    },
+    {
+      "type": "python_module",
+      "name": "graphrag",
+      "required": true,
+      "version_spec": "==3.1.2"
+    },
+    {
+      "type": "python_module",
+      "name": "pyarrow",
+      "required": true,
+      "version_spec": "==25.0.1"
+    },
+    {
+      "type": "python_module",
+      "name": "pandas",
+      "required": true,
+      "version_spec": "==2.3.2"
+    }
+  ],
+  "build": {
+    "definition": "requirements.txt",
+    "network_required": true
+  }
+}

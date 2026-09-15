@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust-and-newsroom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+          components: rustfmt, clippy
+      - name: Python test dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 basemap==2.0.0 matplotlib==3.10.8
+      - name: Install pinned Pi runtime
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check
+        run: cargo check --all-targets
+      - name: Build CLI for live-runtime acceptance
+        run: cargo build --bin news
+      - name: Verify pinned live runtime
+        run: target/debug/news doctor --strict --json
+      - name: Real DuckDB replay acceptance
+        run: |
+          python3 scripts/create_recompute_fixture.py /tmp/newsroom-recompute-real
+          target/debug/news verify /tmp/newsroom-recompute-real --recompute
+      - name: Test
+        run: cargo test --all-targets
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Validate JSON schema syntax
+        run: |
+          python3 -m json.tool schemas/news-artifact.schema.json >/dev/null
+          python3 -m json.tool schemas/newsroom-viz-spec.schema.json >/dev/null
+          python3 -m json.tool schemas/publication-spec.schema.json >/dev/null
+          python3 -m json.tool schemas/map-spec.schema.json >/dev/null
+      - name: Validate bundled Pi runtime syntax
+        run: |
+          node --check runtime/pi/viz.mjs
+          node --check runtime/pi/net.mjs
+          node --check runtime/pi/provenance.mjs
+          node --check runtime/pi/infographic.mjs
+          node --check runtime/pi/explanatory.mjs
+          node --check runtime/pi/illustration.mjs
+          node --check runtime/pi/vision.mjs
+          node --check runtime/pi/publication.mjs
+          node --check runtime/pi/publication_binding.mjs
+          node --check runtime/pi/svg_security.mjs
+          node --check runtime/pi/tool_phase_policy.mjs
+          node --experimental-strip-types --check runtime/pi/newsroom.ts
+      - name: Check release baseline
+        run: python3 scripts/check_release_baseline.py
+      - name: Check Rust ↔ Pi runtime contract
+        run: python3 scripts/check_runtime_contract.py
+      - name: Unified PR release gate
+        run: python3 scripts/release_check.py --profile pr --output outputs/ci-release-check-pr.json
+      - name: Visual compiler contract tests
+        run: |
+          python3 scripts/test_runtime_build_plan_v116.py
+          python3 scripts/test_visual_recipe_schema_v117.py
+          python3 scripts/test_visual_skill_bundle_v116.py
+          python3 scripts/test_graph_extraction_v125.py
+          node scripts/test_visual_backend_agent_v116.mjs
+          node scripts/test_visual_recipe_v117.mjs
+          node scripts/test_graph_backend_v120.mjs
+          node scripts/test_web_runtime_contract_v120.mjs
+          node scripts/test_echarts_editorial_v121.mjs
+          node scripts/test_backend_executor_v118.mjs
+          node scripts/test_backend_router_v123.mjs
+          node scripts/test_render_cache_v124.mjs
+      - name: Validate NewsroomVizSpec contract
+        run: python3 scripts/test_viz_schema.py
+      - name: Validate NewsArtifact contract
+        run: python3 scripts/test_artifact_schema.py
+      - name: Verify offline data-news fixture
+        run: python3 scripts/verify_fixture.py
+      - name: Provenance and bounded-I/O smoke tests
+        run: |
+          node scripts/test_content_addressing.mjs
+          node scripts/test_stream_limits.mjs
+          node scripts/test_cjk_viz.mjs
+          python3 scripts/selftest_evaluator.py
+          python3 scripts/test_integrity_adversarial.py
+          python3 scripts/benchmark_verify.py
+          python3 scripts/benchmark_verify_scale.py
+          python3 scripts/test_recompute_protocol.py
+          python3 scripts/test_qualification_summary.py
+          node scripts/test_rich_illustration.mjs
+          node scripts/test_vision_contract.mjs
+          python3 scripts/test_infographic_preview.py
+      - name: Visualization semantic smoke tests
+        run: node scripts/test_viz.mjs
+      - name: Visualization SVG snapshot tests
+        run: node scripts/test_viz_snapshots.mjs
+      - name: Complex visualization semantic smoke tests
+        run: |
+          node scripts/test_complex_viz.mjs
+          node scripts/test_complex_realdata_viz.mjs
+          node scripts/test_realdata_viz.mjs
+      - name: Complex visualization SVG snapshots
+        run: node scripts/test_complex_snapshots.mjs
+      - name: Rust ↔ Pi mock control-plane acceptance
+        run: ./scripts/test_control_plane.sh
+      - name: Visualization performance budget
+        run: node scripts/benchmark_viz.mjs
+      - name: Complex visualization performance budget
+        run: node scripts/benchmark_complex_viz.mjs
