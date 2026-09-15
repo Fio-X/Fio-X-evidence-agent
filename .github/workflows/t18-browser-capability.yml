@@ -2,11 +2,6 @@ name: t18-browser-capability
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [import-current]
-    paths:
-      - '.github/workflows/t18-browser-capability.yml'
-      - 'scripts/test_macos_browser_capability.py'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
