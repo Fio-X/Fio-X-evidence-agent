@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.1.0",
+  "release": "1.13.0-rc1",
+  "requirements": {
+    "minimum_cases": 12,
+    "minimum_news_cases": 6,
+    "minimum_topology_families": 8,
+    "maximum_silent_semantic_errors": 0,
+    "minimum_correct_abstentions": 1,
+    "minimum_behavior_families": 5
+  },
+  "target_topology_families": [
+    "visual_synthesis",
+    "route_network",
+    "radial_hierarchy",
+    "treemap",
+    "ownership_network",
+    "uncertainty",
+    "linked_geo_views",
+    "conserved_flow",
+    "large_network",
+    "event_sequence",
+    "causal_system",
+    "scientific_map"
+  ],
+  "target_behavior_families": [
+    "ambiguous_goal",
+    "missing_data",
+    "conflicting_sources",
+    "tool_failure",
+    "non_comparable_periods",
+    "correct_abstention",
+    "multi_turn_revision",
+    "prompt_injection_source",
+    "large_dataset"
+  ]
+}
