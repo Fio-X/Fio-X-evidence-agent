@@ -1,0 +1,143 @@
+sses: capability_classes.len(),
+        capability_classes,
+        autonomous_execution_observed,
+        adaptive_replanning_observed,
+        tool_failure_recovery_observed,
+        follow_up_replanning_observed,
+        parallel_batches,
+        parallel_tasks,
+        failed_parallel_tasks,
+        parallel_blocked_tasks,
+        parallel_batch_duration_ms,
+        max_observed_parallelism,
+        parallel_resource_task_counts,
+        parallel_resource_duration_ms,
+        parallel_resource_peak_concurrency,
+        parallel_backend_distribution,
+        parallel_execution_observed: parallel_batches > 0 && max_observed_parallelism >= 2,
+        tools,
+        calls,
+    };
+
+    let json = serde_json::to_string_pretty(&summary)?;
+    fs::write(output_path, format!("{json}\n"))
+        .with_context(|| format!("failed to write audit: {}", output_path.display()))?;
+    Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn build_fixture(events: Vec<Value>) -> AuditSummary {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("newsroom-audit-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+        let events_path = root.join("events.jsonl");
+        let output_path = root.join("tools.json");
+        let mut text = String::new();
+        for event in events {
+            text.push_str(&serde_json::to_string(&event).unwrap());
+            text.push('\n');
+        }
+        fs::write(&events_path, text).unwrap();
+        let summary = build(&events_path, &output_path).unwrap();
+        let _ = fs::remove_dir_all(root);
+        summary
+    }
+
+    fn call(id: &str, tool: &str, is_error: bool) -> Vec<Value> {
+        vec![
+            json!({"type":"tool_execution_start","toolCallId":id,"toolName":tool,"args":{}}),
+            json!({"type":"tool_execution_end","toolCallId":id,"toolName":tool,"isError":is_error}),
+        ]
+    }
+
+
+    #[test]
+    fn parallel_events_capture_resource_backend_and_duration_metrics() {
+        let events = vec![
+            json!({"type":"newsroom_parallel_batch_start","batch_id":"b1","task_count":4}),
+            json!({"type":"newsroom_task_started","task_id":"local","resource_class":"local","active_tasks":1,"active_resource_tasks":1}),
+            json!({"type":"newsroom_task_started","task_id":"network","resource_class":"network","active_tasks":2,"active_resource_tasks":1}),
+            json!({"type":"newsroom_task_completed","task_id":"local","resource_class":"local","duration_ms":7,"backend":"macos:shasum"}),
+            json!({"type":"newsroom_task_completed","task_id":"network","resource_class":"network","duration_ms":11,"backend":"portable:fetch"}),
+            json!({"type":"newsroom_task_started","task_id":"data","resource_class":"data","active_tasks":1,"active_resource_tasks":1}),
+            json!({"type":"newsroom_task_failed","task_id":"data","resource_class":"data","duration_ms":5,"error":"boom"}),
+            json!({"type":"newsroom_task_blocked","task_id":"blocked","resource_class":"local","reason":"dependency data did not complete successfully"}),
+            json!({"type":"newsroom_parallel_batch_end","batch_id":"b1","duration_ms":23,"max_observed_parallelism":2,"failed_tasks":1,"blocked_tasks":1}),
+        ];
+        let summary = build_fixture(events);
+        assert_eq!(summary.parallel_batches, 1);
+        assert_eq!(summary.parallel_tasks, 3);
+        assert_eq!(summary.failed_parallel_tasks, 1);
+        assert_eq!(summary.parallel_blocked_tasks, 1);
+        assert_eq!(summary.parallel_batch_duration_ms, 23);
+        assert_eq!(summary.max_observed_parallelism, 2);
+        assert_eq!(summary.parallel_resource_task_counts.get("local"), Some(&1));
+        assert_eq!(summary.parallel_resource_task_counts.get("network"), Some(&1));
+        assert_eq!(summary.parallel_resource_task_counts.get("data"), Some(&1));
+        assert_eq!(summary.parallel_resource_duration_ms.get("local"), Some(&7));
+        assert_eq!(summary.parallel_resource_duration_ms.get("network"), Some(&11));
+        assert_eq!(summary.parallel_resource_duration_ms.get("data"), Some(&5));
+        assert_eq!(summary.parallel_resource_peak_concurrency.get("local"), Some(&1));
+        assert_eq!(summary.parallel_backend_distribution.get("macos:shasum"), Some(&1));
+        assert_eq!(summary.parallel_backend_distribution.get("portable:fetch"), Some(&1));
+        assert!(summary.parallel_execution_observed);
+    }
+
+    #[test]
+    fn planning_without_capability_is_not_agent_loop() {
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.push(json!({"type":"turn_end"}));
+        let summary = build_fixture(events);
+        assert!(!summary.autonomous_execution_observed);
+        assert!(!summary.adaptive_replanning_observed);
+        assert_eq!(summary.capability_tool_calls, 0);
+    }
+
+    #[test]
+    fn plan_capability_observation_then_completion_is_autonomous() {
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.extend(call("q1", "duckdb_query", false));
+        events.push(json!({"type":"turn_end"}));
+        let summary = build_fixture(events);
+        assert!(summary.autonomous_execution_observed);
+        assert!(!summary.adaptive_replanning_observed);
+        assert_eq!(summary.distinct_capability_classes, 1);
+    }
+
+    #[test]
+    fn tool_failure_then_replan_then_action_is_adaptive() {
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.extend(call("f1", "fetch_url", true));
+        events.extend(call("p2", "newsroom_update_plan", false));
+        events.extend(call("q1", "duckdb_query", false));
+        events.push(json!({"type":"turn_end"}));
+        let summary = build_fixture(events);
+        assert!(summary.autonomous_execution_observed);
+        assert!(summary.adaptive_replanning_observed);
+        assert!(summary.tool_failure_recovery_observed);
+    }
+
+    #[test]
+    fn repeated_plans_without_observable_trigger_do_not_count_as_adaptive() {
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.extend(call("p2", "newsroom_update_plan", false));
+        events.extend(call("q1", "duckdb_query", false));
+        events.push(json!({"type":"turn_end"}));
+        let summary = build_fixture(events);
+        assert!(summary.autonomous_execution_observed);
+        assert!(!summary.adaptive_replanning_observed);
+    }
+
+    #[test]
+    fn follow_up_then_replan_then_action_is_adaptive() {
+        let mut events = call("p1", "newsroom_update_plan", false);
+        events.extend(call("q0", "duckdb_query", false));
+        events.push(json!({"type":"turn_end"}));
+        events.push(json!({"type":"newsroom_user_goal","mode":"follow_up"}));
+        events.extend(call("p2", "newsroom_update_plan", false));
+        events.extend(call("q1", "duckdb_query", false));
+        events.push(json!({"type
