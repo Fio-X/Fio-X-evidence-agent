@@ -1,16 +1,10 @@
 name: cargo-lock-bootstrap
 
 on:
-  pull_request:
-    branches: [import-current]
-    paths:
-      - 'Cargo.toml'
-      - 'rust-toolchain.toml'
-      - '.github/workflows/cargo-lock-bootstrap.yml'
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -18,13 +12,10 @@ permissions:
 
 jobs:
   generate-lock:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: macos-26
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
       - name: Verify Tahoe Arm64 baseline
         shell: bash
         run: |
@@ -44,17 +35,11 @@ jobs:
           rustup run 1.98.1 cargo generate-lockfile
           test -s Cargo.lock
           shasum -a 256 Cargo.lock
-      - name: Commit Cargo.lock to PR head
-        if: ${{ github.event_name == 'pull_request' }}
+      - name: Verify committed lock is current
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Cargo.lock
-          git diff --cached --quiet && exit 0
-          git commit -m 'Add Cargo.lock for locked qualification'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git diff --exit-code -- Cargo.lock
       - name: Upload lock evidence
         uses: actions/upload-artifact@v4
         with:
