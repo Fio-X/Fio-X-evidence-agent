@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { runTaskDag } from '../runtime/pi/parallel_scheduler.mjs';
-import { localBackendStatus, localHash, localMetadata, localPlistJson, localSqliteQuery } from '../runtime/pi/local_backend.mjs';
+import { localBackendStatus, localHash, localMetadata, localPlistJson, localSqliteQuery, localText } from '../runtime/pi/local_backend.mjs';
 
 assert.equal(process.platform, 'darwin', 'this smoke test is intended for macOS');
 const root = await mkdtemp(path.join(os.tmpdir(), 'newsroom-macos-smoke-'));
@@ -20,9 +20,14 @@ try {
   await writeFile(path.join(root, 'note.txt'), 'newsroom local backend');
   const metadata = await localMetadata('note.txt');
   assert.match(metadata.backend, /^macos:/);
+  const plainText = await localText('note.txt');
+  assert.equal(plainText.backend, 'portable:fs', 'plain text should use deterministic in-process fallback');
   const hash = await localHash('note.txt');
   assert.equal(hash.backend, 'macos:shasum');
   assert.match(hash.digest, /^[0-9a-f]{64}$/);
+  await assert.rejects(() => localMetadata('../outside.txt'), /escapes NEWSROOM_ARTIFACT_DIR/i);
+  await symlink('/etc/hosts', path.join(root, 'escape-link'));
+  await assert.rejects(() => localText('escape-link'), /resolved path escapes NEWSROOM_ARTIFACT_DIR/i);
 
   const plist = path.join(root, 'sample.plist');
   await writeFile(plist, '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>name</key><string>newsroom</string></dict></plist>');
@@ -74,6 +79,8 @@ try {
     platform: process.platform,
     arch: process.arch,
     native_tools: status.tools,
+    sandbox: { traversal_rejected: true, symlink_escape_rejected: true },
+    fallback: { plain_text_backend: plainText.backend },
     scheduler: { max_observed_parallelism: dag.max_observed_parallelism, per_host_max: maxSameHost },
     benchmark: { serial_ms: Number(serialMs.toFixed(3)), parallel_ms: Number(parallelMs.toFixed(3)), speedup: Number((serialMs / Math.max(parallelMs, 0.001)).toFixed(3)), max_observed_parallelism: parallel.max_observed_parallelism },
   }, null, 2));
