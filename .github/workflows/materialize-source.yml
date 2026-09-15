@@ -1,0 +1,84 @@
+name: materialize-source
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: materialize-source-iteration-next
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: iteration-next
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Require complete transient transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          parts=(transport/t01/part-*.b64)
+          test "${#parts[@]}" -gt 0 || { echo 'T01 transport parts are not present' >&2; exit 64; }
+          mkdir -p /tmp/t01
+          : > /tmp/t01/core.tar.xz
+          for part in "${parts[@]}"; do base64 --decode "$part" >> /tmp/t01/core.tar.xz; done
+          echo 'f4b0f8c6d9493522a1c2c4279da0c74336444cf953648cfdfe77e8a1421dd4c1  /tmp/t01/core.tar.xz' | shasum -a 256 -c -
+          test "$(tar -tJf /tmp/t01/core.tar.xz | wc -l | tr -d ' ')" = 659
+      - name: Restore pinned external bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check pyogrio==0.12.1
+          python3 - <<'PY'
+          from pathlib import Path
+          import pyogrio
+          root=Path(pyogrio.__file__).resolve().parent
+          hits=list(root.rglob('tests/fixtures/naturalearth_lowres/naturalearth_lowres.shp'))
+          if len(hits)!=1: raise SystemExit(f'expected one Natural Earth fixture, found {len(hits)}')
+          print(hits[0].parent)
+          Path('/tmp/t01/natural-earth-dir').write_text(str(hits[0].parent))
+          PY
+          curl --fail --location --silent --show-error https://cdn.plot.ly/plotly-3.3.1.min.js -o /tmp/t01/plotly-3.3.1.min.js
+          echo '9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3  /tmp/t01/plotly-3.3.1.min.js' | shasum -a 256 -c -
+      - name: Fill missing release source without overwriting hardened head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/materialize_release_source.py \
+            --root . \
+            --archive /tmp/t01/core.tar.xz \
+            --plotly-source /tmp/t01/plotly-3.3.1.min.js \
+            --natural-earth-dir "$(cat /tmp/t01/natural-earth-dir)"
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json --archive /tmp/t01/core.tar.xz
+          rm -rf transport/t01 bootstrap-staging
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: Assert full release source shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in src/main.rs src/audit.rs src/artifact.rs runtime/pi/newsroom.ts runtime/pi/local_backend.mjs runtime/pi/parallel_scheduler.mjs runtime/pi/browser_qa.py schemas/news-artifact.schema.json scripts/release_check.py scripts/integration_qualification.sh scripts/agentic_qualification.sh; do
+            test -f "$path" || { echo "missing release path: $path" >&2; exit 2; }
+          done
+          test ! -d transport/t01
+          test ! -d bootstrap-staging
+          test "$(find . -type f -name '*.png' -path './fixtures/*' | wc -l | tr -d ' ')" = 0
+      - name: Commit materialized release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'no materialization changes'; exit 0; }
+          git commit -m 'Materialize complete hardened release source'
+          git push origin HEAD:iteration-next
