@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Source integrity verifier and tamper detection
         run: python3 scripts/test_source_integrity_contract.py
+      - name: Backend routing threshold contract from measured macOS baseline
+        run: python3 scripts/check_backend_routing_baseline.py
       - name: Measured business-value aggregation contract
         run: python3 scripts/test_business_value_benchmark.py
       - name: Agentic evaluator and repeated-trial reliability contract
