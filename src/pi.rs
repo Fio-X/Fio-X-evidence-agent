@@ -192,7 +192,7 @@ pub async fn run_prompt(
             }
         }
 
-        let record = line.trim_end_matches(|c| c == '\r' || c == '\n');
+        let record = line.trim_end_matches(['\r', '\n']);
         if record.is_empty() {
             continue;
         }
