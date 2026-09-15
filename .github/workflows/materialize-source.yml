@@ -41,7 +41,7 @@ jobs:
           from pathlib import Path
 
           cfg = json.loads(Path('config/t01-comment-transport.json').read_text())
-          required = ['issue_number','transport_id','chunk_count','archive_bytes','archive_sha256','author_login']
+          required = ['issue_number','transport_id','chunk_count','archive_bytes','archive_sha256','archive_file_count','author_login']
           missing = [key for key in required if key not in cfg]
           if missing:
               raise SystemExit(f'transport config missing fields: {missing}')
@@ -117,12 +117,14 @@ jobs:
           out.write_bytes(archive)
           print(json.dumps({'status':'PASS','chunks':expected_total,'bytes':len(archive),'sha256':actual_archive_sha}, sort_keys=True))
           PY
-          test "$(tar -tJf /tmp/t01/core.tar.xz | wc -l | tr -d ' ')" = 659
-      - name: Restore pinned external bytes
+          actual_files="$(tar -tJf /tmp/t01/core.tar.xz | wc -l | tr -d ' ')"
+          expected_files="$(python3 -c 'import json; print(json.load(open("config/t01-comment-transport.json"))["archive_file_count"])')"
+          test "$actual_files" = "$expected_files" || { echo "archive file count mismatch: $actual_files != $expected_files" >&2; exit 2; }
+      - name: Restore pinned external bytes and deterministic fixtures
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check pyogrio==0.12.1
+          python3 -m pip install --disable-pip-version-check pyogrio==0.12.1 networkx==3.6.1 pyshp==2.3.1
           python3 - <<'PY'
           from pathlib import Path
           import pyogrio
@@ -151,7 +153,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for path in src/main.rs src/audit.rs src/artifact.rs runtime/pi/newsroom.ts runtime/pi/local_backend.mjs runtime/pi/parallel_scheduler.mjs runtime/pi/browser_qa.py schemas/news-artifact.schema.json scripts/release_check.py scripts/integration_qualification.sh scripts/agentic_qualification.sh; do
+          for path in src/main.rs src/audit.rs src/artifact.rs runtime/pi/newsroom.ts runtime/pi/local_backend.mjs runtime/pi/parallel_scheduler.mjs runtime/pi/browser_qa.py schemas/news-artifact.schema.json scripts/release_check.py scripts/integration_qualification.sh scripts/agentic_qualification.sh fixtures/v110-systems/large-network-5000.json fixtures/v110-systems/world-outline.json; do
             test -f "$path" || { echo "missing release path: $path" >&2; exit 2; }
           done
           test ! -d bootstrap-staging
