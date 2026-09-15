@@ -32,13 +32,31 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("duckdb"));
 
     let pi = exact_check("pi", "0.85.1", &args.pi.pi_bin, &["--version"], EXPECTED_PI).await;
-    let duckdb = exact_check("duckdb", "1.5.5", &duckdb_bin, &["--version"], EXPECTED_DUCKDB).await;
+    let duckdb = exact_check(
+        "duckdb",
+        "1.5.5",
+        &duckdb_bin,
+        &["--version"],
+        EXPECTED_DUCKDB,
+    )
+    .await;
     let node = node_check().await;
-    let rustc = exact_check("rustc", "1.98.1", Path::new("rustc"), &["--version"], EXPECTED_RUST).await;
-    let python = availability_check("python3", "optional", Path::new("python3"), &["--version"]).await;
+    let rustc = exact_check(
+        "rustc",
+        "1.98.1",
+        Path::new("rustc"),
+        &["--version"],
+        EXPECTED_RUST,
+    )
+    .await;
+    let python =
+        availability_check("python3", "optional", Path::new("python3"), &["--version"]).await;
 
     let checks = vec![pi, duckdb, node, rustc, python];
-    let live_ready = checks.iter().filter(|check| check.requirement != "optional").all(|check| check.ok);
+    let live_ready = checks
+        .iter()
+        .filter(|check| check.requirement != "optional")
+        .all(|check| check.ok);
     let report = DoctorReport {
         schema_version: "0.7.0",
         live_ready,
@@ -49,8 +67,18 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         for check in &report.checks {
-            let value = check.version.as_deref().or(check.error.as_deref()).unwrap_or("unknown");
-            println!("{:<10} {:<12} {:<5} {}", check.name, check.requirement, if check.ok { "PASS" } else { "FAIL" }, value);
+            let value = check
+                .version
+                .as_deref()
+                .or(check.error.as_deref())
+                .unwrap_or("unknown");
+            println!(
+                "{:<10} {:<12} {:<5} {}",
+                check.name,
+                check.requirement,
+                if check.ok { "PASS" } else { "FAIL" },
+                value
+            );
         }
         println!("baseline   v1.1.0       Rust 1.98.1 | Node >=22.19.0 | Pi 0.85.1 | DuckDB 1.5.5");
         println!("live ready {}", if live_ready { "yes" } else { "no" });
@@ -65,7 +93,13 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
     Ok(())
 }
 
-async fn exact_check(name: &'static str, requirement: &'static str, bin: &Path, args: &[&str], expected: &str) -> Check {
+async fn exact_check(
+    name: &'static str,
+    requirement: &'static str,
+    bin: &Path,
+    args: &[&str],
+    expected: &str,
+) -> Check {
     match check(bin, args).await {
         Ok(version) => Check {
             name,
@@ -84,27 +118,66 @@ async fn exact_check(name: &'static str, requirement: &'static str, bin: &Path, 
     }
 }
 
-async fn availability_check(name: &'static str, requirement: &'static str, bin: &Path, args: &[&str]) -> Check {
+async fn availability_check(
+    name: &'static str,
+    requirement: &'static str,
+    bin: &Path,
+    args: &[&str],
+) -> Check {
     match check(bin, args).await {
-        Ok(version) => Check { name, requirement, ok: true, version: Some(version), error: None },
-        Err(error) => Check { name, requirement, ok: false, version: None, error: Some(error) },
+        Ok(version) => Check {
+            name,
+            requirement,
+            ok: true,
+            version: Some(version),
+            error: None,
+        },
+        Err(error) => Check {
+            name,
+            requirement,
+            ok: false,
+            version: None,
+            error: Some(error),
+        },
     }
 }
 
 async fn node_check() -> Check {
     match check(Path::new("node"), &["--version"]).await {
         Ok(version) => {
-            let ok = parse_version(&version).map(|value| value >= MIN_NODE).unwrap_or(false);
-            Check { name: "node", requirement: ">=22.19.0", ok, version: Some(version), error: None }
+            let ok = parse_version(&version)
+                .map(|value| value >= MIN_NODE)
+                .unwrap_or(false);
+            Check {
+                name: "node",
+                requirement: ">=22.19.0",
+                ok,
+                version: Some(version),
+                error: None,
+            }
         }
-        Err(error) => Check { name: "node", requirement: ">=22.19.0", ok: false, version: None, error: Some(error) },
+        Err(error) => Check {
+            name: "node",
+            requirement: ">=22.19.0",
+            ok: false,
+            version: None,
+            error: Some(error),
+        },
     }
 }
 
 fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
-    let token = text.trim().trim_start_matches('v').split_whitespace().next()?;
+    let token = text
+        .trim()
+        .trim_start_matches('v')
+        .split_whitespace()
+        .next()?;
     let mut parts = token.split('.');
-    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+    Some((
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+    ))
 }
 
 async fn check(bin: &Path, args: &[&str]) -> std::result::Result<String, String> {

@@ -34,13 +34,22 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
         })),
     });
     let path = args.artifact.join("verification.json");
-    fs::write(&path, format!("{}\n", serde_json::to_string_pretty(&output)?))
-        .with_context(|| format!("failed to write {}", path.display()))?;
+    fs::write(
+        &path,
+        format!("{}\n", serde_json::to_string_pretty(&output)?),
+    )
+    .with_context(|| format!("failed to write {}", path.display()))?;
 
-    println!("artifact integrity: {}", if report.passed { "PASS" } else { "FAIL" });
+    println!(
+        "artifact integrity: {}",
+        if report.passed { "PASS" } else { "FAIL" }
+    );
     println!("integrity checks: {}", report.checks);
     if let Some(replay) = &replay {
-        println!("SQL recompute: {}", if replay.passed { "PASS" } else { "FAIL" });
+        println!(
+            "SQL recompute: {}",
+            if replay.passed { "PASS" } else { "FAIL" }
+        );
         println!("recompute checks: {}", replay.checks);
         println!("recompute time: {} ms", replay.duration_ms);
         for error in &replay.errors {

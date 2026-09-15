@@ -66,7 +66,10 @@ impl PiConfig {
                 .arg("--no-prompt-templates")
                 .arg("--no-context-files")
                 .arg("--tools")
-                .arg(tools_for_profile(&self.tool_profile).unwrap_or_else(|| tools_for_profile(DEFAULT_TOOL_PROFILE).expect("default tool profile must exist")));
+                .arg(tools_for_profile(&self.tool_profile).unwrap_or_else(|| {
+                    tools_for_profile(DEFAULT_TOOL_PROFILE)
+                        .expect("default tool profile must exist")
+                }));
         }
 
         if self.approve_project {
@@ -104,7 +107,11 @@ impl PiConfig {
         } else {
             "ephemeral"
         };
-        let profile = if tools_for_profile(&self.tool_profile).is_some() { self.tool_profile.as_str() } else { DEFAULT_TOOL_PROFILE };
+        let profile = if tools_for_profile(&self.tool_profile).is_some() {
+            self.tool_profile.as_str()
+        } else {
+            DEFAULT_TOOL_PROFILE
+        };
         format!("pi-rpc provider={provider} model={model} session={session} tools={profile}")
     }
 }
@@ -125,8 +132,14 @@ pub async fn run_prompt(
         .spawn()
         .with_context(|| format!("failed to start Pi executable: {}", config.binary.display()))?;
 
-    let mut stdin = child.stdin.take().context("Pi RPC stdin was not available")?;
-    let stdout = child.stdout.take().context("Pi RPC stdout was not available")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .context("Pi RPC stdin was not available")?;
+    let stdout = child
+        .stdout
+        .take()
+        .context("Pi RPC stdout was not available")?;
     let mut reader = BufReader::new(stdout);
     let mut log = match event_log {
         Some(path) => Some(
@@ -255,7 +268,10 @@ pub async fn run_prompt(
                     .get("toolName")
                     .and_then(Value::as_str)
                     .unwrap_or("unknown");
-                let failed = event.get("isError").and_then(Value::as_bool).unwrap_or(false);
+                let failed = event
+                    .get("isError")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 if failed {
                     eprintln!("[tool] !! {tool} failed");
                 } else {
@@ -310,13 +326,18 @@ pub async fn run_prompt(
     let _ = child.wait().await;
 
     if !prompt_accepted {
-        return Err(anyhow!("Pi RPC stream ended before the prompt was accepted"));
+        return Err(anyhow!(
+            "Pi RPC stream ended before the prompt was accepted"
+        ));
     }
     if !saw_settled {
         return Err(anyhow!("Pi RPC stream ended before agent_settled"));
     }
     if !extension_errors.is_empty() {
-        eprintln!("[extension] {} runtime error(s) were recorded in events.jsonl", extension_errors.len());
+        eprintln!(
+            "[extension] {} runtime error(s) were recorded in events.jsonl",
+            extension_errors.len()
+        );
     }
 
     let answer = final_answer.unwrap_or(streamed_answer);

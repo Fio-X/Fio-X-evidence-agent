@@ -121,15 +121,31 @@ impl InvestigationBundle {
             .get("id")
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .or_else(|| dir.file_name().and_then(|value| value.to_str()).map(str::to_owned))
+            .or_else(|| {
+                dir.file_name()
+                    .and_then(|value| value.to_str())
+                    .map(str::to_owned)
+            })
             .context("story.json has no id")?;
         Self::from_dir(dir.to_path_buf(), id)
     }
 
     fn from_dir(dir: PathBuf, id: String) -> Result<Self> {
-        for child in ["session", "runtime", "searches", "sources", "data", "computations", "visualizations", "infographics"] {
+        for child in [
+            "session",
+            "runtime",
+            "searches",
+            "sources",
+            "data",
+            "computations",
+            "visualizations",
+            "infographics",
+        ] {
             fs::create_dir_all(dir.join(child)).with_context(|| {
-                format!("failed to create artifact subdirectory: {}", dir.join(child).display())
+                format!(
+                    "failed to create artifact subdirectory: {}",
+                    dir.join(child).display()
+                )
             })?;
         }
 
@@ -161,7 +177,10 @@ impl InvestigationBundle {
 
     pub fn import_data(&self, source: &Path) -> Result<String> {
         if !source.is_file() {
-            bail!("local data file does not exist or is not a regular file: {}", source.display());
+            bail!(
+                "local data file does not exist or is not a regular file: {}",
+                source.display()
+            );
         }
         let original_name = source
             .file_name()
@@ -169,7 +188,13 @@ impl InvestigationBundle {
             .context("local data filename is not valid UTF-8")?;
         let safe_name: String = original_name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect();
         if safe_name.is_empty() || safe_name.starts_with('.') {
             bail!("local data filename is not safe: {original_name}");
@@ -179,24 +204,39 @@ impl InvestigationBundle {
             .and_then(|value| value.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        if !matches!(extension.as_str(), "csv" | "json" | "jsonl" | "ndjson" | "tsv" | "parquet") {
+        if !matches!(
+            extension.as_str(),
+            "csv" | "json" | "jsonl" | "ndjson" | "tsv" | "parquet"
+        ) {
             bail!("unsupported local data extension '.{extension}'; use CSV, JSON, JSONL, NDJSON, TSV, or Parquet");
         }
         let sha256 = sha256_file(source)
             .with_context(|| format!("failed to hash local data {}", source.display()))?;
-        let stored_name = if extension.is_empty() { sha256.clone() } else { format!("{sha256}.{extension}") };
+        let stored_name = if extension.is_empty() {
+            sha256.clone()
+        } else {
+            format!("{sha256}.{extension}")
+        };
         let relative_file = format!("data/{stored_name}");
         let destination = self.dir.join(&relative_file);
         let bytes = fs::metadata(source)?.len();
         if destination.exists() {
-            let existing = sha256_file(&destination)
-                .with_context(|| format!("failed to hash existing dataset {}", destination.display()))?;
+            let existing = sha256_file(&destination).with_context(|| {
+                format!("failed to hash existing dataset {}", destination.display())
+            })?;
             if existing != sha256 {
-                bail!("content-addressed dataset collision at {}", destination.display());
+                bail!(
+                    "content-addressed dataset collision at {}",
+                    destination.display()
+                );
             }
         } else {
             fs::copy(source, &destination).with_context(|| {
-                format!("failed to copy local data {} to {}", source.display(), destination.display())
+                format!(
+                    "failed to copy local data {} to {}",
+                    source.display(),
+                    destination.display()
+                )
             })?;
         }
         let metadata = serde_json::json!({
@@ -205,13 +245,19 @@ impl InvestigationBundle {
             "sha256": sha256,
             "file": relative_file
         });
-        let metadata_path = self.dir.join("data").join(format!("{stored_name}.meta.json"));
+        let metadata_path = self
+            .dir
+            .join("data")
+            .join(format!("{stored_name}.meta.json"));
         let metadata_text = format!("{}\n", serde_json::to_string_pretty(&metadata)?);
         if metadata_path.exists() {
             let existing = fs::read_to_string(&metadata_path)
                 .with_context(|| format!("failed to read {}", metadata_path.display()))?;
             if existing != metadata_text {
-                bail!("immutable dataset metadata collision at {}", metadata_path.display());
+                bail!(
+                    "immutable dataset metadata collision at {}",
+                    metadata_path.display()
+                );
             }
         } else {
             fs::write(&metadata_path, &metadata_text)
@@ -235,7 +281,10 @@ impl InvestigationBundle {
             let existing = fs::read_to_string(&origin_path)
                 .with_context(|| format!("failed to read {}", origin_path.display()))?;
             if existing != origin_text {
-                bail!("immutable dataset origin collision at {}", origin_path.display());
+                bail!(
+                    "immutable dataset origin collision at {}",
+                    origin_path.display()
+                );
             }
         } else {
             fs::write(&origin_path, origin_text)
@@ -253,7 +302,6 @@ impl InvestigationBundle {
         fs::write(&self.answer_path, answer)
             .with_context(|| format!("failed to write {}", self.answer_path.display()))
     }
-
 
     pub fn write_session_stats(&self, stats: &Value) -> Result<()> {
         let json = serde_json::to_string_pretty(stats)?;
@@ -284,8 +332,16 @@ impl InvestigationBundle {
             .iter()
             .filter(|claim| {
                 claim.get("status").and_then(Value::as_str) == Some("verified")
-                    && claim.get("source_refs").and_then(Value::as_array).map(|v| !v.is_empty()).unwrap_or(false)
-                    && claim.get("computation_refs").and_then(Value::as_array).map(|v| !v.is_empty()).unwrap_or(false)
+                    && claim
+                        .get("source_refs")
+                        .and_then(Value::as_array)
+                        .map(|v| !v.is_empty())
+                        .unwrap_or(false)
+                    && claim
+                        .get("computation_refs")
+                        .and_then(Value::as_array)
+                        .map(|v| !v.is_empty())
+                        .unwrap_or(false)
             })
             .count();
         let value = serde_json::json!({
@@ -426,11 +482,13 @@ impl InvestigationBundle {
     }
 }
 
-
 fn read_user_messages(path: &Path) -> Option<usize> {
     let text = fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
-    value.get("userMessages")?.as_u64().map(|value| value as usize)
+    value
+        .get("userMessages")?
+        .as_u64()
+        .map(|value| value as usize)
 }
 
 fn existing_created_at(path: &Path) -> Option<String> {
@@ -518,7 +576,10 @@ mod tests {
 
     #[test]
     fn slugifies_ascii_topic() {
-        assert_eq!(slugify("US Electricity Prices 2026"), "us-electricity-prices-2026");
+        assert_eq!(
+            slugify("US Electricity Prices 2026"),
+            "us-electricity-prices-2026"
+        );
     }
 
     #[test]
