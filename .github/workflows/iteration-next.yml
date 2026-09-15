@@ -1,0 +1,37 @@
+name: iteration-next
+
+on:
+  pull_request:
+    branches: [import-current]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scheduler-contract:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Scheduler deterministic and anti-spoof tests
+        run: node scripts/test_parallel_scheduler.mjs
+      - name: macOS local-first smoke
+        run: node scripts/macos_parallel_smoke.mjs
+
+  source-shape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert iteration files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f runtime/pi/parallel_scheduler.mjs
+          test -f runtime/pi/local_backend.mjs
+          test -f scripts/test_parallel_scheduler.mjs
+          test -f docs/iteration-next-plan.md
