@@ -56,7 +56,6 @@ def verify_archive(root: Path, manifest: dict, archive_override: Path | None, er
     if not expected or not name or not evidence_rel:
         errors.append('source_archive requires name, sha256, and verification_evidence')
         return {'mode': 'invalid'}
-
     evidence_path = safe_path(root, evidence_rel)
     if archive_override is not None:
         if not archive_override.is_file():
@@ -65,32 +64,44 @@ def verify_archive(root: Path, manifest: dict, archive_override: Path | None, er
         actual = sha256_file(archive_override)
         if actual != expected:
             errors.append(f'source archive sha256 expected {expected}, got {actual}')
-        receipt = {
-            'schema_version': '1.0.0',
-            'status': 'PASS' if actual == expected else 'FAIL',
-            'archive_name': name,
-            'archive_sha256': actual,
-            'expected_sha256': expected,
-        }
+        receipt = {'schema_version':'1.0.0','status':'PASS' if actual == expected else 'FAIL','archive_name':name,'archive_sha256':actual,'expected_sha256':expected}
         evidence_path.parent.mkdir(parents=True, exist_ok=True)
         evidence_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
-        return {'mode': 'recomputed', 'actual_sha256': actual, 'evidence': evidence_rel}
-
+        return {'mode':'recomputed','actual_sha256':actual,'evidence':evidence_rel}
     if not evidence_path.is_file():
         errors.append(f'source archive verification evidence missing: {evidence_rel}')
-        return {'mode': 'receipt'}
+        return {'mode':'receipt'}
     try:
         receipt = json.loads(evidence_path.read_text())
     except Exception as exc:
         errors.append(f'invalid source archive verification evidence: {exc}')
-        return {'mode': 'receipt'}
-    if receipt.get('status') != 'PASS':
-        errors.append('source archive verification evidence is not PASS')
-    if receipt.get('archive_name') != name:
-        errors.append('source archive verification evidence name mismatch')
+        return {'mode':'receipt'}
+    if receipt.get('status') != 'PASS': errors.append('source archive verification evidence is not PASS')
+    if receipt.get('archive_name') != name: errors.append('source archive verification evidence name mismatch')
     if receipt.get('archive_sha256') != expected or receipt.get('expected_sha256') != expected:
         errors.append('source archive verification evidence sha256 mismatch')
-    return {'mode': 'receipt', 'evidence': evidence_rel}
+    return {'mode':'receipt','evidence':evidence_rel}
+
+
+def verify_hash_map(root: Path, value, label: str, errors: list[str]) -> int:
+    if value is None:
+        return 0
+    if not isinstance(value, dict):
+        errors.append(f'{label} must be an object')
+        return 0
+    for rel, expected in sorted(value.items()):
+        try:
+            candidate = safe_path(root, rel)
+        except ValueError:
+            errors.append(f'{label} path escapes root: {rel}')
+            continue
+        if not candidate.is_file():
+            errors.append(f'{label} file missing: {rel}')
+            continue
+        actual = sha256_file(candidate)
+        if actual != expected:
+            errors.append(f'{label} sha256 mismatch: {rel}')
+    return len(value)
 
 
 def verify(root: Path, manifest_path: Path, archive_override: Path | None = None) -> dict:
@@ -105,62 +116,41 @@ def verify(root: Path, manifest_path: Path, archive_override: Path | None = None
     rows = tree_rows(root, exclusions, ignored)
     errors = []
     expected_count = manifest.get('file_count')
-    if expected_count != len(rows):
-        errors.append(f'file_count expected {expected_count}, got {len(rows)}')
+    if expected_count != len(rows): errors.append(f'file_count expected {expected_count}, got {len(rows)}')
     actual_tree = tree_hash(rows)
     if manifest.get('source_tree_sha256') != actual_tree:
         errors.append(f'source_tree_sha256 expected {manifest.get("source_tree_sha256")}, got {actual_tree}')
-
     try:
         archive_result = verify_archive(root, manifest, archive_override, errors)
     except ValueError:
         errors.append('source archive verification evidence path escapes root')
-        archive_result = {'mode': 'invalid'}
-
-    restored = manifest.get('restored_vendor_hashes') or {}
-    if not isinstance(restored, dict):
-        errors.append('restored_vendor_hashes must be an object')
-    else:
-        for rel, expected in sorted(restored.items()):
-            try:
-                candidate = safe_path(root, rel)
-            except ValueError:
-                errors.append(f'vendor path escapes root: {rel}')
-                continue
-            if not candidate.is_file():
-                errors.append(f'restored vendor missing: {rel}')
-                continue
-            actual = sha256_file(candidate)
-            if actual != expected:
-                errors.append(f'restored vendor sha256 mismatch: {rel}')
-
+        archive_result = {'mode':'invalid'}
+    restored_count = verify_hash_map(root, manifest.get('restored_vendor_hashes'), 'restored vendor', errors)
+    regenerated_count = verify_hash_map(root, manifest.get('regenerated_fixture_hashes'), 'regenerated fixture', errors)
     return {
-        'status': 'PASS' if not errors else 'FAIL',
-        'file_count': len(rows),
-        'source_tree_sha256': actual_tree,
-        'excluded_paths': exclusions,
-        'restored_vendor_count': len(restored) if isinstance(restored, dict) else 0,
-        'archive_verification': archive_result,
-        'errors': errors,
+        'status':'PASS' if not errors else 'FAIL',
+        'file_count':len(rows),
+        'source_tree_sha256':actual_tree,
+        'excluded_paths':exclusions,
+        'restored_vendor_count':restored_count,
+        'regenerated_fixture_count':regenerated_count,
+        'archive_verification':archive_result,
+        'errors':errors,
     }
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--root', default='.')
-    ap.add_argument('--manifest', required=True)
-    ap.add_argument('--archive', help='transient source archive to recompute and write verification receipt')
-    args = ap.parse_args()
-    root = Path(args.root).resolve()
-    manifest = Path(args.manifest).resolve()
-    try:
-        manifest.relative_to(root)
-    except ValueError:
-        raise SystemExit('manifest must be inside root')
-    archive = Path(args.archive).resolve() if args.archive else None
-    result = verify(root, manifest, archive)
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if result['status'] == 'PASS' else 2
+    ap=argparse.ArgumentParser()
+    ap.add_argument('--root',default='.')
+    ap.add_argument('--manifest',required=True)
+    ap.add_argument('--archive',help='transient source archive to recompute and write verification receipt')
+    args=ap.parse_args()
+    root=Path(args.root).resolve(); manifest=Path(args.manifest).resolve()
+    try: manifest.relative_to(root)
+    except ValueError: raise SystemExit('manifest must be inside root')
+    archive=Path(args.archive).resolve() if args.archive else None
+    result=verify(root,manifest,archive)
+    print(json.dumps(result,indent=2,sort_keys=True))
+    return 0 if result['status']=='PASS' else 2
 
-if __name__ == '__main__':
-    raise SystemExit(main())
+if __name__=='__main__': raise SystemExit(main())
