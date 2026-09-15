@@ -1,0 +1,51 @@
+name: macOS Host Probe
+
+on:
+  push:
+    branches: [import-current]
+    paths:
+      - '.github/workflows/macos-host-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - name: Probe macOS native capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          mkdir -p artifacts
+          python3 - <<'PY'
+          import json, os, platform, shutil, subprocess
+          tools = ['mdls','mdfind','textutil','sips','qlmanage','sqlite3','curl','file','shasum','plutil']
+          result = {
+              'platform': platform.platform(),
+              'machine': platform.machine(),
+              'tools': {name: shutil.which(name) for name in tools},
+          }
+          missing = [name for name, value in result['tools'].items() if not value]
+          with open('artifacts/macos-host-probe.json','w') as f:
+              json.dump(result, f, indent=2)
+          if missing:
+              raise SystemExit('missing native tools: ' + ', '.join(missing))
+          PY
+
+          printf 'name = "newsroom"\n' > /tmp/newsroom.txt
+          mdls /tmp/newsroom.txt >/dev/null || file /tmp/newsroom.txt >/dev/null
+          printf '<?xml version="1.0"?><plist version="1.0"><dict><key>name</key><string>newsroom</string></dict></plist>' > /tmp/newsroom.plist
+          plutil -convert json -o - /tmp/newsroom.plist | grep -q newsroom
+          sqlite3 /tmp/newsroom.sqlite 'create table t(v text); insert into t values ("ok");'
+          sqlite3 -readonly -json /tmp/newsroom.sqlite 'select * from t;' | grep -q ok
+          printf newsroom | shasum -a 256 >/dev/null
+
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-host-probe
+          path: artifacts/macos-host-probe.json
