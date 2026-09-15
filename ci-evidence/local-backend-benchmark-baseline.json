@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "provenance": {
+    "workflow_run_id": 34938439944,
+    "artifact_id": 10384288007,
+    "artifact_name": "local-backend-benchmark-macos-26",
+    "artifact_sha256": "c3e777823cf43dbf793346f54e225b64794e1bc012d6c1ae3620f6a01e621867",
+    "runner": "macos-26",
+    "observed_os": "macOS 26.6.2",
+    "architecture": "arm64",
+    "samples": 12
+  },
+  "rows": [
+    {"name":"metadata_local_first","backend":"macos:mdls","p50_ms":15.776,"p95_ms":16.386,"min_ms":12.726,"max_ms":16.386},
+    {"name":"metadata_portable_stat","backend":"portable:fs-stat","p50_ms":0.022,"p95_ms":0.109,"min_ms":0.020,"max_ms":0.109},
+    {"name":"text_conversion_local_first","backend":"macos:textutil","p50_ms":23.210,"p95_ms":26.305,"min_ms":20.496,"max_ms":26.305},
+    {"name":"text_plain_portable","backend":"portable:fs","p50_ms":0.222,"p95_ms":0.426,"min_ms":0.202,"max_ms":0.426},
+    {"name":"image_probe_local_first","backend":"macos:sips","p50_ms":13.165,"p95_ms":13.954,"min_ms":12.439,"max_ms":13.954},
+    {"name":"sqlite_local_first","backend":"macos:sqlite3","p50_ms":5.874,"p95_ms":7.670,"min_ms":5.126,"max_ms":7.670},
+    {"name":"hash_local_first","backend":"macos:shasum","p50_ms":12.427,"p95_ms":15.788,"min_ms":11.173,"max_ms":15.788},
+    {"name":"hash_portable_crypto","backend":"portable:node-crypto","p50_ms":0.148,"p95_ms":0.372,"min_ms":0.126,"max_ms":0.372},
+    {"name":"local_search","backend":"portable:filename-walk","p50_ms":52.942,"p95_ms":69.254,"min_ms":49.356,"max_ms":69.254},
+    {"name":"http_curl","backend":"macos:curl","p50_ms":8.158,"p95_ms":9.908,"min_ms":7.700,"max_ms":9.908},
+    {"name":"http_node_fetch","backend":"portable:node-fetch","p50_ms":0.639,"p95_ms":1.887,"min_ms":0.338,"max_ms":1.887}
+  ]
+}
