@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1.0",
+  "release": "1.13.0-rc1",
+  "required_for_final": [
+    "Cargo.lock",
+    "runtime/web/package-lock.json",
+    "runtime/sigma/package-lock.json",
+    "runtime/map/package-lock.json",
+    "runtime/d3/package-lock.json"
+  ],
+  "build_policy": {
+    "rust": "cargo build --locked",
+    "node": "npm ci --omit=dev --ignore-scripts",
+    "python": "runtime images must pin direct dependencies; fully resolved environment locks remain required before final promotion"
+  },
+  "current_host_note": "Cargo is unavailable and npm package acquisition is unavailable in this host. Missing transitive lock files are a final-release blocker and are not synthesized."
+}

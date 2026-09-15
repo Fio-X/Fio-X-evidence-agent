@@ -1,0 +1,25 @@
+FROM node:22.19.0-bookworm-slim
+
+ARG RUST_VERSION=1.98.1
+ARG PI_VERSION=0.85.1
+ARG DUCKDB_VERSION=1.5.5
+ARG CAIROSVG_VERSION=2.8.2
+
+ENV PATH="/root/.cargo/bin:/root/.duckdb/cli/latest:${PATH}"
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl build-essential python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION}
+RUN rustup component add rustfmt clippy \
+    && npm install -g --ignore-scripts @earendil-works/pi-coding-agent@${PI_VERSION} \
+    && python3 -m pip install --break-system-packages --no-cache-dir duckdb-cli==${DUCKDB_VERSION} jsonschema==4.26.0 CairoSVG==${CAIROSVG_VERSION}
+
+COPY . /workspace
+RUN cargo build --locked --release --bin news \
+    && ./target/release/news doctor --strict --json \
+    && ./scripts/smoke.sh
+
+ENTRYPOINT ["/workspace/target/release/news"]

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/runtime-lock.schema.json",
+  "title": "Promoted visualization runtime lock",
+  "type": "object",
+  "required": ["schema_version", "source_commit", "runtimes"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "source_commit": {"type": "string", "minLength": 7},
+    "generated_at": {"type": "string"},
+    "runtimes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["runtime", "image", "image_digest", "health_status", "deps_sha256"],
+        "properties": {
+          "runtime": {"type": "string"},
+          "image": {"type": "string", "minLength": 1},
+          "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "health_status": {"const": "PASS"},
+          "health_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "deps_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

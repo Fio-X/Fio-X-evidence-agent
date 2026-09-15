@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 656" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">Energy moves from supply through transformation to end use</title>
+<desc id="viz-desc-mobile">A Sankey diagram traces energy from domestic production and imports through available energy, transformation and final users.</desc>
+<rect width="640" height="656" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">Energy moves from supply through</text>
+<text x="32" y="65" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">transformation to end use</text>
+<text x="32" y="98" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">Synthetic topology fixture used to exercise deterministic</text>
+<text x="32" y="118" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">complex-visual rules</text>
+<path data-role="flow-link" d="M134,332 C162.2,332 168.46666666666667,364 196.66666666666666,364" fill="none" stroke="#2f6f8f" stroke-width="22" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M288.66666666666663,364 C316.8666666666666,364 323.1333333333333,315.9583333333333 351.3333333333333,315.9583333333333" fill="none" stroke="#d1493f" stroke-width="21.38888888888889" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M134,407 C162.2,407 168.46666666666667,368.84 196.66666666666666,368.84" fill="none" stroke="#3c7d5a" stroke-width="14.666666666666666" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M288.66666666666663,368.7055555555556 C316.8666666666666,368.7055555555556 323.1333333333333,384.08333333333337 351.3333333333333,384.08333333333337" fill="none" stroke="#7b6ba8" stroke-width="10.694444444444445" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,315.9583333333333 C471.5333333333333,315.9583333333333 477.8,294.4166666666667 506,294.4166666666667" fill="none" stroke="#b7843e" stroke-width="7.638888888888888" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,314.27777777777777 C471.5333333333333,314.27777777777777 477.8,348.33333333333337 506,348.33333333333337" fill="none" stroke="#4c8a83" stroke-width="6.722222222222223" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,315.75666666666666 C471.5333333333333,315.75666666666666 477.8,395.91666666666674 506,395.91666666666674" fill="none" stroke="#8c6c59" stroke-width="5.5" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M288.66666666666663,371.05833333333334 C316.8666666666666,371.05833333333334 323.1333333333333,432.125 351.3333333333333,432.125" fill="none" stroke="#a9afb5" stroke-width="4.583333333333334" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,384.08333333333337 C471.5333333333333,384.08333333333337 477.8,296.09722222222223 506,296.09722222222223" fill="none" stroke="#2f6f8f" stroke-width="4.583333333333334" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,383.07500000000005 C471.5333333333333,383.07500000000005 477.8,346.8544444444445 506,346.8544444444445" fill="none" stroke="#d1493f" stroke-width="3.6666666666666665" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,383.8816666666667 C471.5333333333333,383.8816666666667 477.8,397.1266666666667 506,397.1266666666667" fill="none" stroke="#3c7d5a" stroke-width="2.444444444444444" stroke-opacity="0.56" stroke-linecap="round"/>
+<path data-role="flow-link" d="M443.3333333333333,314.5466666666666 C471.5333333333333,314.5466666666666 477.8,439.91666666666674 506,439.91666666666674" fill="none" stroke="#7b6ba8" stroke-width="1.527777777777778" stroke-opacity="0.56" stroke-linecap="round"/>
+<rect data-role="flow-node" x="42" y="299" width="92" height="66" rx="2" fill="#202124" opacity="0.88"/>
+<text x="88" y="330" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Domestic</text>
+<text x="88" y="342" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">production</text>
+<rect data-role="flow-node" x="42" y="385" width="92" height="44" rx="2" fill="#202124" opacity="0.88"/>
+<text x="88" y="411" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Imports</text>
+<rect data-role="flow-node" x="196.66666666666666" y="309" width="92" height="110" rx="2" fill="#202124" opacity="0.88"/>
+<text x="242.66666666666666" y="362" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Available</text>
+<text x="242.66666666666666" y="374" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">energy</text>
+<rect data-role="flow-node" x="351.3333333333333" y="283.875" width="92" height="64.16666666666667" rx="2" fill="#d1493f" opacity="1"/>
+<text x="397.3333333333333" y="319.9583333333333" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Transformation</text>
+<rect data-role="flow-node" x="351.3333333333333" y="368.0416666666667" width="92" height="32.083333333333336" rx="2" fill="#202124" opacity="0.88"/>
+<text x="397.3333333333333" y="388.08333333333337" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Direct use</text>
+<rect data-role="flow-node" x="351.3333333333333" y="420.125" width="92" height="24" rx="2" fill="#202124" opacity="0.88"/>
+<text x="397.3333333333333" y="436.125" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Losses</text>
+<rect data-role="flow-node" x="506" y="276.08333333333337" width="92" height="36.666666666666664" rx="2" fill="#202124" opacity="0.88"/>
+<text x="552" y="298.4166666666667" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Households</text>
+<rect data-role="flow-node" x="506" y="332.75000000000006" width="92" height="31.166666666666664" rx="2" fill="#202124" opacity="0.88"/>
+<text x="552" y="352.33333333333337" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Industry</text>
+<rect data-role="flow-node" x="506" y="383.91666666666674" width="92" height="24" rx="2" fill="#202124" opacity="0.88"/>
+<text x="552" y="399.91666666666674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Transport</text>
+<rect data-role="flow-node" x="506" y="427.91666666666674" width="92" height="24" rx="2" fill="#202124" opacity="0.88"/>
+<text x="552" y="437.91666666666674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">Transformation</text>
+<text x="552" y="449.91666666666674" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="#fff">losses</text>
+<line data-role="annotation-leader" x1="397.3333333333333" y1="283.875" x2="397.3333333333333" y2="272.875" stroke="#687076" stroke-width="1"/>
+<text data-role="annotation" x="397.3333333333333" y="265.875" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.2" font-weight="600" fill="#202124">Transformation is the main</text>
+<text data-role="annotation" x="397.3333333333333" y="278.875" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.2" font-weight="600" fill="#202124">conversion stage</text>
+<line x1="32" y1="578" x2="608" y2="578" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="597" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: Synthetic topology regression fixture</text>
+</svg>

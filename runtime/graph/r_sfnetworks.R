@@ -1,0 +1,16 @@
+#!/usr/bin/env Rscript
+suppressPackageStartupMessages({library(jsonlite); library(sf); library(sfnetworks); library(ggplot2); library(ggrepel); library(svglite)})
+args <- commandArgs(trailingOnly=TRUE)
+if (length(args) != 1) stop('usage: r_sfnetworks.R REQUEST_JSON')
+req <- fromJSON(args[[1]], simplifyVector=TRUE)
+if (!identical(req$backend, 'sfnetworks_spatial')) stop('request backend must be sfnetworks_spatial')
+inputs <- req$inputs
+if (is.null(inputs$nodes) || is.null(inputs$edges)) stop('sfnetworks_spatial requires inputs.nodes and inputs.edges')
+nodes <- st_read(inputs$nodes,quiet=TRUE); edges <- st_read(inputs$edges,quiet=TRUE)
+if (!all(c('from','to') %in% names(edges))) stop('edge layer requires integer from/to columns matching node row order')
+net <- sfnetwork(nodes,edges,directed=ifelse(is.null(req$options$directed),TRUE,req$options$directed))
+edge_sf <- st_as_sf(activate(net,'edges')); node_sf <- st_as_sf(activate(net,'nodes'))
+p <- ggplot() + geom_sf(data=edge_sf,linewidth=.55,colour='#777777',alpha=.55) + geom_sf(data=node_sf,size=2.5,colour='#155f63') + coord_sf(datum=NA) + theme_void() + labs(title=ifelse(is.null(req$options$title),'Spatial network',req$options$title))
+outdir <- req$output_dir; dir.create(outdir,recursive=TRUE,showWarnings=FALSE); out <- file.path(outdir,ifelse(is.null(req$options$filename),'figure.svg',req$options$filename))
+ggsave(out,p,width=11,height=8,device=svglite)
+writeLines(toJSON(list(schema_version='1.0.0',backend='sfnetworks_spatial',artifact_status='FINAL',story_id=req$story_id,semantic_fingerprint=req$semantic_fingerprint,evidence_hashes=req$evidence_hashes,claim_ids=req$claim_ids,output=out,nodes=nrow(node_sf),edges=nrow(edge_sf)),auto_unbox=TRUE,pretty=TRUE),file.path(outdir,'manifest.json'))

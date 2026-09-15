@@ -1,19 +1,17 @@
 {
-  "schema_version": "1.0.0",
-  "workstream": "T01",
-  "status": "BLOCKED_EXTERNAL_TRANSPORT",
-  "blocking_capability": "exact_binary_file_to_authenticated_git_checkout",
-  "archive": {
-    "name": "t01-core-text-v3.tar.xz",
-    "version": "v3",
-    "file_count": 657,
-    "bytes": 592736,
-    "sha256": "79219f59ba7667e8e540b83f14be74eddce2e97edd14febe61e446ac591a2d8a"
-  },
   "accepted_transports": [
     "local-authenticated-git-materialization",
     "trusted-url-with-exact-pre-materialization-verification"
   ],
+  "archive": {
+    "bytes": 592736,
+    "file_count": 657,
+    "name": "t01-core-text-v3.tar.xz",
+    "sha256": "79219f59ba7667e8e540b83f14be74eddce2e97edd14febe61e446ac591a2d8a",
+    "version": "v3"
+  },
+  "blocking_capability": "exact_binary_file_to_authenticated_git_checkout",
+  "next_action": "push iteration-next and let GitHub CI validate T02/T03/T04/T18",
   "rejected_transports": [
     {
       "method": "issue-comment-base64",
@@ -24,7 +22,9 @@
       "reason": "controlled probes produced Git object SHA mismatches for payload chunks"
     }
   ],
+  "resolved_via": "local-authenticated-git-materialization",
+  "schema_version": "1.0.0",
+  "status": "RESOLVED_LOCAL_MATERIALIZATION",
   "unblock_condition": "The exact v3 archive is available inside an authenticated local Git checkout, or through a trusted URL, and SHA-256, byte count, and archive file count are recomputed before materialization.",
-  "next_action": "bash scripts/t01_local_materialize.sh /absolute/path/to/t01-core-text-v3.tar.xz --commit --push",
-  "resolved_via": null
+  "workstream": "T01"
 }

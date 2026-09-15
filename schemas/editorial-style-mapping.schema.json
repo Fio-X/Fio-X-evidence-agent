@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"urn:agentic-data-newsroom:schema:editorial-style-mapping:0.1.0",
+  "title":"Editorial Style Mapping v0.1",
+  "type":"object",
+  "required":["schema_version","profiles","rules"],
+  "properties":{
+    "schema_version":{"const":"0.1.0"},
+    "profiles":{"type":"object","minProperties":1,"additionalProperties":{"$ref":"#/$defs/profile"}},
+    "rules":{"type":"array","items":{"type":"object","required":["profile","priority"],"properties":{"profile":{"type":"string"},"requires_any_dimension":{"type":"array","items":{"type":"string"}},"priority":{"type":"integer"}},"additionalProperties":false}}
+  },
+  "additionalProperties":false,
+  "$defs":{"profile":{"type":"object","required":["description","compatible_dimensions","compatible_topologies","tokens"],"properties":{"description":{"type":"string"},"compatible_dimensions":{"type":"array","items":{"type":"string"}},"compatible_topologies":{"type":"array","items":{"type":"string"}},"tokens":{"type":"object","required":["font_display","font_body","paper","ink","muted","panel","grid","accent","density","annotation","geometry","motion","surface","interaction_depth"],"additionalProperties":{"type":"string"}}},"additionalProperties":false}}
+}

@@ -1,0 +1,13 @@
+Investigate how Europe's electricity transition changed between 2015 and 2025 using reproducible public data.
+
+Find a strong data-news angle around wind and solar growth across European countries. Compare countries on a defensible common basis, exclude regional aggregates from country rankings, verify the strongest three numerical claims, and produce at least one publication-ready chart. Check whether the dataset contains duplicate or overlapping category/subcategory representations before aggregating, and explain any filtering rule you use.
+
+Candidate primary dataset: Ember, Yearly Electricity Data Europe (2026).
+Dataset page:
+https://ember-energy.org/data/yearly-electricity-data/
+Public CSV:
+https://files.ember-energy.org/public-downloads/europe_yearly_full_release_long_format.csv
+Methodology:
+https://files.ember-energy.org/public-downloads/ember_electricity_data_methodology.pdf
+
+Treat these as candidate evidence. Own the investigation plan and tool sequence. Separate the data publication/retrieval date from the observation year, and preserve the downloaded CSV snapshot and SQL used for every major numerical claim.

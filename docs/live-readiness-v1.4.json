@@ -1,0 +1,63 @@
+{
+  "schema_version": "0.7.0",
+  "release": "1.4.0",
+  "live_ready": false,
+  "model_credential_available": false,
+  "api_key_env_available": false,
+  "pi_auth_present": false,
+  "credential_env_names": [],
+  "checks": [
+    {
+      "name": "node",
+      "required": true,
+      "command": "node",
+      "path": "/opt/nvm/versions/node/v22.16.0/bin/node",
+      "ok": false,
+      "version": "v22.16.0"
+    },
+    {
+      "name": "pi",
+      "required": true,
+      "command": "pi",
+      "path": null,
+      "ok": false,
+      "version": null,
+      "error": "not found"
+    },
+    {
+      "name": "duckdb",
+      "required": true,
+      "command": "duckdb",
+      "path": null,
+      "ok": false,
+      "version": null,
+      "error": "not found"
+    },
+    {
+      "name": "rustc",
+      "required": true,
+      "command": "rustc",
+      "path": null,
+      "ok": false,
+      "version": null,
+      "error": "not found"
+    },
+    {
+      "name": "cargo",
+      "required": true,
+      "command": "cargo",
+      "path": null,
+      "ok": false,
+      "version": null,
+      "error": "not found"
+    },
+    {
+      "name": "python3",
+      "required": false,
+      "command": "python3",
+      "path": "/opt/pyvenv/bin/python3",
+      "ok": true,
+      "version": "Python 3.13.5"
+    }
+  ]
+}

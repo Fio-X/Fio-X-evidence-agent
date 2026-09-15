@@ -1,0 +1,45 @@
+# v1.8 RC Change Manifest
+
+Core synthesis contract
+- runtime/pi/story_graph.mjs
+- schemas/story-graph.schema.json
+- runtime/pi/infographic.mjs
+- schemas/infographic-spec.schema.json
+- runtime/pi/newsroom.ts
+- src/runtime.rs
+
+Semantic and rendering support
+- runtime/visual/measure_semantics.mjs
+- runtime/pi/measure_semantics.mjs
+- runtime/visual/editorial_semantics.mjs
+- runtime/pi/editorial_semantics.mjs
+- runtime/gis/visual_recipe.schema.json
+- runtime/pi/viz.mjs
+
+Qualification and build contracts
+- scripts/test_visual_synthesis_v18.mjs
+- scripts/test_runtime_visual_synthesis_v18.mjs
+- scripts/test_story_graph_schema_v18.py
+- scripts/test_infographic_schema.py
+- scripts/check_runtime_contract.py
+- scripts/smoke.sh
+- scripts/smoke_visual_compiler.sh
+- versions.json
+- Cargo.toml
+- README.md
+
+Documentation
+- docs/iteration-plan-v1.8.md
+- docs/completion-audit-v1.8.md
+- docs/test-report-v1.8.md
+- docs/change-manifest-v1.8.txt
+
+Qualification artifact
+- outputs/v18-monsoon/india-food-risk-infographic.svg
+- outputs/v18-monsoon/india-food-risk-infographic.mobile.svg
+- outputs/v18-monsoon/india-food-risk-infographic.png
+- outputs/v18-monsoon/india-food-risk-infographic.mobile@2x.png
+- outputs/v18-monsoon/story-graph.json
+- outputs/v18-monsoon/qualification.json
+- outputs/v18-monsoon/visual-qa-desktop.json
+- outputs/v18-monsoon/visual-qa-mobile@2x.json

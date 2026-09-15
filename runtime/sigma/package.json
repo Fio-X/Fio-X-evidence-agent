@@ -1,0 +1,12 @@
+{
+  "name": "adn-viz-sigma",
+  "private": true,
+  "version": "1.13.0-rc1",
+  "type": "module",
+  "dependencies": {
+    "sigma": "3.0.3",
+    "graphology": "0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "graphology-communities-louvain": "2.0.2"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "0.1.0",
+  "adapters": {
+    "gephi_toolkit": {
+      "status": "contract_only",
+      "role": "network_layout_challenger",
+      "requires": ["java>=17", "pinned_gephi_toolkit"],
+      "capabilities": ["forceatlas2", "community_workflows", "large_network_layout", "gexf", "graphml"],
+      "activation_policy": "Only activate after deterministic CLI/service wrapper, seed policy, export hash verification, and regression qualification."
+    },
+    "rawgraphs_models": {
+      "status": "contract_only",
+      "role": "vendored_visual_model_source",
+      "requires": ["pinned_chart_modules", "local_bundle"],
+      "candidate_models": ["beeswarm", "circular_dendrogram", "circle_packing", "bump_chart", "voronoi_treemap", "circular_sankey", "advanced_chord", "parallel_coordinates"],
+      "activation_policy": "Vendor selected chart algorithms under a pinned version; do not embed the full application or depend on its GUI."
+    },
+    "flourish": {
+      "status": "contract_only",
+      "role": "optional_external_publishing_adapter",
+      "requires": ["explicit_credentials", "approved_account_capability", "network_access"],
+      "capabilities": ["template_rendering", "interactive_publishing", "hosted_embed"],
+      "activation_policy": "Never required for core publication. Record template, data, settings, version, provider and external provenance whenever enabled."
+    }
+  }
+}

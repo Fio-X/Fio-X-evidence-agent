@@ -1,0 +1,84 @@
+{
+  "id": "viz-browser",
+  "version": "1.12.0-rc1",
+  "execution": "browser",
+  "target_versions": {
+    "python": "3.13",
+    "networkx": "3.6.1",
+    "plotly": "6.5.2",
+    "plotly.js": "3.3.1",
+    "playwright": "1.57.0",
+    "chromium": ">=120,<150"
+  },
+  "capabilities": [
+    "self_contained_html",
+    "responsive_html",
+    "browser_qa",
+    "interaction_replay",
+    "plotly_interactive",
+    "plotly_sankey",
+    "linked_views",
+    "network_analysis",
+    "network_layout",
+    "community_detection",
+    "uncertainty_band",
+    "linked_geo_views",
+    "native_canvas_network",
+    "large_network",
+    "scientific_map",
+    "physical_basemap",
+    "projection_explicit",
+    "scale_bar",
+    "style_mapping",
+    "nature_scientific_map",
+    "evidence_bound_publication",
+    "browser_cpu_qa",
+    "accessibility_qa",
+    "production_asset_packaging",
+    "large_network_overview",
+    "community_reduction"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "python3",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=3.13,<3.15"
+    },
+    {
+      "type": "python_module",
+      "name": "networkx",
+      "required": true,
+      "version_spec": "==3.6.1"
+    },
+    {
+      "type": "python_module",
+      "name": "plotly",
+      "required": true,
+      "version_spec": "==6.5.2"
+    },
+    {
+      "type": "python_module",
+      "name": "playwright",
+      "required": true,
+      "version_spec": "==1.57.0"
+    },
+    {
+      "type": "command",
+      "name": "chromium",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=120,<150"
+    }
+  ],
+  "build": {
+    "definition": "Dockerfile",
+    "network_required": true,
+    "requirements": "requirements.txt"
+  }
+}

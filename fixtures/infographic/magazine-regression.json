@@ -1,0 +1,103 @@
+{
+  "spec": {
+    "schema_version": "1.0.0",
+    "kicker": "SYSTEMS / DATA FEATURE",
+    "title": "A system is easier to understand when the parts share one page",
+    "dek": "This regression feature combines verified numbers, explanatory copy and two upstream newsroom visuals into a single responsive editorial composition.",
+    "alt": "A magazine-style data feature with a large headline, two hero statistics, a ranking chart, a Sankey diagram and explanatory text.",
+    "byline": "Newsroom Agent",
+    "date_label": "Regression edition",
+    "layout": "feature",
+    "complexity_budget": "medium",
+    "source_note": "Synthetic infographic regression fixture",
+    "modules": [
+      {
+        "id": "section-1",
+        "type": "section_header",
+        "span": "full",
+        "eyebrow": "The premise",
+        "heading": "Numbers gain meaning from hierarchy",
+        "deck": "The composer controls reading order while preserving upstream data provenance."
+      },
+      {
+        "id": "stat-total",
+        "type": "hero_stat",
+        "span": "third",
+        "tone": "accent",
+        "value": "100",
+        "unit": "PJ",
+        "label": "Total energy entering the synthetic system",
+        "detail": "Verified claim fixture",
+        "claim_id": "claim-infographic",
+        "label_short": "Total"
+      },
+      {
+        "id": "bar",
+        "type": "visual",
+        "span": "two_thirds",
+        "label": "The ranking",
+        "manifest_ref": "visualizations/bar.json"
+      },
+      {
+        "id": "flow",
+        "type": "visual",
+        "span": "full",
+        "label": "The system",
+        "manifest_ref": "visualizations/flow.json"
+      },
+      {
+        "id": "stat-loss",
+        "type": "hero_stat",
+        "span": "third",
+        "tone": "dark",
+        "value": "20",
+        "unit": "PJ",
+        "label": "Energy represented as losses",
+        "detail": "One fifth of the synthetic total",
+        "claim_id": "claim-infographic"
+      },
+      {
+        "id": "text",
+        "type": "text",
+        "span": "two_thirds",
+        "label": "Why it matters",
+        "heading": "One feature, several reading speeds",
+        "body": "The headline provides the argument, hero numbers reward scanning, charts support comparison, and explanatory prose gives the reader enough context to interpret the structure without detaching the visuals from their verified claims.",
+        "claim_ids": [
+          "claim-infographic"
+        ]
+      }
+    ]
+  },
+  "lint": {
+    "schema_version": "1.0.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [
+      "visual_modules=2",
+      "claim_references=3",
+      "unique_sources=1"
+    ],
+    "content_hash": "9f14795c0b6542b9c31171bc91e0f228ef44f78e3b2dbfe5f903eb47e3aca845"
+  },
+  "critic": {
+    "schema_version": "1.0.0",
+    "quality_target": "legacy",
+    "passed": true,
+    "score": 100,
+    "viewports": {
+      "desktop": {
+        "passed": true,
+        "score": 100,
+        "issues": []
+      },
+      "mobile": {
+        "passed": true,
+        "score": 100,
+        "issues": []
+      }
+    },
+    "issues": []
+  }
+}

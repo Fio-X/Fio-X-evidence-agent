@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+import assert from 'node:assert/strict';import {chooseRenderer} from '../runtime/pi/render_router.mjs';
+assert.equal(chooseRenderer({point_count:500,label_count:20}).selected_backend,'svg');const dense=chooseRenderer({point_count:200000,geographic:true,interaction:true,redraw_hz:30},{available_backends:['svg']});assert.equal(dense.desired_backend,'webgl_map');assert.equal(dense.selected_backend,'svg');assert.equal(dense.capability_status,'fallback');const native=chooseRenderer({point_count:200000,geographic:true,redraw_hz:30},{available_backends:['svg','webgl_map']});assert.equal(native.selected_backend,'webgl_map');console.log('renderer router v1.13 PASS');

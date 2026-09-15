@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 555" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">The same network as a matrix</title>
+<desc id="viz-desc-mobile">An adjacency matrix encodes the same newsroom relationship network as cells.</desc>
+<rect width="640" height="555" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">The same network as a matrix</text>
+<text x="32" y="67" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">Synthetic topology fixture used to exercise deterministic</text>
+<text x="32" y="87" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">complex-visual rules</text>
+<text x="122" y="227.1875" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Climate</text>
+<text x="145.1875" y="201" transform="rotate(-55 145.1875 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Climate</text>
+<text x="122" y="257.5625" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Data desk</text>
+<text x="175.5625" y="201" transform="rotate(-55 175.5625 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Data desk</text>
+<text x="122" y="287.9375" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Editor</text>
+<text x="205.9375" y="201" transform="rotate(-55 205.9375 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Editor</text>
+<text x="122" y="318.3125" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Graphics</text>
+<text x="236.3125" y="201" transform="rotate(-55 236.3125 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Graphics</text>
+<text x="122" y="348.6875" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Investigatio…</text>
+<text x="266.6875" y="201" transform="rotate(-55 266.6875 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Investigations</text>
+<text x="122" y="379.0625" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Legal</text>
+<text x="297.0625" y="201" transform="rotate(-55 297.0625 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Legal</text>
+<text x="122" y="409.4375" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Politics</text>
+<text x="327.4375" y="201" transform="rotate(-55 327.4375 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Politics</text>
+<text x="122" y="439.8125" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.7" fill="#202124">Science</text>
+<text x="357.8125" y="201" transform="rotate(-55 357.8125 201)" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" fill="#687076">Science</text>
+<rect data-role="matrix-cell" x="161.375" y="270.75" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.7792203186882429"/>
+<rect data-role="matrix-cell" x="313.25" y="270.75" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.7096245778943945"/>
+<rect data-role="matrix-cell" x="222.125" y="240.375" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.9"/>
+<rect data-role="matrix-cell" x="131" y="240.375" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.6306298631522221"/>
+<rect data-role="matrix-cell" x="131" y="301.125" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.7096245778943945"/>
+<rect data-role="matrix-cell" x="252.5" y="392.25" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.8421396778225901"/>
+<rect data-role="matrix-cell" x="282.875" y="331.5" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.6306298631522221"/>
+<rect data-role="matrix-cell" x="191.75" y="361.875" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.5369275373833821"/>
+<rect data-role="matrix-cell" x="343.625" y="210" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.7792203186882429"/>
+<rect data-role="matrix-cell" x="222.125" y="422.625" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.6306298631522221"/>
+<rect data-role="matrix-cell" x="191.75" y="301.125" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.5369275373833821"/>
+<rect data-role="matrix-cell" x="222.125" y="392.25" width="28.375" height="28.375" fill="#2f6f8f" fill-opacity="0.6306298631522221"/>
+<line x1="32" y1="477" x2="608" y2="477" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="496" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: Synthetic topology regression fixture</text>
+</svg>

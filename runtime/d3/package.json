@@ -1,0 +1,10 @@
+{
+  "name": "adn-viz-d3",
+  "private": true,
+  "version": "1.13.0-rc1",
+  "type": "module",
+  "dependencies": {
+    "d3": "7.9.0",
+    "vega-lite": "6.4.3"
+  }
+}

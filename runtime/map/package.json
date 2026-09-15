@@ -1,0 +1,12 @@
+{
+  "name": "adn-viz-map",
+  "private": true,
+  "version": "1.13.0-rc1",
+  "type": "module",
+  "dependencies": {
+    "maplibre-gl": "6.9.0",
+    "@deck.gl/core": "9.4.0",
+    "@deck.gl/layers": "9.4.0",
+    "@deck.gl/geo-layers": "9.4.0"
+  }
+}

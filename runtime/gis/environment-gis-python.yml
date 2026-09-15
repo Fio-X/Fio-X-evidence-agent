@@ -1,0 +1,16 @@
+name: adn-gis
+channels: [conda-forge]
+dependencies:
+  - python>=3.12
+  - geopandas>=1.0
+  - shapely>=2.0
+  - pyproj>=3.6
+  - pyogrio>=0.10
+  - pyarrow
+  - matplotlib>=3.8
+  - rasterio
+  - datashader>=0.18
+  - pygmt>=0.18
+  - gmt>=6.5
+  - duckdb
+  - pip

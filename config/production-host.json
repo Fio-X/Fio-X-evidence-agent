@@ -1,0 +1,35 @@
+{
+  "schema_version": "0.1.0",
+  "release": "1.13.0-rc1",
+  "required_versions": {
+    "node_min": "22.19.0",
+    "rust_exact": "1.98.1",
+    "duckdb_exact": "1.5.5",
+    "pi_exact": "0.85.1",
+    "python_major_minor": "3.13",
+    "playwright_exact": "1.57.0",
+    "chromium_expected": "144.0.7559.96"
+  },
+  "required_lockfiles": [
+    "Cargo.lock",
+    "runtime/web/package-lock.json",
+    "runtime/sigma/package-lock.json",
+    "runtime/map/package-lock.json",
+    "runtime/d3/package-lock.json"
+  ],
+  "browser_profiles": {
+    "cpu": {"required": true, "sandbox": true, "external_requests": 0},
+    "gpu": {"required_for_final": true, "webgl2": true, "sandbox": true}
+  },
+  "cold_story_gate": {
+    "minimum_cases": 12,
+    "minimum_news_cases": 6,
+    "minimum_topology_families": 8,
+    "maximum_silent_semantic_errors": 0,
+    "minimum_correct_abstentions": 1
+  },
+  "manual_gates": [
+    "qualified-human editorial review",
+    "provider-backed investigate -> continue -> verify --recompute"
+  ]
+}
