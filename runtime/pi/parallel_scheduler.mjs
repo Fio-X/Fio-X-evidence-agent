@@ -8,6 +8,36 @@ function normalizeStringArray(value) {
   return [...new Set(value.map((item) => String(item)).filter(Boolean))];
 }
 
+function normalizeWriteScopePath(value, taskId) {
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (raw.includes('\0')) throw new Error(`task ${taskId}: write_scope contains NUL`);
+
+  const candidate = raw.replaceAll('\\', '/');
+  if (candidate.startsWith('/') || candidate.startsWith('//') || /^[A-Za-z]:\//.test(candidate)) {
+    throw new Error(`task ${taskId}: write_scope must be relative: ${raw}`);
+  }
+
+  const parts = [];
+  for (const part of candidate.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') throw new Error(`task ${taskId}: write_scope traversal is not allowed: ${raw}`);
+    parts.push(part);
+  }
+
+  return parts.length ? parts.join('/') : '.';
+}
+
+function normalizeWriteScopes(value, taskId) {
+  if (!Array.isArray(value)) return [];
+  const normalized = [];
+  for (const item of value) {
+    const scope = normalizeWriteScopePath(item, taskId);
+    if (scope != null && !normalized.includes(scope)) normalized.push(scope);
+  }
+  return normalized;
+}
+
 function defaultResourceClass(kind) {
   const name = String(kind).toLowerCase();
   if (/(fetch|download|news_search|http|curl|url)/.test(name)) return 'network';
@@ -28,7 +58,6 @@ function deriveNetworkKey(raw) {
         return `network:${parsed.hostname.toLowerCase()}`;
       }
     } catch {
-      // Invalid URLs are handled by the underlying tool; scheduler stays conservative.
     }
   }
   return 'network:unknown';
@@ -58,7 +87,7 @@ function normalizeTask(raw, index, customClassifier) {
     resource_key: classification.resource_key,
     requested_resource_class: raw.resource_class == null ? null : String(raw.resource_class),
     requested_resource_key: raw.resource_key == null ? null : String(raw.resource_key),
-    write_scope: normalizeStringArray(raw.write_scope),
+    write_scope: normalizeWriteScopes(raw.write_scope, id),
   };
 }
 
@@ -66,6 +95,7 @@ function scopesConflict(a, b) {
   if (!a.length || !b.length) return false;
   for (const left of a) {
     for (const right of b) {
+      if (left === '.' || right === '.') return true;
       if (left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`)) return true;
     }
   }
