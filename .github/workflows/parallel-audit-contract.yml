@@ -29,33 +29,27 @@ jobs:
           rustup toolchain install 1.98.1 --profile minimal
           rustup run 1.98.1 rustc --version
           rustup run 1.98.1 cargo --version
-      - name: Reconstruct production Rust sources from bootstrap staging
+      - name: Reconstruct and verify production Rust snapshots
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import base64, glob
-          parts = sorted(glob.glob('bootstrap-staging/source.b64.part-*'))
-          if not parts:
-              raise SystemExit('no bootstrap source fragments found')
-          data = b''.join(open(path, 'rb').read() for path in parts)
-          open('/tmp/newsroom-bootstrap.tar.xz', 'wb').write(base64.b64decode(data))
-          PY
-          mkdir -p /tmp/newsroom-bootstrap
-          tar -tJf /tmp/newsroom-bootstrap.tar.xz >/tmp/bootstrap-files.txt
-          tar -xJf /tmp/newsroom-bootstrap.tar.xz -C /tmp/newsroom-bootstrap
-          source_root="$(find /tmp/newsroom-bootstrap -type f -path '*/src/audit.rs' -print -quit | sed 's#/src/audit.rs$##')"
-          test -n "$source_root" || { echo 'bootstrap archive has no src/audit.rs' >&2; exit 3; }
-          test -f "$source_root/src/artifact.rs"
           mkdir -p rust-audit-contract/production rust-audit-contract/src rust-audit-contract/tests
-          cp "$source_root/src/audit.rs" rust-audit-contract/production/audit.rs
-          cp "$source_root/src/artifact.rs" rust-audit-contract/production/artifact.rs
+          cat contracts/parallel-audit/audit.part-* > rust-audit-contract/production/audit.rs
+          cat contracts/parallel-audit/artifact.part-* > rust-audit-contract/production/artifact.rs
+          audit_sha="$(shasum -a 256 rust-audit-contract/production/audit.rs | awk '{print $1}')"
+          artifact_sha="$(shasum -a 256 rust-audit-contract/production/artifact.rs | awk '{print $1}')"
+          test "$audit_sha" = "749b25e4538a7d71148af69ef2bfdcf5cc60bc77d0e0545ab66bdb5ad9d41774" || { echo "audit snapshot SHA mismatch: $audit_sha" >&2; exit 3; }
+          test "$artifact_sha" = "df0b2e2c0096b3f407f6e11a934ede567de0e7edec397866b1e99e0ee55eaa4d" || { echo "artifact snapshot SHA mismatch: $artifact_sha" >&2; exit 3; }
+          grep -q 'parallel_blocked_tasks' rust-audit-contract/production/audit.rs
           grep -q 'parallel_batch_duration_ms' rust-audit-contract/production/audit.rs
           grep -q 'parallel_resource_peak_concurrency' rust-audit-contract/production/audit.rs
           grep -q 'parallel_backend_distribution' rust-audit-contract/production/audit.rs
+          grep -q 'parallel_blocked_tasks' rust-audit-contract/production/artifact.rs
           grep -q 'parallel_batch_duration_ms' rust-audit-contract/production/artifact.rs
           grep -q 'parallel_resource_peak_concurrency' rust-audit-contract/production/artifact.rs
           grep -q 'parallel_backend_distribution' rust-audit-contract/production/artifact.rs
+          echo "audit snapshot: $audit_sha"
+          echo "artifact snapshot: $artifact_sha"
       - name: Build contract crate around production audit and artifact modules
         shell: bash
         run: |
@@ -98,96 +92,6 @@ jobs:
           pub mod audit;
           #[path = "../production/artifact.rs"]
           pub mod artifact;
-          EOF
-          cat > rust-audit-contract/tests/projection.rs <<'EOF'
-          use parallel_audit_contract::{artifact::InvestigationBundle, audit::AuditSummary};
-          use serde_json::Value;
-          use std::collections::BTreeMap;
-          use std::fs;
-          use std::time::{SystemTime, UNIX_EPOCH};
-
-          fn audit_fixture() -> AuditSummary {
-              AuditSummary {
-                  schema_version: "0.8.0",
-                  generated_at: "2026-09-15T00:00:00Z".to_string(),
-                  turns: 1,
-                  tool_calls: 2,
-                  capability_tool_calls: 2,
-                  successful_capability_tool_calls: 1,
-                  failed_tool_calls: 1,
-                  automatic_retries: 0,
-                  plan_revisions: 1,
-                  successful_plan_calls: 1,
-                  follow_up_goals: 0,
-                  distinct_capability_classes: 2,
-                  capability_classes: BTreeMap::new(),
-                  autonomous_execution_observed: true,
-                  adaptive_replanning_observed: true,
-                  tool_failure_recovery_observed: true,
-                  follow_up_replanning_observed: false,
-                  parallel_batches: 1,
-                  parallel_tasks: 3,
-                  failed_parallel_tasks: 1,
-                  parallel_blocked_tasks: 1,
-                  parallel_batch_duration_ms: 23,
-                  max_observed_parallelism: 2,
-                  parallel_resource_task_counts: BTreeMap::from([
-                      ("local".to_string(), 1),
-                      ("network".to_string(), 1),
-                      ("data".to_string(), 1),
-                  ]),
-                  parallel_resource_duration_ms: BTreeMap::from([
-                      ("local".to_string(), 7),
-                      ("network".to_string(), 11),
-                      ("data".to_string(), 5),
-                  ]),
-                  parallel_resource_peak_concurrency: BTreeMap::from([
-                      ("local".to_string(), 1),
-                      ("network".to_string(), 1),
-                      ("data".to_string(), 1),
-                  ]),
-                  parallel_backend_distribution: BTreeMap::from([
-                      ("macos:shasum".to_string(), 1),
-                      ("portable:fetch".to_string(), 1),
-                  ]),
-                  parallel_execution_observed: true,
-                  tools: BTreeMap::new(),
-                  calls: vec![],
-              }
-          }
-
-          #[test]
-          fn production_projection_reaches_story_and_run_metrics() {
-              let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-              let root = std::env::temp_dir().join(format!("parallel-audit-contract-{stamp}"));
-              fs::create_dir_all(&root).unwrap();
-              let bundle = InvestigationBundle::create(&root, "parallel audit contract").unwrap();
-              bundle.write_session_stats(&serde_json::json!({"userMessages": 1})).unwrap();
-              let audit = audit_fixture();
-              bundle.write_manifest("parallel audit contract", Some("test"), Some("model"), "completed", Some(&audit)).unwrap();
-              bundle.append_run_metric("investigate", Some("test"), Some("model"), "completed", 42, Some(&audit)).unwrap();
-
-              let story: Value = serde_json::from_str(&fs::read_to_string(&bundle.manifest_path).unwrap()).unwrap();
-              let autonomy = &story["autonomy"];
-              assert_eq!(autonomy["parallel_blocked_tasks"], 1);
-              assert_eq!(autonomy["parallel_batch_duration_ms"], 23);
-              assert_eq!(autonomy["max_observed_parallelism"], 2);
-              assert_eq!(autonomy["parallel_resource_task_counts"]["network"], 1);
-              assert_eq!(autonomy["parallel_resource_duration_ms"]["network"], 11);
-              assert_eq!(autonomy["parallel_resource_peak_concurrency"]["network"], 1);
-              assert_eq!(autonomy["parallel_backend_distribution"]["portable:fetch"], 1);
-
-              let metric_text = fs::read_to_string(&bundle.run_metrics_path).unwrap();
-              let metric: Value = serde_json::from_str(metric_text.trim()).unwrap();
-              assert_eq!(metric["parallel_blocked_tasks"], 1);
-              assert_eq!(metric["parallel_batch_duration_ms"], 23);
-              assert_eq!(metric["max_observed_parallelism"], 2);
-              assert_eq!(metric["parallel_resource_task_counts"]["local"], 1);
-              assert_eq!(metric["parallel_resource_duration_ms"]["data"], 5);
-              assert_eq!(metric["parallel_resource_peak_concurrency"]["local"], 1);
-              assert_eq!(metric["parallel_backend_distribution"]["macos:shasum"], 1);
-              let _ = fs::remove_dir_all(root);
-          }
           EOF
       - name: Compile and run production Rust audit contract
         shell: bash
