@@ -85,6 +85,24 @@ export const TOOL_REGISTRY = Object.freeze({
       ]
     },
     {
+      "name": "newsroom_parallel_tasks",
+      "phase": "verify",
+      "capability_class": "synthesis",
+      "agent_visible": true,
+      "profiles": [
+        "full",
+        "competition",
+        "investigate",
+        "visual"
+      ],
+      "execution": {
+        "parallel": true,
+        "max_concurrency": 8,
+        "local_first_on_macos": true,
+        "mutating": false
+      }
+    },
+    {
       "name": "newsroom_visual_backend_status",
       "phase": "core",
       "capability_class": "meta",

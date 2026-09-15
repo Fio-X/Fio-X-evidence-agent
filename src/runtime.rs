@@ -44,6 +44,8 @@ const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publicatio
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
+const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
+const LOCAL_BACKEND_RUNTIME: &str = include_str!("../runtime/pi/local_backend.mjs");
 
 fn write_if_changed(path: &Path, content: &str) -> Result<()> {
     let should_write = match fs::read_to_string(path) {
@@ -120,6 +122,8 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let svg_security_path = runtime_dir.join("svg_security.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
+    let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
+    let local_backend_path = runtime_dir.join("local_backend.mjs");
     write_if_changed(&extension_path, NEWSROOM_EXTENSION)?;
     write_if_changed(&viz_path, VIZ_RUNTIME)?;
     write_if_changed(&cartography_path, CARTOGRAPHY_RUNTIME)?;
@@ -165,6 +169,8 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&svg_security_path, SVG_SECURITY_RUNTIME)?;
     write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
     write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
+    write_if_changed(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME)?;
+    write_if_changed(&local_backend_path, LOCAL_BACKEND_RUNTIME)?;
 
     Ok(extension_path)
 }
