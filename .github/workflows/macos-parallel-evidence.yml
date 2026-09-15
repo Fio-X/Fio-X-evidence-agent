@@ -1,0 +1,43 @@
+name: macOS Parallel Evidence
+
+on:
+  push:
+    branches: [import-current]
+    paths:
+      - 'runtime/pi/parallel_scheduler.mjs'
+      - 'runtime/pi/local_backend.mjs'
+      - 'scripts/macos_parallel_smoke.mjs'
+      - '.github/workflows/macos-parallel-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  evidence:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: import-current
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Run macOS smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence
+          node scripts/macos_parallel_smoke.mjs > ci-evidence/macos-parallel-smoke.json
+          cat ci-evidence/macos-parallel-smoke.json
+      - name: Commit successful evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ci-evidence/macos-parallel-smoke.json
+          git diff --cached --quiet && exit 0
+          git commit -m '[macos evidence] local-first parallel smoke passed'
+          git push origin HEAD:import-current
