@@ -1,9 +1,18 @@
 name: parallel-audit-contract
 
 on:
-  pull_request:
+  push:
     branches: [import-current]
+    paths:
+      - 'contracts/parallel-audit/**'
+      - 'src/audit.rs'
+      - 'src/artifact.rs'
+      - '.github/workflows/parallel-audit-contract.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
