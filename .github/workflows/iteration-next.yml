@@ -69,14 +69,10 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          OVERALL: ${{ (needs.scheduler-contract.result == 'success' && needs.source-shape.result == 'success') && 'success' || 'failure' }}
         run: |
           set -euo pipefail
           mkdir -p ci-evidence
-          if [ "$SCHEDULER_RESULT" = success ] && [ "$SOURCE_SHAPE_RESULT" = success ]; then
-            overall=success
-          else
-            overall=failure
-          fi
           python3 - <<'PY'
           import json, os
           payload = {
@@ -103,15 +99,6 @@ jobs:
               json.dump(payload, f, indent=2, sort_keys=True)
               f.write("\n")
           PY
-        env:
-          SCHEDULER_RESULT: ${{ needs.scheduler-contract.result }}
-          SOURCE_SHAPE_RESULT: ${{ needs.source-shape.result }}
-          EVALUATED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          OVERALL: ${{ (needs.scheduler-contract.result == 'success' && needs.source-shape.result == 'success') && 'success' || 'failure' }}
       - name: Upload CI evidence
         uses: actions/upload-artifact@v4
         with:
