@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, fnmatch, hashlib, json, shutil, subprocess, sys, tarfile, tempfile
-from pathlib import Path
+import argparse, fnmatch, hashlib, json, shutil, subprocess, sys, tarfile, tempfile, zipfile
+from pathlib import Path, PurePosixPath
 
 PLOTLY_SHA = '9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3'
 NATURAL_EARTH = {
@@ -23,11 +23,45 @@ GENERATED_EXCLUSIONS = [
     'target', 'node_modules', '.newsroom', 'outputs', '__pycache__', '**/__pycache__', '*.pyc', '**/*.pyc',
 ]
 
+
 def sha(path: Path) -> str:
     h=hashlib.sha256()
     with path.open('rb') as f:
         for chunk in iter(lambda:f.read(1024*1024), b''): h.update(chunk)
     return h.hexdigest()
+
+
+def excluded(rel: str, patterns: list[str]) -> bool:
+    for pattern in patterns:
+        pattern=pattern.replace('\\','/').rstrip('/')
+        if rel == pattern or rel.startswith(pattern + '/') or fnmatch.fnmatch(rel, pattern): return True
+    return False
+
+
+def should_copy(rel: str) -> bool:
+    if excluded(rel, GENERATED_EXCLUSIONS):
+        return False
+    if rel in PLOTLY_PATHS or rel in REGENERATED_V110:
+        return False
+    if rel in {f'fixtures/external/naturalearth_lowres/{name}' for name in NATURAL_EARTH}:
+        return False
+    return True
+
+
+def safe_rel(name: str, strip_prefix: str | None = None) -> str:
+    p=PurePosixPath(name)
+    if p.is_absolute() or '..' in p.parts:
+        raise SystemExit(f'unsafe archive member: {name}')
+    parts=list(p.parts)
+    if strip_prefix and parts and parts[0] == strip_prefix:
+        parts=parts[1:]
+    if not parts:
+        return ''
+    rel=PurePosixPath(*parts).as_posix()
+    if rel.startswith('../') or rel == '..':
+        raise SystemExit(f'unsafe archive member: {name}')
+    return rel
+
 
 def safe_members(tf: tarfile.TarFile):
     for m in tf.getmembers():
@@ -37,14 +71,17 @@ def safe_members(tf: tarfile.TarFile):
         if m.isfile():
             yield m
 
-def copy_missing_from_archive(root: Path, archive: Path) -> tuple[int,int]:
+
+def copy_missing_from_tar(root: Path, archive: Path) -> tuple[int,int]:
     copied=preserved=0
     with tempfile.TemporaryDirectory() as td:
         tmp=Path(td)
-        with tarfile.open(archive, 'r:xz') as tf:
+        with tarfile.open(archive, 'r:*') as tf:
             members=list(safe_members(tf)); tf.extractall(tmp, members=members, filter='data')
         for src in sorted(p for p in tmp.rglob('*') if p.is_file()):
-            rel=src.relative_to(tmp)
+            rel=src.relative_to(tmp).as_posix()
+            if not should_copy(rel):
+                continue
             dst=root/rel
             if dst.exists():
                 preserved += 1
@@ -52,6 +89,40 @@ def copy_missing_from_archive(root: Path, archive: Path) -> tuple[int,int]:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src,dst); copied += 1
     return copied,preserved
+
+
+def copy_missing_from_zip(root: Path, archive: Path) -> tuple[int,int]:
+    copied=preserved=0
+    with zipfile.ZipFile(archive) as zf:
+        infos=[i for i in zf.infolist() if not i.is_dir()]
+        top_parts={PurePosixPath(i.filename).parts[0] for i in infos if PurePosixPath(i.filename).parts}
+        strip_prefix=next(iter(top_parts)) if len(top_parts)==1 else None
+        final: dict[str, zipfile.ZipInfo] = {}
+        for info in infos:
+            rel=safe_rel(info.filename, strip_prefix)
+            if rel:
+                final[rel]=info
+        for rel in sorted(final):
+            if not should_copy(rel):
+                continue
+            dst=root/rel
+            if dst.exists():
+                preserved += 1
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(final[rel]) as src, dst.open('wb') as out:
+                shutil.copyfileobj(src,out)
+            copied += 1
+    return copied,preserved
+
+
+def copy_missing_from_archive(root: Path, archive: Path) -> tuple[int,int]:
+    if zipfile.is_zipfile(archive):
+        return copy_missing_from_zip(root, archive)
+    if tarfile.is_tarfile(archive):
+        return copy_missing_from_tar(root, archive)
+    raise SystemExit(f'unsupported source archive format: {archive}')
+
 
 def regenerate_v110(root: Path):
     generator = root/'scripts'/'build_v110_system_fixtures.py'
@@ -63,17 +134,13 @@ def regenerate_v110(root: Path):
         if actual != expected:
             raise SystemExit(f'regenerated fixture hash mismatch for {rel}: expected {expected}, got {actual}')
 
+
 def restore_file(src: Path, dst: Path, expected: str):
     actual=sha(src)
     if actual != expected: raise SystemExit(f'hash mismatch for {src}: expected {expected}, got {actual}')
     dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src,dst)
     if sha(dst) != expected: raise SystemExit(f'post-copy hash mismatch: {dst}')
 
-def excluded(rel: str, patterns: list[str]) -> bool:
-    for pattern in patterns:
-        pattern=pattern.replace('\\','/').rstrip('/')
-        if rel == pattern or rel.startswith(pattern + '/') or fnmatch.fnmatch(rel, pattern): return True
-    return False
 
 def release_tree(root: Path, manifest_rel: str, receipt_rel: str, exclusions: list[str]):
     rows=[]
@@ -85,6 +152,7 @@ def release_tree(root: Path, manifest_rel: str, receipt_rel: str, exclusions: li
     for rel,digest in rows:
         h.update(rel.encode('utf-8')); h.update(b'\0'); h.update(digest.encode('ascii')); h.update(b'\n')
     return rows,h.hexdigest()
+
 
 def main():
     ap=argparse.ArgumentParser()
@@ -102,7 +170,7 @@ def main():
     for name,digest in NATURAL_EARTH.items(): restore_file(ne/name, root/'fixtures/external/naturalearth_lowres'/name, digest)
     regenerate_v110(root)
     manifest={
-      'schema_version':'1.0.0',
+      'schema_version':'1.1.0',
       'import_strategy':'fill-missing-preserve-hardened-head',
       'file_count':0,
       'source_tree_sha256':'PENDING',
