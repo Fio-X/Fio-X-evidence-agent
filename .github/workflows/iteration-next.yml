@@ -52,6 +52,23 @@ jobs:
           test -f runtime/pi/local_backend.mjs
           test -f scripts/test_parallel_scheduler.mjs
           test -f docs/iteration-next-plan.md
+          test -f config/tool-registry.json
+          test -f config/backend-policy.json
+          test -f scripts/sync_backend_policy.py
+          test -f scripts/check_backend_policy.py
+      - name: Backend policy drift gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_backend_policy.py
+          tmp="$(mktemp)"
+          cp config/backend-policy.json "$tmp"
+          python3 scripts/sync_backend_policy.py
+          cmp -s "$tmp" config/backend-policy.json || {
+            echo 'backend-policy.json is not the deterministic generated projection of tool-registry.json' >&2
+            diff -u "$tmp" config/backend-policy.json || true
+            exit 2
+          }
 
   report-status:
     if: ${{ always() }}
@@ -75,6 +92,7 @@ jobs:
           mkdir -p ci-evidence
           python3 - <<'PY'
           import json, os
+          ok = os.environ["OVERALL"] == "success"
           payload = {
               "schema_version": "1.0.0",
               "workflow": "iteration-next",
@@ -93,7 +111,7 @@ jobs:
                   "scheduler-contract": os.environ["SCHEDULER_RESULT"],
                   "source-shape": os.environ["SOURCE_SHAPE_RESULT"]
               },
-              "completed_workstreams": ["T06", "T07"] if os.environ["OVERALL"] == "success" else []
+              "completed_workstreams": ["T06", "T07", "T08", "T10", "T12"] if ok else []
           }
           with open("ci-evidence/iteration-next-latest.json", "w", encoding="utf-8") as f:
               json.dump(payload, f, indent=2, sort_keys=True)
@@ -123,7 +141,7 @@ jobs:
               `- Target: \`macos-26\` / Tahoe 26.x / \`arm64\`\n` +
               `- Evaluated SHA: \`${sha}\`\n` +
               `- scheduler-contract: **${scheduler}**\n` +
-              `- source-shape: **${source}**\n` +
+              `- source-shape + backend-policy drift gate: **${source}**\n` +
               `- Machine-readable artifact: \`iteration-next-ci-evidence\`\n` +
               `- Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n` +
               `This comment is updated in place after each CI run.`;
