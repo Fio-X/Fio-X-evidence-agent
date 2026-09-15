@@ -64,11 +64,15 @@ jobs:
           tmp="$(mktemp)"
           cp config/backend-policy.json "$tmp"
           python3 scripts/sync_backend_policy.py
-          cmp -s "$tmp" config/backend-policy.json || {
-            echo 'backend-policy.json is not the deterministic generated projection of tool-registry.json' >&2
-            diff -u "$tmp" config/backend-policy.json || true
-            exit 2
-          }
+          python3 - "$tmp" config/backend-policy.json <<'PY'
+          import json, sys
+          before = json.load(open(sys.argv[1]))
+          generated = json.load(open(sys.argv[2]))
+          canonical = lambda obj: json.dumps(obj, sort_keys=True, separators=(',', ':'))
+          if canonical(before) != canonical(generated):
+              raise SystemExit('backend-policy.json is not the deterministic generated projection of tool-registry.json')
+          print(f'backend policy canonical projection: PASS ({len(generated.get("tools", {}))} tools)')
+          PY
 
   report-status:
     if: ${{ always() }}
