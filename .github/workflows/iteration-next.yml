@@ -10,10 +10,25 @@ permissions:
 
 jobs:
   scheduler-contract:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sw_vers -productVersion)"
+          build="$(sw_vers -buildVersion)"
+          arch="$(uname -m)"
+          echo "macOS version: $version"
+          echo "macOS build: $build"
+          echo "architecture: $arch"
+          case "$version" in
+            26.*) ;;
+            *) echo "Expected macOS 26.x Tahoe runner, got $version" >&2; exit 2 ;;
+          esac
+          test "$arch" = "arm64" || { echo "Expected arm64, got $arch" >&2; exit 2; }
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
