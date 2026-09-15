@@ -35,6 +35,8 @@ jobs:
           set -e
           cat /tmp/agentic-no-provider.out
           test "$code" -eq 64
+      - name: Visual browser/GPU normalization and blocker semantics
+        run: python3 scripts/test_visual_qualification_contract.py
       - name: Final release conjunction and blocker semantics
         run: python3 scripts/test_final_qualification_contract.py
       - name: Integration harness fails closed without provider configuration
