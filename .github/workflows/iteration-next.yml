@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   scheduler-contract:
@@ -50,3 +52,113 @@ jobs:
           test -f runtime/pi/local_backend.mjs
           test -f scripts/test_parallel_scheduler.mjs
           test -f docs/iteration-next-plan.md
+
+  report-status:
+    if: ${{ always() }}
+    needs: [scheduler-contract, source-shape]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Write machine-readable CI evidence
+        shell: bash
+        env:
+          SCHEDULER_RESULT: ${{ needs.scheduler-contract.result }}
+          SOURCE_SHAPE_RESULT: ${{ needs.source-shape.result }}
+          EVALUATED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence
+          if [ "$SCHEDULER_RESULT" = success ] && [ "$SOURCE_SHAPE_RESULT" = success ]; then
+            overall=success
+          else
+            overall=failure
+          fi
+          python3 - <<'PY'
+          import json, os
+          payload = {
+              "schema_version": "1.0.0",
+              "workflow": "iteration-next",
+              "overall": os.environ["OVERALL"],
+              "evaluated_sha": os.environ["EVALUATED_SHA"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "event_name": os.environ["EVENT_NAME"],
+              "pr_number": int(os.environ["PR_NUMBER"]) if os.environ.get("PR_NUMBER") else None,
+              "target_environment": {
+                  "runner": "macos-26",
+                  "os_family": "macOS Tahoe 26.x",
+                  "architecture": "arm64"
+              },
+              "jobs": {
+                  "scheduler-contract": os.environ["SCHEDULER_RESULT"],
+                  "source-shape": os.environ["SOURCE_SHAPE_RESULT"]
+              },
+              "completed_workstreams": ["T06", "T07"] if os.environ["OVERALL"] == "success" else []
+          }
+          with open("ci-evidence/iteration-next-latest.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f, indent=2, sort_keys=True)
+              f.write("\n")
+          PY
+        env:
+          SCHEDULER_RESULT: ${{ needs.scheduler-contract.result }}
+          SOURCE_SHAPE_RESULT: ${{ needs.source-shape.result }}
+          EVALUATED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          OVERALL: ${{ (needs.scheduler-contract.result == 'success' && needs.source-shape.result == 'success') && 'success' || 'failure' }}
+      - name: Upload CI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: iteration-next-ci-evidence
+          path: ci-evidence/iteration-next-latest.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Update PR status comment
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        env:
+          SCHEDULER_RESULT: ${{ needs.scheduler-contract.result }}
+          SOURCE_SHAPE_RESULT: ${{ needs.source-shape.result }}
+        with:
+          script: |
+            const marker = '<!-- iteration-next-ci-status -->';
+            const scheduler = process.env.SCHEDULER_RESULT;
+            const source = process.env.SOURCE_SHAPE_RESULT;
+            const overall = scheduler === 'success' && source === 'success' ? 'PASS' : 'FAIL';
+            const sha = context.payload.pull_request.head.sha;
+            const body = `${marker}\n### Iteration-next CI: ${overall}\n\n` +
+              `- Target: \`macos-26\` / Tahoe 26.x / \`arm64\`\n` +
+              `- Evaluated SHA: \`${sha}\`\n` +
+              `- scheduler-contract: **${scheduler}**\n` +
+              `- source-shape: **${source}**\n` +
+              `- Machine-readable artifact: \`iteration-next-ci-evidence\`\n` +
+              `- Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n` +
+              `This comment is updated in place after each CI run.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
