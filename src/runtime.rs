@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 const NEWSROOM_EXTENSION: &str = include_str!("../runtime/pi/newsroom.ts");
 const VIZ_RUNTIME: &str = include_str!("../runtime/pi/viz.mjs");
 const CARTOGRAPHY_RUNTIME: &str = include_str!("../runtime/pi/cartography.mjs");
-const CARTOGRAPHY_BASEMAP: &str = include_str!("../runtime/pi/assets/naturalearth-admin0-110m.geojson");
+const CARTOGRAPHY_BASEMAP: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin0-110m.geojson");
 const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
 const PROVENANCE_RUNTIME: &str = include_str!("../runtime/pi/provenance.mjs");
 const INFOGRAPHIC_RUNTIME: &str = include_str!("../runtime/pi/infographic.mjs");
@@ -21,7 +22,8 @@ const BACKEND_POLICY_RUNTIME: &str = include_str!("../runtime/pi/backend_policy.
 const MEASURE_SEMANTICS_RUNTIME: &str = include_str!("../runtime/pi/measure_semantics.mjs");
 const EDITORIAL_SEMANTICS_RUNTIME: &str = include_str!("../runtime/pi/editorial_semantics.mjs");
 const VISUAL_SKILL_BUNDLE_RUNTIME: &str = include_str!("../runtime/pi/visual_skill_bundle.mjs");
-const EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME: &str = include_str!("../runtime/pi/editorial_design_system_bundle.mjs");
+const EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME: &str =
+    include_str!("../runtime/pi/editorial_design_system_bundle.mjs");
 const RASTERIZE_RUNTIME: &str = include_str!("../runtime/pi/rasterize_svg.py");
 const PUBLICATION_RUNTIME: &str = include_str!("../runtime/pi/publication.mjs");
 const PLOTLY_EDITORIAL_RUNTIME: &str = include_str!("../runtime/pi/plotly_editorial.mjs");
@@ -30,7 +32,8 @@ const PLOTLY_VENDOR_RUNTIME: &str = include_str!("../runtime/pi/vendor/plotly-3.
 const BROWSER_QA_RUNTIME: &str = include_str!("../runtime/pi/browser_qa.py");
 const NETWORKX_ANALYZE_RUNTIME: &str = include_str!("../runtime/pi/networkx_analyze.py");
 const NETWORKX_REDUCE_RUNTIME: &str = include_str!("../runtime/pi/networkx_reduce.py");
-const SCIENTIFIC_BASEMAP_PREPARE_RUNTIME: &str = include_str!("../runtime/pi/scientific_basemap_prepare.py");
+const SCIENTIFIC_BASEMAP_PREPARE_RUNTIME: &str =
+    include_str!("../runtime/pi/scientific_basemap_prepare.py");
 const MODEL_SPEC_RUNTIME: &str = include_str!("../runtime/pi/model_spec.mjs");
 const STYLE_MAPPING_RUNTIME: &str = include_str!("../runtime/pi/style_mapping.mjs");
 const MAP_SPEC_RUNTIME: &str = include_str!("../runtime/pi/map_spec.mjs");
@@ -56,15 +59,23 @@ fn write_if_changed(path: &Path, content: &str) -> Result<()> {
 
 pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let runtime_dir = artifact_dir.join("runtime");
-    fs::create_dir_all(&runtime_dir)
-        .with_context(|| format!("failed to create runtime directory: {}", runtime_dir.display()))?;
+    fs::create_dir_all(&runtime_dir).with_context(|| {
+        format!(
+            "failed to create runtime directory: {}",
+            runtime_dir.display()
+        )
+    })?;
 
     let extension_path = runtime_dir.join("newsroom.ts");
     let viz_path = runtime_dir.join("viz.mjs");
     let cartography_path = runtime_dir.join("cartography.mjs");
     let assets_dir = runtime_dir.join("assets");
-    fs::create_dir_all(&assets_dir)
-        .with_context(|| format!("failed to create runtime assets directory: {}", assets_dir.display()))?;
+    fs::create_dir_all(&assets_dir).with_context(|| {
+        format!(
+            "failed to create runtime assets directory: {}",
+            assets_dir.display()
+        )
+    })?;
     let cartography_basemap_path = assets_dir.join("naturalearth-admin0-110m.geojson");
     let net_path = runtime_dir.join("net.mjs");
     let provenance_path = runtime_dir.join("provenance.mjs");
@@ -81,13 +92,19 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let measure_semantics_path = runtime_dir.join("measure_semantics.mjs");
     let editorial_semantics_path = runtime_dir.join("editorial_semantics.mjs");
     let visual_skill_bundle_path = runtime_dir.join("visual_skill_bundle.mjs");
-    let editorial_design_system_bundle_path = runtime_dir.join("editorial_design_system_bundle.mjs");
+    let editorial_design_system_bundle_path =
+        runtime_dir.join("editorial_design_system_bundle.mjs");
     let rasterize_path = runtime_dir.join("rasterize_svg.py");
     let publication_path = runtime_dir.join("publication.mjs");
     let plotly_editorial_path = runtime_dir.join("plotly_editorial.mjs");
     let d3_editorial_path = runtime_dir.join("d3_editorial.mjs");
     let vendor_dir = runtime_dir.join("vendor");
-    fs::create_dir_all(&vendor_dir).with_context(|| format!("failed to create runtime vendor directory: {}", vendor_dir.display()))?;
+    fs::create_dir_all(&vendor_dir).with_context(|| {
+        format!(
+            "failed to create runtime vendor directory: {}",
+            vendor_dir.display()
+        )
+    })?;
     let plotly_vendor_path = vendor_dir.join("plotly-3.3.1.min.js");
     let browser_qa_path = runtime_dir.join("browser_qa.py");
     let networkx_analyze_path = runtime_dir.join("networkx_analyze.py");
@@ -122,7 +139,10 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&measure_semantics_path, MEASURE_SEMANTICS_RUNTIME)?;
     write_if_changed(&editorial_semantics_path, EDITORIAL_SEMANTICS_RUNTIME)?;
     write_if_changed(&visual_skill_bundle_path, VISUAL_SKILL_BUNDLE_RUNTIME)?;
-    write_if_changed(&editorial_design_system_bundle_path, EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME)?;
+    write_if_changed(
+        &editorial_design_system_bundle_path,
+        EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME,
+    )?;
     write_if_changed(&rasterize_path, RASTERIZE_RUNTIME)?;
     write_if_changed(&publication_path, PUBLICATION_RUNTIME)?;
     write_if_changed(&plotly_editorial_path, PLOTLY_EDITORIAL_RUNTIME)?;
@@ -131,7 +151,10 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&browser_qa_path, BROWSER_QA_RUNTIME)?;
     write_if_changed(&networkx_analyze_path, NETWORKX_ANALYZE_RUNTIME)?;
     write_if_changed(&networkx_reduce_path, NETWORKX_REDUCE_RUNTIME)?;
-    write_if_changed(&scientific_basemap_prepare_path, SCIENTIFIC_BASEMAP_PREPARE_RUNTIME)?;
+    write_if_changed(
+        &scientific_basemap_prepare_path,
+        SCIENTIFIC_BASEMAP_PREPARE_RUNTIME,
+    )?;
     write_if_changed(&model_spec_path, MODEL_SPEC_RUNTIME)?;
     write_if_changed(&style_mapping_path, STYLE_MAPPING_RUNTIME)?;
     write_if_changed(&map_spec_path, MAP_SPEC_RUNTIME)?;

@@ -74,5 +74,8 @@ pub fn capability_class(name: &str) -> Option<&'static str> {
 }
 
 pub fn is_capability_class(class: Option<&str>) -> bool {
-    matches!(class, Some("discovery" | "computation" | "evidence" | "synthesis" | "visual" | "publication"))
+    matches!(
+        class,
+        Some("discovery" | "computation" | "evidence" | "synthesis" | "visual" | "publication")
+    )
 }

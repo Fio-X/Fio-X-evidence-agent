@@ -20,14 +20,45 @@ pub async fn run(args: InspectArgs) -> Result<()> {
     println!("plan revisions {}", audit.plan_revisions);
     println!("tool calls      {}", audit.tool_calls);
     println!("capability calls {}", audit.capability_tool_calls);
-    println!("successful capability calls {}", audit.successful_capability_tool_calls);
+    println!(
+        "successful capability calls {}",
+        audit.successful_capability_tool_calls
+    );
     println!("capability classes {}", audit.distinct_capability_classes);
     println!("tool failures    {}", audit.failed_tool_calls);
     println!("auto retries     {}", audit.automatic_retries);
-    println!("autonomous loop  {}", if audit.autonomous_execution_observed { "observed" } else { "insufficient evidence" });
-    println!("adaptive replan  {}", if audit.adaptive_replanning_observed { "observed" } else { "not observed" });
-    println!("failure recovery {}", if audit.tool_failure_recovery_observed { "observed" } else { "not observed" });
-    println!("follow-up replan {}", if audit.follow_up_replanning_observed { "observed" } else { "not observed" });
+    println!(
+        "autonomous loop  {}",
+        if audit.autonomous_execution_observed {
+            "observed"
+        } else {
+            "insufficient evidence"
+        }
+    );
+    println!(
+        "adaptive replan  {}",
+        if audit.adaptive_replanning_observed {
+            "observed"
+        } else {
+            "not observed"
+        }
+    );
+    println!(
+        "failure recovery {}",
+        if audit.tool_failure_recovery_observed {
+            "observed"
+        } else {
+            "not observed"
+        }
+    );
+    println!(
+        "follow-up replan {}",
+        if audit.follow_up_replanning_observed {
+            "observed"
+        } else {
+            "not observed"
+        }
+    );
     if let Ok(text) = fs::read_to_string(&bundle.run_metrics_path) {
         let durations: Vec<u64> = text
             .lines()
@@ -38,7 +69,10 @@ pub async fn run(args: InspectArgs) -> Result<()> {
             let total: u64 = durations.iter().sum();
             println!("agent runs       {}", durations.len());
             println!("agent wall ms    {total}");
-            println!("latest run ms    {}", durations.last().copied().unwrap_or(0));
+            println!(
+                "latest run ms    {}",
+                durations.last().copied().unwrap_or(0)
+            );
         }
     }
     for (label, pointer) in [
@@ -48,7 +82,11 @@ pub async fn run(args: InspectArgs) -> Result<()> {
         ("claims", "/evidence/claims"),
         ("visualizations", "/evidence/visualizations"),
     ] {
-        let count = story.pointer(pointer).and_then(Value::as_array).map(|v| v.len()).unwrap_or(0);
+        let count = story
+            .pointer(pointer)
+            .and_then(Value::as_array)
+            .map(|v| v.len())
+            .unwrap_or(0);
         println!("{label:16} {count}");
     }
     if !audit.tools.is_empty() {

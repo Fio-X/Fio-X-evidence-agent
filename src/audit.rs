@@ -174,7 +174,9 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
         if is_capability_class(call.capability_class) {
             capability_tool_calls += 1;
             if let Some(class) = call.capability_class {
-                *capability_classes.entry(class.to_string()).or_insert(0usize) += 1;
+                *capability_classes
+                    .entry(class.to_string())
+                    .or_insert(0usize) += 1;
             }
             if call.is_error == Some(false) {
                 successful_capability_tool_calls += 1;
@@ -263,7 +265,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn build_fixture(events: Vec<Value>) -> AuditSummary {
-        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let root = std::env::temp_dir().join(format!("newsroom-audit-{stamp}"));
         fs::create_dir_all(&root).unwrap();
         let events_path = root.join("events.jsonl");

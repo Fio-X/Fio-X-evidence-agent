@@ -95,7 +95,11 @@ pub struct InvestigateArgs {
     pub topic: Vec<String>,
 
     /// Directory where investigation bundles are stored.
-    #[arg(long, env = "NEWSROOM_ARTIFACTS_DIR", default_value = ".newsroom/artifacts")]
+    #[arg(
+        long,
+        env = "NEWSROOM_ARTIFACTS_DIR",
+        default_value = ".newsroom/artifacts"
+    )]
     pub out: PathBuf,
 
     /// Seed a local CSV, JSON, JSONL, TSV, or Parquet file into the investigation. Repeat for multiple files.
