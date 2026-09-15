@@ -1,0 +1,169 @@
+is_dir() {
+                walk(root, &path, values)?;
+            } else if entry.file_type()?.is_file() {
+                if let Ok(relative) = path.strip_prefix(root) {
+                    values.push(relative.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let mut values = Vec::new();
+    walk(root, &root.join(child), &mut values)?;
+    values.sort();
+    Ok(values)
+}
+
+fn read_claims(path: &Path) -> Result<Vec<Value>> {
+    if !path.is_file() {
+        return Ok(vec![]);
+    }
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut values = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_str(&line) {
+            values.push(value);
+        }
+    }
+    Ok(values)
+}
+
+pub fn slugify(input: &str) -> String {
+    let mut out = String::with_capacity(input.len().min(64));
+    let mut last_dash = false;
+
+    for c in input.chars() {
+        if out.len() >= 64 {
+            break;
+        }
+
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+
+    while out.ends_with('-') {
+        out.pop();
+    }
+
+    if out.is_empty() {
+        "story".to_string()
+    } else {
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{slugify, InvestigationBundle};
+    use crate::audit::AuditSummary;
+    use serde_json::Value;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn parallel_audit_fixture() -> AuditSummary {
+        AuditSummary {
+            schema_version: "0.8.0",
+            generated_at: "2026-09-15T00:00:00Z".to_string(),
+            turns: 1,
+            tool_calls: 2,
+            capability_tool_calls: 2,
+            successful_capability_tool_calls: 1,
+            failed_tool_calls: 1,
+            automatic_retries: 0,
+            plan_revisions: 1,
+            successful_plan_calls: 1,
+            follow_up_goals: 0,
+            distinct_capability_classes: 2,
+            capability_classes: BTreeMap::new(),
+            autonomous_execution_observed: true,
+            adaptive_replanning_observed: true,
+            tool_failure_recovery_observed: true,
+            follow_up_replanning_observed: false,
+            parallel_batches: 1,
+            parallel_tasks: 3,
+            failed_parallel_tasks: 1,
+            parallel_blocked_tasks: 1,
+            parallel_batch_duration_ms: 23,
+            max_observed_parallelism: 2,
+            parallel_resource_task_counts: BTreeMap::from([
+                ("local".to_string(), 1),
+                ("network".to_string(), 1),
+                ("data".to_string(), 1),
+            ]),
+            parallel_resource_duration_ms: BTreeMap::from([
+                ("local".to_string(), 7),
+                ("network".to_string(), 11),
+                ("data".to_string(), 5),
+            ]),
+            parallel_resource_peak_concurrency: BTreeMap::from([
+                ("local".to_string(), 1),
+                ("network".to_string(), 1),
+                ("data".to_string(), 1),
+            ]),
+            parallel_backend_distribution: BTreeMap::from([
+                ("macos:shasum".to_string(), 1),
+                ("portable:fetch".to_string(), 1),
+            ]),
+            parallel_execution_observed: true,
+            tools: BTreeMap::new(),
+            calls: vec![],
+        }
+    }
+
+    #[test]
+    fn slugifies_ascii_topic() {
+        assert_eq!(slugify("US Electricity Prices 2026"), "us-electricity-prices-2026");
+    }
+
+    #[test]
+    fn falls_back_for_non_ascii_topic() {
+        assert_eq!(slugify("全球电价"), "story");
+    }
+
+    #[test]
+    fn parallel_metrics_are_projected_to_manifest_and_run_metrics() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("newsroom-artifact-{stamp}"));
+        fs::create_dir_all(&root).unwrap();
+        let bundle = InvestigationBundle::create(&root, "parallel metrics fixture").unwrap();
+        bundle.write_session_stats(&serde_json::json!({"userMessages": 1})).unwrap();
+        let audit = parallel_audit_fixture();
+
+        bundle.write_manifest("parallel metrics fixture", Some("test"), Some("model"), "completed", Some(&audit)).unwrap();
+        bundle.append_run_metric("investigate", Some("test"), Some("model"), "completed", 42, Some(&audit)).unwrap();
+
+        let story: Value = serde_json::from_str(&fs::read_to_string(&bundle.manifest_path).unwrap()).unwrap();
+        let autonomy = &story["autonomy"];
+        assert_eq!(autonomy["parallel_blocked_tasks"], 1);
+        assert_eq!(autonomy["parallel_batch_duration_ms"], 23);
+        assert_eq!(autonomy["max_observed_parallelism"], 2);
+        assert_eq!(autonomy["parallel_resource_task_counts"]["network"], 1);
+        assert_eq!(autonomy["parallel_resource_duration_ms"]["network"], 11);
+        assert_eq!(autonomy["parallel_resource_peak_concurrency"]["network"], 1);
+        assert_eq!(autonomy["parallel_backend_distribution"]["portable:fetch"], 1);
+
+        let metric_line = fs::read_to_string(&bundle.run_metrics_path).unwrap();
+        let metric: Value = serde_json::from_str(metric_line.trim()).unwrap();
+        assert_eq!(metric["parallel_blocked_tasks"], 1);
+        assert_eq!(metric["parallel_batch_duration_ms"], 23);
+        assert_eq!(metric["max_observed_parallelism"], 2);
+        assert_eq!(metric["parallel_resource_task_counts"]["local"], 1);
+        assert_eq!(metric["parallel_resource_duration_ms"]["data"], 5);
+        assert_eq!(metric["parallel_resource_peak_concurrency"]["local"], 1);
+        assert_eq!(metric["parallel_backend_distribution"]["macos:shasum"], 1);
+
+        let _ = fs::remove_dir_all(root);
+    }
+}
