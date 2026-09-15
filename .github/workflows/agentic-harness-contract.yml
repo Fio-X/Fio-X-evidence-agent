@@ -1,0 +1,34 @@
+name: agentic-harness-contract
+
+on:
+  pull_request:
+    branches: [import-current]
+    paths:
+      - 'scripts/evaluate_agentic_artifact.py'
+      - 'scripts/agentic_trials.py'
+      - 'scripts/test_agentic_qualification_harness.py'
+      - 'scripts/agentic_qualification.sh'
+      - 'config/tool-registry.json'
+      - '.github/workflows/agentic-harness-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate evaluator and repeated-trial reliability contract
+        run: python3 scripts/test_agentic_qualification_harness.py
+      - name: Assert live harness remains fail-closed without provider configuration
+        shell: bash
+        run: |
+          set +e
+          env -u NEWSROOM_PROVIDER -u NEWSROOM_MODEL bash scripts/agentic_qualification.sh >/tmp/agentic-no-provider.out 2>&1
+          code=$?
+          set -e
+          cat /tmp/agentic-no-provider.out
+          test "$code" -eq 64
