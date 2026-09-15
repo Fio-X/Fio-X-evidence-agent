@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, fnmatch, hashlib, json, shutil, tarfile, tempfile
+import argparse, fnmatch, hashlib, json, shutil, subprocess, sys, tarfile, tempfile
 from pathlib import Path
 
 PLOTLY_SHA = '9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3'
@@ -8,6 +8,10 @@ NATURAL_EARTH = {
     'naturalearth_lowres.dbf': 'd2ae1c99adcf8e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1',
     'naturalearth_lowres.shp': '08e341606e8391e458c3f08deb312de664b56bfae376064c5aa0aee6681a5f55',
     'naturalearth_lowres.shx': '8b0be2ad97dd484aee5c2ebc98697d5372e832b8ae58a35a661aeef6b985668d',
+}
+REGENERATED_V110 = {
+    'fixtures/v110-systems/large-network-5000.json': '5d0112b3493b62a5a9ba738f46e0533151074ac911f0028e64828a8bb0fb1dee',
+    'fixtures/v110-systems/world-outline.json': '0adf5b7a8af2cae68f5a13ae427861bbe332235405b117e51028681a9f028ca0',
 }
 PLOTLY_PATHS = [
     'runtime/pi/vendor/plotly-3.3.1.min.js',
@@ -49,6 +53,16 @@ def copy_missing_from_archive(root: Path, archive: Path) -> tuple[int,int]:
             shutil.copy2(src,dst); copied += 1
     return copied,preserved
 
+def regenerate_v110(root: Path):
+    generator = root/'scripts'/'build_v110_system_fixtures.py'
+    if not generator.is_file():
+        raise SystemExit(f'missing v110 fixture generator: {generator}')
+    subprocess.run([sys.executable, str(generator)], cwd=root, check=True)
+    for rel, expected in REGENERATED_V110.items():
+        actual = sha(root/rel)
+        if actual != expected:
+            raise SystemExit(f'regenerated fixture hash mismatch for {rel}: expected {expected}, got {actual}')
+
 def restore_file(src: Path, dst: Path, expected: str):
     actual=sha(src)
     if actual != expected: raise SystemExit(f'hash mismatch for {src}: expected {expected}, got {actual}')
@@ -86,6 +100,7 @@ def main():
     copied,preserved=copy_missing_from_archive(root,archive)
     for rel in PLOTLY_PATHS: restore_file(plotly, root/rel, PLOTLY_SHA)
     for name,digest in NATURAL_EARTH.items(): restore_file(ne/name, root/'fixtures/external/naturalearth_lowres'/name, digest)
+    regenerate_v110(root)
     manifest={
       'schema_version':'1.0.0',
       'import_strategy':'fill-missing-preserve-hardened-head',
@@ -102,6 +117,7 @@ def main():
         **{f'fixtures/external/naturalearth_lowres/{k}':v for k,v in NATURAL_EARTH.items()},
       },
       'generated_visuals_excluded':True,
+      'regenerated_fixture_hashes':REGENERATED_V110,
       'materialization':{'copied_missing_files':copied,'preserved_existing_files':preserved},
     }
     rows,digest=release_tree(root,args.manifest,manifest['source_archive']['verification_evidence'],manifest['excluded_paths'])
