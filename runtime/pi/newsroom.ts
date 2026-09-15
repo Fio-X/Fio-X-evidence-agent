@@ -27,6 +27,8 @@ import { readBodyBytes, readBodyText } from "./net.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
+import { runTaskDag } from "./parallel_scheduler.mjs";
+import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const MAX_QUERY_BYTES = 1_000_000;
@@ -928,6 +930,83 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       return textResult(JSON.stringify({ row_count: rows.length, rows, artifact: path }, null, 2), {
         rowCount: rows.length,
         path,
+      });
+    },
+  });
+
+  registerScopedTool(pi, {
+    name: "newsroom_parallel_tasks",
+    label: "Run parallel local evidence tasks",
+    description: "Run a bounded DAG of read-only local evidence tasks through the hardened scheduler and macOS-aware local backend. This tool never performs network access, mutation, arbitrary shell execution, or nested Pi-tool calls.",
+    promptSnippet: "Run bounded parallel local evidence reads",
+    promptGuidelines: [
+      "Use only for independent local evidence reads; use duckdb_query, fetch_url, or download_data directly when their dedicated safety and provenance controls are required.",
+    ],
+    parameters: Type.Object({
+      tasks: Type.Array(Type.Object({
+        id: Type.String({ minLength: 1 }),
+        kind: StringEnum(["local_hash", "local_text", "local_metadata", "local_image_info", "local_search", "sqlite_query"] as const),
+        depends_on: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 64 })),
+        write_scope: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 16 })),
+        path: Type.Optional(Type.String({ minLength: 1 })),
+        query: Type.Optional(Type.String({ minLength: 1 })),
+        sql: Type.Optional(Type.String({ minLength: 1 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
+      }), { minItems: 1, maxItems: 64 }),
+      max_concurrency: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })),
+    }),
+    async execute(_id, params) {
+      const root = artifactRoot();
+      if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for newsroom_parallel_tasks");
+      if (!Array.isArray(params.tasks) || params.tasks.length === 0 || params.tasks.length > 64) {
+        throw new Error("tasks must contain between 1 and 64 items");
+      }
+      const maxConcurrency = clampInt(params.max_concurrency, 1, 8, 8);
+      const tasks = params.tasks.map((task: any) => ({
+        id: task.id,
+        kind: task.kind,
+        ...(task.depends_on === undefined ? {} : { depends_on: task.depends_on }),
+        ...(task.write_scope === undefined ? {} : { write_scope: task.write_scope }),
+        ...(task.path === undefined ? {} : { path: task.path }),
+        ...(task.query === undefined ? {} : { query: task.query }),
+        ...(task.sql === undefined ? {} : { sql: task.sql }),
+        ...(task.limit === undefined ? {} : { limit: task.limit }),
+      }));
+      const result = await runTaskDag(tasks, async (task: any) => {
+        const required = (field: string) => {
+          const value = task[field];
+          if (typeof value !== "string" || !value.trim()) {
+            throw new Error(`task ${task.id}: ${field} is required for ${task.kind}`);
+          }
+          return value;
+        };
+        switch (task.kind) {
+          case "local_hash":
+            return localHash(required("path"));
+          case "local_text":
+            return localText(required("path"));
+          case "local_metadata":
+            return localMetadata(required("path"));
+          case "local_image_info":
+            return localImageInfo(required("path"));
+          case "local_search":
+            return localSpotlight(required("query"), { limit: clampInt(task.limit, 1, 200, 50) });
+          case "sqlite_query":
+            return localSqliteQuery(required("path"), required("sql"));
+          default:
+            throw new Error(`task ${task.id}: unsupported read-only local task kind ${task.kind}`);
+        }
+      }, {
+        artifactRoot: root,
+        maxConcurrency,
+        emit: async (event: unknown) => {
+          await appendArtifact("runtime/parallel-events.jsonl", event);
+        },
+      });
+      return textResult(JSON.stringify(result, null, 2), {
+        result,
+        eventPath: "runtime/parallel-events.jsonl",
+        maxConcurrency,
       });
     },
   });

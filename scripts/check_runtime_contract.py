@@ -15,6 +15,11 @@ registry = json.loads((ROOT / 'config' / 'tool-registry.json').read_text(encodin
 registry_tools = [row['name'] for row in registry.get('tools', [])]
 registered_tools = re.findall(r'registerScopedTool\s*\(\s*pi\s*,\s*\{\s*name:\s*"([^"]+)"', extension, re.S)
 generated_rust = (ROOT / 'src' / 'tool_registry.rs').read_text(encoding='utf-8')
+
+def has_materializer_call(path_var, const):
+    pattern = rf'write_if_changed\(\s*&{re.escape(path_var)}\s*,\s*{re.escape(const)}\s*,?\s*\)'
+    return re.search(pattern, runtime, re.S) is not None
+
 allow_match = re.search(r'pub const NEWSROOM_TOOLS: &str = "([^"]+)"', generated_rust)
 if not allow_match:
     raise SystemExit('generated Rust Pi allowlist constant not found')
@@ -65,26 +70,37 @@ if 'adaptive_replanning_observed' not in audit or 'autonomous_execution_observed
 for core_tool in ['artifact_inventory','news_search','fetch_url','download_data','duckdb_query','record_claim']:
     if core_tool not in generated_rust:
         raise SystemExit(f'{core_tool} missing from generated Rust capability classifier')
-if 'include_str!("../runtime/pi/tool_registry.mjs")' not in runtime or 'write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)' not in runtime:
+if 'include_str!("../runtime/pi/tool_registry.mjs")' not in runtime or not has_materializer_call('tool_registry_path', 'TOOL_REGISTRY_RUNTIME'):
     raise SystemExit('generated tool_registry.mjs is not embedded/materialized')
+
+for module, const, path_var in [
+    ('parallel_scheduler.mjs', 'PARALLEL_SCHEDULER_RUNTIME', 'parallel_scheduler_path'),
+    ('local_backend.mjs', 'LOCAL_BACKEND_RUNTIME', 'local_backend_path'),
+]:
+    if f'include_str!("../runtime/pi/{module}")' not in runtime:
+        raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
+    if not has_materializer_call(path_var, const):
+        raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
+    if f'./{module}' not in extension:
+        raise SystemExit(f'newsroom.ts does not import required runtime module {module}')
 
 if 'include_str!("../runtime/pi/viz.mjs")' not in runtime:
     raise SystemExit('viz.mjs is not embedded in the Rust runtime materializer')
-if 'write_if_changed(&viz_path, VIZ_RUNTIME)' not in runtime:
+if not has_materializer_call('viz_path', 'VIZ_RUNTIME'):
     raise SystemExit('viz.mjs is embedded but not materialized beside newsroom.ts')
 
 if 'include_str!("../runtime/pi/cartography.mjs")' not in runtime:
     raise SystemExit('cartography.mjs is not embedded in the Rust runtime materializer')
 if 'include_str!("../runtime/pi/assets/naturalearth-admin0-110m.geojson")' not in runtime:
     raise SystemExit('Natural Earth cartography basemap is not embedded in the Rust runtime materializer')
-if 'write_if_changed(&cartography_path, CARTOGRAPHY_RUNTIME)' not in runtime or 'write_if_changed(&cartography_basemap_path, CARTOGRAPHY_BASEMAP)' not in runtime:
+if not has_materializer_call('cartography_path', 'CARTOGRAPHY_RUNTIME') or not has_materializer_call('cartography_basemap_path', 'CARTOGRAPHY_BASEMAP'):
     raise SystemExit('cartography runtime/assets are embedded but not materialized')
 if './cartography.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import required runtime module cartography.mjs')
 for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('provenance.mjs', 'PROVENANCE_RUNTIME', 'provenance_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
-    if f'write_if_changed(&{path_var}, {const})' not in runtime:
+    if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
     if f'./{module}' not in extension:
         raise SystemExit(f'newsroom.ts does not import required runtime module {module}')
@@ -93,7 +109,7 @@ for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('proven
 for module, const, path_var in [('visual_backends.mjs', 'VISUAL_BACKENDS_RUNTIME', 'visual_backends_path'), ('backend_policy.mjs', 'BACKEND_POLICY_RUNTIME', 'backend_policy_path'), ('story_graph.mjs', 'STORY_GRAPH_RUNTIME', 'story_graph_path'), ('measure_semantics.mjs', 'MEASURE_SEMANTICS_RUNTIME', 'measure_semantics_path'), ('editorial_semantics.mjs', 'EDITORIAL_SEMANTICS_RUNTIME', 'editorial_semantics_path'), ('visual_skill_bundle.mjs', 'VISUAL_SKILL_BUNDLE_RUNTIME', 'visual_skill_bundle_path'), ('editorial_design_system_bundle.mjs', 'EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME', 'editorial_design_system_bundle_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
-    if f'write_if_changed(&{path_var}, {const})' not in runtime:
+    if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
 if './visual_backends.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import visual_backends.mjs')
@@ -111,7 +127,7 @@ for name in ['measure_semantics.mjs', 'editorial_semantics.mjs']:
 
 if 'include_str!("../runtime/pi/explanatory.mjs")' not in runtime:
     raise SystemExit('explanatory.mjs is not embedded in the Rust runtime materializer')
-if 'write_if_changed(&explanatory_path, EXPLANATORY_RUNTIME)' not in runtime:
+if not has_materializer_call('explanatory_path', 'EXPLANATORY_RUNTIME'):
     raise SystemExit('explanatory.mjs is embedded but not materialized beside newsroom.ts')
 if './explanatory.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import required runtime module explanatory.mjs')
@@ -122,7 +138,7 @@ for marker in ['renderExplanatoryBundle', 'lintExplanatorySpec', 'critiqueExplan
 
 if 'include_str!("../runtime/pi/infographic.mjs")' not in runtime:
     raise SystemExit('infographic.mjs is not embedded in the Rust runtime materializer')
-if 'write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)' not in runtime:
+if not has_materializer_call('infographic_path', 'INFOGRAPHIC_RUNTIME'):
     raise SystemExit('infographic.mjs is embedded but not materialized beside newsroom.ts')
 if './infographic.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import required runtime module infographic.mjs')
@@ -130,7 +146,7 @@ if './infographic.mjs' not in extension:
 for module, const, path_var in [('illustration.mjs', 'ILLUSTRATION_RUNTIME', 'illustration_path'), ('vision.mjs', 'VISION_RUNTIME', 'vision_path'), ('competition.mjs', 'COMPETITION_RUNTIME', 'competition_path'), ('editorial.mjs', 'EDITORIAL_RUNTIME', 'editorial_path'), ('art_direction.mjs', 'ART_DIRECTION_RUNTIME', 'art_direction_path'), ('rasterize_svg.py', 'RASTERIZE_RUNTIME', 'rasterize_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
-    if f'write_if_changed(&{path_var}, {const})' not in runtime:
+    if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
 if './illustration.mjs' not in extension or './vision.mjs' not in extension or './competition.mjs' not in extension or './editorial.mjs' not in extension or './art_direction.mjs' not in extension:
     raise SystemExit('newsroom.ts is missing rich illustration, vision, competition, editorial, or art-direction runtime imports')
@@ -173,7 +189,7 @@ for module, const, path_var in [
 ]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
-    if f'write_if_changed(&{path_var}, {const})' not in runtime:
+    if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
 for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs']:
     if f'./{module}' not in extension:
