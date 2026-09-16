@@ -4,21 +4,70 @@ on:
   push:
     branches: [qualification-probe-20260916]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: macos-26
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 801e8a309f4a81b2054bfdacb9a6b09ec5e6b743
-      - name: T02 source integrity
-        run: python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
-      - name: T03 lock presence
+          ref: c197b6ffdf2e159a1f325744e6186c45aabcccfd
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
         run: |
-          test -s Cargo.lock
-          test -s runtime/web/package-lock.json
-          test -s runtime/sigma/package-lock.json
-          test -s runtime/map/package-lock.json
-          test -s runtime/d3/package-lock.json
-      - name: T18 browser capability
-        run: python3 scripts/test_macos_browser_capability.py || true
+          set -euo pipefail
+          case "$(sw_vers -productVersion)" in 26.*) ;; *) exit 2 ;; esac
+          test "$(uname -m)" = arm64
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install pinned Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+          rustup run 1.98.1 rustc --version
+          rustup run 1.98.1 cargo --version
+      - name: T02 source integrity
+        shell: bash
+        run: python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: T03 dependency locks and Cargo qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          for lock in Cargo.lock runtime/web/package-lock.json runtime/sigma/package-lock.json runtime/map/package-lock.json runtime/d3/package-lock.json; do
+            test -s "$lock"
+          done
+          python3 scripts/verify_dependency_locks.py
+          rustup run 1.98.1 cargo fmt --all -- --check
+          rustup run 1.98.1 cargo check --all-targets --locked
+          rustup run 1.98.1 cargo test --all-targets --locked
+      - name: T04 full local-first backend matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test_parallel_scheduler.mjs
+          node scripts/macos_parallel_smoke.mjs | tee /tmp/macos-local-first.json
+      - name: T18 browser CPU and WebGL capability evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_macos_browser_capability.py
+          mkdir -p outputs
+          python3 scripts/normalize_visual_qualification.py \
+            --input ci-evidence/t18-browser-capability.json \
+            --output outputs/visual-browser-qualification.json \
+            --full-release-tree-qualified
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qualification-probe-c197b6ff
+          path: |
+            /tmp/macos-local-first.json
+            ci-evidence/t18-*
+            outputs/visual-browser-qualification.json
+          if-no-files-found: warn
+          retention-days: 30
