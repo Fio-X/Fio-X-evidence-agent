@@ -21,6 +21,9 @@ pub enum Commands {
     /// Send an ephemeral raw prompt to Pi over RPC.
     Ask(AskArgs),
 
+    /// Direct LLM chat (new agent mode, bypasses Pi RPC).
+    Chat(ChatArgs),
+
     /// Start a persistent, tool-using data-news investigation.
     Investigate(InvestigateArgs),
 
@@ -81,6 +84,29 @@ pub struct AskArgs {
     pub pi: PiArgs,
 
     /// Prompt sent to Pi.
+    #[arg(required = true, num_args = 1..)]
+    pub prompt: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ChatArgs {
+    /// LLM provider (anthropic or openai).
+    #[arg(long, env = "NEWSROOM_PROVIDER", default_value = "anthropic")]
+    pub provider: String,
+
+    /// Model to use.
+    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-4")]
+    pub model: String,
+
+    /// API key (falls back to ANTHROPIC_API_KEY or OPENAI_API_KEY env vars).
+    #[arg(long, env = "NEWSROOM_API_KEY")]
+    pub api_key: Option<String>,
+
+    /// Custom base URL for API (e.g., https://dragoncode.codes).
+    #[arg(long, env = "NEWSROOM_BASE_URL")]
+    pub base_url: Option<String>,
+
+    /// Prompt to send.
     #[arg(required = true, num_args = 1..)]
     pub prompt: Vec<String>,
 }

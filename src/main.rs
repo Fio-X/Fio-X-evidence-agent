@@ -3,6 +3,7 @@ mod audit;
 mod cli;
 mod commands;
 mod hash;
+mod llm;
 mod pi;
 mod prompt;
 mod runtime;
@@ -20,6 +21,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Doctor(args) => commands::doctor::run(args).await,
         Commands::Ask(args) => commands::ask::run(args).await,
+        Commands::Chat(args) => commands::chat::run(args).await,
         Commands::Investigate(args) => commands::investigate::run(args).await,
         Commands::Continue(args) => commands::continue_investigation::run(args).await,
         Commands::Inspect(args) => commands::inspect::run(args).await,
