@@ -1,0 +1,65 @@
+{
+  "spec": {
+    "schema_version": "0.9.0",
+    "takeaway": "Topology-aware visual fixture",
+    "title": "A verified newsroom claim moves through six stages",
+    "alt": "A process schematic shows a report moving from fact extraction and source verification through deterministic computation, drafting, visual review and publication.",
+    "source_note": "Synthetic v0.9 regression fixture",
+    "claim_id": "claim-v09-spatial",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [
+      "Verify sources"
+    ],
+    "reader_task": "process",
+    "visual_family": "explanatory",
+    "data_topology": "process_graph",
+    "chart_type": "process_schematic",
+    "source_field": "source",
+    "target_field": "target",
+    "edge_label_field": "edge"
+  },
+  "rows": [
+    {
+      "source": "Report arrives",
+      "target": "Extract facts",
+      "edge": "ingest"
+    },
+    {
+      "source": "Extract facts",
+      "target": "Verify sources",
+      "edge": "evidence"
+    },
+    {
+      "source": "Verify sources",
+      "target": "Compute metrics",
+      "edge": "validated data"
+    },
+    {
+      "source": "Compute metrics",
+      "target": "Draft finding",
+      "edge": "result"
+    },
+    {
+      "source": "Draft finding",
+      "target": "Visual review",
+      "edge": "story claim"
+    },
+    {
+      "source": "Visual review",
+      "target": "Publish",
+      "edge": "approved"
+    }
+  ],
+  "lint": {
+    "schema_version": "0.9.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "c9b057b0c88a6e2ad66248eaa3543e1a1088cc5df84547a9281cc311f444c8c5",
+    "row_count": 6
+  }
+}

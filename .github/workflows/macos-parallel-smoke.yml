@@ -15,11 +15,23 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sw_vers -productVersion)"
+          build="$(sw_vers -buildVersion)"
+          arch="$(uname -m)"
+          echo "macOS version: $version"
+          echo "macOS build: $build"
+          echo "architecture: $arch"
+          case "$version" in 26.*) ;; *) echo "Expected macOS 26.x Tahoe runner, got $version" >&2; exit 2 ;; esac
+          test "$arch" = "arm64" || { echo "Expected arm64, got $arch" >&2; exit 2; }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.19.0'
       - name: Run local-first and parallel smoke

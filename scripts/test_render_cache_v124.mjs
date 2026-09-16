@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {renderCacheKey} from '../runtime/visual/render_cache.mjs';
+const a=renderCacheKey({dataHashes:['b','a'],recipe:{z:1,a:2},backend:'python',backendVersion:'1'}); const b=renderCacheKey({dataHashes:['a','b'],recipe:{a:2,z:1},backend:'python',backendVersion:'1'}); assert.equal(a,b); assert.notEqual(a,renderCacheKey({dataHashes:['a','b'],recipe:{a:3,z:1},backend:'python',backendVersion:'1'})); console.log('render cache v1.24 PASS');

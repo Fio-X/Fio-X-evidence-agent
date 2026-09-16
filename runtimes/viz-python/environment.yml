@@ -1,0 +1,15 @@
+name: adn-viz-python
+channels: [conda-forge]
+dependencies:
+  - python=3.13
+  - geopandas=1.1.2
+  - shapely=2.1.2
+  - pyproj=3.7.2
+  - pyogrio=0.12.1
+  - matplotlib=3.10.8
+  - rasterio
+  - pyarrow
+  - pandas
+  - numpy
+  - adjusttext
+  - networkx

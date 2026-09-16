@@ -1,0 +1,76 @@
+{
+  "schema_version": "0.1.0",
+  "release": "1.13.0-rc1",
+  "cases": [
+    {
+      "id": "india-monsoon-food-risk",
+      "date": "2026-09-14",
+      "kind": "news",
+      "topology_family": "visual_synthesis",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": false,
+      "evidence_ref": "docs/test-report-v1.8.md"
+    },
+    {
+      "id": "saudi-oil-chokepoint",
+      "date": "2026-09-14",
+      "kind": "news",
+      "topology_family": "route_network",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": true,
+      "evidence_ref": "docs/cold-advanced-topology-qualification-v1.9.md"
+    },
+    {
+      "id": "asia-ai-selloff",
+      "date": "2026-09-14",
+      "kind": "news",
+      "topology_family": "radial_hierarchy",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": false,
+      "evidence_ref": "docs/cold-advanced-topology-qualification-v1.9.md"
+    },
+    {
+      "id": "us-cpi-treemap",
+      "date": "2026-09-14",
+      "kind": "news",
+      "topology_family": "treemap",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": false,
+      "evidence_ref": "docs/cold-advanced-topology-qualification-v1.9.md"
+    },
+    {
+      "id": "enbridge-tallgrass-deal",
+      "date": "2026-09-14",
+      "kind": "news",
+      "topology_family": "ownership_network",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": false,
+      "evidence_ref": "docs/cold-advanced-topology-qualification-v1.9.md"
+    },
+    {
+      "id": "nhc-forecast-envelope",
+      "date": "2026-09-14",
+      "kind": "official_data",
+      "topology_family": "uncertainty",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": false,
+      "evidence_ref": "docs/test-report-v1.10.md"
+    },
+    {
+      "id": "usgs-linked-seismic-view",
+      "date": "2026-09-14",
+      "kind": "official_data",
+      "topology_family": "linked_geo_views",
+      "status": "PASS",
+      "silent_semantic_errors": 0,
+      "correct_abstention": false,
+      "evidence_ref": "docs/test-report-v1.10.md"
+    }
+  ]
+}

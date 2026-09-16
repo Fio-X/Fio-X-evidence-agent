@@ -1,0 +1,9 @@
+[
+  {
+    "route_id": "verified-demo",
+    "label": "Verified route contract fixture",
+    "amount": 12,
+    "geometry": [[-122.4,37.8],[-140,40],[-160,43],[175,45],[150,40],[139.7,35.7]],
+    "observed_at": "2026-01-01T00:00:00Z"
+  }
+]

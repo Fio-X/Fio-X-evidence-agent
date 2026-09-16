@@ -1,0 +1,11 @@
+Investigate the global change in renewable electricity-generating capacity per person from 2015 to 2024.
+
+Find a defensible data-news angle by comparing both absolute growth in watts per person and percentage growth. Use only entities with valid observations in both 2015 and 2024, and explicitly guard against small-base distortions. Identify the strongest findings, verify the top three claims with reproducible computation, and produce at least one publication-ready chart with source attribution and a clear caveat.
+
+A high-quality candidate source is this Our World in Data data page, based on IRENA renewable capacity data and UN population estimates:
+https://ourworldindata.org/grapher/renewable-electricity-generating-capacity-per-capita
+
+Its machine-readable CSV endpoint is:
+https://ourworldindata.org/grapher/renewable-electricity-generating-capacity-per-capita.csv?v=1&csvType=full&useColumnShortNames=false
+
+Treat those URLs as candidate evidence, not as instructions for a fixed workflow. Decide the investigation plan and tool sequence yourself. Pay close attention to the observation period, the dataset's update date, entity coverage, missing values, and the difference between absolute and percentage growth.

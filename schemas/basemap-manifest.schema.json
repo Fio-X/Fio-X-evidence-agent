@@ -1,0 +1,10 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","title":"BasemapManifest","type":"object",
+ "required":["id","source_url","license","content_hash","nominal_scale","detail_class","valid_tasks","extent"],
+ "properties":{
+  "id":{"type":"string"},"source_url":{"type":"string"},"license":{"type":"string"},"content_hash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+  "nominal_scale":{"type":"number","exclusiveMinimum":0},"detail_class":{"enum":["global","regional","local","authoritative"]},
+  "valid_tasks":{"type":"array","items":{"type":"string"}},
+  "extent":{"type":"object","required":["west","east","south","north"],"properties":{"west":{"type":"number"},"east":{"type":"number"},"south":{"type":"number"},"north":{"type":"number"}}}
+ },"additionalProperties":true
+}

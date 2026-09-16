@@ -1,0 +1,75 @@
+{
+  "spec": {
+    "schema_version": "0.9.0",
+    "takeaway": "Topology-aware visual fixture",
+    "title": "Regions are connected by bilateral flows",
+    "alt": "A chord diagram shows weighted relationships among five world regions, with thicker ribbons representing larger flows.",
+    "source_note": "Synthetic v0.9 regression fixture",
+    "claim_id": "claim-v09-spatial",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [
+      "Asia"
+    ],
+    "reader_task": "relationship",
+    "visual_family": "relationship",
+    "data_topology": "graph_edges",
+    "chart_type": "chord",
+    "source_field": "source",
+    "target_field": "target",
+    "value_field": "value"
+  },
+  "rows": [
+    {
+      "source": "Asia",
+      "target": "Europe",
+      "value": 42
+    },
+    {
+      "source": "Asia",
+      "target": "North America",
+      "value": 36
+    },
+    {
+      "source": "Europe",
+      "target": "North America",
+      "value": 24
+    },
+    {
+      "source": "Europe",
+      "target": "Africa",
+      "value": 17
+    },
+    {
+      "source": "Africa",
+      "target": "Asia",
+      "value": 15
+    },
+    {
+      "source": "North America",
+      "target": "Latin America",
+      "value": 21
+    },
+    {
+      "source": "Latin America",
+      "target": "Europe",
+      "value": 12
+    },
+    {
+      "source": "Latin America",
+      "target": "Asia",
+      "value": 9
+    }
+  ],
+  "lint": {
+    "schema_version": "0.9.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "3c4bc53368117e1b6c1bc87cf16add40562e9b1108c920c423099e5deb71d9fd",
+    "row_count": 8
+  }
+}

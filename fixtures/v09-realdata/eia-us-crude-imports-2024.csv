@@ -1,0 +1,7 @@
+country,source_lat,source_lon,target,target_lat,target_lon,thousand_bpd,annual_thousand_barrels
+Canada,45.4215,-75.6972,United States,39.8283,-98.5795,4061.8,1486610
+Mexico,19.4326,-99.1332,United States,39.8283,-98.5795,464.0,169827
+Saudi Arabia,24.7136,46.6753,United States,39.8283,-98.5795,273.8,100196
+Iraq,33.3152,44.3661,United States,39.8283,-98.5795,198.2,72546
+Brazil,-15.7939,-47.8828,United States,39.8283,-98.5795,220.6,80750
+Colombia,4.7110,-74.0721,United States,39.8283,-98.5795,214.2,78379

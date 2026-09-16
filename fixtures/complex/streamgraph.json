@@ -1,0 +1,194 @@
+{
+  "spec": {
+    "schema_version": "0.8.0",
+    "takeaway": "Complex relationship fixture.",
+    "title": "Energy mix changes over time",
+    "subtitle": "Synthetic topology fixture used to exercise deterministic complex-visual rules",
+    "alt": "A streamgraph shows the changing relative magnitudes of four energy sources over eight years.",
+    "source_note": "Synthetic topology regression fixture",
+    "claim_id": "claim-complex-v08",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [],
+    "reader_task": "change",
+    "visual_family": "temporal",
+    "data_topology": "tabular",
+    "chart_type": "streamgraph",
+    "x_field": "year",
+    "series_field": "series",
+    "value_field": "value"
+  },
+  "rows": [
+    {
+      "year": 2018,
+      "series": "Coal",
+      "value": 30
+    },
+    {
+      "year": 2019,
+      "series": "Coal",
+      "value": 29.6
+    },
+    {
+      "year": 2020,
+      "series": "Coal",
+      "value": 25.2
+    },
+    {
+      "year": 2021,
+      "series": "Coal",
+      "value": 24.8
+    },
+    {
+      "year": 2022,
+      "series": "Coal",
+      "value": 20.4
+    },
+    {
+      "year": 2023,
+      "series": "Coal",
+      "value": 20
+    },
+    {
+      "year": 2024,
+      "series": "Coal",
+      "value": 15.600000000000001
+    },
+    {
+      "year": 2025,
+      "series": "Coal",
+      "value": 15.2
+    },
+    {
+      "year": 2018,
+      "series": "Gas",
+      "value": 26
+    },
+    {
+      "year": 2019,
+      "series": "Gas",
+      "value": 27.6
+    },
+    {
+      "year": 2020,
+      "series": "Gas",
+      "value": 25.2
+    },
+    {
+      "year": 2021,
+      "series": "Gas",
+      "value": 26.8
+    },
+    {
+      "year": 2022,
+      "series": "Gas",
+      "value": 24.4
+    },
+    {
+      "year": 2023,
+      "series": "Gas",
+      "value": 26
+    },
+    {
+      "year": 2024,
+      "series": "Gas",
+      "value": 23.6
+    },
+    {
+      "year": 2025,
+      "series": "Gas",
+      "value": 25.2
+    },
+    {
+      "year": 2018,
+      "series": "Wind",
+      "value": 22
+    },
+    {
+      "year": 2019,
+      "series": "Wind",
+      "value": 25.6
+    },
+    {
+      "year": 2020,
+      "series": "Wind",
+      "value": 25.2
+    },
+    {
+      "year": 2021,
+      "series": "Wind",
+      "value": 28.8
+    },
+    {
+      "year": 2022,
+      "series": "Wind",
+      "value": 28.4
+    },
+    {
+      "year": 2023,
+      "series": "Wind",
+      "value": 32
+    },
+    {
+      "year": 2024,
+      "series": "Wind",
+      "value": 31.6
+    },
+    {
+      "year": 2025,
+      "series": "Wind",
+      "value": 35.2
+    },
+    {
+      "year": 2018,
+      "series": "Solar",
+      "value": 18
+    },
+    {
+      "year": 2019,
+      "series": "Solar",
+      "value": 23.6
+    },
+    {
+      "year": 2020,
+      "series": "Solar",
+      "value": 25.2
+    },
+    {
+      "year": 2021,
+      "series": "Solar",
+      "value": 30.8
+    },
+    {
+      "year": 2022,
+      "series": "Solar",
+      "value": 32.4
+    },
+    {
+      "year": 2023,
+      "series": "Solar",
+      "value": 38
+    },
+    {
+      "year": 2024,
+      "series": "Solar",
+      "value": 39.6
+    },
+    {
+      "year": 2025,
+      "series": "Solar",
+      "value": 45.2
+    }
+  ],
+  "lint": {
+    "schema_version": "0.8.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "8b17da77eec2949d10de27afd5257c9de0b55607a1b7b3086d136096ee680273",
+    "row_count": 32
+  }
+}

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 867" role="img" aria-labelledby="ex-title ex-desc" data-explainer-version="0.1.0" data-view="system">
+<title id="ex-title">How the system is layered</title>
+<desc id="ex-desc">A schematic explanatory graphic labels the major layers of a synthetic system and explicitly states that geometry is not to scale.</desc>
+<rect width="640" height="867" fill="#fffdf9"/>
+<text x="42" y="38" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c9473d">EXPLAINER</text>
+<text x="42" y="72" text-anchor="start" font-family="Georgia, 'Times New Roman', serif" font-size="29" font-weight="700" fill="#1d2329">How the system is layered</text>
+<text x="42" y="118" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#69727a">Semantic explanatory-graphic regression fixture</text>
+<line x1="42" y1="146" x2="598" y2="146" stroke="#d9dde1"/>
+<line x1="320" y1="222" x2="320" y2="340" stroke="#69727a" stroke-width="2"/>
+<text x="320" y="275" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#69727a">feeds</text>
+<line x1="320" y1="340" x2="320" y2="458" stroke="#69727a" stroke-width="2"/>
+<text x="320" y="393" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#69727a">serves</text>
+<line x1="320" y1="340" x2="320" y2="576" stroke="#69727a" stroke-width="2"/>
+<text x="320" y="452" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#69727a">loses</text>
+<rect x="165" y="190" width="310" height="64" rx="5" fill="#24313a" stroke="#24313a"/>
+<text x="320" y="226" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#fff">Primary supply</text>
+<rect x="165" y="308" width="310" height="64" rx="5" fill="#f1f0ec" stroke="#d9dde1"/>
+<text x="320" y="344" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">Conversion</text>
+<rect x="165" y="426" width="310" height="64" rx="5" fill="#f1f0ec" stroke="#d9dde1"/>
+<text x="320" y="462" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">End use</text>
+<rect x="165" y="544" width="310" height="64" rx="5" fill="#f1f0ec" stroke="#d9dde1"/>
+<text x="320" y="580" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">Losses</text>
+<line x1="42" y1="760" x2="598" y2="760" stroke="#d9dde1"/>
+<text x="42" y="785" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#c9473d">SCHEMATIC / NOT TO SCALE</text>
+<text x="42" y="808" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#69727a">Source / basis: Synthetic regression fixture</text>
+</svg>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 700" role="img" aria-labelledby="ex-title ex-desc" data-explainer-version="0.1.0" data-view="cutaway">
+<title id="ex-title">How the system is layered</title>
+<desc id="ex-desc">A schematic explanatory graphic labels the major layers of a synthetic system and explicitly states that geometry is not to scale.</desc>
+<rect width="1040" height="700" fill="#fffdf9"/>
+<text x="62" y="38" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c9473d">EXPLAINER</text>
+<text x="62" y="72" text-anchor="start" font-family="Georgia, 'Times New Roman', serif" font-size="35" font-weight="700" fill="#1d2329">How the system is layered</text>
+<text x="62" y="124" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#69727a">Semantic explanatory-graphic regression fixture</text>
+<line x1="62" y1="153" x2="978" y2="153" stroke="#d9dde1"/>
+<rect x="320" y="203" width="400" height="94.87179487179486" fill="#e3e8ea" stroke="#d9dde1"/>
+<text x="336" y="229" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#1d2329">Primary supply</text>
+<circle cx="320" cy="250.43589743589743" r="3.5" fill="#c9473d"/>
+<line x1="320" y1="250.43589743589743" x2="298" y2="250.43589743589743" stroke="#69727a"/>
+<text x="284" y="246.43589743589743" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">Primary supply</text>
+<text x="284" y="264.43589743589746" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#69727a">Inputs enter the system</text>
+<rect x="320" y="297.87179487179486" width="400" height="113.84615384615384" fill="#f1f0ec" stroke="#d9dde1"/>
+<text x="336" y="323.87179487179486" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#1d2329">Conversion</text>
+<circle cx="720" cy="354.79487179487177" r="3.5" fill="#c9473d"/>
+<line x1="720" y1="354.79487179487177" x2="742" y2="354.79487179487177" stroke="#69727a"/>
+<text x="756" y="350.79487179487177" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">Conversion</text>
+<text x="756" y="368.79487179487177" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#69727a">Some inputs change form</text>
+<rect x="320" y="411.71794871794873" width="400" height="104.35897435897436" fill="#e3e8ea" stroke="#d9dde1"/>
+<text x="336" y="437.71794871794873" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#1d2329">End use</text>
+<circle cx="320" cy="463.8974358974359" r="3.5" fill="#c9473d"/>
+<line x1="320" y1="463.8974358974359" x2="298" y2="463.8974358974359" stroke="#69727a"/>
+<text x="284" y="459.8974358974359" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">End use</text>
+<text x="284" y="477.8974358974359" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#69727a">Useful output reaches users</text>
+<rect x="320" y="516.0769230769231" width="400" height="56.92307692307692" fill="#f1f0ec" stroke="#d9dde1"/>
+<text x="336" y="542.0769230769231" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#1d2329">Losses</text>
+<circle cx="720" cy="544.5384615384615" r="3.5" fill="#c9473d"/>
+<line x1="720" y1="544.5384615384615" x2="742" y2="544.5384615384615" stroke="#69727a"/>
+<text x="756" y="540.5384615384615" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1d2329">Losses</text>
+<text x="756" y="558.5384615384615" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#69727a">Some energy exits as losses</text>
+<line x1="62" y1="593" x2="978" y2="593" stroke="#d9dde1"/>
+<text x="62" y="618" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#c9473d">SCHEMATIC / NOT TO SCALE</text>
+<text x="62" y="641" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#69727a">Source / basis: Synthetic regression fixture</text>
+</svg>

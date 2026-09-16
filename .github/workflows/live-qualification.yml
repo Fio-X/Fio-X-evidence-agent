@@ -1,0 +1,67 @@
+name: live-qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Pi provider ID, e.g. openai, anthropic, deepseek, kimi, zai
+        required: true
+        type: string
+      model:
+        description: Pi model ID
+        required: true
+        type: string
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEWSROOM_PROVIDER: ${{ inputs.provider }}
+      NEWSROOM_MODEL: ${{ inputs.model }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+      ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+          components: rustfmt, clippy
+      - name: Install pinned live runtime
+        run: |
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2
+      - name: Build release CLI
+        run: cargo build --locked --release --bin news
+      - name: Strict runtime readiness
+        run: target/release/news doctor --strict --json --provider "$NEWSROOM_PROVIDER" --model "$NEWSROOM_MODEL"
+      - name: Run agentic qualification
+        env:
+          NEWSROOM_NEWS_BIN: ${{ github.workspace }}/target/release/news
+          NEWSROOM_AGENTIC_OUT: ${{ github.workspace }}/.newsroom/agentic-qualification
+        run: ./scripts/agentic_qualification.sh
+      - name: Run integration qualification
+        env:
+          NEWSROOM_NEWS_BIN: ${{ github.workspace }}/target/release/news
+          NEWSROOM_LIVE_OUT: ${{ github.workspace }}/.newsroom/integration-qualification
+        run: ./scripts/integration_qualification.sh
+      - name: Upload qualification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newsroom-${{ inputs.provider }}-${{ inputs.model }}-qualification
+          path: |
+            .newsroom/agentic-qualification
+            .newsroom/integration-qualification
+          if-no-files-found: warn
+          retention-days: 14

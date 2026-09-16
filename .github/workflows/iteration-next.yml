@@ -1,0 +1,212 @@
+name: iteration-next
+
+on:
+  pull_request:
+    branches: [import-current]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  scheduler-contract:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sw_vers -productVersion)"
+          build="$(sw_vers -buildVersion)"
+          arch="$(uname -m)"
+          echo "macOS version: $version"
+          echo "macOS build: $build"
+          echo "architecture: $arch"
+          case "$version" in
+            26.*) ;;
+            *) echo "Expected macOS 26.x Tahoe runner, got $version" >&2; exit 2 ;;
+          esac
+          test "$arch" = "arm64" || { echo "Expected arm64, got $arch" >&2; exit 2; }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Scheduler deterministic and anti-spoof tests
+        run: node scripts/test_parallel_scheduler.mjs
+      - name: macOS local-first smoke
+        run: node scripts/macos_parallel_smoke.mjs
+
+  source-shape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Assert iteration files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f runtime/pi/parallel_scheduler.mjs
+          test -f runtime/pi/local_backend.mjs
+          test -f scripts/test_parallel_scheduler.mjs
+          test -f scripts/benchmark_local_backend_matrix.mjs
+          test -f docs/iteration-next-plan.md
+          test -f config/tool-registry.json
+          test -f config/backend-policy.json
+          test -f scripts/sync_backend_policy.py
+          test -f scripts/check_backend_policy.py
+          test -f config/cold-story-requirements.json
+          test -f config/cold-story-ledger.json
+          test -f fixtures/cold-behavior/cases.json
+          test -f scripts/test_cold_behavioral_cases.mjs
+          test -f scripts/check_cold_story_ledger.py
+      - name: Backend policy drift gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_backend_policy.py
+          tmp="$(mktemp)"
+          cp config/backend-policy.json "$tmp"
+          python3 scripts/sync_backend_policy.py
+          python3 - "$tmp" config/backend-policy.json <<'PY'
+          import json, sys
+          before = json.load(open(sys.argv[1]))
+          generated = json.load(open(sys.argv[2]))
+          canonical = lambda obj: json.dumps(obj, sort_keys=True, separators=(',', ':'))
+          if canonical(before) != canonical(generated):
+              raise SystemExit('backend-policy.json is not the deterministic generated projection of tool-registry.json')
+          print(f'backend policy canonical projection: PASS ({len(generated.get("tools", {}))} tools)')
+          PY
+
+  cold-story-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Execute behavioral cold stories
+        run: node scripts/test_cold_behavioral_cases.mjs
+      - name: Evaluate cold story release gate
+        run: python3 scripts/check_cold_story_ledger.py
+      - name: Upload cold story evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cold-story-gate-evidence
+          path: |
+            outputs/v113-cold-behavior-results.json
+            outputs/v113-cold-story-gate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  report-status:
+    if: ${{ always() }}
+    needs: [scheduler-contract, source-shape, cold-story-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Write machine-readable CI evidence
+        shell: bash
+        env:
+          SCHEDULER_RESULT: ${{ needs.scheduler-contract.result }}
+          SOURCE_SHAPE_RESULT: ${{ needs.source-shape.result }}
+          COLD_STORY_RESULT: ${{ needs.cold-story-gate.result }}
+          EVALUATED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          OVERALL: ${{ (needs.scheduler-contract.result == 'success' && needs.source-shape.result == 'success' && needs.cold-story-gate.result == 'success') && 'success' || 'failure' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence
+          python3 - <<'PY'
+          import json, os
+          ok = os.environ["OVERALL"] == "success"
+          payload = {
+              "schema_version": "1.0.0",
+              "workflow": "iteration-next",
+              "overall": os.environ["OVERALL"],
+              "evaluated_sha": os.environ["EVALUATED_SHA"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "run_attempt": int(os.environ["RUN_ATTEMPT"]),
+              "event_name": os.environ["EVENT_NAME"],
+              "pr_number": int(os.environ["PR_NUMBER"]) if os.environ.get("PR_NUMBER") else None,
+              "target_environment": {
+                  "runner": "macos-26",
+                  "os_family": "macOS Tahoe 26.x",
+                  "architecture": "arm64"
+              },
+              "jobs": {
+                  "scheduler-contract": os.environ["SCHEDULER_RESULT"],
+                  "source-shape": os.environ["SOURCE_SHAPE_RESULT"],
+                  "cold-story-gate": os.environ["COLD_STORY_RESULT"]
+              },
+              "completed_workstreams": ["T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14"] if ok else []
+          }
+          with open("ci-evidence/iteration-next-latest.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f, indent=2, sort_keys=True)
+              f.write("\n")
+          PY
+      - name: Upload CI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: iteration-next-ci-evidence
+          path: ci-evidence/iteration-next-latest.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Update PR status comment
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        env:
+          SCHEDULER_RESULT: ${{ needs.scheduler-contract.result }}
+          SOURCE_SHAPE_RESULT: ${{ needs.source-shape.result }}
+          COLD_STORY_RESULT: ${{ needs.cold-story-gate.result }}
+        with:
+          script: |
+            const marker = '<!-- iteration-next-ci-status -->';
+            const scheduler = process.env.SCHEDULER_RESULT;
+            const source = process.env.SOURCE_SHAPE_RESULT;
+            const cold = process.env.COLD_STORY_RESULT;
+            const overall = scheduler === 'success' && source === 'success' && cold === 'success' ? 'PASS' : 'FAIL';
+            const sha = context.payload.pull_request.head.sha;
+            const body = `${marker}\n### Iteration-next CI: ${overall}\n\n` +
+              `- Target: \`macos-26\` / Tahoe 26.x / \`arm64\`\n` +
+              `- Evaluated SHA: \`${sha}\`\n` +
+              `- scheduler-contract: **${scheduler}**\n` +
+              `- source-shape + backend-policy drift gate: **${source}**\n` +
+              `- cold-story executable gate: **${cold}**\n` +
+              `- Machine-readable artifact: \`iteration-next-ci-evidence\`\n` +
+              `- Cold-story artifact: \`cold-story-gate-evidence\`\n` +
+              `- Backend benchmark runs separately on base-branch backend changes or workflow_dispatch.\n` +
+              `- Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n` +
+              `This comment is updated in place after each CI run.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

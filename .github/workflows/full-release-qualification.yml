@@ -1,0 +1,157 @@
+name: full-release-qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Optional provider ID for T17 integration qualification
+        required: false
+        type: string
+      model:
+        description: Optional model ID for T17 integration qualification
+        required: false
+        type: string
+
+concurrency:
+  group: full-release-qualification-iteration-next
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos-locked-and-local:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: iteration-next
+      - name: Require materialized source and integrity receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f src/main.rs
+          test -f source-integrity.json
+          test -f ci-evidence/source-import-verification.json
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(sw_vers -productVersion)" in 26.*) ;; *) exit 2 ;; esac
+          test "$(uname -m)" = arm64
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install pinned Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+          rustup run 1.98.1 rustc --version
+          rustup run 1.98.1 cargo --version
+      - name: Require dependency locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for lock in Cargo.lock runtime/web/package-lock.json runtime/sigma/package-lock.json runtime/map/package-lock.json runtime/d3/package-lock.json; do
+            test -s "$lock" || { echo "BLOCKED missing dependency lock: $lock" >&2; exit 64; }
+          done
+      - name: T03 cargo fmt locked check test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.98.1 cargo fmt --all -- --check
+          rustup run 1.98.1 cargo check --all-targets --locked
+          rustup run 1.98.1 cargo test --all-targets --locked
+      - name: T04 full local-first backend matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test_parallel_scheduler.mjs
+          node scripts/macos_parallel_smoke.mjs | tee /tmp/macos-local-first.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-locked-local-first
+          path: /tmp/macos-local-first.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  integration:
+    needs: macos-locked-and-local
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NEWSROOM_PROVIDER: ${{ inputs.provider }}
+      NEWSROOM_MODEL: ${{ inputs.model }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+      ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: iteration-next
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Install Rust and pinned Pi runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+          rustup run 1.98.1 cargo build --locked --release --bin news
+      - name: T17 integration qualification or explicit BLOCKED
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence .newsroom/integration-qualification
+          if [[ -z "${NEWSROOM_PROVIDER:-}" || -z "${NEWSROOM_MODEL:-}" ]]; then
+            printf '%s\n' '{"schema_version":"1.0.0","qualification_type":"integration","status":"BLOCKED","reason":"provider/model not configured"}' > ci-evidence/t17-integration-status.json
+            exit 0
+          fi
+          NEWSROOM_NEWS_BIN="$GITHUB_WORKSPACE/target/release/news" NEWSROOM_LIVE_OUT="$GITHUB_WORKSPACE/.newsroom/integration-qualification" ./scripts/integration_qualification.sh
+          printf '%s\n' '{"schema_version":"1.0.0","qualification_type":"integration","status":"EXECUTED"}' > ci-evidence/t17-integration-status.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: t17-integration-qualification
+          path: |
+            ci-evidence/t17-integration-status.json
+            .newsroom/integration-qualification
+          if-no-files-found: warn
+          retention-days: 30
+
+  browser-capability:
+    needs: macos-locked-and-local
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: iteration-next
+      - name: T18 browser CPU and WebGL capability evidence
+        run: python3 scripts/test_macos_browser_capability.py
+      - name: Normalize T18 full-tree qualification for T20
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          python3 scripts/normalize_visual_qualification.py \
+            --input ci-evidence/t18-browser-capability.json \
+            --output outputs/visual-browser-qualification.json \
+            --full-release-tree-qualified
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: t18-full-tree-browser-capability
+          path: |
+            ci-evidence/t18-*
+            outputs/visual-browser-qualification.json
+          if-no-files-found: error
+          retention-days: 30

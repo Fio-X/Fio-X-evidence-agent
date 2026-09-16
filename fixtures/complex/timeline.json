@@ -1,0 +1,49 @@
+{
+  "spec": {
+    "schema_version": "0.8.0",
+    "takeaway": "Complex relationship fixture.",
+    "title": "Policy implementation timeline",
+    "subtitle": "Synthetic topology fixture used to exercise deterministic complex-visual rules",
+    "alt": "A timeline shows four dated milestones from announcement to the second implementation phase.",
+    "source_note": "Synthetic topology regression fixture",
+    "claim_id": "claim-complex-v08",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [],
+    "reader_task": "sequence",
+    "visual_family": "temporal",
+    "data_topology": "events",
+    "chart_type": "timeline",
+    "x_field": "date",
+    "label_field": "event"
+  },
+  "rows": [
+    {
+      "date": "2024-01-01",
+      "event": "Policy announced"
+    },
+    {
+      "date": "2024-03-18",
+      "event": "First implementation phase"
+    },
+    {
+      "date": "2024-07-01",
+      "event": "Mid-year review"
+    },
+    {
+      "date": "2025-01-01",
+      "event": "Second phase begins"
+    }
+  ],
+  "lint": {
+    "schema_version": "0.8.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [],
+    "data_hash": "b182dc5f4a0cf72bd639605aca755fdb3fd0147f7bee6ee554eea264a52e4310",
+    "row_count": 4
+  }
+}

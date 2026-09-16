@@ -1,0 +1,49 @@
+name: cargo-lock-bootstrap
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  generate-lock:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(sw_vers -productVersion)" in 26.*) ;; *) exit 2 ;; esac
+          test "$(uname -m)" = arm64
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup run 1.98.1 cargo --version
+      - name: Generate deterministic Cargo.lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.98.1 cargo generate-lockfile
+          test -s Cargo.lock
+          shasum -a 256 Cargo.lock
+      - name: Verify committed lock is current
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- Cargo.lock
+      - name: Upload lock evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-lock-bootstrap
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 30

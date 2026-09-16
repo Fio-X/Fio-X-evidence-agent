@@ -1,0 +1,42 @@
+# v1.7 RC Change Manifest
+
+Generated Python bytecode caches are intentionally omitted from the RC package.
+
+## Added
+- docs/completion-audit-v1.7.md
+- docs/iteration-plan-v1.7.md
+- docs/test-report-v1.7.md
+- fixtures/v17-editorial-semantics/adversarial-corpus.json
+- fixtures/v17-editorial-semantics/saudi-hormuz-2026-09-14.json
+- runtime/pi/editorial_semantics.mjs
+- runtime/pi/measure_semantics.mjs
+- runtime/visual/editorial_semantics.mjs
+- runtime/visual/measure_semantics.mjs
+- scripts/build_editorial_semantics_bundle.py
+- scripts/test_cold_story_editorial_semantics_v17.mjs
+- scripts/test_editorial_semantics_adversarial_v17.mjs
+- scripts/test_editorial_semantics_v17.mjs
+- scripts/test_runtime_editorial_semantics_v17.mjs
+
+## Modified
+- Cargo.toml
+- README.md
+- runtime/gis/ai_visual_compiler.mjs
+- runtime/gis/visual_recipe.schema.json
+- runtime/pi/backend_policy.mjs
+- runtime/pi/newsroom.ts
+- runtime/pi/visual_backends.mjs
+- runtime/pi/viz.mjs
+- runtime/visual/backend_policy.mjs
+- runtime/visual/backend_router_v2.mjs
+- runtime/visual/semantic_contract.mjs
+- runtime/visual/visual_compiler_v2.mjs
+- runtime/visual/visual_recipe_v2.mjs
+- scripts/check_runtime_contract.py
+- scripts/smoke_visual_compiler.sh
+- scripts/test_backend_router_v123.mjs
+- scripts/test_semantic_contract_v127.mjs
+- scripts/test_visual_recipe_schema_v117.py
+- scripts/test_visual_recipe_v117.mjs
+- src/runtime.rs
+- versions.json

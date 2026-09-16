@@ -1,0 +1,76 @@
+{
+  "id": "viz-python",
+  "version": "1.26.0",
+  "execution": "container",
+  "target_versions": {
+    "python": "3.13",
+    "geopandas": "1.1.2",
+    "shapely": "2.1.2",
+    "pyproj": "3.7.2",
+    "pyogrio": "0.12.1",
+    "matplotlib": "3.10.8"
+  },
+  "capabilities": [
+    "static_editorial",
+    "static_map",
+    "trajectory",
+    "flow_map",
+    "choropleth",
+    "symbol_map",
+    "vector_export",
+    "metric_crs",
+    "adjacency_matrix",
+    "dense_graph_comparison",
+    "warm_worker"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "python3",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=3.13,<3.15"
+    },
+    {
+      "type": "python_module",
+      "name": "geopandas",
+      "required": true,
+      "version_spec": "==1.1.2"
+    },
+    {
+      "type": "python_module",
+      "name": "shapely",
+      "required": true,
+      "version_spec": "==2.1.2"
+    },
+    {
+      "type": "python_module",
+      "name": "pyproj",
+      "required": true,
+      "version_spec": "==3.7.2"
+    },
+    {
+      "type": "python_module",
+      "name": "pyogrio",
+      "required": true,
+      "version_spec": "==0.12.1"
+    },
+    {
+      "type": "python_module",
+      "name": "matplotlib",
+      "required": true,
+      "version_spec": "==3.10.8"
+    }
+  ],
+  "build": {
+    "definition": "environment.yml",
+    "network_required": true
+  },
+  "warm_worker": {
+    "protocol": "jsonl",
+    "entrypoint": "runtime/worker/python_worker.py",
+    "schema": "runtimes/warm-worker-protocol.schema.json"
+  }
+}

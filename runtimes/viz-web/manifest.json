@@ -1,0 +1,101 @@
+{
+  "id": "viz-web",
+  "version": "1.12.0-rc1",
+  "execution": "browser",
+  "target_versions": {
+    "sigma": "3.0.3",
+    "graphology": "0.26.0",
+    "maplibre-gl": "6.9.0",
+    "deck.gl": "9.4.0",
+    "d3": "7.9.0",
+    "vega-lite": "6.4.3",
+    "echarts": "6.0.0",
+    "plotly.js-dist": "3.3.1"
+  },
+  "capabilities": [
+    "circle_packing",
+    "d3_editorial",
+    "echarts_editorial",
+    "gpu_paths",
+    "graph_filter",
+    "graph_search",
+    "interactive_chord",
+    "interactive_geo",
+    "interactive_network",
+    "interactive_sankey",
+    "parallel_coordinates",
+    "radial_hierarchy",
+    "radial_network",
+    "trips",
+    "vector_tiles",
+    "scientific_map",
+    "physical_basemap",
+    "projection_explicit",
+    "scale_bar",
+    "style_mapping"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "node",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=22.19.0,<23"
+    },
+    {
+      "type": "node_package",
+      "name": "sigma",
+      "required": true,
+      "version_spec": "==3.0.3"
+    },
+    {
+      "type": "node_package",
+      "name": "graphology",
+      "required": true,
+      "version_spec": "==0.26.0"
+    },
+    {
+      "type": "node_package",
+      "name": "maplibre-gl",
+      "required": true,
+      "version_spec": "==6.9.0"
+    },
+    {
+      "type": "node_package",
+      "name": "@deck.gl/core",
+      "required": true,
+      "version_spec": "==9.4.0"
+    },
+    {
+      "type": "node_package",
+      "name": "d3",
+      "required": true,
+      "version_spec": "==7.9.0"
+    },
+    {
+      "type": "node_package",
+      "name": "vega-lite",
+      "required": true,
+      "version_spec": "==6.4.3"
+    },
+    {
+      "type": "node_package",
+      "name": "echarts",
+      "required": true,
+      "version_spec": "==6.0.0"
+    },
+    {
+      "type": "node_package",
+      "name": "plotly.js-dist",
+      "required": true,
+      "version_spec": "==3.3.1"
+    }
+  ],
+  "build": {
+    "definition": "Dockerfile",
+    "network_required": true,
+    "package_manifest": "runtime/web/package.json"
+  }
+}
