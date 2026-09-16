@@ -76,9 +76,11 @@ impl Default for ToolRegistry {
 // 具体工具实现
 mod web_search;
 mod calculate;
+mod create_chart;
 
 pub use web_search::WebSearchTool;
 pub use calculate::CalculateTool;
+pub use create_chart::CreateChartTool;
 
 /// 创建默认工具注册表
 pub fn create_default_registry() -> ToolRegistry {
@@ -87,6 +89,7 @@ pub fn create_default_registry() -> ToolRegistry {
     // 注册工具
     registry.register(WebSearchTool);
     registry.register(CalculateTool);
+    registry.register(CreateChartTool);
 
     registry
 }
