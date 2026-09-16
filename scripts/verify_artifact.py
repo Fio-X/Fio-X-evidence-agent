@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -288,13 +289,21 @@ def recompute_competition_machine_pass(profile: str, deterministic: dict, vision
     return not failures, failures
 
 
+@functools.lru_cache(maxsize=32)
+def _resolved_root(root: Path) -> Path:
+    # Artifact roots are immutable for the duration of one verifier process.
+    # Cache only the root canonicalization; child refs are still resolved on
+    # every check so symlink/path escape mutations remain fail-closed.
+    return root.resolve()
+
+
 def safe_ref(root: Path, ref: str) -> Path:
     p = PurePosixPath(ref)
     if not ref or p.is_absolute() or ".." in p.parts:
         raise ValueError(f"unsafe relative artifact reference: {ref!r}")
     full = root.joinpath(*p.parts)
     try:
-        full.resolve().relative_to(root.resolve())
+        full.resolve().relative_to(_resolved_root(root))
     except ValueError as exc:
         raise ValueError(f"artifact reference escapes root: {ref!r}") from exc
     return full
