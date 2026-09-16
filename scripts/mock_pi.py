@@ -32,13 +32,50 @@ def sha_bytes(data: bytes):
     return hashlib.sha256(data).hexdigest()
 
 
+def normalize_infographic_source(plan: dict) -> dict:
+    normalized = json.loads(json.dumps(plan))
+    normalized.pop("content_hash", None)
+    if normalized.get("schema_version") == "1.1.0":
+        normalized["schema_version"] = "1.2.0"
+    if normalized.get("schema_version") in {"1.2.0", "1.3.0"} and not normalized.get("competition_profile"):
+        normalized["competition_profile"] = "editorial"
+    return normalized
+
+
+def infographic_immutable_hash(plan: dict) -> str:
+    projected = normalize_infographic_source(plan)
+    projected.pop("mobile_module_order", None)
+    modules = []
+    for module in projected.get("modules") or []:
+        item = dict(module)
+        for key in ("span", "emphasis", "priority"):
+            item.pop(key, None)
+        modules.append(item)
+    projected["modules"] = sorted(modules, key=lambda item: str(item.get("id", "")))
+    return sha_bytes(canonical(projected).encode())
+
+
 def ensure_artifacts(resume: bool):
     root_value = os.environ.get("NEWSROOM_ARTIFACT_DIR")
     if not root_value:
         return
     root = Path(root_value)
     root.mkdir(parents=True, exist_ok=True)
-    for child in ["data", "sources", "computations", "visualizations/plans", "visualizations/lints", "visualizations/critics", "infographics/plans", "infographics/lints", "infographics/critics"]:
+    for child in [
+        "data",
+        "sources",
+        "computations",
+        "visualizations/plans",
+        "visualizations/lints",
+        "visualizations/critics",
+        "infographics/plans",
+        "infographics/lints",
+        "infographics/critics",
+        "infographics/previews",
+        "infographics/vision-critics",
+        "infographics/revisions",
+        "infographics/competition-preflight",
+    ]:
         (root / child).mkdir(parents=True, exist_ok=True)
 
     revision = 3 if resume else 2
@@ -63,6 +100,7 @@ def ensure_artifacts(resume: bool):
     comp_key = sha_bytes(f"{sql}\n{input_hash}\n{result_hash}".encode())
     comp_ref = f"computations/{comp_key}.json"
     write_json(root / comp_ref, {"schema_version": "0.7.0", "sql": sql, "input_snapshot_hash": input_hash, "input_fingerprints": fingerprints, "result_hash": result_hash, "rows": rows})
+
     plan_ref = "visualizations/plans/mock.json"
     lint_ref = "visualizations/lints/mock.json"
     manifest_ref = "visualizations/mock.json"
@@ -74,6 +112,7 @@ def ensure_artifacts(resume: bool):
     (root / "visualizations" / "mock.mobile.svg").write_text(mobile, encoding="utf-8")
     write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": "mock-claim", "data_hash": result_hash, "svg": "visualizations/mock.svg", "variants": {"desktop": "visualizations/mock.svg", "mobile": "visualizations/mock.mobile.svg"}})
     write_json(root / "visualizations/critics/mock.json", {"passed": True, "score": 100, "manifest_ref": manifest_ref})
+
     expl_plan_ref = "visualizations/illustrations/plans/mock.json"
     expl_lint_ref = "visualizations/illustrations/lints/mock.json"
     expl_manifest_ref = "visualizations/illustrations/mock.json"
@@ -85,9 +124,11 @@ def ensure_artifacts(resume: bool):
     expl_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 600" role="img" data-explainer-version="0.1.0"><title>Mock explainer</title><desc>A schematic mock explanatory graphic with accessible labels.</desc><rect width="1040" height="600" fill="white"/><text x="40" y="80">Input</text><text x="40" y="130">Output</text><text x="40" y="560">SCHEMATIC / NOT TO SCALE</text></svg>\n'
     expl_mobile_svg = expl_svg.replace('1040 600', '640 700').replace('width="1040" height="600"', 'width="640" height="700"')
     (root / expl_desktop_ref).parent.mkdir(parents=True, exist_ok=True)
-    (root / expl_desktop_ref).write_text(expl_svg, encoding="utf-8"); (root / expl_mobile_ref).write_text(expl_mobile_svg, encoding="utf-8")
+    (root / expl_desktop_ref).write_text(expl_svg, encoding="utf-8")
+    (root / expl_mobile_ref).write_text(expl_mobile_svg, encoding="utf-8")
     write_json(root / expl_manifest_ref, {"schema_version": "0.1.0", "plan_ref": expl_plan_ref, "lint_ref": expl_lint_ref, "title": "Mock explainer", "alt": "A schematic mock cutaway used to validate the explanatory control plane.", "view": "cutaway", "source_note": "Mock source", "claim_ids": ["mock-claim"], "not_to_scale": True, "variants": {"desktop": expl_desktop_ref, "mobile": expl_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(expl_svg.encode()), "mobile_sha256": sha_bytes(expl_mobile_svg.encode())}})
     write_json(root / expl_critic_ref, {"schema_version": "0.1.0", "passed": True, "score": 96, "manifest_ref": expl_manifest_ref})
+
     rich_plan_ref = "visualizations/illustrations/plans/mock-rich.json"
     rich_lint_ref = "visualizations/illustrations/lints/mock-rich.json"
     rich_manifest_ref = "visualizations/illustrations/mock-rich.json"
@@ -98,16 +139,44 @@ def ensure_artifacts(resume: bool):
     write_json(root / rich_lint_ref, {"schema_version": "0.2.0", "passed": True, "plan_ref": rich_plan_ref, "blockers": []})
     rich_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" data-rich-illustration-version="0.2.0" data-origin="generative_ai" data-digital-source-type="trainedAlgorithmicMedia"><title>Mock rich illustration</title><desc>Accessible provenance-aware mock rich illustration.</desc><rect width="1200" height="700" fill="white"/><circle cx="420" cy="350" r="160" fill="#ddd"/><path d="M 580 260 L 940 350 L 580 440 Z" fill="#c9473d"/></svg>\n'
     rich_mobile_svg = rich_svg.replace('1200 700', '640 760').replace('width="1200" height="700"', 'width="640" height="760"')
-    (root / rich_desktop_ref).write_text(rich_svg, encoding="utf-8"); (root / rich_mobile_ref).write_text(rich_mobile_svg, encoding="utf-8")
+    (root / rich_desktop_ref).write_text(rich_svg, encoding="utf-8")
+    (root / rich_mobile_ref).write_text(rich_mobile_svg, encoding="utf-8")
     write_json(root / rich_manifest_ref, {"schema_version": "0.2.0", "kind": "rich_illustration", "plan_ref": rich_plan_ref, "lint_ref": rich_lint_ref, "title": "Mock rich illustration", "alt": "A provenance-aware mock illustration used to validate rich illustration artifact integrity.", "source_note": "Mock source", "credit": "Mock fixture", "claim_ids": ["mock-claim"], "evidence_refs": [source_ref, comp_ref], "origin_policy": "ai_disclosed", "not_to_scale": False, "variants": {"desktop": rich_desktop_ref, "mobile": rich_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(rich_svg.encode()), "mobile_sha256": sha_bytes(rich_mobile_svg.encode())}, "provenance": {"origin": "generative_ai", "digital_source_type": "trainedAlgorithmicMedia", "provider": "mock-provider", "model": "mock-image-model", "version": "1", "disclosure": "AI-generated mock illustration for control-plane testing.", "request_hash": "a" * 64, "evidence_snapshot_hash": "b" * 64}})
     write_json(root / rich_critic_ref, {"schema_version": "0.2.0", "passed": True, "score": 98, "manifest_ref": rich_manifest_ref, "origin": "generative_ai", "digital_source_type": "trainedAlgorithmicMedia"})
+
     info_plan_ref = "infographics/plans/mock.json"
+    revised_info_plan_ref = "infographics/plans/mock-revised.json"
     info_lint_ref = "infographics/lints/mock.json"
     info_manifest_ref = "infographics/mock.json"
     info_desktop_ref = "infographics/mock.svg"
     info_mobile_ref = "infographics/mock.mobile.svg"
-    write_json(root / info_plan_ref, {"schema_version": "1.1.0", "title": "Mock magazine feature", "dek": "Mock responsive feature for control-plane acceptance.", "alt": "A synthetic magazine feature used to validate the Rust control plane and artifact pipeline.", "intent": "Exercise the infographic control-plane acceptance path.", "primary_message": "Responsive composition preserves verified visual provenance.", "story_arc": "explain", "audience": "informed", "quality_target": "award", "modules": [{"id": "v1", "type": "visual", "manifest_ref": manifest_ref, "story_role": "evidence", "priority": 1, "emphasis": "hero"}, {"id": "v2", "type": "visual", "manifest_ref": manifest_ref, "story_role": "evidence", "priority": 2, "emphasis": "primary"}, {"id": "i", "type": "illustration", "asset_ref": expl_manifest_ref, "critic_ref": expl_critic_ref, "alt": "A schematic mock cutaway used to validate the explanatory control plane.", "credit": "Mock fixture", "claim_ids": ["mock-claim"], "story_role": "explanation", "priority": 2, "emphasis": "primary"}, {"id": "ir", "type": "illustration", "asset_ref": rich_manifest_ref, "critic_ref": rich_critic_ref, "alt": "A provenance-aware mock rich illustration used for control-plane testing.", "credit": "Mock fixture", "claim_ids": ["mock-claim"], "story_role": "resolution", "priority": 3, "emphasis": "support"}, {"id": "s", "type": "hero_stat", "value": "20", "label": "Mock value", "claim_id": "mock-claim", "story_role": "hook", "priority": 1, "emphasis": "primary"}]})
+    info_plan = {
+        "schema_version": "1.1.0",
+        "title": "Mock magazine feature",
+        "dek": "Mock responsive feature for control-plane acceptance.",
+        "alt": "A synthetic magazine feature used to validate the Rust control plane and artifact pipeline.",
+        "intent": "Exercise the infographic control-plane acceptance path.",
+        "primary_message": "Responsive composition preserves verified visual provenance.",
+        "story_arc": "explain",
+        "audience": "informed",
+        "quality_target": "award",
+        "modules": [
+            {"id": "v1", "type": "visual", "manifest_ref": manifest_ref, "story_role": "evidence", "priority": 1, "emphasis": "hero"},
+            {"id": "v2", "type": "visual", "manifest_ref": manifest_ref, "story_role": "evidence", "priority": 2, "emphasis": "primary"},
+            {"id": "i", "type": "illustration", "asset_ref": expl_manifest_ref, "critic_ref": expl_critic_ref, "alt": "A schematic mock cutaway used to validate the explanatory control plane.", "credit": "Mock fixture", "claim_ids": ["mock-claim"], "story_role": "explanation", "priority": 2, "emphasis": "primary"},
+            {"id": "ir", "type": "illustration", "asset_ref": rich_manifest_ref, "critic_ref": rich_critic_ref, "alt": "A provenance-aware mock rich illustration used for control-plane testing.", "credit": "Mock fixture", "claim_ids": ["mock-claim"], "story_role": "resolution", "priority": 3, "emphasis": "support"},
+            {"id": "s", "type": "hero_stat", "value": "20", "label": "Mock value", "claim_id": "mock-claim", "story_role": "hook", "priority": 1, "emphasis": "primary"},
+        ],
+    }
+    write_json(root / info_plan_ref, info_plan)
     write_json(root / info_lint_ref, {"schema_version": "1.1.0", "passed": True, "plan_ref": info_plan_ref, "blockers": []})
+
+    revision_patches = [{"target_module_id": "v1", "field": "span", "value": "full"}]
+    revised_info_plan = normalize_infographic_source(info_plan)
+    revised_info_plan["modules"][0]["span"] = "full"
+    revised_info_plan["mobile_module_order"] = [str(module["id"]) for module in revised_info_plan["modules"]]
+    write_json(root / revised_info_plan_ref, revised_info_plan)
+
     info_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1200" role="img" data-infographic-version="1.1.0"><title>Mock magazine feature</title><desc>Responsive mock magazine infographic with verified visual modules.</desc><rect width="1440" height="1200" fill="white"/><text x="40" y="70">Mock magazine feature</text><rect x="40" y="110" width="360" height="190" fill="#f2f3f4"/><text x="60" y="160">Hero statistic: 20</text><rect x="430" y="110" width="930" height="420" fill="white" stroke="#ddd"/><text x="460" y="160">Verified visualization module one</text><rect x="40" y="560" width="1320" height="420" fill="white" stroke="#ddd"/><text x="70" y="610">Verified visualization module two retained with provenance.</text><text x="70" y="660">This page exists to exercise the infographic control-plane and integrity contract.</text><g data-rich-illustration-version="0.2.0"><rect x="70" y="720" width="280" height="160" fill="#eee"/></g><rect data-role="illustration-credit" x="70" y="890" width="1" height="1" fill="none"/><text x="70" y="910">Mock fixture · AI-generated illustration disclosed.</text><text x="40" y="1140">SOURCES &amp; METHODS</text></svg>\n'
     info_mobile_svg = info_svg.replace('1440 1200', '720 1400').replace('width="1440" height="1200"', 'width="720" height="1400"')
     (root / info_desktop_ref).write_text(info_svg, encoding="utf-8")
@@ -115,14 +184,57 @@ def ensure_artifacts(resume: bool):
     info_hashes = {"desktop_sha256": sha_bytes(info_svg.encode()), "mobile_sha256": sha_bytes(info_mobile_svg.encode())}
     write_json(root / info_manifest_ref, {"schema_version": "1.1.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": ["mock-claim"], "variants": {"desktop": info_desktop_ref, "mobile": info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True})
     deterministic_critic_ref = "infographics/critics/mock.json"
-    write_json(root / deterministic_critic_ref, {"schema_version": "1.1.0", "passed": True, "score": 96, "rubric": {"impact_story_focus": 96, "engagement": 94, "clarity_information_flow": 98, "effectiveness": 96, "hierarchy": 95, "editorial_rhythm": 94, "inclusion_accessibility": 98, "responsive_execution": 98, "craft_geometry": 94, "originality_variety": 90}, "manifest_ref": info_manifest_ref})
+    deterministic_rubric = {"impact_story_focus": 96, "engagement": 94, "clarity_information_flow": 98, "effectiveness": 96, "hierarchy": 95, "editorial_rhythm": 94, "inclusion_accessibility": 98, "responsive_execution": 98, "craft_geometry": 94, "originality_variety": 90}
+    write_json(root / deterministic_critic_ref, {"schema_version": "1.1.0", "passed": True, "score": 96, "rubric": deterministic_rubric, "manifest_ref": info_manifest_ref})
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+T+Z1AAAAAElFTkSuQmCC")
     preview_desktop_ref, preview_mobile_ref = "infographics/previews/mock.png", "infographics/previews/mock.mobile.png"
-    (root / preview_desktop_ref).parent.mkdir(parents=True, exist_ok=True)
-    (root / preview_desktop_ref).write_bytes(png); (root / preview_mobile_ref).write_bytes(png)
+    (root / preview_desktop_ref).write_bytes(png)
+    (root / preview_mobile_ref).write_bytes(png)
     preview_ref = "infographics/previews/mock.json"
     write_json(root / preview_ref, {"schema_version": "0.1.0", "kind": "infographic_visual_preview", "manifest_ref": info_manifest_ref, "deterministic_critic_ref": deterministic_critic_ref, "source_hashes": info_hashes, "variants": {"desktop": preview_desktop_ref, "mobile": preview_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(png), "mobile_sha256": sha_bytes(png)}})
-    write_json(root / "infographics/vision-critics/mock.json", {"schema_version": "0.1.0", "kind": "image_aware_model", "passed": True, "score": 92, "confidence": 0.9, "rubric": {"hierarchy": 92, "legibility": 94, "composition": 91, "visual_coherence": 93, "typography": 90, "source_legibility": 94, "responsive_quality": 92, "illustration_integration": 90, "color_contrast": 95, "editorial_distinctiveness": 88}, "issues": [], "patches": [], "manifest_ref": info_manifest_ref, "preview_ref": preview_ref, "deterministic_critic_ref": deterministic_critic_ref, "provider": "mock-provider", "model": "mock-model"})
+    vision_critic_ref = "infographics/vision-critics/mock.json"
+    vision_rubric = {"hierarchy": 92, "legibility": 94, "composition": 91, "visual_coherence": 93, "typography": 90, "source_legibility": 94, "responsive_quality": 92, "illustration_integration": 90, "color_contrast": 95, "editorial_distinctiveness": 88}
+    write_json(root / vision_critic_ref, {"schema_version": "0.2.0", "kind": "image_aware_model", "passed": True, "score": 92, "confidence": 0.9, "rubric": vision_rubric, "issues": [], "patches": revision_patches, "manifest_ref": info_manifest_ref, "preview_ref": preview_ref, "deterministic_critic_ref": deterministic_critic_ref, "provider": "mock-provider", "model": "mock-model"})
+
+    revision_ref = "infographics/revisions/mock.json"
+    write_json(root / revision_ref, {
+        "schema_version": "0.1.0",
+        "source_plan_ref": info_plan_ref,
+        "vision_critic_ref": vision_critic_ref,
+        "revised_plan_ref": revised_info_plan_ref,
+        "applied_patches": revision_patches,
+        "safety": {
+            "immutable_projection_sha256": infographic_immutable_hash(info_plan),
+            "evidence_fields_preserved": True,
+            "source_schema_version": "1.1.0",
+            "revised_schema_version": "1.2.0",
+            "allowed_patch_fields": ["span", "emphasis", "priority", "move_before", "mobile_move_before"],
+        },
+    })
+
+    preflight_ref = "infographics/competition-preflight/mock.json"
+    write_json(root / preflight_ref, {
+        "schema_version": "0.1.0",
+        "profile": "editorial",
+        "label": "Editorial competition readiness proxy",
+        "threshold_basis": "internal_operational_proxy_not_official_jury_cutoff",
+        "source_urls": [],
+        "machine_passed": True,
+        "submission_ready": False,
+        "blockers": [],
+        "warnings": [],
+        "manual_requirements": [
+            "Human editor must confirm story-specific editorial effectiveness.",
+            "Human editor must confirm originality and final submission suitability.",
+        ],
+        "evidence": [{"kind": "rich_illustration_origin", "ref": rich_manifest_ref, "origin": "generative_ai"}],
+        "observed": {"deterministic_score": 96, "vision_score": 92, "deterministic_rubric": deterministic_rubric, "vision_rubric": vision_rubric},
+        "plan_ref": info_plan_ref,
+        "manifest_ref": info_manifest_ref,
+        "deterministic_critic_ref": deterministic_critic_ref,
+        "vision_critic_ref": vision_critic_ref,
+    })
+
     claim = {"schema_version": "0.7.0", "claim_id": "mock-claim", "claim": "B is higher than A in the deterministic mock fixture.", "status": "verified", "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}
     claims_path = root / "claims.jsonl"
     if not claims_path.exists():
@@ -179,6 +291,8 @@ def run_rpc():
                 tool("ic1", "newsroom_infographic_critic", {"manifest_ref": "infographics/mock.json"})
                 tool("ivp1", "newsroom_infographic_preview", {"manifest_ref": "infographics/mock.json"})
                 tool("ivc1", "newsroom_infographic_vision_critic", {"manifest_ref": "infographics/mock.json"})
+                tool("ivr1", "newsroom_infographic_revise", {"source_plan_ref": "infographics/plans/mock.json", "revised_plan_ref": "infographics/plans/mock-revised.json"})
+                tool("cpf1", "newsroom_competition_preflight", {"profile": "editorial", "manifest_ref": "infographics/mock.json"})
             emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": answer}})
             emit({"type": "turn_end"})
             emit({"type": "agent_settled"})
