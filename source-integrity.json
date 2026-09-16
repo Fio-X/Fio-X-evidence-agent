@@ -13,7 +13,7 @@
     "*.pyc",
     "**/*.pyc"
   ],
-  "file_count": 720,
+  "file_count": 727,
   "generated_visuals_excluded": true,
   "import_strategy": "fill-missing-preserve-hardened-head",
   "materialization": {
@@ -38,5 +38,5 @@
     "upstream_hardening_archive_sha256": "13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c",
     "verification_evidence": "ci-evidence/source-import-verification.json"
   },
-  "source_tree_sha256": "6a574ca1c00265e7b0028ea972c9cf5daeed624fb71164f8684802d5a560c1ce"
+  "source_tree_sha256": "6e39875d4c26adfaec281452325d559c94811a42612cb098b3897535879d6950"
 }
