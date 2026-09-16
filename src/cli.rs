@@ -27,6 +27,9 @@ pub enum Commands {
     /// Start a persistent, tool-using data-news investigation.
     Investigate(InvestigateArgs),
 
+    /// New autonomous investigation (Phase 3, bypasses Pi).
+    InvestigateV2(InvestigateV2Args),
+
     /// Continue an existing investigation with full Pi session context.
     Continue(ContinueArgs),
 
@@ -109,6 +112,29 @@ pub struct ChatArgs {
     /// Prompt to send.
     #[arg(required = true, num_args = 1..)]
     pub prompt: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct InvestigateV2Args {
+    /// LLM provider (anthropic or openai).
+    #[arg(long, env = "NEWSROOM_PROVIDER", default_value = "anthropic")]
+    pub provider: String,
+
+    /// Model to use.
+    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-5")]
+    pub model: String,
+
+    /// API key (falls back to ANTHROPIC_API_KEY or OPENAI_API_KEY env vars).
+    #[arg(long, env = "NEWSROOM_API_KEY")]
+    pub api_key: Option<String>,
+
+    /// Custom base URL for API (e.g., https://dragoncode.codes).
+    #[arg(long, env = "NEWSROOM_BASE_URL")]
+    pub base_url: Option<String>,
+
+    /// Investigation topic or goal.
+    #[arg(required = true, num_args = 1..)]
+    pub topic: Vec<String>,
 }
 
 #[derive(Debug, Args)]

@@ -24,6 +24,7 @@ async fn main() -> Result<()> {
         Commands::Ask(args) => commands::ask::run(args).await,
         Commands::Chat(args) => commands::chat::run(args).await,
         Commands::Investigate(args) => commands::investigate::run(args).await,
+        Commands::InvestigateV2(args) => commands::investigate_v2::run(args).await,
         Commands::Continue(args) => commands::continue_investigation::run(args).await,
         Commands::Inspect(args) => commands::inspect::run(args).await,
         Commands::Verify(args) => commands::verify::run(args).await,
