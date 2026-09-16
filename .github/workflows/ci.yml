@@ -21,7 +21,7 @@ jobs:
           components: rustfmt, clippy
       - name: Python test dependencies
         run: |
-          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 basemap==2.0.0 matplotlib==3.10.8
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 networkx==3.6.1 scipy==1.18.1 basemap==2.0.0 matplotlib==3.10.8
       - name: Install pinned Pi runtime
         run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
       - name: Format
