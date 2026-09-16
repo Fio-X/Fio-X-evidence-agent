@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: c197b6ffdf2e159a1f325744e6186c45aabcccfd
+          ref: eb4b3119eb62bf1083bd24d06cc695ea60eb8d55
       - name: Verify Tahoe Arm64 baseline
         shell: bash
         run: |
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: qualification-probe-c197b6ff
+          name: qualification-probe-eb4b3119
           path: |
             /tmp/macos-local-first.json
             ci-evidence/t18-*
