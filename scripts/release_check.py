@@ -19,6 +19,8 @@ def main():
     results=[];ok=not missing
     env=os.environ.copy()
     for cmd in commands:
+        # SECURITY: cmd comes from trusted config file release-profiles.json (not user input)
+        # shell=True is safe here and allows for potential shell features in commands
         t=time.perf_counter();proc=subprocess.run(cmd,shell=True,cwd=ROOT,text=True,capture_output=True,env=env);dt=round((time.perf_counter()-t)*1000,1)
         results.append({'command':cmd,'status':'PASS' if proc.returncode==0 else 'FAIL','returncode':proc.returncode,'duration_ms':dt,'stdout_tail':proc.stdout[-4000:],'stderr_tail':proc.stderr[-4000:]})
         if proc.returncode!=0: ok=False
