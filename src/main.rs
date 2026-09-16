@@ -1,3 +1,4 @@
+mod agent;
 mod artifact;
 mod audit;
 mod cli;
