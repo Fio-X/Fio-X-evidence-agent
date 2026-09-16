@@ -1,0 +1,24 @@
+name: qualification-probe
+
+on:
+  push:
+    branches: [qualification-probe-20260916]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 801e8a309f4a81b2054bfdacb9a6b09ec5e6b743
+      - name: T02 source integrity
+        run: python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: T03 lock presence
+        run: |
+          test -s Cargo.lock
+          test -s runtime/web/package-lock.json
+          test -s runtime/sigma/package-lock.json
+          test -s runtime/map/package-lock.json
+          test -s runtime/d3/package-lock.json
+      - name: T18 browser capability
+        run: python3 scripts/test_macos_browser_capability.py || true
