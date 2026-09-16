@@ -7,6 +7,7 @@ const VIZ_RUNTIME: &str = include_str!("../runtime/pi/viz.mjs");
 const CARTOGRAPHY_RUNTIME: &str = include_str!("../runtime/pi/cartography.mjs");
 const CARTOGRAPHY_BASEMAP: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-110m.geojson");
+const GSHHS_BASEMAP: &str = include_str!("../runtime/pi/assets/gshhs-i-syros-local.geojson");
 const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
 const PROVENANCE_RUNTIME: &str = include_str!("../runtime/pi/provenance.mjs");
 const INFOGRAPHIC_RUNTIME: &str = include_str!("../runtime/pi/infographic.mjs");
@@ -79,6 +80,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
         )
     })?;
     let cartography_basemap_path = assets_dir.join("naturalearth-admin0-110m.geojson");
+    let gshhs_basemap_path = assets_dir.join("gshhs-i-syros-local.geojson");
     let net_path = runtime_dir.join("net.mjs");
     let provenance_path = runtime_dir.join("provenance.mjs");
     let infographic_path = runtime_dir.join("infographic.mjs");
@@ -128,6 +130,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&viz_path, VIZ_RUNTIME)?;
     write_if_changed(&cartography_path, CARTOGRAPHY_RUNTIME)?;
     write_if_changed(&cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;
+    write_if_changed(&gshhs_basemap_path, GSHHS_BASEMAP)?;
     write_if_changed(&net_path, NET_RUNTIME)?;
     write_if_changed(&provenance_path, PROVENANCE_RUNTIME)?;
     write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)?;
