@@ -88,8 +88,21 @@ pub async fn run(args: DoctorArgs) -> Result<()> {
         bail!("live qualification environment is incomplete; run scripts/bootstrap_live_env.sh or fix the failed checks");
     }
     if report.checks.first().map(|check| check.ok) != Some(true) && !args.strict {
+        eprintln!("\n❌ Pi 未安装或配置错误");
+        eprintln!("\n📦 安装方法:");
+        eprintln!("   npm install -g @earendil-works/pi-coding-agent@0.85.1");
+        eprintln!("\n🚀 或运行自动安装脚本:");
+        eprintln!("   ./scripts/setup.sh");
+        eprintln!();
         bail!("Pi is required. Install/configure Pi or pass --pi-bin <path>");
     }
+
+    // 提供友好的安装建议（如果有失败的检查）
+    if !args.json && !live_ready {
+        eprintln!("\n💡 提示: 运行自动安装脚本配置所有依赖:");
+        eprintln!("   ./scripts/setup.sh\n");
+    }
+
     Ok(())
 }
 

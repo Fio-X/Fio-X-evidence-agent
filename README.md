@@ -9,7 +9,34 @@ Rust 控制平面 + Pi 驱动的智能数据新闻编辑室。
 - **Python 脚本**: 可视化运行时和验证工具
 - **多运行时支持**: Web、D3、Sigma、Map 等可视化引擎
 
-## 快速开始
+## 🚀 快速开始（推荐）
+
+### 一键安装所有依赖
+
+```bash
+# 1. 克隆项目
+git clone <repo-url>
+cd PJ004
+
+# 2. 运行自动安装脚本
+./scripts/setup.sh
+
+# 3. 安装 news CLI
+cargo install --path . --locked
+
+# 4. 配置 API Key
+export ANTHROPIC_API_KEY=your_key_here
+
+# 5. 验证安装
+news doctor
+
+# 6. 开始使用
+news investigate "分析2025年全球气候数据"
+```
+
+### 手动安装
+
+如果自动脚本失败，可以手动安装：
 
 ### 前置要求
 - Rust 1.98.1+
