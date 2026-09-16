@@ -1063,4 +1063,96 @@ mod tests {
         let value: Value = serde_json::from_str(r#"[{"b":2,"a":1}]"#).unwrap();
         assert_eq!(canonical_json(&value), r#"[{"a":1,"b":2}]"#);
     }
+
+    #[test]
+    fn safe_ref_allows_normal_relative_paths() {
+        let root = Path::new("/tmp/root");
+
+        // 正常相对路径应该通过
+        assert!(safe_ref(root, "data/file.json").is_ok());
+        assert!(safe_ref(root, "evidence/report.txt").is_ok());
+        assert!(safe_ref(root, "nested/deep/path/file.md").is_ok());
+    }
+
+    #[test]
+    fn safe_ref_prevents_path_traversal() {
+        let root = Path::new("/tmp/root");
+
+        // 路径遍历应该失败
+        assert!(safe_ref(root, "../etc/passwd").is_err());
+        assert!(safe_ref(root, "data/../../etc/passwd").is_err());
+        assert!(safe_ref(root, "./data/../../../secrets").is_err());
+    }
+
+    #[test]
+    fn safe_ref_rejects_absolute_paths() {
+        let root = Path::new("/tmp/root");
+
+        // 绝对路径应该失败
+        assert!(safe_ref(root, "/etc/passwd").is_err());
+        assert!(safe_ref(root, "/var/log/system.log").is_err());
+    }
+
+    #[test]
+    fn safe_ref_rejects_empty_paths() {
+        let root = Path::new("/tmp/root");
+
+        // 空路径应该失败
+        assert!(safe_ref(root, "").is_err());
+    }
+
+    #[test]
+    fn canonical_json_handles_nested_objects() {
+        let value: Value = serde_json::from_str(
+            r#"{"z": {"b": 2, "a": 1}, "a": [{"d": 4, "c": 3}]}"#
+        ).unwrap();
+        assert_eq!(
+            canonical_json(&value),
+            r#"{"a":[{"c":3,"d":4}],"z":{"a":1,"b":2}}"#
+        );
+    }
+
+    #[test]
+    fn canonical_json_preserves_numbers_and_booleans() {
+        let value: Value = serde_json::from_str(
+            r#"{"num": 42, "float": 3.14, "bool": true, "null": null}"#
+        ).unwrap();
+        assert_eq!(
+            canonical_json(&value),
+            r#"{"bool":true,"float":3.14,"null":null,"num":42}"#
+        );
+    }
+
+    #[test]
+    fn verification_report_tracks_errors() {
+        let mut report = VerificationReport::default();
+
+        assert_eq!(report.checks, 0);
+        assert_eq!(report.errors.len(), 0);
+
+        report.check(true, "should pass");
+        assert_eq!(report.checks, 1);
+        assert_eq!(report.errors.len(), 0);
+
+        report.check(false, "should fail");
+        assert_eq!(report.checks, 2);
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.errors[0], "should fail");
+
+        report.error("explicit error");
+        assert_eq!(report.checks, 3);
+        assert_eq!(report.errors.len(), 2);
+        assert_eq!(report.errors[1], "explicit error");
+    }
+
+    #[test]
+    fn safe_ref_constructs_correct_path() {
+        let root = Path::new("/tmp/root");
+
+        let result = safe_ref(root, "data/file.json").unwrap();
+        assert_eq!(result, Path::new("/tmp/root/data/file.json"));
+
+        let result = safe_ref(root, "nested/deep/file.txt").unwrap();
+        assert_eq!(result, Path::new("/tmp/root/nested/deep/file.txt"));
+    }
 }

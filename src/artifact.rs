@@ -586,4 +586,56 @@ mod tests {
     fn falls_back_for_non_ascii_topic() {
         assert_eq!(slugify("全球电价"), "story");
     }
+
+    #[test]
+    fn slugify_handles_special_characters() {
+        assert_eq!(slugify("Data: Analysis & Report!"), "data-analysis-report");
+        assert_eq!(slugify("test@example.com"), "test-example-com");
+        assert_eq!(slugify("foo___bar"), "foo-bar");
+    }
+
+    #[test]
+    fn slugify_trims_leading_and_trailing_dashes() {
+        assert_eq!(slugify("  hello world  "), "hello-world");
+        assert_eq!(slugify("---test---"), "test");
+    }
+
+    #[test]
+    fn slugify_limits_to_64_chars() {
+        let long_input = "a".repeat(100);
+        let result = slugify(&long_input);
+        assert_eq!(result.len(), 64);
+    }
+
+    #[test]
+    fn slugify_collapses_multiple_separators() {
+        assert_eq!(slugify("hello    world"), "hello-world");
+        assert_eq!(slugify("test----case"), "test-case");
+    }
+
+    #[test]
+    fn slugify_handles_mixed_case() {
+        assert_eq!(slugify("HelloWorld"), "helloworld");
+        assert_eq!(slugify("API Response"), "api-response");
+    }
+
+    #[test]
+    fn slugify_handles_numbers() {
+        assert_eq!(slugify("2024 Report"), "2024-report");
+        assert_eq!(slugify("v1.2.3"), "v1-2-3");
+    }
+
+    #[test]
+    fn slugify_returns_story_for_empty_input() {
+        assert_eq!(slugify(""), "story");
+        assert_eq!(slugify("   "), "story");
+        assert_eq!(slugify("!!!"), "story");
+    }
+
+    #[test]
+    fn slugify_handles_unicode_fallback() {
+        assert_eq!(slugify("测试数据"), "story");
+        assert_eq!(slugify("Тест"), "story");
+        assert_eq!(slugify("🚀 rocket"), "rocket");
+    }
 }
