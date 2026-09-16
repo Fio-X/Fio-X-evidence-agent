@@ -71,16 +71,25 @@ def main() -> int:
             {
                 "qualification_type": "agentic",
                 "passed": True,
+                "unsupported_verified_claims": 0,
                 "checks": {
                     "causal_autonomous_execution": True,
                     "adaptive_replanning": True,
                     "hidden_tool_failure_recovery": True,
                     "same_session_follow_up": True,
                     "contextual_follow_up_replanning": True,
+                    "unsupported_verified_claims_zero": True,
                 },
             },
         )
-        write(integration, {"passed": True, "checks": {"browser_publication_passed": True}})
+        write(
+            integration,
+            {
+                "qualification_type": "integration",
+                "passed": True,
+                "checks": {"browser_publication_passed": True},
+            },
+        )
         write(human, {"passed": True, "reviewer_qualification": "fixture", "artifact_sha256": "a" * 64})
 
         # The repository's lock state can keep the overall dossier BLOCKED. The
