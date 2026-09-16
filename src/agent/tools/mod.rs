@@ -77,19 +77,29 @@ impl Default for ToolRegistry {
 mod web_search;
 mod calculate;
 mod create_chart;
+mod pi_visualization;
 
 pub use web_search::WebSearchTool;
 pub use calculate::CalculateTool;
 pub use create_chart::CreateChartTool;
+pub use pi_visualization::PiVisualizationTool;
 
 /// 创建默认工具注册表
 pub fn create_default_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
 
-    // 注册工具
+    // 注册基础工具
     registry.register(WebSearchTool);
     registry.register(CalculateTool);
     registry.register(CreateChartTool);
+
+    // 如果有 DragonCode API key，注册专业可视化工具
+    if std::env::var("DRAGONCODE_API_KEY").is_ok() || std::env::var("ANTHROPIC_API_KEY").is_ok() {
+        registry.register(PiVisualizationTool::new(
+            "dragoncode".to_string(),
+            "claude-sonnet-4-6".to_string(),
+        ));
+    }
 
     registry
 }
