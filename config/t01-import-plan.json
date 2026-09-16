@@ -1,6 +1,6 @@
 {
   "schema_version": "1.1.0",
-  "status": "TRANSPORT_PENDING",
+  "status": "MATERIALIZED",
   "strategy": "fill-missing-preserve-hardened-head",
   "core_text_archive": {
     "version": "v3",
