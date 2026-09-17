@@ -1,6 +1,10 @@
-pub mod tools;
 pub mod core;
+pub mod tools;
 
-pub use tools::{Tool, ToolResult, ToolRegistry};
-pub use tools::{WebSearchTool, CalculateTool, CreateChartTool, PiVisualizationTool, ModernChartTool, create_default_registry};
+#[allow(unused_imports)]
 pub use core::{AgentState, NewsroomAgent};
+#[allow(unused_imports)]
+pub use tools::{
+    create_default_registry, CalculateTool, CreateChartTool, ModernChartTool, PiVisualizationTool,
+    Tool, ToolRegistry, ToolResult, WebSearchTool,
+};

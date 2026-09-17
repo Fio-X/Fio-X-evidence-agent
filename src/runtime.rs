@@ -7,9 +7,12 @@ const VIZ_RUNTIME: &str = include_str!("../runtime/pi/viz.mjs");
 const CARTOGRAPHY_RUNTIME: &str = include_str!("../runtime/pi/cartography.mjs");
 const CARTOGRAPHY_BASEMAP: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-110m.geojson");
+const CARTOGRAPHY_BASEMAP_50M: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin0-50m.geojson");
 const GSHHS_BASEMAP: &str = include_str!("../runtime/pi/assets/gshhs-i-syros-local.geojson");
 const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
 const PROVENANCE_RUNTIME: &str = include_str!("../runtime/pi/provenance.mjs");
+const EVIDENCE_GATE_RUNTIME: &str = include_str!("../runtime/pi/evidence_gate.mjs");
 const INFOGRAPHIC_RUNTIME: &str = include_str!("../runtime/pi/infographic.mjs");
 const EXPLANATORY_RUNTIME: &str = include_str!("../runtime/pi/explanatory.mjs");
 const ILLUSTRATION_RUNTIME: &str = include_str!("../runtime/pi/illustration.mjs");
@@ -69,6 +72,10 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
         )
     })?;
 
+    write_if_changed(
+        &runtime_dir.join("process.mjs"),
+        include_str!("../runtime/pi/process.mjs"),
+    )?;
     let extension_path = runtime_dir.join("newsroom.ts");
     let viz_path = runtime_dir.join("viz.mjs");
     let cartography_path = runtime_dir.join("cartography.mjs");
@@ -80,9 +87,11 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
         )
     })?;
     let cartography_basemap_path = assets_dir.join("naturalearth-admin0-110m.geojson");
+    let cartography_basemap_50m_path = assets_dir.join("naturalearth-admin0-50m.geojson");
     let gshhs_basemap_path = assets_dir.join("gshhs-i-syros-local.geojson");
     let net_path = runtime_dir.join("net.mjs");
     let provenance_path = runtime_dir.join("provenance.mjs");
+    let evidence_gate_path = runtime_dir.join("evidence_gate.mjs");
     let infographic_path = runtime_dir.join("infographic.mjs");
     let explanatory_path = runtime_dir.join("explanatory.mjs");
     let illustration_path = runtime_dir.join("illustration.mjs");
@@ -130,9 +139,11 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&viz_path, VIZ_RUNTIME)?;
     write_if_changed(&cartography_path, CARTOGRAPHY_RUNTIME)?;
     write_if_changed(&cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;
+    write_if_changed(&cartography_basemap_50m_path, CARTOGRAPHY_BASEMAP_50M)?;
     write_if_changed(&gshhs_basemap_path, GSHHS_BASEMAP)?;
     write_if_changed(&net_path, NET_RUNTIME)?;
     write_if_changed(&provenance_path, PROVENANCE_RUNTIME)?;
+    write_if_changed(&evidence_gate_path, EVIDENCE_GATE_RUNTIME)?;
     write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)?;
     write_if_changed(&explanatory_path, EXPLANATORY_RUNTIME)?;
     write_if_changed(&illustration_path, ILLUSTRATION_RUNTIME)?;

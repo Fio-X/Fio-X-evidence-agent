@@ -24,9 +24,9 @@ Arguments:
   <PROMPT>...  Prompt to send
 
 Options:
-      --provider <PROVIDER>  LLM provider (anthropic or openai)
+      --provider <PROVIDER>  LLM provider (anthropic, dragoncode, or openai)
       --model <MODEL>        Model to use
-      --api-key <API_KEY>    API key
+      --api-key <API_KEY>    API key (prefer an environment variable)
       --base-url <BASE_URL>  Custom base URL for API
 ```
 
@@ -38,11 +38,11 @@ Options:
 
 ```bash
 # 设置环境变量
-export OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
+# Load DRAGONCODE_API_KEY from the external secret store before this step.
 
 # 测试
 news chat \
-  --provider openai \
+  --provider dragoncode \
   --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "你好，请用中文回答：什么是数据新闻？"
@@ -53,10 +53,10 @@ news chat \
 ```bash
 # 添加到 .env
 cat >> .env << 'EOF'
-NEWSROOM_PROVIDER=openai
+NEWSROOM_PROVIDER=dragoncode
 NEWSROOM_MODEL=claude-sonnet-4-6
 NEWSROOM_BASE_URL=https://dragoncode.codes
-OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
+# Load DRAGONCODE_API_KEY from the external secret store before this step.
 EOF
 
 # 加载并测试
@@ -114,8 +114,7 @@ news chat "Hello"
 
 **解决**：
 ```bash
-export OPENAI_API_KEY=your-key-here
-# 或者使用 --api-key 参数
+export DRAGONCODE_API_KEY=<configured-key>
 ```
 
 ### 问题 2: API 返回 403/401
@@ -125,7 +124,7 @@ export OPENAI_API_KEY=your-key-here
 **解决**：
 - 检查 API key 是否正确
 - 确认 Base URL: `https://dragoncode.codes`
-- 确认 provider 设置为 `openai`
+- 确认 provider 设置为 `dragoncode`，API mode 为 `anthropic_messages`
 
 ### 问题 3: 连接超时
 

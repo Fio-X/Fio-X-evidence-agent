@@ -238,12 +238,12 @@ For professional charts:
 ```bash
 #!/bin/bash
 
-export DRAGONCODE_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
+export DRAGONCODE_API_KEY=<your-key>
 
 # 测试 1: 简单柱状图
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "创建专业柱状图：2023年各地区电动车销量（中国913万，欧洲294万，美国118万）"
 

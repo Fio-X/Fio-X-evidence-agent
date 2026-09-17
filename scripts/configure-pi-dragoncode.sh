@@ -15,13 +15,24 @@ fi
 echo "✅ Pi 已安装"
 echo ""
 
-# 设置环境变量（给 Pi 使用）
-export OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
-export OPENAI_BASE_URL=https://dragoncode.codes
+# DragonCode 的 Hermes/Pi 路由是 Anthropic Messages。使用已加载的外部
+# .env；不要把 key 写入脚本、shell 历史或日志。
+if [[ -z "${DRAGONCODE_API_KEY:-}" && -n "${OPENAI_API_KEY:-}" ]]; then
+    export DRAGONCODE_API_KEY="${OPENAI_API_KEY}"
+fi
+if [[ -z "${DRAGONCODE_API_KEY:-}" ]]; then
+    echo "❌ 未找到 DRAGONCODE_API_KEY 或 OPENAI_API_KEY（请先加载外部 .env）"
+    exit 1
+fi
+export DRAGONCODE_BASE_URL="${DRAGONCODE_BASE_URL:-${OPENAI_BASE_URL:-https://dragoncode.codes}}"
+export NEWSROOM_PI_PROVIDER=dragoncode
+export NEWSROOM_PI_MODEL=claude-sonnet-4-6
 
 echo "📝 环境变量已设置："
-echo "   OPENAI_API_KEY=sk-00b8...bf2"
-echo "   OPENAI_BASE_URL=https://dragoncode.codes"
+echo "   DRAGONCODE_API_KEY=<configured>"
+echo "   DRAGONCODE_BASE_URL=${DRAGONCODE_BASE_URL}"
+echo "   NEWSROOM_PI_PROVIDER=${NEWSROOM_PI_PROVIDER}"
+echo "   NEWSROOM_PI_MODEL=${NEWSROOM_PI_MODEL}"
 echo ""
 
 # 测试 Pi
@@ -34,7 +45,7 @@ Hello, please respond with "OK" if you can read this.
 EOF
 
 # 尝试调用 Pi
-if pi --provider openai --model claude-sonnet-4-6 /tmp/pi_test.txt 2>&1 | grep -q "OK\|ok\|可以"; then
+if pi --provider dragoncode --model claude-sonnet-4-6 /tmp/pi_test.txt 2>&1 | grep -q "OK\|ok\|可以"; then
     echo "✅ Pi 配置成功！"
     echo ""
     echo "现在可以运行："
@@ -45,9 +56,10 @@ else
     echo "手动配置步骤："
     echo "1. 运行: pi"
     echo "2. 输入: /login"
-    echo "3. 选择: openai"
-    echo "4. API Key: sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2"
-    echo "5. Base URL: https://dragoncode.codes"
+    echo "3. 选择: dragoncode"
+    echo "4. 使用外部 .env 中的 key（不在终端显示）"
+    echo "5. API mode: anthropic_messages"
+    echo "6. Base URL: https://dragoncode.codes"
 fi
 
 rm -f /tmp/pi_test.txt

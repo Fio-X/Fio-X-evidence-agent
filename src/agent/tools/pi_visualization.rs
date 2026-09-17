@@ -1,5 +1,6 @@
 use super::Tool;
 use crate::agent::ToolResult;
+use crate::output;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -12,6 +13,10 @@ use uuid::Uuid;
 pub struct PiVisualizationTool {
     provider: String,
     model: String,
+}
+
+fn csv_cell(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 impl PiVisualizationTool {
@@ -27,33 +32,37 @@ impl PiVisualizationTool {
 
         // Extract headers from first object
         let first = &data[0];
-        let headers: Vec<String> = if let Some(obj) = first.as_object() {
-            obj.keys().cloned().collect()
-        } else {
-            return Err(anyhow::anyhow!("Data must be array of objects"));
-        };
+        let headers: Vec<String> = first
+            .as_object()
+            .map(|obj| obj.keys().cloned().collect())
+            .ok_or_else(|| anyhow::anyhow!("Data must be array of objects"))?;
 
         // Build CSV
-        let mut csv = headers.join(",") + "\n";
+        let mut csv = headers
+            .iter()
+            .map(|header| csv_cell(header))
+            .collect::<Vec<_>>()
+            .join(",");
+        csv.push('\n');
         for row in data {
-            if let Some(obj) = row.as_object() {
-                let values: Vec<String> = headers
-                    .iter()
-                    .map(|h| {
-                        obj.get(h)
-                            .and_then(|v| {
-                                if v.is_string() {
-                                    v.as_str().map(|s| format!("\"{}\"", s))
-                                } else {
-                                    Some(v.to_string())
-                                }
-                            })
-                            .unwrap_or_default()
-                    })
-                    .collect();
-                csv.push_str(&values.join(","));
-                csv.push('\n');
-            }
+            let obj = row
+                .as_object()
+                .ok_or_else(|| anyhow::anyhow!("Data rows must be objects"))?;
+            let values: Vec<String> = headers
+                .iter()
+                .map(|header| {
+                    obj.get(header)
+                        .map(|value| {
+                            value
+                                .as_str()
+                                .map(csv_cell)
+                                .unwrap_or_else(|| csv_cell(&value.to_string()))
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            csv.push_str(&values.join(","));
+            csv.push('\n');
         }
 
         fs::write(output_path, csv).await?;
@@ -82,7 +91,9 @@ impl PiVisualizationTool {
         }
 
         if svg_files.is_empty() {
-            return Err(anyhow::anyhow!("No SVG files found in visualizations directory"));
+            return Err(anyhow::anyhow!(
+                "No SVG files found in visualizations directory"
+            ));
         }
 
         // Return the first SVG (or could sort by modification time)
@@ -93,15 +104,29 @@ impl PiVisualizationTool {
     fn build_investigation_prompt(&self, params: &Value) -> String {
         let title = params["title"].as_str().unwrap_or("Untitled");
         let chart_type = params["chart_type"].as_str().unwrap_or("bar");
-        let subtitle = params.get("subtitle").and_then(|v| v.as_str()).unwrap_or("");
-        let source_note = params.get("source_note").and_then(|v| v.as_str()).unwrap_or("");
+        let subtitle = params
+            .get("subtitle")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let source_note = params
+            .get("source_note")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         format!(
             "创建专业的{}图表。标题：{}。{}{}使用提供的数据文件生成高质量的SVG可视化。",
             chart_type,
             title,
-            if subtitle.is_empty() { String::new() } else { format!("副标题：{}。", subtitle) },
-            if source_note.is_empty() { String::new() } else { format!("数据来源：{}。", source_note) }
+            if subtitle.is_empty() {
+                String::new()
+            } else {
+                format!("副标题：{}。", subtitle)
+            },
+            if source_note.is_empty() {
+                String::new()
+            } else {
+                format!("数据来源：{}。", source_note)
+            }
         )
     }
 }
@@ -113,10 +138,12 @@ impl Tool for PiVisualizationTool {
     }
 
     fn description(&self) -> &str {
-        "Create magazine-grade data visualization using professional newsroom system. \
-         Supports bar charts, line charts, and complex infographics. \
-         Returns publication-ready SVG files. Use this when high-quality, \
-         professional visualization is required for publication or presentation."
+        "Create an evidence-backed newsroom visualization using the professional \
+         Pi pipeline. Use the chart family that answers the reader question: \
+         statistical charts, Sankey/alluvial flows, network/adjacency views, \
+         timelines, or geographic flow maps. Flow rows need source/target/value \
+         and one unit; maps need sourced coordinates, projection, and basemap \
+         provenance. Returns an SVG artifact after the runtime validation gates."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -129,8 +156,14 @@ impl Tool for PiVisualizationTool {
                 },
                 "chart_type": {
                     "type": "string",
-                    "enum": ["bar", "line", "multi_line"],
-                    "description": "Type of chart to create"
+                    "enum": [
+                        "bar", "horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line",
+                        "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial",
+                        "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph",
+                        "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map",
+                        "trajectory_profile", "process_schematic"
+                    ],
+                    "description": "Choose by analytical job; use Sankey/alluvial only for additive flows, network forms for relationships, and geo/cartographic flow only for sourced geography"
                 },
                 "data": {
                     "type": "array",
@@ -168,14 +201,16 @@ impl Tool for PiVisualizationTool {
 
         // Create temporary directory for this visualization
         let temp_id = Uuid::new_v4();
-        let temp_dir = format!(".newsroom/temp/viz-{}", temp_id);
+        let temp_root = output::runtime_output_dir()?.join("temp");
+        let temp_dir = temp_root.join(format!("viz-{}", temp_id));
         fs::create_dir_all(&temp_dir)
             .await
             .context("Failed to create temp directory")?;
 
         // Write data as CSV
-        let data_file = format!("{}/data.csv", temp_dir);
-        self.write_data_csv(data, &data_file)
+        let data_file = temp_dir.join("data.csv");
+        let data_file_string = data_file.to_string_lossy().to_string();
+        self.write_data_csv(data, &data_file_string)
             .await
             .context("Failed to write data CSV")?;
 
@@ -185,11 +220,14 @@ impl Tool for PiVisualizationTool {
         // Check for API key
         let api_key = std::env::var("DRAGONCODE_API_KEY")
             .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
-            .context("No API key found. Set DRAGONCODE_API_KEY or ANTHROPIC_API_KEY")?;
+            .or_else(|_| std::env::var("OPENAI_API_KEY"))
+            .context(
+                "No API key found. Set DRAGONCODE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY",
+            )?;
 
         // Call Pi investigate
         let output = Command::new("news")
-            .args(&[
+            .args([
                 "investigate",
                 "--provider",
                 &self.provider,
@@ -198,9 +236,9 @@ impl Tool for PiVisualizationTool {
                 "--tool-profile",
                 "visual",
                 "--out",
-                &temp_dir,
+                temp_dir.to_string_lossy().as_ref(),
                 "--data",
-                &data_file,
+                &data_file_string,
                 &prompt,
             ])
             .env("DRAGONCODE_API_KEY", &api_key)
@@ -209,10 +247,21 @@ impl Tool for PiVisualizationTool {
             .context("Failed to execute 'news investigate' command")?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let status = output
+                .status
+                .code()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "signal".to_string());
             return Ok(ToolResult {
                 success: false,
-                output: format!("Pi investigation failed: {}", stderr),
+                // Provider and subprocess stderr can contain credentials or
+                // prompt fragments. Keep only bounded, non-sensitive
+                // diagnostics in the tool result.
+                output: format!(
+                    "Pi investigation failed (exit status {}; stderr suppressed, {} bytes)",
+                    status,
+                    output.stderr.len()
+                ),
                 data: None,
             });
         }
@@ -223,14 +272,19 @@ impl Tool for PiVisualizationTool {
 
         while let Some(entry) = artifacts.next_entry().await? {
             let path = entry.path();
-            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.contains("Z-")) {
+            if path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.contains("Z-"))
+            {
                 artifact_dir = Some(path);
                 break;
             }
         }
 
-        let artifact_path = artifact_dir
-            .ok_or_else(|| anyhow::anyhow!("No artifact directory found"))?;
+        let artifact_path =
+            artifact_dir.ok_or_else(|| anyhow::anyhow!("No artifact directory found"))?;
 
         // Find SVG file
         let svg_path = self
@@ -253,5 +307,38 @@ impl Tool for PiVisualizationTool {
                 "title": title
             })),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_cells_escape_quotes_for_complex_labels() {
+        assert_eq!(csv_cell("port, \"A\""), "\"port, \"\"A\"\"\"");
+    }
+
+    #[test]
+    fn professional_schema_exposes_topology_aware_families() {
+        let schema = PiVisualizationTool::new("dragoncode".into(), "claude-sonnet-4-6".into())
+            .parameters_schema();
+        let chart_types = schema["properties"]["chart_type"]["enum"]
+            .as_array()
+            .expect("chart type enum");
+        for expected in [
+            "sankey",
+            "alluvial",
+            "node_link",
+            "timeline",
+            "cartographic_flow_map",
+        ] {
+            assert!(
+                chart_types
+                    .iter()
+                    .any(|value| value.as_str() == Some(expected)),
+                "missing {expected}"
+            );
+        }
     }
 }

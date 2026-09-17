@@ -10,6 +10,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "clap",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,14 +1,14 @@
+import { runProcess } from "./process.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve, sep, relative } from "node:path";
-import { spawn } from "node:child_process";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, validateVizSpec } from "./viz.mjs";
-import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL } from "./cartography.mjs";
+import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { composeInfographicBundle, critiqueInfographic, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
@@ -23,8 +23,9 @@ import { validateMapSpec } from "./map_spec.mjs";
 import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
-import { readBodyBytes, readBodyText } from "./net.mjs";
+import { assertResolvedAddressesSafe, isPrivateIpAddress, readBodyBytes, readBodyText } from "./net.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, evidenceRefFromFingerprint, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
@@ -34,6 +35,17 @@ const MAX_FETCH_CHARS = 80_000;
 const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
 const MAX_DATASET_BYTES = 25_000_000;
+const sourceAccessCircuit = createSourceAccessCircuit(3);
+
+// A 1:50m country basemap is still a global/regional context layer, but keeps
+// coastlines and borders substantially more legible for the default flow-map
+// experience. Callers can explicitly select the lighter 1:110m context or a
+// local basemap when the story's scale requires it.
+const CARTOGRAPHIC_DEFAULT_BASEMAP_ID = "naturalearth_admin0_50m";
+const CARTOGRAPHIC_DEFAULT_BASEMAP = getBasemap(CARTOGRAPHIC_DEFAULT_BASEMAP_ID);
+const CARTOGRAPHIC_DEFAULT_SOURCE_URL = CARTOGRAPHIC_DEFAULT_BASEMAP?.source_url ?? BASEMAP_SOURCE_URL;
+const CARTOGRAPHIC_DEFAULT_LICENSE = CARTOGRAPHIC_DEFAULT_BASEMAP?.license ?? BASEMAP_LICENSE;
+const CARTOGRAPHIC_DEFAULT_CONTENT_HASH = CARTOGRAPHIC_DEFAULT_BASEMAP?.content_hash ?? BASEMAP_CONTENT_HASH;
 
 import { toolEnabled } from "./tool_phase_policy.mjs";
 
@@ -72,6 +84,7 @@ const SEMANTIC_REQUIRED_READER_TASKS = new Set(["ranking", "comparison", "change
 
 const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   rank: ["horizontal_bar", "dot"],
+  comparison: ["horizontal_bar", "dot", "dumbbell", "slope", "small_multiples"],
   change: ["dumbbell", "slope"],
   trend: ["line", "multi_line", "small_multiples"],
   anomaly: ["diverging_bar", "dot", "small_multiples"],
@@ -291,25 +304,6 @@ function textResult(text: string, details: Record<string, unknown> = {}) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
-function isPrivateIp(ip: string) {
-  const value = ip.toLowerCase();
-  if (value === "::1" || value === "::") return true;
-  if (value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe8") || value.startsWith("fe9") || value.startsWith("fea") || value.startsWith("feb")) return true;
-  if (value.startsWith("::ffff:")) return isPrivateIp(value.slice(7));
-  const parts = value.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
-  const [a, b] = parts;
-  return (
-    a === 0 || a === 10 || a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
-}
-
 async function assertPublicUrl(url: URL) {
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only http/https URLs are allowed");
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -317,27 +311,42 @@ async function assertPublicUrl(url: URL) {
     throw new Error("Private and local network hosts are blocked");
   }
   if (isIP(hostname)) {
-    if (isPrivateIp(hostname)) throw new Error("Private and local network hosts are blocked");
+    if (isPrivateIpAddress(hostname)) throw new Error("Private and local network hosts are blocked");
     return;
   }
   const addresses = await lookup(hostname, { all: true, verbatim: true });
-  if (addresses.length === 0 || addresses.some((entry) => isPrivateIp(entry.address))) {
-    throw new Error("Host resolves to a private, local, or unsupported network address");
-  }
+  assertResolvedAddressesSafe(addresses, url.protocol);
 }
 
 async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>) {
-  let current = new URL(urlText);
-  for (let redirect = 0; redirect <= 5; redirect++) {
-    await assertPublicUrl(current);
-    const response = await fetch(current, { redirect: "manual", signal, headers });
-    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-    const location = response.headers.get("location");
-    if (!location) return response;
-    await response.body?.cancel();
-    current = new URL(location, current);
+  let current: URL | undefined;
+  try {
+    current = new URL(urlText);
+    for (let redirect = 0; redirect <= 5; redirect++) {
+      sourceAccessCircuit.assertAvailable(current.hostname.toLowerCase());
+      await assertPublicUrl(current);
+      const response = await fetch(current, { redirect: "manual", signal, headers });
+      if (![301, 302, 303, 307, 308].includes(response.status)) {
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new Error(`HTTP ${response.status}`);
+        }
+        sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
+        return response;
+      }
+      const location = response.headers.get("location");
+      if (!location) return response;
+      await response.body?.cancel();
+      current = new URL(location, current);
+    }
+    throw new Error("Too many HTTP redirects");
+  } catch (error: any) {
+    throw sourceAccessCircuit.recordFailure(
+      "network evidence fetch",
+      error,
+      current?.hostname?.toLowerCase(),
+    );
   }
-  throw new Error("Too many HTTP redirects");
 }
 
 function normalizeHtml(html: string, baseUrl: string) {
@@ -394,57 +403,6 @@ async function fetchText(urlText: string, maxChars: number, signal?: AbortSignal
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abortForwarder);
   }
-}
-
-function runProcess(bin: string, args: string[], signal?: AbortSignal, cwd?: string, input?: string, stdoutLimit = MAX_QUERY_BYTES, timeoutMs = 20_000): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(bin, args, { cwd, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let tooLarge = false;
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      if (stdout.length < stdoutLimit) stdout += chunk;
-      else tooLarge = true;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      if (stderr.length < 100_000) stderr += chunk;
-    });
-    if (input !== undefined) child.stdin.end(input);
-
-    const onAbort = () => child.kill("SIGTERM");
-    signal?.addEventListener("abort", onAbort, { once: true });
-
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onAbort);
-      rejectPromise(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onAbort);
-      if (timedOut) {
-        rejectPromise(new Error(`${bin} exceeded the ${Math.round(timeoutMs / 1000)} second execution limit`));
-        return;
-      }
-      if (code !== 0) {
-        rejectPromise(new Error(`${bin} exited with code ${code}: ${stderr.trim()}`));
-        return;
-      }
-      if (tooLarge) {
-        rejectPromise(new Error(`${bin} exceeded the ${stdoutLimit} byte stdout limit`));
-        return;
-      }
-      resolvePromise({ stdout, stderr });
-    });
-  });
 }
 
 async function rasterizeArtifactSvg(relativePath: string, width: number, signal?: AbortSignal) {
@@ -639,6 +597,45 @@ async function normalizeArtifactRefs(refs: string[], kind: string) {
     normalized.push(rel);
   }
   return normalized;
+}
+
+async function validateSourceEvidence(refs: string[]) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for evidence validation");
+  for (const ref of refs) {
+    const full = resolve(root, ref);
+    if (ref.startsWith("sources/")) {
+      let source: any;
+      try {
+        source = JSON.parse(await readFile(full, "utf8"));
+      } catch {
+        throw new Error(`INVALID_SOURCE_EVIDENCE: source snapshot is not valid JSON: ${ref}`);
+      }
+      const expectedHash = sourceContentHash({
+        finalUrl: source.final_url,
+        status: source.status,
+        contentType: source.content_type,
+        truncated: source.truncated,
+        text: source.text,
+      });
+      assertUsableSourceRecord(source, ref, expectedHash);
+    } else if (ref.startsWith("data/")) {
+      const info = await stat(full);
+      assertDatasetPayload(ref, info.size);
+    }
+  }
+}
+
+async function hasUsableEvidenceInput(snapshot: { fingerprints: string[] }) {
+  for (const fingerprint of snapshot.fingerprints) {
+    const ref = evidenceRefFromFingerprint(fingerprint);
+    if (!ref) continue;
+    try {
+      await validateSourceEvidence([ref]);
+      return true;
+    } catch {}
+  }
+  return false;
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -914,6 +911,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const safeSql = validateReadOnlySql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
+      assertInlineRowsHaveEvidence(safeSql, await hasUsableEvidenceInput(inputSnapshot));
       const inputSnapshotHash = inputSnapshot.hash;
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
@@ -1180,7 +1178,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       }), { minItems: 1, maxItems: 24 })),
       claim_spec: Type.Optional(Type.Object({
         claim_id: Type.String(),
-        relation: StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "geography", "network"] as const),
+        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "geography", "network"] as const),
         reader_task: Type.String(),
         target_measure: Type.Optional(Type.String()),
         baseline_measure: Type.Optional(Type.String()),
@@ -1210,6 +1208,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       route_geometry_field: Type.Optional(Type.String()),
       route_provenance_note: Type.Optional(Type.String()),
       route_provenance_field: Type.Optional(Type.String()),
+      flow_id_field: Type.Optional(Type.String({ description: "Stable route key used to link map and Sankey interactions" })),
+      flow_layer_field: Type.Optional(Type.String({ description: "Field naming independent flow layers such as energy, logistics or capital" })),
+      flow_unit_field: Type.Optional(Type.String({ description: "Per-row unit field; each layer must contain exactly one unit" })),
+      flow_period_field: Type.Optional(Type.String({ description: "Per-row period field; each layer must contain one reference period" })),
+      flow_layer_order: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 6 })),
       time_field: Type.Optional(Type.String()),
       trajectory_points_field: Type.Optional(Type.String()),
       extent_mode: Type.Optional(StringEnum(["world", "data"] as const)),
@@ -1257,12 +1260,15 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
         projection: "natural_earth_1",
-        basemap_id: BASEMAP_ID,
-        basemap_source_url: BASEMAP_SOURCE_URL,
-        basemap_license: BASEMAP_LICENSE,
-        basemap_content_hash: BASEMAP_CONTENT_HASH,
+        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
+        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
+        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
+        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
         aggregation_policy: "none",
         ...params,
+        ...(params.geometry_semantics === "abstract_od" && !String(params.note ?? "").trim()
+          ? { note: "Arcs encode origin-destination relationships; they do not trace physical routes." }
+          : {}),
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
       if (deliveryRole === "infographic_module") {
@@ -1399,7 +1405,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
 Desktop SVG: ${desktopSvgRef}
 Mobile SVG: ${mobileSvgRef}
 Manifest: ${manifestRef}
-Verified data hash: ${currentHash}`, {
+Verified data hash: ${currentHash}
+Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`, {
         svgRef: desktopSvgRef,
         desktopSvgRef,
         mobileSvgRef,
@@ -2522,7 +2529,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       manifest_ref: Type.String(),
       profile: Type.Optional(StringEnum(["cpu", "gpu"] as const)),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, signal) {
       const spec = await readArtifactJson(params.plan_ref, "publications/plans/");
       const manifest = await readArtifactJson(params.manifest_ref, "publications/");
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Publication manifest does not belong to the supplied plan");
@@ -2532,12 +2539,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       const outDir = join(root, "publications", "qa", key); await mkdir(outDir, { recursive: true });
       const specPath = join(outDir, "publication-spec.json"); await writeFile(specPath, JSON.stringify(spec, null, 2) + "\n", "utf8");
       const script = join(root, "runtime", "browser_qa.py");
-      const child = spawn("python3", [script, "--html", fullHtml, "--spec", specPath, "--output", outDir, "--profile", params.profile ?? "cpu"], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
-      let stdout = "", stderr = ""; child.stdout.on("data", (chunk) => stdout += chunk); child.stderr.on("data", (chunk) => stderr += chunk);
-      const code: number = await new Promise((resolveCode) => child.on("close", resolveCode));
+      const { code } = await runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--html", fullHtml, "--spec", specPath, "--output", outDir, "--profile", params.profile ?? "cpu"], signal, root, undefined, MAX_QUERY_BYTES, Number(process.env.NEWSROOM_BROWSER_QA_TIMEOUT_MS ?? 120_000), true);
       const report = JSON.parse(await readFile(join(outDir, "browser-qa.json"), "utf8"));
       const reportRef = `publications/qa/${key}/browser-qa.json`;
-      return textResult(`${report.status}: browser publication QA\nProfile: ${report.profile}\nReport: ${reportRef}\nViewports: ${(report.viewports ?? []).map((v: any) => `${v.width}px:${v.status ?? (report.status === "PASS" ? "PASS" : "checked")}`).join(" | ")}\nExternal requests: ${(report.external_requests ?? []).length}\nAccessibility errors: ${(report.accessibility_errors ?? []).length}\nInteraction replay: ${report.interaction_replay?.status ?? "n/a"}`, { passed: code === 0 && report.status === "PASS", reportRef, report, stderr: stderr.slice(0, 4000), stdout: stdout.slice(0, 4000) });
+      return textResult(`${report.status}: browser publication QA\nProfile: ${report.profile}\nReport: ${reportRef}\nViewports: ${(report.viewports ?? []).map((v: any) => `${v.width}px:${v.status ?? (report.status === "PASS" ? "PASS" : "checked")}`).join(" | ")}\nExternal requests: ${(report.external_requests ?? []).length}\nAccessibility errors: ${(report.accessibility_errors ?? []).length}\nInteraction replay: ${report.interaction_replay?.status ?? "n/a"}`, { passed: code === 0 && report.status === "PASS", reportRef, report });
     },
   });
 
@@ -2810,12 +2815,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
   registerScopedTool(pi, {
     name: "newsroom_chart",
     label: "Generate verified chart",
-    description: "Legacy regression/fallback chart tool. For editorial graphics prefer newsroom_viz_plan → newsroom_viz_lint → newsroom_viz_render.",
+    description: "Legacy regression/fallback chart tool for an existing verified claim and its exact deterministic computation. For editorial graphics prefer newsroom_viz_plan → newsroom_viz_lint → newsroom_viz_render.",
     promptSnippet: "Generate an SVG chart from deterministic SQL output",
     promptGuidelines: [
       "Prefer the newsroom_viz_plan → newsroom_viz_lint → newsroom_viz_render pipeline for editorial graphics. Use this legacy tool only as a simple fallback.",
+      "A chart is blocked unless claim_id identifies a verified claim whose source artifacts are usable and whose computation_refs include the exact SQL result rendered here.",
     ],
     parameters: Type.Object({
+      claim_id: Type.String({ description: "Verified claim_id whose cited computation exactly matches this chart query" }),
       title: Type.String(),
       chart_type: StringEnum(["bar", "line"] as const),
       sql: Type.String({ description: "Read-only SQL returning chart rows" }),
@@ -2825,12 +2832,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       subtitle: Type.Optional(Type.String({ description: "Short subtitle that defines the comparison period or denominator" })),
       source_note: Type.String({ description: "Concise source attribution shown on the SVG, including the data producer when known" }),
       note: Type.Optional(Type.String({ description: "Concise methodological caveat shown on the SVG" })),
-      claim: Type.Optional(Type.String({ description: "The factual claim this chart tests or communicates" })),
     }),
     async execute(_id, params, signal) {
-      const rows = await queryDuckDb(params.sql, signal) as Record<string, unknown>[];
+      const safeSql = validateReadOnlySql(params.sql);
+      const inputSnapshot = await evidenceSnapshot();
+      const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
       if (rows.length === 0) throw new Error("Chart query returned no rows");
       if (rows.length > MAX_CHART_ROWS) throw new Error(`Chart query returned ${rows.length} rows; limit is ${MAX_CHART_ROWS}`);
+      const resultHash = hashRows(rows);
+      const computationRef = computationRelativePath(safeSql, inputSnapshot.hash, resultHash);
+      const claim = requireVerifiedClaim(await verifiedClaimRecords(), params.claim_id, computationRef);
+      await validateSourceEvidence(claim.source_refs);
       const svg = makeSvg(
         rows,
         params.chart_type,
@@ -2842,14 +2854,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
         params.source_note,
         params.note,
       );
-      const key = sha256Hex(JSON.stringify({ title: params.title, sql: params.sql, x: params.x_field, y: params.y_field, source_note: params.source_note, rows_hash: hashRows(rows) }));
+      const key = sha256Hex(JSON.stringify({ claim_id: params.claim_id, title: params.title, sql: safeSql, x: params.x_field, y: params.y_field, source_note: params.source_note, rows_hash: resultHash }));
       const svgPath = await writeArtifactIfAbsent(`visualizations/${key}.svg`, svg);
       const manifestPath = await writeArtifactIfAbsent(`visualizations/${key}.json`, {
         schema_version: "0.7.0",
+        claim_id: params.claim_id,
+        computation_ref: computationRef,
         title: params.title,
         chart_type: params.chart_type,
-        claim: params.claim ?? null,
-        sql: validateReadOnlySql(params.sql),
+        claim: claim.claim,
+        sql: safeSql,
         x_field: params.x_field,
         y_field: params.y_field,
         y_label: params.y_label ?? null,
@@ -2884,10 +2898,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       caveat: Type.Optional(Type.String()),
     }),
     async execute(_id, params) {
-      if (params.status === "verified" && params.source_refs.length === 0) {
-        throw new Error("A verified claim requires at least one source artifact reference");
-      }
+      assertEvidenceBackedStatus(params.status, params.source_refs, params.computation_refs);
       const sourceRefs = await normalizeArtifactRefs(params.source_refs, "source");
+      await validateSourceEvidence(sourceRefs);
       const computationRefs = await normalizeArtifactRefs(params.computation_refs, "computation");
       const claimId = `claim-${stableId(JSON.stringify({ claim: params.claim, sourceRefs, computationRefs }))}`;
       const record = {

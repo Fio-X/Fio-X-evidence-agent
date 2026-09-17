@@ -65,7 +65,8 @@ try:
 except Exception as e:
     print(json.dumps({{'error': str(e)}}))
 "#,
-                query.replace('\'', "\\'"), max_results
+                query.replace('\'', "\\'"),
+                max_results
             ))
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

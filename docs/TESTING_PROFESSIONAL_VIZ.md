@@ -21,8 +21,8 @@ export DRAGONCODE_API_KEY=your-key-here
 
 # 2. 验证工具已注册
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "列出你可以使用的工具"
 ```
@@ -41,8 +41,8 @@ news investigate-v2 \
 export DRAGONCODE_API_KEY=your-key-here
 
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "创建专业柱状图：2023年各地区电动车销量。中国913万辆，欧洲294万辆，美国118万辆，其他地区111万辆"
 ```

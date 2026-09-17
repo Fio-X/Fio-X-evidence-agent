@@ -45,25 +45,35 @@ impl ToolRegistry {
 
     /// 执行工具
     pub async fn execute(&self, name: &str, params: Value) -> Result<ToolResult> {
-        let tool = self.tools.get(name)
+        let tool = self
+            .tools
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", name))?;
         tool.execute(params).await
     }
 
     /// 获取所有工具的 Claude 格式定义
     pub fn to_claude_tools(&self) -> Vec<Value> {
-        self.tools.values()
-            .map(|tool| serde_json::json!({
-                "name": tool.name(),
-                "description": tool.description(),
-                "input_schema": tool.parameters_schema()
-            }))
-            .collect()
+        let mut tools: Vec<Value> = self
+            .tools
+            .values()
+            .map(|tool| {
+                serde_json::json!({
+                    "name": tool.name(),
+                    "description": tool.description(),
+                    "input_schema": tool.parameters_schema()
+                })
+            })
+            .collect();
+        tools.sort_by(|left, right| left["name"].as_str().cmp(&right["name"].as_str()));
+        tools
     }
 
     /// 工具列表
     pub fn list_tools(&self) -> Vec<String> {
-        self.tools.keys().cloned().collect()
+        let mut names: Vec<String> = self.tools.keys().cloned().collect();
+        names.sort();
+        names
     }
 }
 
@@ -74,17 +84,17 @@ impl Default for ToolRegistry {
 }
 
 // 具体工具实现
-mod web_search;
 mod calculate;
 mod create_chart;
-mod pi_visualization;
 mod modern_chart;
+mod pi_visualization;
+mod web_search;
 
-pub use web_search::WebSearchTool;
 pub use calculate::CalculateTool;
 pub use create_chart::CreateChartTool;
-pub use pi_visualization::PiVisualizationTool;
 pub use modern_chart::ModernChartTool;
+pub use pi_visualization::PiVisualizationTool;
+pub use web_search::WebSearchTool;
 
 /// 创建默认工具注册表
 pub fn create_default_registry() -> ToolRegistry {
@@ -94,14 +104,26 @@ pub fn create_default_registry() -> ToolRegistry {
     registry.register(WebSearchTool);
     registry.register(CalculateTool);
 
-    // 注册现代交互式图表工具（推荐）
+    // 注册遵守 editorial-chart skill 的交互式图表工具
     registry.register(ModernChartTool);
 
     // 注册传统静态图表工具（快速）
     registry.register(CreateChartTool);
 
-    // 如果有 DragonCode API key，注册专业可视化工具
-    if std::env::var("DRAGONCODE_API_KEY").is_ok() || std::env::var("ANTHROPIC_API_KEY").is_ok() {
+    // Register the Pi publication tool for an explicit DragonCode/Anthropic
+    // route. OPENAI_API_KEY is accepted only when its configured base URL is
+    // DragonCode, so a normal OpenAI setup is not silently rerouted.
+    let dragoncode_base_url = std::env::var("DRAGONCODE_BASE_URL")
+        .ok()
+        .or_else(|| std::env::var("OPENAI_BASE_URL").ok())
+        .unwrap_or_default();
+    let dragoncode_endpoint = dragoncode_base_url
+        .to_ascii_lowercase()
+        .contains("dragoncode.codes");
+    if std::env::var("DRAGONCODE_API_KEY").is_ok()
+        || std::env::var("ANTHROPIC_API_KEY").is_ok()
+        || (std::env::var("OPENAI_API_KEY").is_ok() && dragoncode_endpoint)
+    {
         registry.register(PiVisualizationTool::new(
             "dragoncode".to_string(),
             "claude-sonnet-4-6".to_string(),
@@ -110,4 +132,3 @@ pub fn create_default_registry() -> ToolRegistry {
 
     registry
 }
-

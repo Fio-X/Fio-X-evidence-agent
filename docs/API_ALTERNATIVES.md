@@ -2,23 +2,22 @@
 
 ## 🔍 DragonCode API 状态
 
-### 测试结果
+### 最新测试结果（2026-09-17）
 ```
 ✅ 网站可访问: https://dragoncode.codes (HTTP 200)
-❌ API 调用失败: 503 Service Unavailable
+✅ 请求已到达: https://dragoncode.codes/v1/messages (Anthropic Messages)
+❌ 账号返回: 403 INSUFFICIENT_BALANCE
 ```
 
-### 可能原因
-1. 服务间歇性不稳定
-2. 模型 `claude-sonnet-4-6` 不可用
-3. API 配额或限流
-4. 服务维护中
+这次不是 DNS 或 endpoint 路由错误。当前阻塞是账户余额；余额恢复后仍需重新验证模型权限和完整工具链。
+
+此前的 503 记录保留为历史观测，不能替代当前状态。
 
 ---
 
 ## 🎯 三个可行方案
 
-### 方案 A: 等待 DragonCode 稳定 ⏰
+### 方案 A: 恢复 DragonCode 余额后重测 ⏰
 
 **优点**: 使用你现有的 API
 **缺点**: 不确定何时恢复
@@ -26,11 +25,11 @@
 
 **测试命令**:
 ```bash
-export OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
-export OPENAI_BASE_URL=https://dragoncode.codes
+# Load DRAGONCODE_API_KEY from the external secret store before this step.
+export DRAGONCODE_BASE_URL=https://dragoncode.codes
 
 news chat \
-  --provider openai \
+  --provider dragoncode \
   --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "test"
@@ -65,7 +64,7 @@ news investigate \
   "分析AI发展趋势"
 ```
 
-**费用估算**:
+**费用估算（仅为历史示例，本次验收未使用或核实）**:
 - Claude Sonnet 4: ~$3/million tokens
 - 一次调查: ~10-20k tokens ≈ $0.03-0.06
 - 测试 10 次: ~$0.50
@@ -83,7 +82,7 @@ news investigate \
 # https://platform.openai.com/
 
 # 2. 测试
-export OPENAI_API_KEY=sk-your-openai-key
+# Load OPENAI_API_KEY from the external secret store before this step.
 
 news chat \
   --provider openai \
@@ -103,7 +102,7 @@ news investigate \
 
 | 方案 | 稳定性 | 成本 | 体验 | 推荐度 |
 |------|--------|------|------|--------|
-| DragonCode | 🔴 不稳定 | 免费? | ? | ⭐ |
+| DragonCode | 🟡 路由已验证，余额阻塞 | unavailable | 待重测 | ⭐⭐⭐ |
 | Anthropic | ✅ 稳定 | ~$0.5 | ✅ 最佳 | ⭐⭐⭐⭐⭐ |
 | OpenAI | ✅ 稳定 | ~$1 | 🟡 较好 | ⭐⭐⭐⭐ |
 
@@ -120,8 +119,8 @@ news investigate \
 4. 开始准备参赛材料
 
 **如果没有预算**:
-1. 继续等待 DragonCode
-2. 每小时测试一次
+1. 优先恢复账号余额并重跑 route smoke
+2. 若权限仍不可用，再考虑 Anthropic 官方 API
 3. 同时完善其他材料（文档、截图）
 
 ---
@@ -158,7 +157,7 @@ news investigate \
 
 ## 🎯 参赛时间线（无论用哪个 API）
 
-### Day 1-2: 测试和验证 🔴 **当前卡住**
+### Day 1-2: 测试和验证 🟡 **余额恢复后继续**
 - [ ] 配置 API（任意一个可用的）
 - [ ] 运行成功的调查
 - [ ] 收集输出样本
@@ -181,7 +180,7 @@ news investigate \
 
 ## 🚨 风险提示
 
-### 如果 DragonCode 一直不稳定
+### 如果 DragonCode 余额或权限长期未恢复
 
 **备选方案优先级**:
 1. **Anthropic 官方** - 最佳体验，稳定可靠
@@ -194,7 +193,7 @@ news investigate \
 - 至少 1 次成功的完整调查（录制视频）
 - 3-5 个典型场景输出（展示能力）
 
-**如果 48 小时内 DragonCode 不恢复，强烈建议切换到 Anthropic 官方 API**
+**如果余额恢复后仍无法使用该模型，建议切换到 Anthropic 官方 API**
 
 ---
 
@@ -224,11 +223,11 @@ news investigate \
 4. ✅ 快速参赛指南
 5. ✅ 代码测试和验证
 
-**唯一缺失**: 一个稳定可用的 API 端点
+**当前缺失**: 余额恢复后的实际模型调用和 3x3 评测
 
 ---
 
-**现在的关键问题**: 
+**现在的关键问题**: 先恢复 DragonCode 余额，再完成真实模型和证据链复测。
 
 **你想：**
 1. 继续等 DragonCode？

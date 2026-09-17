@@ -1,7 +1,10 @@
-use crate::llm::{LLMClient, Message, Response};
 use super::{ToolRegistry, ToolResult};
+use crate::llm::{LLMClient, Message, ToolUse};
 use anyhow::Result;
-use serde_json::Value;
+
+// Keep the V2 agent on the same editorial contract as the bundled newsroom
+// runtime. This is a project-owned skill; no upstream template code is copied.
+const EDITORIAL_CHART_SKILL: &str = include_str!("../../skills/editorial-chart/SKILL.md");
 
 /// Agent 状态
 #[derive(Debug)]
@@ -26,8 +29,14 @@ impl AgentState {
         self.conversation.push(Message::user(&content));
     }
 
-    pub fn add_assistant_message(&mut self, content: String) {
-        self.conversation.push(Message::assistant(&content));
+    pub fn add_assistant_response(&mut self, content: &str, tool_uses: &[ToolUse]) {
+        self.conversation
+            .push(Message::assistant_response(content, tool_uses));
+    }
+
+    pub fn add_tool_results_message(&mut self, blocks: Vec<serde_json::Value>, content: String) {
+        self.conversation
+            .push(Message::tool_results(blocks, content));
     }
 
     pub fn add_tool_result(&mut self, tool_name: String, result: ToolResult) {
@@ -72,13 +81,17 @@ impl NewsroomAgent {
 
 规则：
 - 根据需要主动调用工具
-- 每次调用一个工具
+- 对互不依赖的工具可在同一轮批量调用；等待所有结果后再决策
 - 基于工具结果动态调整计划
 - 完成后输出完整的调查报告
 - 报告要包含数据来源和关键发现
+
+图表输出必须遵守项目 editorial-chart skill（不要把装饰当作证据）：
+{}
 "#,
             self.state.goal,
-            self.tools.list_tools().join(", ")
+            self.tools.list_tools().join(", "),
+            EDITORIAL_CHART_SKILL
         )
     }
 
@@ -117,23 +130,39 @@ impl NewsroomAgent {
 
             let response = self.llm.chat(&messages, Some(&tools)).await?;
 
-            // 记录 assistant 消息
-            if !response.content.is_empty() {
+            // Preserve the exact assistant turn shape for Anthropic tool use:
+            // text and tool_use blocks must share one assistant message.
+            if !response.content.is_empty() || !response.tool_uses.is_empty() {
                 self.state
-                    .add_assistant_message(response.content.clone());
-                eprintln!("💭 Agent: {}", response.content.lines().next().unwrap_or(""));
+                    .add_assistant_response(&response.content, &response.tool_uses);
+            }
+            if !response.content.is_empty() {
+                eprintln!(
+                    "💭 Agent: {}",
+                    response.content.lines().next().unwrap_or("")
+                );
             }
 
             // 处理工具调用
             if !response.tool_uses.is_empty() {
+                let mut result_blocks = Vec::with_capacity(response.tool_uses.len());
+                let mut rendered_results = String::new();
                 for tool_use in &response.tool_uses {
                     eprintln!("🔧 Tool: {} ({})", tool_use.name, tool_use.id);
 
                     // 执行工具
-                    let result = self
+                    let result = match self
                         .tools
                         .execute(&tool_use.name, tool_use.input.clone())
-                        .await?;
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => ToolResult {
+                            success: false,
+                            output: format!("Tool '{}' execution failed", tool_use.name),
+                            data: None,
+                        },
+                    };
 
                     if result.success {
                         eprintln!("✅ {}", result.output);
@@ -157,8 +186,22 @@ impl NewsroomAgent {
                         format!("Tool '{}' result: {}", tool_use.name, result.output)
                     };
 
-                    self.state.add_user_message(result_message);
+                    let mut result_block = serde_json::json!({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use.id,
+                        "content": result_message,
+                    });
+                    if !result.success {
+                        result_block["is_error"] = serde_json::Value::Bool(true);
+                    }
+                    result_blocks.push(result_block);
+                    rendered_results.push_str(&format!("{}\n", result_message));
                 }
+
+                // One assistant turn maps to one user turn containing every
+                // tool result in order, as required by Anthropic Messages.
+                self.state
+                    .add_tool_results_message(result_blocks, rendered_results);
 
                 // 继续循环让 agent 处理工具结果
                 continue;
@@ -200,5 +243,27 @@ impl NewsroomAgent {
         }
 
         Ok(report)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::llm::Provider;
+
+    #[test]
+    fn v2_prompt_includes_editorial_chart_skill() {
+        let agent = NewsroomAgent::new(
+            LLMClient::new(
+                Provider::Anthropic,
+                "test-key".to_string(),
+                "test-model".to_string(),
+            ),
+            ToolRegistry::default(),
+            "test goal".to_string(),
+        );
+        let prompt = agent.build_system_prompt();
+        assert!(prompt.contains("investigate-v2` contract"));
+        assert!(prompt.contains("Do not use gradients"));
     }
 }

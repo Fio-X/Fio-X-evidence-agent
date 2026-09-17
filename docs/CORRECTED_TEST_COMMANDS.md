@@ -5,11 +5,11 @@
 ### 步骤 1: 验证工具注册
 
 ```bash
-export ANTHROPIC_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
+export ANTHROPIC_API_KEY=<your-key>
 
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "列出你可以使用的工具"
 ```
@@ -19,11 +19,11 @@ news investigate-v2 \
 ### 步骤 2: 测试专业可视化
 
 ```bash
-export ANTHROPIC_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
+export ANTHROPIC_API_KEY=<your-key>
 
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "创建专业柱状图：2023年各地区电动车销量。中国913万辆，欧洲294万辆，美国118万辆，其他地区111万辆"
 ```
@@ -35,15 +35,15 @@ news investigate-v2 \
 ```bash
 # 基础图表（应该使用 create_chart）
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "创建简单图表：苹果100亿，微软95亿"
 
 # 专业图表（应该使用 create_professional_chart）
 news investigate-v2 \
-  --provider anthropic \
-  --model claude-sonnet-5 \
+  --provider dragoncode \
+  --model claude-sonnet-4-6 \
   --base-url https://dragoncode.codes \
   "创建专业出版级图表：苹果100亿，微软95亿"
 ```
@@ -54,8 +54,8 @@ news investigate-v2 \
 
 1. **环境变量**: 使用 `ANTHROPIC_API_KEY` 或 `DRAGONCODE_API_KEY`
 2. **Base URL**: `--base-url https://dragoncode.codes`
-3. **Provider**: `--provider anthropic` (只能用一次)
-4. **Model**: `--model claude-sonnet-5`
+3. **Provider**: `--provider dragoncode` (只能用一次)
+4. **Model**: `--model claude-sonnet-4-6`
 
 ---
 

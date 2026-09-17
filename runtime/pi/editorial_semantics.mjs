@@ -4,7 +4,10 @@ import { COMPARABILITY, compareMeasureSemantics, normalizeMeasureSemantics } fro
 export const CLAIM_SPEC_VERSION='1.0.0';
 export const EDITORIAL_GRAMMAR_VERSION='1.0.0';
 
-const RELATIONS=new Set(['rank','change','trend','anomaly','benchmark','composition','distribution','relationship','uncertainty','flow','geography','network']);
+// `comparison` is a reader-facing task exposed by the newsroom tool schema.
+// Keep it as a first-class claim relation so the model can declare a direct
+// comparison without being rejected before the chart grammar is evaluated.
+const RELATIONS=new Set(['rank','comparison','change','trend','anomaly','benchmark','composition','distribution','relationship','uncertainty','flow','geography','network']);
 const DERIVED_METRICS=new Set(['percent_change','absolute_change','percentage_point_change','ratio']);
 
 function object(v,name){ if(!v||typeof v!=='object'||Array.isArray(v)) throw new Error(`${name} must be an object`); }
@@ -79,6 +82,7 @@ function grammarFor(claim,gate){
   const twoPoint=Boolean(claim.target_measure&&claim.baseline_measure);
   const map={
     rank:['horizontal_bar','dot'],
+    comparison:['horizontal_bar','dot','dumbbell','slope','small_multiples'],
     change:twoPoint?['dumbbell','slope']:['line'],
     trend:['line','small_multiples'],
     anomaly:['diverging_bar','dot','small_multiples'],

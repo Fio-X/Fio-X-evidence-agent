@@ -31,11 +31,11 @@
 
 ```bash
 # 方式 A: 自动配置（推荐）
-export OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
-export OPENAI_BASE_URL=https://dragoncode.codes
+# Load DRAGONCODE_API_KEY from the external secret store before this step.
+export DRAGONCODE_BASE_URL=https://dragoncode.codes
 
 # 测试 Pi
-pi --provider openai --model claude-sonnet-4-6 --help
+pi --provider dragoncode --model claude-sonnet-4-6 --help
 
 # 方式 B: 交互式配置（如果方式A失败）
 pi
@@ -49,7 +49,7 @@ pi
 ```bash
 # 简单测试
 news investigate \
-  --provider openai \
+  --provider dragoncode \
   --model claude-sonnet-4-6 \
   "分析2025年人工智能发展三大趋势"
 
@@ -105,15 +105,15 @@ cat .newsroom/artifacts/$LATEST/tools.json
 **录制脚本**:
 ```bash
 # 录制准备
-export OPENAI_API_KEY=your-key
-export OPENAI_BASE_URL=https://dragoncode.codes
+# Load DRAGONCODE_API_KEY from the external secret store before this step.
+export DRAGONCODE_BASE_URL=https://dragoncode.codes
 
 # 清屏准备
 clear
 
 # 开始录制
 news investigate \
-  --provider openai \
+  --provider dragoncode \
   --model claude-sonnet-4-6 \
   --tool-profile visual \
   "分析2025年全球电动汽车市场：对比特斯拉、比亚迪、大众的销量数据，生成包含市场份额饼图和销量趋势折线图的专业报告"
@@ -383,11 +383,11 @@ news investigate "分析一下"  # 目标不明确
 
 ```bash
 # 运行配置脚本
-export OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
-export OPENAI_BASE_URL=https://dragoncode.codes
+# Load DRAGONCODE_API_KEY from the external secret store before this step.
+export DRAGONCODE_BASE_URL=https://dragoncode.codes
 
 # 测试
-pi --provider openai --model claude-sonnet-4-6 <<< "Hello, test"
+pi --provider dragoncode --model claude-sonnet-4-6 <<< "Hello, test"
 ```
 
 ---
@@ -397,7 +397,7 @@ pi --provider openai --model claude-sonnet-4-6 <<< "Hello, test"
 ```bash
 # 等 DragonCode 恢复后
 news investigate \
-  --provider openai \
+  --provider dragoncode \
   --model claude-sonnet-4-6 \
   --tool-profile visual \
   "分析2025年AI发展三大趋势，生成简报"
@@ -437,9 +437,14 @@ cat .newsroom/artifacts/$LATEST/tools.json
 
 ## 📞 遇到问题？
 
-### 问题 1: DragonCode 503
+### 问题 1: DragonCode 余额或权限错误
 
-**解决**: 等服务恢复，或使用其他 API
+**当前实测**: 请求已到达 `https://dragoncode.codes/v1/messages`，账号返回
+`403 INSUFFICIENT_BALANCE`。恢复余额后先重跑 route smoke；不要把它诊断为
+DNS 或 OpenAI `/v1/chat/completions` 路由错误。
+
+**解决**: 使用 `--provider dragoncode --model claude-sonnet-4-6`，或恢复账号
+余额后重测；如果模型权限仍不可用，再使用其他 API。
 
 ### 问题 2: Pi 配置失败
 

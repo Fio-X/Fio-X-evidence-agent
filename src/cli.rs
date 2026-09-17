@@ -10,7 +10,7 @@ use std::path::PathBuf;
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -93,15 +93,15 @@ pub struct AskArgs {
 
 #[derive(Debug, Args)]
 pub struct ChatArgs {
-    /// LLM provider (anthropic or openai).
+    /// LLM provider (anthropic, dragoncode, or openai).
     #[arg(long, env = "NEWSROOM_PROVIDER", default_value = "anthropic")]
     pub provider: String,
 
     /// Model to use.
-    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-4")]
+    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-4-6")]
     pub model: String,
 
-    /// API key (falls back to ANTHROPIC_API_KEY or OPENAI_API_KEY env vars).
+    /// API key (falls back to the provider's key env var; DragonCode also accepts OPENAI_API_KEY).
     #[arg(long, env = "NEWSROOM_API_KEY")]
     pub api_key: Option<String>,
 
@@ -116,15 +116,15 @@ pub struct ChatArgs {
 
 #[derive(Debug, Args)]
 pub struct InvestigateV2Args {
-    /// LLM provider (anthropic or openai).
+    /// LLM provider (anthropic, dragoncode, or openai).
     #[arg(long, env = "NEWSROOM_PROVIDER", default_value = "anthropic")]
     pub provider: String,
 
     /// Model to use.
-    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-5")]
+    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-4-6")]
     pub model: String,
 
-    /// API key (falls back to ANTHROPIC_API_KEY or OPENAI_API_KEY env vars).
+    /// API key (falls back to the provider's key env var; DragonCode also accepts OPENAI_API_KEY).
     #[arg(long, env = "NEWSROOM_API_KEY")]
     pub api_key: Option<String>,
 
@@ -135,6 +135,19 @@ pub struct InvestigateV2Args {
     /// Investigation topic or goal.
     #[arg(required = true, num_args = 1..)]
     pub topic: Vec<String>,
+
+    /// Directory below which this ephemeral run writes its report and generated visuals.
+    /// Relative paths are resolved from the directory where `news` was started.
+    #[arg(
+        long,
+        env = "NEWSROOM_OUTPUT_DIR",
+        default_value = ".newsroom/artifacts"
+    )]
+    pub out: PathBuf,
+
+    /// Ask for an interactive confirmation before creating the output directory.
+    #[arg(long, default_value_t = false)]
+    pub confirm_output: bool,
 }
 
 #[derive(Debug, Args)]
@@ -153,6 +166,10 @@ pub struct InvestigateArgs {
         default_value = ".newsroom/artifacts"
     )]
     pub out: PathBuf,
+
+    /// Ask for an interactive confirmation before creating the output directory.
+    #[arg(long, default_value_t = false)]
+    pub confirm_output: bool,
 
     /// Seed a local CSV, JSON, JSONL, TSV, or Parquet file into the investigation. Repeat for multiple files.
     #[arg(long = "data", value_name = "FILE")]

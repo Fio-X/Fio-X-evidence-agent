@@ -18,6 +18,7 @@ if(!toolEnabled('duckdb_query',{profile:'investigate'})) throw new Error('invest
 if(!toolEnabled('newsroom_parallel_tasks',{profile:'investigate',phase:'verify'})) throw new Error('investigate profile must include parallel tasks when verify is enabled');
 if(toolEnabled('newsroom_parallel_tasks',{profile:'publication',phase:'verify'})) throw new Error('publication profile must hide parallel tasks');
 if(!toolEnabled('newsroom_chart',{profile:'investigate'})) throw new Error('investigate profile must include fallback chart');
+if(toolEnabled('newsroom_chart',{profile:'visual'})) throw new Error('visual profile must use the critic-backed viz pipeline');
 const investigateCount=TOOL_REGISTRY.tools.filter(t=>t.profiles.includes('investigate')).length;
 if(investigateCount>15) throw new Error(`investigate profile is too broad: ${investigateCount}`);
 console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,phases:VALID_TOOL_PHASES},null,2));

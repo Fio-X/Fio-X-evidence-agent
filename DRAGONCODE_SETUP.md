@@ -2,7 +2,10 @@
 
 ## 问题
 
-`news` CLI 依赖 Pi 框架，Pi 需要单独配置 API 凭证，不会自动读取 `.env` 文件。
+`news` CLI 依赖 Pi 框架。直接运行 `news` 时，CLI 会从启动命令所在目录的
+`.env` 读取白名单中的 provider/model/base URL/key 设置；已经存在的 shell
+变量优先，密钥不会打印、复制或写回文件。单独运行 `pi` 仍不会自动读取
+`.env`，需要使用 Pi 自己的登录/config 流程。
 
 ## 解决方案
 
@@ -12,33 +15,43 @@
 # 1. 启动 Pi 登录流程
 pi /login
 
-# 2. 选择 openai provider
+# 2. 选择 dragoncode provider
 
 # 3. 输入配置：
-#    API Key: sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
+#    API Key: <your-key>
 #    Base URL: https://dragoncode.codes
+#    API mode: anthropic_messages
 
 # 4. 验证配置
 pi auth
 
 # 5. 测试
-news investigate --provider openai --model claude-sonnet-4-6 "测试查询"
+news investigate --provider dragoncode --model claude-sonnet-4-6 "测试查询"
 ```
 
 ### 方法 2: 手动配置 Pi（如果方法1不可用）
 
-Pi 的配置文件通常在 `~/.config/pi/` 或类似位置。需要添加 OpenAI provider 配置。
+Pi 的配置文件通常在 `~/.config/pi/` 或类似位置。需要添加 DragonCode
+provider，API mode 使用 `anthropic_messages`，不要把它当作 OpenAI
+`chat/completions` endpoint。
 
 ### 方法 3: 临时使用（仅测试）
 
 ```bash
-# 设置环境变量
-export OPENAI_API_KEY=sk-00b8db337e5ffece199d01e003abc37ba6912277ad3aff6ace58eabf8c814bf2
-export OPENAI_BASE_URL=https://dragoncode.codes
+# 独立 worktree 可直接让 news 读取已有外部 .env；不会将 key 复制到 worktree
+NEWSROOM_ENV_FILE=/Users/fio/code/PJ004/.env \
+news investigate --provider dragoncode --model claude-sonnet-4-6 "测试查询"
+
+# 也可以在当前目录放置 .env，再运行：
+set -a
+source /Users/fio/code/PJ004/.env
+set +a
+export DRAGONCODE_API_KEY="${DRAGONCODE_API_KEY:-${OPENAI_API_KEY:-}}"
+export DRAGONCODE_BASE_URL="${DRAGONCODE_BASE_URL:-${OPENAI_BASE_URL:-https://dragoncode.codes}}"
 
 # 运行调查
 news investigate \
-  --provider openai \
+  --provider dragoncode \
   --model claude-sonnet-4-6 \
   --tool-profile visual \
   "你的调查主题"
@@ -46,16 +59,16 @@ news investigate \
 
 ## 已知问题
 
-1. **Pi 不自动读取 .env** - 需要通过 Pi 的 /login 命令配置
-2. **DragonCode 需要自定义 Base URL** - 不是标准的 OpenAI endpoint
-3. **模型名称警告** - Pi 不认识 `claude-sonnet-4-6`，但会尝试使用
+1. **单独运行 Pi 不自动读取 .env** - 需要通过 Pi 的 /login 命令配置；`news` CLI 会读取当前目录或 `NEWSROOM_ENV_FILE` 指定文件
+2. **DragonCode 使用 Anthropic Messages** - endpoint 是 `/v1/messages`
+3. **模型名称** - 账号必须实际拥有 `claude-sonnet-4-6` 权限
 
 ## 建议
 
 对于生产使用，建议：
 - 使用标准的 Anthropic/OpenAI API
 - 或者为 DragonCode 创建专门的配置文档
-- 或者改进 `news` CLI 使其能直接读取 `.env` 文件
+- 若使用其他启动器，确保它也把相同的白名单设置传给 `news`
 
 ## 测试步骤
 

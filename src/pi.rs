@@ -4,9 +4,13 @@ use serde_json::{json, Value};
 use std::fs::OpenOptions;
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::process::Command as StdCommand;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+use tokio::time::Instant;
 
 use crate::tool_registry::{tools_for_profile, DEFAULT_TOOL_PROFILE};
 
@@ -30,7 +34,128 @@ pub struct PiRunResult {
     pub session_stats: Option<Value>,
 }
 
+#[cfg(target_os = "macos")]
+fn parse_system_https_proxy(raw: &str) -> Option<String> {
+    let mut http_enabled = false;
+    let mut https_enabled = false;
+    let mut http_host = None;
+    let mut https_host = None;
+    let mut http_port = None;
+    let mut https_port = None;
+
+    for line in raw.lines() {
+        let Some((key, value)) = line.trim().split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        match key {
+            "HTTPEnable" => http_enabled = value == "1",
+            "HTTPSEnable" => https_enabled = value == "1",
+            "HTTPProxy" if !value.is_empty() => http_host = Some(value),
+            "HTTPSProxy" if !value.is_empty() => https_host = Some(value),
+            "HTTPPort" => http_port = value.parse::<u16>().ok(),
+            "HTTPSPort" => https_port = value.parse::<u16>().ok(),
+            _ => {}
+        }
+    }
+
+    let (enabled, host, port) = if https_enabled {
+        (
+            https_enabled,
+            https_host.or(http_host),
+            https_port.or(http_port),
+        )
+    } else if http_enabled {
+        (http_enabled, http_host, http_port)
+    } else {
+        (false, None, None)
+    };
+    if !enabled {
+        return None;
+    }
+    let host = host?;
+    let port = port.filter(|port| *port > 0)?;
+    if host
+        .chars()
+        .any(|character| character.is_whitespace() || character.is_control())
+        || host.contains(['/', '@', '#', '?'])
+    {
+        return None;
+    }
+    let authority = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    Some(format!("http://{authority}:{port}"))
+}
+
+fn configured_system_proxy() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = StdCommand::new("scutil").arg("--proxy").output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        parse_system_https_proxy(&text)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+fn append_node_option(existing: Option<String>, option: &str) -> String {
+    let current = existing.unwrap_or_default();
+    if current.split_whitespace().any(|value| value == option) {
+        current
+    } else if current.trim().is_empty() {
+        option.to_owned()
+    } else {
+        format!("{} {option}", current.trim())
+    }
+}
+
 impl PiConfig {
+    fn dragoncode_endpoint(value: &str) -> bool {
+        let authority = value
+            .split_once("://")
+            .map(|(_, rest)| rest)
+            .unwrap_or(value)
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .rsplit('@')
+            .next()
+            .unwrap_or("")
+            .split(':')
+            .next()
+            .unwrap_or("");
+        authority.eq_ignore_ascii_case("dragoncode.codes")
+    }
+
+    pub fn normalize_provider(provider: Option<&str>) -> Option<String> {
+        let provider = provider?;
+        let dragoncode_base = std::env::var("DRAGONCODE_BASE_URL")
+            .ok()
+            .or_else(|| std::env::var("OPENAI_BASE_URL").ok());
+        if provider.eq_ignore_ascii_case("openai")
+            && dragoncode_base
+                .as_deref()
+                .is_some_and(Self::dragoncode_endpoint)
+        {
+            Some("dragoncode".to_string())
+        } else {
+            Some(provider.to_string())
+        }
+    }
+
+    pub fn effective_provider(&self) -> Option<String> {
+        Self::normalize_provider(self.provider.as_deref())
+    }
+
     pub fn command(&self) -> Command {
         let mut cmd = Command::new(&self.binary);
         cmd.arg("--mode").arg("rpc");
@@ -44,9 +169,22 @@ impl PiConfig {
             cmd.arg("--no-session");
         }
 
-        if let Some(provider) = &self.provider {
-            cmd.arg("--provider").arg(provider);
-            cmd.env("NEWSROOM_ACTIVE_PROVIDER", provider);
+        if let Some(provider) = self.effective_provider() {
+            if self.provider.as_deref() != Some(provider.as_str()) {
+                eprintln!(
+                    "[agent] normalized Pi provider to dragoncode for dragoncode.codes (Anthropic Messages route)"
+                );
+            }
+            cmd.arg("--provider").arg(&provider);
+            cmd.env("NEWSROOM_ACTIVE_PROVIDER", &provider);
+            if provider == "dragoncode" && std::env::var("DRAGONCODE_API_KEY").is_err() {
+                if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                    // The existing external .env uses the OpenAI-compatible name
+                    // for this DragonCode key. Pass it only to the child process;
+                    // never write it to the worktree or a command-line argument.
+                    cmd.env("DRAGONCODE_API_KEY", key);
+                }
+            }
         }
         if let Some(model) = &self.model {
             cmd.arg("--model").arg(model);
@@ -92,11 +230,38 @@ impl PiConfig {
         // Model-provider and explicitly invoked newsroom network tools remain available.
         cmd.env("PI_SKIP_VERSION_CHECK", "1");
         cmd.env("PI_TELEMETRY", "0");
+
+        let inherited_https_proxy = std::env::var("HTTPS_PROXY")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let inherited_http_proxy = std::env::var("HTTP_PROXY")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let system_proxy = if inherited_https_proxy.is_none() && inherited_http_proxy.is_none() {
+            configured_system_proxy()
+        } else {
+            None
+        };
+        if let Some(proxy) = system_proxy.as_ref() {
+            cmd.env("HTTPS_PROXY", proxy);
+            cmd.env("HTTP_PROXY", proxy);
+            eprintln!("[agent] network route=macOS system proxy enabled (proxy host hidden)");
+        }
+        let proxy_available = inherited_https_proxy
+            .or(inherited_http_proxy)
+            .or(system_proxy);
+        if proxy_available.is_some() {
+            let node_options =
+                append_node_option(std::env::var("NODE_OPTIONS").ok(), "--use-env-proxy");
+            cmd.env("NODE_OPTIONS", node_options);
+        }
         cmd
     }
 
     pub fn display_runtime(&self) -> String {
-        let provider = self.provider.as_deref().unwrap_or("<pi-default>");
+        let provider = self
+            .effective_provider()
+            .unwrap_or_else(|| "<pi-default>".to_string());
         let model = self.model.as_deref().unwrap_or("<pi-default>");
         let session = if self.session_dir.is_some() {
             if self.continue_session {
@@ -116,246 +281,449 @@ impl PiConfig {
     }
 }
 
+fn redact_event(value: &mut Value, secrets: &[String]) {
+    match value {
+        Value::String(text) => {
+            for secret in secrets {
+                *text = text.replace(secret, "[REDACTED]");
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_event(item, secrets);
+            }
+        }
+        Value::Object(object) => {
+            for (key, item) in object {
+                if matches!(key.as_str(), "error" | "errorMessage") {
+                    *item = json!("diagnostic suppressed");
+                } else {
+                    redact_event(item, secrets);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// All durations are milliseconds. Active tools/thinking/retries use the total
+/// deadline rather than a token-silence heuristic. Zero disables only total.
+fn wait_duration(name: &str, default: u64, allow_zero: bool) -> Result<Duration> {
+    let value = match std::env::var(name) {
+        Ok(value) => value
+            .parse::<u64>()
+            .with_context(|| format!("invalid {name}"))?,
+        Err(std::env::VarError::NotPresent) => default,
+        Err(_) => bail!("invalid {name}"),
+    };
+    if (!allow_zero && value == 0) || value > 604_800_000 {
+        bail!(
+            "{name} must be within {}..=604800000 milliseconds",
+            if allow_zero { 0 } else { 1 }
+        );
+    }
+    Ok(Duration::from_millis(value))
+}
+
+#[cfg(unix)]
+struct ProcessGroup(u32);
+#[cfg(unix)]
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        // Pi and its non-detached tool descendants share this new process group.
+        unsafe {
+            libc::kill(-(self.0 as i32), libc::SIGKILL);
+        }
+    }
+}
+
 pub async fn run_prompt(
     config: &PiConfig,
     prompt: &str,
     event_log: Option<&Path>,
 ) -> Result<PiRunResult> {
+    let startup = wait_duration("NEWSROOM_RPC_STARTUP_MS", 60_000, false)?;
+    let idle = wait_duration("NEWSROOM_RPC_IDLE_MS", 300_000, false)?;
+    let finish = wait_duration("NEWSROOM_RPC_FINISH_MS", 30_000, false)?;
+    let total = wait_duration("NEWSROOM_RPC_TOTAL_MS", 86_400_000, true)?;
+    let heartbeat = wait_duration("NEWSROOM_RPC_HEARTBEAT_MS", 5_000, false)?;
+    let secrets: Vec<String> = std::env::vars()
+        .filter_map(|(key, value)| {
+            let key = key.to_ascii_uppercase();
+            (value.len() >= 8
+                && ["API_KEY", "TOKEN", "SECRET", "PASSWORD"]
+                    .iter()
+                    .any(|part| key.contains(part)))
+            .then_some(value)
+        })
+        .collect();
+    let started = Instant::now();
+    eprintln!("[agent] phase=startup elapsed_ms=0");
     let mut command = config.command();
+    #[cfg(unix)]
+    command.process_group(0);
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::null())
         .kill_on_drop(true);
 
     let mut child = command
         .spawn()
         .with_context(|| format!("failed to start Pi executable: {}", config.binary.display()))?;
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .context("Pi RPC stdin was not available")?;
-    let stdout = child
-        .stdout
-        .take()
-        .context("Pi RPC stdout was not available")?;
-    let mut reader = BufReader::new(stdout);
-    let mut log = match event_log {
-        Some(path) => Some(
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .with_context(|| format!("failed to open event log: {}", path.display()))?,
-        ),
-        None => None,
-    };
+    #[cfg(unix)]
+    let group = ProcessGroup(child.id().context("Pi process id unavailable")?);
+    let outcome = async {
+        let mut stdin = child
+            .stdin
+            .take()
+            .context("Pi RPC stdin was not available")?;
+        let stdout = child
+            .stdout
+            .take()
+            .context("Pi RPC stdout was not available")?;
+        let mut reader = BufReader::new(stdout);
+        let mut log = match event_log {
+            Some(path) => Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .with_context(|| format!("failed to open event log: {}", path.display()))?,
+            ),
+            None => None,
+        };
 
-    send_json(
-        &mut stdin,
-        &json!({
-            "id": "news-prompt",
-            "type": "prompt",
-            "message": prompt
-        }),
-    )
-    .await?;
+        send_json(
+            &mut stdin,
+            &json!({
+                "id": "news-prompt",
+                "type": "prompt",
+                "message": prompt
+            }),
+            startup,
+        )
+        .await?;
 
-    let mut streamed_answer = String::new();
-    let mut final_answer: Option<String> = None;
-    let mut final_text_response_received = false;
-    let mut session_stats: Option<Value> = None;
-    let mut session_stats_response_received = false;
-    let mut prompt_accepted = false;
-    let mut saw_settled = false;
-    let mut final_queries_sent = false;
-    let mut abort_sent = false;
-    let mut extension_errors: Vec<String> = Vec::new();
+        let mut streamed_answer = String::new();
+        let mut final_answer: Option<String> = None;
+        let mut final_text_response_received = false;
+        let mut session_stats: Option<Value> = None;
+        let mut session_stats_response_received = false;
+        let mut prompt_accepted = false;
+        let mut saw_settled = false;
+        let mut final_queries_sent = false;
+        let mut active_work = false;
+        let mut last_activity = Instant::now();
+        let mut finish_started = None;
+        let mut first_text_ms: Option<u128> = None;
+        let mut ticks = tokio::time::interval(heartbeat.min(Duration::from_millis(100)));
+        ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut next_heartbeat = started + heartbeat;
+        let mut extension_errors: Vec<String> = Vec::new();
 
-    loop {
-        let mut line = String::new();
-
-        tokio::select! {
-            read = reader.read_line(&mut line) => {
-                let bytes = read?;
-                if bytes == 0 {
-                    break;
+        let mut line = Vec::new();
+        loop {
+            tokio::select! {
+                read = read_record(&mut reader, &mut line) => {
+                    let bytes = read?;
+                    if bytes == 0 {
+                        break;
+                    }
+                }
+                signal = tokio::signal::ctrl_c() => {
+                    signal?;
+                    bail!("Pi RPC cancelled by user");
+                }
+                _ = ticks.tick() => {
+                    let now = Instant::now();
+                    let phase = if finish_started.is_some() { "finishing" }
+                        else if !prompt_accepted { "startup" }
+                        else if active_work { "active-work" } else { "rpc-wait" };
+                    if now >= next_heartbeat {
+                        eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        next_heartbeat = now + heartbeat;
+                    }
+                    let expired = if !total.is_zero() && started.elapsed() >= total { Some("total") }
+                        else if !prompt_accepted && started.elapsed() >= startup { Some("startup") }
+                        else if finish_started.is_some_and(|t: Instant| t.elapsed() >= finish) { Some("finishing") }
+                        else if prompt_accepted && !active_work && finish_started.is_none() && last_activity.elapsed() >= idle { Some("idle") }
+                        else { None };
+                    if let Some(phase) = expired { bail!("Pi RPC {phase} timeout"); }
+                    continue;
                 }
             }
-            signal = tokio::signal::ctrl_c(), if !abort_sent => {
-                signal?;
-                send_json(&mut stdin, &json!({"type": "abort"})).await?;
-                abort_sent = true;
-                eprintln!("\n[agent] abort requested; waiting for Pi to settle...");
+
+            let record = std::str::from_utf8(&line)
+                .context("Pi emitted invalid UTF-8")?
+                .trim();
+            if record.is_empty() {
+                line.clear();
                 continue;
             }
-        }
 
-        let record = line.trim_end_matches(['\r', '\n']);
-        if record.is_empty() {
-            continue;
-        }
+            let event: Value = serde_json::from_str(record)
+                .context("invalid JSONL record from Pi (payload suppressed)")?;
+            line.clear();
+            last_activity = Instant::now();
 
-        let event: Value = serde_json::from_str(record)
-            .with_context(|| format!("invalid JSONL record from Pi: {record}"))?;
-
-        if let Some(file) = log.as_mut() {
-            let mut logged_event = event.clone();
-            if let Some(object) = logged_event.as_object_mut() {
-                object.insert(
-                    "_newsroom_recorded_at".to_string(),
-                    Value::String(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
-                );
-            }
-            writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
-            file.flush()?;
-        }
-
-        match event.get("type").and_then(Value::as_str) {
-            Some("response") if event.get("command").and_then(Value::as_str) == Some("prompt") => {
-                if event.get("success").and_then(Value::as_bool) == Some(true) {
-                    prompt_accepted = true;
-                } else {
-                    let error = event
-                        .get("error")
-                        .map(Value::to_string)
-                        .unwrap_or_else(|| "Pi rejected the prompt".to_string());
-                    bail!("{error}");
-                }
-            }
-            Some("response")
-                if event.get("command").and_then(Value::as_str)
-                    == Some("get_last_assistant_text") =>
+            let mut event = event;
+            redact_event(&mut event, &secrets);
+            // Provider/extension diagnostics are untrusted and may contain credentials.
+            if event.get("type").and_then(Value::as_str) == Some("extension_error")
+                || (event.get("type").and_then(Value::as_str) == Some("response")
+                    && event.get("success").and_then(Value::as_bool) == Some(false))
             {
-                final_text_response_received = true;
-                if event.get("success").and_then(Value::as_bool) == Some(true) {
-                    final_answer = event
-                        .get("data")
-                        .and_then(|data| data.get("text"))
-                        .and_then(Value::as_str)
-                        .map(str::to_owned);
-                }
+                let object = event.as_object_mut().context("invalid RPC event")?;
+                object.remove("error");
+                object.remove("data");
+                object.insert("diagnostic_suppressed".into(), Value::Bool(true));
             }
-            Some("response")
-                if event.get("command").and_then(Value::as_str) == Some("get_session_stats") =>
-            {
-                session_stats_response_received = true;
-                if event.get("success").and_then(Value::as_bool) == Some(true) {
-                    session_stats = event.get("data").cloned();
+            if let Some(file) = log.as_mut() {
+                let mut logged_event = event.clone();
+                if let Some(object) = logged_event.as_object_mut() {
+                    object.insert(
+                        "_newsroom_recorded_at".to_string(),
+                        Value::String(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
+                    );
                 }
+                writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
+                file.flush()?;
             }
-            Some("message_update") => {
-                if let Some(update) = event.get("assistantMessageEvent") {
-                    if update.get("type").and_then(Value::as_str) == Some("text_delta") {
-                        if let Some(delta) = update.get("delta").and_then(Value::as_str) {
-                            print!("{delta}");
-                            std::io::stdout().flush().ok();
-                            streamed_answer.push_str(delta);
+
+            match event.get("type").and_then(Value::as_str) {
+                Some("response")
+                    if event.get("command").and_then(Value::as_str) == Some("prompt") =>
+                {
+                    if event.get("success").and_then(Value::as_bool) == Some(true) {
+                        prompt_accepted = true;
+                        eprintln!("[agent] startup_ms={}", started.elapsed().as_millis());
+                    } else {
+                        bail!("Pi rejected the prompt (provider diagnostic suppressed)");
+                    }
+                }
+                Some("response")
+                    if event.get("command").and_then(Value::as_str)
+                        == Some("get_last_assistant_text") =>
+                {
+                    if event.get("success").and_then(Value::as_bool) != Some(true) {
+                        bail!("Pi final text query failed (diagnostic suppressed)");
+                    }
+                    final_text_response_received = true;
+                    if event.get("success").and_then(Value::as_bool) == Some(true) {
+                        final_answer = event
+                            .get("data")
+                            .and_then(|data| data.get("text"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned);
+                    }
+                }
+                Some("response")
+                    if event.get("command").and_then(Value::as_str)
+                        == Some("get_session_stats") =>
+                {
+                    if event.get("success").and_then(Value::as_bool) != Some(true) {
+                        bail!("Pi session statistics query failed (diagnostic suppressed)");
+                    }
+                    session_stats_response_received = true;
+                    if event.get("success").and_then(Value::as_bool) == Some(true) {
+                        session_stats = event.get("data").cloned();
+                    }
+                }
+                Some("message_update") => {
+                    active_work = true;
+                    if let Some(update) = event.get("assistantMessageEvent") {
+                        if update.get("type").and_then(Value::as_str) == Some("text_delta") {
+                            if let Some(delta) = update.get("delta").and_then(Value::as_str) {
+                                if first_text_ms.is_none() {
+                                    first_text_ms = Some(started.elapsed().as_millis());
+                                }
+                                print!("{delta}");
+                                std::io::stdout().flush().ok();
+                                streamed_answer.push_str(delta);
+                            }
                         }
                     }
                 }
-            }
-            Some("tool_execution_start") => {
-                let tool = event
-                    .get("toolName")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                eprintln!("\n[tool] -> {tool}");
-            }
-            Some("tool_execution_end") => {
-                let tool = event
-                    .get("toolName")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                let failed = event
-                    .get("isError")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                if failed {
-                    eprintln!("[tool] !! {tool} failed");
-                } else {
-                    eprintln!("[tool] <- {tool} ok");
+                Some("tool_execution_start") => {
+                    active_work = true;
+                    eprintln!(
+                        "[agent] phase=tool-running elapsed_ms={}",
+                        started.elapsed().as_millis()
+                    );
                 }
-            }
-            Some("auto_retry_start") => {
-                let attempt = event.get("attempt").and_then(Value::as_u64).unwrap_or(0);
-                eprintln!("[agent] automatic retry attempt {attempt}");
-            }
-            Some("extension_error") => {
-                let error = event
-                    .get("error")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown extension error")
-                    .to_string();
-                extension_errors.push(error.clone());
-                eprintln!("[extension] error: {error}");
-            }
-            Some("agent_settled") => {
-                saw_settled = true;
-                if !final_queries_sent {
-                    send_json(
-                        &mut stdin,
-                        &json!({
-                            "id": "news-final-text",
-                            "type": "get_last_assistant_text"
-                        }),
-                    )
-                    .await?;
-                    send_json(
-                        &mut stdin,
-                        &json!({
-                            "id": "news-session-stats",
-                            "type": "get_session_stats"
-                        }),
-                    )
-                    .await?;
-                    final_queries_sent = true;
+                Some("tool_execution_end") => {
+                    eprintln!(
+                        "[agent] phase=tool-complete elapsed_ms={}",
+                        started.elapsed().as_millis()
+                    );
                 }
+                Some("turn_start") => {
+                    // A new model/tool turn is active even when the provider
+                    // emits no visible text while it is thinking.
+                    active_work = true;
+                }
+                Some("turn_end") => {
+                    // Re-enable the idle boundary between turns. Tool and
+                    // thinking events keep this true for the whole turn, so a
+                    // long tool call is never mistaken for token silence.
+                    active_work = false;
+                }
+                Some("agent_start" | "message_start" | "auto_retry_start") => {
+                    active_work = true;
+                }
+                Some("extension_error") => {
+                    extension_errors.push("suppressed".to_string());
+                    eprintln!("[extension] runtime error (payload suppressed)");
+                }
+                Some("agent_settled") => {
+                    saw_settled = true;
+                    finish_started.get_or_insert_with(Instant::now);
+                    if !final_queries_sent {
+                        send_json(
+                            &mut stdin,
+                            &json!({
+                                "id": "news-final-text",
+                                "type": "get_last_assistant_text"
+                            }),
+                            finish,
+                        )
+                        .await?;
+                        send_json(
+                            &mut stdin,
+                            &json!({
+                                "id": "news-session-stats",
+                                "type": "get_session_stats"
+                            }),
+                            finish,
+                        )
+                        .await?;
+                        final_queries_sent = true;
+                    }
+                }
+                _ => {}
             }
-            _ => {}
+
+            if saw_settled && final_text_response_received && session_stats_response_received {
+                break;
+            }
         }
 
-        if saw_settled && final_text_response_received && session_stats_response_received {
-            break;
+        drop(stdin);
+
+        if !prompt_accepted {
+            return Err(anyhow!(
+                "Pi RPC stream ended before the prompt was accepted"
+            ));
         }
-    }
+        if !saw_settled {
+            return Err(anyhow!("Pi RPC stream ended before agent_settled"));
+        }
+        if !final_text_response_received || !session_stats_response_received {
+            bail!("Pi RPC ended before final replies");
+        }
+        if !extension_errors.is_empty() {
+            eprintln!(
+                "[extension] {} runtime error(s) were recorded in events.jsonl",
+                extension_errors.len()
+            );
+        }
 
-    drop(stdin);
-    let _ = child.kill().await;
-    let _ = child.wait().await;
+        let answer = final_answer.unwrap_or(streamed_answer);
+        if answer.trim().is_empty() {
+            bail!("Pi returned an empty final answer (provider diagnostic suppressed)");
+        }
+        if !answer.ends_with('\n') {
+            println!();
+        }
 
-    if !prompt_accepted {
-        return Err(anyhow!(
-            "Pi RPC stream ended before the prompt was accepted"
-        ));
-    }
-    if !saw_settled {
-        return Err(anyhow!("Pi RPC stream ended before agent_settled"));
-    }
-    if !extension_errors.is_empty() {
         eprintln!(
-            "[extension] {} runtime error(s) were recorded in events.jsonl",
-            extension_errors.len()
+            "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
+            started.elapsed().as_millis(),
+            first_text_ms
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into())
         );
+        if let Some(tokens) = session_stats.as_ref().and_then(|s| s.get("tokens")) {
+            let numeric = |key: &str| {
+                tokens
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "N/A".into())
+            };
+            eprintln!("[agent] tokens_input={} tokens_output={} tokens_cache_read={} tokens_cache_write={}", numeric("input"), numeric("output"), numeric("cacheRead"), numeric("cacheWrite"));
+        }
+        Ok(PiRunResult {
+            text: answer,
+            session_stats,
+        })
+    };
+    let outcome = tokio::select! {
+        result = outcome => result,
+        _ = tokio::signal::ctrl_c() => Err(anyhow!("Pi RPC cancelled by user")),
+        _ = tokio::time::sleep(total), if !total.is_zero() => Err(anyhow!("Pi RPC total timeout")),
+    };
+    #[cfg(unix)]
+    {
+        // Give Pi a bounded chance to clean up its own tracked detached tools.
+        unsafe {
+            libc::kill(-(group.0 as i32), libc::SIGTERM);
+        }
+        let _ = tokio::time::timeout(Duration::from_millis(500), child.wait()).await;
+        drop(group);
     }
-
-    let answer = final_answer.unwrap_or(streamed_answer);
-    if !answer.ends_with('\n') {
-        println!();
-    }
-
-    Ok(PiRunResult {
-        text: answer,
-        session_stats,
-    })
+    let _ = child.kill().await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    outcome
 }
 
-async fn send_json(stdin: &mut tokio::process::ChildStdin, value: &Value) -> Result<()> {
+// fill_buf/consume keeps partial JSON safe across select cancellation and caps memory.
+async fn read_record(
+    reader: &mut BufReader<tokio::process::ChildStdout>,
+    line: &mut Vec<u8>,
+) -> Result<usize> {
+    loop {
+        let buf = reader.fill_buf().await?;
+        if buf.is_empty() {
+            return Ok(line.len());
+        }
+        let end = buf.iter().position(|b| *b == b'\n');
+        let count = end.map_or(buf.len(), |i| i + 1);
+        if line.len() + count > 8_000_000 {
+            bail!("Pi RPC record limit exceeded");
+        }
+        line.extend_from_slice(&buf[..count]);
+        reader.consume(count);
+        if end.is_some() {
+            return Ok(line.len());
+        }
+    }
+}
+
+async fn send_json(
+    stdin: &mut tokio::process::ChildStdin,
+    value: &Value,
+    limit: Duration,
+) -> Result<()> {
     let wire = serde_json::to_string(value)?;
-    stdin.write_all(wire.as_bytes()).await?;
-    stdin.write_all(b"\n").await?;
-    stdin.flush().await?;
+
+    let heartbeat = wait_duration("NEWSROOM_RPC_HEARTBEAT_MS", 5_000, false)?;
+    let started = Instant::now();
+    let write = tokio::time::timeout(limit, async {
+        stdin.write_all(wire.as_bytes()).await?;
+        stdin.write_all(b"\n").await?;
+        stdin.flush().await
+    });
+    tokio::pin!(write);
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => bail!("Pi RPC cancelled by user"),
+            result = &mut write => { result.context("Pi RPC write timeout")??; break; },
+            _ = tokio::time::sleep(heartbeat) => eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis()),
+        }
+    }
     Ok(())
 }
 
@@ -381,5 +749,47 @@ mod tests {
             cfg.display_runtime(),
             "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
         );
+    }
+
+    #[test]
+    fn dragoncode_endpoint_matching_is_exact() {
+        assert!(PiConfig::dragoncode_endpoint("https://dragoncode.codes"));
+        assert!(PiConfig::dragoncode_endpoint("https://dragoncode.codes/v1"));
+        assert!(!PiConfig::dragoncode_endpoint(
+            "https://api.dragoncode.codes"
+        ));
+        assert!(!PiConfig::dragoncode_endpoint(
+            "https://dragoncode.codes.example"
+        ));
+    }
+
+    #[test]
+    fn node_proxy_option_is_added_once() {
+        assert_eq!(
+            append_node_option(None, "--use-env-proxy"),
+            "--use-env-proxy"
+        );
+        assert_eq!(
+            append_node_option(Some("--import=observer.mjs".to_string()), "--use-env-proxy"),
+            "--import=observer.mjs --use-env-proxy"
+        );
+        assert_eq!(
+            append_node_option(Some("--use-env-proxy".to_string()), "--use-env-proxy"),
+            "--use-env-proxy"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parses_macos_https_proxy_without_exposing_credentials() {
+        let raw = "HTTPSEnable : 1\nHTTPSProxy : 127.0.0.1\nHTTPSPort : 1082\n";
+        assert_eq!(
+            parse_system_https_proxy(raw).as_deref(),
+            Some("http://127.0.0.1:1082")
+        );
+        assert!(parse_system_https_proxy(
+            "HTTPSEnable : 1\nHTTPSProxy : bad/path\nHTTPSPort : 1082\n"
+        )
+        .is_none());
     }
 }

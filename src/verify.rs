@@ -824,9 +824,8 @@ fn read_json(path: &Path) -> Result<Value> {
 fn canonical_json(value: &Value) -> String {
     match value {
         Value::Null => "null".to_owned(),
-        Value::Bool(_) | Value::Number(_) | Value::String(_) => {
-            serde_json::to_string(value).unwrap_or_default()
-        }
+        Value::Bool(_) | Value::String(_) => serde_json::to_string(value).unwrap_or_default(),
+        Value::Number(number) => canonical_number(number),
         Value::Array(values) => format!(
             "[{}]",
             values
@@ -851,6 +850,22 @@ fn canonical_json(value: &Value) -> String {
             format!("{{{body}}}")
         }
     }
+}
+
+/// DuckDB's JSON output may spell an integral CSV coordinate as `35.0` while
+/// the original tool response stores the same value as `35`. Normalize only
+/// exactly representable, safe integral floats; retain the original JSON
+/// spelling for fractional or large values so evidence hashes stay precise.
+fn canonical_number(number: &serde_json::Number) -> String {
+    if number.is_f64() {
+        if let Some(value) = number.as_f64() {
+            const MAX_EXACT_INTEGER: f64 = 9_007_199_254_740_991.0;
+            if value.is_finite() && value.fract() == 0.0 && value.abs() <= MAX_EXACT_INTEGER {
+                return (value as i64).to_string();
+            }
+        }
+    }
+    number.to_string()
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -1103,9 +1118,8 @@ mod tests {
 
     #[test]
     fn canonical_json_handles_nested_objects() {
-        let value: Value = serde_json::from_str(
-            r#"{"z": {"b": 2, "a": 1}, "a": [{"d": 4, "c": 3}]}"#
-        ).unwrap();
+        let value: Value =
+            serde_json::from_str(r#"{"z": {"b": 2, "a": 1}, "a": [{"d": 4, "c": 3}]}"#).unwrap();
         assert_eq!(
             canonical_json(&value),
             r#"{"a":[{"c":3,"d":4}],"z":{"a":1,"b":2}}"#
@@ -1114,13 +1128,22 @@ mod tests {
 
     #[test]
     fn canonical_json_preserves_numbers_and_booleans() {
-        let value: Value = serde_json::from_str(
-            r#"{"num": 42, "float": 3.14, "bool": true, "null": null}"#
-        ).unwrap();
+        let value: Value =
+            serde_json::from_str(r#"{"num": 42, "float": 3.14, "bool": true, "null": null}"#)
+                .unwrap();
         assert_eq!(
             canonical_json(&value),
             r#"{"bool":true,"float":3.14,"null":null,"num":42}"#
         );
+    }
+
+    #[test]
+    fn canonical_json_normalizes_integral_float_spelling() {
+        let integer: Value = serde_json::from_str("35").unwrap();
+        let float: Value = serde_json::from_str("35.0").unwrap();
+        assert_eq!(canonical_json(&integer), canonical_json(&float));
+        let fractional: Value = serde_json::from_str("35.25").unwrap();
+        assert_ne!(canonical_json(&integer), canonical_json(&fractional));
     }
 
     #[test]

@@ -43,6 +43,8 @@ const eia=csv(join(ROOT,'fixtures','v09-realdata','eia-us-crude-imports-2024.csv
 const eiaSpec={...base('U.S. crude imports are anchored by Canada','Selected origin-destination relationships, average thousand barrels per day, 2024','thousand b/d'),source_note:'U.S. Energy Information Administration, Petroleum & Other Liquids, selected 2024 crude-oil imports.',geometry_semantics:'abstract_od',source_lat_field:'source_lat',source_lon_field:'source_lon',target_lat_field:'target_lat',target_lon_field:'target_lon'};
 const eiaResult=exercise(eiaSpec,eia,'eia-abstract');
 assert(eiaResult.bundle.desktop.includes('do not represent physical routes'),'EIA OD disclosure missing');
+const prefixedSourceResult=renderVizBundle({...eiaSpec,source_note:'Source: U.S. Energy Information Administration'},eia);
+assert(!prefixedSourceResult.desktop.includes('Source: Source:'),'source attribution was duplicated');
 
 const rem=csv(join(ROOT,'fixtures','v15-cartographic-flow','world-bank-remittance-corridors-2021.csv')).map(r=>({source:r.source,target:r.target,source_lat:r.source_lat,source_lon:r.source_lon,target_lat:r.target_lat,target_lon:r.target_lon,value:r.usd_billion}));
 const remSpec={...base('Four of the largest estimated remittance corridors in 2021','Published World Bank bilateral corridor estimates, billions of U.S. dollars','$bn'),source_note:'World Bank, Bilateral Remittance Matrix (new), published 2022; 2021 corridor estimates.',geometry_semantics:'abstract_od',source_lat_field:'source_lat',source_lon_field:'source_lon',target_lat_field:'target_lat',target_lon_field:'target_lon',note:'Arcs encode estimated bilateral remittance relationships; they do not represent physical routes or money-transfer infrastructure.'};
