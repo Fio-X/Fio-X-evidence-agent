@@ -78,11 +78,13 @@ mod web_search;
 mod calculate;
 mod create_chart;
 mod pi_visualization;
+mod modern_chart;
 
 pub use web_search::WebSearchTool;
 pub use calculate::CalculateTool;
 pub use create_chart::CreateChartTool;
 pub use pi_visualization::PiVisualizationTool;
+pub use modern_chart::ModernChartTool;
 
 /// 创建默认工具注册表
 pub fn create_default_registry() -> ToolRegistry {
@@ -91,6 +93,11 @@ pub fn create_default_registry() -> ToolRegistry {
     // 注册基础工具
     registry.register(WebSearchTool);
     registry.register(CalculateTool);
+
+    // 注册现代交互式图表工具（推荐）
+    registry.register(ModernChartTool);
+
+    // 注册传统静态图表工具（快速）
     registry.register(CreateChartTool);
 
     // 如果有 DragonCode API key，注册专业可视化工具
