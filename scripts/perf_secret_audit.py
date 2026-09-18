@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Scan workspace source and local evidence; print counts and safe locations only."""
-import json, os, re, subprocess
+import json, os, re
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 values=dict(os.environ)
-for line in Path('/Users/fio/code/PJ004/.env').read_text().splitlines():
- if '=' in line and not line.lstrip().startswith('#'):
-  key,value=line.removeprefix('export ').split('=',1);values[key.strip()]=value.strip().strip('\"\'')
+env_candidates=[]
+if os.environ.get('NEWSROOM_ENV_FILE'):
+ env_candidates.append(Path(os.environ['NEWSROOM_ENV_FILE']).expanduser())
+env_candidates.extend([root/'.env', Path.home()/'.config/fio-x/.env'])
+for env_path in env_candidates:
+ if not env_path.is_file():
+  continue
+ for line in env_path.read_text(encoding='utf-8').splitlines():
+  if '=' in line and not line.lstrip().startswith('#'):
+   key,value=line.removeprefix('export ').split('=',1);values[key.strip()]=value.strip().strip('\"\'')
 secrets=[v.encode() for k,v in values.items() if len(v)>=8 and any(w in k.upper() for w in ['API_KEY','TOKEN','SECRET','PASSWORD'])]
 pattern=re.compile(rb'(?:sk-(?:ant-)?[A-Za-z0-9_-]{24,}|(?:Bearer|x-api-key)[ :]+[A-Za-z0-9_-]{24,})')
 hits=[];files=0
