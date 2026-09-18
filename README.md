@@ -1,6 +1,6 @@
 # Agentic Data Newsroom
 
-Rust 控制平面 + Pi 驱动的智能数据新闻编辑室。
+智能数据新闻编辑室。
 
 ## 简介
 
