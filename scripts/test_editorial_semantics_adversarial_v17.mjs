@@ -16,7 +16,7 @@ for(const c of corpus.cases){
 assert.equal(incompatibleFalseNegatives,0,'INCOMPATIBLE false negatives must be zero');
 
 const grammarCases=[
-  ['rank',['horizontal_bar','dot']],['change',['dumbbell','slope']],['trend',['line','small_multiples']],
+  ['rank',['horizontal_bar','dot']],['comparison',['horizontal_bar','dot','dumbbell','slope','small_multiples']],['change',['dumbbell','slope']],['trend',['line','small_multiples']],
   ['benchmark',['dot_with_reference','bullet']],['relationship',['scatter']],['flow',['sankey','alluvial','flow_map']],
   ['network',['node_link','adjacency_matrix']]
 ];

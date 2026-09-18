@@ -207,6 +207,24 @@ errors = list(validator.iter_errors(valid_chord))
 if errors:
     raise SystemExit("valid chord spec failed schema validation: " + " | ".join(error.message for error in errors))
 
+valid_layered = {
+    **valid_carto,
+    "schema_version": "1.1.0",
+    "flow_id_field": "flow_id",
+    "flow_layer_field": "flow_layer",
+    "flow_unit_field": "flow_unit",
+    "flow_period_field": "flow_period",
+    "flow_layer_order": ["Energy", "Logistics", "Capital"],
+}
+errors = list(validator.iter_errors(valid_layered))
+if errors:
+    raise SystemExit("valid layered cartographic spec failed schema validation: " + " | ".join(error.message for error in errors))
+invalid_layered = dict(valid_layered)
+invalid_layered.pop("flow_unit_field")
+errors = list(validator.iter_errors(invalid_layered))
+if not any("flow_unit_field" in error.message for error in errors):
+    raise SystemExit("layered cartographic spec without flow_unit_field was not rejected")
+
 print("viz schema: PASS")
 print("draft: 2020-12")
 print("valid spec: PASS")
@@ -215,3 +233,4 @@ print("complex topology schema: PASS")
 print("v0.9 spatial/explanatory schema: PASS")
 print("v1.0 cartographic flow schema: PASS")
 print("v1.1 trajectory cartography schema: PASS")
+print("v1.1 layered cartographic flow schema: PASS")

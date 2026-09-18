@@ -555,8 +555,7 @@ export const TOOL_REGISTRY = Object.freeze({
       "profiles": [
         "full",
         "competition",
-        "investigate",
-        "visual"
+        "investigate"
       ]
     },
     {

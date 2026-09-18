@@ -363,6 +363,32 @@
       "type": "string",
       "minLength": 1
     },
+    "flow_id_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "flow_layer_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "flow_unit_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "flow_period_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "flow_layer_order": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "time_field": {
       "type": "string",
       "minLength": 1
@@ -919,6 +945,27 @@
               "time_field"
             ]
           }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "cartographic_flow_map"
+          },
+          "flow_layer_field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chart_type",
+          "flow_layer_field"
+        ]
+      },
+      "then": {
+        "required": [
+          "flow_unit_field"
         ]
       }
     }

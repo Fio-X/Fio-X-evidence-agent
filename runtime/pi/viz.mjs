@@ -370,6 +370,12 @@ export function validateVizSpec(spec) {
     else if (spec.dimension_fields.some((field) => !String(field ?? "").trim())) errors.push("parallel_sets dimension_fields must be non-empty strings");
   }
   if (spec.chart_type === "cartographic_flow_map") {
+    if (spec.flow_layer_field !== undefined && !String(spec.flow_layer_field ?? '').trim()) errors.push("flow_layer_field must be a non-empty field name when provided");
+    if (spec.flow_unit_field !== undefined && !String(spec.flow_unit_field ?? '').trim()) errors.push("flow_unit_field must be a non-empty field name when provided");
+    if (spec.flow_period_field !== undefined && !String(spec.flow_period_field ?? '').trim()) errors.push("flow_period_field must be a non-empty field name when provided");
+    if (spec.flow_id_field !== undefined && !String(spec.flow_id_field ?? '').trim()) errors.push("flow_id_field must be a non-empty field name when provided");
+    if (spec.flow_layer_field && !spec.flow_unit_field) errors.push("flow_unit_field is required when flow_layer_field is provided so layer scales cannot be confused");
+    if (spec.flow_layer_order !== undefined && (!Array.isArray(spec.flow_layer_order) || spec.flow_layer_order.length < 1 || spec.flow_layer_order.length > 6 || spec.flow_layer_order.some((item) => !String(item ?? '').trim()))) errors.push("flow_layer_order must contain 1 to 6 non-empty layer names");
     if (!GEOMETRY_SEMANTICS.includes(spec.geometry_semantics)) errors.push(`geometry_semantics must be one of ${GEOMETRY_SEMANTICS.join(", ")}`);
     if (spec.geometry_crs !== 'EPSG:4326') errors.push("geometry_crs must be 'EPSG:4326' in cartography 0.1");
     if (!MAP_PROJECTIONS.includes(spec.projection)) errors.push(`projection must be one of ${MAP_PROJECTIONS.join(", ")}`);
@@ -614,6 +620,34 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.chart_type === "cartographic_flow_map") {
     if (rows.some((row) => (n(row[spec.value_field]) ?? -1) < 0)) blockers.push('cartographic_flow_map does not allow negative flow weights');
     const selected = selectRoutes(rows, spec);
+    if (spec.flow_layer_field) {
+      const layerValues = selected.map((row) => String(row[spec.flow_layer_field] ?? '').trim()).filter(Boolean);
+      const layerSet = [...new Set(layerValues)];
+      if (layerValues.length !== selected.length) blockers.push(`cartographic_flow_map flow_layer_field '${spec.flow_layer_field}' contains missing values`);
+      if (layerSet.length > 6) blockers.push(`cartographic_flow_map has ${layerSet.length} flow layers; maximum is 6 in one composite`);
+      if (Array.isArray(spec.flow_layer_order)) {
+        const unknown = layerSet.filter((layer) => !spec.flow_layer_order.map(String).includes(layer));
+        if (unknown.length) blockers.push(`flow_layer_order is missing layer(s): ${unknown.join(', ')}`);
+      }
+      const unitsByLayer = new Map();
+      for (const row of selected) {
+        const layer = String(row[spec.flow_layer_field] ?? '').trim();
+        const unit = String(row[spec.flow_unit_field] ?? '').trim();
+        if (!unit) blockers.push(`cartographic_flow_map layer '${layer || 'unknown'}' has no unit in '${spec.flow_unit_field}'`);
+        else { if (!unitsByLayer.has(layer)) unitsByLayer.set(layer, new Set()); unitsByLayer.get(layer).add(unit); }
+      }
+      for (const [layer, units] of unitsByLayer) if (units.size > 1) blockers.push(`cartographic_flow_map layer '${layer}' mixes units; each layer needs one independent width scale`);
+      if (spec.flow_period_field) {
+        const periodsByLayer = new Map();
+        for (const row of selected) {
+          const layer = String(row[spec.flow_layer_field] ?? '').trim(), period = String(row[spec.flow_period_field] ?? '').trim();
+          if (!period) blockers.push(`cartographic_flow_map layer '${layer || 'unknown'}' has no period in '${spec.flow_period_field}'`);
+          else { if (!periodsByLayer.has(layer)) periodsByLayer.set(layer, new Set()); periodsByLayer.get(layer).add(period); }
+        }
+        for (const [layer, periods] of periodsByLayer) if (periods.size > 1) blockers.push(`cartographic_flow_map layer '${layer}' mixes reference periods; facet or separate the observations`);
+      }
+      notes.push(`layered cartographic flow: ${layerSet.length} independent layers; width scales reset within each layer and must not be compared across units`);
+    }
     if (spec.aggregation_policy !== 'top_n' && rows.length > 80) blockers.push(`cartographic_flow_map has ${rows.length} routes; set aggregation_policy=top_n or split the story`);
     if (selected.length > 45) warnings.push(`cartographic_flow_map renders ${selected.length} routes; route density may exceed a static editorial frame`);
     if (["abstract_od","great_circle_reference"].includes(spec.geometry_semantics)) {
@@ -639,8 +673,9 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
     if (spec.geometry_semantics === 'abstract_od') notes.push('abstract_od route curves encode relationships only and must not be described as physical routes');
     if (spec.geometry_semantics === 'great_circle_reference') notes.push('great_circle_reference is a geodesic baseline, not a filed or observed route');
-    notes.push(`cartographic basemap=${BASEMAP_ID}; crs=${spec.geometry_crs}; projection=${spec.projection}; geometry_semantics=${spec.geometry_semantics}`);
-    if(spec.extent_mode==='data'){const ex=cartographicDataExtent(spec,selected);if(ex){const span=Math.max(ex.east-ex.west,ex.north-ex.south);if(span<1)warnings.push(`cartographic extent spans only ${span.toFixed(3)} degrees; the bundled 1:110m basemap is too coarse for harbour/street-scale geographic context`);}}
+    const selectedBasemap = getBasemap(spec.basemap_id);
+    notes.push(`cartographic basemap=${spec.basemap_id ?? BASEMAP_ID}; crs=${spec.geometry_crs}; projection=${spec.projection}; geometry_semantics=${spec.geometry_semantics}`);
+    if(spec.extent_mode==='data'){const ex=cartographicDataExtent(spec,selected);if(ex){const span=Math.max(ex.east-ex.west,ex.north-ex.south);if(span<1)warnings.push(`cartographic extent spans only ${span.toFixed(3)} degrees; ${selectedBasemap?.label ?? spec.basemap_id} is too coarse for harbour/street-scale geographic context`);}}
   }
   if (spec.chart_type === "process_schematic") {
     const topo = topologyStats(rows, spec.source_field, spec.target_field);
@@ -743,7 +778,7 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (spec.chart_type === "cartographic_flow_map") {
     const selected=selectRoutes(rows,spec);
     if (selected.length > 35) add("warning","cartographic_route_density",`${selected.length} routes compete on the same cartographic frame.`,8,"Aggregate to top routes, facet by category, or separate overview from detail.");
-    if (spec.geometry_semantics === "abstract_od" && !/(physical|tanker|pipeline|relationship)/i.test(String(spec.note ?? ""))) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
+    if (spec.geometry_semantics === "abstract_od" && !/(physical|tanker|pipeline|relationship|not\s+(?:actual\s+)?(?:ship\s+)?routes?)/i.test(String(spec.note ?? ""))) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
     if (["verified_route","observed_trajectory","network_constrained"].includes(spec.geometry_semantics) && !String(spec.route_provenance_note ?? "").trim()) add("blocker","route_provenance_missing","Physical or observed route geometry has no route provenance note.",100,"Bind route geometry to an explicit source and measurement description.");
     if(spec.extent_mode==="data"){const ex=cartographicDataExtent(spec,selected);if(ex){const adequacy=basemapAdequacy(spec.basemap_id,ex,spec.map_task??null);if(!adequacy.adequate)add("warning","basemap_detail_mismatch",`Basemap ${spec.basemap_id} is not qualified for ${adequacy.task}-scale interpretation (${adequacy.reason}).`,14,"Use a provenance-bound basemap whose registered detail class and extent cover this geographic task.");}}
   }
@@ -857,7 +892,12 @@ function addFooter(parts, spec, footerTop) {
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="986" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
   if (spec.note) y += svgTextLines(parts, `Note: ${spec.note}`, 54, y, { size: 11, lineHeight: 15, fill: PALETTE.muted, maxChars: 120 });
-  svgTextLines(parts, `Source: ${spec.source_note}`, 54, y + 3, { size: 11, lineHeight: 15, fill: PALETTE.muted, maxChars: 120 });
+  svgTextLines(parts, sourceAttribution(spec.source_note), 54, y + 3, { size: 11, lineHeight: 15, fill: PALETTE.muted, maxChars: 120 });
+}
+
+function sourceAttribution(value) {
+  const note = String(value ?? '').trim();
+  return /^source\s*:/i.test(note) ? note : `Source: ${note}`;
 }
 
 function extent(values, includeZero = false) {
@@ -900,8 +940,82 @@ function sortRows(rows, spec, field) {
   return copy;
 }
 
+function renderGroupedDots(spec, rows) {
+  const valueField = spec.value_field;
+  const categoryField = spec.category_field;
+  const seriesField = spec.series_field;
+  const categories = unique(rows.map((row) => String(row[categoryField] ?? ""))).filter(Boolean);
+  const series = unique(rows.map((row) => String(row[seriesField] ?? ""))).filter(Boolean);
+  const bodyHeight = Math.max(250, categories.length * 48 + 78);
+  const f = frame(spec, bodyHeight);
+  const left = 250, right = 955, top = f.bodyTop + 34, bottom = f.bodyBottom - 34;
+  const values = rows.map((row) => n(row[valueField])).filter((value) => value !== null);
+  const domain = extent(values, true);
+  const scale = horizontalScale(domain, left, right);
+  const zero = scale(0);
+  const renderedAnnotations = new Set();
+  const annotationSeries = new Map(categories.map((category) => {
+    const available = series.map((seriesName, index) => rows.some((row) => String(row[categoryField] ?? "") === category && String(row[seriesField] ?? "") === seriesName) ? index : -1).filter((index) => index >= 0);
+    return [category, available.at(-1)];
+  }));
+  const legendY = f.bodyTop + 12;
+  f.parts.push(`<text x="${left}" y="${legendY}" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="${PALETTE.muted}">分组：</text>`);
+  let legendX = left + 42;
+  series.forEach((name, index) => {
+    const color = SERIES_COLORS[index % SERIES_COLORS.length];
+    f.parts.push(`<circle cx="${legendX}" cy="${legendY - 4}" r="5" fill="${color}"/>`);
+    f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="${PALETTE.ink}">${esc(name)}</text>`);
+    legendX += Math.max(68, String(name).length * 11 + 30);
+  });
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
+  const step = (bottom - top) / Math.max(categories.length, 1);
+  const offsets = series.length <= 1
+    ? [0]
+    : series.map((_name, index) => (index - (series.length - 1) / 2) * Math.min(16, 28 / series.length));
+  categories.forEach((category, categoryIndex) => {
+    const center = top + step * categoryIndex + step * 0.5;
+    f.parts.push(`<text x="235" y="${center + 4}" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="${PALETTE.ink}">${esc(category)}</text>`);
+    series.forEach((seriesName, seriesIndex) => {
+      const row = rows.find((candidate) => String(candidate[categoryField] ?? "") === category && String(candidate[seriesField] ?? "") === seriesName);
+      if (!row) return;
+      const value = n(row[valueField]);
+      if (value === null) return;
+      const y = center + (offsets[seriesIndex] ?? 0);
+      const x = scale(value);
+      const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
+      f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
+      f.parts.push(`<circle cx="${x}" cy="${y}" r="5.5" fill="${color}"/>`);
+      const label = fmt(value, spec.label_unit ?? "");
+      const labelWidth = Math.max(24, label.length * 6.2);
+      const canPlaceRight = x + 9 + labelWidth <= right;
+      const canPlaceLeft = x - 9 - labelWidth >= left;
+      const placeRight = value >= 0 ? canPlaceRight || !canPlaceLeft : !canPlaceLeft;
+      const anchor = placeRight ? "start" : "end";
+      const labelX = x + (placeRight ? 9 : -9);
+      if (spec.direct_labels !== false) {
+        f.parts.push(`<text data-role="dot-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="600" fill="${PALETTE.ink}">${esc(label)}</text>`);
+      }
+      if (seriesIndex === annotationSeries.get(category)) {
+        pointAnnotations(spec, row).forEach((annotation) => {
+          const key = `${annotation.claim_id ?? ""}|${annotation.match_field ?? ""}|${annotation.match_value ?? ""}|${annotation.text ?? ""}`;
+          if (renderedAnnotations.has(key)) return;
+          renderedAnnotations.add(key);
+          addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout });
+        });
+      }
+    });
+  });
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
+}
+
 function renderHorizontal(spec, rows, mode) {
   const valueField = spec.value_field;
+  if (mode === "dot" && spec.series_field && fieldExists(rows, spec.series_field)) {
+    return renderGroupedDots(spec, rows);
+  }
   const sorted = sortRows(rows, spec, valueField);
   const bodyHeight = Math.max(230, sorted.length * 38 + 45);
   const f = frame(spec, bodyHeight);
@@ -1247,10 +1361,13 @@ function addMobileFooter(parts, spec, footerTop) {
   parts.push(`<line x1="32" y1="${footerTop - 16}" x2="608" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
   if (spec.note) y += svgTextLines(parts, `Note: ${spec.note}`, 32, y, { size: 10.5, lineHeight: 15, fill: PALETTE.muted, maxChars: 70 });
-  svgTextLines(parts, `Source: ${spec.source_note}`, 32, y + 3, { size: 10.5, lineHeight: 15, fill: PALETTE.muted, maxChars: 70 });
+  svgTextLines(parts, sourceAttribution(spec.source_note), 32, y + 3, { size: 10.5, lineHeight: 15, fill: PALETTE.muted, maxChars: 70 });
 }
 
 function renderMobileHorizontal(spec, rows, mode) {
+  if (mode === "dot" && spec.series_field && fieldExists(rows, spec.series_field)) {
+    return renderGroupedDotsMobile(spec, rows);
+  }
   const sorted = sortRows(rows, spec, spec.value_field);
   const f = mobileFrame(spec, Math.max(250, sorted.length * 42 + 50));
   const left = 178, right = 595, top = f.bodyTop + 5, bottom = f.bodyBottom - 36;
@@ -1290,6 +1407,75 @@ function renderMobileHorizontal(spec, rows, mode) {
       f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, spec.unit))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout, maxChars: 30 }));
+  });
+  addMobileFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
+
+function renderGroupedDotsMobile(spec, rows) {
+  const valueField = spec.value_field;
+  const categoryField = spec.category_field;
+  const seriesField = spec.series_field;
+  const categories = unique(rows.map((row) => String(row[categoryField] ?? ""))).filter(Boolean);
+  const series = unique(rows.map((row) => String(row[seriesField] ?? ""))).filter(Boolean);
+  const bodyHeight = Math.max(280, categories.length * 48 + 92);
+  const f = mobileFrame(spec, bodyHeight);
+  const left = 178, right = 592, top = f.bodyTop + 48, bottom = f.bodyBottom - 34;
+  const values = rows.map((row) => n(row[valueField])).filter((value) => value !== null);
+  const domain = extent(values, true);
+  const scale = horizontalScale(domain, left, right);
+  const zero = scale(0);
+  const renderedAnnotations = new Set();
+  const annotationSeries = new Map(categories.map((category) => {
+    const available = series.map((seriesName, index) => rows.some((row) => String(row[categoryField] ?? "") === category && String(row[seriesField] ?? "") === seriesName) ? index : -1).filter((index) => index >= 0);
+    return [category, available.at(-1)];
+  }));
+  const legendY = f.bodyTop + 16;
+  f.parts.push(`<text x="${left}" y="${legendY}" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="${PALETTE.muted}">分组：</text>`);
+  let legendX = left + 36;
+  series.forEach((name, index) => {
+    const color = SERIES_COLORS[index % SERIES_COLORS.length];
+    f.parts.push(`<circle cx="${legendX}" cy="${legendY - 3}" r="4" fill="${color}"/>`);
+    f.parts.push(`<text x="${legendX + 8}" y="${legendY}" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="${PALETTE.ink}">${esc(name)}</text>`);
+    legendX += Math.max(56, String(name).length * 9 + 24);
+  });
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.1"/>`);
+  const step = (bottom - top) / Math.max(categories.length, 1);
+  const offsets = series.length <= 1
+    ? [0]
+    : series.map((_name, index) => (index - (series.length - 1) / 2) * Math.min(14, 24 / series.length));
+  categories.forEach((category, categoryIndex) => {
+    const center = top + step * categoryIndex + step * 0.5;
+    f.parts.push(`<text x="165" y="${center + 4}" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10.5" fill="${PALETTE.ink}">${esc(category.length > 20 ? category.slice(0, 19) + "…" : category)}</text>`);
+    series.forEach((seriesName, seriesIndex) => {
+      const row = rows.find((candidate) => String(candidate[categoryField] ?? "") === category && String(candidate[seriesField] ?? "") === seriesName);
+      if (!row) return;
+      const value = n(row[valueField]);
+      if (value === null) return;
+      const y = center + (offsets[seriesIndex] ?? 0);
+      const x = scale(value);
+      const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
+      f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.5"/>`);
+      f.parts.push(`<circle cx="${x}" cy="${y}" r="4.8" fill="${color}"/>`);
+      const label = fmt(value, spec.label_unit ?? "");
+      const labelWidth = Math.max(22, label.length * 5.5);
+      const canPlaceRight = x + 7 + labelWidth <= right;
+      const canPlaceLeft = x - 7 - labelWidth >= left;
+      const placeRight = value >= 0 ? canPlaceRight || !canPlaceLeft : !canPlaceLeft;
+      const anchor = placeRight ? "start" : "end";
+      const labelX = x + (placeRight ? 7 : -7);
+      if (spec.direct_labels !== false) {
+        f.parts.push(`<text data-role="dot-value-label" x="${labelX}" y="${y + 3.5}" text-anchor="${anchor}" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="600" fill="${PALETTE.ink}">${esc(label)}</text>`);
+      }
+      if (seriesIndex === annotationSeries.get(category)) {
+        pointAnnotations(spec, row).forEach((annotation) => {
+          const key = `${annotation.claim_id ?? ""}|${annotation.match_field ?? ""}|${annotation.match_value ?? ""}|${annotation.text ?? ""}`;
+          if (renderedAnnotations.has(key)) return;
+          renderedAnnotations.add(key);
+          addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout, maxChars: 26 });
+        });
+      }
+    });
   });
   addMobileFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
@@ -1437,7 +1623,7 @@ function renderSankey(spec, rows, mobile=false) {
   layout.levels.forEach((level,li)=>{const totalH=bottom-top, gap=mobile?20:16, usable=totalH-gap*Math.max(0,level.length-1), raw=level.map((node)=>Math.max(24,(Math.max(node.in,node.out)/maxNode)*Math.min(110,usable/Math.max(1,level.length)*1.7))), sum=raw.reduce((a,b)=>a+b,0), scale=sum>usable?usable/sum:1;let y=top+(usable-sum*scale)/2;level.forEach((node,i)=>{const h=raw[i]*scale;positions.set(node.id,{x:xAt(li),y,h});y+=h+gap;});});
   const maxFlow=Math.max(...rows.map((r)=>n(r[spec.value_field])??0),1);
   const outOffsets=new Map(), inOffsets=new Map();
-  rows.slice().sort((a,b)=>(n(b[spec.value_field])??0)-(n(a[spec.value_field])??0)).forEach((row,ri)=>{const a=String(row[spec.source_field]),b=String(row[spec.target_field]),v=n(row[spec.value_field])??0,pa=positions.get(a),pb=positions.get(b);if(!pa||!pb)return;const sw=Math.max(1.5,(v/maxFlow)*(mobile?22:30)),oa=outOffsets.get(a)??0,ib=inOffsets.get(b)??0,y1=pa.y+pa.h/2+oa,y2=pb.y+pb.h/2+ib;outOffsets.set(a,oa+(ri%2?1:-1)*Math.min(pa.h*.18,sw*.22));inOffsets.set(b,ib+(ri%2?-1:1)*Math.min(pb.h*.18,sw*.22));f.parts.push(`<path data-role="flow-link" d="${sankeyPath(pa.x+nodeW,y1,pb.x,y2)}" fill="none" stroke="${SERIES_COLORS[ri%SERIES_COLORS.length]}" stroke-width="${sw}" stroke-opacity="${spec.chart_type==="alluvial"?.46:.56}" stroke-linecap="round"/>`);});
+  rows.slice().sort((a,b)=>(n(b[spec.value_field])??0)-(n(a[spec.value_field])??0)).forEach((row,ri)=>{const a=String(row[spec.source_field]),b=String(row[spec.target_field]),v=n(row[spec.value_field])??0,pa=positions.get(a),pb=positions.get(b);if(!pa||!pb)return;const sw=Math.max(1.5,(v/maxFlow)*(mobile?22:30)),oa=outOffsets.get(a)??0,ib=inOffsets.get(b)??0,y1=pa.y+pa.h/2+oa,y2=pb.y+pb.h/2+ib;outOffsets.set(a,oa+(ri%2?1:-1)*Math.min(pa.h*.18,sw*.22));inOffsets.set(b,ib+(ri%2?-1:1)*Math.min(pb.h*.18,sw*.22));const flowKey = spec.flow_id_field && row[spec.flow_id_field] !== undefined ? String(row[spec.flow_id_field]) : `${a}→${b}`;const d=sankeyPath(pa.x+nodeW,y1,pb.x,y2);f.parts.push(`<path data-role="flow-hit" data-flow-key="${esc(flowKey)}" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(14,sw*2.5)}" stroke-linecap="round" pointer-events="stroke"/>`);f.parts.push(`<path data-role="flow-link" data-flow-key="${esc(flowKey)}" d="${d}" fill="none" stroke="${SERIES_COLORS[ri%SERIES_COLORS.length]}" stroke-width="${sw}" stroke-opacity="${spec.chart_type==="alluvial"?.46:.56}" stroke-linecap="round" pointer-events="none"/>`);});
   layout.levels.forEach((level,li)=>level.forEach((node,ni)=>{const p=positions.get(node.id), highlighted=(spec.highlight_values??[]).includes(node.id);f.parts.push(`<rect data-role="flow-node" x="${p.x}" y="${p.y}" width="${nodeW}" height="${p.h}" rx="2" fill="${highlighted?PALETTE.accent:PALETTE.ink}" opacity="${highlighted?1:.88}"/>`);const labelLines=wrapText(node.id,mobile?15:16).slice(0,2);labelLines.forEach((line,j)=>f.parts.push(`<text x="${p.x+nodeW/2}" y="${p.y+p.h/2-(labelLines.length-1)*6+j*12+4}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?9.5:10.5}" font-weight="600" fill="#fff">${esc(line)}</text>`));}));
   addPointlessFlowAnnotations(f.parts,spec,positions,nodeW,f.annotationLayout,mobile);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
@@ -1551,16 +1737,24 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
     else {points=spec.geometry_semantics==='observed_trajectory'&&spec.trajectory_points_field?trajectoryCache.get(row):null;lines=points?trajectoryLines(points):parseRouteGeometry(row[spec.route_geometry_field]);if(!validRouteGeometry(lines))return;d=projectedPolylinePath(lines,project,(right-left)*.55);const first=lines[0][0],lastLine=lines[lines.length-1],last=lastLine[lastLine.length-1];a=project(first[0],first[1]);b=project(last[0],last[1]);const line=lines[Math.floor(lines.length/2)],m=line[Math.floor(line.length/2)];mid=project(m[0],m[1]);if(spec.geometry_semantics==='observed_trajectory')sw=mobile?2.8:3.4;}
     if(spec.geometry_semantics==='observed_trajectory'&&spec.reference_path==='great_circle'&&lines){const first=lines[0][0],lastLine=lines[lines.length-1],last=lastLine[lastLine.length-1],ref=[greatCirclePoints(first[0],first[1],last[0],last[1],40)],rd=projectedPolylinePath(ref,project,(right-left)*.55);f.parts.push(`<path data-role="cartographic-reference" d="${rd}" fill="none" stroke="${PALETTE.ink}" stroke-width="${mobile?1:1.25}" stroke-opacity=".42" stroke-dasharray="5 5"/>`);}
     const opacity=spec.geometry_semantics==='observed_trajectory'?.88:spec.geometry_semantics==='verified_route'?.7:.6;
-    f.parts.push(`<path data-role="cartographic-flow" data-geometry-semantics="${esc(spec.geometry_semantics)}" d="${d}" fill="none" stroke="${color}" stroke-width="${sw.toFixed(2)}" stroke-opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#${markerId})"/>`);
+    const flowKey = spec.flow_id_field && row[spec.flow_id_field] !== undefined
+      ? String(row[spec.flow_id_field])
+      : `${String(row[spec.source_field] ?? '')}→${String(row[spec.target_field] ?? '')}`;
+    const layerKey = spec.flow_layer_field && row[spec.flow_layer_field] !== undefined ? String(row[spec.flow_layer_field]) : '';
+    const flowAttrs = `data-flow-key="${esc(flowKey)}"${layerKey ? ` data-flow-layer="${esc(layerKey)}"` : ''}`;
+    // Keep the visible stroke editorially thin while giving pointer/touch users
+    // a generous target, following the B3 big-threads interaction contract.
+    f.parts.push(`<path data-role="cartographic-flow" ${flowAttrs} data-geometry-semantics="${esc(spec.geometry_semantics)}" d="${d}" fill="none" stroke="${color}" stroke-width="${sw.toFixed(2)}" stroke-opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" marker-end="url(#${markerId})"/>`);
+    f.parts.push(`<path data-role="cartographic-hit" ${flowAttrs} d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(12, sw * 3).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" pointer-events="stroke"/>`);
     if(points&&points.length){const markerPoints=[{p:points[0],label:'coverage starts'},...points.filter((p,j)=>j>0&&p.segment!==points[j-1].segment).map(p=>({p,label:'coverage resumes'})),{p:points[points.length-1],label:points[points.length-1].altitude_ft===0?'ground / coverage ends':'coverage ends'}];const maxAlt=points.reduce((best,p)=>Number(p.altitude_ft)>Number(best.altitude_ft)?p:best,points[0]);if(maxAlt&&Number(maxAlt.altitude_ft)>0)markerPoints.splice(markerPoints.length-1,0,{p:maxAlt,label:`${Math.round(Number(maxAlt.altitude_ft)).toLocaleString('en-US')} ft`});for(const [mi,item] of markerPoints.entries()){const q=project(item.p.lon,item.p.lat),anchor=q.x>(left+right)/2?'end':'start',tx=q.x+(anchor==='end'?-7:7),ty=q.y+(mi%2?12:-8);f.parts.push(`<circle data-role="trajectory-marker" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${mobile?2.4:2.8}" fill="#fff" stroke="${color}" stroke-width="1.5"/><text data-role="trajectory-marker-label" x="${tx.toFixed(1)}" y="${clamp(ty,top+10,bottom-4).toFixed(1)}" text-anchor="${anchor}" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?7.5:8.7}" font-weight="700" fill="${PALETTE.ink}">${esc(item.label)}</text>`);}}
     if(a)f.parts.push(`<circle data-role="cartographic-origin" cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="${mobile?2.6:3.2}" fill="${PALETTE.ink}"/>`); if(b)f.parts.push(`<circle data-role="cartographic-destination" cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${mobile?2.9:3.5}" fill="${PALETTE.accent}"/>`);
     const routeLength=a&&b?Math.hypot(b.x-a.x,b.y-a.y):Infinity,sourceKey=spec.source_field&&row[spec.source_field]!==undefined?String(row[spec.source_field]):'',valueAtSource=routeLength<(mobile?105:145)&&sourceKey&&(sourceFrequency.get(sourceKey)??0)===1;
     if(spec.source_field&&a&&row[spec.source_field]!==undefined){const text=valueAtSource?`${sourceKey} · ${fmt(value,'')}`:sourceKey;pointLabels.set(`s:${sourceKey}`,{...a,text,anchor:a.x>(left+right)/2?'end':'start'});} if(spec.target_field&&b&&row[spec.target_field]!==undefined)pointLabels.set(`t:${row[spec.target_field]}`,{...b,text:String(row[spec.target_field]),anchor:b.x>(left+right)/2?'end':'start'}); routeInfos.push({row,value,color,mid,routeLength,valueAtSource});
   });
   f.parts.push('</g>');
-  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmt(info.value,spec.unit),font=mobile?8.2:9.2,w=Math.max(30,label.length*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
-  if(pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?12:14);for(const p of placed){const label=p.text.length>(mobile?15:28)?p.text.slice(0,mobile?14:27)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?8.5:9.5,w=Math.max(25,label.length*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="Arial, Helvetica, sans-serif" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
-  if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
+  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmt(info.value,spec.unit),font=mobile?8.2:9.2,w=Math.max(30,label.length*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
+  if(pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?12:14);for(const p of placed){const label=p.text.length>(mobile?15:28)?p.text.slice(0,mobile?14:27)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?8.5:9.5,w=Math.max(25,label.length*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="Arial, Helvetica, sans-serif" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
+  if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
   const keyY=bottom+18; f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?7.8:8.8}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?110:130)}" y="${keyY}" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?7.8:8.8}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?124:146)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?131:153)}" y="${keyY}" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?7.8:8.8}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
   const disclosure=geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??''); f.parts.push(`<text data-role="cartographic-disclosure" x="${right}" y="${bottom+40}" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?8.1:9.1}" font-weight="600" fill="${PALETTE.muted}">${esc(disclosure.length>(mobile?92:132)?disclosure.slice(0,mobile?91:131)+'…':disclosure)}</text>`);
   f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="${mobile?7.8:8.8}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}</text>`);

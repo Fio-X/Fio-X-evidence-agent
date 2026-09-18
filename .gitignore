@@ -5,3 +5,8 @@ __pycache__/
 *.py[cod]
 /logs/
 *.log
+
+# Local performance evidence and conversation notes (never credentials).
+/perf-results/
+/ai-conversations/
+/outputs/

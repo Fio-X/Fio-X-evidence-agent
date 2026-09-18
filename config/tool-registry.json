@@ -57,7 +57,7 @@
     {"name":"newsroom_infographic_vision_critic","phase":"design","capability_class":"visual","agent_visible":true,"profiles":["full","competition","visual"]},
     {"name":"newsroom_infographic_revise","phase":"design","capability_class":"visual","agent_visible":true,"profiles":["full","competition","visual"]},
     {"name":"newsroom_competition_preflight","phase":"verify_publication","capability_class":"publication","agent_visible":true,"profiles":["full","competition","publication"]},
-    {"name":"newsroom_chart","phase":"design","capability_class":"visual","agent_visible":true,"profiles":["full","competition","investigate","visual"]},
+    {"name":"newsroom_chart","phase":"design","capability_class":"visual","agent_visible":true,"profiles":["full","competition","investigate"]},
     {"name":"record_claim","phase":"verify","capability_class":"evidence","agent_visible":true,"profiles":["full","competition","investigate","visual","publication"]}
   ]
 }
