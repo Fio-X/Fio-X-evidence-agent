@@ -19,6 +19,18 @@ const DEFINITIONS = [
     label: 'Natural Earth Admin 0, 1:110m',
   },
   {
+    id: 'naturalearth_admin0_50m',
+    file: 'naturalearth-admin0-50m.geojson',
+    source_url: 'https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries/',
+    license: 'Public domain (Natural Earth terms of use)',
+    resolution: '50m',
+    nominal_scale: 50_000_000,
+    detail_class: 'regional',
+    valid_tasks: ['world', 'continental', 'regional', 'global_context', 'regional_route'],
+    extent: { west: -180, east: 180, south: -90, north: 90 },
+    label: 'Natural Earth Admin 0, 1:50m',
+  },
+  {
     id: 'gshhg_syros_i_local',
     file: 'gshhs-i-syros-local.geojson',
     source_url: 'https://www.soest.hawaii.edu/pwessel/gshhg/',

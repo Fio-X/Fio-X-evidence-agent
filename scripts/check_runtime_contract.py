@@ -93,6 +93,8 @@ if 'include_str!("../runtime/pi/cartography.mjs")' not in runtime:
     raise SystemExit('cartography.mjs is not embedded in the Rust runtime materializer')
 if 'include_str!("../runtime/pi/assets/naturalearth-admin0-110m.geojson")' not in runtime:
     raise SystemExit('Natural Earth cartography basemap is not embedded in the Rust runtime materializer')
+if 'include_str!("../runtime/pi/assets/naturalearth-admin0-50m.geojson")' not in runtime:
+    raise SystemExit('Natural Earth 50m cartography basemap is not embedded in the Rust runtime materializer')
 if not has_materializer_call('cartography_path', 'CARTOGRAPHY_RUNTIME') or not has_materializer_call('cartography_basemap_path', 'CARTOGRAPHY_BASEMAP'):
     raise SystemExit('cartography runtime/assets are embedded but not materialized')
 if './cartography.mjs' not in extension:
@@ -104,6 +106,11 @@ for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('proven
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
     if f'./{module}' not in extension:
         raise SystemExit(f'newsroom.ts does not import required runtime module {module}')
+
+if 'include_str!("../runtime/pi/evidence_gate.mjs")' not in runtime or not has_materializer_call('evidence_gate_path', 'EVIDENCE_GATE_RUNTIME'):
+    raise SystemExit('evidence_gate.mjs is not embedded/materialized')
+if './evidence_gate.mjs' not in extension:
+    raise SystemExit('newsroom.ts does not import evidence_gate.mjs')
 
 
 for module, const, path_var in [('visual_backends.mjs', 'VISUAL_BACKENDS_RUNTIME', 'visual_backends_path'), ('backend_policy.mjs', 'BACKEND_POLICY_RUNTIME', 'backend_policy_path'), ('story_graph.mjs', 'STORY_GRAPH_RUNTIME', 'story_graph_path'), ('measure_semantics.mjs', 'MEASURE_SEMANTICS_RUNTIME', 'measure_semantics_path'), ('editorial_semantics.mjs', 'EDITORIAL_SEMANTICS_RUNTIME', 'editorial_semantics_path'), ('visual_skill_bundle.mjs', 'VISUAL_SKILL_BUNDLE_RUNTIME', 'visual_skill_bundle_path'), ('editorial_design_system_bundle.mjs', 'EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME', 'editorial_design_system_bundle_path')]:

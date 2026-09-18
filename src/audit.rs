@@ -262,14 +262,16 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
 
     fn build_fixture(events: Vec<Value>) -> AuditSummary {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("newsroom-audit-{stamp}"));
+        let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "newsroom-audit-{}-{fixture_id}",
+            std::process::id()
+        ));
         fs::create_dir_all(&root).unwrap();
         let events_path = root.join("events.jsonl");
         let output_path = root.join("tools.json");

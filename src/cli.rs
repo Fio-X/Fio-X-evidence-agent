@@ -10,7 +10,7 @@ use std::path::PathBuf;
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -21,8 +21,14 @@ pub enum Commands {
     /// Send an ephemeral raw prompt to Pi over RPC.
     Ask(AskArgs),
 
+    /// Direct LLM chat (new agent mode, bypasses Pi RPC).
+    Chat(ChatArgs),
+
     /// Start a persistent, tool-using data-news investigation.
     Investigate(InvestigateArgs),
+
+    /// New autonomous investigation (Phase 3, bypasses Pi).
+    InvestigateV2(InvestigateV2Args),
 
     /// Continue an existing investigation with full Pi session context.
     Continue(ContinueArgs),
@@ -86,6 +92,65 @@ pub struct AskArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ChatArgs {
+    /// LLM provider (anthropic, dragoncode, or openai).
+    #[arg(long, env = "NEWSROOM_PROVIDER", default_value = "anthropic")]
+    pub provider: String,
+
+    /// Model to use.
+    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-4-6")]
+    pub model: String,
+
+    /// API key (falls back to the provider's key env var; DragonCode also accepts OPENAI_API_KEY).
+    #[arg(long, env = "NEWSROOM_API_KEY")]
+    pub api_key: Option<String>,
+
+    /// Custom base URL for API (e.g., https://dragoncode.codes).
+    #[arg(long, env = "NEWSROOM_BASE_URL")]
+    pub base_url: Option<String>,
+
+    /// Prompt to send.
+    #[arg(required = true, num_args = 1..)]
+    pub prompt: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct InvestigateV2Args {
+    /// LLM provider (anthropic, dragoncode, or openai).
+    #[arg(long, env = "NEWSROOM_PROVIDER", default_value = "anthropic")]
+    pub provider: String,
+
+    /// Model to use.
+    #[arg(long, env = "NEWSROOM_MODEL", default_value = "claude-sonnet-4-6")]
+    pub model: String,
+
+    /// API key (falls back to the provider's key env var; DragonCode also accepts OPENAI_API_KEY).
+    #[arg(long, env = "NEWSROOM_API_KEY")]
+    pub api_key: Option<String>,
+
+    /// Custom base URL for API (e.g., https://dragoncode.codes).
+    #[arg(long, env = "NEWSROOM_BASE_URL")]
+    pub base_url: Option<String>,
+
+    /// Investigation topic or goal.
+    #[arg(required = true, num_args = 1..)]
+    pub topic: Vec<String>,
+
+    /// Directory below which this ephemeral run writes its report and generated visuals.
+    /// Relative paths are resolved from the directory where `news` was started.
+    #[arg(
+        long,
+        env = "NEWSROOM_OUTPUT_DIR",
+        default_value = ".newsroom/artifacts"
+    )]
+    pub out: PathBuf,
+
+    /// Ask for an interactive confirmation before creating the output directory.
+    #[arg(long, default_value_t = false)]
+    pub confirm_output: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct InvestigateArgs {
     #[command(flatten)]
     pub pi: PiArgs,
@@ -101,6 +166,10 @@ pub struct InvestigateArgs {
         default_value = ".newsroom/artifacts"
     )]
     pub out: PathBuf,
+
+    /// Ask for an interactive confirmation before creating the output directory.
+    #[arg(long, default_value_t = false)]
+    pub confirm_output: bool,
 
     /// Seed a local CSV, JSON, JSONL, TSV, or Parquet file into the investigation. Repeat for multiple files.
     #[arg(long = "data", value_name = "FILE")]

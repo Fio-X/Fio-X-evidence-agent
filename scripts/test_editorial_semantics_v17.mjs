@@ -27,6 +27,16 @@ assert.ok(Math.abs(hormuz.semantic_gate.derived_metric.value-(-94.4))<1e-9);
 assert.ok(hormuz.editorial_plan.required_constraints.includes('surface_derived_percent_change_as_primary_annotation'));
 assert.ok(!hormuz.candidates.some(x=>x.backend==='adjacency_matrix'));
 
+// `comparison` is the reader-task relation emitted by the newsroom model for
+// a direct cross-segment comparison. It must survive semantic normalization
+// and expose a grammar compatible with the comparison chart forms.
+const directComparison=evaluateVisualSemantics({
+  measure_semantics:[current,prewar],
+  claim_spec:{claim_id:'claim:direct-comparison',relation:'comparison',reader_task:'comparison',target_measure:'current',baseline_measure:'prewar'}
+});
+assert.equal(directComparison.status,'PASS');
+assert.deepEqual(directComparison.editorial_plan.recommended_forms,['horizontal_bar','dot','dumbbell','slope','small_multiples']);
+
 const flow={id:'recent_flow',phenomenon:'crude_oil_flow',unit:'mbd',measure_kind:'flow',temporal_basis:{type:'point_in_time',date:'2026-09-14'},observation_status:'observed',aggregation:'daily',value:4};
 const capacity={id:'pipeline_capacity',phenomenon:'crude_oil_flow',unit:'mbd',measure_kind:'capacity',temporal_basis:{type:'structural'},observation_status:'capacity',aggregation:'daily',value:7};
 const forecast={id:'annual_supply_change',phenomenon:'crude_oil_flow',unit:'mbd',measure_kind:'change',temporal_basis:{type:'annual_average',start:'2026-01-01',end:'2026-12-31'},observation_status:'forecast',aggregation:'annual_average',value:-5.7};

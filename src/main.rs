@@ -1,8 +1,13 @@
+mod agent;
 mod artifact;
 mod audit;
 mod cli;
 mod commands;
+mod config;
 mod hash;
+mod interactive;
+mod llm;
+mod output;
 mod pi;
 mod prompt;
 mod runtime;
@@ -15,14 +20,18 @@ use cli::{Cli, Commands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    config::load_project_env()?;
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Doctor(args) => commands::doctor::run(args).await,
-        Commands::Ask(args) => commands::ask::run(args).await,
-        Commands::Investigate(args) => commands::investigate::run(args).await,
-        Commands::Continue(args) => commands::continue_investigation::run(args).await,
-        Commands::Inspect(args) => commands::inspect::run(args).await,
-        Commands::Verify(args) => commands::verify::run(args).await,
+        Some(Commands::Doctor(args)) => commands::doctor::run(args).await,
+        Some(Commands::Ask(args)) => commands::ask::run(args).await,
+        Some(Commands::Chat(args)) => commands::chat::run(args).await,
+        Some(Commands::Investigate(args)) => commands::investigate::run(args).await,
+        Some(Commands::InvestigateV2(args)) => commands::investigate_v2::run(args).await,
+        Some(Commands::Continue(args)) => commands::continue_investigation::run(args).await,
+        Some(Commands::Inspect(args)) => commands::inspect::run(args).await,
+        Some(Commands::Verify(args)) => commands::verify::run(args).await,
+        None => interactive::run().await,
     }
 }

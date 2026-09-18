@@ -24,14 +24,24 @@ cd PJ004
 # 3. 安装 news CLI
 cargo install --path . --locked
 
-# 4. 配置 API Key
-export ANTHROPIC_API_KEY=your_key_here
+# 4. 配置 API Key（推荐把配置放在项目目录的 .env；news 会自动读取白名单设置）
+cat > .env <<'EOF'
+NEWSROOM_PI_PROVIDER=dragoncode
+NEWSROOM_PI_MODEL=claude-sonnet-4-6
+OPENAI_BASE_URL=https://dragoncode.codes
+OPENAI_API_KEY=your_key_here
+EOF
 
 # 5. 验证安装
 news doctor
 
-# 6. 开始使用
+# 6. 开始使用；结果自动写入当前目录 .newsroom/artifacts/<run-id>
 news investigate "分析2025年全球气候数据"
+
+# 最简单的方式：不带子命令进入连续对话式编辑室
+news
+# 输入第一句目标，之后继续输入追问或新的图表要求
+# :help 查看命令，:path 查看当前 artifact，:new 开始新调查，:quit 退出
 ```
 
 ### 手动安装
@@ -64,8 +74,20 @@ npm install -g @earendil-works/pi-coding-agent@0.85.1
 # 检查环境
 ./target/release/news doctor
 
-# 开始调查
+# 开始调查（相对输出路径以启动命令的当前目录为基准）
 ./target/release/news investigate "分析2025年全球气候数据"
+
+# 进入连续对话式编辑室；news 会自动读取当前目录 .env，或用户配置
+# ~/.config/fio-x/.env，结果仍写入启动命令所在目录
+./target/release/news
+
+# 输出默认位于启动 CLI 的当前目录：./.newsroom/artifacts/<run-id>
+# 也可以显式指定目录；需要人工确认时加 --confirm-output
+./target/release/news investigate --out ./results --confirm-output "分析2025年全球气候数据"
+
+# 如果密钥由外部 symlink 管理，可显式指定它；CLI 只读取，不复制或改写
+NEWSROOM_ENV_FILE=/Users/fio/code/PJ004/.env \
+  ./target/release/news investigate "分析2025年全球气候数据"
 
 # 继续现有调查
 ./target/release/news continue <investigation-id>
@@ -135,6 +157,10 @@ PJ004/
 
 # 使用完整工具配置
 ./target/release/news investigate --tool-profile full "..."
+
+# investigate-v2 同样把报告和生成的 HTML/SVG 放在当前目录的
+# .newsroom/artifacts/<run-id>/ 下；可用 --out 覆盖。
+./target/release/news investigate-v2 --out ./results "..."
 ```
 
 ### `news continue`

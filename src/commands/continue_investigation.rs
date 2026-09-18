@@ -2,15 +2,29 @@ use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::ContinueArgs;
 use crate::pi::{run_prompt, PiConfig};
-use crate::runtime;
+use crate::{prompt, runtime};
 use anyhow::Result;
 use std::time::Instant;
 
 pub async fn run(args: ContinueArgs) -> Result<()> {
+    let run_started = Instant::now();
+    eprintln!(
+        "[agent] phase=preparing elapsed_ms={}",
+        run_started.elapsed().as_millis()
+    );
     let bundle = InvestigationBundle::open(&args.artifact)?;
     let topic = bundle.topic()?;
     let message = args.message.join(" ");
+    eprintln!(
+        "[agent] phase=runtime-initialization elapsed_ms={}",
+        run_started.elapsed().as_millis()
+    );
+    let runtime_started = Instant::now();
     let extension = runtime::materialize_extension(&bundle.dir)?;
+    eprintln!(
+        "[agent] runtime_initialization_ms={}",
+        runtime_started.elapsed().as_millis()
+    );
 
     let config = PiConfig {
         binary: args.pi.pi_bin,
@@ -24,20 +38,22 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         continue_session: true,
         tool_profile: args.pi.tool_profile,
     };
+    let reported_provider = config.effective_provider();
 
     eprintln!("continuing: {}", bundle.id);
     eprintln!("runtime: {}", config.display_runtime());
     eprintln!("artifact: {}\n", bundle.dir.display());
 
     let follow_up = format!(
-        "Continue the same investigation using the existing conversation and evidence. User follow-up:\n\n{}\n\nApply the same evidence and autonomy rules as the original investigation. Reuse existing evidence when it remains valid, and acquire or compute additional evidence only when the updated goal requires it.",
-        message
+        "Continue the same investigation using the existing conversation and evidence. User follow-up:\n\n{}\n\nApply the same evidence and autonomy rules as the original investigation. Reuse existing evidence when it remains valid, and acquire or compute additional evidence only when the updated goal requires it.{}",
+        message,
+        prompt::language_instruction(&message)
     );
 
     audit::append_user_goal_event(&bundle.events_path, "follow_up")?;
-    let run_started = Instant::now();
     match run_prompt(&config, &follow_up, Some(&bundle.events_path)).await {
         Ok(result) => {
+            let persistence_started = Instant::now();
             bundle.write_answer(&result.text)?;
             bundle.append_conversation(&message, &result.text)?;
             if let Some(stats) = &result.session_stats {
@@ -51,7 +67,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             };
             bundle.append_run_metric(
                 "continue",
-                config.provider.as_deref(),
+                reported_provider.as_deref(),
                 config.model.as_deref(),
                 status,
                 run_started.elapsed().as_millis(),
@@ -59,12 +75,17 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             )?;
             bundle.write_manifest(
                 &topic,
-                config.provider.as_deref(),
+                reported_provider.as_deref(),
                 config.model.as_deref(),
                 status,
                 Some(&audit),
             )?;
             eprintln!("\nupdated: {}", bundle.manifest_path.display());
+            eprintln!(
+                "[agent] persistence_ms={} end_to_end_ms={}",
+                persistence_started.elapsed().as_millis(),
+                run_started.elapsed().as_millis()
+            );
             Ok(())
         }
         Err(error) => {
@@ -75,7 +96,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             };
             bundle.append_run_metric(
                 "continue",
-                config.provider.as_deref(),
+                reported_provider.as_deref(),
                 config.model.as_deref(),
                 "failed",
                 run_started.elapsed().as_millis(),
@@ -83,7 +104,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             )?;
             bundle.write_manifest(
                 &topic,
-                config.provider.as_deref(),
+                reported_provider.as_deref(),
                 config.model.as_deref(),
                 "failed",
                 audit.as_ref(),
