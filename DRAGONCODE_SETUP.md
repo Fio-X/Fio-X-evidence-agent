@@ -39,12 +39,12 @@ provider，API mode 使用 `anthropic_messages`，不要把它当作 OpenAI
 
 ```bash
 # 独立 worktree 可直接让 news 读取已有外部 .env；不会将 key 复制到 worktree
-NEWSROOM_ENV_FILE=/Users/fio/code/PJ004/.env \
+NEWSROOM_ENV_FILE="$PWD/.env" \
 news investigate --provider dragoncode --model claude-sonnet-4-6 "测试查询"
 
 # 也可以在当前目录放置 .env，再运行：
 set -a
-source /Users/fio/code/PJ004/.env
+source ./.env
 set +a
 export DRAGONCODE_API_KEY="${DRAGONCODE_API_KEY:-${OPENAI_API_KEY:-}}"
 export DRAGONCODE_BASE_URL="${DRAGONCODE_BASE_URL:-${OPENAI_BASE_URL:-https://dragoncode.codes}}"
