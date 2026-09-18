@@ -86,7 +86,7 @@ npm install -g @earendil-works/pi-coding-agent@0.85.1
 ./target/release/news investigate --out ./results --confirm-output "分析2025年全球气候数据"
 
 # 如果密钥由外部 symlink 管理，可显式指定它；CLI 只读取，不复制或改写
-NEWSROOM_ENV_FILE=/Users/fio/code/PJ004/.env \
+NEWSROOM_ENV_FILE="$HOME/.config/fio-x/.env" \
   ./target/release/news investigate "分析2025年全球气候数据"
 
 # 继续现有调查
