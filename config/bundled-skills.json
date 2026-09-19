@@ -663,7 +663,7 @@
     "economist-analytical": {
       "description": "用结论先行、直接标注和克制颜色制作可在几秒内读懂的分析型单图；每张图只回答一个可验证的比较或变化问题。",
       "name": "economist-analytical",
-      "sha256": "9985503fbb0cc207a65f6e3416cb2ad077b5b428d72bca61833922a2eb34b31e"
+      "sha256": "95005e3ea88be95b9caab22294826caa9d9951491547739c35bfb3f8fdd5a877"
     },
     "editorial-chart": {
       "description": "Use for recurring newsroom statistical chart families such as bars, dots, slopes, lines, distributions, scatterplots, small multiples, timelines, and chart-tables. Select a mature grammar or template backend and preserve a consistent project editorial theme, direct labeling, source notes, mobile behavior, and deterministic export rather than hand-coding a new renderer for each chart.",
@@ -698,7 +698,7 @@
     "pudding-visual-essay": {
       "description": "以读者问题为核心的滚动视觉文章方法，使用 hook、context、evidence、turn、resolution 的状态变化组织交互，并保持无 JS 与 reduced-motion 可读。",
       "name": "pudding-visual-essay",
-      "sha256": "d038c0abadb6e296dbe795f39ed25763938902528e246b76505f097a38ccbfac"
+      "sha256": "79f07faac4c2aeec778be008e011155385c21bfe6e21981e5f161e091d87bf42"
     },
     "pygmt-scientific": {
       "description": "Use for terrain, bathymetry, contours, gridded scientific surfaces, projection-heavy global maps, and other GMT-native cartographic tasks when the PyGMT runtime is available. Treat PyGMT as a specialist backend rather than a default map renderer; keep source grids and region/projection parameters explicit.",
@@ -723,7 +723,7 @@
     "scmp-integrated-explainer": {
       "description": "以数据和研究为先、以对象或空间为页面骨架，把地图、剖面、时间线、插画、照片和数据组合成可理解的机制型解释页面。",
       "name": "scmp-integrated-explainer",
-      "sha256": "5fd70c54650f3ea58a046a4dd91547b7451cf7906150a2b54431d936b46208a7"
+      "sha256": "79042f2fe900b23ef5867f345c773eedd97921207f086119d79fba9c1fd2f724"
     },
     "sigma-network": {
       "description": "Use for interactive graph exploration with thousands of nodes or edges, including search, filtering, community exploration, ego networks, and neighborhood expansion. Use Graphology for graph structure, metrics, community detection, and layouts; use Sigma.js for WebGL rendering. Do not ask the model to invent node coordinates.",
