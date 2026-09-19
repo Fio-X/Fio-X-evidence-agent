@@ -196,9 +196,20 @@ PJ004/
 
 - **investigate** (默认): 基础调查工具（搜索、数据、可视化）
 - **visual**: 完整视觉合成工具（图表、解释图、插图）
+- **visual-story**: 复杂信息图工具（StoryGraph、GIS/流/网络 publication 与 portable HTML fallback）
 - **publication**: 发布管线工具（排版、QA、竞赛预检）
 - **competition**: 完整竞赛工具集
 - **full**: 所有可用工具
+
+### 可视化请求的数据与交付契约
+
+当 `news investigate` 的目标包含“图表 / 可视化 / 信息图 / SVG / HTML”等视觉交付词时，默认的 `investigate` profile 会自动提升为 `visual` profile。代理必须先检查本地文件；缺少数据时只能通过 `news_search`、`fetch_url`、`download_data` 获取可复现的 CSV/JSON/Parquet/TSV，再用 `duckdb_query` 计算图表行，不能用模型记忆或 `VALUES` 伪造数据。
+
+单图默认输出最小可交付物（SVG 与自包含 HTML 伴随文件）；明确要求完整报告时才生成多模块 HTML。复杂组合优先使用 `newsroom_portable_publication`：它把 verified computation 绑定到 Plotly `geo_linked`/Sankey 与 native Canvas network，并输出 self-contained `japanese_editorial` HTML。geo 模块可用经纬度、ISO-3 或国家名，Sankey/network 接受 `*_field` 字段映射，`relationship` 会规范化为网络维度；相关 supporting computations 会在 provenance 中显式留痕。若专业渲染器不可用，`newsroom_lieflat_catalog` → `newsroom_lieflat_render` 会使用仓库锁定版本的 Lieflat Charts 模板作为最后保底。渲染器会校验 verified claim、source 与 computation 绑定；没有可验证数据时返回 `EVIDENCE_BLOCKED`，不会生成看似真实的图。
+
+这里的 verified claim 是“发布事实性图表”的门槛，不是加载可视化 skill 或探索图形语法的门槛。探索阶段可在 `newsroom_viz_plan` 传 `verification_mode: "draft"` 并省略 `claim_id`；生成的 SVG/HTML 会明确标记 `DRAFT`、`publishable: false`，可用于检查布局和交互，但不能进入信息图/出版物。转为最终交付时再切换为 `verification_mode: "verified"`，绑定 `record_claim` 返回的 claim、source 和 computation。
+
+OpenAI Chat Completions 与 Anthropic Messages 的工具协议由客户端分别编码：OpenAI 使用 `type=function` / `function.parameters`，工具调用参数必须解码为 JSON 对象；数组字段（例如 `data`、`modules`）若被模型编码成字符串会在分发边界被拒绝并返回字段路径。
 
 ## 开发
 

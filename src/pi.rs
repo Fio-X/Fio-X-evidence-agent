@@ -19,6 +19,8 @@ pub struct PiConfig {
     pub binary: PathBuf,
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
     pub thinking: Option<String>,
     pub approve_project: bool,
     pub extension: Option<PathBuf>,
@@ -136,10 +138,14 @@ impl PiConfig {
         authority.eq_ignore_ascii_case("dragoncode.codes")
     }
 
-    pub fn normalize_provider(provider: Option<&str>) -> Option<String> {
+    fn normalize_provider_with_base(
+        provider: Option<&str>,
+        configured_base_url: Option<&str>,
+    ) -> Option<String> {
         let provider = provider?;
-        let dragoncode_base = std::env::var("DRAGONCODE_BASE_URL")
-            .ok()
+        let dragoncode_base = configured_base_url
+            .map(str::to_owned)
+            .or_else(|| std::env::var("DRAGONCODE_BASE_URL").ok())
             .or_else(|| std::env::var("OPENAI_BASE_URL").ok());
         if provider.eq_ignore_ascii_case("openai")
             && dragoncode_base
@@ -152,8 +158,12 @@ impl PiConfig {
         }
     }
 
+    pub fn normalize_provider(provider: Option<&str>) -> Option<String> {
+        Self::normalize_provider_with_base(provider, None)
+    }
+
     pub fn effective_provider(&self) -> Option<String> {
-        Self::normalize_provider(self.provider.as_deref())
+        Self::normalize_provider_with_base(self.provider.as_deref(), self.base_url.as_deref())
     }
 
     pub fn command(&self) -> Command {
@@ -177,6 +187,24 @@ impl PiConfig {
             }
             cmd.arg("--provider").arg(&provider);
             cmd.env("NEWSROOM_ACTIVE_PROVIDER", &provider);
+            if let Some(api_key) = self.api_key.as_deref().filter(|value| !value.is_empty()) {
+                let key_name = match provider.as_str() {
+                    "anthropic" => "ANTHROPIC_API_KEY",
+                    "openai" => "OPENAI_API_KEY",
+                    "dragoncode" => "DRAGONCODE_API_KEY",
+                    _ => "NEWSROOM_API_KEY",
+                };
+                cmd.env(key_name, api_key);
+            }
+            if let Some(base_url) = self.base_url.as_deref().filter(|value| !value.is_empty()) {
+                let base_name = match provider.as_str() {
+                    "anthropic" => "ANTHROPIC_BASE_URL",
+                    "openai" => "OPENAI_BASE_URL",
+                    "dragoncode" => "DRAGONCODE_BASE_URL",
+                    _ => "NEWSROOM_BASE_URL",
+                };
+                cmd.env(base_name, base_url);
+            }
             if provider == "dragoncode" && std::env::var("DRAGONCODE_API_KEY").is_err() {
                 if let Ok(key) = std::env::var("OPENAI_API_KEY") {
                     // The existing external .env uses the OpenAI-compatible name
@@ -737,6 +765,8 @@ mod tests {
             binary: "pi".into(),
             provider: None,
             model: None,
+            api_key: None,
+            base_url: None,
             thinking: None,
             approve_project: false,
             extension: None,

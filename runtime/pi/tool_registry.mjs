@@ -6,9 +6,15 @@ export const TOOL_REGISTRY = Object.freeze({
     "investigate",
     "visual",
     "publication",
+    "visual-story",
     "competition",
     "full"
   ],
+  "profile_inheritance": {
+    "visual-story": [
+      "visual"
+    ]
+  },
   "tools": [
     {
       "name": "artifact_inventory",
@@ -109,7 +115,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -129,7 +136,34 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual",
+        "visual-story"
+      ]
+    },
+    {
+      "name": "newsroom_lieflat_catalog",
+      "phase": "design",
+      "capability_class": "visual",
+      "agent_visible": true,
+      "profiles": [
+        "full",
+        "competition",
+        "visual",
+        "visual-story"
+      ]
+    },
+    {
+      "name": "newsroom_lieflat_render",
+      "phase": "publish",
+      "capability_class": "publication",
+      "agent_visible": true,
+      "profiles": [
+        "full",
+        "competition",
+        "publication",
+        "visual",
+        "visual-story"
       ]
     },
     {
@@ -139,7 +173,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -417,7 +452,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -427,7 +463,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -437,7 +474,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -447,7 +485,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -458,7 +497,20 @@ export const TOOL_REGISTRY = Object.freeze({
       "profiles": [
         "full",
         "competition",
-        "publication"
+        "publication",
+        "visual-story"
+      ]
+    },
+    {
+      "name": "newsroom_portable_publication",
+      "phase": "publish",
+      "capability_class": "publication",
+      "agent_visible": true,
+      "profiles": [
+        "full",
+        "competition",
+        "publication",
+        "visual-story"
       ]
     },
     {
@@ -469,7 +521,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "profiles": [
         "full",
         "competition",
-        "publication"
+        "publication",
+        "visual-story"
       ]
     },
     {
@@ -480,7 +533,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "profiles": [
         "full",
         "competition",
-        "publication"
+        "publication",
+        "visual-story"
       ]
     },
     {
@@ -490,7 +544,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -500,7 +555,8 @@ export const TOOL_REGISTRY = Object.freeze({
       "agent_visible": true,
       "profiles": [
         "full",
-        "competition"
+        "competition",
+        "visual-story"
       ]
     },
     {
@@ -580,5 +636,8 @@ export function toolEnabledForProfile(name, profile=TOOL_REGISTRY.default_profil
   const meta=toolMetadata(name); if(!meta) return false;
   const requested=String(profile??TOOL_REGISTRY.default_profile).trim()||TOOL_REGISTRY.default_profile;
   if(!TOOL_REGISTRY.profiles.includes(requested)) return false;
-  return meta.agent_visible===true && meta.profiles.includes(requested);
+  const seen=new Set(); const enabled=(profile)=>{ if(seen.has(profile)) return false; seen.add(profile);
+    if(meta.profiles.includes(profile)) return true;
+    return (TOOL_REGISTRY.profile_inheritance?.[profile]??[]).some(enabled); };
+  return meta.agent_visible===true && enabled(requested);
 }

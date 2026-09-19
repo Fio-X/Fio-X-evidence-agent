@@ -6,6 +6,19 @@ use crate::{prompt, runtime};
 use anyhow::Result;
 use std::time::Instant;
 
+fn effective_tool_profile(requested: &str, text: &str) -> String {
+    if requested != "investigate" {
+        return requested.to_string();
+    }
+    if prompt::is_complex_visual_request(text) {
+        "visual-story".to_string()
+    } else if prompt::is_visual_request(text) {
+        "visual".to_string()
+    } else {
+        requested.to_string()
+    }
+}
+
 pub async fn run(args: ContinueArgs) -> Result<()> {
     let run_started = Instant::now();
     eprintln!(
@@ -30,13 +43,15 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
         model: args.pi.model,
+        api_key: None,
+        base_url: None,
         thinking: args.pi.thinking,
         approve_project: args.pi.approve_project,
         extension: Some(extension),
         artifact_dir: Some(bundle.dir.clone()),
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: true,
-        tool_profile: args.pi.tool_profile,
+        tool_profile: effective_tool_profile(&args.pi.tool_profile, &format!("{topic} {message}")),
     };
     let reported_provider = config.effective_provider();
 
@@ -80,7 +95,16 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 status,
                 Some(&audit),
             )?;
-            eprintln!("\nupdated: {}", bundle.manifest_path.display());
+            match bundle.primary_artifact()? {
+                Some((path, kind)) => {
+                    eprintln!(
+                        "\nprimary_artifact: {} ({kind})",
+                        bundle.dir.join(path).display()
+                    );
+                    eprintln!("manifest (metadata): {}", bundle.manifest_path.display());
+                }
+                None => eprintln!("\nmanifest (metadata): {}", bundle.manifest_path.display()),
+            }
             eprintln!(
                 "[agent] persistence_ms={} end_to_end_ms={}",
                 persistence_started.elapsed().as_millis(),

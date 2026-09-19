@@ -13,6 +13,15 @@ description: Use for recurring newsroom statistical chart families such as bars,
 5. Provide a responsive mobile state and honour `prefers-reduced-motion`. Keep essential values in the chart itself; tooltips are supplementary.
 6. Export deterministically and run source/value checks plus screenshot QA. A screenshot `PASS` is diagnostic evidence, not a claim that the chart is publication-ready.
 
+## Verification modes
+
+The newsroom runtime supports `verification_mode="draft"` for exploratory
+visual grammar work and supplied-data prototypes. Draft mode may omit
+`claim_id`, but the resulting SVG/HTML is explicitly marked `DRAFT`, is not
+publishable, and must not be described as a verified factual result. Switch to
+`verification_mode="verified"` and bind a recorded verified claim before
+publication, infographic composition, or a final report.
+
 ## LieFlat-informed template discipline
 
 The project follows the useful parts of the LieFlat workflow without copying its

@@ -6,6 +6,7 @@ import argparse
 import functools
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -20,6 +21,42 @@ def load_json(path: Path):
 
 def canonical_json(value) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def canonical_rows_json(value) -> str:
+    """Canonical row wire form shared with runtime/pi/viz.mjs and Rust.
+
+    Python, V8 and serde_json do not always emit the same shortest decimal
+    spelling or halfway rounding for an IEEE-754 value. Non-integral row
+    numbers therefore become six-decimal strings using explicit half-away-
+    from-zero rounding; integral values remain numbers.
+    """
+    if value is None or isinstance(value, bool) or isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not (value == value and abs(value) != float("inf")):
+            return "null"
+        if value.is_integer() and abs(value) <= 9_007_199_254_740_991:
+            return str(int(value))
+        magnitude = math.floor(abs(value) * 1_000_000 + 0.5)
+        if math.isfinite(magnitude) and magnitude <= 9_007_199_254_740_991:
+            sign = "-" if value < 0 else ""
+            fixed = f"{sign}{magnitude // 1_000_000}.{magnitude % 1_000_000:06d}"
+            return json.dumps(fixed, ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(f"{value:.6f}", ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_rows_json(item) for item in value) + "]"
+    if isinstance(value, dict):
+        body = ",".join(
+            json.dumps(str(key), ensure_ascii=False, separators=(",", ":"))
+            + ":"
+            + canonical_rows_json(value[key])
+            for key in sorted(value)
+        )
+        return "{" + body + "}"
+    return canonical_json(value)
 
 
 def sha256_file(path: Path) -> str:
@@ -530,7 +567,7 @@ def verify(root: Path) -> Report:
             rows = comp.get("rows")
             report.check(isinstance(rows, list), f"computation rows missing: {rel}")
             if isinstance(rows, list) and comp.get("result_hash"):
-                actual = hashlib.sha256(canonical_json(rows).encode()).hexdigest()
+                actual = hashlib.sha256(canonical_rows_json(rows).encode()).hexdigest()
                 report.check(actual == comp["result_hash"], f"computation result_hash mismatch: {rel}")
             if str(comp.get("schema_version", "")) >= "0.7.0":
                 report.check(bool(comp.get("result_hash")), f"v0.7 computation missing result_hash: {rel}")
@@ -600,7 +637,12 @@ def verify(root: Path) -> Report:
                 continue
             manifest_ref = manifest_path.relative_to(root).as_posix()
             claim_id = str(manifest.get("claim_id") or "")
-            report.check(claim_id in verified_ids, f"visualization {manifest_ref} claim_id is not verified: {claim_id}")
+            verification_mode = str(manifest.get("verification_mode") or "verified")
+            draft = verification_mode == "draft" or manifest.get("artifact_status") == "DRAFT" or manifest.get("publishable") is False
+            if draft:
+                report.check(not claim_id or claim_id in verified_ids, f"draft visualization {manifest_ref} has an unverified optional claim_id: {claim_id}")
+            else:
+                report.check(claim_id in verified_ids, f"visualization {manifest_ref} claim_id is not verified: {claim_id}")
             plan_ref, lint_ref = manifest.get("plan_ref"), manifest.get("lint_ref")
             for label, ref, prefix in [("plan", plan_ref, "visualizations/plans/"), ("lint", lint_ref, "visualizations/lints/")]:
                 report.check(isinstance(ref, str) and ref.startswith(prefix), f"visualization {manifest_ref} invalid {label}_ref")
@@ -1116,9 +1158,10 @@ def recompute(root: Path, duckdb_bin: str = "duckdb", timeout_seconds: float = 3
                 continue
             data_dir = str((root / "data").resolve()).replace("'", "''")
             source_dir = str((root / "sources").resolve()).replace("'", "''")
+            computation_dir = str((root / "computations").resolve()).replace("'", "''")
             command = [
                 duckdb_bin, "-json", ":memory:",
-                "-cmd", f"SET allowed_directories = ['{data_dir}', '{source_dir}']",
+                "-cmd", f"SET allowed_directories = ['{data_dir}', '{source_dir}', '{computation_dir}']",
                 "-cmd", "SET enable_external_access = false",
                 "-cmd", "SET allow_community_extensions = false",
                 "-cmd", "SET memory_limit = '512MB'",
@@ -1136,8 +1179,8 @@ def recompute(root: Path, duckdb_bin: str = "duckdb", timeout_seconds: float = 3
             actual_rows = [] if not text else json.loads(text)
             if not isinstance(actual_rows, list):
                 actual_rows = [actual_rows]
-            report.check(canonical_json(actual_rows) == canonical_json(stored_rows), f"recompute rows mismatch: {rel}")
-            actual_hash = hashlib.sha256(canonical_json(actual_rows).encode()).hexdigest()
+            report.check(canonical_rows_json(actual_rows) == canonical_rows_json(stored_rows), f"recompute rows mismatch: {rel}")
+            actual_hash = hashlib.sha256(canonical_rows_json(actual_rows).encode()).hexdigest()
             report.check(actual_hash == comp.get("result_hash"), f"recompute result_hash mismatch: {rel}")
             if elapsed_ms > timeout_seconds * 1000:
                 report.check(False, f"recompute exceeded timeout budget: {rel}")

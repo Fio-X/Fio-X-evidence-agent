@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -25,6 +26,21 @@ def write_json(path: Path, value):
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+def canonical_rows(value):
+    if value is None or isinstance(value, bool) or isinstance(value, str): return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, int): return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")): return "null"
+        if value.is_integer() and abs(value) <= 9_007_199_254_740_991: return str(int(value))
+        magnitude = math.floor(abs(value) * 1_000_000 + 0.5)
+        if math.isfinite(magnitude) and magnitude <= 9_007_199_254_740_991:
+            sign = "-" if value < 0 else ""
+            return json.dumps(f"{sign}{magnitude // 1_000_000}.{magnitude % 1_000_000:06d}", ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(f"{value:.6f}", ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, list): return "[" + ",".join(canonical_rows(item) for item in value) + "]"
+    if isinstance(value, dict): return "{" + ",".join(json.dumps(str(k), ensure_ascii=False) + ":" + canonical_rows(value[k]) for k in sorted(value)) + "}"
+    return canonical(value)
 
 
 def sha_bytes(data: bytes):
@@ -93,7 +109,7 @@ def ensure_artifacts(resume: bool):
     source_ref = f"sources/{source_hash}.json"
     write_json(root / source_ref, {"schema_version": "0.7.0", **source_payload, "content_hash": source_hash, "trust": "untrusted_external_content"})
     rows = [{"country": "A", "value": 10}, {"country": "B", "value": 20}]
-    result_hash = sha_bytes(canonical(rows).encode())
+    result_hash = sha_bytes(canonical_rows(rows).encode())
     sql = f"SELECT * FROM read_csv_auto('{data_ref}')"
     fingerprints = sorted([f"data:{data_ref}:{data_hash}", f"source:{Path(source_ref).name}:{source_hash}"])
     input_hash = sha_bytes("\n".join(fingerprints).encode())

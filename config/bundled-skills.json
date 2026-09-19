@@ -1,0 +1,739 @@
+{
+  "bundle_module": "runtime/pi/visual_skill_bundle.mjs",
+  "lieflat": {
+    "aggregate_sha256": "4879f634735ed018ffe0c0ed5f27fbdcf36d9b80651778286676ee0224b65193",
+    "commit": "eace082a317b696c5570c25826a53a7fa113e984",
+    "files": [
+      {
+        "bytes": 61,
+        "path": ".gitignore",
+        "sha256": "12019aa03e3f3ed9d3a62370a7357c032ff565ad52a0badb48f44940871e19b3"
+      },
+      {
+        "bytes": 4563,
+        "path": "LICENSE",
+        "sha256": "ffcca38841adb694b6f380647e15f17c446a4d1656fed51a1e2041d064c94cc8"
+      },
+      {
+        "bytes": 18847,
+        "path": "README.en.md",
+        "sha256": "0c7e5dec2ee0d2fe290826013eafeeacebcfdbf1e92e0e0f5f9cc681f669f590"
+      },
+      {
+        "bytes": 18554,
+        "path": "README.md",
+        "sha256": "4158f1b64dfd9c9922ff56a9d004d2f28b6bac290c71d7f7dd15c5ad3d38d842"
+      },
+      {
+        "bytes": 37560,
+        "path": "SKILL.md",
+        "sha256": "1d58a31343b0f38fed16a44a65fd2fac0588ca98ffc9e43b20263d886f3ee9ce"
+      },
+      {
+        "bytes": 746,
+        "path": "THIRD_PARTY_NOTICES.md",
+        "sha256": "3545b3af3d3d3f34ecebd603ddb1867e5ea1d45ef86bf2c065002f5033ede7a3"
+      },
+      {
+        "bytes": 531,
+        "path": "UPSTREAM.json",
+        "sha256": "e195f5b801cf9679c746d3ec9515b2d23620cb9350df961a7bb963070db00ce4"
+      },
+      {
+        "bytes": 466,
+        "path": "agents/openai.yaml",
+        "sha256": "0e3f07f84e16250447048e9fe2379d3dd8d339e25f7b04094961542c58df3b2f"
+      },
+      {
+        "bytes": 13776,
+        "path": "catalog.md",
+        "sha256": "40f361ade4b40896a52884296cd3d5753c896f6412bc240f7a3718f49a1be7ce"
+      },
+      {
+        "bytes": 9888,
+        "path": "color-presets.js",
+        "sha256": "6ea2503665c85d0e49b51a09aae69c2cd062653f9050c16e317b3447fe85726e"
+      },
+      {
+        "bytes": 241403,
+        "path": "docs/assets/author-profile.jpg",
+        "sha256": "e3e538f5b3d1a10fb9c4b483dabd29059c9b8288bd5aa9bd97774f28b827f8ae"
+      },
+      {
+        "bytes": 412405,
+        "path": "docs/assets/color-palm-support-motion.gif",
+        "sha256": "39d596f9ebd694705065ed3d4dd8f7a2970427950019e41dfe683aec87d77146"
+      },
+      {
+        "bytes": 466327,
+        "path": "docs/assets/color-palm-wave-motion.gif",
+        "sha256": "56c625cebf310b5c5501026ec62b2b9edc167314dd103cd09f293888d7691231"
+      },
+      {
+        "bytes": 1783106,
+        "path": "docs/assets/color-porcelain-almanac-motion.gif",
+        "sha256": "37ef47a29a86d3321a59426ba42a48faafcc86c8390aed930a0ecfffe50cac98"
+      },
+      {
+        "bytes": 1037942,
+        "path": "docs/assets/color-porcelain-motion.gif",
+        "sha256": "79dd37a8e8ec56ba1a4df0d37238b948b551678e045d5f3d77b46b0db6234b50"
+      },
+      {
+        "bytes": 622011,
+        "path": "docs/assets/color-wire-hourglass-motion.gif",
+        "sha256": "0794c40c9d5459c633e32a457041a27ae81373ddfe725042b8c93596cb05b1ce"
+      },
+      {
+        "bytes": 612693,
+        "path": "docs/assets/color-wire-patchwork-motion.gif",
+        "sha256": "18952fcdb181c62a9005ee73c6d670db897213f7af1291419797abbaf70de126"
+      },
+      {
+        "bytes": 221753,
+        "path": "docs/assets/examples/r04-financial-report.zh.png",
+        "sha256": "1e972f2d3260cdb20cae745c84f7c5fcb8e26e85d60a146219ecea364100ffe7"
+      },
+      {
+        "bytes": 234967,
+        "path": "docs/assets/glance-motion.gif",
+        "sha256": "c3976e0546b55305307415e692633c6ec3aa3b49bf7ca21c44a775669ca5a5a8"
+      },
+      {
+        "bytes": 586056,
+        "path": "docs/assets/glance-race-motion.gif",
+        "sha256": "fc59f49ce81155557f8a47beab86f03203685dc430da2a82aad9db3a21153f14"
+      },
+      {
+        "bytes": 78713,
+        "path": "docs/assets/glance-stroke-motion.gif",
+        "sha256": "aee364c33bb0f5c673a0f3109d9d0e948ed4f9c153c12afab11203d0feca9b42"
+      },
+      {
+        "bytes": 44721,
+        "path": "docs/assets/glance-wave-motion.gif",
+        "sha256": "8486461ce898d280eefc373feaf5ae380c1661b973bbfcddad5c4d1e0653a858"
+      },
+      {
+        "bytes": 2479001,
+        "path": "docs/assets/interactive-motion.gif",
+        "sha256": "13c2df6fa2b64735efb57a8e8b907d8aa404b92adedfff44d83e9845d85ee0ef"
+      },
+      {
+        "bytes": 62009,
+        "path": "docs/assets/moxt-quick-start-en.png",
+        "sha256": "0562af8d97c1be57ba7d4aec2a98634f986ba1d2b76af36682e4ff125dcabc24"
+      },
+      {
+        "bytes": 62629,
+        "path": "docs/assets/moxt-quick-start-zh.png",
+        "sha256": "75833c4c0ccedd14b2fe6f99476f99d751c909300bfaaa6da47f4881d4f18ea1"
+      },
+      {
+        "bytes": 226774,
+        "path": "docs/assets/preview-basics-01.png",
+        "sha256": "28d267205d0631b0254e4dac9c24bc58fd92339a65bc2159c331c50ce6250a79"
+      },
+      {
+        "bytes": 355269,
+        "path": "docs/assets/preview-basics-02.png",
+        "sha256": "d188e869dc47151c95c6915c065b2292711e40a97d93adc6b79eb37a90c86823"
+      },
+      {
+        "bytes": 76144,
+        "path": "docs/assets/preview-color-palm-basics.png",
+        "sha256": "94ca6505eb933adaed387e815386615ea6a034bb88f08df9dc03b566aa43b0ba"
+      },
+      {
+        "bytes": 122280,
+        "path": "docs/assets/preview-color-palm.png",
+        "sha256": "50a5e6a53c56fddac56d5114e2709fd1c21ce913c10cb7548d9a412531831bf3"
+      },
+      {
+        "bytes": 140997,
+        "path": "docs/assets/preview-color-porcelain-basics.png",
+        "sha256": "4fc54f6272c098e9748d41013fe008b95534b68fbda2f22dcaf7e86032893ae6"
+      },
+      {
+        "bytes": 124801,
+        "path": "docs/assets/preview-color-porcelain.png",
+        "sha256": "932cd8e20319e58a6ba47202a266c501a51c8f332ae09e8cba05d38f1b4a3370"
+      },
+      {
+        "bytes": 73919,
+        "path": "docs/assets/preview-color-wire-basics.png",
+        "sha256": "e56841758e18b3e4d5723c9564ca7984700c0e580ebfff49da5d3937a187869d"
+      },
+      {
+        "bytes": 119377,
+        "path": "docs/assets/preview-color-wire.png",
+        "sha256": "2c2710d276dd7e0c20ac652afc6bc0928bdb2ff83c6ba417646ec7408b39bb96"
+      },
+      {
+        "bytes": 336511,
+        "path": "docs/assets/preview-glance-02.png",
+        "sha256": "db2148014b1967f1dd5f9b2d3e417f15c42900c6aab563a73ae03f8cddad331b"
+      },
+      {
+        "bytes": 230410,
+        "path": "docs/assets/preview-glance-03.png",
+        "sha256": "4b3f10e73820c9c3fb32381c5da408a9ee3fb54151571661165fcf158b463e20"
+      },
+      {
+        "bytes": 265190,
+        "path": "docs/assets/preview-lupi-01.png",
+        "sha256": "c294789af8124a09ef505f8f6e0e3eb3a11c0ec4db12767669a707001f4a567e"
+      },
+      {
+        "bytes": 340168,
+        "path": "docs/assets/preview-lupi-02.png",
+        "sha256": "8e304cec7a1605d35f1b4e431cc15120d9b021db9716c825f5eb90386cbdb898"
+      },
+      {
+        "bytes": 358310,
+        "path": "docs/assets/preview-lupi-03.png",
+        "sha256": "08a2264024cbc04eeec3c69d0b9962f96a27605379a5bd65289c52ddd3b4af58"
+      },
+      {
+        "bytes": 81327,
+        "path": "docs/assets/readme-hero-en.png",
+        "sha256": "da4414d033bd2bf68eb93831ad4623ebb473bc1c9d7b614d9df0f7de5d4e787b"
+      },
+      {
+        "bytes": 80972,
+        "path": "docs/assets/readme-hero-zh.png",
+        "sha256": "8c6aead9d3dee985d9cc45376e9fc25fd56ff6be17111c5a39239b3b0ae3ff9c"
+      },
+      {
+        "bytes": 207226,
+        "path": "docs/assets/reports/en/report-01.png",
+        "sha256": "b094c0b306345c0826acb78c261e76e29c8fa35682f0f12db3b99645e0d878b7"
+      },
+      {
+        "bytes": 134914,
+        "path": "docs/assets/reports/en/report-02.png",
+        "sha256": "b528b73c46c325389bb2a9e4b119a812a4c0b1725ed7a1ebec061d035bae18f5"
+      },
+      {
+        "bytes": 156102,
+        "path": "docs/assets/reports/en/report-03.png",
+        "sha256": "2cacafb1a010c6a1090d814d9e8f497c073c5fd4e5521ee41689fdd56cee984a"
+      },
+      {
+        "bytes": 123716,
+        "path": "docs/assets/reports/en/report-04.png",
+        "sha256": "87d67215e8f88d8781996a1a762bb7d34d903eb7a41ef3c6dedd0e3561e6bb1a"
+      },
+      {
+        "bytes": 139930,
+        "path": "docs/assets/reports/en/report-05.png",
+        "sha256": "866e0860631b8a0c701850fe8584fe16050d820771bf89adfeadb10a6d6f5929"
+      },
+      {
+        "bytes": 211270,
+        "path": "docs/assets/reports/en/report-06.png",
+        "sha256": "f317125bd056b4cf1cb1244f702d473979d4db34f72be7dd9bc42359ac8ca667"
+      },
+      {
+        "bytes": 186174,
+        "path": "docs/assets/reports/en/report-07.png",
+        "sha256": "d8b3dbc96730256e9be0dfca9f4da33a3a80ea84cc4b3c5a7c06cb80822d70f2"
+      },
+      {
+        "bytes": 105932,
+        "path": "docs/assets/reports/en/report-08.png",
+        "sha256": "67b8ca31ce77bab1c24fe4aa193f4f6cf3e71bdf66e45ec70ac34a870da4ee95"
+      },
+      {
+        "bytes": 104352,
+        "path": "docs/assets/reports/en/report-09.png",
+        "sha256": "5540498bfc33234be591957a7969ae901be8235db6f6dd1f0057c23276d8b41c"
+      },
+      {
+        "bytes": 210713,
+        "path": "docs/assets/reports/en/report-10.png",
+        "sha256": "43bf36339aae550e5c0c3805b1d4b7fa3f44e06dd20a308b7c2d8c2cc2f9ae04"
+      },
+      {
+        "bytes": 200991,
+        "path": "docs/assets/reports/en/report-11.png",
+        "sha256": "e0b833ca8376e36baeca9fdc2eb8941dba102cb783413d6caed3cdb7a569a478"
+      },
+      {
+        "bytes": 223232,
+        "path": "docs/assets/reports/en/report-12-v2.png",
+        "sha256": "c76b6f42718e872367e3f84a26b1303497dbc962597c653ec07b1de1264865d6"
+      },
+      {
+        "bytes": 232171,
+        "path": "docs/assets/reports/en/report-12-v3.png",
+        "sha256": "03a8f03d51d68ec6b0fc03672bf4ac9044d86f866e8ed0f5b2ea4e207b318063"
+      },
+      {
+        "bytes": 108216,
+        "path": "docs/assets/reports/en/report-12.png",
+        "sha256": "15644a2fbc8545f3f0f74932573625c309c70be75e091761804660d87da1ff45"
+      },
+      {
+        "bytes": 516177,
+        "path": "docs/assets/reports/report-01.png",
+        "sha256": "571536e3e537b39c09ca0cdca5802a409dfd8f8f6efdedd5c34ab71d882c7bd5"
+      },
+      {
+        "bytes": 320920,
+        "path": "docs/assets/reports/report-02.png",
+        "sha256": "dc709cccc009456c9d0f760e1bd44b13c0bc798b685a35ee59258f3bc94770fd"
+      },
+      {
+        "bytes": 303966,
+        "path": "docs/assets/reports/report-03.png",
+        "sha256": "e24ba1e4b800112693023b9b2b3ca4ecdb523c8bf813d3b5464223d550b1cbcc"
+      },
+      {
+        "bytes": 417258,
+        "path": "docs/assets/reports/report-04.png",
+        "sha256": "fe595211d2960ff224a85929d6c8abf5b95afbed491f92e94072561865e1abaa"
+      },
+      {
+        "bytes": 349679,
+        "path": "docs/assets/reports/report-05.png",
+        "sha256": "563a0344bdba887c70e1e2bf16cc79731f76bc35f81feba6046508c3cfc72753"
+      },
+      {
+        "bytes": 744527,
+        "path": "docs/assets/reports/report-06.png",
+        "sha256": "27f5591e52ec8c8ce79b3957171c5ebbfa0d923778a93b87ad9a069afde88423"
+      },
+      {
+        "bytes": 472056,
+        "path": "docs/assets/reports/report-07.png",
+        "sha256": "33bbcc8c208dc7a3f6f9a58482351005a2d20bf8d8924da9bdc8d64d03b487f8"
+      },
+      {
+        "bytes": 243567,
+        "path": "docs/assets/reports/report-08.png",
+        "sha256": "589117df6f9f9f1092e03bda10b1c49708520ff4169515e5db5f50673ea9f0b7"
+      },
+      {
+        "bytes": 468253,
+        "path": "docs/assets/reports/report-09.png",
+        "sha256": "c56324ef0d1ba157712f2d5f1760ee98c582416d46cbf1ebbeac84a658208def"
+      },
+      {
+        "bytes": 519061,
+        "path": "docs/assets/reports/report-10.png",
+        "sha256": "1bee0a9815ab4ca7e440806114ccda0525ac387532b9c0620ebbd89864ac9e62"
+      },
+      {
+        "bytes": 269540,
+        "path": "docs/assets/reports/report-11.png",
+        "sha256": "c1f8180500afe6181a12b9f7fb0cfe5be35016963ea30a0e10cd3c3b48be045a"
+      },
+      {
+        "bytes": 226053,
+        "path": "docs/assets/reports/report-12-v2.png",
+        "sha256": "e2bbffba131fca4f591a589a967100e43d563ab908536464942198c45dc8c326"
+      },
+      {
+        "bytes": 229629,
+        "path": "docs/assets/reports/report-12-v3.png",
+        "sha256": "d8b8cd287cd8349156608e14734c84c58669b04960f78b7c52834a04af8a6b64"
+      },
+      {
+        "bytes": 107996,
+        "path": "docs/assets/reports/report-12.png",
+        "sha256": "c3dfc005676cf2bd34c9909971802978909bc57ccb2fe6226aa4d0f82a13ab3a"
+      },
+      {
+        "bytes": 2680,
+        "path": "examples/README.md",
+        "sha256": "c82df97ce736ddd04dbb9d40eaa990be5569912c03c572bab1dbd967a6e9b7ff"
+      },
+      {
+        "bytes": 23629,
+        "path": "examples/lenny-2026-survey.html",
+        "sha256": "1a0db34e70922b913575cefbb1c228c0f78d8e3b307b93b8616df8d385e44496"
+      },
+      {
+        "bytes": 19737,
+        "path": "examples/reports/r04-financial-report.zh.html",
+        "sha256": "33459359e3eda924e12fef784c7ec54e8ddcc7a195e0495a38dc64a6cc45de12"
+      },
+      {
+        "bytes": 10427,
+        "path": "mono-tokens.js",
+        "sha256": "fc44eb4c24c56bb42514c4572db8d8883cc26eddae1556b5629e74855205f837"
+      },
+      {
+        "bytes": 4869,
+        "path": "report-catalog.md",
+        "sha256": "a990028cff43a2c794efd03ecb7b56f2f8ee5400c22a8037eb5a33944ea914e8"
+      },
+      {
+        "bytes": 3344,
+        "path": "scripts/smoke-new-charts.mjs",
+        "sha256": "ebba49d91121f21960279959e390ac8ff391eb8eb65c1b58557731648a32122a"
+      },
+      {
+        "bytes": 11310,
+        "path": "scripts/validate.mjs",
+        "sha256": "037bf574b89033c69593c19eacf0488e2220b92049d10baca2de4f3ce5ecc238"
+      },
+      {
+        "bytes": 49417,
+        "path": "templates/basics-gallery.html",
+        "sha256": "1d01c8695b6b8e921de142cef0de66c10802a7a3ef38112b049c0c2f1eb35fd6"
+      },
+      {
+        "bytes": 4035,
+        "path": "templates/big-circular.html",
+        "sha256": "38af6e7022b58ddf28872c606d58ba99176fbc092acbb70e6bb53124cf776176"
+      },
+      {
+        "bytes": 4651,
+        "path": "templates/big-force.html",
+        "sha256": "e331808fbb83814c7557bfc9ca821c84e6f2dfb8a7425b2ae16a1842e669ac37"
+      },
+      {
+        "bytes": 7711,
+        "path": "templates/big-threads.html",
+        "sha256": "093d08d506722d61edcbb1f5b33fb5a35cb9edc904c7cdc3d92b3377cdcfd39b"
+      },
+      {
+        "bytes": 2836,
+        "path": "templates/color/README.md",
+        "sha256": "cb402b5f57a5746aee98ed10f48a23db7168fe613c80cf6342dc99a76f783659"
+      },
+      {
+        "bytes": 48341,
+        "path": "templates/color/basics-palm.html",
+        "sha256": "fddcd007a66b81f288be7bafc0d2dd81021f4d90414788992b75b3eccd592458"
+      },
+      {
+        "bytes": 47617,
+        "path": "templates/color/basics-porcelain.html",
+        "sha256": "335586ea95e87f3a6fdd8f023325ea72c91b3d5bc69cd0be36eb1e38b158f8ef"
+      },
+      {
+        "bytes": 47910,
+        "path": "templates/color/basics-wire.html",
+        "sha256": "15aa27fc3d9cd325031c689c1bf7eaf89c1368cb6337c33faee981c05245e911"
+      },
+      {
+        "bytes": 4161,
+        "path": "templates/color/big-circular-palm.html",
+        "sha256": "e198cae1a9d1c04c1290b6527572052ea17fea90bc420ac4ab7ab1d08d985265"
+      },
+      {
+        "bytes": 4169,
+        "path": "templates/color/big-circular-porcelain.html",
+        "sha256": "f652468e513df6f32aa038490063a1cd3033ea637f48e173760304b2709a76eb"
+      },
+      {
+        "bytes": 4773,
+        "path": "templates/color/big-force-palm.html",
+        "sha256": "371b427f601a714632b913349667a6841a554dbbed879fc257e0294d21482cf2"
+      },
+      {
+        "bytes": 4781,
+        "path": "templates/color/big-force-porcelain.html",
+        "sha256": "d8d483ff8b254d5bd4d4fa029c8f984119938e353520178bbb6032602ac7346b"
+      },
+      {
+        "bytes": 7724,
+        "path": "templates/color/big-threads-palm.html",
+        "sha256": "d57707118b1e8f498d3b908cde1bad0d75ec8a3ea503ec407a2b10bab6661920"
+      },
+      {
+        "bytes": 7729,
+        "path": "templates/color/big-threads-porcelain.html",
+        "sha256": "071e71236a0a04c24f1d72b5cda82343a98512214dc745d6db66943dc893257a"
+      },
+      {
+        "bytes": 49563,
+        "path": "templates/color/glance-palm.html",
+        "sha256": "6090a6b954deb6787e7bf762c445149664005fe79faba1ad72842ceb369e0fd9"
+      },
+      {
+        "bytes": 49445,
+        "path": "templates/color/glance-porcelain.html",
+        "sha256": "54ded051437dedd40bba56ec18ee03cbbb8276c60452ddf6766f8218068a080a"
+      },
+      {
+        "bytes": 49761,
+        "path": "templates/color/glance-wire.html",
+        "sha256": "5fd5332cfa98fc227c7ac07c820adea20a8b2357fb29ca1093d30fdcdb61dec4"
+      },
+      {
+        "bytes": 62464,
+        "path": "templates/color/lupi-palm.html",
+        "sha256": "0d6e96cb6ca68789331a74501faf512ad55938d419015b3e3ce7e0a9ff4721a0"
+      },
+      {
+        "bytes": 62408,
+        "path": "templates/color/lupi-porcelain.html",
+        "sha256": "995425e38fe58be5ac4da3241da8006e7f85e18e4420660f9c25a3a5cff18ac9"
+      },
+      {
+        "bytes": 62368,
+        "path": "templates/color/lupi-wire.html",
+        "sha256": "ca0334fd88326b50a54791985bf4246050a54001bea29fd5d11b709e48022f47"
+      },
+      {
+        "bytes": 9813,
+        "path": "templates/color/maps-palm.html",
+        "sha256": "a582e1de10001e183316d75ee2ba39275cf29542f6187dc6965462bc2b6f507b"
+      },
+      {
+        "bytes": 9825,
+        "path": "templates/color/maps-porcelain.html",
+        "sha256": "00668509410b25770f83353a1fefb980530f59f0c95cacda049a198d856e0987"
+      },
+      {
+        "bytes": 9840,
+        "path": "templates/color/maps-wire.html",
+        "sha256": "c53a8eeb86005d6afe23eada7498275d1b1324a24f8c5c43eb4b1ab52bda42f5"
+      },
+      {
+        "bytes": 46157,
+        "path": "templates/glance-gallery.html",
+        "sha256": "d2e99307cb35417405a1df9edc608651a5868c05322eaf8a79191fb8fab12ced"
+      },
+      {
+        "bytes": 58153,
+        "path": "templates/lupi-gallery.html",
+        "sha256": "158f9258a111f299f18774dc0b2d48834f0c3c49bf77aafbbf57380cdc407bac"
+      },
+      {
+        "bytes": 9786,
+        "path": "templates/maps-gallery.html",
+        "sha256": "984728e65def8c0e087ec4bede2e6bb6a73f3497a022eed3969be7efdf2c05d2"
+      },
+      {
+        "bytes": 10836,
+        "path": "templates/reports/index.html",
+        "sha256": "6b441d556eecef3068ea9939b193cc7d27e0b88579f0c68a1d5355e3ed8ae2c5"
+      },
+      {
+        "bytes": 16347,
+        "path": "templates/reports/report-01.en.html",
+        "sha256": "830a57b9bd4b5ad2b2e094e4690fe46be7b819ec73241cb1527ef01a851607f7"
+      },
+      {
+        "bytes": 16314,
+        "path": "templates/reports/report-01.zh.html",
+        "sha256": "5ded8952f905a1aad50269374603f521760eec9f4bc34aca51334d5a2783d9a2"
+      },
+      {
+        "bytes": 18640,
+        "path": "templates/reports/report-02.en.html",
+        "sha256": "a741c55f9c6e0eea164830a7a694a3cdd6be284b11c921debf6dba75c250fc05"
+      },
+      {
+        "bytes": 18794,
+        "path": "templates/reports/report-02.zh.html",
+        "sha256": "2adca5f97993560386955ed75412149e93ad30b68832d2c6746d6badbdfae0c1"
+      },
+      {
+        "bytes": 19602,
+        "path": "templates/reports/report-03.en.html",
+        "sha256": "a4e15b45d102abdc3e1093292d376975fbc3c2745a00ec0e499f37ac6b6cb3dd"
+      },
+      {
+        "bytes": 19647,
+        "path": "templates/reports/report-03.zh.html",
+        "sha256": "91e5b10a8d10e747b88682b3d0d82e9a09a4aacd20c68c68694377d49cde3289"
+      },
+      {
+        "bytes": 19064,
+        "path": "templates/reports/report-04.en.html",
+        "sha256": "888c7433f32eb1100162d26e58d59c47d8781495f35679772a93229d044745b3"
+      },
+      {
+        "bytes": 19546,
+        "path": "templates/reports/report-04.zh.html",
+        "sha256": "cf96246f4ec7407cc176f7f4b5b5929f63b70c560f5875c719cca68b4452ed4b"
+      },
+      {
+        "bytes": 13594,
+        "path": "templates/reports/report-05.en.html",
+        "sha256": "ef9f52990f3f5565e72f50a4e005ac088ebfec22d858366f7daee6a92e7e4659"
+      },
+      {
+        "bytes": 13694,
+        "path": "templates/reports/report-05.zh.html",
+        "sha256": "bdf03b3edaba2a0464e1ac578f0d1fa3988c0ada0f74429344f5005670e64689"
+      },
+      {
+        "bytes": 23443,
+        "path": "templates/reports/report-06.en.html",
+        "sha256": "de654f26e790b53ae06c531f27c09e4465311baefdf7aa34ca5c612de5ad54cb"
+      },
+      {
+        "bytes": 23202,
+        "path": "templates/reports/report-06.zh.html",
+        "sha256": "9bb41ad60db4e3d52db2a9013198ceb5fbbfbe69709144e7fff45ae75b982aa2"
+      },
+      {
+        "bytes": 22358,
+        "path": "templates/reports/report-07.en.html",
+        "sha256": "348bd5d868d725bf151b4418faa98016da819a0a616b4d0aabc1d86f02a88c1d"
+      },
+      {
+        "bytes": 22126,
+        "path": "templates/reports/report-07.zh.html",
+        "sha256": "736f81d6fadade9b0a61ec018103f62c2418ef0e149909f2ed0aa6096f7bebdb"
+      },
+      {
+        "bytes": 12995,
+        "path": "templates/reports/report-08.en.html",
+        "sha256": "6f0dd69c785641129e06a7096045182081809b914841018387292911d267cc38"
+      },
+      {
+        "bytes": 12820,
+        "path": "templates/reports/report-08.zh.html",
+        "sha256": "d0c23d871fe98bb2406a313b9eeb906ba2367e19051c7ca175dae31df8a239c7"
+      },
+      {
+        "bytes": 23029,
+        "path": "templates/reports/report-09.en.html",
+        "sha256": "b4c23fcb4ea57fa8a96e5a34c4de93366aa3655674200efc7802b48f0ca5822d"
+      },
+      {
+        "bytes": 23095,
+        "path": "templates/reports/report-09.zh.html",
+        "sha256": "49dde207c8c16231e261f25703c734b6580df47ff5f470035bf4a4ab3bda54b7"
+      },
+      {
+        "bytes": 21360,
+        "path": "templates/reports/report-10.en.html",
+        "sha256": "866380a3a2ce41c9fa0ad5c7dafa9e2d74f88074cdbfbdff5877585ac1aa4419"
+      },
+      {
+        "bytes": 20908,
+        "path": "templates/reports/report-10.zh.html",
+        "sha256": "5c1b28109e4027f77ae62ede733a8586c83cab8ea53cfba07358f4ed1af6c9d5"
+      },
+      {
+        "bytes": 14358,
+        "path": "templates/reports/report-11.en.html",
+        "sha256": "e400a13559db56c7861a64948caa58e182ece6212573b03f0e5430760bfb8d68"
+      },
+      {
+        "bytes": 14401,
+        "path": "templates/reports/report-11.zh.html",
+        "sha256": "05384f08d8efa3ca295bde63fa42892d7fbdb9fad016bfd13a865e1134c6270d"
+      },
+      {
+        "bytes": 15169,
+        "path": "templates/reports/report-12.en.html",
+        "sha256": "abe25f78d81ac85e917a0959a52ce7f7e0264b3ea98798eb6b104ecbbfa46a12"
+      },
+      {
+        "bytes": 15117,
+        "path": "templates/reports/report-12.zh.html",
+        "sha256": "b857265d9479ddbaea09b4f3072b110bbc20ff4b6aea4ff020170cb06a8d4cbe"
+      }
+    ],
+    "license": "PolyForm Noncommercial License 1.0.0",
+    "name": "lieflat-charts",
+    "repository": "https://github.com/larashero3-dotcom/lieflat-charts",
+    "source_file_count": 125,
+    "source_tree_sha256": "3bd79355e851155f02c4f345347f6dd6a1b7879d5dec52d63801fbc289487f8e",
+    "usage": "personal-noncommercial",
+    "vendored": true
+  },
+  "schema_version": "1.0.0",
+  "skills": {
+    "browser-publication": {
+      "description": "Publish an approved InfographicSpec and StoryGraph as self-contained responsive HTML with functional style mapping, explicit interaction purpose, browser QA and static archival fallback.",
+      "name": "browser-publication",
+      "sha256": "6beee7aae9ad4da231ae7d919cec02ec89beb43d17ebc567be1cd672b0651175"
+    },
+    "d3-editorial": {
+      "description": "Build highly customized browser-native editorial visuals such as radial networks, hierarchies, circle packing, custom Sankey, chord and linked explanatory views with D3.",
+      "name": "d3-editorial",
+      "sha256": "575a8e828c0657a993e58a5e9e653d146b038cf7511703ccb1d795746db9dfa2"
+    },
+    "datashader-density": {
+      "description": "Use for very large point, trajectory, or density datasets where vector marks would be excessive, typically around one million or more marks or when a density/raster representation is the analytical intent. Use Datashader only for aggregation pixels; add labels, annotations, and editorial composition in a downstream renderer.",
+      "name": "datashader-density",
+      "sha256": "0beb2f8f16d40f2a640531c1142e64a2f030f11ca452ca217ce8c7307f27f74a"
+    },
+    "economist-analytical": {
+      "description": "用结论先行、直接标注和克制颜色制作可在几秒内读懂的分析型单图；每张图只回答一个可验证的比较或变化问题。",
+      "name": "economist-analytical",
+      "sha256": "9985503fbb0cc207a65f6e3416cb2ad077b5b428d72bca61833922a2eb34b31e"
+    },
+    "editorial-chart": {
+      "description": "Use for recurring newsroom statistical chart families such as bars, dots, slopes, lines, distributions, scatterplots, small multiples, timelines, and chart-tables. Select a mature grammar or template backend and preserve a consistent project editorial theme, direct labeling, source notes, mobile behavior, and deterministic export rather than hand-coding a new renderer for each chart.",
+      "name": "editorial-chart",
+      "sha256": "b44e46a1b1d76b7d19d6dd84cabb4094442a002fe0748442238f1136c48e7d72"
+    },
+    "graph-extraction": {
+      "description": "Extract evidence-bearing entity and relationship graphs from document corpora through the project graph-extraction runtime. Use for investigations that need entities, relationships, claims, communities, or GraphRAG indexing before visualization or retrieval. Keep extraction upstream from rendering and preserve source text-unit provenance.",
+      "name": "graph-extraction",
+      "sha256": "6ae56fe6601832f9f3dc3b4bb6bef8494dc735222ce317a137ae1258995a81d9"
+    },
+    "lieflat-charts": {
+      "catalog_available": true,
+      "description": "一套模板驱动的数据可视化与报告生成 skill，既能严格从 Lupi、Basics、Glance、Maps 与 Interactive gallery 的真实实现生成 HTML 图表，也能从 12 套中英文整页报告模板生成可发布的 HTML 报告；以 Mono 为保底，能按数据语义自动选择内置彩色预设，也支持用户明确提供的自定义色板。地图仅在用户明确要求时启用，同一交付禁止混用色系。",
+      "license": "PolyForm Noncommercial License 1.0.0",
+      "name": "lieflat-charts",
+      "report_catalog_available": true,
+      "sha256": "1d58a31343b0f38fed16a44a65fd2fac0588ca98ffc9e43b20263d886f3ee9ce",
+      "templates_available": true,
+      "upstream_commit": "eace082a317b696c5570c25826a53a7fa113e984"
+    },
+    "network-analysis": {
+      "description": "Analyze graph structure with deterministic NetworkX metrics, communities and layouts before handing geometry to a publication renderer.",
+      "name": "network-analysis",
+      "sha256": "1f334f3f7dffb733f2e5482611345f3faa5354677747682da905326657569f6d"
+    },
+    "plotly-editorial": {
+      "description": "Build self-contained interactive editorial charts, uncertainty views, scientific maps, Sankey diagrams and linked browser visualizations with Plotly while preserving verified data and claim bindings.",
+      "name": "plotly-editorial",
+      "sha256": "50492fd74e96fe1f60d0c15af6b556fc673c844d10d533ceb7da51766ca3f872"
+    },
+    "pudding-visual-essay": {
+      "description": "以读者问题为核心的滚动视觉文章方法，使用 hook、context、evidence、turn、resolution 的状态变化组织交互，并保持无 JS 与 reduced-motion 可读。",
+      "name": "pudding-visual-essay",
+      "sha256": "d038c0abadb6e296dbe795f39ed25763938902528e246b76505f097a38ccbfac"
+    },
+    "pygmt-scientific": {
+      "description": "Use for terrain, bathymetry, contours, gridded scientific surfaces, projection-heavy global maps, and other GMT-native cartographic tasks when the PyGMT runtime is available. Treat PyGMT as a specialist backend rather than a default map renderer; keep source grids and region/projection parameters explicit.",
+      "name": "pygmt-scientific",
+      "sha256": "0d60be1b92908d7d9db214c199f36f75816e33de3d53b7aed1872a5c0e48b889"
+    },
+    "python-gis": {
+      "description": "Use for deterministic static geospatial and editorial maps when the task needs CRS transforms, geometry operations, trajectories, flow maps, choropleths, symbol maps, or vector export and the Python visualization runtime is available. Prefer GeoPandas/Shapely/PROJ over hand-written geographic math; do not use for million-mark density, terrain-specialist, or dense-label QGIS tasks.",
+      "name": "python-gis",
+      "sha256": "fb8972f4d9cb3f1f0e20044d2dbe7f17a6f4744c84e4b8f004d1d40f23bcc84d"
+    },
+    "qgis-cartography": {
+      "description": "Use for professional static cartography with dense labels, local/site maps, callouts, rule-based styling, print layouts, atlas output, or complex map composition when the QGIS runtime and a validated QPT template are available. Keep factual geometry and source layers immutable; use QGIS PAL and layout tools instead of custom label solvers.",
+      "name": "qgis-cartography",
+      "sha256": "eaf41d832c35373b0f83fc82f315a0b3eb95a51ca1f07eeefb18befa92601e8e"
+    },
+    "r-editorial": {
+      "description": "Use for publication-quality static charts, thematic maps, and small-to-medium graph/network graphics when R is available, especially when ggplot2, mapsf, ggraph, sf, ggrepel, or sfnetworks fit the analytical task. Use ADN theme helpers instead of inventing styling on every run; do not use as a generic fallback when the runtime health check is unavailable.",
+      "name": "r-editorial",
+      "sha256": "a2a1dc6bc7f3628615f3bfb5cd39f3d9ceaded6a0543765a424dc50a62c44aec"
+    },
+    "scmp-integrated-explainer": {
+      "description": "以数据和研究为先、以对象或空间为页面骨架，把地图、剖面、时间线、插画、照片和数据组合成可理解的机制型解释页面。",
+      "name": "scmp-integrated-explainer",
+      "sha256": "5fd70c54650f3ea58a046a4dd91547b7451cf7906150a2b54431d936b46208a7"
+    },
+    "sigma-network": {
+      "description": "Use for interactive graph exploration with thousands of nodes or edges, including search, filtering, community exploration, ego networks, and neighborhood expansion. Use Graphology for graph structure, metrics, community detection, and layouts; use Sigma.js for WebGL rendering. Do not ask the model to invent node coordinates.",
+      "name": "sigma-network",
+      "sha256": "b1ffd19d5c2e948ded9ffdfd8dd2c2a07948ddf058a7aac514d208a9e07d2b90"
+    },
+    "web-geospatial": {
+      "description": "Use for interactive geospatial stories that need GPU-rendered paths, trips, vector tiles, zoom-dependent styling, map labels, or high-volume browser exploration. Route MapLibre GL JS to basemap/vector-tile/camera/label responsibilities and deck.gl to high-volume analytical layers such as TripsLayer, ArcLayer, PathLayer, MVTLayer, or aggregation. Use only when interaction materially improves the story; keep a deterministic static fallback for essential claims.",
+      "name": "web-geospatial",
+      "sha256": "8fdec0a72975b99c6af87fa6c2cdfb6794c322031ad3b2996ad26db347a0185d"
+    }
+  }
+}

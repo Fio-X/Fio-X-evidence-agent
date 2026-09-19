@@ -30,12 +30,25 @@ import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisu
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
+import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
 const MAX_DATASET_BYTES = 25_000_000;
 const sourceAccessCircuit = createSourceAccessCircuit(3);
+
+// DuckDB returns two useful identifiers for a computation: the content-addressed
+// artifact filename and the deterministic hash of its rows.  Models frequently
+// copy the former into `result_hash`; accept that unambiguous alias and normalize
+// it to the row hash at the trust boundary, while rejecting any other mismatch.
+function boundComputationResultHash(supplied: unknown, computationRef: string, currentHash: string): string {
+  const value = String(supplied ?? "").trim().toLowerCase();
+  if (!value || value === currentHash.toLowerCase()) return currentHash;
+  const stem = String(computationRef).split("/").pop()?.replace(/\.json$/i, "").toLowerCase() ?? "";
+  if (stem && value === stem) return currentHash;
+  throw new Error(`result_hash must match computation rows ${currentHash}; the computation artifact id is ${stem || "unknown"}`);
+}
 
 // A 1:50m country basemap is still a global/regional context layer, but keeps
 // coastlines and borders substantially more legible for the default flow-map
@@ -445,10 +458,15 @@ async function queryDuckDb(sql: string, signal?: AbortSignal) {
   if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
   const dataDir = join(root, "data").replace(/'/g, "''");
   const sourceDir = join(root, "sources").replace(/'/g, "''");
+  // A visualization plan may consume a previously verified computation
+  // artifact (for example computations/<hash>.json for a Sankey). Keep that
+  // read-only path explicitly allow-listed so the plan can preserve its
+  // intended grammar instead of silently falling back to a simpler chart.
+  const computationDir = join(root, "computations").replace(/'/g, "''");
   const args = [
     "-json",
     ":memory:",
-    "-cmd", `SET allowed_directories = ['${dataDir}', '${sourceDir}']`,
+    "-cmd", `SET allowed_directories = ['${dataDir}', '${sourceDir}', '${computationDir}']`,
     "-cmd", "SET enable_external_access = false",
     "-cmd", "SET allow_community_extensions = false",
     "-cmd", "SET memory_limit = '512MB'",
@@ -903,6 +921,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     promptSnippet: "Run read-only analytical SQL with DuckDB",
     promptGuidelines: [
       "Use duckdb_query for aggregations, comparisons, joins, rankings, rates, and chart data whenever the required dataset is locally available.",
+      "For every ordered result, make the ORDER BY a total order by adding deterministic secondary keys (usually country, iso_code, year, or all grouping fields). Do not rely on the arbitrary order of tied DuckDB rows; replay must reproduce the same row sequence.",
     ],
     parameters: Type.Object({
       sql: Type.String({ description: "One read-only analytical SQL statement" }),
@@ -1037,14 +1056,107 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_visual_skill",
     label: "Load bundled visual backend guidance",
-    description: "Load the reproducible project-local Skill guidance for a professional visualization backend. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime.",
+    description: "Load the reproducible project-local Skill guidance for a professional visualization backend; loading guidance itself does not require a verified claim. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime. Use newsroom_viz_plan verification_mode=draft for exploratory rendering, or verified mode for publishable output.",
     promptSnippet: "Load the backend-specific visual production method before generating an execution request",
     parameters: Type.Object({
-      skill: StringEnum(["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication"] as const),
+      skill: StringEnum(["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const),
     }),
     async execute(_id, params) {
       const skill = visualSkill(params.skill);
-      return textResult(`${skill.description}\n\n${skill.body}`, { skill: skill.name, sha256: skill.sha256 });
+      const metadata = params.skill === "lieflat-charts" ? lieflatSkillMetadata() : { skill: skill.name, sha256: skill.sha256 };
+      return textResult(`${skill.description}\n\n${skill.body}`, { ...metadata, skill: skill.name, sha256: skill.sha256 });
+    },
+  });
+
+  registerScopedTool(pi, {
+    name: "newsroom_lieflat_catalog",
+    label: "Select a pinned Lieflat chart or report template",
+    description: "Compare catalog-backed Lieflat candidates by data shape, analytical job, reader task, language, and reading speed. Returns only offline-ready templates covered by the pinned adapter; it never selects by visual appeal alone.",
+    promptSnippet: "Compare pinned Lieflat candidates before rendering",
+    promptGuidelines: [
+      "For a chart, compare at least three candidates when available and follow Lupi Editorial → Lupi Basics → Glance unless the request explicitly calls for a dashboard, monitor, weekly report, or three-second read.",
+      "For a report, compare R01–R12 and select the language-specific .zh.html or .en.html file. R01–R12 are report layout shells, not module chart grammars; call this tool again with mode=chart for each quantitative module and use the returned L/F/G id. Record why rejected templates do not fit.",
+      "A map is eligible only when location itself is the reader problem; unsupported or network-required templates must remain fail-closed.",
+    ],
+    parameters: Type.Object({
+      mode: StringEnum(["chart", "report"] as const),
+      language: StringEnum(["zh", "en"] as const),
+      analytical_job: Type.String(),
+      data_shape: Type.String(),
+      reader_task: Type.String(),
+      reading_speed: StringEnum(["glance", "normal", "close"] as const),
+      module_count: Type.Integer({ minimum: 1, maximum: 9 }),
+      offline_required: Type.Boolean(),
+    }),
+    async execute(_id, params) {
+      if (params.offline_required !== true) throw new Error("Lieflat adapter requires offline_required=true for the bundled publication contract");
+      const result = catalogLieflat(params);
+      const key = sha256Hex(JSON.stringify(result));
+      const ref = `lieflat/catalog-selections/${key}.json`;
+      const root = artifactRoot();
+      if (root) await writeLieflatArtifact(root, ref, result);
+      return textResult(`Lieflat catalog selection: ${result.selected_id ?? "none"}\nSelection: ${ref}\nCompared: ${result.candidates.length}\nTemplate: ${result.selected_file ?? "none"}\nSelf-contained: ${result.self_contained ? "yes" : "no"}\nNetwork required: ${result.network_required ? "yes" : "no"}`, { ...result, selectionRef: ref });
+    },
+  });
+
+  registerScopedTool(pi, {
+    name: "newsroom_lieflat_render",
+    label: "Render an evidence-bound Lieflat publication",
+    description: "Use the pinned Lieflat Charts skill as a fail-closed publication fallback. Render either one evidence-bound chart (SVG plus self-contained HTML) or a multi-module report (self-contained HTML), binding every quantitative module to verified claims/sources/computations. Unsupported templates fail closed; no source text is accepted as an artifact. For exploratory no-claim SVGs, use newsroom_viz_plan verification_mode=draft instead; Lieflat itself remains publication-only.",
+    promptSnippet: "Render a real offline Lieflat HTML report",
+    promptGuidelines: [
+      "For one conclusion, use mode=chart and output_mode=auto or image; the tool returns a real SVG and a self-contained HTML companion. Use mode=report only for an explicitly requested multi-module report.",
+      "Use report mode after editorial discovery, Story Graph lint, and an ordered 4–9 module infographic plan. A single bar or a source-code message is not a report.",
+      "Design modules as one composed visual argument: use complementary chart grammars (for example trend → matrix/ranking → scatter → resolution trend), preserve a deliberate hook/context/evidence/turn/resolution order, and avoid six isolated copies of one chart template.",
+      "Every quantitative module needs story_role, analytical_job, reader_question, claim_ids, source_refs, chart_template_id, and computation data_ref. In report mode, template_id=R01–R12 is only the report layout shell; call newsroom_lieflat_catalog with mode=chart for each quantitative module and use the returned L/F/G chart id as chart_template_id. Never put Rxx in a module chart_template_id.",
+      "For every quantitative module, inspect the computation row schema and provide label_field plus value_field(s) when the metric is not literally named value/y/amount. Never let a dimension such as year, id, or rank be used as the measure; use multiple value_fields for a multi-series trend and two fields for a scatter relationship.",
+      "A report must cover hook, context/evidence, turn/explanation, and resolution roles. The resolution must be a distinct evidence-bound finding, not a repeated claim set; every quantitative module claim must list the module's data_ref in its computation_refs.",
+      "Do not invent data, human-scale references, routes, sources, or template conclusions. Evidence insufficiency must fail rather than fill empty modules with decoration.",
+    ],
+    parameters: Type.Object({
+      mode: StringEnum(["chart", "report"] as const),
+      output_mode: Type.Optional(StringEnum(["auto", "image", "html"] as const)),
+      language: StringEnum(["zh", "en"] as const),
+      template_id: Type.String(),
+      template_file: Type.String(),
+      method_skill: Type.Optional(StringEnum(["lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const)),
+      story_graph_ref: Type.Optional(Type.String()),
+      title: Type.String(),
+      dek: Type.String(),
+      reader_question: Type.Optional(Type.String()),
+      modules: Type.Array(Type.Object({
+        id: Type.String(),
+        story_role: StringEnum(["hook", "context", "evidence", "turn", "explanation", "resolution", "method"] as const),
+        analytical_job: Type.String(),
+        reader_question: Type.String(),
+        claim_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
+        source_refs: Type.Array(Type.String({ description: "Only sources/ or data/ evidence paths; computation outputs belong in data_ref." }), { minItems: 1, maxItems: 20 }),
+        chart_template_id: Type.Optional(Type.String({ description: "For report modules, use an L/F/G chart id returned by newsroom_lieflat_catalog(mode='chart'); R01–R12 are report layout shells and are invalid here." })),
+        data_ref: Type.Optional(Type.String({ description: "Optional computations/<hash>.json row artifact for quantitative modules." })),
+        label_field: Type.Optional(Type.String({ description: "Optional exact dimension field used for labels (for example year, country, or region). The renderer infers it when omitted." })),
+        value_field: Type.Optional(Type.String({ description: "Optional exact metric field for a single-series chart. Prefer value_fields for multi-series or scatter charts." })),
+        value_fields: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8, description: "Optional exact metric fields used by the chart, in display order. This prevents a dimension such as year from being mistaken for a measure." })),
+        title: Type.String(),
+        annotation: Type.String(),
+      }), { minItems: 1, maxItems: 9 }),
+      claim_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 40 }),
+      source_refs: Type.Array(Type.String({ description: "Only sources/ or data/ evidence paths; do not put computations/ here." }), { minItems: 1, maxItems: 40 }),
+      output_name: Type.String({ description: "Use index.html for report mode; the adapter normalizes other names to index.html." }),
+    }),
+    async execute(_id, params) {
+      const root = artifactRoot();
+      if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for newsroom_lieflat_render");
+      // Reports are browser-openable publications; normalize a model's
+      // descriptive filename instead of rejecting an otherwise valid report.
+      // The renderer still writes exactly one canonical index.html.
+      const outputName = params.mode === "report" ? "index.html" : params.output_name;
+      const outputMode = params.output_mode ?? "auto";
+      if (params.mode === "report" && outputMode === "image") throw new Error("report mode requires output_mode=html or auto; use mode=chart for an image delivery");
+      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root });
+      const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
+      const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
+      const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
+      return textResult(`Rendered Lieflat ${params.mode} publication.\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
     },
   });
 
@@ -1122,10 +1234,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_viz_plan",
     label: "Plan newsroom visualization",
-    description: "Create an observable editorial visualization plan that binds a verified claim, reader task, data topology, deterministic SQL query, visual family, annotation text, units, reference-period policy, and accessibility copy. Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics.",
+    description: "Create an observable editorial visualization plan. Verified mode binds a publishable chart to a verified claim; draft mode supports exploratory/prototype rendering without a claim and is explicitly non-publishable. Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics.",
     promptSnippet: "Plan a newsroom-grade visualization before rendering",
     promptGuidelines: [
-      "Use this after a major numerical claim has been recorded as verified. Choose the chart family from the reader task, not from aesthetic preference.",
+      "Use verified mode after a major numerical claim has been recorded as verified. Use verification_mode=draft when testing a visual grammar or exploring supplied data before claim review; draft artifacts must never be presented as publishable facts.",
       "If the requested deliverable is an infographic or visual story, this tool may create only one module after newsroom_story_graph and concept selection. Set delivery_role=infographic_module, bind story_graph_ref plus story_node_ids, and do not treat the chart as the final deliverable.",
       "For ranking, comparison, change, distribution, correlation, and part-to-whole tasks, declare measure_semantics plus claim_spec. The semantic gate blocks incomparable measures before rendering and derives the editorial grammar from the claim.",
       "For mixed reference periods, prefer explicit separation such as small multiples rather than silently ranking incomparable observations.",
@@ -1136,6 +1248,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const),
       delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const)),
+      verification_mode: Type.Optional(StringEnum(["verified", "draft"] as const)),
       story_graph_ref: Type.Optional(Type.String()),
       story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
@@ -1150,7 +1263,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       alt: Type.String({ description: "Standalone accessible description of the visual and its main takeaway" }),
       source_note: Type.String(),
       note: Type.Optional(Type.String()),
-      claim_id: Type.String({ description: "Verified claim_id previously returned by record_claim" }),
+      claim_id: Type.Optional(Type.String({ description: "Verified claim_id previously returned by record_claim; required in verified mode and omitted for draft mode" })),
       sql: Type.String({ description: "Read-only SQL whose rows directly encode the visual" }),
       unit: Type.String({ description: "Quantitative unit, such as %, TWh, MtCO2, index points, or USD" }),
       measure_semantics: Type.Optional(Type.Array(Type.Object({
@@ -1177,9 +1290,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         value: Type.Optional(Type.Number()),
       }), { minItems: 1, maxItems: 24 })),
       claim_spec: Type.Optional(Type.Object({
-        claim_id: Type.String(),
-        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "geography", "network"] as const),
-        reader_task: Type.String(),
+        claim_id: Type.Optional(Type.String({ description: "Optional in draft mode; required for a verified claim-bound plan" })),
+        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const),
+        reader_task: Type.String({ description: "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." }),
         target_measure: Type.Optional(Type.String()),
         baseline_measure: Type.Optional(Type.String()),
         context_measures: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })),
@@ -1244,7 +1357,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       annotations: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["point", "node"] as const),
         text: Type.String(),
-        claim_id: Type.String(),
+        claim_id: Type.Optional(Type.String({ description: "Verified claim_id for publishable annotations; optional in draft mode" })),
         match_field: Type.Optional(Type.String()),
         match_value: Type.Optional(Type.Union([Type.String(), Type.Number()])),
       }), { maxItems: 8 })),
@@ -1271,6 +1384,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           : {}),
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
+      const verificationMode = params.verification_mode ?? (params.claim_id ? "verified" : "draft");
+      if (verificationMode === "verified" && !String(params.claim_id ?? "").trim()) {
+        throw new Error("VERIFIED_CLAIM_REQUIRED: verified mode requires claim_id; use verification_mode='draft' for exploratory rendering");
+      }
       if (deliveryRole === "infographic_module") {
         if (!params.story_graph_ref || !Array.isArray(params.story_node_ids) || !params.story_node_ids.length) throw new Error("INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required");
         const storyGraph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
@@ -1283,17 +1400,21 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec`);
       }
       const semanticGate = evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
-      if (semanticGate.enforcement === "strict" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match verified claim_id '${params.claim_id}'`);
+      if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
+      if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
       assertEditorialGrammar(semanticGate, params.chart_type);
       const errors = validateVizSpec(normalizedParams);
       if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
       const claimIds = await verifiedClaimIds();
-      if (!claimIds.includes(params.claim_id)) throw new Error(`claim_id '${params.claim_id}' is not a verified recorded claim`);
+      if (params.claim_id && !claimIds.includes(params.claim_id)) throw new Error(`claim_id '${params.claim_id}' is not a verified recorded claim`);
       const specCore = {
         schema_version: ["cartographic_flow_map", "trajectory_profile"].includes(params.chart_type) ? "1.1.0" : "0.9.0",
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
         data_topology: params.data_topology ?? ({ sankey: "flow_edges", alluvial: "flow_edges", parallel_sets: "categorical_flow", node_link: "graph_edges", adjacency_matrix: "graph_edges", chord: "graph_edges", hierarchy_tree: "hierarchy", timeline: "events", geo_flow_map: "geo_edges", cartographic_flow_map: "geo_edges", trajectory_profile: "tabular", process_schematic: "process_graph" } as Record<string, string>)[params.chart_type] ?? "tabular",
         complexity_budget: params.complexity_budget ?? "medium",
+        verification_mode: verificationMode,
+        artifact_status: verificationMode === "verified" ? "VERIFIED" : "DRAFT",
+        publishable: verificationMode === "verified",
         ...normalizedParams,
         semantic_gate: semanticGate,
         editorial_plan: semanticGate.editorial_plan,
@@ -1308,7 +1429,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const spec = { ...specCore, content_hash: key };
       const rel = `visualizations/plans/${key}.json`;
       await writeArtifactIfAbsent(rel, spec);
-      return textResult(`Visualization plan recorded.\nPlan: ${rel}\nNext: call newsroom_viz_lint with this plan_ref before rendering.`, { planRef: rel, chartType: params.chart_type });
+      const statusText = verificationMode === "verified" ? "VERIFIED / publishable after all QA gates" : "DRAFT / exploratory only, not publishable";
+      return textResult(`Visualization plan recorded.\nPlan: ${rel}\nVerification: ${statusText}\nNext: call newsroom_viz_lint with this plan_ref before rendering.`, { planRef: rel, chartType: params.chart_type, verificationMode, publishable: verificationMode === "verified" });
     },
   });
 
@@ -1344,15 +1466,21 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         schema_version: "0.9.0",
         plan_ref: params.plan_ref,
         computation_ref: computationRef,
+        verification_mode: spec.verification_mode ?? "verified",
+        artifact_status: spec.artifact_status ?? ((spec.verification_mode ?? "verified") === "verified" ? "VERIFIED" : "DRAFT"),
+        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
       });
       const status = lint.passed ? "PASS" : "BLOCKED";
-      return textResult(`${status}: visualization lint\nPlan: ${params.plan_ref}\nLint: ${lintRef}\nData hash: ${lint.data_hash}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_viz_render with plan_ref and lint_ref." : "Revise the visualization plan and lint again before rendering."}`, {
+      const verificationText = (spec.verification_mode ?? "verified") === "verified" ? "VERIFIED / publishable after QA" : "DRAFT / exploratory only; not publishable";
+      return textResult(`${status}: visualization lint\nPlan: ${params.plan_ref}\nLint: ${lintRef}\nVerification: ${verificationText}\nData hash: ${lint.data_hash}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_viz_render with plan_ref and lint_ref." : "Revise the visualization plan and lint again before rendering."}`, {
         passed: lint.passed,
         lintRef,
         computationRef,
         dataHash: lint.data_hash,
         blockers: lint.blockers,
         warnings: lint.warnings,
+        verificationMode: spec.verification_mode ?? "verified",
+        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
       });
     },
   });
@@ -1386,7 +1514,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         plan_ref: params.plan_ref,
         lint_ref: params.lint_ref,
         computation_ref: lint.computation_ref,
-        claim_id: spec.claim_id,
+        claim_id: spec.claim_id ?? null,
+        verification_mode: spec.verification_mode ?? "verified",
+        artifact_status: spec.artifact_status ?? ((spec.verification_mode ?? "verified") === "verified" ? "VERIFIED" : "DRAFT"),
+        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
         chart_type: spec.chart_type,
         reader_task: spec.reader_task,
         takeaway: spec.takeaway,
@@ -1405,7 +1536,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
 Desktop SVG: ${desktopSvgRef}
 Mobile SVG: ${mobileSvgRef}
 Manifest: ${manifestRef}
-Verified data hash: ${currentHash}
+Verification: ${(spec.verification_mode ?? "verified") === "verified" ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
+Data hash: ${currentHash}
 Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`, {
         svgRef: desktopSvgRef,
         desktopSvgRef,
@@ -1413,6 +1545,8 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
         manifestRef,
         dataHash: currentHash,
         rowCount: rows.length,
+        verificationMode: spec.verification_mode ?? "verified",
+        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
       });
     },
   });
@@ -1770,7 +1904,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
     id: Type.String(),
     kind: StringEnum(["evidence", "claim", "mechanism", "context", "outcome", "uncertainty"] as const),
     summary: Type.String(),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome"] as const),
+    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "relationship"] as const),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     module_hint: Type.Optional(Type.String()),
@@ -2087,6 +2221,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
           const critic = await readArtifactJson(String(module.critic_ref), "visualizations/critics/");
           if (!critic.passed) throw new Error(`Visual module '${module.id}' uses a visualization whose critic did not pass`);
           if (critic.manifest_ref && critic.manifest_ref !== module.manifest_ref) throw new Error(`Visual module '${module.id}' critic does not match its manifest`);
+          if (manifest.verification_mode === "draft" || manifest.artifact_status === "DRAFT" || manifest.publishable === false) throw new Error(`Visual module '${module.id}' cannot use a DRAFT/non-publishable visualization manifest; bind a verified visual before infographic composition`);
           if (manifest.claim_id && !verified.has(String(manifest.claim_id))) throw new Error(`Visual module '${module.id}' manifest references unverified claim '${manifest.claim_id}'`);
         }
         if (module.type === "illustration") {
@@ -2289,7 +2424,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
     description: "Resolve a functional editorial style profile from story dimensions and topology. The result controls typography, density, annotation, geometry, motion restraint, surface and interaction depth; it is not a decorative theme switch.",
     promptSnippet: "Choose a compatible editorial style profile for the visual story",
     parameters: Type.Object({
-      requested: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map"] as const)),
+      requested: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
       dimensions: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
       topologies: Type.Array(Type.String(), { minItems: 1, maxItems: 10 }),
       signals: Type.Optional(Type.Array(Type.String(), { maxItems: 10 })),
@@ -2310,7 +2445,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
     dek: Type.Optional(Type.String()),
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "hierarchy", "model"] as const),
+    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"] as const),
     width: Type.Optional(StringEnum(["full", "wide", "half", "third"] as const)),
     computation_ref: Type.Optional(Type.String()),
     result_hash: Type.Optional(Type.String()),
@@ -2358,7 +2493,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       reader_question: Type.String(),
       visual_thesis: Type.String(),
       source_note: Type.Optional(Type.String()),
-      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map"] as const)),
+      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
       delivery_mode: Type.Optional(StringEnum(["html", "scrollytelling", "hybrid"] as const)),
       packaging: Type.Optional(StringEnum(["archive", "production"] as const)),
       static_fallback: Type.Optional(StringEnum(["svg", "png", "svg_png"] as const)),
@@ -2399,12 +2534,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
           const rows = Array.isArray(computation.rows) ? computation.rows : [];
           const currentHash = hashRows(rows);
           if (String(computation.result_hash ?? "") !== currentHash) throw new Error(`Publication computation '${module.computation_ref}' failed row-hash verification`);
-          if (!module.result_hash || String(module.result_hash) !== currentHash) throw new Error(`Publication module '${module.id}' result_hash must match computation ${currentHash}`);
+          boundComputationResultHash(module.result_hash, String(module.computation_ref), currentHash);
+          const relatedComputationRefs = new Set<string>();
           for (const claimId of module.claim_ids ?? []) {
             const claim = claimRecords.get(String(claimId));
-            if (!(claim?.computation_refs ?? []).includes(String(module.computation_ref))) throw new Error(`Publication module '${module.id}' claim '${claimId}' is not bound to computation '${module.computation_ref}'`);
+            if (!claim) throw new Error(`Publication module '${module.id}' references missing verified claim '${claimId}'`);
+            const refs = Array.isArray(claim.computation_refs) ? claim.computation_refs.map(String).filter(Boolean) : [];
+            if (!refs.length) throw new Error(`Publication module '${module.id}' claim '${claimId}' has no computation provenance`);
+            refs.forEach(ref => relatedComputationRefs.add(ref));
           }
-          binding = { kind: "computation", ref: module.computation_ref, result_hash: currentHash, row_count: rows.length, field_mapping: fieldMapping };
+          binding = { kind: "computation", ref: module.computation_ref, result_hash: currentHash, row_count: rows.length, field_mapping: fieldMapping, claim_computation_refs: [...relatedComputationRefs] };
         } else if (module.analysis_ref) {
           const analysis = await readArtifactJson(String(module.analysis_ref), "visualizations/graph-analysis/");
           const resultHash = String(analysis.result_hash ?? ""); if (!/^[a-f0-9]{64}$/i.test(resultHash)) throw new Error(`Publication analysis '${module.analysis_ref}' has no valid result_hash`);
@@ -2425,8 +2564,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
           binding = { kind: "asset", ref: module.asset_ref, result_hash: sha256Text(clean), field_mapping: fieldMapping };
         }
         if (dataBearing && !binding) throw new Error(`Publication module '${module.id}' requires an immutable evidence binding`);
-        const rest: any = { ...module };
+        const rest: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
         delete rest.computation_ref; delete rest.result_hash; delete rest.field_mapping_json; delete rest.view_spec_json;
+        if (dataBearing && ["plotly", "d3", "sigma"].includes(String(rest.type)) && !rest.view_spec && !rest.spec && !rest.map_ref && !rest.analysis_ref) rest.view_spec = { visual_type: rest.visual_type ?? "statistical" };
         const accessibility = dataBearing ? {
           summary: String(module.accessibility_summary ?? "").trim(),
           long_description: String(module.accessibility_long_description ?? "").trim(),
@@ -2469,6 +2609,113 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
   });
 
   registerScopedTool(pi, {
+    name: "newsroom_portable_publication",
+    label: "Render portable evidence-bound composite HTML",
+    description: "Build a self-contained Japanese-editorial HTML composite directly from verified claims and immutable computation artifacts. This is the portable Plotly/native Canvas fallback for geo bubbles, Sankey and network modules when specialist GIS or NetworkX runtimes are unavailable; it never accepts inline data.",
+    promptSnippet: "Render a verified multi-module HTML with Plotly geo/flow and native Canvas network fallbacks",
+    promptGuidelines: [
+      "Use after DuckDB computations and record_claim verification when a complex visual story needs a real HTML deliverable but the full magazine/infographic planning chain is unavailable.",
+      "Prefer visual_type='geo_linked' for coordinate-bound bubbles, visual_type='sankey' for additive flows, and type='model', visual_type='network' for relationship graphs. Every quantitative module must bind computation_ref, result_hash, field_mapping_json and verified claim_ids.",
+      "The geo renderer uses Plotly's embedded Natural Earth context and accepts either lon/lat, ISO-3 location_field, or country_field values (the latter uses Plotly country names). Disclose representative coordinates or abstract relationships when the source does not contain administrative geometry. Native network coordinates are deterministic schematic positions and never imply geography or causality.",
+      "A type='model', visual_type='network' module is data-bearing: it must include computation_ref, result_hash, field_mapping_json with source_field/target_field (and optional weight_field), and verified claim_ids; do not replace it with explanatory text.",
+      "This portable path is still evidence-bound and self-contained, but it does not replace browser QA. Call newsroom_publication_qa when a formal publication plan and browser runtime are available.",
+    ],
+    parameters: Type.Object({
+      story_graph_ref: Type.String(),
+      title: Type.String(),
+      dek: Type.String(),
+      reader_question: Type.String(),
+      visual_thesis: Type.String(),
+      source_note: Type.Optional(Type.String()),
+      style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
+      modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 12 }),
+    }),
+    async execute(_id, params) {
+      const root = artifactRoot();
+      if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for portable publication");
+      const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
+      if (!graph.passed) throw new Error("Portable publication requires a StoryGraph that passed narrative closure");
+      const nodeIds = new Set((graph.nodes ?? []).map((node: any) => String(node.id)));
+      const claims = await verifiedClaimRecords();
+      const plannedModules: any[] = [];
+      for (const module of params.modules as any[]) {
+        for (const nodeId of module.story_node_ids ?? []) if (!nodeIds.has(String(nodeId))) throw new Error(`Portable module '${module.id}' references unknown StoryGraph node '${nodeId}'`);
+        const dataBearing = module.type !== "text";
+        if (dataBearing && (!Array.isArray(module.claim_ids) || !module.claim_ids.length)) throw new Error(`Portable module '${module.id}' requires verified claim_ids`);
+        for (const claimId of module.claim_ids ?? []) if (!claims.has(String(claimId))) throw new Error(`Portable module '${module.id}' references unverified claim '${claimId}'`);
+        let viewSpec: any = {};
+        if (module.view_spec_json) {
+          try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Portable module '${module.id}' view_spec_json is not valid JSON`); }
+          assertViewSpecHasNoInlineData(viewSpec);
+        }
+        let fieldMapping: any = {};
+        if (module.field_mapping_json) {
+          try { fieldMapping = JSON.parse(module.field_mapping_json); } catch { throw new Error(`Portable module '${module.id}' field_mapping_json is not valid JSON`); }
+          if (!fieldMapping || typeof fieldMapping !== "object" || Array.isArray(fieldMapping)) throw new Error(`Portable module '${module.id}' field_mapping_json must be an object`);
+        }
+        const planned: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
+        if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
+        if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };
+        if (dataBearing) {
+          if (!module.computation_ref) throw new Error(`Portable module '${module.id}' requires computation_ref`);
+          const computation = await readArtifactJson(String(module.computation_ref), "computations/");
+          const rows = Array.isArray(computation.rows) ? computation.rows : [];
+          const currentHash = hashRows(rows);
+          if (String(computation.result_hash ?? "") !== currentHash) throw new Error(`Portable computation '${module.computation_ref}' failed row-hash verification`);
+          boundComputationResultHash(module.result_hash, String(module.computation_ref), currentHash);
+          const relatedComputationRefs = new Set<string>();
+          for (const claimId of module.claim_ids ?? []) {
+            const claim = claims.get(String(claimId));
+            if (!claim) throw new Error(`Portable module '${module.id}' references missing verified claim '${claimId}'`);
+            const refs = Array.isArray(claim.computation_refs) ? claim.computation_refs.map(String).filter(Boolean) : [];
+            if (!refs.length) throw new Error(`Portable module '${module.id}' claim '${claimId}' has no computation provenance`);
+            refs.forEach(ref => relatedComputationRefs.add(ref));
+          }
+          if (!String(module.accessibility_summary ?? "").trim() || !String(module.accessibility_long_description ?? "").trim()) throw new Error(`Portable module '${module.id}' requires accessibility_summary and accessibility_long_description`);
+          planned.evidence_binding = { kind: "computation", ref: module.computation_ref, result_hash: currentHash, row_count: rows.length, field_mapping: fieldMapping, claim_computation_refs: [...relatedComputationRefs] };
+          planned.accessibility = { summary: String(module.accessibility_summary).trim(), long_description: String(module.accessibility_long_description).trim(), keyboard_navigation: module.keyboard_navigation !== false };
+          delete planned.accessibility_summary; delete planned.accessibility_long_description; delete planned.keyboard_navigation;
+        }
+        plannedModules.push(planned);
+      }
+      const spec: any = {
+        schema_version: "0.3.0",
+        title: params.title,
+        dek: params.dek,
+        reader_question: params.reader_question,
+        visual_thesis: params.visual_thesis,
+        story_graph_ref: params.story_graph_ref,
+        infographic_plan_ref: "portable/direct",
+        style_profile: params.style_profile ?? "japanese_editorial",
+        ...(params.source_note ? { source_note: params.source_note } : {}),
+        delivery: { mode: "html", packaging: "archive", self_contained: true, static_fallback: "svg", breakpoints: [390, 768, 1024, 1440], max_initial_bytes: 8_000_000, max_ready_ms: 8_000 },
+        interaction: { allowed: ["hover", "focus", "select", "linked_view"], replay: [] },
+        modules: plannedModules,
+      };
+      const errors = validatePublicationSpec(spec);
+      if (errors.length) throw new Error(`Portable PublicationSpec blocked: ${errors.join(" | ")}`);
+      const planHash = sha256Hex(JSON.stringify(spec));
+      const planRef = `publications/plans/${planHash}.json`;
+      await writeArtifactIfAbsent(planRef, { ...spec, content_hash: planHash, portable_fallback: true });
+      const resolvedModules: any[] = [];
+      for (const module of plannedModules) {
+        if (module.evidence_binding?.kind === "computation") {
+          const computation = await readArtifactJson(String(module.evidence_binding.ref), "computations/");
+          resolvedModules.push(buildEvidenceBoundModule(module, Array.isArray(computation.rows) ? computation.rows : []));
+        } else resolvedModules.push(module);
+      }
+      const rendered = renderPublication({ ...spec, modules: resolvedModules }, { includePlotly: true, includeD3: false });
+      const key = sha256Hex(rendered.html);
+      const htmlRef = `publications/${key}/index.html`;
+      const manifestRef = `publications/${key}/manifest.json`;
+      await writeArtifactIfAbsent(htmlRef, rendered.html);
+      await writeArtifactIfAbsent(manifestRef, { ...rendered.manifest, plan_ref: planRef, html_ref: htmlRef, portable_fallback: true, specialist_runtime_blockers: ["professional GIS/map runtime not required for geo_linked fallback", "NetworkX/R runtime not required for deterministic native Canvas network fallback"] });
+      return textResult(`Rendered portable evidence-bound composite publication.\nPlan: ${planRef}\nHTML: ${htmlRef}\nManifest: ${manifestRef}\nModules: ${plannedModules.length}\nEvidence-bound: yes\nSelf-contained: yes\nBrowser QA: not run by portable fallback; run newsroom_publication_qa for a formal publication plan.`, { planRef, htmlRef, manifestRef, moduleCount: plannedModules.length, evidenceBound: true, selfContained: true, portableFallback: true });
+    },
+  });
+
+  registerScopedTool(pi, {
     name: "newsroom_publication_render",
     label: "Render trusted browser publication",
     description: "Resolve immutable publication bindings, reverify row hashes and sanitized assets, then render the PublicationSpec. The renderer never accepts fresh inline data.",
@@ -2484,7 +2731,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
           const computation = await readArtifactJson(String(binding.ref), "computations/");
           const rows = Array.isArray(computation.rows) ? computation.rows : [];
           const currentHash = hashRows(rows);
-          if (currentHash !== String(binding.result_hash) || currentHash !== String(computation.result_hash)) throw new Error(`Publication evidence changed for module '${module.id}'`);
+          const boundHash = boundComputationResultHash(binding.result_hash, String(binding.ref), currentHash);
+          if (currentHash !== String(computation.result_hash) || boundHash !== currentHash) throw new Error(`Publication evidence changed for module '${module.id}'`);
           resolvedModules.push(buildEvidenceBoundModule(module, rows));
         } else if (binding.kind === "analysis") {
           const analysis = await readArtifactJson(String(binding.ref), "visualizations/graph-analysis/");

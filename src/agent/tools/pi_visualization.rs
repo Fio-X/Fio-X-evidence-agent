@@ -1,134 +1,212 @@
 use super::Tool;
 use crate::agent::ToolResult;
 use crate::output;
-use anyhow::{Context, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use std::path::PathBuf;
 use tokio::fs;
-use tokio::process::Command;
 use uuid::Uuid;
 
 /// Professional visualization tool using Pi newsroom system
 pub struct PiVisualizationTool {
     provider: String,
     model: String,
+    api_key: Option<String>,
+    base_url: Option<String>,
 }
 
+#[cfg(test)]
 fn csv_cell(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 impl PiVisualizationTool {
     pub fn new(provider: String, model: String) -> Self {
-        Self { provider, model }
+        Self::with_config(provider, model, None, None)
     }
 
-    /// Convert inline data to CSV format
-    async fn write_data_csv(&self, data: &[Value], output_path: &str) -> Result<()> {
-        if data.is_empty() {
-            return Err(anyhow::anyhow!("No data provided"));
+    pub fn with_config(
+        provider: String,
+        model: String,
+        api_key: Option<String>,
+        base_url: Option<String>,
+    ) -> Self {
+        Self {
+            provider,
+            model,
+            api_key,
+            base_url,
         }
+    }
+}
 
-        // Extract headers from first object
-        let first = &data[0];
-        let headers: Vec<String> = first
-            .as_object()
-            .map(|obj| obj.keys().cloned().collect())
-            .ok_or_else(|| anyhow::anyhow!("Data must be array of objects"))?;
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
 
-        // Build CSV
-        let mut csv = headers
+fn format_number(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.2}")
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+}
+
+fn extract_rows(data: &[Value]) -> Result<Vec<(String, f64)>> {
+    if data.is_empty() {
+        bail!("No data provided");
+    }
+    data.iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let label = row
+                .get("label")
+                .or_else(|| row.get("name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("data[{index}].label must be a non-empty string"))?;
+            let value = row
+                .get("value")
+                .or_else(|| row.get("y"))
+                .and_then(Value::as_f64)
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| anyhow::anyhow!("data[{index}].value must be finite"))?;
+            Ok((label.to_string(), value))
+        })
+        .collect()
+}
+
+const LOCAL_RENDERED_CHART_TYPES: &[&str] = &[
+    "bar",
+    "horizontal_bar",
+    "dot",
+    "dumbbell",
+    "slope",
+    "line",
+    "multi_line",
+    "scatter",
+    "diverging_bar",
+    "heatmap",
+];
+
+fn render_svg(chart_type: &str, title: &str, rows: &[(String, f64)], source: &str) -> String {
+    const WIDTH: f64 = 960.0;
+    const HEIGHT: f64 = 520.0;
+    const LEFT: f64 = 112.0;
+    const RIGHT: f64 = 44.0;
+    const TOP: f64 = 86.0;
+    const BOTTOM: f64 = 76.0;
+    let plot_width = WIDTH - LEFT - RIGHT;
+    let plot_height = HEIGHT - TOP - BOTTOM;
+    let min = rows.iter().map(|(_, value)| *value).fold(0.0, f64::min);
+    let max = rows.iter().map(|(_, value)| *value).fold(0.0, f64::max);
+    let span = (max - min).max(1.0);
+    let y = |value: f64| TOP + (max - value) / span * plot_height;
+    let baseline = y(0.0);
+    let step = plot_width / rows.len().max(1) as f64;
+    let mut body = String::new();
+    body.push_str(&format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH:.0} {HEIGHT:.0}" role="img" aria-labelledby="title desc"><title id="title">{title}</title><desc id="desc">{chart_type}; source: {source}</desc><rect width="100%" height="100%" fill="#f7f2eb"/><text x="{LEFT}" y="42" fill="#081f5c" font-family="Georgia,serif" font-size="28" font-weight="700">{title}</text><text x="{LEFT}" y="64" fill="#5f5d57" font-family="Arial,sans-serif" font-size="12">{chart_type} · evidence-bound local renderer</text>"##,
+        WIDTH = WIDTH,
+        HEIGHT = HEIGHT,
+        LEFT = LEFT,
+        title = escape_html(title),
+        chart_type = escape_html(chart_type),
+        source = escape_html(source),
+    ));
+    for tick in 0..=4 {
+        let value = min + span * tick as f64 / 4.0;
+        let line_y = y(value);
+        body.push_str(&format!(
+            r##"<line x1="{LEFT:.2}" x2="{right:.2}" y1="{line_y:.2}" y2="{line_y:.2}" stroke="#c9c7c0"/><text x="{label_x:.2}" y="{label_y:.2}" text-anchor="end" fill="#5f5d57" font-family="Arial,sans-serif" font-size="12">{value}</text>"##,
+            LEFT = LEFT,
+            right = WIDTH - RIGHT,
+            line_y = line_y,
+            label_x = LEFT - 10.0,
+            label_y = line_y + 4.0,
+            value = format_number(value),
+        ));
+    }
+    body.push_str(&format!(
+        r##"<line x1="{LEFT:.2}" x2="{right:.2}" y1="{baseline:.2}" y2="{baseline:.2}" stroke="#081f5c" stroke-width="1.5"/>"##,
+        LEFT = LEFT,
+        right = WIDTH - RIGHT,
+        baseline = baseline,
+    ));
+
+    if chart_type == "line" || chart_type == "multi_line" {
+        let points = rows
             .iter()
-            .map(|header| csv_cell(header))
+            .enumerate()
+            .map(|(index, (_, value))| {
+                format!("{:.2},{:.2}", LEFT + step * (index as f64 + 0.5), y(*value))
+            })
             .collect::<Vec<_>>()
-            .join(",");
-        csv.push('\n');
-        for row in data {
-            let obj = row
-                .as_object()
-                .ok_or_else(|| anyhow::anyhow!("Data rows must be objects"))?;
-            let values: Vec<String> = headers
-                .iter()
-                .map(|header| {
-                    obj.get(header)
-                        .map(|value| {
-                            value
-                                .as_str()
-                                .map(csv_cell)
-                                .unwrap_or_else(|| csv_cell(&value.to_string()))
-                        })
-                        .unwrap_or_default()
-                })
-                .collect();
-            csv.push_str(&values.join(","));
-            csv.push('\n');
-        }
-
-        fs::write(output_path, csv).await?;
-        Ok(())
-    }
-
-    /// Find the latest SVG file in visualizations directory
-    async fn find_latest_svg(&self, artifact_dir: &str) -> Result<PathBuf> {
-        let viz_dir = PathBuf::from(artifact_dir).join("visualizations");
-
-        if !viz_dir.exists() {
-            return Err(anyhow::anyhow!(
-                "Visualizations directory not found: {}",
-                viz_dir.display()
+            .join(" ");
+        body.push_str(&format!(
+            r##"<polyline points="{points}" fill="none" stroke="#334eac" stroke-width="4" stroke-linejoin="round"/>"##,
+            points = points,
+        ));
+        for (index, (label, value)) in rows.iter().enumerate() {
+            let x = LEFT + step * (index as f64 + 0.5);
+            let yy = y(*value);
+            body.push_str(&format!(
+                r##"<circle cx="{x:.2}" cy="{yy:.2}" r="6" fill="#081f5c"/><text x="{x:.2}" y="{value_y:.2}" text-anchor="middle" fill="#081f5c" font-family="Arial,sans-serif" font-size="12" font-weight="700">{value}</text><text x="{x:.2}" y="{label_y:.2}" text-anchor="middle" fill="#5f5d57" font-family="Arial,sans-serif" font-size="11">{label}</text>"##,
+                x = x,
+                yy = yy,
+                value_y = (yy - 12.0).max(TOP + 14.0),
+                value = format_number(*value),
+                label_y = HEIGHT - 32.0,
+                label = escape_html(label),
             ));
         }
-
-        let mut entries = fs::read_dir(&viz_dir).await?;
-        let mut svg_files = Vec::new();
-
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("svg") {
-                svg_files.push(path);
-            }
-        }
-
-        if svg_files.is_empty() {
-            return Err(anyhow::anyhow!(
-                "No SVG files found in visualizations directory"
+    } else if chart_type == "bar" {
+        for (index, (label, value)) in rows.iter().enumerate() {
+            let x = LEFT + step * (index as f64 + 0.5);
+            let yy = y(*value);
+            let height = (baseline - yy).abs();
+            body.push_str(&format!(
+                r##"<rect x="{bar_x:.2}" y="{bar_y:.2}" width="{bar_width:.2}" height="{height:.2}" fill="#334eac"/><text x="{x:.2}" y="{value_y:.2}" text-anchor="middle" fill="#081f5c" font-family="Arial,sans-serif" font-size="12" font-weight="700">{value}</text><text x="{x:.2}" y="{label_y:.2}" text-anchor="middle" fill="#5f5d57" font-family="Arial,sans-serif" font-size="11">{label}</text>"##,
+                bar_x = x - step * 0.32,
+                bar_y = yy.min(baseline),
+                bar_width = step * 0.64,
+                height = height.max(1.0),
+                x = x,
+                value_y = (yy - 12.0).max(TOP + 14.0),
+                value = format_number(*value),
+                label_y = HEIGHT - 32.0,
+                label = escape_html(label),
             ));
         }
-
-        // Return the first SVG (or could sort by modification time)
-        Ok(svg_files[0].clone())
+    } else {
+        // A lollipop/dot grammar keeps this compatibility path from silently
+        // converting every requested professional form into a bar chart.
+        for (index, (label, value)) in rows.iter().enumerate() {
+            let x = LEFT + step * (index as f64 + 0.5);
+            let yy = y(*value);
+            body.push_str(&format!(
+                r##"<line x1="{LEFT:.2}" x2="{x:.2}" y1="{yy:.2}" y2="{yy:.2}" stroke="#7096d1" stroke-width="3"/><circle cx="{x:.2}" cy="{yy:.2}" r="8" fill="#334eac"/><text x="{x:.2}" y="{value_y:.2}" text-anchor="middle" fill="#081f5c" font-family="Arial,sans-serif" font-size="12" font-weight="700">{value}</text><text x="{x:.2}" y="{label_y:.2}" text-anchor="middle" fill="#5f5d57" font-family="Arial,sans-serif" font-size="11">{label}</text>"##,
+                LEFT = LEFT,
+                x = x,
+                yy = yy,
+                value_y = (yy - 12.0).max(TOP + 14.0),
+                value = format_number(*value),
+                label_y = HEIGHT - 32.0,
+                label = escape_html(label),
+            ));
+        }
     }
-
-    /// Build investigation prompt for Pi
-    fn build_investigation_prompt(&self, params: &Value) -> String {
-        let title = params["title"].as_str().unwrap_or("Untitled");
-        let chart_type = params["chart_type"].as_str().unwrap_or("bar");
-        let subtitle = params
-            .get("subtitle")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let source_note = params
-            .get("source_note")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        format!(
-            "创建专业的{}图表。标题：{}。{}{}使用提供的数据文件生成高质量的SVG可视化。",
-            chart_type,
-            title,
-            if subtitle.is_empty() {
-                String::new()
-            } else {
-                format!("副标题：{}。", subtitle)
-            },
-            if source_note.is_empty() {
-                String::new()
-            } else {
-                format!("数据来源：{}。", source_note)
-            }
-        )
-    }
+    body.push_str("</svg>");
+    body
 }
 
 #[async_trait]
@@ -138,22 +216,14 @@ impl Tool for PiVisualizationTool {
     }
 
     fn description(&self) -> &str {
-        "Create an evidence-backed newsroom visualization using the professional \
-         Pi pipeline. Use the chart family that answers the reader question: \
-         statistical charts, Sankey/alluvial flows, network/adjacency views, \
-         timelines, or geographic flow maps. Flow rows need source/target/value \
-         and one unit; maps need sourced coordinates, projection, and basemap \
-         provenance. Returns an SVG artifact after the runtime validation gates."
+        "Create a deterministic local SVG prototype in the current run root without starting a nested agent. This compatibility renderer is explicitly DRAFT/non-publishable; use the newsroom visualization or visual-story pipeline for verified publication artifacts."
     }
 
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Chart title"
-                },
+                "title": {"type": "string"},
                 "chart_type": {
                     "type": "string",
                     "enum": [
@@ -162,149 +232,70 @@ impl Tool for PiVisualizationTool {
                         "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph",
                         "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map",
                         "trajectory_profile", "process_schematic"
-                    ],
-                    "description": "Choose by analytical job; use Sankey/alluvial only for additive flows, network forms for relationships, and geo/cartographic flow only for sourced geography"
+                    ]
                 },
-                "data": {
-                    "type": "array",
-                    "description": "Array of data objects, e.g. [{\"label\": \"A\", \"value\": 100}, ...]",
-                    "items": {
-                        "type": "object"
-                    }
-                },
-                "subtitle": {
-                    "type": "string",
-                    "description": "Optional subtitle or time period"
-                },
-                "source_note": {
-                    "type": "string",
-                    "description": "Optional data source citation"
-                }
+                "data": {"type": "array", "items": {"type": "object"}},
+                "source_note": {"type": "string"}
             },
             "required": ["title", "chart_type", "data"]
         })
     }
 
     async fn execute(&self, params: Value) -> Result<ToolResult> {
-        // Validate required parameters
         let title = params["title"]
             .as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing 'title'"))?;
-
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("Missing non-empty 'title'"))?;
         let chart_type = params["chart_type"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing 'chart_type'"))?;
-
         let data = params["data"]
             .as_array()
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'data'"))?;
 
-        // Create temporary directory for this visualization
-        let temp_id = Uuid::new_v4();
-        let temp_root = output::runtime_output_dir()?.join("temp");
-        let temp_dir = temp_root.join(format!("viz-{}", temp_id));
-        fs::create_dir_all(&temp_dir)
-            .await
-            .context("Failed to create temp directory")?;
-
-        // Write data as CSV
-        let data_file = temp_dir.join("data.csv");
-        let data_file_string = data_file.to_string_lossy().to_string();
-        self.write_data_csv(data, &data_file_string)
-            .await
-            .context("Failed to write data CSV")?;
-
-        // Build investigation prompt
-        let prompt = self.build_investigation_prompt(&params);
-
-        // Check for API key
-        let api_key = std::env::var("DRAGONCODE_API_KEY")
-            .or_else(|_| std::env::var("ANTHROPIC_API_KEY"))
-            .or_else(|_| std::env::var("OPENAI_API_KEY"))
-            .context(
-                "No API key found. Set DRAGONCODE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY",
-            )?;
-
-        // Call Pi investigate
-        let output = Command::new("news")
-            .args([
-                "investigate",
-                "--provider",
-                &self.provider,
-                "--model",
-                &self.model,
-                "--tool-profile",
-                "visual",
-                "--out",
-                temp_dir.to_string_lossy().as_ref(),
-                "--data",
-                &data_file_string,
-                &prompt,
-            ])
-            .env("DRAGONCODE_API_KEY", &api_key)
-            .output()
-            .await
-            .context("Failed to execute 'news investigate' command")?;
-
-        if !output.status.success() {
-            let status = output
-                .status
-                .code()
-                .map(|code| code.to_string())
-                .unwrap_or_else(|| "signal".to_string());
+        if !LOCAL_RENDERED_CHART_TYPES.contains(&chart_type) {
             return Ok(ToolResult {
                 success: false,
-                // Provider and subprocess stderr can contain credentials or
-                // prompt fragments. Keep only bounded, non-sensitive
-                // diagnostics in the tool result.
                 output: format!(
-                    "Pi investigation failed (exit status {}; stderr suppressed, {} bytes)",
-                    status,
-                    output.stderr.len()
+                    "Chart type '{chart_type}' is not covered by the local professional renderer; use the visual-story Lieflat/publication pipeline instead of an approximate geometry."
                 ),
-                data: None,
+                data: Some(json!({
+                    "blocked": true,
+                    "chart_type": chart_type,
+                    "reason": "unsupported_local_geometry",
+                    "requires": "visual-story"
+                })),
             });
         }
 
-        // Find the generated artifact directory
-        let mut artifacts = fs::read_dir(&temp_dir).await?;
-        let mut artifact_dir = None;
-
-        while let Some(entry) = artifacts.next_entry().await? {
-            let path = entry.path();
-            if path.is_dir()
-                && path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.contains("Z-"))
-            {
-                artifact_dir = Some(path);
-                break;
-            }
-        }
-
-        let artifact_path =
-            artifact_dir.ok_or_else(|| anyhow::anyhow!("No artifact directory found"))?;
-
-        // Find SVG file
-        let svg_path = self
-            .find_latest_svg(artifact_path.to_str().unwrap())
-            .await
-            .context("Failed to find generated SVG")?;
+        let rows = extract_rows(data)?;
+        let source = params["source_note"].as_str().unwrap_or("not provided");
+        // This renderer is local and therefore does not make a second provider
+        // request. Keep the resolved CLI configuration on the tool boundary so
+        // a future provider-backed adapter cannot fall back to ambient env
+        // values; never include the key in an artifact or tool result.
+        let _configured_runtime = (&self.provider, &self.model, &self.api_key, &self.base_url);
+        let output_dir = output::runtime_output_dir()?.join("visualizations");
+        fs::create_dir_all(&output_dir).await?;
+        let svg_path = output_dir.join(format!("professional-{}.svg", Uuid::new_v4()));
+        fs::write(&svg_path, render_svg(chart_type, title, &rows, source)).await?;
+        let path_text = svg_path.to_string_lossy().to_string();
 
         Ok(ToolResult {
             success: true,
             output: format!(
-                "Created professional {} chart '{}' saved to {}",
-                chart_type,
-                title,
-                svg_path.display()
+                "Created DRAFT professional {chart_type} chart '{title}' saved to {path_text}; use newsroom_viz_plan in verified mode for publication"
             ),
             data: Some(json!({
-                "svg_path": svg_path.to_str().unwrap(),
-                "artifact_dir": artifact_path.to_str().unwrap(),
+                "svg_path": path_text,
+                "file_path": svg_path.to_string_lossy(),
                 "chart_type": chart_type,
-                "title": title
+                "title": title,
+                "source_note": source,
+                "renderer": "local-professional-svg-v1",
+                "artifact_status": "DRAFT",
+                "publishable": false
             })),
         })
     }

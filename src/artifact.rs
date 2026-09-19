@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct InvestigationBundle {
@@ -38,6 +38,7 @@ struct Manifest<'a> {
     files: Files,
     autonomy: Autonomy,
     evidence: Evidence,
+    delivery: Delivery,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +96,18 @@ struct Evidence {
     claims: Vec<Value>,
     visualizations: Vec<String>,
     infographics: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct Delivery {
+    /// The file a user should open first. JSON manifests stay evidence
+    /// metadata and are never selected as the primary visual deliverable.
+    primary_artifact: Option<String>,
+    primary_kind: Option<String>,
+    primary_mime_type: Option<String>,
+    html: Vec<String>,
+    images: Vec<String>,
+    manifests: Vec<String>,
 }
 
 impl InvestigationBundle {
@@ -416,6 +429,7 @@ impl InvestigationBundle {
         };
         let audit = audit.unwrap_or(&empty_audit);
         let user_messages = read_user_messages(&self.session_stats_path).unwrap_or(0);
+        let delivery = discover_delivery(&self.dir)?;
 
         let manifest = Manifest {
             schema_version: "0.7.0",
@@ -474,11 +488,17 @@ impl InvestigationBundle {
                 visualizations: relative_files(&self.dir, "visualizations")?,
                 infographics: relative_files(&self.dir, "infographics")?,
             },
+            delivery,
         };
 
         let json = serde_json::to_string_pretty(&manifest)?;
         fs::write(&self.manifest_path, format!("{json}\n"))
             .with_context(|| format!("failed to write {}", self.manifest_path.display()))
+    }
+
+    pub fn primary_artifact(&self) -> Result<Option<(String, String)>> {
+        let delivery = discover_delivery(&self.dir)?;
+        Ok(delivery.primary_artifact.zip(delivery.primary_kind))
     }
 }
 
@@ -520,6 +540,97 @@ fn relative_files(root: &Path, child: &str) -> Result<Vec<String>> {
     walk(root, &root.join(child), &mut values)?;
     values.sort();
     Ok(values)
+}
+
+fn discover_delivery(root: &Path) -> Result<Delivery> {
+    let mut html = Vec::new();
+    let mut images = Vec::new();
+    let mut manifests = Vec::new();
+    for child in ["publications", "infographics", "visualizations"] {
+        for path in relative_files(root, child)? {
+            let lower = path.to_ascii_lowercase();
+            if lower.ends_with(".html") {
+                html.push(path);
+            } else if lower.ends_with(".svg") || lower.ends_with(".png") {
+                images.push(path);
+            } else if lower.ends_with(".json")
+                && !lower.contains("/critics/")
+                && !lower.contains("/lints/")
+                && !lower.contains("/plans/")
+            {
+                manifests.push(path);
+            }
+        }
+    }
+    html.sort();
+    images.sort();
+    manifests.sort();
+    let declared_primary = fs::read_to_string(root.join("story.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|story| {
+            story
+                .pointer("/delivery/primary_artifact")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|path| {
+            let candidate = Path::new(path);
+            !candidate.is_absolute()
+                && !candidate
+                    .components()
+                    .any(|component| matches!(component, Component::ParentDir))
+                && root.join(candidate).is_file()
+        });
+    let primary = declared_primary
+        .or_else(|| {
+            html.iter()
+                .find(|path| path.starts_with("publications/") && path.ends_with("/index.html"))
+                .cloned()
+        })
+        .or_else(|| html.first().cloned())
+        .or_else(|| {
+            images
+                .iter()
+                .find(|path| {
+                    path.starts_with("infographics/")
+                        && path.matches('/').count() == 1
+                        && !path.ends_with(".mobile.svg")
+                })
+                .cloned()
+        })
+        .or_else(|| {
+            images
+                .iter()
+                .find(|path| !path.ends_with(".mobile.svg"))
+                .cloned()
+        });
+    let (primary_artifact, primary_kind, primary_mime_type) = match primary {
+        Some(path) if path.to_ascii_lowercase().ends_with(".html") => (
+            Some(path.clone()),
+            Some("html".to_string()),
+            Some("text/html".to_string()),
+        ),
+        Some(path) if path.to_ascii_lowercase().ends_with(".png") => (
+            Some(path.clone()),
+            Some("png".to_string()),
+            Some("image/png".to_string()),
+        ),
+        Some(path) => (
+            Some(path.clone()),
+            Some("svg".to_string()),
+            Some("image/svg+xml".to_string()),
+        ),
+        None => (None, None, None),
+    };
+    Ok(Delivery {
+        primary_artifact,
+        primary_kind,
+        primary_mime_type,
+        html,
+        images,
+        manifests,
+    })
 }
 
 fn read_claims(path: &Path) -> Result<Vec<Value>> {
@@ -572,7 +683,9 @@ pub fn slugify(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::slugify;
+    use super::{discover_delivery, slugify};
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn slugifies_ascii_topic() {
@@ -637,5 +750,27 @@ mod tests {
         assert_eq!(slugify("测试数据"), "story");
         assert_eq!(slugify("Тест"), "story");
         assert_eq!(slugify("🚀 rocket"), "rocket");
+    }
+
+    #[test]
+    fn delivery_prefers_declared_primary_over_lexical_first_publication() {
+        let dir = tempdir().expect("temp dir");
+        let old = dir.path().join("publications/000-old");
+        let current = dir.path().join("publications/999-current");
+        fs::create_dir_all(&old).expect("old dir");
+        fs::create_dir_all(&current).expect("current dir");
+        fs::write(old.join("index.html"), "old").expect("old html");
+        fs::write(current.join("index.html"), "current").expect("current html");
+        fs::write(
+            dir.path().join("story.json"),
+            r#"{"delivery":{"primary_artifact":"publications/999-current/index.html"}}"#,
+        )
+        .expect("story");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(
+            delivery.primary_artifact.as_deref(),
+            Some("publications/999-current/index.html")
+        );
     }
 }

@@ -16,6 +16,25 @@ registry_tools = [row['name'] for row in registry.get('tools', [])]
 registered_tools = re.findall(r'registerScopedTool\s*\(\s*pi\s*,\s*\{\s*name:\s*"([^"]+)"', extension, re.S)
 generated_rust = (ROOT / 'src' / 'tool_registry.rs').read_text(encoding='utf-8')
 
+profile_inheritance = registry.get('profile_inheritance') or {}
+if not isinstance(profile_inheritance, dict):
+    raise SystemExit('profile_inheritance must be an object')
+
+def effective_profiles(profile, visiting=None):
+    visiting = set() if visiting is None else visiting
+    if profile in visiting:
+        raise SystemExit(f'profile inheritance cycle at {profile}')
+    visiting.add(profile)
+    result = {profile}
+    for parent in profile_inheritance.get(profile, []):
+        if parent not in registry.get('profiles', []):
+            raise SystemExit(f'unknown inherited profile: {parent}')
+        result.update(effective_profiles(parent, visiting))
+    visiting.remove(profile)
+    return result
+
+effective_profile_map = {profile: effective_profiles(profile) for profile in registry.get('profiles', [])}
+
 def has_materializer_call(path_var, const):
     pattern = rf'write_if_changed\(\s*&{re.escape(path_var)}\s*,\s*{re.escape(const)}\s*,?\s*\)'
     return re.search(pattern, runtime, re.S) is not None
@@ -38,7 +57,7 @@ if len(registered_tools) != len(set(registered_tools)):
 # canonical registry. This prevents a safe default profile from silently
 # drifting back toward the full 49-tool surface.
 for profile in registry.get('profiles', []):
-    expected = [row['name'] for row in registry['tools'] if profile in (row.get('profiles') or []) and row.get('agent_visible') is True]
+    expected = [row['name'] for row in registry['tools'] if effective_profile_map[profile].intersection(row.get('profiles') or []) and row.get('agent_visible') is True]
     const_name = 'NEWSROOM_TOOLS_' + profile.upper().replace('-', '_')
     profile_match = re.search(rf'pub const {const_name}: &str = "([^"]*)"', generated_rust)
     if not profile_match:
@@ -72,6 +91,12 @@ for core_tool in ['artifact_inventory','news_search','fetch_url','download_data'
         raise SystemExit(f'{core_tool} missing from generated Rust capability classifier')
 if 'include_str!("../runtime/pi/tool_registry.mjs")' not in runtime or not has_materializer_call('tool_registry_path', 'TOOL_REGISTRY_RUNTIME'):
     raise SystemExit('generated tool_registry.mjs is not embedded/materialized')
+if 'include_str!("../runtime/pi/lieflat.mjs")' not in runtime:
+    raise SystemExit('lieflat.mjs is not embedded in the Rust runtime materializer')
+if not has_materializer_call('lieflat_path', 'LIEFLAT_RUNTIME'):
+    raise SystemExit('lieflat.mjs is embedded but not materialized beside newsroom.ts')
+if './lieflat.mjs' not in extension:
+    raise SystemExit('newsroom.ts does not import required runtime module lieflat.mjs')
 
 for module, const, path_var in [
     ('parallel_scheduler.mjs', 'PARALLEL_SCHEDULER_RUNTIME', 'parallel_scheduler_path'),
@@ -307,6 +332,14 @@ art_direction_runtime = (ROOT / 'runtime' / 'pi' / 'art_direction.mjs').read_tex
 for marker in ['planEditorialAssets', 'retrieveReferencePatterns', 'evaluateExpertPreference', 'summarizeAwardMode', 'DEFAULT_REFERENCE_PATTERNS']:
     if marker not in art_direction_runtime:
         raise SystemExit(f'missing v1.4 art-direction runtime marker: {marker}')
+
+lieflat_runtime = (ROOT / 'runtime' / 'pi' / 'lieflat.mjs').read_text(encoding='utf-8')
+for marker in ['catalogLieflat', 'renderLieflatPublication', 'materializeLieflat', 'LIEFLAT_UPSTREAM_COMMIT', 'PolyForm Noncommercial License 1.0.0']:
+    if marker not in lieflat_runtime:
+        raise SystemExit(f'missing Lieflat runtime marker: {marker}')
+for marker in ['newsroom_lieflat_catalog', 'newsroom_lieflat_render', 'visual-story']:
+    if marker not in extension and marker not in generated_rust:
+        raise SystemExit(f'missing Lieflat/story tool marker: {marker}')
 
 print('runtime contract: PASS')
 print('allowlist/audit/tools/runtime materialization are aligned')

@@ -303,6 +303,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (!asset.manifest) blockers.push(`visual '${module.id}' is missing visualization manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
+      if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
       if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
       if (spec.schema_version === "1.4.0" && module.visual_grammar) {
@@ -1104,4 +1105,3 @@ export function critiqueInfographic(spec, bundle) {
     ],
   };
 }
-

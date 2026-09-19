@@ -8,6 +8,8 @@ pub async fn run(args: AskArgs) -> Result<()> {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
         model: args.pi.model,
+        api_key: None,
+        base_url: None,
         thinking: args.pi.thinking,
         approve_project: args.pi.approve_project,
         extension: None,

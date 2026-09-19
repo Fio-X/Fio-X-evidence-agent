@@ -7,6 +7,19 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Instant;
 
+fn effective_tool_profile(requested: &str, topic: &str) -> String {
+    if requested != "investigate" {
+        return requested.to_string();
+    }
+    if prompt::is_complex_visual_request(topic) {
+        "visual-story".to_string()
+    } else if prompt::is_visual_request(topic) {
+        "visual".to_string()
+    } else {
+        requested.to_string()
+    }
+}
+
 pub async fn run(args: InvestigateArgs) -> Result<()> {
     if args.dry_run {
         let topic = args.topic.join(" ");
@@ -67,13 +80,15 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
         model: args.pi.model,
+        api_key: None,
+        base_url: None,
         thinking: args.pi.thinking,
         approve_project: args.pi.approve_project,
         extension: Some(extension),
         artifact_dir: Some(bundle.dir.clone()),
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: false,
-        tool_profile: args.pi.tool_profile,
+        tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic),
     };
     let reported_provider = config.effective_provider();
 
@@ -116,7 +131,22 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                     "\n[qualification] investigation completed without enough observable planning/tool evidence; inspect tools.json"
                 );
             }
-            eprintln!("\nwritten: {}", bundle.manifest_path.display());
+            match bundle.primary_artifact()? {
+                Some((path, kind)) => {
+                    eprintln!(
+                        "\nprimary_artifact: {} ({kind})",
+                        bundle.dir.join(path).display()
+                    );
+                    eprintln!("manifest (metadata): {}", bundle.manifest_path.display());
+                }
+                None if prompt::is_visual_request(&topic) => {
+                    eprintln!(
+                        "\n[qualification] visual request produced no HTML/SVG/PNG primary artifact; manifest (metadata): {}",
+                        bundle.manifest_path.display()
+                    );
+                }
+                None => eprintln!("\nmanifest (metadata): {}", bundle.manifest_path.display()),
+            }
             eprintln!(
                 "[agent] persistence_ms={} end_to_end_ms={}",
                 persistence_started.elapsed().as_millis(),

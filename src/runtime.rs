@@ -50,6 +50,9 @@ const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_p
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
 const LOCAL_BACKEND_RUNTIME: &str = include_str!("../runtime/pi/local_backend.mjs");
+const LIEFLAT_RUNTIME: &str = include_str!("../runtime/pi/lieflat.mjs");
+const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
+    include_str!("../config/editorial-style-mappings.json");
 
 fn write_if_changed(path: &Path, content: &str) -> Result<()> {
     let should_write = match fs::read_to_string(path) {
@@ -135,6 +138,15 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
     let local_backend_path = runtime_dir.join("local_backend.mjs");
+    let lieflat_path = runtime_dir.join("lieflat.mjs");
+    let config_dir = artifact_dir.join("config");
+    fs::create_dir_all(&config_dir).with_context(|| {
+        format!(
+            "failed to create materialized config directory: {}",
+            config_dir.display()
+        )
+    })?;
+    let style_mapping_config_path = config_dir.join("editorial-style-mappings.json");
     write_if_changed(&extension_path, NEWSROOM_EXTENSION)?;
     write_if_changed(&viz_path, VIZ_RUNTIME)?;
     write_if_changed(&cartography_path, CARTOGRAPHY_RUNTIME)?;
@@ -185,6 +197,30 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
     write_if_changed(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME)?;
     write_if_changed(&local_backend_path, LOCAL_BACKEND_RUNTIME)?;
+    write_if_changed(&lieflat_path, LIEFLAT_RUNTIME)?;
+    write_if_changed(&style_mapping_config_path, EDITORIAL_STYLE_MAPPING_CONFIG)?;
 
     Ok(extension_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::materialize_extension;
+    use std::fs;
+
+    #[test]
+    fn materializes_style_mapping_config_for_isolated_runtime() {
+        let root = tempfile::tempdir().expect("temporary artifact root");
+        let extension = materialize_extension(root.path()).expect("materialize runtime");
+        assert!(extension.is_file());
+        let config = root
+            .path()
+            .join("config")
+            .join("editorial-style-mappings.json");
+        let config_text = fs::read_to_string(config).expect("materialized style mapping config");
+        assert!(config_text.contains("japanese_editorial"));
+        let style_runtime = fs::read_to_string(root.path().join("runtime/style_mapping.mjs"))
+            .expect("materialized style mapping runtime");
+        assert!(style_runtime.contains("NEWSROOM_ARTIFACT_DIR"));
+    }
 }

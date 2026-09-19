@@ -203,6 +203,56 @@
         "uncertainty": "explicit",
         "color_strategy": "restrained"
       }
+    },
+    "japanese_editorial": {
+      "description": "Quiet, asymmetric editorial composition inspired by Japanese information design: ma (breathing room), hairline rules, book-like hierarchy and selective vermilion emphasis.",
+      "compatible_dimensions": [
+        "trend",
+        "rank",
+        "spatial",
+        "mechanism",
+        "comparison",
+        "distribution",
+        "uncertainty",
+        "human_scale",
+        "method",
+        "context",
+        "outcome",
+        "flow",
+        "network",
+        "hierarchy",
+        "model"
+      ],
+      "compatible_topologies": [
+        "tabular",
+        "flow_edges",
+        "graph_edges",
+        "process_graph",
+        "hierarchy",
+        "geography",
+        "geo_edges",
+        "spatial_network"
+      ],
+      "tokens": {
+        "font_display": "Hiragino Mincho ProN, Yu Mincho, Noto Serif CJK JP, Georgia, serif",
+        "font_body": "Hiragino Sans, Noto Sans CJK JP, Arial, Helvetica, sans-serif",
+        "paper": "#f7f5ef",
+        "ink": "#1b1b1b",
+        "muted": "#706d67",
+        "panel": "#eeece5",
+        "grid": "#d5d0c6",
+        "accent": "#b64032",
+        "density": "low",
+        "annotation": "selective",
+        "geometry": "asymmetric_editorial",
+        "motion": "minimal",
+        "surface": "flat",
+        "interaction_depth": "focused",
+        "composition": "asymmetric_editorial",
+        "title_tracking": "-0.025em",
+        "section_rule": "hairline",
+        "reading_measure": "wide"
+      }
     }
   },
   "rules": [
@@ -260,6 +310,15 @@
         "method"
       ],
       "priority": 10
+    },
+    {
+      "profile": "japanese_editorial",
+      "requires_any_signal": [
+        "japanese_editorial",
+        "ma_layout",
+        "bookish_grid"
+      ],
+      "priority": 110
     }
   ]
 }

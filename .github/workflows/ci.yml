@@ -64,6 +64,19 @@ jobs:
         run: python3 scripts/check_release_baseline.py
       - name: Check Rust ↔ Pi runtime contract
         run: python3 scripts/check_runtime_contract.py
+      - name: Visual-story and portable-publication regressions
+        run: |
+          node scripts/test_bundled_skills.mjs
+          node scripts/test_lieflat_catalog.mjs
+          node scripts/test_lieflat_report.mjs
+          node scripts/test_visual_story_completion.mjs
+          node scripts/test_visual_story_routing.mjs
+          node scripts/test_evidence_bound_composite.mjs
+          node scripts/test_composite_geo_network_sankey.mjs
+          node scripts/test_offline_geo_fallback.mjs
+          python3 scripts/test_openai_wire_mock.py
+          python3 scripts/test_anthropic_wire_mock.py
+          python3 scripts/test_artifact_completion.py
       - name: Unified PR release gate
         run: python3 scripts/release_check.py --profile pr --output outputs/ci-release-check-pr.json
       - name: Visual compiler contract tests
