@@ -19,6 +19,11 @@ case "$RID" in
     node --version | sed 's/^/node==/'
     npm ls --all --json
     ;;
+  viz-d3|viz-map|viz-sigma)
+    cd "runtime/${RID#viz-}"
+    node --version | sed 's/^/node==/'
+    npm ls --all --json
+    ;;
   viz-python|viz-density|viz-graph-extract)
     python3 --version
     python3 -m pip freeze | LC_ALL=C sort
