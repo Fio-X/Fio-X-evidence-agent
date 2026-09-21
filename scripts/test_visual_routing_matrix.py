@@ -35,6 +35,11 @@ CASES = [
     ("four modules", "map, Sankey, trend, and network"),
     ("comparison only", "compare two charts"),
 ]
+EXPECTED_CHANGED_LABELS = {
+    "single Sankey", "Sankey HTML", "mobile chart", "dashboard",
+    "Chinese mobile", "Chinese Sankey", "map + Sankey + trend",
+    "map + Sankey + trend mobile", "four modules",
+}
 
 
 def main() -> None:
@@ -57,10 +62,11 @@ fn main() {
         _, baseline, split = line.split("\t")
         observed.append({"label": label, "goal": goal, "baseline": baseline == "true", "split": split == "true"})
     changes = [row for row in observed if row["baseline"] != row["split"]]
-    assert len(observed) >= 20
-    assert any(row["label"] == "mobile chart" and row["split"] is False for row in changes)
-    assert any(row["label"] == "map + Sankey + trend" and row["split"] for row in observed)
-    assert not any(row["label"] == "single Sankey" and row["split"] for row in observed)
+    assert len(observed) == 24
+    assert len(changes) == 9
+    assert {row["label"] for row in changes} == EXPECTED_CHANGED_LABELS
+    assert all(row["baseline"] and not row["split"] for row in changes if row["label"] in {"single Sankey", "Sankey HTML", "mobile chart", "dashboard", "Chinese mobile", "Chinese Sankey"})
+    assert all(not row["baseline"] and row["split"] for row in changes if row["label"] in {"map + Sankey + trend", "map + Sankey + trend mobile", "four modules"})
     print(json.dumps({"status": "PASS", "case_count": len(observed), "routing_changes": len(changes), "changes": changes}, indent=2, ensure_ascii=False))
 
 
