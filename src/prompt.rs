@@ -2,6 +2,9 @@ const INVESTIGATE_TEMPLATE: &str = include_str!("../prompts/investigate.md");
 
 pub fn investigation(topic: &str, local_data: &[String]) -> String {
     let mut prompt = INVESTIGATE_TEMPLATE.replace("{{TOPIC}}", topic);
+    if sparse_checkpoints_enabled() {
+        prompt.push_str(sparse_checkpoint_contract());
+    }
     prompt.push_str(language_instruction(topic));
     if is_visual_request(topic) {
         prompt.push_str(
@@ -23,6 +26,18 @@ pub fn investigation(topic: &str, local_data: &[String]) -> String {
         prompt.push_str("Use artifact_inventory if you need to inspect available files before querying them. Treat local files as evidence inputs and profile their schema before drawing conclusions.\n");
     }
     prompt
+}
+
+/// Opt-in research instrumentation.  It describes macro boundaries without
+/// asking Pi to decide verification, publication, or evidence status.
+pub fn sparse_checkpoints_enabled() -> bool {
+    std::env::var("NEWSROOM_SPARSE_CHECKPOINTS")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn sparse_checkpoint_contract() -> &'static str {
+    "\n\nExperimental macro checkpoint contract (instrumentation only): work is observed at RESEARCH, DESIGN, and PUBLISH boundaries. Keep semantic choices and tool work in the existing agent loop. The control plane remains authoritative for evidence, verification, completion, and publication gates; never claim a gate passed because a checkpoint was recorded.\n"
 }
 
 pub fn is_visual_request(text: &str) -> bool {

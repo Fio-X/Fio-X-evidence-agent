@@ -7,6 +7,8 @@ use anyhow::{bail, Result};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 use std::path::{Component, Path};
 use std::time::Instant;
@@ -124,6 +126,34 @@ fn is_transient_completion_provider_error(error: &anyhow::Error) -> bool {
         .contains("Pi returned an empty final answer")
 }
 
+fn append_sparse_checkpoint(
+    events_path: &Path,
+    started: Instant,
+    name: &str,
+    scope: &[&str],
+    passed: bool,
+    reason_codes: &[&str],
+) -> Result<()> {
+    if !prompt::sparse_checkpoints_enabled() {
+        return Ok(());
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(events_path)?;
+    let event = serde_json::json!({
+        "type": "newsroom_macro_checkpoint",
+        "schema_version": "0.1.0",
+        "checkpoint": name,
+        "scope": scope,
+        "elapsed_ms": started.elapsed().as_millis(),
+        "reason_codes": reason_codes,
+        "passed": passed,
+    });
+    writeln!(file, "{}", serde_json::to_string(&event)?)?;
+    Ok(())
+}
+
 async fn run_prompt_with_empty_recovery(
     config: &PiConfig,
     prompt: &str,
@@ -219,6 +249,14 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
     eprintln!("artifact: {}\n", bundle.dir.display());
 
     audit::append_user_goal_event(&bundle.events_path, "initial")?;
+    append_sparse_checkpoint(
+        &bundle.events_path,
+        run_started,
+        "RESEARCH",
+        &["topic", "local_data", "prompt"],
+        true,
+        &["bundle_initialized", "prompt_recorded"],
+    )?;
     match run_prompt_with_empty_recovery(&config, &prompt, &prompt, &bundle.events_path).await {
         Ok(result) => {
             let persistence_started = Instant::now();
@@ -230,6 +268,14 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
             }
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
             let mut completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
+            append_sparse_checkpoint(
+                &bundle.events_path,
+                run_started,
+                "DESIGN",
+                &["existing_ir", "audit", "completion_contract"],
+                true,
+                &["agent_result_observed", "authoritative_audit_available"],
+            )?;
             if prompt::is_complex_visual_request(&topic) {
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
@@ -264,6 +310,18 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                     completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
                 }
             }
+            append_sparse_checkpoint(
+                &bundle.events_path,
+                run_started,
+                "PUBLISH",
+                &["completion_gates", "manifest", "primary_artifact"],
+                completion_gaps.is_empty(),
+                if completion_gaps.is_empty() {
+                    &["completion_gates_passed", "publication_status_recorded"]
+                } else {
+                    &["completion_gates_failed", "publication_blocked"]
+                },
+            )?;
             let status = if !completion_gaps.is_empty() {
                 "failed"
             } else if audit.has_agent_loop_evidence() {
