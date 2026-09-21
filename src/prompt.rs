@@ -87,6 +87,62 @@ pub fn is_complex_visual_request(text: &str) -> bool {
     .any(|term| lower.contains(term))
 }
 
+/// Delivery constraints are orthogonal to the analytical work a visual
+/// request requires.  Keep these predicates explicit so a mobile or
+/// self-contained delivery target does not, by itself, select the rich
+/// visual-story route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisualDeliveryRequirements {
+    pub html: bool,
+    pub png: bool,
+    pub mobile: bool,
+    pub self_contained: bool,
+    pub interactive: bool,
+}
+
+pub fn visual_delivery_requirements(text: &str) -> VisualDeliveryRequirements {
+    let lower = text.to_lowercase();
+    VisualDeliveryRequirements {
+        html: requires_html(text),
+        png: requires_png(text),
+        mobile: ["mobile", "移动端", "手机", "响应式"]
+            .iter()
+            .any(|term| lower.contains(term)),
+        self_contained: lower.contains("self-contained") || lower.contains("自包含"),
+        interactive: lower.contains("interactive") || lower.contains("交互"),
+    }
+}
+
+/// Analytical complexity is deliberately conservative: one requested
+/// grammar (including an interactive Sankey) stays on the ordinary visual
+/// route.  A request becomes a visual-story candidate only when it explicitly
+/// asks for a multi-module/story form or names at least three analytical
+/// modules.
+pub fn has_multi_module_analytical_complexity(text: &str) -> bool {
+    if !is_visual_request(text) {
+        return false;
+    }
+    let lower = text.to_lowercase();
+    let explicit = [
+        "multi-module",
+        "multi module",
+        "scrollytelling",
+        "visual essay",
+        "多模块",
+        "视觉文章",
+        "长页面",
+    ]
+    .iter()
+    .any(|term| lower.contains(term));
+    explicit || required_visual_modes(text).len() >= 3
+}
+
+/// Opt-in Round 4 classifier split.  The default classifier above remains
+/// unchanged until this experiment is promoted.
+pub fn is_complex_visual_request_split(text: &str) -> bool {
+    is_visual_request(text) && has_multi_module_analytical_complexity(text)
+}
+
 pub fn requires_html(text: &str) -> bool {
     let lower = text.to_lowercase();
     lower.contains("html") || lower.contains("网页") || lower.contains("web page")
@@ -276,5 +332,29 @@ mod tests {
         let retry_contract = visual_mode_contract("世界地图、Sankey 和年代比较");
         assert!(retry_contract.contains("primary editorial grammar ROUTE_SPINE"));
         assert!(retry_contract.contains("Add THEN_NOW"));
+    }
+
+    #[test]
+    fn split_classifier_separates_delivery_from_analytical_complexity() {
+        let delivery =
+            visual_delivery_requirements("self-contained HTML mobile interactive Sankey");
+        assert_eq!(
+            delivery,
+            VisualDeliveryRequirements {
+                html: true,
+                png: false,
+                mobile: true,
+                self_contained: true,
+                interactive: true,
+            }
+        );
+        assert!(!is_complex_visual_request_split(
+            "self-contained HTML mobile single chart"
+        ));
+        assert!(!is_complex_visual_request_split("interactive Sankey"));
+        assert!(is_complex_visual_request_split(
+            "map, Sankey, and trend as a scrollytelling story"
+        ));
+        assert!(is_complex_visual_request_split("map, Sankey, and trend"));
     }
 }
