@@ -51,7 +51,7 @@
       "local_ref": "fixtures/migration/deep-learning-human-migration-top-corridors.csv",
       "retrieved_at": "2026-09-19T14:50:57Z",
       "role": "primary_data",
-      "sha256": "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4",
+      "sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0",
       "title": "Deep-learning model estimates of annual bilateral migration flows",
       "url": "https://doi.org/10.57967/hf/8902"
     },
