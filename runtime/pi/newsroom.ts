@@ -37,6 +37,7 @@ import { materializeComputationRowTables, safeDuckDbDiagnostic } from "./computa
 const MAX_FETCH_CHARS = 80_000;
 const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
+const DUCKDB_MODEL_PREVIEW_ROWS = 50;
 const MAX_DATASET_BYTES = 25_000_000;
 const sourceAccessCircuit = createSourceAccessCircuit(3);
 
@@ -323,6 +324,19 @@ function clampInt(value: number | undefined, min: number, max: number, fallback:
 
 function textResult(text: string, details: Record<string, unknown> = {}) {
   return { content: [{ type: "text" as const, text }], details };
+}
+
+function compactDuckDbResultEnvelope(rows: Record<string, unknown>[], artifact: string | null, resultHash: string) {
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  const previewRows = rows.slice(0, DUCKDB_MODEL_PREVIEW_ROWS);
+  return {
+    row_count: rows.length,
+    columns,
+    preview_rows: previewRows,
+    artifact_ref: artifact,
+    result_hash: resultHash,
+    truncated_for_model: previewRows.length < rows.length,
+  };
 }
 
 async function assertPublicUrl(url: URL) {
@@ -984,9 +998,14 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         rows,
       };
       const path = await writeArtifactIfAbsent(computationRef, record);
-      return textResult(JSON.stringify({ row_count: rows.length, rows, artifact: path }, null, 2), {
+      const compact = /^(1|true|yes)$/i.test(String(process.env.NEWSROOM_DUCKDB_COMPACT_ENVELOPE ?? ""));
+      const modelResult = compact
+        ? compactDuckDbResultEnvelope(rows as Record<string, unknown>[], path, resultHash)
+        : { row_count: rows.length, rows, artifact: path };
+      return textResult(JSON.stringify(modelResult, null, 2), {
         rowCount: rows.length,
         path,
+        ...(compact ? { modelVisibleResultBytes: Buffer.byteLength(JSON.stringify(modelResult)) } : {}),
       });
     },
   });
