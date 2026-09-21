@@ -443,6 +443,16 @@ def jsonl(path: Path):
     return rows
 
 
+def system_verified_claim(claim):
+    verification = claim.get("verification") or {}
+    return (
+        claim.get("status") == "verified"
+        and verification.get("authority") == "system"
+        and verification.get("rule_id") == "verification.source+extraction+computation+claim.v1"
+        and all(verification.get(key) is True for key in ("source_resolved", "extraction_passed", "computation_replayed", "claim_supported", "publishable"))
+    )
+
+
 def verify(root: Path) -> Report:
     report = Report()
     if not root.is_dir():
@@ -593,6 +603,9 @@ def verify(root: Path) -> Report:
             report.check(False, f"claims.jsonl parse error: {claim['__parse_error__']}")
             continue
         if claim.get("status") != "verified":
+            continue
+        report.check(system_verified_claim(claim), f"verified claim {claim.get('claim_id')} lacks system-derived verification")
+        if not system_verified_claim(claim):
             continue
         claim_id = claim.get("claim_id")
         if claim_id:

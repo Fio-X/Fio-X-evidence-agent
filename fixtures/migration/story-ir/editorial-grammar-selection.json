@@ -1,0 +1,83 @@
+{
+  "available_renderer_capabilities": [
+    "svg",
+    "canvas2d"
+  ],
+  "candidates": [
+    {
+      "grammar": "ROUTE_SPINE",
+      "hard_constraints_passed": true,
+      "reason_codes": [
+        "evidence_requirements_met",
+        "renderer_available",
+        "cognitive_goal_match"
+      ],
+      "renderer_capability_passed": true,
+      "soft_score": 1
+    },
+    {
+      "grammar": "THEN_NOW",
+      "hard_constraints_passed": true,
+      "reason_codes": [
+        "evidence_requirements_met",
+        "renderer_available",
+        "cognitive_goal_match"
+      ],
+      "renderer_capability_passed": true,
+      "soft_score": 0.94
+    },
+    {
+      "grammar": "SCALE_TRANSLATOR",
+      "hard_constraints_passed": true,
+      "reason_codes": [
+        "evidence_requirements_met",
+        "renderer_available",
+        "cognitive_goal_match"
+      ],
+      "renderer_capability_passed": true,
+      "soft_score": 0.88
+    }
+  ],
+  "cognitive_goals": [
+    "ORIENT",
+    "ZOOM",
+    "MEASURE",
+    "COMPARE",
+    "CONSEQUENCE"
+  ],
+  "decision_log": [
+    {
+      "grammar": "ROUTE_SPINE",
+      "outcome": "pass",
+      "reason_code": "verified_origin_destination_locations",
+      "stage": "hard_constraint"
+    },
+    {
+      "grammar": "ROUTE_SPINE",
+      "outcome": "pass",
+      "reason_code": "svg_canvas_available",
+      "stage": "renderer_capability"
+    },
+    {
+      "grammar": "ROUTE_SPINE",
+      "outcome": "select",
+      "reason_code": "highest_eligible_score",
+      "stage": "final_selection"
+    }
+  ],
+  "evidence_features": [
+    "origin_destination_relation",
+    "verified_locations",
+    "comparable_timepoints",
+    "quantity",
+    "human_scale_reference"
+  ],
+  "primary": "ROUTE_SPINE",
+  "project_id": "migration-four-decades",
+  "schema_version": "0.1.0",
+  "selected": "ROUTE_SPINE",
+  "supporting": [
+    "THEN_NOW",
+    "SCALE_TRANSLATOR"
+  ]
+}

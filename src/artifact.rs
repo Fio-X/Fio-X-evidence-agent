@@ -500,6 +500,31 @@ impl InvestigationBundle {
         let delivery = discover_delivery(&self.dir)?;
         Ok(delivery.primary_artifact.zip(delivery.primary_kind))
     }
+
+    pub fn visual_delivery_gaps(
+        &self,
+        require_html: bool,
+        require_png_pair: bool,
+    ) -> Result<Vec<String>> {
+        let delivery = discover_delivery(&self.dir)?;
+        let mut gaps = Vec::new();
+        if require_html && delivery.html.is_empty() {
+            gaps.push("requested self-contained HTML is missing".to_string());
+        }
+        if require_png_pair {
+            let png_count = delivery
+                .images
+                .iter()
+                .filter(|path| path.to_ascii_lowercase().ends_with(".png"))
+                .count();
+            if png_count < 2 {
+                gaps.push(format!(
+                    "requested desktop/mobile PNG pair is incomplete ({png_count}/2 found)"
+                ));
+            }
+        }
+        Ok(gaps)
+    }
 }
 
 fn read_user_messages(path: &Path) -> Option<usize> {

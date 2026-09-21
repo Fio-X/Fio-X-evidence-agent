@@ -16,6 +16,7 @@ import { applyVisionPatches, normalizeVisionCriticReport, VISION_RUBRIC_KEYS } f
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph } from "./story_graph.mjs";
+import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection } from "./editorial_grammar.mjs";
 import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle } from "./style_mapping.mjs";
@@ -25,12 +26,13 @@ import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, isPrivateIpAddress, readBodyBytes, readBodyText } from "./net.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, evidenceRefFromFingerprint, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, evidenceRefFromFingerprint, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
+import { materializeComputationRowTables, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const MAX_QUERY_BYTES = 1_000_000;
@@ -126,6 +128,12 @@ function artifactRoot(): string | null {
   return value ? resolve(value) : null;
 }
 
+async function loadEditorialGrammarRegistry(): Promise<any> {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for editorial grammar validation");
+  return JSON.parse(await readFile(join(root, "config", "editorial-grammar-registry.json"), "utf8"));
+}
+
 async function ensureParent(path: string) {
   await mkdir(dirname(path), { recursive: true });
 }
@@ -211,7 +219,7 @@ async function verifiedClaimIds() {
     return text.split(/\r?\n/).filter(Boolean).flatMap((line) => {
       try {
         const claim = JSON.parse(line);
-        return claim.status === "verified" && claim.claim_id ? [String(claim.claim_id)] : [];
+        return isSystemVerifiedClaim(claim) && claim.claim_id ? [String(claim.claim_id)] : [];
       } catch {
         return [];
       }
@@ -230,7 +238,7 @@ async function verifiedClaimRecords() {
     for (const line of text.split(/\r?\n/).filter(Boolean)) {
       try {
         const claim = JSON.parse(line);
-        if (claim.status === "verified" && claim.claim_id) out.set(String(claim.claim_id), claim);
+        if (isSystemVerifiedClaim(claim) && claim.claim_id) out.set(String(claim.claim_id), claim);
       } catch {}
     }
   } catch {}
@@ -456,6 +464,10 @@ async function queryDuckDb(sql: string, signal?: AbortSignal) {
   const bin = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
   const root = artifactRoot();
   if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
+  const materialized = await materializeComputationRowTables(safeSql, {
+    readComputation: (ref: string) => readArtifactJson(ref, "computations/"),
+    writeRows: (ref: string, rows: unknown[]) => writeArtifactIfAbsent(ref, rows),
+  });
   const dataDir = join(root, "data").replace(/'/g, "''");
   const sourceDir = join(root, "sources").replace(/'/g, "''");
   // A visualization plan may consume a previously verified computation
@@ -463,18 +475,20 @@ async function queryDuckDb(sql: string, signal?: AbortSignal) {
   // read-only path explicitly allow-listed so the plan can preserve its
   // intended grammar instead of silently falling back to a simpler chart.
   const computationDir = join(root, "computations").replace(/'/g, "''");
+  const queryRowsDir = join(root, "runtime", "query-rows").replace(/'/g, "''");
   const args = [
     "-json",
     ":memory:",
-    "-cmd", `SET allowed_directories = ['${dataDir}', '${sourceDir}', '${computationDir}']`,
+    "-cmd", `SET allowed_directories = ['${dataDir}', '${sourceDir}', '${computationDir}', '${queryRowsDir}']`,
     "-cmd", "SET enable_external_access = false",
     "-cmd", "SET allow_community_extensions = false",
     "-cmd", "SET memory_limit = '512MB'",
     "-cmd", "SET threads = 2",
     "-cmd", "SET lock_configuration = true",
-    "-c", safeSql,
+    "-c", materialized.sql,
   ];
-  const { stdout } = await runProcess(bin, args, signal, root);
+  const { stdout, stderr, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES, 20_000, true);
+  if (code !== 0) throw new Error(`DUCKDB_QUERY_FAILED: ${safeDuckDbDiagnostic(stderr, root)}`);
   const text = stdout.trim();
   if (!text) return [];
   try {
@@ -640,6 +654,32 @@ async function validateSourceEvidence(refs: string[]) {
     } else if (ref.startsWith("data/")) {
       const info = await stat(full);
       assertDatasetPayload(ref, info.size);
+    }
+  }
+}
+
+async function replayComputationEvidence(refs: string[], sourceRefs: string[], signal?: AbortSignal) {
+  for (const ref of refs) {
+    const computation = await readArtifactJson(ref, "computations/");
+    const sql = validateReadOnlySql(String(computation?.sql ?? ""));
+    const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
+    const recordedResultHash = String(computation?.result_hash ?? "");
+    if (!inputSnapshotHash || !/^[0-9a-f]{64}$/i.test(recordedResultHash) || !Array.isArray(computation?.rows)) {
+      throw new Error(`INVALID_COMPUTATION_EVIDENCE: incomplete deterministic computation record: ${ref}`);
+    }
+    if (hashRows(computation.rows) !== recordedResultHash) {
+      throw new Error(`INVALID_COMPUTATION_EVIDENCE: stored rows do not match result_hash: ${ref}`);
+    }
+    if (computationRelativePath(sql, inputSnapshotHash, recordedResultHash) !== ref) {
+      throw new Error(`INVALID_COMPUTATION_EVIDENCE: content-addressed path does not match computation: ${ref}`);
+    }
+    const inputs = Array.isArray(computation.input_fingerprints) ? computation.input_fingerprints.map(String) : [];
+    const isBound = sourceRefs.some((sourceRef) => sourceRef.startsWith("data/")
+      ? inputs.some((fingerprint: string) => fingerprint.startsWith(`data:${sourceRef}:`))
+      : inputs.some((fingerprint: string) => fingerprint.startsWith(`source:${sourceRef.slice("sources/".length)}:`)));
+    if (!isBound) throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} does not consume any cited source artifact`);
+    if (hashRows(await queryDuckDb(sql, signal)) !== recordedResultHash) {
+      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}`);
     }
   }
 }
@@ -1056,7 +1096,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_visual_skill",
     label: "Load bundled visual backend guidance",
-    description: "Load the reproducible project-local Skill guidance for a professional visualization backend; loading guidance itself does not require a verified claim. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime. Use newsroom_viz_plan verification_mode=draft for exploratory rendering, or verified mode for publishable output.",
+    description: "Load the reproducible project-local Skill guidance for a professional visualization backend; loading guidance itself does not require a verified claim. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime. Omit claim_id for a draft, or bind a system-verified claim for publishable output.",
     promptSnippet: "Load the backend-specific visual production method before generating an execution request",
     parameters: Type.Object({
       skill: StringEnum(["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const),
@@ -1102,7 +1142,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_lieflat_render",
     label: "Render an evidence-bound Lieflat publication",
-    description: "Use the pinned Lieflat Charts skill as a fail-closed publication fallback. Render either one evidence-bound chart (SVG plus self-contained HTML) or a multi-module report (self-contained HTML), binding every quantitative module to verified claims/sources/computations. Unsupported templates fail closed; no source text is accepted as an artifact. For exploratory no-claim SVGs, use newsroom_viz_plan verification_mode=draft instead; Lieflat itself remains publication-only.",
+    description: "Use the pinned Lieflat Charts skill as a fail-closed publication fallback. Render either one evidence-bound chart (SVG plus self-contained HTML) or a multi-module report (self-contained HTML), binding every quantitative module to verified claims/sources/computations. Unsupported templates fail closed; no source text is accepted as an artifact. For exploratory no-claim SVGs, call newsroom_viz_plan without claim_id; Lieflat itself remains publication-only.",
     promptSnippet: "Render a real offline Lieflat HTML report",
     promptGuidelines: [
       "For one conclusion, use mode=chart and output_mode=auto or image; the tool returns a real SVG and a self-contained HTML companion. Use mode=report only for an explicitly requested multi-module report.",
@@ -1234,21 +1274,21 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_viz_plan",
     label: "Plan newsroom visualization",
-    description: "Create an observable editorial visualization plan. Verified mode binds a publishable chart to a verified claim; draft mode supports exploratory/prototype rendering without a claim and is explicitly non-publishable. Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics.",
+    description: "Create an observable editorial visualization plan. A system-verified claim_id produces a publishable plan; omitting claim_id produces an explicitly non-publishable draft. The model cannot select verification status. Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics.",
     promptSnippet: "Plan a newsroom-grade visualization before rendering",
     promptGuidelines: [
-      "Use verified mode after a major numerical claim has been recorded as verified. Use verification_mode=draft when testing a visual grammar or exploring supplied data before claim review; draft artifacts must never be presented as publishable facts.",
+      "Bind claim_id only after record_claim reports system verification. Omit claim_id when testing a visual grammar or exploring supplied data; draft artifacts must never be presented as publishable facts.",
       "If the requested deliverable is an infographic or visual story, this tool may create only one module after newsroom_story_graph and concept selection. Set delivery_role=infographic_module, bind story_graph_ref plus story_node_ids, and do not treat the chart as the final deliverable.",
       "For ranking, comparison, change, distribution, correlation, and part-to-whole tasks, declare measure_semantics plus claim_spec. The semantic gate blocks incomparable measures before rendering and derives the editorial grammar from the claim.",
       "For mixed reference periods, prefer explicit separation such as small multiples rather than silently ranking incomparable observations.",
       "For flow, relationship, hierarchy, spatial, sequence, or process questions, select a topology-aware form such as Sankey, parallel sets, chord, geographic flow map, adjacency matrix, hierarchy tree, timeline, or process schematic. Do not force complex relationships into bars or scatterplots.",
+      "For reciprocal origin-destination data in a Sankey, create role-qualified bipartite node labels (for example origin:Asia → destination:Asia). This preserves both directions without self-loops or cycles; do not drop the requested Sankey merely because geographic names repeat across source and destination roles.",
       "Use complexity_budget='low' for fast analytical reading, 'medium' for explanatory newsroom graphics, and 'exploratory' only when the editorial goal justifies higher visual-search cost.",
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
     parameters: Type.Object({
       reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const),
       delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const)),
-      verification_mode: Type.Optional(StringEnum(["verified", "draft"] as const)),
       story_graph_ref: Type.Optional(Type.String()),
       story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
@@ -1384,9 +1424,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           : {}),
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
-      const verificationMode = params.verification_mode ?? (params.claim_id ? "verified" : "draft");
+      const verificationMode = params.claim_id ? "verified" : "draft";
       if (verificationMode === "verified" && !String(params.claim_id ?? "").trim()) {
-        throw new Error("VERIFIED_CLAIM_REQUIRED: verified mode requires claim_id; use verification_mode='draft' for exploratory rendering");
+        throw new Error("VERIFIED_CLAIM_REQUIRED: publishable plans require claim_id; omit claim_id for exploratory rendering");
       }
       if (deliveryRole === "infographic_module") {
         if (!params.story_graph_ref || !Array.isArray(params.story_node_ids) || !params.story_node_ids.length) throw new Error("INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required");
@@ -1405,8 +1445,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       assertEditorialGrammar(semanticGate, params.chart_type);
       const errors = validateVizSpec(normalizedParams);
       if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
-      const claimIds = await verifiedClaimIds();
-      if (params.claim_id && !claimIds.includes(params.claim_id)) throw new Error(`claim_id '${params.claim_id}' is not a verified recorded claim`);
+      const claimRecords = await verifiedClaimRecords();
+      const verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
       const specCore = {
         schema_version: ["cartographic_flow_map", "trajectory_profile"].includes(params.chart_type) ? "1.1.0" : "0.9.0",
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
@@ -1415,6 +1455,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         verification_mode: verificationMode,
         artifact_status: verificationMode === "verified" ? "VERIFIED" : "DRAFT",
         publishable: verificationMode === "verified",
+        verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
         semantic_gate: semanticGate,
         editorial_plan: semanticGate.editorial_plan,
@@ -1446,6 +1487,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
       const verified = await verifiedClaimIds();
+      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)));
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified });
       const inputSnapshot = await evidenceSnapshot();
       const inputSnapshotHash = inputSnapshot.hash;
@@ -1466,12 +1508,12 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         schema_version: "0.9.0",
         plan_ref: params.plan_ref,
         computation_ref: computationRef,
-        verification_mode: spec.verification_mode ?? "verified",
-        artifact_status: spec.artifact_status ?? ((spec.verification_mode ?? "verified") === "verified" ? "VERIFIED" : "DRAFT"),
-        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
+        verification_mode: systemVerified ? "verified" : "draft",
+        artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
+        publishable: systemVerified,
       });
       const status = lint.passed ? "PASS" : "BLOCKED";
-      const verificationText = (spec.verification_mode ?? "verified") === "verified" ? "VERIFIED / publishable after QA" : "DRAFT / exploratory only; not publishable";
+      const verificationText = systemVerified ? "VERIFIED / publishable after QA" : "DRAFT / exploratory only; not publishable";
       return textResult(`${status}: visualization lint\nPlan: ${params.plan_ref}\nLint: ${lintRef}\nVerification: ${verificationText}\nData hash: ${lint.data_hash}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_viz_render with plan_ref and lint_ref." : "Revise the visualization plan and lint again before rendering."}`, {
         passed: lint.passed,
         lintRef,
@@ -1479,8 +1521,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         dataHash: lint.data_hash,
         blockers: lint.blockers,
         warnings: lint.warnings,
-        verificationMode: spec.verification_mode ?? "verified",
-        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
+        verificationMode: systemVerified ? "verified" : "draft",
+        publishable: systemVerified,
       });
     },
   });
@@ -1500,6 +1542,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       if (lint.plan_ref !== params.plan_ref) throw new Error("Lint artifact does not belong to the supplied visualization plan");
       if (!lint.passed || (Array.isArray(lint.blockers) && lint.blockers.length > 0)) throw new Error("Visualization lint has blocking failures; revise and lint again before rendering");
       const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
+      const systemVerified = Boolean(spec.claim_id && (await verifiedClaimIds()).includes(String(spec.claim_id)));
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       const bundle = renderVizBundle(spec, rows);
@@ -1515,9 +1558,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         lint_ref: params.lint_ref,
         computation_ref: lint.computation_ref,
         claim_id: spec.claim_id ?? null,
-        verification_mode: spec.verification_mode ?? "verified",
-        artifact_status: spec.artifact_status ?? ((spec.verification_mode ?? "verified") === "verified" ? "VERIFIED" : "DRAFT"),
-        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
+        verification_mode: systemVerified ? "verified" : "draft",
+        artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
+        publishable: systemVerified,
+        verification: systemVerified ? (await verifiedClaimRecords()).get(String(spec.claim_id))?.verification : deriveClaimVerification({}),
         chart_type: spec.chart_type,
         reader_task: spec.reader_task,
         takeaway: spec.takeaway,
@@ -1536,7 +1580,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
 Desktop SVG: ${desktopSvgRef}
 Mobile SVG: ${mobileSvgRef}
 Manifest: ${manifestRef}
-Verification: ${(spec.verification_mode ?? "verified") === "verified" ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
+Verification: ${systemVerified ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
 Data hash: ${currentHash}
 Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`, {
         svgRef: desktopSvgRef,
@@ -1545,8 +1589,8 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
         manifestRef,
         dataHash: currentHash,
         rowCount: rows.length,
-        verificationMode: spec.verification_mode ?? "verified",
-        publishable: spec.publishable ?? ((spec.verification_mode ?? "verified") === "verified"),
+        verificationMode: systemVerified ? "verified" : "draft",
+        publishable: systemVerified,
       });
     },
   });
@@ -2128,6 +2172,31 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const)),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
+    graphic_object_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 40 })),
+    annotations: Type.Optional(Type.Array(Type.Object({
+      id: Type.String(), target_object_id: Type.String(), text: Type.String(), claim_id: Type.String(),
+    }), { maxItems: 8 })),
+    visual_channels: Type.Optional(Type.Array(Type.Object({
+      channel: StringEnum(["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const),
+      field: Type.String(), role: StringEnum(["quantitative", "categorical", "identity", "emphasis", "uncertainty"] as const),
+    }), { maxItems: 12 })),
+    quantitative_encoding: Type.Optional(Type.Object({
+      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const),
+      mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width"] as const),
+      scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const),
+      baseline_policy: StringEnum(["zero", "symmetric_zero", "included", "not_applicable"] as const),
+      domain_min: Type.Optional(Type.Number()), domain_max: Type.Optional(Type.Number()),
+      area_proportional: Type.Optional(Type.Boolean()), uncertainty_disclosed: Type.Boolean(), disclosure: Type.Optional(Type.String()),
+    })),
+  });
+
+  const editorialGrammarParameters = Type.Object({
+    project_id: Type.String(),
+    primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"] as const),
+    supporting: Type.Array(StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"] as const), { maxItems: 2 }),
+    available_renderer_capabilities: Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
+    evidence_features: Type.Array(StringEnum(["spatial_structure", "quantity", "human_scale_reference", "process_or_causal_relation", "comparable_entities", "comparable_timepoints", "origin_destination_relation", "verified_locations"] as const), { minItems: 1 }),
+    cognitive_goals: Type.Array(StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const), { minItems: 1 }),
   });
 
   registerScopedTool(pi, {
@@ -2137,7 +2206,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
     promptSnippet: "Plan a responsive multi-module magazine infographic",
     promptGuidelines: [
       "Use this only after newsroom_story_graph passes, editorial discovery and the visual concept tournament are complete, and the investigation has at least two visual/explanatory assets that passed their critics.",
-      "InfographicSpec 1.4 must answer the same reader_question and express the same visual_thesis as StoryGraph. A single-chart fallback is release-blocking.",
+      "InfographicSpec 1.5 must answer the same reader_question and express the same visual_thesis as StoryGraph. A single-chart fallback is release-blocking.",
+      "Choose one eligible project-level primary editorial grammar and at most two supporting grammars. Supply only evidence features, cognitive goals and renderer capabilities; the system computes the three candidates, scores, pass flags and decision log. Keep module visual_grammar separate as the analytical encoding family.",
+      "Choose the editorial grammar set to cover every module visual_grammar. A route story with spatial and flow modules should use ROUTE_SPINE as primary when eligible; add SCALE_TRANSLATOR or SPECIMEN_GRID for composition and THEN_NOW for change when needed. Change this project-level selection instead of relabeling or deleting an explicitly requested module.",
+      "Use SceneGraph 0.2 cognitive goals. Every scene has one bounded hero, supporting claims, and explicit limits for sidecars, annotations, and claims.",
       "Define the editorial intent, target audience, one primary message, and a story arc before selecting modules. Form follows the reporting purpose.",
       "Assign every module a story_role and priority. Use a single explicit visual anchor, then alternate dense evidence with lighter context, turns, or section resets.",
       "Prefer 4-9 modules. A magazine page should have a reading sequence, not a dashboard grid. The composer will generate and rank balanced, anchor, and rhythm layout candidates.",
@@ -2168,25 +2240,36 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       selected_concept_id: Type.String(),
       novelty_ref: Type.String(),
       asset_plan_ref: Type.String(),
+      editorial_grammar: editorialGrammarParameters,
       scene_graph: Type.Object({
-        schema_version: Type.Literal("0.1.0"),
+        schema_version: Type.Literal("0.2.0"),
         scenes: Type.Array(Type.Object({
           id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const),
           eyebrow: Type.Optional(Type.String()), title: Type.Optional(Type.String()), dek: Type.Optional(Type.String()),
           anchor_module_id: Type.String(), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
-        }), { minItems: 1, maxItems: 3 }),
+          primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const),
+          hero_object_id: Type.String(), supporting_claim_ids: Type.Array(Type.String(), { maxItems: 12 }),
+          scene_budget: Type.Object({
+            max_supporting_objects: Type.Integer({ minimum: 0, maximum: 3 }),
+            max_annotations: Type.Integer({ minimum: 0, maximum: 8 }),
+            max_claims: Type.Integer({ minimum: 1, maximum: 12 }),
+          }),
+        }), { minItems: 1, maxItems: 6 }),
       }),
       source_note: Type.Optional(Type.String()),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
     async execute(_id, params) {
+      const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
+      const editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
       const specCore = {
-        schema_version: "1.4.0",
+        schema_version: "1.5.0",
         layout: params.layout ?? "feature",
         complexity_budget: params.complexity_budget ?? "medium",
         quality_target: params.quality_target ?? "publishable",
         competition_profile: params.competition_profile ?? "editorial",
         ...params,
+        editorial_grammar: editorialGrammar,
         modules: params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" })),
       };
       const storyGraph = await readArtifactJson(String(specCore.story_graph_ref), "editorial/story-graphs/");
@@ -2199,6 +2282,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       }
       const errors = validateInfographicSpec(specCore);
       if (errors.length) throw new Error(`Invalid infographic plan: ${errors.join("; ")}`);
+      const grammarLint = lintEditorialGrammarSelection(specCore.editorial_grammar, editorialGrammarRegistry);
+      if (!grammarLint.passed) throw new Error(`Invalid editorial grammar selection: ${grammarLint.issues.map((issue: any) => `${issue.rule_id}: ${issue.message}`).join("; ")}`);
       {
         const discovery = await readArtifactJson(String(specCore.editorial_discovery_ref), "editorial/discovery/");
         if (discovery.decision !== "CONTINUE") throw new Error(`Award infographic cannot proceed from editorial discovery decision '${discovery.decision}'`);
@@ -2251,8 +2336,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const assets = await loadInfographicAssets(spec);
       const verified = await verifiedClaimIds();
+      const verifiedRecords = await verifiedClaimRecords();
       const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
-      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, story_graph: storyGraph });
+      const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
+      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry });
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
         mobile_sha256: sha256Hex(asset.mobileSvg),
@@ -2770,7 +2857,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
   registerScopedTool(pi, {
     name: "newsroom_publication_qa",
     label: "Verify browser publication",
-    description: "Cold-load a rendered browser publication at every declared viewport, replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles.",
+    description: "Cold-load a rendered browser publication at every declared viewport, save full-page PNG screenshots for all declared widths (including desktop and mobile), replay interactions, validate accessibility and rendering bounds, and enforce separate CPU/GPU browser profiles.",
     promptSnippet: "Verify browser publication in pinned Chromium",
     parameters: Type.Object({
       plan_ref: Type.String(),
@@ -3136,33 +3223,46 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on both vie
     description: "Record a concise factual claim with explicit source and computation references in the investigation artifact.",
     promptSnippet: "Record a claim with provenance",
     promptGuidelines: [
-      "Use record_claim for important factual conclusions. A verified numerical claim should reference both source snapshots and deterministic computation artifacts when applicable.",
+      "Use record_claim for important factual conclusions. Request supported only when evidence supports the wording. The runtime, not the model, grants verified after source validation and deterministic computation replay.",
     ],
     parameters: Type.Object({
       claim: Type.String(),
-      status: StringEnum(["hypothesis", "supported", "verified", "contested"] as const),
+      claim_kind: StringEnum(["descriptive", "quantitative", "comparative", "causal", "mechanistic", "predictive", "uncertainty"] as const),
+      status: StringEnum(["hypothesis", "supported", "contested"] as const),
       source_refs: Type.Array(Type.String(), { maxItems: 20 }),
       computation_refs: Type.Array(Type.String(), { maxItems: 20 }),
       caveat: Type.Optional(Type.String()),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, signal) {
       assertEvidenceBackedStatus(params.status, params.source_refs, params.computation_refs);
       const sourceRefs = await normalizeArtifactRefs(params.source_refs, "source");
       await validateSourceEvidence(sourceRefs);
       const computationRefs = await normalizeArtifactRefs(params.computation_refs, "computation");
+      if (params.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
+      const claimSupport = evaluateClaimSupport({ requested_status: params.status, claim_kind: params.claim_kind, claim: params.claim });
+      const verification = deriveClaimVerification({
+        source_resolved: sourceRefs.length > 0,
+        extraction_passed: sourceRefs.length > 0,
+        computation_replayed: computationRefs.length > 0 && params.status === "supported",
+        claim_supported: claimSupport.passed,
+      });
       const claimId = `claim-${stableId(JSON.stringify({ claim: params.claim, sourceRefs, computationRefs }))}`;
       const record = {
-        schema_version: "0.7.0",
+        schema_version: "0.8.0",
         claim_id: claimId,
         recorded_at: new Date().toISOString(),
         claim: params.claim,
-        status: params.status,
+        claim_kind: params.claim_kind,
+        requested_status: params.status,
+        status: verification.publishable ? "verified" : params.status,
+        verification,
+        claim_support: claimSupport,
         source_refs: sourceRefs,
         computation_refs: computationRefs,
         caveat: params.caveat ?? null,
       };
       const path = await appendArtifact("claims.jsonl", record);
-      return textResult(`Claim recorded${path ? ` in ${path}` : ""}.\nclaim_id: ${claimId}`, { path, status: params.status, claimId });
+      return textResult(`Claim recorded${path ? ` in ${path}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
     },
   });
 }

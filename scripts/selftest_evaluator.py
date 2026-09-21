@@ -89,7 +89,8 @@ def build_valid(root: Path):
     write_json(root / comp_ref, {"schema_version": "0.7.0", "sql": sql, "input_snapshot_hash": input_hash, "input_fingerprints": fingerprints, "result_hash": result_hash, "rows": rows})
 
     claim_id = "claim-valid"
-    write_text(root / "claims.jsonl", json.dumps({"claim_id": claim_id, "status": "verified", "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}) + "\n")
+    verification = {"authority": "system", "source_resolved": True, "extraction_passed": True, "computation_replayed": True, "claim_supported": True, "publishable": True, "rule_id": "verification.source+extraction+computation+claim.v1"}
+    write_text(root / "claims.jsonl", json.dumps({"schema_version": "0.8.0", "claim_id": claim_id, "requested_status": "supported", "status": "verified", "verification": verification, "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}) + "\n")
 
     plan_ref = "visualizations/plans/chart.json"
     lint_ref = "visualizations/lints/chart.json"

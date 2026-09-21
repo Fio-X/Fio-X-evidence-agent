@@ -548,6 +548,16 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
         if claim.get("status").and_then(Value::as_str) != Some("verified") {
             continue;
         }
+        report.check(
+            is_system_verified_claim(&claim),
+            format!(
+                "verified claim on line {} lacks system-derived verification",
+                line_no + 1
+            ),
+        );
+        if !is_system_verified_claim(&claim) {
+            continue;
+        }
         let source_refs = claim
             .get("source_refs")
             .and_then(Value::as_array)
@@ -808,13 +818,33 @@ fn verified_claim_ids(root: &Path) -> Result<HashSet<String>> {
             Ok(value) => value,
             Err(_) => continue,
         };
-        if value.get("status").and_then(Value::as_str) == Some("verified") {
+        if is_system_verified_claim(&value) {
             if let Some(id) = value.get("claim_id").and_then(Value::as_str) {
                 ids.insert(id.to_owned());
             }
         }
     }
     Ok(ids)
+}
+
+fn is_system_verified_claim(value: &Value) -> bool {
+    let verification = match value.get("verification") {
+        Some(value) => value,
+        None => return false,
+    };
+    value.get("status").and_then(Value::as_str) == Some("verified")
+        && verification.get("authority").and_then(Value::as_str) == Some("system")
+        && verification.get("rule_id").and_then(Value::as_str)
+            == Some("verification.source+extraction+computation+claim.v1")
+        && [
+            "source_resolved",
+            "extraction_passed",
+            "computation_replayed",
+            "claim_supported",
+            "publishable",
+        ]
+        .iter()
+        .all(|key| verification.get(key).and_then(Value::as_bool) == Some(true))
 }
 
 fn safe_ref(root: &Path, reference: &str) -> Result<PathBuf> {

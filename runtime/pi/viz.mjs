@@ -595,7 +595,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       if (topo.edges.length > 96) blockers.push(`${spec.chart_type} has ${topo.edges.length} links; maximum is 96`);
       if (rows.some((row) => (n(row[spec.value_field]) ?? -1) < 0)) blockers.push(`${spec.chart_type} does not allow negative flows`);
       const cyclicFlow = hasDirectedCycle(rows, spec.source_field, spec.target_field);
-      if (cyclicFlow) blockers.push(`${spec.chart_type} requires an acyclic flow graph; cycles must be resolved or represented with another form`);
+      if (cyclicFlow) blockers.push(`${spec.chart_type} requires an acyclic flow graph; for reciprocal origin-destination data, role-qualify nodes into separate source and target layers (for example origin:Asia -> destination:Asia) before considering another form`);
       const conservationMode = spec.flow_conservation ?? "warn";
       const tolerance = Number.isFinite(Number(spec.flow_tolerance)) ? Math.max(0, Number(spec.flow_tolerance)) : 0.02;
       const imbalances = flowImbalances(rows, spec.source_field, spec.target_field, spec.value_field).filter((item) => item.relative > tolerance);

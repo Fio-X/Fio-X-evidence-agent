@@ -950,7 +950,7 @@ async function renderLieflatChart(input = {}) {
   const claimIds = claimSet({ claim_ids: module.claim_ids || input.claim_ids });
   const sourceRefs = unique(module.source_refs || input.source_refs);
   const dataRef = text(module.data_ref || input.data_ref);
-  if (!claimIds.length) throw new Error("Lieflat publication chart requires claim_ids; use newsroom_viz_plan with verification_mode='draft' for exploratory SVG rendering");
+  if (!claimIds.length) throw new Error("Lieflat publication chart requires claim_ids; call newsroom_viz_plan without claim_id for exploratory SVG rendering");
   if (!sourceRefs.length) throw new Error("chart rendering requires source_refs");
   if (!dataRef) throw new Error("chart rendering requires data_ref pointing to a computation");
   const claims = await verifiedClaims(root);

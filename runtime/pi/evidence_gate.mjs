@@ -1,5 +1,46 @@
 const EVIDENCE_BACKED_STATUSES = new Set(["supported", "verified"]);
 const INLINE_ROW_SQL = /\b(values|unnest|generate_series)\s*\(/i;
+export const SYSTEM_VERIFICATION_RULE_ID = "verification.source+extraction+computation+claim.v1";
+
+export function deriveClaimVerification(gates = {}) {
+  const verification = {
+    authority: "system",
+    source_resolved: gates.source_resolved === true,
+    extraction_passed: gates.extraction_passed === true,
+    computation_replayed: gates.computation_replayed === true,
+    claim_supported: gates.claim_supported === true,
+    publishable: false,
+    rule_id: SYSTEM_VERIFICATION_RULE_ID,
+  };
+  verification.publishable = verification.source_resolved
+    && verification.extraction_passed
+    && verification.computation_replayed
+    && verification.claim_supported;
+  return verification;
+}
+
+export function isSystemVerifiedClaim(claim) {
+  const verification = claim?.verification;
+  return claim?.status === "verified"
+    && verification?.authority === "system"
+    && verification?.rule_id === SYSTEM_VERIFICATION_RULE_ID
+    && verification?.source_resolved === true
+    && verification?.extraction_passed === true
+    && verification?.computation_replayed === true
+    && verification?.claim_supported === true
+    && verification?.publishable === true;
+}
+
+const AUTO_VERIFIABLE_CLAIM_KINDS = new Set(["descriptive", "quantitative", "comparative", "uncertainty"]);
+const UNSUPPORTED_INFERENCE_LANGUAGE = /\b(caus(?:e|ed|al)|driv(?:e|en)|because|labou?r|war|conflict)\b|驱动|导致|因为|劳动力|战争|冲突|反映.{0,12}(原因|危机|政策)/iu;
+
+export function evaluateClaimSupport({ requested_status, claim_kind, claim } = {}) {
+  const reasons = [];
+  if (requested_status !== "supported") reasons.push("claim_not_requested_as_supported");
+  if (!AUTO_VERIFIABLE_CLAIM_KINDS.has(String(claim_kind ?? ""))) reasons.push("claim_kind_requires_external_support_review");
+  if (UNSUPPORTED_INFERENCE_LANGUAGE.test(String(claim ?? ""))) reasons.push("claim_contains_unbound_causal_or_motive_language");
+  return { passed: reasons.length === 0, authority: "system", rule_id: "claim_support.provenance_bound_noncausal.v1", reasons };
+}
 
 export function assertEvidenceBackedStatus(status, sourceRefs, computationRefs = []) {
   const normalizedStatus = String(status ?? "");
@@ -18,7 +59,7 @@ export function assertEvidenceBackedStatus(status, sourceRefs, computationRefs =
 export function requireVerifiedClaim(claimRecords, claimId, computationRef = null) {
   const normalizedId = String(claimId ?? "").trim();
   const claim = claimRecords?.get?.(normalizedId);
-  if (!claim || claim.status !== "verified") {
+  if (!isSystemVerifiedClaim(claim)) {
     throw new Error(`VERIFIED_CLAIM_REQUIRED: claim_id '${normalizedId}' is not a verified recorded claim`);
   }
   if (!Array.isArray(claim.source_refs) || claim.source_refs.length === 0) {

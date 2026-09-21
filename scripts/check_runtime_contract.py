@@ -143,6 +143,13 @@ for module, const, path_var in [('visual_backends.mjs', 'VISUAL_BACKENDS_RUNTIME
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
     if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
+for module, const, path_var in [('fact_graph.mjs', 'FACT_GRAPH_RUNTIME', 'fact_graph_path'), ('editorial_grammar.mjs', 'EDITORIAL_GRAMMAR_RUNTIME', 'editorial_grammar_path'), ('editorial_validators.mjs', 'EDITORIAL_VALIDATORS_RUNTIME', 'editorial_validators_path')]:
+    if f'include_str!("../runtime/pi/{module}")' not in runtime:
+        raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
+    if not has_materializer_call(path_var, const):
+        raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
+if 'editorial-grammar-registry.json' not in runtime or 'EDITORIAL_GRAMMAR_REGISTRY_CONFIG' not in runtime:
+    raise SystemExit('editorial grammar registry is not embedded/materialized')
 if './visual_backends.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import visual_backends.mjs')
 if './editorial_semantics.mjs' not in extension:
@@ -195,7 +202,7 @@ for marker in ['composeInfographicBundle', 'lintInfographicSpec', 'critiqueInfog
     if marker not in infographic_runtime:
         raise SystemExit(f'missing infographic runtime marker: {marker}')
 infographic_schema = (ROOT / 'schemas' / 'infographic-spec.schema.json').read_text(encoding='utf-8')
-for marker in ['hero_stat', 'section_header', 'pull_quote', 'manifest_ref', '1.0.0', '1.2.0', '1.3.0', 'competition_profile', 'mobile_module_order', 'scene_graph', 'visual_concept_ref']:
+for marker in ['hero_stat', 'section_header', 'pull_quote', 'manifest_ref', '1.0.0', '1.2.0', '1.3.0', '1.5.0', 'competition_profile', 'mobile_module_order', 'scene_graph', 'visual_concept_ref', 'editorial_grammar', 'primary_cognitive_goal', 'scene_budget']:
     if marker not in infographic_schema:
         raise SystemExit(f'missing infographic schema marker: {marker}')
 
@@ -212,6 +219,7 @@ for module, const, path_var in [
     ('basemap_registry.mjs','BASEMAP_REGISTRY_RUNTIME','basemap_registry_path'),
     ('flow_layout.mjs','FLOW_LAYOUT_RUNTIME','flow_layout_path'),
     ('browser_qa.py','BROWSER_QA_RUNTIME','browser_qa_path'),
+    ('computation_rows.mjs','COMPUTATION_ROWS_RUNTIME','computation_rows_path'),
     ('networkx_analyze.py','NETWORKX_ANALYZE_RUNTIME','networkx_analyze_path'),
     ('networkx_reduce.py','NETWORKX_REDUCE_RUNTIME','networkx_reduce_path'),
     ('scientific_basemap_prepare.py','SCIENTIFIC_BASEMAP_PREPARE_RUNTIME','scientific_basemap_prepare_path'),
@@ -223,7 +231,7 @@ for module, const, path_var in [
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
     if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
-for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs']:
+for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs','computation_rows.mjs']:
     if f'./{module}' not in extension:
         raise SystemExit(f'newsroom.ts does not import required runtime module {module}')
 if 'scientific_map.mjs' not in (ROOT/'runtime/pi/publication.mjs').read_text(encoding='utf-8'):

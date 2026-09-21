@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { wrapText } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
 import { evaluateQuestionClosure } from "./story_graph.mjs";
+import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
+import { evaluateClaimSupport } from "./evidence_gate.mjs";
 
 const INK = "#1d2329";
 const MUTED = "#69727a";
@@ -13,7 +15,7 @@ const PAPER = "#fffdf9";
 const SANS = "Arial, Helvetica, sans-serif";
 const SERIF = "Georgia, 'Times New Roman', serif";
 
-export const INFOGRAPHIC_SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"];
+export const INFOGRAPHIC_SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 export const INFOGRAPHIC_MODULE_TYPES = ["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"];
 export const INFOGRAPHIC_SPANS = ["full", "two_thirds", "half", "third"];
 export const INFOGRAPHIC_LAYOUTS = ["feature", "poster", "briefing"];
@@ -114,13 +116,13 @@ export function validateInfographicSpec(spec) {
   if (String(spec.dek ?? "").length > 520) errors.push("dek exceeds 520 characters");
   if (!String(spec.alt ?? "").trim() || String(spec.alt).length < 30) errors.push("alt must be at least 30 characters");
   if (!INFOGRAPHIC_LAYOUTS.includes(spec.layout ?? "feature")) errors.push(`layout must be one of ${INFOGRAPHIC_LAYOUTS.join(", ")}`);
-  if (["1.1.0", "1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version)) {
+  if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     if (!String(spec.intent ?? "").trim()) errors.push("intent is required in InfographicSpec 1.1+");
     if (!String(spec.primary_message ?? "").trim()) errors.push("primary_message is required in InfographicSpec 1.1+");
     if (!INFOGRAPHIC_STORY_ARCS.includes(spec.story_arc)) errors.push(`story_arc must be one of ${INFOGRAPHIC_STORY_ARCS.join(", ")}`);
     if (!INFOGRAPHIC_AUDIENCES.includes(spec.audience)) errors.push(`audience must be one of ${INFOGRAPHIC_AUDIENCES.join(", ")}`);
     if (!INFOGRAPHIC_QUALITY_TARGETS.includes(spec.quality_target)) errors.push(`quality_target must be one of ${INFOGRAPHIC_QUALITY_TARGETS.join(", ")}`);
-    if (["1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version) && !COMPETITION_PROFILE_IDS.includes(spec.competition_profile ?? "editorial")) errors.push(`competition_profile must be one of ${COMPETITION_PROFILE_IDS.join(", ")}`);
+    if (["1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version) && !COMPETITION_PROFILE_IDS.includes(spec.competition_profile ?? "editorial")) errors.push(`competition_profile must be one of ${COMPETITION_PROFILE_IDS.join(", ")}`);
   }
   if (!Array.isArray(spec.modules) || spec.modules.length < 3) errors.push("modules must contain at least 3 items");
   if (Array.isArray(spec.modules) && spec.modules.length > 12) errors.push("modules cannot exceed 12 items in v1.0");
@@ -137,8 +139,8 @@ export function validateInfographicSpec(spec) {
     if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(`module '${module?.id ?? "?"}' has unsupported explanatory_dimension '${module.explanatory_dimension}'`);
     if (module?.visual_grammar !== undefined && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module.visual_grammar)) errors.push(`module '${module?.id ?? "?"}' has unsupported visual_grammar '${module.visual_grammar}'`);
     if (module?.story_node_ids !== undefined && (!Array.isArray(module.story_node_ids) || module.story_node_ids.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' story_node_ids must contain non-empty story node ids`);
-    if (spec.schema_version === "1.4.0" && ["visual","illustration","hero_stat","text"].includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4`);
-    if (spec.schema_version === "1.4.0" && module?.type === "visual" && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module?.visual_grammar)) errors.push(`visual module '${module?.id ?? "?"}' requires visual_grammar in InfographicSpec 1.4`);
+    if (["1.4.0", "1.5.0"].includes(spec.schema_version) && ["visual","illustration","hero_stat","text"].includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
+    if (["1.4.0", "1.5.0"].includes(spec.schema_version) && module?.type === "visual" && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module?.visual_grammar)) errors.push(`visual module '${module?.id ?? "?"}' requires visual_grammar in InfographicSpec 1.4+`);
     if (module?.claim_set !== undefined && (!Array.isArray(module.claim_set) || module.claim_set.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' claim_set must contain non-empty claim ids`);
     if (module?.dependency_on !== undefined && !Array.isArray(module.dependency_on)) errors.push(`module '${module?.id ?? "?"}' dependency_on must be an array`);
     if (module?.type === "visual" && !String(module.manifest_ref ?? "").trim()) errors.push(`visual module '${module.id}' requires manifest_ref`);
@@ -160,7 +162,7 @@ export function validateInfographicSpec(spec) {
     if (module?.type === "pull_quote" && !String(module.text ?? "").trim()) errors.push(`pull_quote '${module.id}' requires text`);
     if (module?.type === "section_header" && !String(module.heading ?? "").trim()) errors.push(`section_header '${module.id}' requires heading`);
   }
-  if (["1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version) && spec.mobile_module_order !== undefined) {
+  if (["1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version) && spec.mobile_module_order !== undefined) {
     if (!Array.isArray(spec.mobile_module_order)) errors.push("mobile_module_order must be an array");
     else {
       const ids = (spec.modules ?? []).map((module) => String(module.id));
@@ -169,22 +171,26 @@ export function validateInfographicSpec(spec) {
     }
   }
 
-  if (spec.schema_version === "1.4.0") {
-    if (!String(spec.reader_question ?? "").trim()) errors.push("reader_question is required for InfographicSpec 1.4");
-    if (!String(spec.visual_thesis ?? "").trim()) errors.push("visual_thesis is required for InfographicSpec 1.4");
-    for (const field of ["story_graph_ref", "editorial_discovery_ref", "visual_concept_ref", "selected_concept_id", "novelty_ref", "asset_plan_ref"]) if (!String(spec[field] ?? "").trim()) errors.push(`${field} is required for InfographicSpec 1.4`);
-    if (!spec.scene_graph) errors.push("scene_graph is required for InfographicSpec 1.4");
+  if (["1.4.0", "1.5.0"].includes(spec.schema_version)) {
+    if (!String(spec.reader_question ?? "").trim()) errors.push("reader_question is required for InfographicSpec 1.4+");
+    if (!String(spec.visual_thesis ?? "").trim()) errors.push("visual_thesis is required for InfographicSpec 1.4+");
+    for (const field of ["story_graph_ref", "editorial_discovery_ref", "visual_concept_ref", "selected_concept_id", "novelty_ref", "asset_plan_ref"]) if (!String(spec[field] ?? "").trim()) errors.push(`${field} is required for InfographicSpec 1.4+`);
+    if (!spec.scene_graph) errors.push("scene_graph is required for InfographicSpec 1.4+");
+    if (spec.schema_version === "1.5.0" && (!spec.editorial_grammar || typeof spec.editorial_grammar !== "object")) errors.push("editorial_grammar is required for InfographicSpec 1.5");
   }
 
-  if (["1.3.0", "1.4.0"].includes(spec.schema_version)) {
+  if (["1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     if (spec.schema_version === "1.3.0" && spec.quality_target === "award") {
       for (const field of ["editorial_discovery_ref", "visual_concept_ref", "selected_concept_id", "novelty_ref", "asset_plan_ref"]) if (!String(spec[field] ?? "").trim()) errors.push(`${field} is required for InfographicSpec 1.3 award mode`);
       if (!spec.scene_graph) errors.push("scene_graph is required for InfographicSpec 1.3 award mode");
     }
     if (spec.scene_graph !== undefined) {
       const graph = spec.scene_graph;
-      if (!graph || typeof graph !== "object" || graph.schema_version !== "0.1.0" || !Array.isArray(graph.scenes) || graph.scenes.length < 1 || graph.scenes.length > 3) errors.push("scene_graph must use schema_version 0.1.0 with 1..3 scenes");
+      const graphVersion = graph?.schema_version;
+      const maxScenes = graphVersion === "0.2.0" ? 6 : 3;
+      if (!graph || typeof graph !== "object" || !["0.1.0", "0.2.0"].includes(graphVersion) || !Array.isArray(graph.scenes) || graph.scenes.length < 1 || graph.scenes.length > maxScenes) errors.push("scene_graph must use schema_version 0.1.0 with 1..3 scenes or 0.2.0 with 1..6 scenes");
       else {
+        if (spec.schema_version === "1.5.0" && graphVersion !== "0.2.0") errors.push("InfographicSpec 1.5 requires SceneGraph 0.2.0");
         const moduleById = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
         const memberIds = new Set();
         const sceneIds = new Set();
@@ -197,6 +203,12 @@ export function validateInfographicSpec(spec) {
           if (!moduleById.has(anchor)) errors.push(`scene '${scene?.id ?? "?"}' references missing anchor module '${anchor}'`);
           else if (!["visual", "illustration"].includes(moduleById.get(anchor)?.type)) errors.push(`scene '${scene?.id ?? "?"}' anchor must be a visual or illustration module`);
           if (sidecars.length < 1 || sidecars.length > 3 || new Set(sidecars).size !== sidecars.length) errors.push(`scene '${scene?.id ?? "?"}' requires 1..3 unique sidecar_module_ids`);
+          if (graphVersion === "0.2.0") {
+            if (!COGNITIVE_GOALS.includes(scene?.primary_cognitive_goal)) errors.push(`scene '${scene?.id ?? "?"}' has unsupported primary_cognitive_goal '${scene?.primary_cognitive_goal ?? ""}'`);
+            if (!String(scene?.hero_object_id ?? "").trim()) errors.push(`scene '${scene?.id ?? "?"}' requires hero_object_id`);
+            if (!Array.isArray(scene?.supporting_claim_ids)) errors.push(`scene '${scene?.id ?? "?"}' requires supporting_claim_ids`);
+            if (!scene?.scene_budget || typeof scene.scene_budget !== "object") errors.push(`scene '${scene?.id ?? "?"}' requires scene_budget`);
+          }
           for (const id of [anchor, ...sidecars]) {
             if (!moduleById.has(id)) errors.push(`scene '${scene?.id ?? "?"}' references missing module '${id}'`);
             if (memberIds.has(id)) errors.push(`module '${id}' cannot belong to more than one scene`);
@@ -213,7 +225,7 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
   const blockers = [];
   const warnings = [];
   const notes = [];
-  if (spec?.schema_version !== "1.4.0") return { passed: true, blockers, warnings, notes, metrics: { enforced: false } };
+  if (!["1.4.0", "1.5.0"].includes(spec?.schema_version)) return { passed: true, blockers, warnings, notes, metrics: { enforced: false } };
   if (!storyGraph || typeof storyGraph !== "object") {
     blockers.push("story_graph_required_for_synthesis_gate");
     return { passed: false, blockers, warnings, notes, metrics: { enforced: true } };
@@ -294,6 +306,37 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
   let visualCount = 0;
   let claimCount = 0;
   const sourceNotes = [];
+  // Publication headlines, decks and theses are assertions too.  When the
+  // runtime supplies claim records, fail closed if those fields introduce a
+  // causal/motive label without a separately reviewed causal or mechanistic
+  // claim.  Merely binding descriptive calculations must not turn
+  // "crisis-driven", "caused by conflict", etc. into verified copy.
+  if (Array.isArray(context.verified_claim_records)) {
+    const hasCausalSupport = context.verified_claim_records.some((record) =>
+      ["causal", "mechanistic"].includes(String(record?.claim_kind ?? ""))
+      && record?.verification?.authority === "system"
+      && record?.verification?.publishable === true);
+    const editorialFields = [
+      ["title", spec.title],
+      ["dek", spec.dek],
+      ["primary_message", spec.primary_message],
+      ["visual_thesis", spec.visual_thesis],
+      ...((spec.modules ?? []).flatMap((module) => [
+        [`module:${module.id}:label`, module.label],
+        [`module:${module.id}:heading`, module.heading],
+        [`module:${module.id}:body`, module.body],
+        [`module:${module.id}:text`, module.text],
+        [`module:${module.id}:new_information`, module.new_information],
+      ])),
+    ];
+    for (const [field, value] of editorialFields) {
+      if (!String(value ?? "").trim()) continue;
+      const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: "descriptive", claim: value });
+      if (!hasCausalSupport && support.reasons.includes("claim_contains_unbound_causal_or_motive_language")) {
+        blockers.push(`unbound_causal_editorial_language:${field}`);
+      }
+    }
+  }
   for (const module of spec.modules ?? []) {
     if (module.type === "visual") {
       visualCount += 1;
@@ -306,7 +349,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
       if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
-      if (spec.schema_version === "1.4.0" && module.visual_grammar) {
+      if (["1.4.0", "1.5.0"].includes(spec.schema_version) && module.visual_grammar) {
         const allowed = VISUAL_GRAMMAR_FORMS[module.visual_grammar];
         const chartType = String(asset.manifest?.chart_type ?? "");
         if (allowed && chartType && !allowed.has(chartType)) blockers.push(`visual '${module.id}' grammar '${module.visual_grammar}' is incompatible with chart_type '${chartType}'`);
@@ -361,7 +404,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
   if ((spec.modules ?? []).filter((m) => m.type === "hero_stat").length > 4) warnings.push("More than four hero statistics weakens hierarchy");
   if (String(spec.title ?? "").length > 90) warnings.push("Headline is long; consider a tighter display headline");
   if (String(spec.dek ?? "").length > 260) warnings.push("Deck is long; consider moving context into a text module");
-  if (["1.1.0", "1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version)) {
+  if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     const roles = new Set((spec.modules ?? []).map((m) => m.story_role).filter(Boolean));
     const priorityOne = (spec.modules ?? []).filter((m) => m.priority === 1);
     const heroVisuals = (spec.modules ?? []).filter((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero");
@@ -378,11 +421,18 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
   notes.push(`visual_modules=${visualCount}`);
   notes.push(`claim_references=${claimCount}`);
   notes.push(`unique_sources=${uniq(sourceNotes).length}`);
-  if (["1.1.0", "1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version)) {
+  if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     notes.push(`story_arc=${spec.story_arc}`);
     notes.push(`audience=${spec.audience}`);
     notes.push(`quality_target=${spec.quality_target}`);
-    if (["1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version)) notes.push(`competition_profile=${spec.competition_profile ?? "editorial"}`);
+    if (["1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) notes.push(`competition_profile=${spec.competition_profile ?? "editorial"}`);
+  }
+  const validators = runEditorialValidators(spec, assets, context);
+  for (const row of validators.issues) {
+    const message = `${row.rule_id}: ${row.message}`;
+    if (["FATAL", "ERROR"].includes(row.severity)) blockers.push(message);
+    else if (row.severity === "WARNING") warnings.push(message);
+    else notes.push(message);
   }
   const synthesis = evaluateInfographicSynthesis(spec, assets, context.story_graph ?? null);
   blockers.push(...synthesis.blockers);
@@ -394,6 +444,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     blockers,
     warnings,
     notes,
+    validators,
     synthesis,
     content_hash: hash(spec),
   };
@@ -460,7 +511,7 @@ function effectiveColumns(module, strategy) {
 }
 
 function normalizedScenes(spec) {
-  if (!["1.3.0", "1.4.0"].includes(spec.schema_version) || !spec.scene_graph?.scenes) return [];
+  if (!["1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version) || !spec.scene_graph?.scenes) return [];
   return spec.scene_graph.scenes.map((scene) => ({ ...scene, sidecar_module_ids: (scene.sidecar_module_ids ?? []).map(String), anchor_module_id: String(scene.anchor_module_id) }));
 }
 
@@ -606,7 +657,7 @@ function scoreLayoutCandidate(spec, layout) {
 }
 
 function layoutDesktop(spec, assets) {
-  if (!["1.1.0", "1.2.0", "1.3.0"].includes(spec.schema_version)) return layoutDesktopWithStrategy(spec, assets, "balanced");
+  if (!["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) return layoutDesktopWithStrategy(spec, assets, "balanced");
   const candidates = INFOGRAPHIC_LAYOUT_STRATEGIES.map((strategy) => {
     const layout = layoutDesktopWithStrategy(spec, assets, strategy);
     return { layout, score: scoreLayoutCandidate(spec, layout) };
@@ -619,7 +670,7 @@ function layoutDesktop(spec, assets) {
 }
 
 function moduleSequence(spec, mobile = false) {
-  if (!mobile || !["1.2.0", "1.3.0"].includes(spec.schema_version) || !Array.isArray(spec.mobile_module_order)) return spec.modules ?? [];
+  if (!mobile || !["1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version) || !Array.isArray(spec.mobile_module_order)) return spec.modules ?? [];
   const byId = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
   return spec.mobile_module_order.map((id) => byId.get(String(id))).filter(Boolean);
 }
@@ -1072,7 +1123,7 @@ function critiqueAwardOne(spec, composed, mobile) {
 }
 
 export function critiqueInfographic(spec, bundle) {
-  if (!["1.1.0", "1.2.0", "1.3.0", "1.4.0"].includes(spec.schema_version)) {
+  if (!["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     const desktop = critiqueLegacyOne(spec, bundle.desktop, false);
     const mobile = critiqueLegacyOne(spec, bundle.mobile, true);
     return {

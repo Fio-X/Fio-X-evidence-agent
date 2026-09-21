@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "fixture": "deep-learning-human-migration-top-corridors.csv",
+  "subject": "Model-estimated annual international migration flows",
+  "upstream": {
+    "dataset": "ThGaskin/Migration_flows",
+    "revision": "b9709be5a89f02d2969a78c128995bd23ce81636",
+    "doi": "10.57967/hf/8902",
+    "paper_doi": "10.1038/s41586-026-10611-7",
+    "license": "GPL-3.0",
+    "files": [
+      {
+        "path": "Estimates/flows.nc",
+        "url": "https://huggingface.co/datasets/ThGaskin/Migration_flows/resolve/b9709be5a89f02d2969a78c128995bd23ce81636/Estimates/flows.nc",
+        "bytes": 14516188,
+        "sha256": "3f29fc7a3fe6b63657ea08e4383a362a5152b00b806c26ff8e7e3d5fbfd50014"
+      },
+      {
+        "path": "Data/Iso_code_lookup.csv",
+        "url": "https://huggingface.co/datasets/ThGaskin/Migration_flows/resolve/b9709be5a89f02d2969a78c128995bd23ce81636/Data/Iso_code_lookup.csv",
+        "bytes": 6045,
+        "sha256": "f6bcc9bbb418c7393af040f8768596e2d8bd3f8503a264bf2def27b2f72ed743"
+      }
+    ]
+  },
+  "retrieved_at": "2026-09-19T14:50:57Z",
+  "transformation": {
+    "script": "scripts/build_migration_flow_fixture.py",
+    "years": [1990, 2000, 2010, 2020, 2023],
+    "rows_per_year": 30,
+    "filters": ["exclude origin equal to destination", "exclude non-finite or negative estimates"],
+    "sort": "estimated_flow_mean descending, then origin_iso3 and destination_iso3 ascending",
+    "fixture_sha256": "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4"
+  },
+  "semantic_guards": {
+    "estimated_flow_mean": "Neural-network model estimate of an annual origin-destination migration flow.",
+    "estimated_flow_std": "Standard deviation supplied with the model estimate.",
+    "migrant_stock": "Not present in this fixture.",
+    "stock_change": "Not present in this fixture and must not be relabelled as a migration flow.",
+    "observed_flow": "Not present in this fixture; model estimates must remain visibly qualified."
+  },
+  "geography": {
+    "dataset": "Natural Earth 1:50m Admin 0 countries",
+    "revision": "ca96624a56bd078437bca8184e78163e5039ad19",
+    "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_50m_admin_0_countries.geojson",
+    "sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+    "license": "Public domain",
+    "use": "ISO country attributes, continent aggregation, and label-point endpoints for abstract origin-destination arcs"
+  },
+  "redistribution_notice": "The fixture is derived from the GPL-3.0 upstream dataset and remains under GPL-3.0. It is kept in a separate fixture directory and is not relicensed by the repository root license."
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:claim-graph:0.1.0",
+  "title": "Agentic Data Newsroom ClaimGraph v0.1",
+  "type": "object",
+  "required": ["schema_version", "claim_graph_id", "fact_graph_ref", "claims", "edges"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "claim_graph_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "fact_graph_ref": {"type": "string", "minLength": 1, "maxLength": 500},
+    "claims": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/claim"}},
+    "edges": {"type": "array", "maxItems": 300, "items": {"$ref": "#/$defs/edge"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "claim": {
+      "type": "object",
+      "required": ["id", "statement", "kind", "fact_ids", "evidence_ids", "support_status"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "statement": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "kind": {"enum": ["descriptive", "quantitative", "comparative", "causal", "mechanistic", "predictive", "uncertainty"]},
+        "fact_ids": {"$ref": "#/$defs/refs"}, "evidence_ids": {"$ref": "#/$defs/refs"},
+        "calculation_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "support_status": {"enum": ["supported", "contested", "insufficient"]},
+        "limitations": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 500}}
+      },
+      "allOf": [{"if": {"properties": {"kind": {"const": "quantitative"}}, "required": ["kind"]}, "then": {"required": ["calculation_ids"], "properties": {"calculation_ids": {"minItems": 1}}}}],
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object", "required": ["from", "to", "relation"],
+      "properties": {"from": {"$ref": "#/$defs/id"}, "to": {"$ref": "#/$defs/id"}, "relation": {"enum": ["supports", "qualifies", "contradicts", "depends_on", "explains", "causes", "precedes"]}},
+      "additionalProperties": false
+    }
+  }
+}

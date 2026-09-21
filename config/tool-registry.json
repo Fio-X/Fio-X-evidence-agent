@@ -55,7 +55,7 @@
     {"name":"newsroom_map_validate","phase":"synthesize","capability_class":"computation","agent_visible":true,"profiles":["full","competition","visual-story"]},
     {"name":"newsroom_style_map","phase":"synthesize","capability_class":"synthesis","agent_visible":true,"profiles":["full","competition","visual-story"]},
     {"name":"newsroom_publication_plan","phase":"publish","capability_class":"publication","agent_visible":true,"profiles":["full","competition","publication","visual-story"]},
-    {"name":"newsroom_portable_publication","phase":"publish","capability_class":"publication","agent_visible":true,"profiles":["full","competition","publication","visual-story"]},
+    {"name":"newsroom_portable_publication","phase":"publish","capability_class":"publication","agent_visible":true,"profiles":["full","competition","publication"]},
     {"name":"newsroom_publication_render","phase":"publish","capability_class":"publication","agent_visible":true,"profiles":["full","competition","publication","visual-story"]},
     {"name":"newsroom_publication_qa","phase":"verify_publication","capability_class":"publication","agent_visible":true,"profiles":["full","competition","publication","visual-story"]},
     {"name":"newsroom_network_analyze","phase":"synthesize","capability_class":"computation","agent_visible":true,"profiles":["full","competition","visual-story"]},

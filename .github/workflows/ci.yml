@@ -46,12 +46,21 @@ jobs:
           python3 -m json.tool schemas/newsroom-viz-spec.schema.json >/dev/null
           python3 -m json.tool schemas/publication-spec.schema.json >/dev/null
           python3 -m json.tool schemas/map-spec.schema.json >/dev/null
+          python3 -m json.tool schemas/fact-graph.schema.json >/dev/null
+          python3 -m json.tool schemas/claim-graph.schema.json >/dev/null
+          python3 -m json.tool schemas/fact-signature.schema.json >/dev/null
+          python3 -m json.tool schemas/evidence-ledger.schema.json >/dev/null
+          python3 -m json.tool schemas/editorial-grammar-selection.schema.json >/dev/null
+          python3 -m json.tool schemas/art-direction-patch-v2.schema.json >/dev/null
       - name: Validate bundled Pi runtime syntax
         run: |
           node --check runtime/pi/viz.mjs
           node --check runtime/pi/net.mjs
           node --check runtime/pi/provenance.mjs
           node --check runtime/pi/infographic.mjs
+          node --check runtime/pi/fact_graph.mjs
+          node --check runtime/pi/editorial_grammar.mjs
+          node --check runtime/pi/editorial_validators.mjs
           node --check runtime/pi/explanatory.mjs
           node --check runtime/pi/illustration.mjs
           node --check runtime/pi/vision.mjs
@@ -66,6 +75,16 @@ jobs:
         run: python3 scripts/check_runtime_contract.py
       - name: Visual-story and portable-publication regressions
         run: |
+          python3 scripts/test_fact_editorial_contracts.py
+          node scripts/test_fact_editorial_runtime.mjs
+          node scripts/test_evidence_gate.mjs
+          node scripts/test_computation_row_tables.mjs
+          python3 scripts/test_infographic_schema.py
+          node scripts/test_cognitive_editorial_validators_v15.mjs
+          node scripts/test_infographic.mjs
+          python3 scripts/test_migration_flow_fixture.py
+          python3 scripts/test_migration_story_ir.py
+          node scripts/test_migration_story_ir.mjs
           node scripts/test_bundled_skills.mjs
           node scripts/test_lieflat_catalog.mjs
           node scripts/test_lieflat_report.mjs
@@ -76,6 +95,8 @@ jobs:
           node scripts/test_offline_geo_fallback.mjs
           python3 scripts/test_openai_wire_mock.py
           python3 scripts/test_anthropic_wire_mock.py
+          python3 scripts/test_pi_prompt_retry.py
+          python3 scripts/test_browser_qa_bootstrap.py
           python3 scripts/test_artifact_completion.py
       - name: Unified PR release gate
         run: python3 scripts/release_check.py --profile pr --output outputs/ci-release-check-pr.json
@@ -93,6 +114,8 @@ jobs:
           node scripts/test_backend_executor_v118.mjs
           node scripts/test_backend_router_v123.mjs
           node scripts/test_render_cache_v124.mjs
+          python3 scripts/test_art_direction_schema_v134.py
+          node scripts/test_art_direction_replay_v134.mjs
       - name: Validate NewsroomVizSpec contract
         run: python3 scripts/test_viz_schema.py
       - name: Validate NewsArtifact contract

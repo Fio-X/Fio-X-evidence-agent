@@ -1,0 +1,35 @@
+year,origin_continent,destination_continent,selected_estimated_flow_sum,selection_scope
+1990,Africa,Africa,793622.218750,top_30_routes_within_year
+1990,Asia,Asia,2047278.867187,top_30_routes_within_year
+1990,Asia,Europe,353132.828125,top_30_routes_within_year
+1990,Asia,North America,206074.417969,top_30_routes_within_year
+1990,Europe,Europe,468123.226563,top_30_routes_within_year
+1990,Europe,North America,95235.695312,top_30_routes_within_year
+1990,North America,Europe,97995.734375,top_30_routes_within_year
+1990,North America,North America,511696.406250,top_30_routes_within_year
+2000,Africa,Africa,114279.285156,top_30_routes_within_year
+2000,Africa,Asia,39447.578125,top_30_routes_within_year
+2000,Asia,Asia,826075.128906,top_30_routes_within_year
+2000,Asia,Europe,156960.249999,top_30_routes_within_year
+2000,Asia,North America,372857.066406,top_30_routes_within_year
+2000,Europe,Europe,113005.414063,top_30_routes_within_year
+2000,North America,North America,560194.957031,top_30_routes_within_year
+2010,Africa,Asia,206173.382812,top_30_routes_within_year
+2010,Asia,Asia,2773431.679688,top_30_routes_within_year
+2010,Asia,North America,273610.453124,top_30_routes_within_year
+2010,Europe,Europe,202404.421874,top_30_routes_within_year
+2010,North America,North America,529634.765625,top_30_routes_within_year
+2020,Africa,Asia,129900.531250,top_30_routes_within_year
+2020,Asia,Africa,205503.046875,top_30_routes_within_year
+2020,Asia,Asia,3555856.054690,top_30_routes_within_year
+2020,Europe,Europe,125962.906250,top_30_routes_within_year
+2020,North America,North America,643743.734375,top_30_routes_within_year
+2020,South America,South America,450494.929688,top_30_routes_within_year
+2023,Africa,Africa,1726437.437500,top_30_routes_within_year
+2023,Africa,Asia,176532.765625,top_30_routes_within_year
+2023,Asia,Africa,188027.312500,top_30_routes_within_year
+2023,Asia,Asia,3028470.875000,top_30_routes_within_year
+2023,Asia,North America,561074.015625,top_30_routes_within_year
+2023,Europe,Europe,963010.671875,top_30_routes_within_year
+2023,North America,North America,777462.578125,top_30_routes_within_year
+2023,South America,South America,1218745.531250,top_30_routes_within_year

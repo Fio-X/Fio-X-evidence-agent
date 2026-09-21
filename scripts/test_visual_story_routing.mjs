@@ -31,6 +31,8 @@ assert.ok(registry.includes('"visual-story"'));
 assert.ok(registry.includes('"newsroom_lieflat_catalog"'));
 assert.ok(registry.includes('"newsroom_lieflat_render"'));
 assert.ok(registry.includes('"newsroom_portable_publication"'));
+const registryData = JSON.parse(registry);
+assert.equal(registryData.tools.find((tool) => tool.name === 'newsroom_portable_publication').profiles.includes('visual-story'), false);
 assert.ok(newsroom.includes('name: "newsroom_portable_publication"'));
 for (const pattern of DEFAULT_REFERENCE_PATTERNS) {
   for (const field of ["id", "publication_or_skill", "reader_task", "data_topologies", "story_shapes", "transferable_principles", "use_when", "do_not_use_when", "required_assets", "completion_signals", "differentiation_rule", "source_url", "copy_risk"]) {

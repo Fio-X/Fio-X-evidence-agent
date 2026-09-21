@@ -120,6 +120,51 @@ fn append_node_option(existing: Option<String>, option: &str) -> String {
     }
 }
 
+fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
+    let diagnostic = event
+        .get("error")
+        .or_else(|| event.get("data"))
+        .map(Value::to_string)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let status = [400_u16, 401, 403, 404, 408, 409, 429, 500, 502, 503, 504]
+        .into_iter()
+        .find(|status| diagnostic.contains(&status.to_string()));
+    let class = match status {
+        Some(401 | 403) => "provider_authentication_failed",
+        Some(408 | 504) => "provider_timeout",
+        Some(429) => "provider_rate_limited",
+        Some(500 | 502 | 503) => "provider_unavailable",
+        Some(400 | 404 | 409) => "provider_request_rejected",
+        _ if diagnostic.contains("no available accounts")
+            || diagnostic.contains("service unavailable") =>
+        {
+            "provider_unavailable"
+        }
+        _ => "provider_error",
+    };
+    (class, status)
+}
+
+fn prompt_retry_allowed(event: &Value, prompt_accepted: bool, attempt: u8) -> bool {
+    !prompt_accepted
+        && attempt < 3
+        && event.get("type").and_then(Value::as_str) == Some("response")
+        && event.get("command").and_then(Value::as_str) == Some("prompt")
+        && event.get("success").and_then(Value::as_bool) == Some(false)
+}
+
+fn assistant_provider_turn_failed(event: &Value) -> bool {
+    matches!(
+        event.get("type").and_then(Value::as_str),
+        Some("message_start" | "message_end")
+    ) && event
+        .get("message")
+        .and_then(|message| message.get("stopReason"))
+        .and_then(Value::as_str)
+        == Some("error")
+}
+
 impl PiConfig {
     fn dragoncode_endpoint(value: &str) -> bool {
         let authority = value
@@ -440,6 +485,7 @@ pub async fn run_prompt(
         let mut session_stats: Option<Value> = None;
         let mut session_stats_response_received = false;
         let mut prompt_accepted = false;
+        let mut prompt_attempt = 1_u8;
         let mut saw_settled = false;
         let mut final_queries_sent = false;
         let mut active_work = false;
@@ -450,6 +496,7 @@ pub async fn run_prompt(
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
+        let mut provider_turn_failed = false;
 
         let mut line = Vec::new();
         loop {
@@ -503,10 +550,18 @@ pub async fn run_prompt(
                 || (event.get("type").and_then(Value::as_str) == Some("response")
                     && event.get("success").and_then(Value::as_bool) == Some(false))
             {
+                let (error_class, http_status) = provider_error_class(&event);
                 let object = event.as_object_mut().context("invalid RPC event")?;
                 object.remove("error");
                 object.remove("data");
                 object.insert("diagnostic_suppressed".into(), Value::Bool(true));
+                object.insert(
+                    "provider_error_class".into(),
+                    Value::String(error_class.to_string()),
+                );
+                if let Some(status) = http_status {
+                    object.insert("provider_http_status".into(), Value::from(status));
+                }
             }
             if let Some(file) = log.as_mut() {
                 let mut logged_event = event.clone();
@@ -520,6 +575,10 @@ pub async fn run_prompt(
                 file.flush()?;
             }
 
+            if assistant_provider_turn_failed(&event) {
+                provider_turn_failed = true;
+            }
+
             match event.get("type").and_then(Value::as_str) {
                 Some("response")
                     if event.get("command").and_then(Value::as_str) == Some("prompt") =>
@@ -527,8 +586,36 @@ pub async fn run_prompt(
                     if event.get("success").and_then(Value::as_bool) == Some(true) {
                         prompt_accepted = true;
                         eprintln!("[agent] startup_ms={}", started.elapsed().as_millis());
+                    } else if prompt_retry_allowed(&event, prompt_accepted, prompt_attempt) {
+                        prompt_attempt += 1;
+                        eprintln!(
+                            "[agent] prompt_not_accepted retry={prompt_attempt}/3 elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        send_json(
+                            &mut stdin,
+                            &json!({
+                                "id": format!("news-prompt-retry-{prompt_attempt}"),
+                                "type": "prompt",
+                                "message": prompt
+                            }),
+                            startup,
+                        )
+                        .await?;
                     } else {
-                        bail!("Pi rejected the prompt (provider diagnostic suppressed)");
+                        let class = event
+                            .get("provider_error_class")
+                            .and_then(Value::as_str)
+                            .unwrap_or("provider_error");
+                        let status = event
+                            .get("provider_http_status")
+                            .and_then(Value::as_u64)
+                            .map(|value| format!(" HTTP {value}"))
+                            .unwrap_or_default();
+                        bail!(
+                            "Pi rejected the prompt: {class}{status} (raw diagnostic suppressed)"
+                        );
                     }
                 }
                 Some("response")
@@ -660,6 +747,9 @@ pub async fn run_prompt(
 
         let answer = final_answer.unwrap_or(streamed_answer);
         if answer.trim().is_empty() {
+            if provider_turn_failed {
+                bail!("Pi provider failed after internal retries (diagnostic suppressed)");
+            }
             bail!("Pi returned an empty final answer (provider diagnostic suppressed)");
         }
         if !answer.ends_with('\n') {
@@ -807,6 +897,51 @@ mod tests {
             append_node_option(Some("--use-env-proxy".to_string()), "--use-env-proxy"),
             "--use-env-proxy"
         );
+    }
+
+    #[test]
+    fn provider_errors_are_safely_classified_without_returning_diagnostics() {
+        let unavailable = json!({
+            "type": "response",
+            "success": false,
+            "error": "HTTP 503 no available accounts secret-token"
+        });
+        assert_eq!(
+            provider_error_class(&unavailable),
+            ("provider_unavailable", Some(503))
+        );
+        let rate_limited = json!({"data": {"status": 429, "message": "secret-token"}});
+        assert_eq!(
+            provider_error_class(&rate_limited),
+            ("provider_rate_limited", Some(429))
+        );
+        assert_eq!(provider_error_class(&json!({})), ("provider_error", None));
+    }
+
+    #[test]
+    fn prompt_retries_are_bounded_and_only_pre_acceptance() {
+        let rejected = json!({"type": "response", "command": "prompt", "success": false});
+        assert!(prompt_retry_allowed(&rejected, false, 1));
+        assert!(prompt_retry_allowed(&rejected, false, 2));
+        assert!(!prompt_retry_allowed(&rejected, false, 3));
+        assert!(!prompt_retry_allowed(&rejected, true, 1));
+        assert!(!prompt_retry_allowed(
+            &json!({"type": "response", "command": "prompt", "success": true}),
+            false,
+            1
+        ));
+    }
+
+    #[test]
+    fn assistant_error_turns_are_not_misreported_as_empty_answers() {
+        assert!(assistant_provider_turn_failed(&json!({
+            "type": "message_end",
+            "message": {"stopReason": "error", "errorMessage": "diagnostic suppressed"}
+        })));
+        assert!(!assistant_provider_turn_failed(&json!({
+            "type": "message_end",
+            "message": {"stopReason": "stop"}
+        })));
     }
 
     #[cfg(target_os = "macos")]

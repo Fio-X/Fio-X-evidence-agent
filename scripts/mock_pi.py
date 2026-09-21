@@ -251,7 +251,8 @@ def ensure_artifacts(resume: bool):
         "vision_critic_ref": vision_critic_ref,
     })
 
-    claim = {"schema_version": "0.7.0", "claim_id": "mock-claim", "claim": "B is higher than A in the deterministic mock fixture.", "status": "verified", "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}
+    verification = {"authority": "system", "source_resolved": True, "extraction_passed": True, "computation_replayed": True, "claim_supported": True, "publishable": True, "rule_id": "verification.source+extraction+computation+claim.v1"}
+    claim = {"schema_version": "0.8.0", "claim_id": "mock-claim", "claim": "B is higher than A in the deterministic mock fixture.", "requested_status": "supported", "status": "verified", "verification": verification, "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}
     claims_path = root / "claims.jsonl"
     if not claims_path.exists():
         claims_path.write_text(json.dumps(claim) + "\n", encoding="utf-8")
