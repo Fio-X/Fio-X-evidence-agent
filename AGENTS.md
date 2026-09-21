@@ -99,3 +99,21 @@ For round 4:
 - no daemon or cross-CLI background service
 - record model-visible bytes separately from full artifact bytes whenever applicable
 - classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
+
+
+## System One round-5 token-budget integration experiments
+
+When the invoking prompt explicitly names an experiment ID from `experiments/system-one/round5-manifest.json`, that experiment contract takes precedence over the default local handoff.
+
+For round 5:
+- read `experiments/system-one/round4-summary.md`, `experiments/system-one/round5-plan.md`, and the named round-5 manifest entry
+- inspect only the listed R3/R4 experiment branches as implementation evidence; do not merge unrelated branches
+- modify only the named experiment's `allowed_files` plus its own result file
+- preserve full source/data/computation artifacts for deterministic replay
+- never auto-repair Fact, Claim, SQL, or Evidence
+- keep all behavior-changing mechanisms opt-in
+- never weaken evidence, provenance, verification, completion, publication, or browser-QA gates
+- distinguish prompt bytes from active/session context and model-visible bytes from full artifact bytes
+- phase measurements must use canonical profile inheritance
+- no daemon or cross-CLI background service
+- classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
