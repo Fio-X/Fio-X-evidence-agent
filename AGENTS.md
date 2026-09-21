@@ -26,6 +26,18 @@ This repository uses local Codex as an environment-bound validation worker. Arch
 - The local worker script stages only the allowlisted files for the active task.
 - Do not commit generated artifacts, screenshots, provider traces, or logs unless the task explicitly requests them.
 
+## System One experiment swarm
+
+When the invoking prompt explicitly names a round-1 experiment ID from `experiments/system-one/manifest.json`, that experiment contract takes precedence over the default `local-codex/task.md` handoff path.
+
+For round 1:
+- read `experiments/system-one/README.md` and the named manifest entry
+- treat product source as read-only
+- write only the named `experiments/system-one/results/<experiment-id>.md` result file
+- use temporary files outside the repository for measurements
+- classify the result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
+- do not update `local-codex/result.md` during a swarm experiment
+
 ## Result contract
 
 Write `local-codex/result.md` before finishing. It must contain:
