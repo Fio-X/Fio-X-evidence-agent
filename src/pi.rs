@@ -492,6 +492,7 @@ pub async fn run_prompt(
         let mut last_activity = Instant::now();
         let mut finish_started = None;
         let mut first_text_ms: Option<u128> = None;
+        let mut startup_ms: Option<u128> = None;
         let mut ticks = tokio::time::interval(heartbeat.min(Duration::from_millis(100)));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_heartbeat = started + heartbeat;
@@ -585,7 +586,9 @@ pub async fn run_prompt(
                 {
                     if event.get("success").and_then(Value::as_bool) == Some(true) {
                         prompt_accepted = true;
-                        eprintln!("[agent] startup_ms={}", started.elapsed().as_millis());
+                        let accepted_ms = started.elapsed().as_millis();
+                        startup_ms = Some(accepted_ms);
+                        eprintln!("[agent] startup_ms={accepted_ms}");
                     } else if prompt_retry_allowed(&event, prompt_accepted, prompt_attempt) {
                         prompt_attempt += 1;
                         eprintln!(
@@ -756,22 +759,64 @@ pub async fn run_prompt(
             println!();
         }
 
+        let rpc_ms = started.elapsed().as_millis();
         eprintln!(
             "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
-            started.elapsed().as_millis(),
+            rpc_ms,
             first_text_ms
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "N/A".into())
         );
-        if let Some(tokens) = session_stats.as_ref().and_then(|s| s.get("tokens")) {
-            let numeric = |key: &str| {
-                tokens
-                    .get(key)
-                    .and_then(Value::as_u64)
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| "N/A".into())
+        let token_value = |key: &str| {
+            session_stats
+                .as_ref()
+                .and_then(|stats| stats.get("tokens"))
+                .and_then(|tokens| tokens.get(key))
+                .and_then(Value::as_u64)
+        };
+        eprintln!(
+            "[agent] tokens_input={} tokens_output={} tokens_cache_read={} tokens_cache_write={}",
+            token_value("input")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into()),
+            token_value("output")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into()),
+            token_value("cacheRead")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into()),
+            token_value("cacheWrite")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into())
+        );
+        if let Some(file) = log.as_mut() {
+            let effective_profile = if tools_for_profile(&config.tool_profile).is_some() {
+                config.tool_profile.as_str()
+            } else {
+                DEFAULT_TOOL_PROFILE
             };
-            eprintln!("[agent] tokens_input={} tokens_output={} tokens_cache_read={} tokens_cache_write={}", numeric("input"), numeric("output"), numeric("cacheRead"), numeric("cacheWrite"));
+            let tool_count = tools_for_profile(effective_profile)
+                .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
+                .unwrap_or(0);
+            let metric_event = json!({
+                "type": "newsroom_rpc_metrics",
+                "schema_version": "0.1.0",
+                "startup_ms": startup_ms,
+                "rpc_ms": rpc_ms,
+                "first_model_text_ms": first_text_ms,
+                "prompt_attempts": prompt_attempt,
+                "prompt_bytes": prompt.len(),
+                "tool_profile": effective_profile,
+                "tool_count": tool_count,
+                "continue_session": config.continue_session,
+                "tokens_input": token_value("input"),
+                "tokens_output": token_value("output"),
+                "tokens_cache_read": token_value("cacheRead"),
+                "tokens_cache_write": token_value("cacheWrite"),
+                "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            });
+            writeln!(file, "{}", serde_json::to_string(&metric_event)?)?;
+            file.flush()?;
         }
         Ok(PiRunResult {
             text: answer,
