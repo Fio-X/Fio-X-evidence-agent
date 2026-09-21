@@ -321,8 +321,18 @@ function clampInt(value: number | undefined, min: number, max: number, fallback:
   return Math.max(min, Math.min(max, Math.trunc(value!)));
 }
 
-function textResult(text: string, details: Record<string, unknown> = {}) {
-  return { content: [{ type: "text" as const, text }], details };
+function textResult(
+  text: string,
+  details: Record<string, unknown> = {},
+  telemetry: { artifact_bytes?: number; truncated_for_model?: boolean } = {},
+) {
+  const resultDetails: Record<string, unknown> = {
+    ...details,
+    model_visible_result_bytes: Buffer.byteLength(text, "utf8"),
+  };
+  if (telemetry.artifact_bytes !== undefined) resultDetails.artifact_bytes = telemetry.artifact_bytes;
+  if (telemetry.truncated_for_model !== undefined) resultDetails.truncated_for_model = telemetry.truncated_for_model;
+  return { content: [{ type: "text" as const, text }], details: resultDetails };
 }
 
 async function assertPublicUrl(url: URL) {

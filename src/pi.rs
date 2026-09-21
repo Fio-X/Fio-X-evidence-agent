@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
@@ -34,6 +35,64 @@ pub struct PiConfig {
 pub struct PiRunResult {
     pub text: String,
     pub session_stats: Option<Value>,
+}
+
+fn rpc_failure_class(error: &anyhow::Error) -> (&'static str, &'static str) {
+    let text = error.to_string().to_ascii_lowercase();
+    let phase = if text.contains("startup") || text.contains("start pi") {
+        "startup"
+    } else if text.contains("finishing") || text.contains("final") {
+        "finishing"
+    } else if text.contains("idle") {
+        "idle"
+    } else if text.contains("total") {
+        "total"
+    } else if text.contains("cancel") {
+        "cancelled"
+    } else {
+        "rpc"
+    };
+    let class = if text.contains("provider") || text.contains("rejected") {
+        "provider_error"
+    } else if text.contains("timeout") {
+        "timeout"
+    } else {
+        "rpc_error"
+    };
+    (phase, class)
+}
+
+fn append_failed_rpc_metric(
+    event_log: Option<&Path>,
+    started: Instant,
+    config: &PiConfig,
+    prompt: &str,
+    error: &anyhow::Error,
+) {
+    let Some(path) = event_log else { return };
+    let (failure_phase, failure_class) = rpc_failure_class(error);
+    let effective_profile = if tools_for_profile(&config.tool_profile).is_some() {
+        config.tool_profile.as_str()
+    } else {
+        DEFAULT_TOOL_PROFILE
+    };
+    let metric = json!({
+        "type": "newsroom_rpc_metrics", "schema_version": "0.2.0", "outcome": "failed",
+        "failure_phase": failure_phase, "failure_class": failure_class,
+        "rpc_ms": started.elapsed().as_millis(), "prompt_attempts": 0, "prompt_bytes": prompt.len(),
+        "tool_profile": effective_profile,
+        "tool_count": tools_for_profile(effective_profile).map(|tools| tools.split(',').filter(|name| !name.is_empty()).count()).unwrap_or(0),
+        "continue_session": config.continue_session,
+        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&metric).unwrap_or_default()
+        );
+        let _ = file.flush();
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -441,9 +500,17 @@ pub async fn run_prompt(
         .stderr(Stdio::null())
         .kill_on_drop(true);
 
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("failed to start Pi executable: {}", config.binary.display()))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let error = anyhow!(error).context(format!(
+                "failed to start Pi executable: {}",
+                config.binary.display()
+            ));
+            append_failed_rpc_metric(event_log, started, config, prompt, &error);
+            return Err(error);
+        }
+    };
 
     #[cfg(unix)]
     let group = ProcessGroup(child.id().context("Pi process id unavailable")?);
@@ -498,6 +565,7 @@ pub async fn run_prompt(
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
         let mut provider_turn_failed = false;
+        let mut tool_started: HashMap<String, Instant> = HashMap::new();
 
         let mut line = Vec::new();
         loop {
@@ -546,6 +614,38 @@ pub async fn run_prompt(
 
             let mut event = event;
             redact_event(&mut event, &secrets);
+            if event.get("type").and_then(Value::as_str) == Some("tool_execution_start") {
+                if let Some(id) = event.get("toolCallId").and_then(Value::as_str) {
+                    tool_started.insert(id.to_string(), Instant::now());
+                }
+            }
+            if event.get("type").and_then(Value::as_str) == Some("tool_execution_end") {
+                let id = event
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let details = event
+                    .pointer("/result/details")
+                    .or_else(|| event.pointer("/details"));
+                if let Some(details) = details {
+                    let mut metric = json!({
+                        "tool_name": event.get("toolName").and_then(Value::as_str).unwrap_or("unknown"),
+                        "model_visible_result_bytes": details.get("model_visible_result_bytes").and_then(Value::as_u64).unwrap_or(0),
+                        "wall_time_ms": tool_started.remove(id).map(|started| started.elapsed().as_millis()).unwrap_or(0),
+                        "success": event.get("isError").and_then(Value::as_bool).map(|value| !value).unwrap_or(true),
+                    });
+                    if let Some(value) = details.get("artifact_bytes").and_then(Value::as_u64) {
+                        metric["artifact_bytes"] = Value::from(value);
+                    }
+                    if let Some(value) = details.get("truncated_for_model").and_then(Value::as_bool)
+                    {
+                        metric["truncated_for_model"] = Value::from(value);
+                    }
+                    event["tool_result_metrics"] = metric;
+                } else {
+                    tool_started.remove(id);
+                }
+            }
             // Provider/extension diagnostics are untrusted and may contain credentials.
             if event.get("type").and_then(Value::as_str) == Some("extension_error")
                 || (event.get("type").and_then(Value::as_str) == Some("response")
@@ -800,7 +900,8 @@ pub async fn run_prompt(
                 .unwrap_or(0);
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
-                "schema_version": "0.1.0",
+                "schema_version": "0.2.0",
+                "outcome": "success",
                 "startup_ms": startup_ms,
                 "rpc_ms": rpc_ms,
                 "first_model_text_ms": first_text_ms,
@@ -839,6 +940,9 @@ pub async fn run_prompt(
     }
     let _ = child.kill().await;
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    if let Err(ref error) = outcome {
+        append_failed_rpc_metric(event_log, started, config, prompt, error);
+    }
     outcome
 }
 
