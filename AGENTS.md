@@ -82,3 +82,20 @@ For round 3:
 - keep Stage Packet work off the production default path in this round
 - keep sparse macro checkpoints on HOLD unless explicitly reintroduced by a later manifest
 - classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
+
+
+## System One round-4 token-curve experiments
+
+When the invoking prompt explicitly names an experiment ID from `experiments/system-one/round4-manifest.json`, that experiment contract takes precedence over the default local handoff.
+
+For round 4:
+- read `experiments/system-one/round3-summary.md`, `experiments/system-one/round4-plan.md`, and the named round-4 manifest entry
+- modify only the experiment's `allowed_files` plus its own result file under `experiments/system-one/results/`
+- inspect listed R3 input branches only when the manifest names them; do not merge unrelated experiment branches
+- preserve full source/data/computation artifacts for deterministic replay
+- never auto-repair Fact, Claim, SQL, or Evidence
+- keep tool-result budgets, phase routing, retry-context changes, and classifier changes opt-in in this round unless the task is telemetry-only
+- never weaken evidence, provenance, verification, validator, completion, publication, or browser-QA gates
+- no daemon or cross-CLI background service
+- record model-visible bytes separately from full artifact bytes whenever applicable
+- classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
