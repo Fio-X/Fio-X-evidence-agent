@@ -8,7 +8,7 @@ baseline='--baseline' in sys.argv
 results=[]
 pid_file=Path(tempfile.gettempdir())/f'perf-child-{os.getpid()}.pid'
 for mode in ['normal','silent','missing_stats','cancel','tool','thinking','spawn_failure','idle','turn_idle','active_stall','fragment','provider_error','oversize','descendant']:
- env={**os.environ,'PERF_MOCK_MODE':mode,'NEWSROOM_RPC_STARTUP_MS':'600' if mode=='fragment' else '150','NEWSROOM_RPC_IDLE_MS':'150','NEWSROOM_RPC_FINISH_MS':'1200' if mode=='fragment' else '150','NEWSROOM_RPC_HEARTBEAT_MS':'50','NEWSROOM_RPC_TOTAL_MS':'1000' if mode=='active_stall' else '3000','PERF_TEST_SECRET':'test-only-'+str(time.time_ns())}
+ env={**os.environ,'PERF_MOCK_MODE':mode,'NEWSROOM_RPC_STARTUP_MS':'600' if mode=='fragment' else '150','NEWSROOM_RPC_IDLE_MS':'300' if mode=='fragment' else '150','NEWSROOM_RPC_FINISH_MS':'1200' if mode=='fragment' else '150','NEWSROOM_RPC_HEARTBEAT_MS':'50','NEWSROOM_RPC_TOTAL_MS':'1000' if mode=='active_stall' else '3000','PERF_TEST_SECRET':'test-only-'+str(time.time_ns())}
  env['PERF_CHILD_PID']=str(pid_file)
  mock=str(root/'scripts/perf_mock_pi.py') if mode!='spawn_failure' else '/nonexistent/perf-pi'
  t=time.monotonic();p=subprocess.Popen([binary,'ask','--pi-bin',mock,'fixed input'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
