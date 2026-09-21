@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
-use std::fs::OpenOptions;
+use std::fs::{read_to_string, OpenOptions};
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -798,6 +798,13 @@ pub async fn run_prompt(
             let tool_count = tools_for_profile(effective_profile)
                 .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
                 .unwrap_or(0);
+            let phase_surface = config
+                .artifact_dir
+                .as_ref()
+                .and_then(|root| read_to_string(root.join("runtime/phase-tool-surface.json")).ok())
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+            let requested_phase =
+                std::env::var("NEWSROOM_PHASE").unwrap_or_else(|_| "all".to_string());
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
                 "schema_version": "0.1.0",
@@ -808,6 +815,11 @@ pub async fn run_prompt(
                 "prompt_bytes": prompt.len(),
                 "tool_profile": effective_profile,
                 "tool_count": tool_count,
+                "phase": phase_surface.as_ref().and_then(|value| value.get("phase")).or(Some(&Value::String(requested_phase))),
+                "profile_tool_count": phase_surface.as_ref().and_then(|value| value.get("profile_tool_count")).or(Some(&Value::from(tool_count))),
+                "effective_phase_tool_count": phase_surface.as_ref().and_then(|value| value.get("effective_phase_tool_count")),
+                "effective_phase_schema_bytes": phase_surface.as_ref().and_then(|value| value.get("effective_phase_schema_bytes")),
+                "schema_byte_method": phase_surface.as_ref().and_then(|value| value.get("schema_byte_method")),
                 "continue_session": config.continue_session,
                 "tokens_input": token_value("input"),
                 "tokens_output": token_value("output"),

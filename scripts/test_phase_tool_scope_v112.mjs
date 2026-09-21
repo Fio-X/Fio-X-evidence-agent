@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {TOOL_PHASES, VALID_TOOL_PHASES, toolEnabledForPhase, toolEnabled} from '../runtime/pi/tool_phase_policy.mjs';
+import {TOOL_PHASES, VALID_TOOL_PHASES, toolEnabledForPhase, toolEnabled, toolSurfaceForProfile} from '../runtime/pi/tool_phase_policy.mjs';
 import {TOOL_REGISTRY} from '../runtime/pi/tool_registry.mjs';
 const canonicalNames=TOOL_REGISTRY.tools.map(t=>t.name);
 const names=Object.keys(TOOL_PHASES);
@@ -21,4 +21,9 @@ if(!toolEnabled('newsroom_chart',{profile:'investigate'})) throw new Error('inve
 if(toolEnabled('newsroom_chart',{profile:'visual'})) throw new Error('visual profile must use the critic-backed viz pipeline');
 const investigateCount=TOOL_REGISTRY.tools.filter(t=>t.profiles.includes('investigate')).length;
 if(investigateCount>15) throw new Error(`investigate profile is too broad: ${investigateCount}`);
-console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,phases:VALID_TOOL_PHASES},null,2));
+const investigateAll=toolSurfaceForProfile('investigate','all');
+const investigateVerify=toolSurfaceForProfile('investigate','verify');
+if(investigateAll.profile_tool_count!==investigateCount || investigateAll.effective_phase_tool_count!==investigateCount) throw new Error('all-phase surface must equal profile surface');
+if(investigateVerify.effective_phase_tool_count>=investigateAll.effective_phase_tool_count) throw new Error('verify phase must reduce the effective surface');
+if(investigateVerify.tool_names.includes('news_search')) throw new Error('verify phase must exclude discovery tools');
+console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,investigate_all:investigateAll,investigate_verify:investigateVerify,phases:VALID_TOOL_PHASES},null,2));

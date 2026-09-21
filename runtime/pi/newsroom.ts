@@ -4,6 +4,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink } from "node:fs/promises";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -62,7 +63,35 @@ const CARTOGRAPHIC_DEFAULT_SOURCE_URL = CARTOGRAPHIC_DEFAULT_BASEMAP?.source_url
 const CARTOGRAPHIC_DEFAULT_LICENSE = CARTOGRAPHIC_DEFAULT_BASEMAP?.license ?? BASEMAP_LICENSE;
 const CARTOGRAPHIC_DEFAULT_CONTENT_HASH = CARTOGRAPHIC_DEFAULT_BASEMAP?.content_hash ?? BASEMAP_CONTENT_HASH;
 
-import { toolEnabled } from "./tool_phase_policy.mjs";
+import { toolEnabled, toolSurfaceForProfile } from "./tool_phase_policy.mjs";
+
+const registeredPhaseTools: Array<{ name: string; schema_bytes: number }> = [];
+
+function writePhaseSurfaceSnapshot() {
+  try {
+    const root = artifactRoot();
+    if (!root) return;
+    const phase=process.env.NEWSROOM_PHASE??'all';
+    const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
+    const configured=toolSurfaceForProfile(profile,phase);
+    const snapshot={
+      schema_version:'0.1.0',
+      phase,
+      tool_profile:profile,
+      profile_tool_count:configured.profile_tool_count,
+      configured_phase_tool_count:configured.effective_phase_tool_count,
+      effective_phase_tool_count:registeredPhaseTools.length,
+      effective_phase_schema_bytes:registeredPhaseTools.reduce((sum,tool)=>sum+tool.schema_bytes,0),
+      schema_byte_method:'utf8-json-parameters-estimate',
+      registered_tool_names:registeredPhaseTools.map(tool=>tool.name),
+    };
+    const path=join(root,'runtime','phase-tool-surface.json');
+    mkdirSync(dirname(path),{recursive:true});
+    writeFileSync(path,JSON.stringify(snapshot,null,2)+'\n','utf8');
+  } catch {
+    // Observability must not alter tool registration or evidence behavior.
+  }
+}
 
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
@@ -92,6 +121,11 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
     }};
   }
   pi.registerTool(tool);
+  registeredPhaseTools.push({
+    name,
+    schema_bytes:(()=>{ try { return Buffer.byteLength(JSON.stringify(tool?.parameters??{})??'','utf8'); } catch { return 0; } })(),
+  });
+  writePhaseSurfaceSnapshot();
 }
 
 
@@ -728,6 +762,7 @@ async function listArtifactFiles(root: string, child: string) {
 }
 
 export default function newsroomExtension(pi: ExtensionAPI) {
+  registeredPhaseTools.length=0;
   registerScopedTool(pi, {
     name: "artifact_inventory",
     label: "Inspect investigation files",
