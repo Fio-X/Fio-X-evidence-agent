@@ -1,14 +1,14 @@
 # Local Codex operating rules
 
-This repository uses local Codex as an environment-bound validation worker. Architecture and GitHub-side source changes are coordinated separately; local Codex should execute the task in `.codex/task.md` and report evidence in `.codex/result.md`.
+This repository uses local Codex as an environment-bound validation worker. Architecture and GitHub-side source changes are coordinated separately; local Codex should execute the task in `local-codex/task.md` and report evidence in `local-codex/result.md`.
 
 ## Scope
 
-- Read this file and `.codex/task.md` before running commands.
+- Read this file and `local-codex/task.md` before running commands.
 - Treat the current Git HEAD as the implementation under test.
 - Do not redesign architecture or refactor product code unless the task explicitly asks for it.
 - Prefer existing project scripts and canonical test commands.
-- If a local-only failure suggests a code fix, report the smallest proposed fix in `.codex/result.md` instead of silently changing source.
+- If a local-only failure suggests a code fix, report the smallest proposed fix in `local-codex/result.md` instead of silently changing source.
 
 ## Safety and evidence invariants
 
@@ -21,14 +21,14 @@ This repository uses local Codex as an environment-bound validation worker. Arch
 
 ## Git discipline
 
-- Work on the branch named in `.codex/task.md`.
+- Work on the branch named in `local-codex/task.md`.
 - Keep product source unchanged unless the task explicitly authorizes edits.
-- The local worker script stages only `.codex/result.md`.
+- The local worker script stages only the allowlisted files for the active task.
 - Do not commit generated artifacts, screenshots, provider traces, or logs unless the task explicitly requests them.
 
 ## Result contract
 
-Write `.codex/result.md` before finishing. It must contain:
+Write `local-codex/result.md` before finishing. It must contain:
 
 - tested commit SHA and branch
 - OS and tool versions relevant to the run
