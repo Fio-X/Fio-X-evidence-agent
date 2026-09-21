@@ -244,15 +244,30 @@ function safeReadOnlySql(sql) {
   return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized) && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized);
 }
 
-export async function localSqliteQuery(input, sql, { maxBytes = 4 * 1024 * 1024 } = {}) {
+export async function localSqliteQuery(input, sql, { maxBytes = 4 * 1024 * 1024, maxRows } = {}) {
   const target = await resolveSandboxPath(input);
   if (!safeReadOnlySql(sql)) throw new Error('local_sqlite_query accepts read-only SELECT/WITH or safe metadata PRAGMA statements');
   if (process.platform !== 'darwin' || !(await available(NATIVE.sqlite3))) {
     throw new Error('sqlite3 is only available on the macOS local backend');
   }
-  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { maxBytes, timeoutMs: 30_000 });
+  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { maxBytes: Number.isInteger(maxRows) ? 4 * 1024 * 1024 : maxBytes, timeoutMs: 30_000 });
   let rows;
   try { rows = stdout.trim() ? JSON.parse(stdout) : []; }
   catch { rows = stdout.trim(); }
-  return { backend: 'macos:sqlite3', path: target, rows };
+  if (!Number.isInteger(maxRows) || maxRows < 1 || !Array.isArray(rows)) return { backend: 'macos:sqlite3', path: target, rows };
+  const totalRows = rows.length;
+  let preview = rows.slice(0, maxRows);
+  let previewBytes = Buffer.byteLength(JSON.stringify(preview), 'utf8');
+  while (preview.length > 0 && previewBytes > maxBytes) {
+    preview = preview.slice(0, Math.max(1, Math.floor(preview.length * 0.75)) - 1);
+    previewBytes = Buffer.byteLength(JSON.stringify(preview), 'utf8');
+  }
+  return {
+    backend: 'macos:sqlite3',
+    path: target,
+    rows: preview,
+    total_rows: totalRows,
+    preview_bytes: previewBytes,
+    truncated: preview.length < totalRows,
+  };
 }
