@@ -357,6 +357,7 @@ impl InvestigationBundle {
                         .unwrap_or(false)
             })
             .count();
+        let pi_rpc = read_rpc_metrics(&self.events_path);
         let value = serde_json::json!({
             "schema_version": "0.8.0",
             "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
@@ -378,6 +379,7 @@ impl InvestigationBundle {
             "adaptive_replanning_observed": audit.map(|a| a.adaptive_replanning_observed),
             "tool_failure_recovery_observed": audit.map(|a| a.tool_failure_recovery_observed),
             "follow_up_replanning_observed": audit.map(|a| a.follow_up_replanning_observed),
+            "pi_rpc": pi_rpc,
         });
         writeln!(file, "{}", serde_json::to_string(&value)?)?;
         Ok(())
@@ -525,6 +527,99 @@ impl InvestigationBundle {
         }
         Ok(gaps)
     }
+}
+
+fn read_rpc_metrics(path: &Path) -> Value {
+    let mut calls = 0_u64;
+    let mut rpc_ms_total = 0_u64;
+    let mut startup_ms_total = 0_u64;
+    let mut first_model_text_ms_min: Option<u64> = None;
+    let mut first_model_text_ms_max: Option<u64> = None;
+    let mut prompt_attempts_total = 0_u64;
+    let mut prompt_bytes_total = 0_u64;
+    let mut tokens_input_total = 0_u64;
+    let mut tokens_output_total = 0_u64;
+    let mut tokens_cache_read_total = 0_u64;
+    let mut tokens_cache_write_total = 0_u64;
+    let mut tool_count_max = 0_u64;
+    let mut tool_profiles: Vec<String> = Vec::new();
+
+    if let Ok(file) = fs::File::open(path) {
+        for line in BufReader::new(file).lines() {
+            let Ok(line) = line else {
+                continue;
+            };
+            let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            if event.get("type").and_then(Value::as_str) != Some("newsroom_rpc_metrics") {
+                continue;
+            }
+            calls += 1;
+            rpc_ms_total += event.get("rpc_ms").and_then(Value::as_u64).unwrap_or(0);
+            startup_ms_total += event
+                .get("startup_ms")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            if let Some(value) = event.get("first_model_text_ms").and_then(Value::as_u64) {
+                first_model_text_ms_min =
+                    Some(first_model_text_ms_min.map_or(value, |current| current.min(value)));
+                first_model_text_ms_max =
+                    Some(first_model_text_ms_max.map_or(value, |current| current.max(value)));
+            }
+            prompt_attempts_total += event
+                .get("prompt_attempts")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            prompt_bytes_total += event
+                .get("prompt_bytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_input_total += event
+                .get("tokens_input")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_output_total += event
+                .get("tokens_output")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_cache_read_total += event
+                .get("tokens_cache_read")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_cache_write_total += event
+                .get("tokens_cache_write")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tool_count_max = tool_count_max.max(
+                event
+                    .get("tool_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
+            );
+            if let Some(profile) = event.get("tool_profile").and_then(Value::as_str) {
+                if !tool_profiles.iter().any(|known| known == profile) {
+                    tool_profiles.push(profile.to_string());
+                }
+            }
+        }
+    }
+
+    serde_json::json!({
+        "calls": calls,
+        "rpc_ms_total": rpc_ms_total,
+        "startup_ms_total": startup_ms_total,
+        "first_model_text_ms_min": first_model_text_ms_min,
+        "first_model_text_ms_max": first_model_text_ms_max,
+        "prompt_attempts_total": prompt_attempts_total,
+        "prompt_bytes_total": prompt_bytes_total,
+        "tool_profiles": tool_profiles,
+        "tool_count_max": tool_count_max,
+        "tokens_input_total": tokens_input_total,
+        "tokens_output_total": tokens_output_total,
+        "tokens_cache_read_total": tokens_cache_read_total,
+        "tokens_cache_write_total": tokens_cache_write_total,
+    })
 }
 
 fn read_user_messages(path: &Path) -> Option<usize> {
@@ -708,9 +803,42 @@ pub fn slugify(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{discover_delivery, slugify};
+    use super::{discover_delivery, read_rpc_metrics, slugify};
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn aggregates_structured_rpc_metrics() {
+        let root = tempdir().unwrap();
+        let events = root.path().join("events.jsonl");
+        fs::write(
+            &events,
+            concat!(
+                "{\"type\":\"turn_end\"}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"startup_ms\":12,\"rpc_ms\":100,\"first_model_text_ms\":40,\"prompt_attempts\":1,\"prompt_bytes\":50,\"tool_profile\":\"investigate\",\"tool_count\":14,\"tokens_input\":120,\"tokens_output\":20,\"tokens_cache_read\":10,\"tokens_cache_write\":2}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"startup_ms\":8,\"rpc_ms\":80,\"first_model_text_ms\":30,\"prompt_attempts\":2,\"prompt_bytes\":30,\"tool_profile\":\"visual-story\",\"tool_count\":47,\"tokens_input\":80,\"tokens_output\":10,\"tokens_cache_read\":5,\"tokens_cache_write\":1}\n"
+            ),
+        )
+        .unwrap();
+
+        let metrics = read_rpc_metrics(&events);
+        assert_eq!(metrics["calls"], 2);
+        assert_eq!(metrics["rpc_ms_total"], 180);
+        assert_eq!(metrics["startup_ms_total"], 20);
+        assert_eq!(metrics["first_model_text_ms_min"], 30);
+        assert_eq!(metrics["first_model_text_ms_max"], 40);
+        assert_eq!(metrics["prompt_attempts_total"], 3);
+        assert_eq!(metrics["prompt_bytes_total"], 80);
+        assert_eq!(metrics["tool_count_max"], 47);
+        assert_eq!(metrics["tokens_input_total"], 200);
+        assert_eq!(metrics["tokens_output_total"], 30);
+        assert_eq!(metrics["tokens_cache_read_total"], 15);
+        assert_eq!(metrics["tokens_cache_write_total"], 3);
+        assert_eq!(
+            metrics["tool_profiles"],
+            serde_json::json!(["investigate", "visual-story"])
+        );
+    }
 
     #[test]
     fn slugifies_ascii_topic() {
