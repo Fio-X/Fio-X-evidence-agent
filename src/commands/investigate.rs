@@ -1,11 +1,12 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::InvestigateArgs;
-use crate::pi::{run_prompt, PiConfig, PiRunResult};
+use crate::hash::sha256_file;
+use crate::pi::{run_prompt, run_prompt_sequence, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
 use anyhow::{bail, Result};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::path::{Component, Path};
@@ -124,6 +125,60 @@ fn is_transient_completion_provider_error(error: &anyhow::Error) -> bool {
         .contains("Pi returned an empty final answer")
 }
 
+fn retry_context_packet(
+    bundle: &InvestigationBundle,
+    topic: &str,
+    gaps: &[String],
+    attempt: usize,
+) -> Result<String> {
+    let mut refs = BTreeMap::new();
+    let mut hashes = BTreeMap::new();
+    for (kind, path) in [
+        ("events", &bundle.events_path),
+        ("tools", &bundle.tools_path),
+        ("claims", &bundle.claims_path),
+        ("plan", &bundle.plan_path),
+    ] {
+        if path.is_file() {
+            refs.insert(
+                kind,
+                path.strip_prefix(&bundle.dir)?
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            hashes.insert(kind, sha256_file(path)?);
+        }
+    }
+    let required_visual_modes = prompt::required_visual_modes(topic)
+        .into_iter()
+        .map(|(label, _)| label)
+        .collect::<Vec<_>>();
+    let packet = serde_json::json!({
+        "schema_version": "0.2.0", "goal": topic, "refs": refs, "hashes": hashes,
+        "passed_gates": [], "remaining_gaps": gaps,
+        "required_visual_modes": required_visual_modes,
+    });
+    let packet_dir = bundle.dir.join("retry-context");
+    fs::create_dir_all(&packet_dir)?;
+    fs::write(
+        packet_dir.join(format!("attempt-{attempt}.json")),
+        format!("{}\n", serde_json::to_string_pretty(&packet)?),
+    )?;
+    Ok(serde_json::to_string(&packet)?)
+}
+
+fn packet_completion_prompt(
+    bundle: &InvestigationBundle,
+    topic: &str,
+    gaps: &[String],
+    attempt: usize,
+) -> Result<String> {
+    let packet = retry_context_packet(bundle, topic, gaps, attempt)?;
+    Ok(format!(
+        "System completion checkpoint attempt {attempt}/2. Continue only the authoritative completion work. Re-read referenced artifacts with tools when needed. Do not invent evidence, quantitative claims, or gate status.\nRETRY_CONTEXT_PACKET={packet}"
+    ))
+}
+
 async fn run_prompt_with_empty_recovery(
     config: &PiConfig,
     prompt: &str,
@@ -219,7 +274,34 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
     eprintln!("artifact: {}\n", bundle.dir.display());
 
     audit::append_user_goal_event(&bundle.events_path, "initial")?;
-    match run_prompt_with_empty_recovery(&config, &prompt, &prompt, &bundle.events_path).await {
+    let strategy = std::env::var("NEWSROOM_REPAIR_SESSION_STRATEGY").unwrap_or_default();
+    let same_child_packet =
+        strategy == "same-child-packet" && prompt::is_complex_visual_request(&topic);
+    let initial_result = if same_child_packet {
+        let prompts = vec![
+            prompt.clone(),
+            packet_completion_prompt(
+                &bundle,
+                &topic,
+                &["completion gates must be evaluated after the research turn".to_string()],
+                1,
+            )?,
+            packet_completion_prompt(
+                &bundle,
+                &topic,
+                &["completion gates must be evaluated after the research turn".to_string()],
+                2,
+            )?,
+        ];
+        eprintln!(
+            "[agent] repair_session_strategy=same-child-packet prompt_count={}",
+            prompts.len()
+        );
+        run_prompt_sequence(&config, &prompts, Some(&bundle.events_path)).await
+    } else {
+        run_prompt_with_empty_recovery(&config, &prompt, &prompt, &bundle.events_path).await
+    };
+    match initial_result {
         Ok(result) => {
             let persistence_started = Instant::now();
             bundle.append_conversation(&topic, &result.text)?;
@@ -230,7 +312,7 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
             }
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
             let mut completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
-            if prompt::is_complex_visual_request(&topic) {
+            if prompt::is_complex_visual_request(&topic) && !same_child_packet {
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
                         break;
@@ -246,11 +328,24 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                         completion_gaps.join("\n- "),
                         mode_contract,
                     );
-                    config.continue_session = true;
+                    let fresh_packet = strategy == "fresh-packet";
+                    if fresh_packet {
+                        config.session_dir =
+                            Some(bundle.dir.join(format!("repair-session-{attempt}")));
+                        config.continue_session = false;
+                        eprintln!("[agent] repair_session_strategy=fresh-packet attempt={attempt} history_reused=false");
+                    } else {
+                        config.continue_session = true;
+                    }
                     let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
+                    let repair_prompt = if fresh_packet {
+                        packet_completion_prompt(&bundle, &topic, &completion_gaps, attempt)?
+                    } else {
+                        correction
+                    };
                     let retry = run_prompt_with_empty_recovery(
                         &config,
-                        &correction,
+                        &repair_prompt,
                         recovery,
                         &bundle.events_path,
                     )
