@@ -325,6 +325,13 @@ function textResult(text: string, details: Record<string, unknown> = {}) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
+function localResultBudget(value: any) {
+  if (!value || typeof value !== "object") return null;
+  const maxBytes = clampInt(value.max_bytes, 1024, 64 * 1024, 64 * 1024);
+  const maxRows = clampInt(value.max_rows, 1, 1000, 100);
+  return { maxBytes, maxRows };
+}
+
 async function assertPublicUrl(url: URL) {
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only http/https URLs are allowed");
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -1011,6 +1018,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
       }), { minItems: 1, maxItems: 64 }),
       max_concurrency: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })),
+      result_budget: Type.Optional(Type.Object({
+        max_bytes: Type.Optional(Type.Integer({ minimum: 1024, maximum: 64 * 1024 })),
+        max_rows: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
+      }, { description: "Opt-in bounded model-visible previews for local_text and sqlite_query; source files and databases remain unchanged" })),
     }),
     async execute(_id, params) {
       const root = artifactRoot();
@@ -1019,6 +1030,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         throw new Error("tasks must contain between 1 and 64 items");
       }
       const maxConcurrency = clampInt(params.max_concurrency, 1, 8, 8);
+      const resultBudget = localResultBudget(params.result_budget);
       const tasks = params.tasks.map((task: any) => ({
         id: task.id,
         kind: task.kind,
@@ -1041,7 +1053,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           case "local_hash":
             return localHash(required("path"));
           case "local_text":
-            return localText(required("path"));
+            if (!resultBudget) return localText(required("path"));
+            return localText(required("path"), { maxBytes: resultBudget.maxBytes });
           case "local_metadata":
             return localMetadata(required("path"));
           case "local_image_info":
@@ -1049,7 +1062,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           case "local_search":
             return localSpotlight(required("query"), { limit: clampInt(task.limit, 1, 200, 50) });
           case "sqlite_query":
-            return localSqliteQuery(required("path"), required("sql"));
+            if (!resultBudget) return localSqliteQuery(required("path"), required("sql"));
+            return localSqliteQuery(required("path"), required("sql"), {
+              maxBytes: resultBudget.maxBytes,
+              maxRows: resultBudget.maxRows,
+            });
           default:
             throw new Error(`task ${task.id}: unsupported read-only local task kind ${task.kind}`);
         }
@@ -1064,6 +1081,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         result,
         eventPath: "runtime/parallel-events.jsonl",
         maxConcurrency,
+        resultBudget,
       });
     },
   });

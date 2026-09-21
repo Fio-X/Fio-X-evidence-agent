@@ -244,15 +244,45 @@ function safeReadOnlySql(sql) {
   return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized) && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized);
 }
 
-export async function localSqliteQuery(input, sql, { maxBytes = 4 * 1024 * 1024 } = {}) {
+function boundedRows(rows, maxBytes, maxRows) {
+  const limited = rows.slice(0, maxRows);
+  const preview = [];
+  let bytes = 2;
+  for (const row of limited) {
+    const rowBytes = Buffer.byteLength(JSON.stringify(row), 'utf8') + (preview.length ? 1 : 0);
+    if (bytes + rowBytes > maxBytes) break;
+    preview.push(row);
+    bytes += rowBytes;
+  }
+  return { rows: preview, bytes, truncated: preview.length < rows.length };
+}
+
+export async function localSqliteQuery(input, sql, { maxBytes = 4 * 1024 * 1024, maxRows = Number.MAX_SAFE_INTEGER } = {}) {
   const target = await resolveSandboxPath(input);
   if (!safeReadOnlySql(sql)) throw new Error('local_sqlite_query accepts read-only SELECT/WITH or safe metadata PRAGMA statements');
   if (process.platform !== 'darwin' || !(await available(NATIVE.sqlite3))) {
     throw new Error('sqlite3 is only available on the macOS local backend');
   }
-  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { maxBytes, timeoutMs: 30_000 });
+  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], {
+    // The budget applies to the returned preview, not to the local computation.
+    // Keep the process-side parse bounded while allowing enough room to count rows.
+    maxBytes: Math.max(maxBytes, 16 * 1024 * 1024),
+    timeoutMs: 30_000,
+  });
   let rows;
   try { rows = stdout.trim() ? JSON.parse(stdout) : []; }
   catch { rows = stdout.trim(); }
-  return { backend: 'macos:sqlite3', path: target, rows };
+  if (!Array.isArray(rows)) return { backend: 'macos:sqlite3', path: target, rows };
+  if (maxRows === Number.MAX_SAFE_INTEGER && maxBytes >= 4 * 1024 * 1024) {
+    return { backend: 'macos:sqlite3', path: target, rows };
+  }
+  const bounded = boundedRows(rows, Math.max(1, Math.trunc(maxBytes)), Math.max(1, Math.trunc(maxRows)));
+  return {
+    backend: 'macos:sqlite3',
+    path: target,
+    rows: bounded.rows,
+    total_rows: rows.length,
+    preview_bytes: bounded.bytes,
+    truncated: bounded.truncated,
+  };
 }
