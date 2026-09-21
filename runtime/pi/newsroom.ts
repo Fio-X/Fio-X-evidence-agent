@@ -1130,7 +1130,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           case "local_hash":
             return localHash(required("path"));
           case "local_text":
-            return localText(required("path"), { full: true });
+            return resultBudget ? localText(required("path"), { full: true }) : localText(required("path"));
           case "local_metadata":
             return localMetadata(required("path"));
           case "local_image_info":
