@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
-use std::fs::OpenOptions;
+use std::fs::{read_to_string, OpenOptions};
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -163,6 +163,64 @@ fn assistant_provider_turn_failed(event: &Value) -> bool {
         .and_then(|message| message.get("stopReason"))
         .and_then(Value::as_str)
         == Some("error")
+}
+
+fn rpc_failure_class(error: &anyhow::Error) -> (&'static str, &'static str) {
+    let text = error.to_string().to_ascii_lowercase();
+    let phase = if text.contains("startup") || text.contains("start pi") {
+        "startup"
+    } else if text.contains("finishing") || text.contains("final") {
+        "finishing"
+    } else if text.contains("idle") {
+        "idle"
+    } else if text.contains("total") {
+        "total"
+    } else if text.contains("cancel") {
+        "cancelled"
+    } else {
+        "rpc"
+    };
+    let class = if text.contains("provider") || text.contains("rejected") {
+        "provider_error"
+    } else if text.contains("timeout") {
+        "timeout"
+    } else {
+        "rpc_error"
+    };
+    (phase, class)
+}
+
+fn append_failed_rpc_metric(
+    event_log: Option<&Path>,
+    started: Instant,
+    config: &PiConfig,
+    prompt: &str,
+    error: &anyhow::Error,
+) {
+    let Some(path) = event_log else { return };
+    let (failure_phase, failure_class) = rpc_failure_class(error);
+    let effective_profile = if tools_for_profile(&config.tool_profile).is_some() {
+        config.tool_profile.as_str()
+    } else {
+        DEFAULT_TOOL_PROFILE
+    };
+    let metric = json!({
+        "type": "newsroom_rpc_metrics", "schema_version": "0.2.0", "outcome": "failed",
+        "failure_phase": failure_phase, "failure_class": failure_class,
+        "rpc_ms": started.elapsed().as_millis(), "prompt_attempts": 0, "prompt_bytes": prompt.len(),
+        "tool_profile": effective_profile,
+        "tool_count": tools_for_profile(effective_profile).map(|tools| tools.split(',').filter(|name| !name.is_empty()).count()).unwrap_or(0),
+        "continue_session": config.continue_session,
+        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&metric).unwrap_or_default()
+        );
+        let _ = file.flush();
+    }
 }
 
 impl PiConfig {
@@ -441,9 +499,17 @@ pub async fn run_prompt(
         .stderr(Stdio::null())
         .kill_on_drop(true);
 
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("failed to start Pi executable: {}", config.binary.display()))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let error = anyhow!(error).context(format!(
+                "failed to start Pi executable: {}",
+                config.binary.display()
+            ));
+            append_failed_rpc_metric(event_log, started, config, prompt, &error);
+            return Err(error);
+        }
+    };
 
     #[cfg(unix)]
     let group = ProcessGroup(child.id().context("Pi process id unavailable")?);
@@ -798,9 +864,17 @@ pub async fn run_prompt(
             let tool_count = tools_for_profile(effective_profile)
                 .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
                 .unwrap_or(0);
+            let phase_surface = config
+                .artifact_dir
+                .as_ref()
+                .and_then(|root| read_to_string(root.join("runtime/phase-tool-surface.json")).ok())
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+            let requested_phase =
+                std::env::var("NEWSROOM_PHASE").unwrap_or_else(|_| "all".to_string());
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
-                "schema_version": "0.1.0",
+                "schema_version": "0.2.0",
+                "outcome": "success",
                 "startup_ms": startup_ms,
                 "rpc_ms": rpc_ms,
                 "first_model_text_ms": first_text_ms,
@@ -808,6 +882,11 @@ pub async fn run_prompt(
                 "prompt_bytes": prompt.len(),
                 "tool_profile": effective_profile,
                 "tool_count": tool_count,
+                "phase": phase_surface.as_ref().and_then(|value| value.get("phase")).cloned().unwrap_or(Value::String(requested_phase)),
+                "profile_tool_count": phase_surface.as_ref().and_then(|value| value.get("profile_tool_count")).cloned().unwrap_or(Value::from(tool_count)),
+                "effective_phase_tool_count": phase_surface.as_ref().and_then(|value| value.get("effective_phase_tool_count")),
+                "effective_phase_schema_bytes": phase_surface.as_ref().and_then(|value| value.get("effective_phase_schema_bytes")),
+                "schema_byte_method": phase_surface.as_ref().and_then(|value| value.get("schema_byte_method")),
                 "continue_session": config.continue_session,
                 "tokens_input": token_value("input"),
                 "tokens_output": token_value("output"),
@@ -839,6 +918,9 @@ pub async fn run_prompt(
     }
     let _ = child.kill().await;
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    if let Err(ref error) = outcome {
+        append_failed_rpc_metric(event_log, started, config, prompt, error);
+    }
     outcome
 }
 
