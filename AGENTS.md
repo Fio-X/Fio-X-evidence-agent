@@ -53,3 +53,17 @@ Write `local-codex/result.md` before finishing. It must contain:
 - confirmation that no secrets were copied into the report
 
 Do not claim a check passed unless the command or observable artifact actually demonstrated it.
+
+
+## System One round-2 experiments
+
+When the invoking prompt explicitly names an experiment ID from `experiments/system-one/round2-manifest.json`, that experiment contract takes precedence over the default `local-codex/task.md` handoff.
+
+For round 2:
+- read `experiments/system-one/README.md`, `experiments/system-one/round1-summary.md`, and the named round-2 manifest entry
+- modify only the experiment's `allowed_files` plus its own result file under `experiments/system-one/results/`
+- preserve all evidence, provenance, verification, validator, publication, and browser-QA gates
+- keep prototypes opt-in or test-only when the experiment contract requires default behavior to remain unchanged
+- do not introduce a generic new RunState or parallel memory system
+- do not expose secrets or raw provider diagnostics
+- classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
