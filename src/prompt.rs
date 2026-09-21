@@ -1,9 +1,5 @@
 const INVESTIGATE_TEMPLATE: &str = include_str!("../prompts/investigate.md");
 
-pub fn investigation(topic: &str, local_data: &[String]) -> String {
-    investigation_with_classifier(topic, local_data, false)
-}
-
 /// Build the investigation prompt using the requested classifier variant.
 /// The split variant is intentionally opt-in; callers that do not select it
 /// retain the established delivery-oriented classifier.
@@ -101,28 +97,6 @@ pub fn is_complex_visual_request(text: &str) -> bool {
     ]
     .iter()
     .any(|term| lower.contains(term))
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VisualDeliveryRequirements {
-    pub html: bool,
-    pub png: bool,
-    pub mobile: bool,
-    pub self_contained: bool,
-    pub interactive: bool,
-}
-
-pub fn visual_delivery_requirements(text: &str) -> VisualDeliveryRequirements {
-    let lower = text.to_lowercase();
-    VisualDeliveryRequirements {
-        html: requires_html(text),
-        png: requires_png(text),
-        mobile: ["mobile", "移动端", "手机", "响应式"]
-            .iter()
-            .any(|term| lower.contains(term)),
-        self_contained: lower.contains("self-contained") || lower.contains("自包含"),
-        interactive: lower.contains("interactive") || lower.contains("交互"),
-    }
 }
 
 pub fn has_multi_module_analytical_complexity(text: &str) -> bool {
@@ -272,7 +246,7 @@ mod tests {
     #[test]
     fn visual_requests_get_data_acquisition_and_lieflat_contract() {
         assert!(is_visual_request("制作一个信息图"));
-        let prompt = investigation("制作一个信息图", &[]);
+        let prompt = investigation_with_classifier("制作一个信息图", &[], false);
         assert!(prompt.contains("newsroom_lieflat_catalog"));
         assert!(prompt.contains("EVIDENCE_BLOCKED"));
         assert!(prompt.contains("SVG/PNG or self-contained HTML"));
@@ -282,7 +256,8 @@ mod tests {
     #[test]
     fn plain_text_request_does_not_add_visual_fallback() {
         assert!(!is_visual_request("总结这篇新闻"));
-        assert!(!investigation("总结这篇新闻", &[]).contains("newsroom_lieflat_catalog"));
+        assert!(!investigation_with_classifier("总结这篇新闻", &[], false)
+            .contains("newsroom_lieflat_catalog"));
     }
 
     #[test]
@@ -290,7 +265,7 @@ mod tests {
         assert!(is_complex_visual_request(
             "制作复杂的多模块信息图并输出 HTML"
         ));
-        let prompt = investigation("制作复杂的多模块信息图并输出 HTML", &[]);
+        let prompt = investigation_with_classifier("制作复杂的多模块信息图并输出 HTML", &[], false);
         assert!(prompt.contains("newsroom_publication_qa"));
         assert!(prompt.contains("portable publication fallback is insufficient"));
         assert!(prompt.contains("JSON manifests are supporting files only"));
@@ -300,9 +275,10 @@ mod tests {
         ));
         assert!(requires_html("制作自包含 HTML"));
         assert!(requires_png("输出桌面和移动 PNG"));
-        let routed = investigation(
+        let routed = investigation_with_classifier(
             "制作自包含 HTML 信息图，组合世界流向地图、地区构成和年代比较",
             &[],
+            false,
         );
         assert!(routed
             .contains("map/spatial: include a rendered visual module with visual_grammar spatial"));
@@ -312,7 +288,8 @@ mod tests {
         assert!(routed.contains(
             "composition: include a rendered visual module with visual_grammar composition"
         ));
-        let routed_sankey = investigation("制作 HTML，组合世界地图、地区 Sankey 构成", &[]);
+        let routed_sankey =
+            investigation_with_classifier("制作 HTML，组合世界地图、地区 Sankey 构成", &[], false);
         assert!(routed_sankey.contains("origin:Asia"));
         assert!(routed_sankey.contains("ROUTE_SPINE"));
         assert!(routed_sankey.contains("current editorial grammar selection is wrong"));
@@ -341,18 +318,12 @@ mod tests {
 
     #[test]
     fn split_classifier_separates_delivery_from_analytical_complexity() {
-        let delivery =
-            visual_delivery_requirements("self-contained HTML mobile interactive Sankey");
-        assert_eq!(
-            delivery,
-            VisualDeliveryRequirements {
-                html: true,
-                png: false,
-                mobile: true,
-                self_contained: true,
-                interactive: true,
-            }
-        );
+        assert!(requires_html(
+            "self-contained HTML mobile interactive Sankey"
+        ));
+        assert!(!requires_png(
+            "self-contained HTML mobile interactive Sankey"
+        ));
         assert!(!is_complex_visual_request_split(
             "self-contained HTML mobile single chart"
         ));
