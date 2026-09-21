@@ -57,8 +57,8 @@ assert.ok(kindMatch, 'parallel tool kind enum is missing');
 assert.deepEqual([...kindMatch[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]), expectedKinds);
 assert.doesNotMatch(block, /\bresource_(?:class|key)\b/, 'public parallel schema must not expose scheduler resource controls');
 assert.ok(block.includes('localHash(required("path"))'), 'local_hash must map the required path');
-assert.match(block, /case "local_text":[\s\S]*?return localText\(required\("path"\), \{ full: true \}\);/,
-  'local_text must hand the complete task result to the scheduler');
+assert.match(block, /case "local_text":[\s\S]*?return resultBudget \? localText\(required\("path",?\), \{ full: true \}\) : localText\(required\("path"\)\);/,
+  'local_text must use full mode only for the opt-in result-budget path and preserve the default helper behavior');
 assert.ok(block.includes('localMetadata(required("path"))'), 'local_metadata must map the required path');
 assert.ok(block.includes('localImageInfo(required("path"))'), 'local_image_info must map the required path');
 assert.match(block, /localSpotlight\(required\("query"\), \{ limit: clampInt\(task\.limit, 1, 200, 50\) \}\)/,
