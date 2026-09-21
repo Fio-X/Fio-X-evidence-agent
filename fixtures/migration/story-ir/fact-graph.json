@@ -782,7 +782,7 @@
       "locator": "all 150 rows",
       "retrieved_at": "2026-09-19T14:50:57Z",
       "source_ref": "fixtures/migration/deep-learning-human-migration-top-corridors.csv",
-      "source_sha256": "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4"
+      "source_sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0"
     },
     {
       "extraction_method": "structured_import",
