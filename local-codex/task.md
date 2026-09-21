@@ -1,115 +1,73 @@
-# Local Codex task: System One R6 production review follow-up
+# Local Codex task: System One R6 inherited Clippy cleanup
 
-Task ID: `system-one-r6-production-review-followup`
+Task ID: `system-one-r6-clippy-dead-code`
 
-Expected branch: `fix/system-one-r6-production-review-blockers`
+Expected branch: `fix/system-one-r6-clippy-dead-code`
 
-Current reviewed commit: `dad5b0e31b90e650950c085bb4b9dc9c8cd51a1f`
+Base commit: `7760d30bb963dff81a8854514c83aa0ecf30c1da`
 
-Parent production-candidate PR: #29
-Target fix PR: #30
+Parent fix PR: #30
 
 ## Objective
 
-Resolve the two remaining PR #30 review findings without changing architecture or adding any new System One mechanism.
+Resolve the inherited GitHub CI Clippy failure without changing System One runtime behavior.
 
-The classifier/completion fix is accepted. The budgeted parallel replay direction is accepted. Preserve both.
+The failing command is:
 
-## Finding 1: restore strict opt-in behavior for parallel local_text
+`cargo clippy --all-targets -- -D warnings`
 
-Current PR #30 wiring calls:
+The inherited errors are all in `src/prompt.rs`:
 
-`localText(required("path"), { full: true })`
+- `investigation` is never used in production
+- `VisualDeliveryRequirements` is never constructed in production
+- `visual_delivery_requirements` is never used in production
 
-for every parallel local_text task, including when public `result_budget` is unset.
+These errors already exist on PR #29 base commit `b326510c825a9c395cf583313329e05693c2f6f9`; do not treat them as a PR #30 regression.
 
-That changes the default/unset path relative to the production-candidate baseline, whose helper-level local_text behavior used the existing default cap.
+## Required approach
 
-Required behavior:
+Prefer removing dead compatibility/test-only API over adding `#[allow(dead_code)]`.
 
-- If `result_budget` is present, the parallel runner must request the complete helper result before scheduler model-visible compaction.
-- If `result_budget` is absent, preserve the pre-existing default local_text helper behavior.
-- The scheduler remains the only model-visible budget owner for the opt-in result-budget path.
-- Do not change the public `result_budget` schema.
-- Do not change the scheduler.
-- SQLite should continue returning its complete successful query result to the scheduler within its existing execution safety bound.
-- Do not reintroduce `maxRows` helper truncation.
-
-The intended local_text wiring is semantically equivalent to:
-
-`resultBudget ? localText(path, { full: true }) : localText(path)`
-
-Exact syntax is your choice.
-
-## Finding 2: reconcile stale local result-budget test
-
-`scripts/test_local_result_budget.mjs` still asserts that `runtime/pi/local_backend.mjs` contains the removed `maxRows` helper mechanism.
-
-Update this test to the current semantic contract:
-
-- default local_text behavior remains bounded/default-compatible;
-- explicit bounded `maxBytes` behavior remains bounded;
-- full mode returns the complete local text result for the opt-in parallel data-plane path;
-- SQLite remains read-only;
-- helper-level `maxRows` truncation is absent.
-
-Prefer behavior assertions over source-literal assertions where practical.
-
-## Result report
-
-Update `local-codex/result.md` to reflect the follow-up run.
-
-Do not classify HOLD solely because the Codex sandbox cannot write the outer worktree Git metadata. The user can perform commit/push after validation. Classification must reflect implementation/test quality.
-
-If all required checks pass and no product blocker remains, classify PROMOTE.
+- Remove the unused `investigation(topic, local_data)` wrapper.
+- Update prompt tests to call the production entrypoint `investigation_with_classifier(topic, local_data, false)` when they need legacy/default classifier behavior.
+- Remove `VisualDeliveryRequirements` and `visual_delivery_requirements` because they are test-only and have no production caller.
+- Preserve coverage for `requires_html`, `requires_png`, and split classifier semantics directly in tests where useful.
+- Do not change the behavior of `investigation_with_classifier`, `is_complex_visual_request`, `is_complex_visual_request_split`, `has_multi_module_analytical_complexity`, `required_visual_modes`, or completion routing.
+- Do not weaken or bypass any evidence, verification, completion, publication, browser-QA, or replay gate.
 
 ## Allowed modifications
 
-- `runtime/pi/newsroom.ts`
-- `scripts/test_parallel_tool_contract.mjs`
-- `scripts/test_parallel_replay_wiring.mjs`
-- `scripts/test_local_result_budget.mjs`
+- `src/prompt.rs`
 - `local-codex/result.md`
 
 Do not modify any other file.
 
-In particular, do not modify:
-
-- `runtime/pi/local_backend.mjs`
-- `runtime/pi/parallel_scheduler.mjs`
-- `src/commands/investigate.rs`
-- `src/prompt.rs`
-- phase registry/policy files
-- evidence/claim/fact/SQL gate implementations
-- publication/browser-QA implementations
-
-The current GitHub CI Clippy failure in `src/prompt.rs` is inherited from PR #29 and will be handled in a separate task branch. Do not fix it in this task.
+If another file is genuinely required, stop and report the smallest scope expansion.
 
 ## Required validation
 
-Run:
+Run all of:
 
-- `node scripts/test_local_result_budget.mjs`
-- `node scripts/test_parallel_tool_contract.mjs`
-- `node scripts/test_parallel_result_budget.mjs`
-- `node scripts/test_parallel_replay_wiring.mjs`
-- `node scripts/test_tool_result_budget_integration.mjs`
+- `cargo fmt --check`
+- `cargo check --all-targets`
+- `cargo test --all-targets`
+- `cargo clippy --all-targets -- -D warnings`
 - `python3 scripts/test_visual_routing_matrix.py`
 - `python3 scripts/test_round6_combined.py`
-- `cargo fmt --check`
-- `cargo test --locked`
-- `cargo build --release --locked`
 - `git diff --check`
 
 Also confirm:
 
 - routing remains exactly 24 cases / 9 intended changes;
-- model-visible measurement remains 942143 -> 30544 (96.76%) unless the actual measured fixture changes;
-- budgeted parallel replay still preserves the complete 96000-byte text result and 240 SQLite rows, or equivalent complete fixtures;
-- unset parallel local_text follows the previous default helper behavior;
-- no evidence/provenance/verification/completion/publication/browser-QA gate changed.
+- no R6 model-visible budget/replay code changed;
+- no production prompt/routing semantics changed;
+- no secrets, credentials, cookies, tokens, or provider diagnostics are copied.
 
-End `local-codex/result.md` with exactly one classification: PROMOTE, HOLD, REJECT, or INCONCLUSIVE.
+Update `local-codex/result.md` with exact commands and PASS/FAIL results.
+
+If all required checks pass and no blocker remains, end with:
+
+PROMOTE
 
 Do not merge any PR.
 Do not mark any Draft PR Ready for Review.
