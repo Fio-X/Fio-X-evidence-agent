@@ -117,3 +117,18 @@ For round 5:
 - phase measurements must use canonical profile inheritance
 - no daemon or cross-CLI background service
 - classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
+
+
+## System One round-6 combined production candidate
+
+When the invoking prompt names `r6-01-combined-token-curve-candidate`, read `experiments/system-one/round5-summary.md`, `round6-plan.md`, and `round6-manifest.json`.
+
+For round 6:
+- inspect only the three listed R5 winner branches as implementation inputs
+- manually reconcile overlapping `runtime/pi/newsroom.ts` changes; do not blindly merge
+- modify only the manifest allowlist plus the experiment result file
+- keep all behavior-changing mechanisms opt-in
+- preserve full replayable artifacts and all evidence/provenance/verification/completion/publication/browser-QA gates
+- use canonical profile inheritance for every phase count
+- require the combined benchmark before classification
+- classify exactly PROMOTE, HOLD, REJECT, or INCONCLUSIVE
