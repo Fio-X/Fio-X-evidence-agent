@@ -1011,6 +1011,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
       }), { minItems: 1, maxItems: 64 }),
       max_concurrency: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })),
+      compact_results: Type.Optional(Type.Boolean({ description: "Opt in to bounded model-visible previews with a replayable local result artifact" })),
+      result_budget_bytes: Type.Optional(Type.Integer({ minimum: 1024, maximum: 262144 })),
+      batch_result_budget_bytes: Type.Optional(Type.Integer({ minimum: 4096, maximum: 524288 })),
     }),
     async execute(_id, params) {
       const root = artifactRoot();
@@ -1029,6 +1032,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         ...(task.sql === undefined ? {} : { sql: task.sql }),
         ...(task.limit === undefined ? {} : { limit: task.limit }),
       }));
+      const compactResults = params.compact_results === true;
+      const resultBudgetBytes = clampInt(params.result_budget_bytes, 1024, 262144, 16 * 1024);
+      const batchResultBudgetBytes = clampInt(params.batch_result_budget_bytes, 4096, 524288, 64 * 1024);
       const result = await runTaskDag(tasks, async (task: any) => {
         const required = (field: string) => {
           const value = task[field];
@@ -1055,15 +1061,30 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         }
       }, {
         artifactRoot: root,
+        ...(compactResults ? {
+          resultBudgets: { local: resultBudgetBytes, data: resultBudgetBytes, default: resultBudgetBytes },
+          batchOutputBudget: batchResultBudgetBytes,
+        } : {}),
         maxConcurrency,
         emit: async (event: unknown) => {
           await appendArtifact("runtime/parallel-events.jsonl", event);
         },
       });
-      return textResult(JSON.stringify(result, null, 2), {
+      const resultRef = result.output_budget?.full_batch_ref ?? null;
+      const response = compactResults ? { ...result, result_ref: resultRef } : result;
+      const details = compactResults ? {
+        result: response,
+        resultRef,
+        compactResults,
+        eventPath: "runtime/parallel-events.jsonl",
+        maxConcurrency,
+      } : {
         result,
         eventPath: "runtime/parallel-events.jsonl",
         maxConcurrency,
+      };
+      return textResult(JSON.stringify(response, null, 2), {
+        ...details,
       });
     },
   });
