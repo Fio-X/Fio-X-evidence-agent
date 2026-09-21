@@ -6,6 +6,9 @@ cd "$ROOT"
 
 EXPECTED_BRANCH=${CODEX_BRANCH:-feat/system-one-observability-codex-handoff}
 MODEL=${CODEX_MODEL:-gpt-5.6-luna}
+LOG=${CODEX_LOG:-${TMPDIR:-/tmp}/fiox-codex.log}
+TASK=local-codex/task.md
+RESULT=local-codex/result.md
 
 if ! command -v codex >/dev/null 2>&1; then
   echo "codex is not installed or not on PATH" >&2
@@ -28,21 +31,31 @@ fi
 git pull --ff-only origin "$EXPECTED_BRANCH"
 
 echo "Running local Codex with model: $MODEL"
-codex exec -m "$MODEL" "Read AGENTS.md and .codex/task.md. Execute the task completely. Do not modify product source. Replace .codex/result.md with the structured result required by the task. Ask the user only when a local login, browser authentication, macOS permission, or another human-only action is actually required."
-
-if git diff --quiet -- .codex/result.md; then
-  echo "Codex did not update .codex/result.md" >&2
+echo "Full Codex output: $LOG"
+if ! codex exec -m "$MODEL" "Read AGENTS.md and $TASK. Execute that task completely. Write the required report to $RESULT. Keep terminal narration concise. Ask the user only for a human-only local action." >"$LOG" 2>&1; then
+  echo "Codex exited with an error. Last 25 log lines:" >&2
+  tail -n 25 "$LOG" >&2
   exit 3
 fi
 
-git add .codex/result.md
-git commit -m "test: report local Codex validation"
-git push origin HEAD
-
-OTHER_CHANGES=$(git status --porcelain --untracked-files=all | grep -v ' \.codex/result\.md$' || true)
-if [ -n "$OTHER_CHANGES" ]; then
-  echo "Local Codex left additional uncommitted changes; they were not pushed:" >&2
-  echo "$OTHER_CHANGES" >&2
+if git diff --quiet -- "$RESULT"; then
+  echo "Codex did not update $RESULT" >&2
+  echo "Last 25 log lines:" >&2
+  tail -n 25 "$LOG" >&2
+  exit 3
 fi
 
-echo "Local validation result pushed. GitHub is now the handoff channel."
+UNEXPECTED=$(git status --porcelain --untracked-files=all | grep -vE '^( M|M |A |\?\?) (src/artifact\.rs|local-codex/result\.md)$' || true)
+if [ -n "$UNEXPECTED" ]; then
+  echo "Codex left unexpected changes; nothing will be committed:" >&2
+  echo "$UNEXPECTED" >&2
+  exit 4
+fi
+
+git add src/artifact.rs "$RESULT"
+git commit -m "test: format and report local Codex validation"
+git push origin HEAD
+
+echo
+grep '^Status:' "$RESULT" || true
+echo "Local validation result pushed to GitHub."
