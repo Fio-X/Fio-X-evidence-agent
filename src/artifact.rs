@@ -557,10 +557,7 @@ fn read_rpc_metrics(path: &Path) -> Value {
             }
             calls += 1;
             rpc_ms_total += event.get("rpc_ms").and_then(Value::as_u64).unwrap_or(0);
-            startup_ms_total += event
-                .get("startup_ms")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
+            startup_ms_total += event.get("startup_ms").and_then(Value::as_u64).unwrap_or(0);
             if let Some(value) = event.get("first_model_text_ms").and_then(Value::as_u64) {
                 first_model_text_ms_min =
                     Some(first_model_text_ms_min.map_or(value, |current| current.min(value)));
@@ -591,12 +588,8 @@ fn read_rpc_metrics(path: &Path) -> Value {
                 .get("tokens_cache_write")
                 .and_then(Value::as_u64)
                 .unwrap_or(0);
-            tool_count_max = tool_count_max.max(
-                event
-                    .get("tool_count")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0),
-            );
+            tool_count_max =
+                tool_count_max.max(event.get("tool_count").and_then(Value::as_u64).unwrap_or(0));
             if let Some(profile) = event.get("tool_profile").and_then(Value::as_str) {
                 if !tool_profiles.iter().any(|known| known == profile) {
                     tool_profiles.push(profile.to_string());
