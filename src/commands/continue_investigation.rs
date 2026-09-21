@@ -1,7 +1,7 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::ContinueArgs;
-use crate::pi::{run_prompt, PiConfig};
+use crate::pi::{run_prompt, run_prompt_sequence, PiConfig};
 use crate::{prompt, runtime};
 use anyhow::Result;
 use std::time::Instant;
@@ -66,7 +66,25 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
     );
 
     audit::append_user_goal_event(&bundle.events_path, "follow_up")?;
-    match run_prompt(&config, &follow_up, Some(&bundle.events_path)).await {
+    let persistent_prototype = std::env::var("NEWSROOM_PERSISTENT_PI_PROTOTYPE")
+        .ok()
+        .as_deref()
+        == Some("1");
+    let result = if persistent_prototype {
+        let initial = format!(
+            "Resume the existing investigation context for topic: {topic}. Re-establish the current plan and evidence state before handling the follow-up."
+        );
+        eprintln!("[agent] persistent_pi_prototype=enabled prompt_count=2");
+        run_prompt_sequence(
+            &config,
+            &[initial, follow_up.clone()],
+            Some(&bundle.events_path),
+        )
+        .await
+    } else {
+        run_prompt(&config, &follow_up, Some(&bundle.events_path)).await
+    };
+    match result {
         Ok(result) => {
             let persistence_started = Instant::now();
             bundle.write_answer(&result.text)?;
