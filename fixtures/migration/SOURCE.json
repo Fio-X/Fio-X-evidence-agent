@@ -30,7 +30,7 @@
     "rows_per_year": 30,
     "filters": ["exclude origin equal to destination", "exclude non-finite or negative estimates"],
     "sort": "estimated_flow_mean descending, then origin_iso3 and destination_iso3 ascending",
-    "fixture_sha256": "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4"
+    "fixture_sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0"
   },
   "semantic_guards": {
     "estimated_flow_mean": "Neural-network model estimate of an annual origin-destination migration flow.",
