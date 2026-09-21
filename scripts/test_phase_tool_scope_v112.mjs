@@ -21,4 +21,11 @@ if(!toolEnabled('newsroom_chart',{profile:'investigate'})) throw new Error('inve
 if(toolEnabled('newsroom_chart',{profile:'visual'})) throw new Error('visual profile must use the critic-backed viz pipeline');
 const investigateCount=TOOL_REGISTRY.tools.filter(t=>t.profiles.includes('investigate')).length;
 if(investigateCount>15) throw new Error(`investigate profile is too broad: ${investigateCount}`);
-console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,phases:VALID_TOOL_PHASES},null,2));
+const profiles=['investigate','visual','visual-story'];
+const phases=['investigate','verify','design'];
+const scope=Object.fromEntries(profiles.map(profile=>[profile,Object.fromEntries(phases.map((label)=>{
+  const phase=label==='investigate'?'discover':label;
+  const tools=TOOL_REGISTRY.tools.filter(tool=>tool.profiles.includes(profile)&&toolEnabledForPhase(tool.name,phase));
+  return [label,{effective_tool_count:tools.length,schema_bytes:Buffer.byteLength(JSON.stringify(tools.map(tool=>({name:tool.name,phase:tool.phase,capability_class:tool.capability_class}))))}];
+}))]));
+console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,phases:VALID_TOOL_PHASES,scope},null,2));

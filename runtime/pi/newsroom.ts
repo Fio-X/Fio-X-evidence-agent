@@ -62,13 +62,25 @@ const CARTOGRAPHIC_DEFAULT_SOURCE_URL = CARTOGRAPHIC_DEFAULT_BASEMAP?.source_url
 const CARTOGRAPHIC_DEFAULT_LICENSE = CARTOGRAPHIC_DEFAULT_BASEMAP?.license ?? BASEMAP_LICENSE;
 const CARTOGRAPHIC_DEFAULT_CONTENT_HASH = CARTOGRAPHIC_DEFAULT_BASEMAP?.content_hash ?? BASEMAP_CONTENT_HASH;
 
-import { toolEnabled } from "./tool_phase_policy.mjs";
+import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
+
+function normalizedNewsroomPhase() {
+  const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
+  if (!raw || raw === "all") return "all";
+  const phases = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  return phases.length && phases.every((phase) => VALID_TOOL_PHASES.includes(phase)) ? phases.join(",") : "core";
+}
 
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
-  const phase=process.env.NEWSROOM_PHASE??'all';
+  const phase=normalizedNewsroomPhase();
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
+
+  if (process.env.NEWSROOM_PHASE_METRICS === "1") {
+    const schemaBytes = Buffer.byteLength(JSON.stringify(tool?.parameters ?? {}), "utf8");
+    process.stderr.write(`${JSON.stringify({type:"newsroom_phase_scope",phase,profile,tool:name,schema_bytes:schemaBytes})}\n`);
+  }
 
   // Test-only fault injection is controlled by the harness, never by the prompt.
   // It fails the named tool once per artifact so recovery behavior can be observed
