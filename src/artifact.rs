@@ -336,6 +336,7 @@ impl InvestigationBundle {
             .append(true)
             .open(&self.run_metrics_path)
             .with_context(|| format!("failed to open {}", self.run_metrics_path.display()))?;
+        let previous_pi_rpc = read_last_run_metric_rpc(&self.run_metrics_path);
         let claims = read_claims(&self.claims_path).unwrap_or_default();
         let verified_claims = claims
             .iter()
@@ -358,6 +359,7 @@ impl InvestigationBundle {
             })
             .count();
         let pi_rpc = read_rpc_metrics(&self.events_path);
+        let pi_rpc_operation = rpc_metric_delta(&pi_rpc, previous_pi_rpc.as_ref());
         let value = serde_json::json!({
             "schema_version": "0.8.0",
             "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
@@ -380,6 +382,7 @@ impl InvestigationBundle {
             "tool_failure_recovery_observed": audit.map(|a| a.tool_failure_recovery_observed),
             "follow_up_replanning_observed": audit.map(|a| a.follow_up_replanning_observed),
             "pi_rpc": pi_rpc,
+            "pi_rpc_operation": pi_rpc_operation,
         });
         writeln!(file, "{}", serde_json::to_string(&value)?)?;
         Ok(())
@@ -543,6 +546,10 @@ fn read_rpc_metrics(path: &Path) -> Value {
     let mut tokens_cache_write_total = 0_u64;
     let mut tool_count_max = 0_u64;
     let mut tool_profiles: Vec<String> = Vec::new();
+    let mut successful_calls = 0_u64;
+    let mut failed_calls = 0_u64;
+    let mut failure_phases: Vec<String> = Vec::new();
+    let mut failure_classes: Vec<String> = Vec::new();
 
     if let Ok(file) = fs::File::open(path) {
         for line in BufReader::new(file).lines() {
@@ -556,6 +563,20 @@ fn read_rpc_metrics(path: &Path) -> Value {
                 continue;
             }
             calls += 1;
+            match event.get("outcome").and_then(Value::as_str) {
+                Some("failed") => failed_calls += 1,
+                _ => successful_calls += 1,
+            }
+            if let Some(phase) = event.get("failure_phase").and_then(Value::as_str) {
+                if !failure_phases.iter().any(|known| known == phase) {
+                    failure_phases.push(phase.to_string());
+                }
+            }
+            if let Some(class) = event.get("failure_class").and_then(Value::as_str) {
+                if !failure_classes.iter().any(|known| known == class) {
+                    failure_classes.push(class.to_string());
+                }
+            }
             rpc_ms_total += event.get("rpc_ms").and_then(Value::as_u64).unwrap_or(0);
             startup_ms_total += event.get("startup_ms").and_then(Value::as_u64).unwrap_or(0);
             if let Some(value) = event.get("first_model_text_ms").and_then(Value::as_u64) {
@@ -600,6 +621,8 @@ fn read_rpc_metrics(path: &Path) -> Value {
 
     serde_json::json!({
         "calls": calls,
+        "successful_calls": successful_calls,
+        "failed_calls": failed_calls,
         "rpc_ms_total": rpc_ms_total,
         "startup_ms_total": startup_ms_total,
         "first_model_text_ms_min": first_model_text_ms_min,
@@ -607,11 +630,50 @@ fn read_rpc_metrics(path: &Path) -> Value {
         "prompt_attempts_total": prompt_attempts_total,
         "prompt_bytes_total": prompt_bytes_total,
         "tool_profiles": tool_profiles,
+        "failure_phases": failure_phases,
+        "failure_classes": failure_classes,
         "tool_count_max": tool_count_max,
         "tokens_input_total": tokens_input_total,
         "tokens_output_total": tokens_output_total,
         "tokens_cache_read_total": tokens_cache_read_total,
         "tokens_cache_write_total": tokens_cache_write_total,
+    })
+}
+
+fn read_last_run_metric_rpc(path: &Path) -> Option<Value> {
+    let file = fs::File::open(path).ok()?;
+    BufReader::new(file)
+        .lines()
+        .filter_map(Result::ok)
+        .filter_map(|line| serde_json::from_str::<Value>(&line).ok())
+        .filter_map(|value| value.get("pi_rpc").cloned())
+        .last()
+}
+
+fn rpc_metric_delta(current: &Value, previous: Option<&Value>) -> Value {
+    let previous = previous.unwrap_or(&Value::Null);
+    let delta = |key: &str| {
+        current
+            .get(key)
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .saturating_sub(previous.get(key).and_then(Value::as_u64).unwrap_or(0))
+    };
+    let calls = delta("calls");
+    serde_json::json!({
+        "calls": calls,
+        "successful_calls": delta("successful_calls"),
+        "failed_calls": delta("failed_calls"),
+        "rpc_ms_total": delta("rpc_ms_total"),
+        "startup_ms_total": delta("startup_ms_total"),
+        "prompt_attempts_total": delta("prompt_attempts_total"),
+        "prompt_bytes_total": delta("prompt_bytes_total"),
+        "tokens_input_total": delta("tokens_input_total"),
+        "tokens_output_total": delta("tokens_output_total"),
+        "tokens_cache_read_total": delta("tokens_cache_read_total"),
+        "tokens_cache_write_total": delta("tokens_cache_write_total"),
+        "first_model_text_ms_min": if calls > 0 { current.get("first_model_text_ms_min").cloned().unwrap_or(Value::Null) } else { Value::Null },
+        "first_model_text_ms_max": if calls > 0 { current.get("first_model_text_ms_max").cloned().unwrap_or(Value::Null) } else { Value::Null },
     })
 }
 

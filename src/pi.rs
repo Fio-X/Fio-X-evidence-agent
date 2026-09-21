@@ -165,6 +165,73 @@ fn assistant_provider_turn_failed(event: &Value) -> bool {
         == Some("error")
 }
 
+fn rpc_failure_class(error: &anyhow::Error) -> (&'static str, &'static str) {
+    let text = error.to_string().to_ascii_lowercase();
+    let phase = if text.contains("startup") || text.contains("start pi") {
+        "startup"
+    } else if text.contains("finishing") || text.contains("final") {
+        "finishing"
+    } else if text.contains("idle") {
+        "idle"
+    } else if text.contains("total") {
+        "total"
+    } else if text.contains("cancel") {
+        "cancelled"
+    } else {
+        "rpc"
+    };
+    let class = if text.contains("provider") || text.contains("rejected") {
+        "provider_error"
+    } else if text.contains("timeout") {
+        "timeout"
+    } else {
+        "rpc_error"
+    };
+    (phase, class)
+}
+
+fn append_failed_rpc_metric(
+    event_log: Option<&Path>,
+    started: Instant,
+    config: &PiConfig,
+    prompt: &str,
+    error: &anyhow::Error,
+) {
+    let Some(path) = event_log else {
+        return;
+    };
+    let (failure_phase, failure_class) = rpc_failure_class(error);
+    let effective_profile = if tools_for_profile(&config.tool_profile).is_some() {
+        config.tool_profile.as_str()
+    } else {
+        DEFAULT_TOOL_PROFILE
+    };
+    let metric = json!({
+        "type": "newsroom_rpc_metrics",
+        "schema_version": "0.2.0",
+        "outcome": "failed",
+        "failure_phase": failure_phase,
+        "failure_class": failure_class,
+        "rpc_ms": started.elapsed().as_millis(),
+        "prompt_attempts": 0,
+        "prompt_bytes": prompt.len(),
+        "tool_profile": effective_profile,
+        "tool_count": tools_for_profile(effective_profile)
+            .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
+            .unwrap_or(0),
+        "continue_session": config.continue_session,
+        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&metric).unwrap_or_default()
+        );
+        let _ = file.flush();
+    }
+}
+
 impl PiConfig {
     fn dragoncode_endpoint(value: &str) -> bool {
         let authority = value
@@ -441,9 +508,17 @@ pub async fn run_prompt(
         .stderr(Stdio::null())
         .kill_on_drop(true);
 
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("failed to start Pi executable: {}", config.binary.display()))?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let error = anyhow!(error).context(format!(
+                "failed to start Pi executable: {}",
+                config.binary.display()
+            ));
+            append_failed_rpc_metric(event_log, started, config, prompt, &error);
+            return Err(error);
+        }
+    };
 
     #[cfg(unix)]
     let group = ProcessGroup(child.id().context("Pi process id unavailable")?);
@@ -800,7 +875,8 @@ pub async fn run_prompt(
                 .unwrap_or(0);
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
-                "schema_version": "0.1.0",
+                "schema_version": "0.2.0",
+                "outcome": "success",
                 "startup_ms": startup_ms,
                 "rpc_ms": rpc_ms,
                 "first_model_text_ms": first_text_ms,
@@ -839,6 +915,9 @@ pub async fn run_prompt(
     }
     let _ = child.kill().await;
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+    if let Err(ref error) = outcome {
+        append_failed_rpc_metric(event_log, started, config, prompt, error);
+    }
     outcome
 }
 
