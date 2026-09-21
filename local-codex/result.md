@@ -1,64 +1,62 @@
-# Local Codex result
+# Result: system-one-r6-production-review-blockers
 
-Task ID: `system-one-observability-followup-v2`
+- Tested branch: `fix/system-one-r6-production-review-blockers`
+- Tested source commit: `8e03ca802570201905aace6f3d2963fc4dc22532`
+- Final commit SHA: not created (Git metadata write blocked)
+- OS/tools: macOS 27.0 (26A428); Node v24.14.1; Python 3.14.6; rustc 1.98.1; Cargo 1.98.1; Pi 0.85.1
 
-Status: COMPLETE
+## Files modified
 
-## Tested revision
+- `src/commands/investigate.rs`
+- `runtime/pi/newsroom.ts`
+- `runtime/pi/local_backend.mjs`
+- `scripts/test_parallel_tool_contract.mjs`
+- `scripts/test_visual_routing_matrix.py`
+- `scripts/test_round6_combined.py`
+- `scripts/test_parallel_replay_wiring.mjs` (new narrowly scoped semantic test)
+- `local-codex/result.md`
 
-- Branch: `feat/system-one-observability-codex-handoff`
-- Commit: `a0a7d3b05868fe750ce80eff5366ea1361aaca18`
+## Required validation
 
-## Environment
+PASS — `node scripts/test_parallel_tool_contract.mjs`
 
-- OS: Darwin 27.0.0 arm64
-- Rust: `rustc 1.98.1`
-- Cargo: `cargo 1.98.1`
-- Python: `3.14.6`
+PASS — `node scripts/test_parallel_result_budget.mjs`
 
-## Checks
+PASS — `node scripts/test_parallel_replay_wiring.mjs`
 
-| Check | Status | Evidence / notes |
-| --- | --- | --- |
-| `cargo fmt -- src/artifact.rs` | PASS | `src/artifact.rs` changed only by line wrapping in two locations. |
-| Formatting-only diff inspection | PASS | `git diff -- src/artifact.rs` contains no semantic changes; `git diff --check` passed. |
-| `cargo fmt --check` | PASS | Exit 0. |
-| `cargo test --locked` | PASS | 87 passed, 0 failed, 1 ignored. |
-| `cargo build --release --locked` | PASS | Release build completed successfully. |
-| `python3 scripts/test_rpc_waits.py target/release/news` | PASS | Harness exit 0; all listed mock scenarios completed without watchdog activation. |
-| Mock `events.jsonl` RPC metric event | PASS | One `newsroom_rpc_metrics` event observed. |
-| Mock `run-metrics.jsonl` aggregation | PASS | One aggregate object observed under the `pi_rpc` key. |
-| Real provider route | BLOCKED | Previous local observation was `provider_error`; intentionally not retried. |
+PASS — `node scripts/test_tool_result_budget_integration.mjs`
 
-## Observed structured metrics
+PASS — `node scripts/test_phase_tool_scope_v112.mjs`
 
-- Mock artifact: `/private/tmp/newsroom-observability-g5VEoH/20260921T033923070Z-observability-mock-investigation`
-- `events.jsonl`: 7 records; `newsroom_rpc_metrics` count: 1.
-- `run-metrics.jsonl`: 1 record; `pi_rpc` aggregate count: 1.
-- Mock investigation process exit: 0.
+PASS — `node scripts/test_phase_runtime_surface.mjs`
 
-## Commands executed
+PASS — `python3 scripts/test_phase_env_plumbing.py`
 
-- `git branch --show-current`
-- `git rev-parse HEAD`
-- `git status --short`
-- `cargo fmt -- src/artifact.rs`
-- `git diff -- src/artifact.rs`
-- `cargo fmt --check`
-- `cargo test --locked`
-- `cargo build --release --locked`
-- `python3 scripts/test_rpc_waits.py target/release/news`
-- `./target/release/news investigate --out <temporary-directory> --pi-bin scripts/perf_mock_pi.py 'observability mock investigation'`
-- Read-only JSONL inspection of the mock `events.jsonl` and `run-metrics.jsonl`.
+PASS — `python3 scripts/test_visual_routing_matrix.py`
 
-## Blockers / failures
+PASS — `python3 scripts/test_visual_routing_cost.py`
 
-- No local validation failures.
-- Real provider validation remains blocked by the prior `provider_error` observation and was not retried.
-- No user action required.
+PASS — `python3 scripts/test_round6_combined.py`
 
-## Safety
+PASS — `cargo fmt --check`
 
-- No secrets copied into this report.
-- No product source modified beyond the formatting-only change to `src/artifact.rs`.
-- No perf outputs, credentials, screenshots, or logs were committed.
+PASS — `cargo test --locked` (88 passed, 0 failed, 1 ignored)
+
+PASS — `cargo build --release --locked` (three existing dead-code warnings)
+
+PASS — `git diff --check`
+
+## Evidence
+
+- Routing matrix: exactly 24 cases and exactly 9 changes. Changed cases: `single Sankey`, `Sankey HTML`, `mobile chart`, `dashboard`, `Chinese mobile`, `Chinese Sankey`, `map + Sankey + trend`, `map + Sankey + trend mobile`, `four modules`.
+- Model-visible measurement: 942143 baseline bytes, 30544 budgeted bytes, reduction ratio `0.9676` (96.76%); default behavior remains opt-in.
+- Parallel replay: semantic test produced a complete 96000-byte text result and 240 complete SQLite rows. Both per-task `full_result_ref` artifacts and the `full_batch_ref` were readable and preserved complete values while scheduler output was bounded (`per_task_truncated: 2`).
+- No-budget/default behavior: local backend default text cap remains intact; parallel wiring uses explicit full-result mode and leaves model-visible truncation to the scheduler.
+- `r6-01b` validator-only commit remains product/runtime neutral; no files from that experiment were modified.
+- The additional non-required `scripts/test_local_result_budget.mjs` still expects the removed helper-level `maxRows` API. It was not modified because it is outside the task allowlist; all required validations pass.
+
+## Blockers
+
+Commit and push are blocked because Git could not create `/Users/fio/code/.git/worktrees/PJ004/index.lock` (`Operation not permitted`); that Git metadata path is outside the writable workspace root. User action is required to grant Git metadata write access or complete the commit/push from an environment with that access. No secrets, credentials, cookies, tokens, or provider diagnostics were copied into this report.
+
+HOLD

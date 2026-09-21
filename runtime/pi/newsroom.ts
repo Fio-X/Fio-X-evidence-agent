@@ -1130,7 +1130,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           case "local_hash":
             return localHash(required("path"));
           case "local_text":
-            return localText(required("path"), resultBudget ? { maxBytes: resultBudget.maxBytes } : {});
+            return localText(required("path"), { full: true });
           case "local_metadata":
             return localMetadata(required("path"));
           case "local_image_info":
@@ -1138,7 +1138,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           case "local_search":
             return localSpotlight(required("query"), { limit: clampInt(task.limit, 1, 200, 50) });
           case "sqlite_query":
-            return localSqliteQuery(required("path"), required("sql"), resultBudget ? { maxBytes: resultBudget.maxBytes, maxRows: resultBudget.maxRows } : {});
+            return localSqliteQuery(required("path"), required("sql"));
           default:
             throw new Error(`task ${task.id}: unsupported read-only local task kind ${task.kind}`);
         }

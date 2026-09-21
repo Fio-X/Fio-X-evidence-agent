@@ -45,6 +45,7 @@ fn visual_completion_gaps(
     bundle: &InvestigationBundle,
     topic: &str,
     audit: &audit::AuditSummary,
+    split_classifier: bool,
 ) -> Result<Vec<String>> {
     let successful_tool = |name: &str| {
         audit
@@ -54,7 +55,7 @@ fn visual_completion_gaps(
     };
     let mut gaps =
         bundle.visual_delivery_gaps(prompt::requires_html(topic), prompt::requires_png(topic))?;
-    if prompt::is_complex_visual_request(topic) {
+    if is_complex_visual_request(topic, split_classifier) {
         for tool in [
             "newsroom_infographic_plan",
             "newsroom_infographic_lint",
@@ -249,7 +250,8 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                 bundle.write_session_stats(stats)?;
             }
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-            let mut completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
+            let mut completion_gaps =
+                visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
             if is_complex_visual_request(&topic, split_classifier) {
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
@@ -281,7 +283,8 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                         bundle.write_session_stats(stats)?;
                     }
                     audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-                    completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
+                    completion_gaps =
+                        visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
                 }
             }
             let status = if !completion_gaps.is_empty() {
