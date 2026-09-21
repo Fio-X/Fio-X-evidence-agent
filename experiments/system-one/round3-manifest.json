@@ -1,0 +1,95 @@
+{
+  "schema_version": "0.3.0",
+  "round": 3,
+  "baseline_branch": "feat/system-one-observability-codex-handoff",
+  "policy": {
+    "common_checks": [
+      "cargo fmt --check",
+      "cargo test --locked",
+      "cargo build --release --locked"
+    ],
+    "invariants": [
+      "AutoRepair ∩ {Fact, Claim, SQL, Evidence} = empty",
+      "default behavior remains unchanged unless an experiment explicitly promotes a compatible observability-only change",
+      "no daemon or background service",
+      "no evidence/provenance/verification/publication/browser-QA gate weakening"
+    ],
+    "result_classes": [
+      "PROMOTE",
+      "HOLD",
+      "REJECT",
+      "INCONCLUSIVE"
+    ]
+  },
+  "experiments": [
+    {
+      "id": "r3-01-observability-foundation",
+      "title": "Integrate trustworthy RPC and tool-surface observability",
+      "inputs": [
+        "origin/exp/system-one-r2-01-rpc-metric-correctness",
+        "origin/exp/system-one-r2-02-phase-surface-observability"
+      ],
+      "allowed_files": [
+        "src/pi.rs",
+        "src/artifact.rs",
+        "runtime/pi/newsroom.ts",
+        "runtime/pi/tool_phase_policy.mjs",
+        "scripts/test_rpc_waits.py",
+        "scripts/test_phase_tool_scope_v112.mjs"
+      ],
+      "acceptance": [
+        "merge both R2 mechanisms without losing backward-readable fields",
+        "success and failure emit sanitized terminal RPC metrics",
+        "run metrics expose cumulative and operation-local RPC aggregates",
+        "metrics distinguish profile tool count from effective phase tool count",
+        "phase and schema-byte surface are recorded when the real extension registers tools",
+        "default phase=all behavior is unchanged",
+        "provider-error redaction tests pass",
+        "measure warm mock overhead across at least 20 repetitions and report median/p95"
+      ]
+    },
+    {
+      "id": "r3-02-single-invocation-persistent-pi",
+      "title": "Reuse one Pi child across investigate completion retries",
+      "inputs": [
+        "origin/exp/system-one-r2-03-persistent-pi-prototype"
+      ],
+      "allowed_files": [
+        "src/pi.rs",
+        "src/commands/investigate.rs",
+        "scripts/test_control_plane.sh",
+        "scripts/test_rpc_waits.py",
+        "scripts/test_artifact_completion.py"
+      ],
+      "acceptance": [
+        "prototype is opt-in; default investigate path stays unchanged",
+        "within one investigate invocation, initial prompt plus bounded completion retries can share one Pi child",
+        "no daemon, socket service, or cross-CLI background process",
+        "existing timeout, cleanup, provider-error redaction, and completion gates remain authoritative",
+        "deterministic harness proves child launches drop from N prompts to 1 for the retry sequence",
+        "run at least 10 repeated mock A/B cases and report median/p95 E2E, launch count, RPC count, retries"
+      ]
+    },
+    {
+      "id": "r3-03-stage-packet-boundary-ab",
+      "title": "Stage Packet boundary and context A/B",
+      "inputs": [
+        "origin/exp/system-one-r2-04-stage-packet-prototype"
+      ],
+      "allowed_files": [
+        "runtime/pi/stage_packet.mjs",
+        "scripts/test_stage_packet.mjs",
+        "scripts/test_stage_packet_boundary.mjs"
+      ],
+      "acceptance": [
+        "reuse the R2 typed content-addressed packet",
+        "simulate at least research-to-design and design-to-publish boundary handoffs using checked-in IR",
+        "compare inline/full boundary bytes versus packet bytes and rehydrated access",
+        "tamper, missing ref, unsafe ref, and scope violation fail closed",
+        "no full FactGraph/ClaimGraph/Evidence body is duplicated into the packet",
+        "report context byte reduction and packet resolve overhead over at least 100 local iterations",
+        "no production default caller is added in this round"
+      ]
+    }
+  ]
+}

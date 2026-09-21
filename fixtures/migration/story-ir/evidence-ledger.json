@@ -3,7 +3,7 @@
     {
       "generator": "scripts/build_migration_story_ir.py",
       "ref": "fixtures/migration/story-ir/country-reference.csv",
-      "sha256": "16e73fbadb90585743fcd45e1062e1dcb8618f5898a2030bf097fb5c04101dea",
+      "sha256": "821edcc657983b344d68ddfcb092c4f7235fbe69cf29786ef1de93fd8142a126",
       "source_ids": [
         "migration-model-flows",
         "natural-earth-countries"
@@ -12,7 +12,7 @@
     {
       "generator": "scripts/build_migration_story_ir.py",
       "ref": "fixtures/migration/story-ir/yearly-top30-summary.csv",
-      "sha256": "c608088f3325f118cbf684ea1365daa0247a5c69bccfe29db8574683dd433559",
+      "sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1",
       "source_ids": [
         "migration-model-flows"
       ]
@@ -20,7 +20,7 @@
     {
       "generator": "scripts/build_migration_story_ir.py",
       "ref": "fixtures/migration/story-ir/continent-flows-top30.csv",
-      "sha256": "6a365878c4b2a731fe572e0b1e033f2e50707e64a99f0bcb6fefb88268f7a61f",
+      "sha256": "d83669c82366118ea209165214f7a4c340bf50aaf95df6e518f6eb395b61bb38",
       "source_ids": [
         "migration-model-flows",
         "natural-earth-countries"
@@ -29,7 +29,7 @@
     {
       "generator": "scripts/build_migration_story_ir.py",
       "ref": "fixtures/migration/story-ir/route-coordinates.csv",
-      "sha256": "92a81bf712dfb182344d2f1882abcb10445bb62ff866d0a19a18d792d9a8a525",
+      "sha256": "6b84012c31eb7346dc132057603c3f34488b34ec0db2bc12cda3a81f5aba6641",
       "source_ids": [
         "migration-model-flows",
         "natural-earth-countries"
@@ -51,7 +51,7 @@
       "local_ref": "fixtures/migration/deep-learning-human-migration-top-corridors.csv",
       "retrieved_at": "2026-09-19T14:50:57Z",
       "role": "primary_data",
-      "sha256": "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4",
+      "sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0",
       "title": "Deep-learning model estimates of annual bilateral migration flows",
       "url": "https://doi.org/10.57967/hf/8902"
     },
