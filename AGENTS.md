@@ -67,3 +67,18 @@ For round 2:
 - do not introduce a generic new RunState or parallel memory system
 - do not expose secrets or raw provider diagnostics
 - classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
+
+
+## System One round-3 experiments
+
+When the invoking prompt explicitly names an experiment ID from `experiments/system-one/round3-manifest.json`, that experiment contract takes precedence over the default local handoff.
+
+For round 3:
+- read `experiments/system-one/round1-summary.md`, `experiments/system-one/round2-summary.md`, and the named round-3 manifest entry
+- inspect listed R2 experiment branches as implementation inputs, but do not blindly merge conflicting files
+- modify only the named experiment's `allowed_files` plus its own result file
+- preserve all evidence, provenance, verification, validator, publication, and browser-QA gates
+- keep persistent-Pi work bounded to a single CLI invocation; do not introduce a daemon or background service
+- keep Stage Packet work off the production default path in this round
+- keep sparse macro checkpoints on HOLD unless explicitly reintroduced by a later manifest
+- classify the final result as exactly one of PROMOTE, HOLD, REJECT, or INCONCLUSIVE
