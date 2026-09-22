@@ -1,42 +1,115 @@
-# Local Codex task: observability follow-up
+# Local Codex task: System One R6 production review follow-up
 
-Task ID: `system-one-observability-followup-v2`
+Task ID: `system-one-r6-production-review-followup`
 
-Expected branch: `feat/system-one-observability-codex-handoff`
+Expected branch: `fix/system-one-r6-production-review-blockers`
+
+Current reviewed commit: `dad5b0e31b90e650950c085bb4b9dc9c8cd51a1f`
+
+Parent production-candidate PR: #29
+Target fix PR: #30
 
 ## Objective
 
-Close the two local validation issues found in the first run without changing runtime behavior.
+Resolve the two remaining PR #30 review findings without changing architecture or adding any new System One mechanism.
 
-You are allowed to modify exactly one product source file: `src/artifact.rs`, and only by running Rust formatting. Do not make semantic edits.
+The classifier/completion fix is accepted. The budgeted parallel replay direction is accepted. Preserve both.
 
-## Required work
+## Finding 1: restore strict opt-in behavior for parallel local_text
 
-1. Record the current branch and commit SHA.
-2. Run `cargo fmt -- src/artifact.rs`.
-3. Inspect `git diff -- src/artifact.rs` and confirm the diff is formatting-only. If the diff contains a semantic change, stop and report FAIL.
-4. Run:
-   - `cargo fmt --check`
-   - `cargo test --locked`
-   - `cargo build --release --locked`
-   - `python3 scripts/test_rpc_waits.py target/release/news`
-5. Run one mock investigation with `scripts/perf_mock_pi.py` and verify that:
-   - `events.jsonl` contains `newsroom_rpc_metrics`
-   - `run-metrics.jsonl` contains the `pi_rpc` aggregate object
-6. Do not retry the real provider route in this task. Record it as BLOCKED with the previous observation `provider_error`; do not change provider or authentication code.
-7. Do not commit perf outputs, temporary investigation artifacts, logs, screenshots, or credentials.
+Current PR #30 wiring calls:
 
-## Result
+`localText(required("path"), { full: true })`
 
-Replace `local-codex/result.md` with a concise report.
+for every parallel local_text task, including when public `result_budget` is unset.
 
-Include:
-- tested branch and SHA
-- environment versions
-- PASS/FAIL/BLOCKED for each check
-- whether `src/artifact.rs` changed only by formatter
-- non-sensitive local artifact paths
-- blockers
-- confirmation that no secrets were copied
+That changes the default/unset path relative to the production-candidate baseline, whose helper-level local_text behavior used the existing default cap.
 
-Do not modify any product file other than the formatting-only change to `src/artifact.rs`.
+Required behavior:
+
+- If `result_budget` is present, the parallel runner must request the complete helper result before scheduler model-visible compaction.
+- If `result_budget` is absent, preserve the pre-existing default local_text helper behavior.
+- The scheduler remains the only model-visible budget owner for the opt-in result-budget path.
+- Do not change the public `result_budget` schema.
+- Do not change the scheduler.
+- SQLite should continue returning its complete successful query result to the scheduler within its existing execution safety bound.
+- Do not reintroduce `maxRows` helper truncation.
+
+The intended local_text wiring is semantically equivalent to:
+
+`resultBudget ? localText(path, { full: true }) : localText(path)`
+
+Exact syntax is your choice.
+
+## Finding 2: reconcile stale local result-budget test
+
+`scripts/test_local_result_budget.mjs` still asserts that `runtime/pi/local_backend.mjs` contains the removed `maxRows` helper mechanism.
+
+Update this test to the current semantic contract:
+
+- default local_text behavior remains bounded/default-compatible;
+- explicit bounded `maxBytes` behavior remains bounded;
+- full mode returns the complete local text result for the opt-in parallel data-plane path;
+- SQLite remains read-only;
+- helper-level `maxRows` truncation is absent.
+
+Prefer behavior assertions over source-literal assertions where practical.
+
+## Result report
+
+Update `local-codex/result.md` to reflect the follow-up run.
+
+Do not classify HOLD solely because the Codex sandbox cannot write the outer worktree Git metadata. The user can perform commit/push after validation. Classification must reflect implementation/test quality.
+
+If all required checks pass and no product blocker remains, classify PROMOTE.
+
+## Allowed modifications
+
+- `runtime/pi/newsroom.ts`
+- `scripts/test_parallel_tool_contract.mjs`
+- `scripts/test_parallel_replay_wiring.mjs`
+- `scripts/test_local_result_budget.mjs`
+- `local-codex/result.md`
+
+Do not modify any other file.
+
+In particular, do not modify:
+
+- `runtime/pi/local_backend.mjs`
+- `runtime/pi/parallel_scheduler.mjs`
+- `src/commands/investigate.rs`
+- `src/prompt.rs`
+- phase registry/policy files
+- evidence/claim/fact/SQL gate implementations
+- publication/browser-QA implementations
+
+The current GitHub CI Clippy failure in `src/prompt.rs` is inherited from PR #29 and will be handled in a separate task branch. Do not fix it in this task.
+
+## Required validation
+
+Run:
+
+- `node scripts/test_local_result_budget.mjs`
+- `node scripts/test_parallel_tool_contract.mjs`
+- `node scripts/test_parallel_result_budget.mjs`
+- `node scripts/test_parallel_replay_wiring.mjs`
+- `node scripts/test_tool_result_budget_integration.mjs`
+- `python3 scripts/test_visual_routing_matrix.py`
+- `python3 scripts/test_round6_combined.py`
+- `cargo fmt --check`
+- `cargo test --locked`
+- `cargo build --release --locked`
+- `git diff --check`
+
+Also confirm:
+
+- routing remains exactly 24 cases / 9 intended changes;
+- model-visible measurement remains 942143 -> 30544 (96.76%) unless the actual measured fixture changes;
+- budgeted parallel replay still preserves the complete 96000-byte text result and 240 SQLite rows, or equivalent complete fixtures;
+- unset parallel local_text follows the previous default helper behavior;
+- no evidence/provenance/verification/completion/publication/browser-QA gate changed.
+
+End `local-codex/result.md` with exactly one classification: PROMOTE, HOLD, REJECT, or INCONCLUSIVE.
+
+Do not merge any PR.
+Do not mark any Draft PR Ready for Review.

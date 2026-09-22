@@ -57,20 +57,18 @@ assert.ok(kindMatch, 'parallel tool kind enum is missing');
 assert.deepEqual([...kindMatch[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]), expectedKinds);
 assert.doesNotMatch(block, /\bresource_(?:class|key)\b/, 'public parallel schema must not expose scheduler resource controls');
 assert.ok(block.includes('localHash(required("path"))'), 'local_hash must map the required path');
-assert.match(block, /case "local_text":[\s\S]*?return localText\(required\("path"\), resultBudget \? \{ maxBytes: resultBudget\.maxBytes \} : \{\}\);/,
-  'local_text must map the required path and forward only the bounded maxBytes option');
+assert.match(block, /case "local_text":[\s\S]*?return resultBudget \? localText\(required\("path",?\), \{ full: true \}\) : localText\(required\("path"\)\);/,
+  'local_text must use full mode only for the opt-in result-budget path and preserve the default helper behavior');
 assert.ok(block.includes('localMetadata(required("path"))'), 'local_metadata must map the required path');
 assert.ok(block.includes('localImageInfo(required("path"))'), 'local_image_info must map the required path');
 assert.match(block, /localSpotlight\(required\("query"\), \{ limit: clampInt\(task\.limit, 1, 200, 50\) \}\)/,
   'local_search must map the required query with its bounded limit');
-assert.match(block, /case "sqlite_query":[\s\S]*?return localSqliteQuery\(required\("path"\), required\("sql"\), resultBudget \? \{ maxBytes: resultBudget\.maxBytes, maxRows: resultBudget\.maxRows \} : \{\}\);/,
-  'sqlite_query must map the required path and SQL and forward bounded maxBytes/maxRows');
+assert.match(block, /case "sqlite_query":[\s\S]*?return localSqliteQuery\(required\("path"\), required\("sql"\)\);/,
+  'sqlite_query must hand the complete task result to the scheduler');
 assert.match(block, /const resultBudget = modelResultBudget\(params\.result_budget\);/,
   'optional result_budget must be normalized through modelResultBudget');
-assert.match(block, /resultBudget \? \{ maxBytes: resultBudget\.maxBytes \} : \{\}/,
-  'local_text must retain an empty default options object when no budget is supplied');
-assert.match(block, /resultBudget \? \{ maxBytes: resultBudget\.maxBytes, maxRows: resultBudget\.maxRows \} : \{\}/,
-  'sqlite_query must retain an empty default options object when no budget is supplied');
+assert.doesNotMatch(block, /localText\([^\n]*maxBytes|localSqliteQuery\([^\n]*maxRows/,
+  'parallel helpers must not apply model-visible budgets before scheduler persistence');
 assert.match(block, /maxConcurrency = clampInt\(params\.max_concurrency, 1, 8, 8\)/);
 assert.match(block, /artifactRoot: root/);
 assert.match(block, /appendArtifact\("runtime\/parallel-events\.jsonl", event\)/);

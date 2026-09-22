@@ -41,6 +41,13 @@ def main() -> None:
         assert rows[label]["effective_tool_count"] == count, (label, rows[label])
 
     assert budget["reduction_ratio"] >= 0.75
+    assert routing["case_count"] == 24
+    assert routing["routing_changes"] == 9
+    assert {row["label"] for row in routing["changes"]} == {
+        "single Sankey", "Sankey HTML", "mobile chart", "dashboard",
+        "Chinese mobile", "Chinese Sankey", "map + Sankey + trend",
+        "map + Sankey + trend mobile", "four modules",
+    }
     assert any(row["label"] == "mobile chart" and not row["split"] for row in routing["changes"])
     assert any(row["label"] == "map + Sankey + trend" and row["split"] for row in routing["changes"])
     assert not any(row["label"] == "single Sankey" and row["split"] for row in routing["changes"])
