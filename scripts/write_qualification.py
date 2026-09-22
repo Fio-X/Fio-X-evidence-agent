@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, os
+import argparse, json, os, subprocess
 from pathlib import Path
 from datetime import datetime, timezone
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def git_commit():
+    try:
+        return subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
 
 REQUIRED_TOOLS = [
     'newsroom_story_graph',
@@ -111,13 +124,17 @@ checks={
     'competition_preflight_passed': preflight_ok,
     'browser_publication_passed': publication_manifest_ok and browser_ok,
 }
+passed=all(checks.values())
 qualification={
-    'schema_version':'1.3.0',
+    'schema_version':'1.4.0',
+    'qualification_type':'integration',
+    'qualification_status':'PASS' if passed else 'FAIL',
+    'source_commit':git_commit(),
     'qualified_at': datetime.now(timezone.utc).isoformat().replace('+00:00','Z'),
     'provider':a.provider,
     'model':a.model,
     'scenario':a.scenario,
-    'passed': all(checks.values()),
+    'passed': passed,
     'checks':checks,
     'missing_required_tools':missing_tools,
     'illustration_adapter':{'kind':adapter_kind,'executable':adapter},

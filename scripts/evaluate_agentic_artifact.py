@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 from pathlib import Path
 
 from verify_artifact import system_verified_claim
@@ -16,6 +17,17 @@ CAPABILITY = {
     for row in REGISTRY["tools"]
     if row["capability_class"] not in {"planning", "meta"}
 }
+
+def git_commit():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
 
 
 def load(path: Path, default):
@@ -111,6 +123,7 @@ def main() -> int:
     result = {
         "schema_version": "1.1.0",
         "qualification_type": "agentic",
+        "source_commit": git_commit(),
         "status": "PASS" if passed else "FAIL",
         "passed": passed,
         "provider": args.provider,
