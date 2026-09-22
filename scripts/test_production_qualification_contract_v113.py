@@ -25,7 +25,7 @@ for rel in host['required_lockfiles']:
 agentic=(ROOT/'scripts/agentic_qualification.sh').read_text()
 for forbidden in ['newsroom_story_graph','newsroom_publication_plan','newsroom_publication_render','newsroom_publication_qa','fetch_url on http://127.0.0.1']:
     if forbidden in agentic:errors.append('agentic qualification prescribes implementation detail '+forbidden)
-for marker in ['NEWSROOM_FAULT_INJECT_TOOL_ONCE','evaluate_agentic_artifact.py','--tool-profile investigate']:
+for marker in ['NEWSROOM_FAULT_INJECT_TOOL_ONCE','NEWSROOM_AGENTIC_SCENARIO_ID','evaluate_agentic_artifact.py','--scenario', '--tool-profile investigate']:
     if marker not in agentic:errors.append('agentic qualification missing '+marker)
 
 integration=(ROOT/'scripts/integration_qualification.sh').read_text()
@@ -45,7 +45,7 @@ for marker in ['agentic_trials.py --trials 3','.newsroom/agentic-trials']:
 release_gate=(ROOT/'.github/workflows/release-gate.yml').read_text()
 if '.newsroom/agentic-trials' not in release_gate:errors.append('release gate does not retain repeated agentic evidence')
 business=(ROOT/'scripts/business_value_benchmark.py').read_text()
-for marker in ['scenario_id','matched_scenarios','candidate_source_commit','source_commit','sha256_file']:
+for marker in ['scenario_id','matched_scenarios','scenario_run_counts','candidate_source_commit','source_commit','sha256_file']:
     if marker not in business:errors.append('business benchmark missing '+marker)
 
 registry=json.loads((ROOT/'config/tool-registry.json').read_text())

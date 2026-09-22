@@ -34,6 +34,7 @@ def trial_row(index: int, exit_code: int, artifact: Path|None, qual: dict, wall_
         'provider': qual.get('provider'),
         'model': qual.get('model'),
         'source_commit': qual.get('source_commit'),
+        'scenario_id': qual.get('scenario_id'),
         'artifact': str(artifact) if artifact else None,
         'wall_ms': wall_ms,
         'input_tokens': first_numeric(usage,('input','token')),
@@ -56,7 +57,7 @@ def reliability_summary(rows: list[dict]):
         pass_at_k[str(k)]=1.0-(miss_combo/total_combo if total_combo else 1.0)
         pass_pow_k[str(k)]=rate**k
 
-    configs=[(row.get('provider'),row.get('model'),row.get('source_commit')) for row in rows]
+    configs=[(row.get('provider'),row.get('model'),row.get('source_commit'),row.get('scenario_id')) for row in rows]
     configuration_complete=bool(configs) and all(all(isinstance(v,str) and v.strip() for v in cfg) for cfg in configs)
     configuration_consistent=configuration_complete and len(set(configs))==1
     minimum_trials_satisfied=n>=MIN_TRIALS
@@ -85,7 +86,7 @@ def reliability_summary(rows: list[dict]):
         'adaptive_replanning_rate':sum(bool(r['adaptive_replanning']) for r in rows)/n if n else 0.0,
     }
     all_pass=minimum_trials_satisfied and configuration_consistent and passed==n and n>0
-    cfg=configs[0] if configuration_consistent else (None,None,None)
+    cfg=configs[0] if configuration_consistent else (None,None,None,None)
     return {
         'schema_version':'1.2.0',
         'qualification_type':'agentic_reliability',
@@ -96,6 +97,7 @@ def reliability_summary(rows: list[dict]):
         'provider':cfg[0],
         'model':cfg[1],
         'source_commit':cfg[2],
+        'scenario_id':cfg[3],
         'trials':n,
         'passed':passed,
         'pass_rate':rate,
