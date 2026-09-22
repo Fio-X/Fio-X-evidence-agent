@@ -153,3 +153,23 @@ jobs:
         run: node scripts/benchmark_viz.mjs
       - name: Complex visualization performance budget
         run: node scripts/benchmark_complex_viz.mjs
+
+  macos-native-contracts:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: Verify macOS-native executables
+        run: |
+          test -x /usr/bin/sqlite3
+          test -x /usr/bin/plutil
+          test -x /usr/bin/textutil
+      - name: macOS-native result-budget and replay contracts
+        run: |
+          node scripts/test_local_result_budget.mjs
+          node scripts/test_parallel_tool_contract.mjs
+          node scripts/test_parallel_result_budget.mjs
+          node scripts/test_parallel_replay_wiring.mjs
+          node scripts/test_tool_result_budget_integration.mjs
