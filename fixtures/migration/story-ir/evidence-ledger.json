@@ -1,0 +1,69 @@
+{
+  "derived_artifacts": [
+    {
+      "generator": "scripts/build_migration_story_ir.py",
+      "ref": "fixtures/migration/story-ir/country-reference.csv",
+      "sha256": "821edcc657983b344d68ddfcb092c4f7235fbe69cf29786ef1de93fd8142a126",
+      "source_ids": [
+        "migration-model-flows",
+        "natural-earth-countries"
+      ]
+    },
+    {
+      "generator": "scripts/build_migration_story_ir.py",
+      "ref": "fixtures/migration/story-ir/yearly-top30-summary.csv",
+      "sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1",
+      "source_ids": [
+        "migration-model-flows"
+      ]
+    },
+    {
+      "generator": "scripts/build_migration_story_ir.py",
+      "ref": "fixtures/migration/story-ir/continent-flows-top30.csv",
+      "sha256": "d83669c82366118ea209165214f7a4c340bf50aaf95df6e518f6eb395b61bb38",
+      "source_ids": [
+        "migration-model-flows",
+        "natural-earth-countries"
+      ]
+    },
+    {
+      "generator": "scripts/build_migration_story_ir.py",
+      "ref": "fixtures/migration/story-ir/route-coordinates.csv",
+      "sha256": "6b84012c31eb7346dc132057603c3f34488b34ec0db2bc12cda3a81f5aba6641",
+      "source_ids": [
+        "migration-model-flows",
+        "natural-earth-countries"
+      ]
+    }
+  ],
+  "ledger_id": "migration-four-decades",
+  "schema_version": "0.1.0",
+  "semantic_guards": [
+    "Every flow value is a neural-network model estimate, not an observed journey.",
+    "The fixture contains the 30 largest estimated corridors in each selected year; sums and shares are selection-bounded and are not global totals.",
+    "Migrant stock and stock change are absent and must not be relabelled as migration flow.",
+    "Map endpoints use Natural Earth label points and arcs encode abstract origin-destination relationships, not physical routes."
+  ],
+  "sources": [
+    {
+      "id": "migration-model-flows",
+      "license": "GPL-3.0",
+      "local_ref": "fixtures/migration/deep-learning-human-migration-top-corridors.csv",
+      "retrieved_at": "2026-09-19T14:50:57Z",
+      "role": "primary_data",
+      "sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0",
+      "title": "Deep-learning model estimates of annual bilateral migration flows",
+      "url": "https://doi.org/10.57967/hf/8902"
+    },
+    {
+      "id": "natural-earth-countries",
+      "license": "Public domain",
+      "local_ref": "external/ne_50m_admin_0_countries.geojson",
+      "retrieved_at": "2026-09-20T00:30:00Z",
+      "role": "geography",
+      "sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+      "title": "Natural Earth 1:50m Admin 0 countries",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_50m_admin_0_countries.geojson"
+    }
+  ]
+}

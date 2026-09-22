@@ -1,0 +1,188 @@
+{
+  "schema_version": "0.4.0",
+  "round": 4,
+  "name": "token-curve",
+  "baseline_branch": "feat/system-one-observability-codex-handoff",
+  "policy": {
+    "common_checks": [
+      "cargo fmt --check",
+      "cargo test --locked",
+      "cargo build --release --locked"
+    ],
+    "invariants": [
+      "AutoRepair ∩ {Fact, Claim, SQL, Evidence} = empty",
+      "full artifact data remains available for replay",
+      "default behavior remains unchanged for opt-in experiments",
+      "no evidence/provenance/verification/publication/browser-QA gate weakening",
+      "no daemon or cross-CLI background service"
+    ],
+    "result_classes": [
+      "PROMOTE",
+      "HOLD",
+      "REJECT",
+      "INCONCLUSIVE"
+    ]
+  },
+  "experiments": [
+    {
+      "id": "r4-01-fixed-token-benchmark",
+      "title": "Fixed complex-visual token benchmark",
+      "hypothesis": "A stable local benchmark can provide one comparable run-level table for request count, prompt bytes, tool-result bytes, retries, tool surface and QA before/after later experiments.",
+      "allowed_files": [
+        "scripts/system_one_token_benchmark.py"
+      ],
+      "acceptance": [
+        "define one deterministic complex visual benchmark goal with map/flow/trend plus HTML and desktop/mobile output requirements",
+        "run against existing deterministic mocks without network/provider dependency",
+        "emit a machine-readable JSON summary and human-readable table to temporary paths only",
+        "capture available RPC/prompt/tool/retry/QA metrics and explicitly mark unavailable token/context fields",
+        "do not modify product behavior"
+      ]
+    },
+    {
+      "id": "r4-02-tool-result-telemetry",
+      "title": "Model-visible tool-result telemetry",
+      "hypothesis": "Generic tool-result accounting can measure model-visible bytes without changing returned content or trust behavior.",
+      "allowed_files": [
+        "runtime/pi/newsroom.ts",
+        "scripts/test_tool_result_telemetry.mjs"
+      ],
+      "acceptance": [
+        "default tool output text is byte-for-byte behaviorally unchanged",
+        "textResult or equivalent records model_visible_result_bytes in details or a bounded runtime event",
+        "support optional artifact_bytes and truncated_for_model metadata",
+        "focused tests cover small and large synthetic results",
+        "no raw source body is duplicated into telemetry"
+      ]
+    },
+    {
+      "id": "r4-03-duckdb-compact-envelope",
+      "title": "Compact DuckDB model-visible results",
+      "hypothesis": "Keeping full query rows in the computation artifact while returning <=50 preview rows can sharply reduce model-visible bytes without losing deterministic replay.",
+      "allowed_files": [
+        "runtime/pi/newsroom.ts",
+        "scripts/test_duckdb_result_budget.mjs"
+      ],
+      "acceptance": [
+        "variant is opt-in",
+        "full rows remain in the content-addressed computation artifact with result_hash",
+        "model-visible envelope includes row_count, columns, preview_rows, artifact ref, result_hash and truncated_for_model",
+        "preview defaults to <=50 rows",
+        "large fixture A/B reports result-byte reduction and replay/hash equivalence",
+        "evidence gate behavior remains unchanged"
+      ]
+    },
+    {
+      "id": "r4-04-fetch-url-compact-envelope",
+      "title": "Compact fetched-source model context",
+      "hypothesis": "A fetched source can retain its full snapshot artifact while returning a bounded excerpt to the model, reducing context growth without losing provenance.",
+      "allowed_files": [
+        "runtime/pi/newsroom.ts",
+        "scripts/test_fetch_result_budget.mjs"
+      ],
+      "acceptance": [
+        "variant is opt-in",
+        "full normalized text remains in sources/<hash>.json",
+        "model-visible result returns metadata, snapshot ref/hash and bounded excerpt",
+        "default experimental excerpt target is 8K-12K chars and reports truncation",
+        "synthetic 30K and 80K bodies demonstrate bounded model-visible bytes",
+        "prompt-injection trust warning remains present"
+      ]
+    },
+    {
+      "id": "r4-05-local-backend-result-budget",
+      "title": "Bound local text and SQLite model-visible results",
+      "hypothesis": "Local text and SQLite reads can expose bounded previews while retaining safe access semantics and avoiding multi-MiB context payloads.",
+      "allowed_files": [
+        "runtime/pi/local_backend.mjs",
+        "runtime/pi/newsroom.ts",
+        "scripts/test_local_result_budget.mjs"
+      ],
+      "acceptance": [
+        "variant is opt-in at the newsroom tool layer",
+        "localText model-visible preview target <=64 KiB without changing sandbox path safety",
+        "SQLite result preview is row/byte bounded and reports total rows when available",
+        "full underlying file/database is not copied into a new unverified state store",
+        "focused tests cover truncation and safe read-only SQL"
+      ]
+    },
+    {
+      "id": "r4-06-parallel-task-envelope",
+      "title": "Compact parallel DAG result envelope",
+      "hypothesis": "newsroom_parallel_tasks can persist the full DAG result locally while returning only task status, compact previews and an artifact ref.",
+      "allowed_files": [
+        "runtime/pi/newsroom.ts",
+        "scripts/test_parallel_result_budget.mjs"
+      ],
+      "acceptance": [
+        "variant is opt-in",
+        "existing scheduler safety/fairness tests still pass",
+        "full DAG result is preserved as an artifact or equivalent replayable local record",
+        "model-visible response contains statuses, bounded previews and result ref instead of the full tree",
+        "A/B includes a large local_text/sqlite synthetic DAG and model-visible byte reduction",
+        "network/mutation/nested-tool prohibition remains unchanged"
+      ]
+    },
+    {
+      "id": "r4-07-phase-env-plumbing",
+      "title": "Rust-to-Pi phase plumbing",
+      "hypothesis": "PiConfig can explicitly inject NEWSROOM_PHASE so opt-in calls register only the requested phase surface without changing default phase=all behavior.",
+      "allowed_files": [
+        "src/pi.rs",
+        "runtime/pi/newsroom.ts",
+        "scripts/test_phase_tool_scope_v112.mjs",
+        "scripts/test_phase_env_plumbing.py"
+      ],
+      "acceptance": [
+        "add a typed/bounded phase configuration or equivalent validated value",
+        "unset phase preserves current all behavior",
+        "invalid phase fails closed or normalizes only through the canonical policy",
+        "focused harness proves Rust-launched Pi receives the phase and effective tool surface",
+        "report profile/effective tool count and schema bytes for at least investigate verify and visual-story design",
+        "no multi-phase production orchestration in this experiment"
+      ]
+    },
+    {
+      "id": "r4-08-retry-context-packet-ab",
+      "title": "Completion retry with compact checkpoint context",
+      "hypothesis": "Combining Stage Packet-style refs with the persistent child experiment can keep completion repair context bounded instead of carrying a growing full-history payload.",
+      "inputs": [
+        "origin/exp/system-one-r3-02-single-invocation-persistent-pi",
+        "origin/exp/system-one-r3-03-stage-packet-boundary-ab"
+      ],
+      "allowed_files": [
+        "src/pi.rs",
+        "src/commands/investigate.rs",
+        "runtime/pi/stage_packet.mjs",
+        "scripts/test_retry_context_packet.py",
+        "scripts/test_stage_packet.mjs"
+      ],
+      "acceptance": [
+        "prototype is opt-in",
+        "completion retry packet contains goal, refs/hashes, passed gates, remaining gaps and required visual modes; no full evidence bodies",
+        "tampered/missing refs fail closed",
+        "compare baseline retry prompt/context bytes to packet variant over at least 10 repeated mock complex-visual runs",
+        "child launch and retry counts are reported",
+        "completion/evidence/publication gates remain authoritative",
+        "no daemon or cross-CLI persistence"
+      ]
+    },
+    {
+      "id": "r4-09-complex-classifier-split",
+      "title": "Separate delivery requirements from analytical complexity",
+      "hypothesis": "Separating delivery format requirements from analytical complexity reduces unnecessary visual-story routing while preserving true multi-module requests.",
+      "allowed_files": [
+        "src/prompt.rs",
+        "scripts/test_visual_routing_matrix.py"
+      ],
+      "acceptance": [
+        "represent delivery requirements separately from analytical complexity or equivalent explicit predicates",
+        "mobile/self-contained HTML single chart does not by itself require visual-story",
+        "interactive Sankey remains visual or specialized visual unless multi-module analytical complexity is present",
+        "map + Sankey + trend multi-module/scrollytelling request remains visual-story",
+        "existing explicit visual-mode completion tests pass",
+        "report routing changes across a fixed >=20-case matrix"
+      ]
+    }
+  ]
+}

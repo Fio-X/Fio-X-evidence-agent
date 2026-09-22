@@ -171,29 +171,29 @@ function trimText(text, maxBytes) {
   return { text: buffer.subarray(0, maxBytes).toString('utf8'), truncated: true };
 }
 
-export async function localPlistJson(input, { maxBytes = 2 * 1024 * 1024 } = {}) {
+export async function localPlistJson(input, { maxBytes = 2 * 1024 * 1024, full = false } = {}) {
   const target = await resolveSandboxPath(input);
   if (process.platform !== 'darwin' || !(await available(NATIVE.plutil))) {
     throw new Error('plutil is only available on the macOS local backend');
   }
-  const { stdout } = await runCommand(NATIVE.plutil, ['-convert', 'json', '-o', '-', target], { maxBytes });
-  const clipped = trimText(stdout, maxBytes);
+  const { stdout } = await runCommand(NATIVE.plutil, ['-convert', 'json', '-o', '-', target], { maxBytes: full ? 4 * 1024 * 1024 : maxBytes });
+  const clipped = full ? { text: stdout, truncated: false } : trimText(stdout, maxBytes);
   return { backend: 'macos:plutil', path: target, ...clipped };
 }
 
-export async function localText(input, { maxBytes = 2 * 1024 * 1024 } = {}) {
+export async function localText(input, { maxBytes = 2 * 1024 * 1024, full = false } = {}) {
   const target = await resolveSandboxPath(input);
   const ext = path.extname(target).toLowerCase();
   if (PLAIN_TEXT_EXTENSIONS.has(ext) || ext === '') {
     const raw = await readFile(target, 'utf8');
-    return { backend: 'portable:fs', path: target, ...trimText(raw, maxBytes) };
+    return { backend: 'portable:fs', path: target, ...(full ? { text: raw, truncated: false } : trimText(raw, maxBytes)) };
   }
   if (process.platform === 'darwin' && ext === '.plist' && await available(NATIVE.plutil)) {
-    return await localPlistJson(input, { maxBytes });
+    return await localPlistJson(input, { maxBytes, full });
   }
   if (process.platform === 'darwin' && await available(NATIVE.textutil)) {
-    const { stdout } = await runCommand(NATIVE.textutil, ['-convert', 'txt', '-stdout', target], { maxBytes });
-    return { backend: 'macos:textutil', path: target, ...trimText(stdout, maxBytes) };
+    const { stdout } = await runCommand(NATIVE.textutil, ['-convert', 'txt', '-stdout', target], { maxBytes: full ? 4 * 1024 * 1024 : maxBytes });
+    return { backend: 'macos:textutil', path: target, ...(full ? { text: stdout, truncated: false } : trimText(stdout, maxBytes)) };
   }
   throw new Error(`no safe local text extractor for ${ext || 'this file type'}`);
 }
@@ -244,13 +244,13 @@ function safeReadOnlySql(sql) {
   return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized) && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized);
 }
 
-export async function localSqliteQuery(input, sql, { maxBytes = 4 * 1024 * 1024 } = {}) {
+export async function localSqliteQuery(input, sql) {
   const target = await resolveSandboxPath(input);
   if (!safeReadOnlySql(sql)) throw new Error('local_sqlite_query accepts read-only SELECT/WITH or safe metadata PRAGMA statements');
   if (process.platform !== 'darwin' || !(await available(NATIVE.sqlite3))) {
     throw new Error('sqlite3 is only available on the macOS local backend');
   }
-  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { maxBytes, timeoutMs: 30_000 });
+  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { timeoutMs: 30_000 });
   let rows;
   try { rows = stdout.trim() ? JSON.parse(stdout) : []; }
   catch { rows = stdout.trim(); }

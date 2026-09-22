@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:fact-graph:0.1.0",
+  "title": "Agentic Data Newsroom FactGraph v0.1",
+  "type": "object",
+  "required": ["schema_version", "fact_graph_id", "entities", "relations", "quantities", "processes", "locations", "time", "scale", "evidence", "calculations", "uncertainty"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "fact_graph_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "entities": {"type": "array", "items": {"$ref": "#/$defs/entity"}, "uniqueItems": true},
+    "relations": {"type": "array", "items": {"$ref": "#/$defs/relation"}, "uniqueItems": true},
+    "quantities": {"type": "array", "items": {"$ref": "#/$defs/quantity"}, "uniqueItems": true},
+    "processes": {"type": "array", "items": {"$ref": "#/$defs/process"}, "uniqueItems": true},
+    "locations": {"type": "array", "items": {"$ref": "#/$defs/location"}, "uniqueItems": true},
+    "time": {"type": "array", "items": {"$ref": "#/$defs/time"}, "uniqueItems": true},
+    "scale": {"type": "array", "items": {"$ref": "#/$defs/scale"}, "uniqueItems": true},
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}, "uniqueItems": true},
+    "calculations": {"type": "array", "items": {"$ref": "#/$defs/calculation"}, "uniqueItems": true},
+    "uncertainty": {"type": "array", "items": {"$ref": "#/$defs/uncertainty"}, "uniqueItems": true}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "entity": {
+      "type": "object", "required": ["id", "kind", "label", "evidence_ids"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "kind": {"type": "string", "minLength": 1, "maxLength": 80}, "label": {"type": "string", "minLength": 1, "maxLength": 240}, "evidence_ids": {"$ref": "#/$defs/refs"}},
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object", "required": ["id", "subject_id", "predicate", "object_id", "evidence_ids"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "subject_id": {"$ref": "#/$defs/id"}, "predicate": {"type": "string", "minLength": 1, "maxLength": 100}, "object_id": {"$ref": "#/$defs/id"}, "time_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}, "evidence_ids": {"$ref": "#/$defs/refs"}},
+      "additionalProperties": false
+    },
+    "quantity": {
+      "type": "object", "required": ["id", "phenomenon", "value", "unit", "origin", "evidence_ids"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "phenomenon": {"type": "string", "minLength": 1, "maxLength": 160},
+        "value": {"type": "number"}, "unit": {"type": "string", "minLength": 1, "maxLength": 80},
+        "origin": {"enum": ["source_extraction", "database", "calculation", "measurement"]},
+        "entity_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "time_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "scale_id": {"$ref": "#/$defs/id"}, "calculation_id": {"$ref": "#/$defs/id"},
+        "evidence_ids": {"$ref": "#/$defs/refs"}, "uncertainty_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+      },
+      "allOf": [{"if": {"properties": {"origin": {"const": "calculation"}}, "required": ["origin"]}, "then": {"required": ["calculation_id"]}}],
+      "additionalProperties": false
+    },
+    "process": {
+      "type": "object", "required": ["id", "label", "participant_ids", "evidence_ids"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "label": {"type": "string", "minLength": 1, "maxLength": 240}, "participant_ids": {"$ref": "#/$defs/refs"}, "relation_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}, "evidence_ids": {"$ref": "#/$defs/refs"}},
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object", "required": ["id", "label", "geometry_semantics", "evidence_ids"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "label": {"type": "string", "minLength": 1, "maxLength": 240}, "geometry_semantics": {"enum": ["point", "administrative_area", "verified_route", "observed_trajectory", "network_constrained", "abstract_origin_destination"]}, "longitude": {"type": "number", "minimum": -180, "maximum": 180}, "latitude": {"type": "number", "minimum": -90, "maximum": 90}, "geometry_ref": {"type": "string", "minLength": 1, "maxLength": 500}, "evidence_ids": {"$ref": "#/$defs/refs"}},
+      "additionalProperties": false
+    },
+    "time": {
+      "type": "object", "required": ["id", "kind", "start"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "kind": {"enum": ["instant", "period", "year", "decade", "reference_period"]}, "start": {"type": "string", "format": "date"}, "end": {"type": "string", "format": "date"}, "label": {"type": "string", "maxLength": 120}},
+      "additionalProperties": false
+    },
+    "scale": {
+      "type": "object", "required": ["id", "level"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "level": {"enum": ["individual", "local", "subnational", "national", "regional", "global"]}, "denominator": {"type": "string", "maxLength": 160}},
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object", "required": ["id", "source_ref", "source_sha256", "extraction_method", "extraction_status"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "source_ref": {"type": "string", "minLength": 1, "maxLength": 1000}, "source_sha256": {"$ref": "#/$defs/hash"}, "extraction_method": {"enum": ["structured_import", "database_query", "text_extraction", "manual_measurement"]}, "extraction_status": {"enum": ["passed", "failed", "pending"]}, "locator": {"type": "string", "maxLength": 500}, "retrieved_at": {"type": "string", "format": "date-time"}},
+      "additionalProperties": false
+    },
+    "calculation": {
+      "type": "object", "required": ["id", "operation", "input_fact_ids", "code_ref", "result_sha256", "replay_status"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "operation": {"type": "string", "minLength": 1, "maxLength": 240}, "input_fact_ids": {"$ref": "#/$defs/refs"}, "code_ref": {"type": "string", "minLength": 1, "maxLength": 500}, "result_sha256": {"$ref": "#/$defs/hash"}, "replay_status": {"enum": ["passed", "failed", "pending"]}},
+      "additionalProperties": false
+    },
+    "uncertainty": {
+      "type": "object", "required": ["id", "kind", "description"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "kind": {"enum": ["sampling", "measurement", "model", "coverage", "classification", "temporal", "geographic", "unknown"]}, "description": {"type": "string", "minLength": 1, "maxLength": 500}, "lower": {"type": "number"}, "upper": {"type": "number"}, "confidence_level": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}},
+      "additionalProperties": false
+    }
+  }
+}

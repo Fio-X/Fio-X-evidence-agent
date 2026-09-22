@@ -215,6 +215,43 @@ export const EDITORIAL_DESIGN_SYSTEMS = Object.freeze({
       "map": "map_with_callouts"
     },
     "content_hash": "be6b417a9fb7aa0ba2c49299afe50606f1833a3924172a25ee5f5fbb2c90d21b"
+  },
+  "japanese_editorial": {
+    "id": "japanese_editorial",
+    "description": "Quiet asymmetric editorial composition with generous ma, book-like hierarchy, hairline rules and selective vermilion emphasis.",
+    "tokens": {
+      "background": "#f7f5ef",
+      "panel": "#eeece5",
+      "text": "#1b1b1b",
+      "muted": "#706d67",
+      "grid": "#d5d0c6",
+      "primary": "#2e4a4b",
+      "secondary": "#8a9692",
+      "accent": "#b64032",
+      "land": "#e8e4da",
+      "water": "#e8eeee",
+      "border": "#bdb6aa",
+      "title_size": 23,
+      "subtitle_size": 10.5,
+      "source_size": 7.4,
+      "label_size": 8.1,
+      "title_weight": "bold",
+      "grid_alpha": 0.46,
+      "line_width": 1.7,
+      "bar_height": 0.58,
+      "point_size": 30,
+      "outer_left": 0.09,
+      "outer_right": 0.93,
+      "plot_top": 0.82,
+      "plot_bottom": 0.14,
+      "bar_mode": "bar",
+      "composition": "asymmetric_editorial"
+    },
+    "composition": {
+      "chart": "bookish_asymmetric",
+      "map": "quiet_map_with_evidence_rail"
+    },
+    "content_hash": "db8d93549d703f883f77a0477dba1e6daf27779e8c5d5aa3890c66321bfcfc0b"
   }
 });
 function inferred(recipe={}){

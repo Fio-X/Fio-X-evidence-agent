@@ -1,0 +1,147 @@
+{
+  "schema_version": "0.1.0",
+  "round": 1,
+  "baseline_branch": "feat/system-one-observability-codex-handoff",
+  "experiments": [
+    {
+      "id": "01-rpc-startup",
+      "title": "Measure Pi process/startup contribution",
+      "objective": "Quantify Pi startup_ms as a fraction of successful mock RPC wall time across repeated runs. Determine whether persistent Pi deserves round-2 work.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/01-rpc-startup.md"
+    },
+    {
+      "id": "02-first-model-text",
+      "title": "Measure first-model-text latency",
+      "objective": "Measure first_model_text_ms and its variance relative to rpc_ms. Identify whether model wait dominates runtime.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/02-first-model-text.md"
+    },
+    {
+      "id": "03-prompt-bytes",
+      "title": "Measure prompt payload size",
+      "objective": "Measure prompt_bytes for representative investigate and visual-story mock flows. Identify the largest prompt construction contributors.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/03-prompt-bytes.md"
+    },
+    {
+      "id": "04-tool-profile-surface",
+      "title": "Measure tool surface by profile",
+      "objective": "Inventory investigate/publication/visual/visual-story/full tool counts and estimate registration surface per profile from runtime definitions.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/04-tool-profile-surface.md"
+    },
+    {
+      "id": "05-phase-policy-opportunity",
+      "title": "Quantify phase-scoping opportunity",
+      "objective": "Using tool_phase_policy and tool definitions, calculate how many tools each phase would expose for visual-story and investigate profiles.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/05-phase-policy-opportunity.md"
+    },
+    {
+      "id": "06-tool-schema-bytes",
+      "title": "Measure tool schema bytes",
+      "objective": "Instrument only through temporary analysis scripts to estimate serialized tool schema bytes per profile and phase; do not edit repo source.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/06-tool-schema-bytes.md"
+    },
+    {
+      "id": "07-context-artifact-size",
+      "title": "Measure artifact context sizes",
+      "objective": "Measure bytes of major IR artifacts, manifests, claims, plans, and conversation inputs in representative fixtures to estimate Stage Packet savings.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/07-context-artifact-size.md"
+    },
+    {
+      "id": "08-stage-packet-design",
+      "title": "Derive minimal Stage Packet fields",
+      "objective": "From existing IR consumers, identify minimal refs/hashes/reason codes needed between research, design, and publish boundaries; report estimated byte reduction.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/08-stage-packet-design.md"
+    },
+    {
+      "id": "09-completion-retry-cost",
+      "title": "Measure completion retry path",
+      "objective": "Use existing completion tests/mocks to quantify bounded completion retry extra RPC count and wall-time contribution.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/09-completion-retry-cost.md"
+    },
+    {
+      "id": "10-validator-cost-map",
+      "title": "Map deterministic validator costs",
+      "objective": "Measure runtime of major local validators/tests and classify mechanical, bounded-presentation, semantic.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/10-validator-cost-map.md"
+    },
+    {
+      "id": "11-repair-routing-candidates",
+      "title": "Find deterministic repair candidates",
+      "objective": "Audit validator failure modes and list repairs safe for deterministic runtime under AutoRepair ∩ {Fact, Claim, SQL, Evidence} = empty.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/11-repair-routing-candidates.md"
+    },
+    {
+      "id": "12-parallel-task-speedup",
+      "title": "Measure local DAG speedup",
+      "objective": "Use newsroom_parallel_tasks smoke/perf paths to measure sequential vs supported concurrency for read-only local evidence tasks.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/12-parallel-task-speedup.md"
+    },
+    {
+      "id": "13-critical-path-map",
+      "title": "Build E2E critical-path map",
+      "objective": "From code and mock timings, map investigate control path and identify serial sections that Amdahl limits.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/13-critical-path-map.md"
+    },
+    {
+      "id": "14-pi-process-count",
+      "title": "Count Pi process launches",
+      "objective": "Trace Rust run_prompt call sites and representative mock flows to estimate how many Pi processes launch per investigation and continuation.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/14-pi-process-count.md"
+    },
+    {
+      "id": "15-session-continuation-cost",
+      "title": "Measure continuation overhead",
+      "objective": "Compare mock initial vs continue_session flows for startup/rpc/prompt metrics and identify persistence benefit ceiling.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/15-session-continuation-cost.md"
+    },
+    {
+      "id": "16-run-metrics-scope",
+      "title": "Audit metric aggregation semantics",
+      "objective": "Determine where pi_rpc aggregation is cumulative vs operation-local and whether this would bias A/B experiments.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/16-run-metrics-scope.md"
+    },
+    {
+      "id": "17-failure-observability-gap",
+      "title": "Audit failed-RPC observability",
+      "objective": "Identify metrics lost on unsuccessful Pi RPC sessions and propose minimal round-2 event fields without implementation.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/17-failure-observability-gap.md"
+    },
+    {
+      "id": "18-tool-count-accuracy",
+      "title": "Audit tool_count semantics",
+      "objective": "Check NEWSROOM_PHASE/profile interactions and identify when current tool_count overstates effective registered tools.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/18-tool-count-accuracy.md"
+    },
+    {
+      "id": "19-prompt-sequencing-pressure",
+      "title": "Audit prompt control logic",
+      "objective": "Inspect src/prompt.rs sequencing instructions and classify which deterministic decisions could move to a sparse supervisor without semantic loss.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/19-prompt-sequencing-pressure.md"
+    },
+    {
+      "id": "20-macro-checkpoint-boundaries",
+      "title": "Propose macro checkpoints",
+      "objective": "Map existing investigate phases and completion gates into the smallest useful RESEARCH/DESIGN/PUBLISH checkpoints; define measurable success criteria.",
+      "mode": "read_only",
+      "result": "experiments/system-one/results/20-macro-checkpoint-boundaries.md"
+    }
+  ]
+}

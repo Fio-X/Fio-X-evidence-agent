@@ -13,6 +13,15 @@ description: Use for recurring newsroom statistical chart families such as bars,
 5. Provide a responsive mobile state and honour `prefers-reduced-motion`. Keep essential values in the chart itself; tooltips are supplementary.
 6. Export deterministically and run source/value checks plus screenshot QA. A screenshot `PASS` is diagnostic evidence, not a claim that the chart is publication-ready.
 
+## Verification authority
+
+Omit `claim_id` for exploratory visual grammar work and supplied-data
+prototypes. The resulting SVG/HTML is explicitly marked `DRAFT`, is not
+publishable, and must not be described as verified. For publication, record a
+supported claim with source and computation references, then bind the claim ID.
+Only the runtime may grant verified status after source validation and
+deterministic computation replay; the model must never request or assert it.
+
 ## LieFlat-informed template discipline
 
 The project follows the useful parts of the LieFlat workflow without copying its

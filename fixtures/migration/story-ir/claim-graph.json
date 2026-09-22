@@ -1,0 +1,154 @@
+{
+  "claim_graph_id": "migration-four-decades",
+  "claims": [
+    {
+      "calculation_ids": [
+        "calc-top30-sum-1990",
+        "calc-top30-sum-2023"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "fact_ids": [
+        "q-top30-sum-1990",
+        "q-top30-sum-2023"
+      ],
+      "id": "claim:selected-scale",
+      "kind": "comparative",
+      "limitations": [
+        "This compares bounded top-30 selections, not total global migration."
+      ],
+      "statement": "Within each year's selected top 30 model-estimated corridors, the summed estimate was 4573159.394531 in 1990 and 8639761.187500 in 2023, a 88.9% increase.",
+      "support_status": "supported"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "fact_ids": [
+        "q-1990-01",
+        "q-2023-01"
+      ],
+      "id": "claim:route-shift",
+      "kind": "descriptive",
+      "limitations": [
+        "Ranks refer only to the published model estimates."
+      ],
+      "statement": "The highest-ranked model-estimated corridor in the bounded fixture changed from IRN-AFG in 1990 to VEN-COL in 2023.",
+      "support_status": "supported"
+    },
+    {
+      "calculation_ids": [
+        "calc-top30-sum-1990",
+        "calc-top30-sum-2023"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "fact_ids": [
+        "q-1990-01",
+        "q-1990-02",
+        "q-1990-03",
+        "q-1990-04",
+        "q-1990-05",
+        "q-1990-06",
+        "q-1990-07",
+        "q-1990-08",
+        "q-1990-09",
+        "q-1990-10",
+        "q-1990-11",
+        "q-1990-12",
+        "q-1990-13",
+        "q-1990-14",
+        "q-1990-15",
+        "q-1990-16",
+        "q-1990-17",
+        "q-1990-18",
+        "q-1990-19",
+        "q-1990-20",
+        "q-1990-21",
+        "q-1990-22",
+        "q-1990-23",
+        "q-1990-24",
+        "q-1990-25",
+        "q-1990-26",
+        "q-1990-27",
+        "q-1990-28",
+        "q-1990-29",
+        "q-1990-30",
+        "q-2023-01",
+        "q-2023-02",
+        "q-2023-03",
+        "q-2023-04",
+        "q-2023-05",
+        "q-2023-06",
+        "q-2023-07",
+        "q-2023-08",
+        "q-2023-09",
+        "q-2023-10",
+        "q-2023-11",
+        "q-2023-12",
+        "q-2023-13",
+        "q-2023-14",
+        "q-2023-15",
+        "q-2023-16",
+        "q-2023-17",
+        "q-2023-18",
+        "q-2023-19",
+        "q-2023-20",
+        "q-2023-21",
+        "q-2023-22",
+        "q-2023-23",
+        "q-2023-24",
+        "q-2023-25",
+        "q-2023-26",
+        "q-2023-27",
+        "q-2023-28",
+        "q-2023-29",
+        "q-2023-30"
+      ],
+      "id": "claim:destination-shift",
+      "kind": "comparative",
+      "limitations": [
+        "Destination aggregates include only routes retained in each year's top-30 selection."
+      ],
+      "statement": "Within the selected routes, the largest destination aggregate changed from AFG in 1990 to USA in 2023.",
+      "support_status": "supported"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "fact_ids": [
+        "q-1990-01",
+        "q-2023-01"
+      ],
+      "id": "claim:model-uncertainty",
+      "kind": "uncertainty",
+      "limitations": [
+        "The fixture does not contain observed migration flows, migrant stocks, or stock changes."
+      ],
+      "statement": "Every corridor value is a model estimate with a supplied standard deviation; none is an observed flow or a migrant-stock change.",
+      "support_status": "supported"
+    }
+  ],
+  "edges": [
+    {
+      "from": "claim:model-uncertainty",
+      "relation": "qualifies",
+      "to": "claim:selected-scale"
+    },
+    {
+      "from": "claim:route-shift",
+      "relation": "supports",
+      "to": "claim:destination-shift"
+    },
+    {
+      "from": "claim:selected-scale",
+      "relation": "supports",
+      "to": "claim:destination-shift"
+    }
+  ],
+  "fact_graph_ref": "fixtures/migration/story-ir/fact-graph.json",
+  "schema_version": "0.1.0"
+}

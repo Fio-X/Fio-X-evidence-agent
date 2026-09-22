@@ -99,6 +99,106 @@ impl Message {
             anthropic_blocks: Some(blocks),
         }
     }
+
+    /// Encode this provider-neutral turn for OpenAI Chat Completions. The
+    /// Anthropic wire format represents tool results as content blocks inside
+    /// one user message; OpenAI requires one `tool` message per result and
+    /// keeps assistant tool calls on the preceding assistant message.
+    fn openai_wire_messages(messages: &[Message]) -> Result<Vec<Value>> {
+        let mut wire = Vec::new();
+        for message in messages {
+            match (message.role.as_str(), message.anthropic_blocks.as_ref()) {
+                ("assistant", Some(blocks)) => {
+                    let mut tool_calls = Vec::new();
+                    let mut text_parts = Vec::new();
+                    for block in blocks {
+                        match block.get("type").and_then(Value::as_str) {
+                            Some("text") => {
+                                if let Some(text) = block.get("text").and_then(Value::as_str) {
+                                    text_parts.push(text.to_string());
+                                }
+                            }
+                            Some("tool_use") => {
+                                let id = block
+                                    .get("id")
+                                    .and_then(Value::as_str)
+                                    .filter(|value| !value.is_empty())
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("assistant tool_use is missing id")
+                                    })?;
+                                let name = block
+                                    .get("name")
+                                    .and_then(Value::as_str)
+                                    .filter(|value| !value.is_empty())
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("assistant tool_use is missing name")
+                                    })?;
+                                let input = block
+                                    .get("input")
+                                    .filter(|value| value.is_object())
+                                    .cloned()
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "assistant tool_use {name} input must be a JSON object"
+                                        )
+                                    })?;
+                                let arguments = serde_json::to_string(&input)?;
+                                tool_calls.push(serde_json::json!({
+                                    "id": id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": name,
+                                        "arguments": arguments,
+                                    }
+                                }));
+                            }
+                            _ => {}
+                        }
+                    }
+                    let mut value = serde_json::json!({
+                        "role": "assistant",
+                        "content": if text_parts.is_empty() { Value::Null } else { Value::String(text_parts.join("")) },
+                    });
+                    if !tool_calls.is_empty() {
+                        value["tool_calls"] = Value::Array(tool_calls);
+                    }
+                    wire.push(value);
+                }
+                ("user", Some(blocks))
+                    if blocks.iter().any(|block| {
+                        block.get("type").and_then(Value::as_str) == Some("tool_result")
+                    }) =>
+                {
+                    for block in blocks {
+                        if block.get("type").and_then(Value::as_str) != Some("tool_result") {
+                            continue;
+                        }
+                        let tool_call_id = block
+                            .get("tool_use_id")
+                            .and_then(Value::as_str)
+                            .filter(|value| !value.is_empty())
+                            .ok_or_else(|| anyhow::anyhow!("tool_result is missing tool_use_id"))?;
+                        let content = block.get("content").cloned().unwrap_or(Value::Null);
+                        let content = content
+                            .as_str()
+                            .map(str::to_owned)
+                            .map(Ok)
+                            .unwrap_or_else(|| serde_json::to_string(&content))?;
+                        wire.push(serde_json::json!({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": content,
+                        }));
+                    }
+                }
+                _ => wire.push(serde_json::json!({
+                    "role": message.role,
+                    "content": message.content,
+                })),
+            }
+        }
+        Ok(wire)
+    }
 }
 
 #[derive(Debug)]
@@ -143,6 +243,10 @@ impl LLMClient {
     pub fn with_base_url(mut self, url: String) -> Self {
         self.base_url = Some(url);
         self
+    }
+
+    pub fn uses_openai_tools(&self) -> bool {
+        matches!(self.provider, Provider::OpenAI)
     }
 
     /// 发送聊天请求
@@ -397,11 +501,11 @@ impl LLMClient {
     /// OpenAI API 调用
     async fn chat_openai(&self, messages: &[Message], tools: Option<&[Value]>) -> Result<Response> {
         let client = Self::http_client()?;
-        let url = self.base_url.as_deref().unwrap_or("https://api.openai.com");
+        let url = self.openai_chat_completions_url();
 
         let mut body = serde_json::json!({
             "model": self.model,
-            "messages": messages,
+            "messages": Message::openai_wire_messages(messages)?,
         });
 
         if let Some(tools) = tools {
@@ -409,7 +513,7 @@ impl LLMClient {
         }
 
         let response = client
-            .post(format!("{}/v1/chat/completions", url))
+            .post(url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("content-type", "application/json")
             .json(&body)
@@ -435,18 +539,32 @@ impl LLMClient {
         self.parse_openai_response(response_json)
     }
 
+    fn openai_chat_completions_url(&self) -> String {
+        let base = self
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com")
+            .trim_end_matches('/');
+        if base.ends_with("/chat/completions") {
+            base.to_string()
+        } else if base.ends_with("/v1") {
+            format!("{base}/chat/completions")
+        } else {
+            format!("{base}/v1/chat/completions")
+        }
+    }
+
     fn parse_anthropic_response(&self, response: Value) -> Result<Response> {
-        let content = response["content"]
-            .as_array()
-            .map(|blocks| {
-                blocks
-                    .iter()
-                    .filter(|block| block["type"] == "text")
-                    .filter_map(|block| block["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("")
-            })
-            .unwrap_or_default();
+        let content_blocks = response
+            .get("content")
+            .and_then(Value::as_array)
+            .ok_or_else(|| anyhow::anyhow!("Anthropic response is missing a content array"))?;
+        let content = content_blocks
+            .iter()
+            .filter(|block| block["type"] == "text")
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("");
 
         let stop_reason = match response["stop_reason"].as_str() {
             Some("end_turn") => StopReason::EndTurn,
@@ -455,19 +573,33 @@ impl LLMClient {
             _ => StopReason::EndTurn,
         };
 
-        let tool_uses = if let Some(content_array) = response["content"].as_array() {
-            content_array
-                .iter()
-                .filter(|item| item["type"] == "tool_use")
-                .map(|item| ToolUse {
-                    id: item["id"].as_str().unwrap_or("").to_string(),
-                    name: item["name"].as_str().unwrap_or("").to_string(),
-                    input: item["input"].clone(),
+        let tool_uses = content_blocks
+            .iter()
+            .filter(|item| item["type"] == "tool_use")
+            .enumerate()
+            .map(|(index, item)| {
+                let id = item["id"]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| anyhow::anyhow!("Anthropic tool use {index} is missing id"))?;
+                let name = item["name"]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| anyhow::anyhow!("Anthropic tool use {index} is missing name"))?;
+                let input = item
+                    .get("input")
+                    .filter(|value| value.is_object())
+                    .cloned()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Anthropic tool use {name} input must be a JSON object")
+                    })?;
+                Ok(ToolUse {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    input,
                 })
-                .collect()
-        } else {
-            vec![]
-        };
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Response {
             content,
@@ -477,34 +609,66 @@ impl LLMClient {
     }
 
     fn parse_openai_response(&self, response: Value) -> Result<Response> {
-        let content = response["choices"][0]["message"]["content"]
-            .as_str()
+        let choice = response
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first())
+            .ok_or_else(|| anyhow::anyhow!("OpenAI response is missing a choices entry"))?;
+        let message = choice
+            .get("message")
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow::anyhow!("OpenAI response choice is missing a message object"))?;
+        let content = message
+            .get("content")
+            .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
 
-        let stop_reason = match response["choices"][0]["finish_reason"].as_str() {
+        let stop_reason = match choice.get("finish_reason").and_then(Value::as_str) {
             Some("stop") => StopReason::EndTurn,
             Some("length") => StopReason::MaxTokens,
             Some("tool_calls") => StopReason::ToolUse,
             _ => StopReason::EndTurn,
         };
 
-        let tool_uses =
-            if let Some(tool_calls) = response["choices"][0]["message"]["tool_calls"].as_array() {
-                tool_calls
-                    .iter()
-                    .map(|call| ToolUse {
-                        id: call["id"].as_str().unwrap_or("").to_string(),
-                        name: call["function"]["name"].as_str().unwrap_or("").to_string(),
-                        input: serde_json::from_str(
-                            call["function"]["arguments"].as_str().unwrap_or("{}"),
+        let tool_uses = if let Some(tool_calls) =
+            message.get("tool_calls").and_then(Value::as_array)
+        {
+            tool_calls
+                .iter()
+                .enumerate()
+                .map(|(index, call)| {
+                    let id = call["id"]
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| anyhow::anyhow!("OpenAI tool call {index} is missing id"))?;
+                    let name = call["function"]["name"]
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("OpenAI tool call {index} is missing function.name")
+                        })?;
+                    let arguments = call["function"]["arguments"].as_str().ok_or_else(|| {
+                        anyhow::anyhow!("OpenAI tool call {name} arguments must be a JSON string")
+                    })?;
+                    let input: Value = serde_json::from_str(arguments).with_context(|| {
+                        format!("OpenAI tool call {name} returned invalid JSON arguments")
+                    })?;
+                    if !input.is_object() {
+                        anyhow::bail!(
+                            "OpenAI tool call {name} arguments must decode to a JSON object"
                         )
-                        .unwrap_or_default(),
+                    }
+                    Ok(ToolUse {
+                        id: id.to_string(),
+                        name: name.to_string(),
+                        input,
                     })
-                    .collect()
-            } else {
-                vec![]
-            };
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
 
         Ok(Response {
             content,
@@ -662,5 +826,99 @@ mod tests {
             .expect("response should parse");
         assert_eq!(response.content, "firstsecond");
         assert_eq!(response.tool_uses.len(), 1);
+    }
+
+    #[test]
+    fn openai_wire_uses_function_tools_and_tool_messages() {
+        let uses = vec![ToolUse {
+            id: "call-1".to_string(),
+            name: "calculate".to_string(),
+            input: serde_json::json!({"expression": "2 + 2"}),
+        }];
+        let messages = vec![
+            Message::user("calculate this"),
+            Message::assistant_response("working", &uses),
+            Message::tool_results(
+                vec![serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": "call-1",
+                    "content": "4"
+                })],
+                "4".to_string(),
+            ),
+        ];
+        let wire = Message::openai_wire_messages(&messages).expect("valid tool turn should encode");
+        assert_eq!(wire[0]["role"], "user");
+        assert_eq!(wire[1]["role"], "assistant");
+        assert_eq!(wire[1]["tool_calls"][0]["type"], "function");
+        assert_eq!(wire[1]["tool_calls"][0]["function"]["name"], "calculate");
+        assert_eq!(
+            wire[1]["tool_calls"][0]["function"]["arguments"],
+            r#"{"expression":"2 + 2"}"#
+        );
+        assert_eq!(wire[2]["role"], "tool");
+        assert_eq!(wire[2]["tool_call_id"], "call-1");
+    }
+
+    #[test]
+    fn openai_url_does_not_duplicate_v1_path() {
+        let root = LLMClient::new(
+            Provider::OpenAI,
+            "test-key".to_string(),
+            "test-model".to_string(),
+        );
+        assert_eq!(
+            root.openai_chat_completions_url(),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        let versioned = root.with_base_url("https://example.test/v1".to_string());
+        assert_eq!(
+            versioned.openai_chat_completions_url(),
+            "https://example.test/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn openai_parser_rejects_non_json_tool_arguments() {
+        let client = LLMClient::new(
+            Provider::OpenAI,
+            "test-key".to_string(),
+            "test-model".to_string(),
+        );
+        let error = client
+            .parse_openai_response(serde_json::json!({
+                "choices": [{
+                    "message": {"content": null, "tool_calls": [{
+                        "id": "call-1",
+                        "function": {"name": "calculate", "arguments": "not-json"}
+                    }]},
+                    "finish_reason": "tool_calls"
+                }]
+            }))
+            .expect_err("malformed arguments must fail closed");
+        assert!(error.to_string().contains("invalid JSON arguments"));
+    }
+
+    #[test]
+    fn provider_parsers_reject_malformed_tool_shapes() {
+        let client = LLMClient::new(
+            Provider::Anthropic,
+            "test-key".to_string(),
+            "test-model".to_string(),
+        );
+        let anthropic_error = client
+            .parse_anthropic_response(serde_json::json!({
+                "content": [{"type": "tool_use", "id": "call-1", "name": "calculate", "input": "{\"x\":1}"}],
+                "stop_reason": "tool_use"
+            }))
+            .expect_err("Anthropic tool input must be an object");
+        assert!(anthropic_error
+            .to_string()
+            .contains("input must be a JSON object"));
+
+        let openai_error = client
+            .parse_openai_response(serde_json::json!({"choices": []}))
+            .expect_err("an empty choices array is not a valid provider response");
+        assert!(openai_error.to_string().contains("choices entry"));
     }
 }

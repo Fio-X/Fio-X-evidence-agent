@@ -1,0 +1,103 @@
+{
+  "answer_node_ids": [
+    "compare-then-now"
+  ],
+  "edges": [
+    {
+      "from": "orient-routes",
+      "relation": "locates",
+      "to": "zoom-hubs"
+    },
+    {
+      "from": "zoom-hubs",
+      "relation": "explains",
+      "to": "measure-scale"
+    },
+    {
+      "from": "measure-scale",
+      "relation": "precedes",
+      "to": "compare-then-now"
+    },
+    {
+      "from": "qualify-model",
+      "relation": "qualifies",
+      "to": "compare-then-now"
+    }
+  ],
+  "entry_node_ids": [
+    "orient-routes",
+    "qualify-model"
+  ],
+  "nodes": [
+    {
+      "claim_ids": [
+        "claim:route-shift"
+      ],
+      "evidence_refs": [
+        "fixtures/migration/deep-learning-human-migration-top-corridors.csv"
+      ],
+      "explanatory_dimension": "spatial",
+      "id": "orient-routes",
+      "kind": "evidence",
+      "module_hint": "world flow map",
+      "summary": "The selected model-estimated corridors form a global origin-destination geography."
+    },
+    {
+      "claim_ids": [
+        "claim:destination-shift"
+      ],
+      "evidence_refs": [
+        "fixtures/migration/story-ir/continent-flows-top30.csv"
+      ],
+      "explanatory_dimension": "distribution",
+      "id": "zoom-hubs",
+      "kind": "claim",
+      "module_hint": "continent Sankey",
+      "summary": "Destination concentration within the selected routes changed across the period."
+    },
+    {
+      "claim_ids": [
+        "claim:selected-scale"
+      ],
+      "evidence_refs": [
+        "fixtures/migration/story-ir/yearly-top30-summary.csv"
+      ],
+      "explanatory_dimension": "trend",
+      "id": "measure-scale",
+      "kind": "claim",
+      "module_hint": "trend and scale translator",
+      "summary": "The summed scale of the bounded top-30 selection differs substantially by year."
+    },
+    {
+      "claim_ids": [
+        "claim:route-shift",
+        "claim:destination-shift"
+      ],
+      "evidence_refs": [
+        "fixtures/migration/deep-learning-human-migration-top-corridors.csv"
+      ],
+      "explanatory_dimension": "comparison",
+      "id": "compare-then-now",
+      "kind": "outcome",
+      "module_hint": "then-now comparison",
+      "summary": "The leading 1990 and 2023 routes occupy different parts of the network."
+    },
+    {
+      "claim_ids": [
+        "claim:model-uncertainty"
+      ],
+      "evidence_refs": [
+        "fixtures/migration/deep-learning-human-migration-top-corridors.csv"
+      ],
+      "explanatory_dimension": "uncertainty",
+      "id": "qualify-model",
+      "kind": "uncertainty",
+      "module_hint": "method and uncertainty",
+      "summary": "The values are model estimates with standard deviations, not observed movements or stock changes."
+    }
+  ],
+  "reader_question": "How did the geography and scale of model-estimated international migration routes change from 1990 to 2023?",
+  "schema_version": "0.1.0",
+  "story_id": "migration-four-decades",
+  "visual_thesis": "A route-led world view shows that the leading estimated corridor, destination hubs, and bounded top-route scale changed together, while uncertainty remains explicit."
+}

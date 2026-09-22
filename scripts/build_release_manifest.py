@@ -4,7 +4,7 @@ import hashlib, json, os, subprocess, time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 VERSIONS=json.loads((ROOT/'versions.json').read_text())
-EXCLUDE_PREFIXES=('outputs/','.newsroom/','.git/','__pycache__/')
+EXCLUDE_PREFIXES=('outputs/','.newsroom/','.git/','target/','__pycache__/')
 EXCLUDE_FILES={'release-manifest.json'}
 def sha(p):
     h=hashlib.sha256();
@@ -14,9 +14,18 @@ def sha(p):
 def git_commit():
     try:return subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True,stderr=subprocess.DEVNULL).strip()
     except Exception:return None
+def source_paths():
+    try:
+        raw=subprocess.check_output(
+            ['git','ls-files','--cached','--others','--exclude-standard','-z'],
+            cwd=ROOT,
+        )
+        return [ROOT/part.decode() for part in raw.split(b'\0') if part]
+    except Exception:
+        return list(ROOT.rglob('*'))
 def main():
     files=[]
-    for p in sorted(ROOT.rglob('*')):
+    for p in sorted(source_paths()):
         if not p.is_file():continue
         rel=p.relative_to(ROOT).as_posix()
         if any(rel.startswith(x) for x in EXCLUDE_PREFIXES) or rel in EXCLUDE_FILES:continue

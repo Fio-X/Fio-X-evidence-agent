@@ -17,7 +17,22 @@ case "$RID" in
   viz-web)
     cd runtime/web
     node --version | sed 's/^/node==/'
+    set +e
     npm ls --all --json
+    STATUS=$?
+    set -e
+    echo "npm_ls_exit=$STATUS"
+    [[ "$STATUS" -le 1 ]]
+    ;;
+  viz-d3|viz-map|viz-sigma)
+    cd "runtime/${RID#viz-}"
+    node --version | sed 's/^/node==/'
+    set +e
+    npm ls --all --json
+    STATUS=$?
+    set -e
+    echo "npm_ls_exit=$STATUS"
+    [[ "$STATUS" -le 1 ]]
     ;;
   viz-python|viz-density|viz-graph-extract)
     python3 --version

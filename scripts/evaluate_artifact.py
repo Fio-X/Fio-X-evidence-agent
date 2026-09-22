@@ -10,7 +10,7 @@ import argparse
 import json
 from pathlib import Path
 
-from verify_artifact import verify as verify_integrity
+from verify_artifact import system_verified_claim, verify as verify_integrity
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL_REGISTRY = json.loads((ROOT / "config" / "tool-registry.json").read_text(encoding="utf-8"))
@@ -56,7 +56,7 @@ def main() -> int:
 
     tool_counts = tools.get("tools") or {}
     capability_used = sorted(name for name in tool_counts if name in CAPABILITY_NAMES)
-    verified_claims = [claim for claim in claims if claim.get("status") == "verified"]
+    verified_claims = [claim for claim in claims if system_verified_claim(claim)]
     verified_with_compute = [
         claim for claim in verified_claims
         if claim.get("source_refs") and claim.get("computation_refs")

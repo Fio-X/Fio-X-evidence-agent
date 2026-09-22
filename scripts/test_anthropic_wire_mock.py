@@ -2,8 +2,10 @@
 """Run investigate-v2 against a strict Anthropic Messages-shaped mock."""
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,6 +14,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 FIXTURE_KEY = "local-fixture-key-do-not-print"
 requests_seen = []
 violations = []
+
+
+def resolve_news_binary(repo):
+    override = os.environ.get("NEWSROOM_TEST_BINARY")
+    candidates = [Path(override)] if override else []
+    candidates.extend([repo / "target/release/news", repo / "target/debug/news"])
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    raise FileNotFoundError(
+        "news binary not found; build it or set NEWSROOM_TEST_BINARY"
+    )
 
 
 def violation(message):
@@ -157,19 +171,37 @@ def main():
             "NEWSROOM_BASE_URL": f"http://127.0.0.1:{server.server_port}",
         }
     )
-    started = time.monotonic()
-    proc = subprocess.run(
-        [
-            "target/release/news",
-            "investigate-v2",
-            "固定夹具：生成并核对两个小型图表",
-        ],
-        cwd=sys.argv[1] if len(sys.argv) > 1 else os.getcwd(),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
+    repo = Path(sys.argv[1] if len(sys.argv) > 1 else os.getcwd()).resolve()
+    news_binary = resolve_news_binary(repo)
+    with tempfile.TemporaryDirectory(prefix="newsroom-wire-") as output:
+        started = time.monotonic()
+        proc = subprocess.run(
+            [
+                str(news_binary),
+                "investigate-v2",
+                "--out",
+                output,
+                "固定夹具：生成并核对两个小型图表",
+            ],
+            cwd=repo,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        output_root = Path(output)
+        run_dirs = [path for path in output_root.iterdir() if path.is_dir()]
+        run_dir = run_dirs[0] if len(run_dirs) == 1 else None
+        artifact_files = (
+            [path for path in run_dir.rglob("*.html") if path.is_file()]
+            if run_dir is not None
+            else []
+        )
+        report_path = run_dir / "report.md" if run_dir is not None else None
+        report = report_path.read_text(encoding="utf-8") if report_path and report_path.is_file() else ""
+        artifact_path_in_report = any(str(path) in report for path in artifact_files)
+        report_exists = report_path is not None and report_path.is_file()
+        artifact_files_nonempty = bool(artifact_files) and all(path.stat().st_size > 0 for path in artifact_files)
     elapsed = time.monotonic() - started
     server.shutdown()
     stdout = proc.stdout
@@ -186,12 +218,26 @@ def main():
             for body in requests_seen[1:]
         ],
         "stdout_has_conclusion": "固定夹具流程完成" in stdout,
+        "run_dir_created": run_dir is not None,
+        "report_exists": report_exists,
+        "html_artifact_count": len(artifact_files),
+        "html_artifacts_nonempty": artifact_files_nonempty,
+        "artifact_path_in_report": artifact_path_in_report,
         "fixture_key_in_output": FIXTURE_KEY in stdout or FIXTURE_KEY in stderr,
         "stderr_lines": len(stderr.splitlines()),
         "violations": violations,
     }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    if proc.returncode != 0 or violations or FIXTURE_KEY in stdout or FIXTURE_KEY in stderr:
+    if (
+        proc.returncode != 0
+        or violations
+        or not report_exists
+        or len(artifact_files) < 2
+        or not artifact_files_nonempty
+        or not artifact_path_in_report
+        or FIXTURE_KEY in stdout
+        or FIXTURE_KEY in stderr
+    ):
         sys.exit(1)
 
 

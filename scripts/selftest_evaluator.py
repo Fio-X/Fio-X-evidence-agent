@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import json
 import subprocess
 import sys
@@ -17,6 +18,21 @@ from verify_artifact import infographic_immutable_hash
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+def canonical_rows(value):
+    if value is None or isinstance(value, bool) or isinstance(value, str): return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, int): return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")): return "null"
+        if value.is_integer() and abs(value) <= 9_007_199_254_740_991: return str(int(value))
+        magnitude = math.floor(abs(value) * 1_000_000 + 0.5)
+        if math.isfinite(magnitude) and magnitude <= 9_007_199_254_740_991:
+            sign = "-" if value < 0 else ""
+            return json.dumps(f"{sign}{magnitude // 1_000_000}.{magnitude % 1_000_000:06d}", ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(f"{value:.6f}", ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, list): return "[" + ",".join(canonical_rows(item) for item in value) + "]"
+    if isinstance(value, dict): return "{" + ",".join(json.dumps(str(k), ensure_ascii=False) + ":" + canonical_rows(value[k]) for k in sorted(value)) + "}"
+    return canonical(value)
 
 
 def sha_bytes(data: bytes) -> str:
@@ -64,7 +80,7 @@ def build_valid(root: Path):
     write_json(root / source_ref, source)
 
     rows = [{"country": "A", "value": 1}, {"country": "B", "value": 2}]
-    result_hash = sha_bytes(canonical(rows).encode())
+    result_hash = sha_bytes(canonical_rows(rows).encode())
     sql = "select country,value"
     fingerprints = sorted([f"data:{data_ref}:{data_hash}", f"source:{Path(source_ref).name}:{source_hash}"])
     input_hash = sha_bytes("\n".join(fingerprints).encode())
@@ -73,7 +89,8 @@ def build_valid(root: Path):
     write_json(root / comp_ref, {"schema_version": "0.7.0", "sql": sql, "input_snapshot_hash": input_hash, "input_fingerprints": fingerprints, "result_hash": result_hash, "rows": rows})
 
     claim_id = "claim-valid"
-    write_text(root / "claims.jsonl", json.dumps({"claim_id": claim_id, "status": "verified", "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}) + "\n")
+    verification = {"authority": "system", "source_resolved": True, "extraction_passed": True, "computation_replayed": True, "claim_supported": True, "publishable": True, "rule_id": "verification.source+extraction+computation+claim.v1"}
+    write_text(root / "claims.jsonl", json.dumps({"schema_version": "0.8.0", "claim_id": claim_id, "requested_status": "supported", "status": "verified", "verification": verification, "source_refs": [source_ref, data_ref], "computation_refs": [comp_ref]}) + "\n")
 
     plan_ref = "visualizations/plans/chart.json"
     lint_ref = "visualizations/lints/chart.json"

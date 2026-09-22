@@ -98,5 +98,13 @@ pub async fn run(args: InspectArgs) -> Result<()> {
     println!("audit file      {}", bundle.tools_path.display());
     println!("plan file       {}", bundle.plan_path.display());
     println!("story file      {}", bundle.manifest_path.display());
+    if let Some((path, kind)) = bundle.primary_artifact()? {
+        println!(
+            "primary artifact {} ({kind})",
+            bundle.dir.join(path).display()
+        );
+    } else {
+        println!("primary artifact none (story.json is metadata, not a visual deliverable)");
+    }
     Ok(())
 }

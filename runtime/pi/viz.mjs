@@ -203,16 +203,37 @@ function fmt(value, unit = "") {
   return unit ? `${text} ${unit}` : text;
 }
 
-function canonicalize(value) {
-  if (Array.isArray(value)) return value.map(canonicalize);
+// JSON number parsing is not bit-for-bit identical across V8, serde_json and
+// Python.  Hashing the shortest spelling emitted by each runtime therefore
+// made valid DuckDB results fail verification (typically by one ULP).  Row
+// hashes use an explicit, loss-bounded wire form: integers stay numeric and
+// Non-integral values become six-decimal strings. Use explicit half-away-from-
+// zero rounding instead of each runtime's formatter (Python/Rust and V8 differ
+// on binary halfway values such as 23747.0703125).
+function fixedSix(value) {
+  const magnitude = Math.floor(Math.abs(value) * 1_000_000 + 0.5);
+  if (Number.isSafeInteger(magnitude)) {
+    const whole = Math.floor(magnitude / 1_000_000);
+    const fraction = String(magnitude % 1_000_000).padStart(6, "0");
+    return `${value < 0 ? "-" : ""}${whole}.${fraction}`;
+  }
+  return value.toFixed(6);
+}
+
+function canonicalizeRows(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeRows);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeRows(value[key])]));
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return Number.isInteger(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER ? value : fixedSix(value);
   }
   return value;
 }
 
 export function hashRows(rows) {
-  return createHash("sha256").update(JSON.stringify(canonicalize(rows))).digest("hex");
+  return createHash("sha256").update(JSON.stringify(canonicalizeRows(rows))).digest("hex");
 }
 
 function inferVisualFamily(chartType) {
@@ -325,7 +346,12 @@ function makeScale(values, left, right, scaleType = "linear") {
 }
 
 function requiredFields(spec) {
-  const common = ["title", "alt", "source_note", "unit", "claim_id", "sql", "reader_task", "chart_type"];
+  const common = ["title", "alt", "source_note", "unit", "sql", "reader_task", "chart_type"];
+  // A draft visualization is useful while exploring a dataset or testing a
+  // visual grammar. It is deliberately not publishable and therefore does
+  // not need a verified claim_id. The default remains the strict, verified
+  // contract for backwards compatibility.
+  if (spec.verification_mode !== "draft") common.push("claim_id");
   const byType = {
     horizontal_bar: ["category_field", "value_field"],
     dot: ["category_field", "value_field"],
@@ -357,6 +383,7 @@ function requiredFields(spec) {
 export function validateVizSpec(spec) {
   const errors = [];
   if (!spec || typeof spec !== "object") return ["Visualization spec must be an object"];
+  if (spec.verification_mode !== undefined && !["verified", "draft"].includes(spec.verification_mode)) errors.push("verification_mode must be 'verified' or 'draft'");
   if (!CHART_TYPES.includes(spec.chart_type)) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
   if (!READER_TASKS.includes(spec.reader_task)) errors.push(`Unsupported reader_task '${spec.reader_task}'`);
   if (spec.visual_family !== undefined && !VISUAL_FAMILIES.includes(spec.visual_family)) errors.push(`Unsupported visual_family '${spec.visual_family}'`);
@@ -415,7 +442,7 @@ export function validateVizSpec(spec) {
       if (!annotation || typeof annotation !== "object") { errors.push(`annotations[${index}] must be an object`); return; }
       if (!["point", "node"].includes(annotation.type)) errors.push(`annotations[${index}].type is unsupported`);
       if (!String(annotation.text ?? "").trim()) errors.push(`annotations[${index}].text is required`);
-      if (!String(annotation.claim_id ?? "").trim()) errors.push(`annotations[${index}].claim_id is required`);
+      if (spec.verification_mode !== "draft" && !String(annotation.claim_id ?? "").trim()) errors.push(`annotations[${index}].claim_id is required`);
       if (["point", "node"].includes(annotation.type) && (!String(annotation.match_field ?? "").trim() || annotation.match_value === undefined)) errors.push(`annotations[${index}] ${annotation.type} annotations require match_field and match_value`);
     });
   }
@@ -442,6 +469,13 @@ export function lintVizSpec(spec, rows, context = {}) {
   const blockers = [];
   const warnings = [];
   const notes = [];
+  const verificationMode = spec?.verification_mode ?? "verified";
+  if (!["verified", "draft"].includes(verificationMode)) blockers.push("verification_mode must be 'verified' or 'draft'");
+  if (verificationMode === "draft") {
+    warnings.push("DRAFT visualization: exploratory output only; it must not be used as a publishable factual artifact until a verified claim is bound.");
+  } else if (!String(spec?.claim_id ?? "").trim()) {
+    blockers.push("A verified visualization requires claim_id");
+  }
   blockers.push(...validateVizSpec(spec));
   if (spec.semantic_gate?.status === "BLOCK") blockers.push("semantic_comparison_blocked");
   if (spec.semantic_gate?.status === "CONTEXTUAL") notes.push("Semantic comparison is contextual; visual roles must remain explicitly differentiated");
@@ -561,7 +595,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       if (topo.edges.length > 96) blockers.push(`${spec.chart_type} has ${topo.edges.length} links; maximum is 96`);
       if (rows.some((row) => (n(row[spec.value_field]) ?? -1) < 0)) blockers.push(`${spec.chart_type} does not allow negative flows`);
       const cyclicFlow = hasDirectedCycle(rows, spec.source_field, spec.target_field);
-      if (cyclicFlow) blockers.push(`${spec.chart_type} requires an acyclic flow graph; cycles must be resolved or represented with another form`);
+      if (cyclicFlow) blockers.push(`${spec.chart_type} requires an acyclic flow graph; for reciprocal origin-destination data, role-qualify nodes into separate source and target layers (for example origin:Asia -> destination:Asia) before considering another form`);
       const conservationMode = spec.flow_conservation ?? "warn";
       const tolerance = Number.isFinite(Number(spec.flow_tolerance)) ? Math.max(0, Number(spec.flow_tolerance)) : 0.02;
       const imbalances = flowImbalances(rows, spec.source_field, spec.target_field, spec.value_field).filter((item) => item.relative > tolerance);
@@ -724,6 +758,9 @@ export function lintVizSpec(spec, rows, context = {}) {
   return {
     schema_version: spec.schema_version === "1.0.0" ? "1.0.0" : "0.9.0",
     passed: blockers.length === 0,
+    verification_mode: verificationMode,
+    artifact_status: verificationMode === "verified" ? "VERIFIED" : "DRAFT",
+    publishable: verificationMode === "verified",
     blockers,
     warnings,
     notes,

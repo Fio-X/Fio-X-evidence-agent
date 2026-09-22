@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-const CONFIG=path.join(ROOT,'config','editorial-style-mappings.json');
+const ARTIFACT_ROOT=process.env.NEWSROOM_ARTIFACT_DIR?path.resolve(process.env.NEWSROOM_ARTIFACT_DIR):null;
+const CONFIG=path.join(ARTIFACT_ROOT??ROOT,'config','editorial-style-mappings.json');
 export const STYLE_MAPPING_VERSION='0.2.0';
 export function styleRegistry(){return JSON.parse(fs.readFileSync(CONFIG,'utf8'));}
 function uniq(xs){return [...new Set((xs??[]).map(String))];}

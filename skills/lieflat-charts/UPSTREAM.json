@@ -1,0 +1,12 @@
+{
+  "name": "lieflat-charts",
+  "repository": "https://github.com/larashero3-dotcom/lieflat-charts",
+  "commit": "eace082a317b696c5570c25826a53a7fa113e984",
+  "license": "PolyForm Noncommercial License 1.0.0",
+  "usage": "personal-noncommercial",
+  "vendored": true,
+  "source_tree_sha256": "3bd79355e851155f02c4f345347f6dd6a1b7879d5dec52d63801fbc289487f8e",
+  "source_file_count": 125,
+  "hash_algorithm": "sha256",
+  "tree_hash_definition": "sha256(path\\0(file_sha256)\\0(size)\\n) over tracked upstream files sorted by path"
+}

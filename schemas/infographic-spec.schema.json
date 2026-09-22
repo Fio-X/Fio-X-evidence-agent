@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:agentic-data-newsroom:schema:infographic-spec:1.4.0",
+  "$id": "urn:agentic-data-newsroom:schema:infographic-spec:1.5.0",
   "title": "Agentic Data Newsroom Infographic Spec v1.4",
   "type": "object",
   "required": [
@@ -17,7 +17,8 @@
         "1.1.0",
         "1.2.0",
         "1.3.0",
-        "1.4.0"
+        "1.4.0",
+        "1.5.0"
       ]
     },
     "kicker": {
@@ -168,6 +169,9 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 240
+    },
+    "editorial_grammar": {
+      "$ref": "#/$defs/editorialGrammarSelection"
     }
   },
   "allOf": [
@@ -179,7 +183,8 @@
               "1.1.0",
               "1.2.0",
               "1.3.0",
-              "1.4.0"
+              "1.4.0",
+              "1.5.0"
             ]
           }
         },
@@ -204,7 +209,8 @@
             "enum": [
               "1.2.0",
               "1.3.0",
-              "1.4.0"
+              "1.4.0",
+              "1.5.0"
             ]
           }
         },
@@ -268,6 +274,37 @@
           "scene_graph"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.5.0"
+          }
+        },
+        "required": ["schema_version"]
+      },
+      "then": {
+        "required": [
+          "reader_question",
+          "visual_thesis",
+          "story_graph_ref",
+          "editorial_discovery_ref",
+          "visual_concept_ref",
+          "selected_concept_id",
+          "novelty_ref",
+          "asset_plan_ref",
+          "scene_graph",
+          "editorial_grammar"
+        ],
+        "properties": {
+          "scene_graph": {
+            "properties": {
+              "schema_version": {"const": "0.2.0"}
+            }
+          }
+        }
+      }
     }
   ],
   "additionalProperties": false,
@@ -298,6 +335,94 @@
         "secondary",
         "support"
       ]
+    },
+    "annotation": {
+      "type": "object",
+      "required": ["id", "target_object_id", "text", "claim_id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 100},
+        "target_object_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "text": {"type": "string", "minLength": 1, "maxLength": 500},
+        "claim_id": {"type": "string", "minLength": 1, "maxLength": 120}
+      },
+      "additionalProperties": false
+    },
+    "visualChannel": {
+      "type": "object",
+      "required": ["channel", "field", "role"],
+      "properties": {
+        "channel": {"enum": ["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"]},
+        "field": {"type": "string", "minLength": 1, "maxLength": 120},
+        "role": {"enum": ["quantitative", "categorical", "identity", "emphasis", "uncertainty"]}
+      },
+      "additionalProperties": false
+    },
+    "quantitativeEncoding": {
+      "type": "object",
+      "required": ["quantity_kind", "mark_semantics", "scale_type", "baseline_policy", "uncertainty_disclosed"],
+      "properties": {
+        "quantity_kind": {"enum": ["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"]},
+        "mark_semantics": {"enum": ["position", "length", "area", "size", "angle", "connection", "flow_width"]},
+        "scale_type": {"enum": ["linear", "log", "sqrt", "symlog", "ordinal"]},
+        "baseline_policy": {"enum": ["zero", "symmetric_zero", "included", "not_applicable"]},
+        "domain_min": {"type": "number"},
+        "domain_max": {"type": "number"},
+        "area_proportional": {"type": "boolean"},
+        "uncertainty_disclosed": {"type": "boolean"},
+        "disclosure": {"type": "string", "maxLength": 500}
+      },
+      "additionalProperties": false
+    },
+    "sceneBudget": {
+      "type": "object",
+      "required": ["max_supporting_objects", "max_annotations", "max_claims"],
+      "properties": {
+        "max_supporting_objects": {"type": "integer", "minimum": 0, "maximum": 3},
+        "max_annotations": {"type": "integer", "minimum": 0, "maximum": 8},
+        "max_claims": {"type": "integer", "minimum": 1, "maximum": 12}
+      },
+      "additionalProperties": false
+    },
+    "editorialGrammarSelection": {
+      "type": "object",
+      "required": ["schema_version", "project_id", "primary", "supporting", "available_renderer_capabilities", "evidence_features", "cognitive_goals", "candidates", "selected", "decision_log"],
+      "properties": {
+        "schema_version": {"const": "0.1.0"},
+        "project_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "primary": {"$ref": "#/$defs/editorialGrammar"},
+        "supporting": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/editorialGrammar"}},
+        "available_renderer_capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["svg", "canvas2d", "webgl_map"]}},
+        "evidence_features": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 100}},
+        "cognitive_goals": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"]}},
+        "candidates": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/editorialGrammarCandidate"}},
+        "selected": {"$ref": "#/$defs/editorialGrammar"},
+        "decision_log": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/editorialGrammarDecision"}}
+      },
+      "additionalProperties": false
+    },
+    "editorialGrammar": {"enum": ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"]},
+    "editorialGrammarCandidate": {
+      "type": "object",
+      "required": ["grammar", "hard_constraints_passed", "renderer_capability_passed", "soft_score", "reason_codes"],
+      "properties": {
+        "grammar": {"$ref": "#/$defs/editorialGrammar"},
+        "hard_constraints_passed": {"type": "boolean"},
+        "renderer_capability_passed": {"type": "boolean"},
+        "soft_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 120}}
+      },
+      "additionalProperties": false
+    },
+    "editorialGrammarDecision": {
+      "type": "object",
+      "required": ["stage", "grammar", "outcome", "reason_code"],
+      "properties": {
+        "stage": {"enum": ["hard_constraint", "soft_preference", "renderer_capability", "final_selection"]},
+        "grammar": {"$ref": "#/$defs/editorialGrammar"},
+        "outcome": {"enum": ["pass", "reject", "select"]},
+        "reason_code": {"type": "string", "minLength": 1, "maxLength": 120}
+      },
+      "additionalProperties": false
     },
     "baseModule": {
       "type": "object",
@@ -414,6 +539,25 @@
             "mechanism",
             "sequence"
           ]
+        },
+        "graphic_object_ids": {
+          "type": "array",
+          "maxItems": 40,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 120}
+        },
+        "annotations": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {"$ref": "#/$defs/annotation"}
+        },
+        "visual_channels": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {"$ref": "#/$defs/visualChannel"}
+        },
+        "quantitative_encoding": {
+          "$ref": "#/$defs/quantitativeEncoding"
         }
       }
     },
@@ -690,6 +834,23 @@
         },
         "shared_source_scope": {
           "type": "boolean"
+        },
+        "primary_cognitive_goal": {
+          "enum": ["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"]
+        },
+        "hero_object_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "supporting_claim_ids": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 120}
+        },
+        "scene_budget": {
+          "$ref": "#/$defs/sceneBudget"
         }
       },
       "additionalProperties": false
@@ -701,18 +862,34 @@
         "scenes"
       ],
       "properties": {
-        "schema_version": {
-          "const": "0.1.0"
-        },
+        "schema_version": {"enum": ["0.1.0", "0.2.0"]},
         "scenes": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 3,
+          "maxItems": 6,
           "items": {
             "$ref": "#/$defs/scene"
           }
         }
       },
+      "allOf": [
+        {
+          "if": {"properties": {"schema_version": {"const": "0.1.0"}}, "required": ["schema_version"]},
+          "then": {"properties": {"scenes": {"maxItems": 3}}}
+        },
+        {
+          "if": {"properties": {"schema_version": {"const": "0.2.0"}}, "required": ["schema_version"]},
+          "then": {
+            "properties": {
+              "scenes": {
+                "items": {
+                  "required": ["id", "pattern", "anchor_module_id", "sidecar_module_ids", "primary_cognitive_goal", "hero_object_id", "supporting_claim_ids", "scene_budget"]
+                }
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     }
   }

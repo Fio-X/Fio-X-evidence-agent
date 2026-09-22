@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:editorial-grammar-selection:0.1.0",
+  "title": "Editorial Grammar Selection v0.1",
+  "type": "object",
+  "required": ["schema_version", "project_id", "primary", "supporting", "available_renderer_capabilities", "evidence_features", "cognitive_goals", "candidates", "selected", "decision_log"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "project_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "primary": {"$ref": "#/$defs/grammar"},
+    "supporting": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/grammar"}},
+    "available_renderer_capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["svg", "canvas2d", "webgl_map"]}},
+    "evidence_features": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 100}},
+    "cognitive_goals": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"]}},
+    "candidates": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/candidate"}},
+    "selected": {"$ref": "#/$defs/grammar"},
+    "decision_log": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/decision"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "grammar": {"enum": ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"]},
+    "candidate": {
+      "type": "object", "required": ["grammar", "hard_constraints_passed", "renderer_capability_passed", "soft_score", "reason_codes"],
+      "properties": {"grammar": {"$ref": "#/$defs/grammar"}, "hard_constraints_passed": {"type": "boolean"}, "renderer_capability_passed": {"type": "boolean"}, "soft_score": {"type": "number", "minimum": 0, "maximum": 1}, "reason_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 120}}},
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object", "required": ["stage", "grammar", "outcome", "reason_code"],
+      "properties": {"stage": {"enum": ["hard_constraint", "soft_preference", "renderer_capability", "final_selection"]}, "grammar": {"$ref": "#/$defs/grammar"}, "outcome": {"enum": ["pass", "reject", "select"]}, "reason_code": {"type": "string", "minLength": 1, "maxLength": 120}},
+      "additionalProperties": false
+    }
+  }
+}

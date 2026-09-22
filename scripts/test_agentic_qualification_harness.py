@@ -16,9 +16,10 @@ def write_artifact(root: Path, unsupported: bool=False):
     }}))
     (root/'tools.json').write_text(json.dumps({'tools':{'fetch_url':1,'duckdb_query':2},'failed_tool_calls':1}))
     (root/'plan.json').write_text(json.dumps({'steps':[{'id':'p1'}]}))
-    good={'status':'verified','source_refs':['sources/a'],'computation_refs':['computations/a']}
+    verification={'authority':'system','source_resolved':True,'extraction_passed':True,'computation_replayed':True,'claim_supported':True,'publishable':True,'rule_id':'verification.source+extraction+computation+claim.v1'}
+    good={'status':'verified','verification':verification,'source_refs':['sources/a'],'computation_refs':['computations/a']}
     claims=[good]
-    if unsupported: claims.append({'status':'verified','source_refs':[],'computation_refs':['computations/b']})
+    if unsupported: claims.append({'status':'verified','verification':verification,'source_refs':[],'computation_refs':['computations/b']})
     (root/'claims.jsonl').write_text(''.join(json.dumps(c)+'\n' for c in claims))
     (root/'run-metrics.jsonl').write_text(json.dumps({'duration_ms':123})+'\n')
     (root/'session-stats.json').write_text(json.dumps({'usage':{'input_tokens':100,'output_tokens':50,'total_tokens':150,'cost':0.01}}))

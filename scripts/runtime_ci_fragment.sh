@@ -10,8 +10,14 @@ mkdir -p "$(dirname "$OUT")"
 HEALTH_FILE="${OUT%.json}.health.txt"
 DEPS_FILE="${OUT%.json}.deps.txt"
 # Health is evaluated only inside the built image.
-docker run --rm "$IMAGE" ./scripts/runtime_image_health.sh "$RID" > "$HEALTH_FILE" 2>&1
-docker run --rm "$IMAGE" ./scripts/runtime_dependency_lock.sh "$RID" > "$DEPS_FILE"
+if ! docker run --rm "$IMAGE" ./scripts/runtime_image_health.sh "$RID" > "$HEALTH_FILE" 2>&1; then
+  cat "$HEALTH_FILE" >&2
+  exit 1
+fi
+if ! docker run --rm "$IMAGE" ./scripts/runtime_dependency_lock.sh "$RID" > "$DEPS_FILE" 2>&1; then
+  cat "$DEPS_FILE" >&2
+  exit 1
+fi
 if [[ "$PUSH" == "1" ]]; then
   docker push "$IMAGE" >/dev/null
   REPO_DIGEST="$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')"

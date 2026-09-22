@@ -1,0 +1,6 @@
+year,selection_scope,selected_route_count,selected_estimated_flow_sum,highest_ranked_route,highest_ranked_route_estimate,largest_destination_within_selection,largest_destination_estimated_flow_sum
+1990,top_30_routes_within_year,30,4573159.394531,IRN-AFG,523189.625000,AFG,991699.656250
+2000,top_30_routes_within_year,30,2182819.679686,MEX-USA,433711.156250,USA,846501.265625
+2010,top_30_routes_within_year,30,3985254.703123,MEX-USA,286959.093750,SAU,1061451.062499
+2020,top_30_routes_within_year,30,5111461.203128,USA-MEX,459726.281250,IND,778729.984376
+2023,top_30_routes_within_year,30,8639761.187500,VEN-COL,779873.187500,USA,1113372.140625

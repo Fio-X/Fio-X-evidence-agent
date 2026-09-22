@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -49,6 +49,7 @@ impl ToolRegistry {
             .tools
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", name))?;
+        validate_tool_parameters(name, &params, &tool.parameters_schema())?;
         tool.execute(params).await
     }
 
@@ -69,12 +70,134 @@ impl ToolRegistry {
         tools
     }
 
+    /// Return OpenAI Chat Completions function tools. The public tool schema
+    /// is shared with Anthropic, but the envelope is provider-specific.
+    pub fn to_openai_tools(&self) -> Vec<Value> {
+        let mut tools: Vec<Value> = self
+            .tools
+            .values()
+            .map(|tool| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name(),
+                        "description": tool.description(),
+                        "parameters": tool.parameters_schema()
+                    }
+                })
+            })
+            .collect();
+        tools.sort_by(|left, right| {
+            left["function"]["name"]
+                .as_str()
+                .cmp(&right["function"]["name"].as_str())
+        });
+        tools
+    }
+
     /// 工具列表
     pub fn list_tools(&self) -> Vec<String> {
         let mut names: Vec<String> = self.tools.keys().cloned().collect();
         names.sort();
         names
     }
+}
+
+/// Validate the small JSON Schema subset used by the direct Rust tools before
+/// dispatch. This keeps malformed model calls actionable and prevents a JSON
+/// string from reaching a tool that expects an object/array.
+fn validate_tool_parameters(name: &str, value: &Value, schema: &Value) -> Result<()> {
+    fn check(value: &Value, schema: &Value, path: &str) -> Result<()> {
+        if let Some(options) = schema
+            .get("anyOf")
+            .and_then(Value::as_array)
+            .or_else(|| schema.get("oneOf").and_then(Value::as_array))
+        {
+            if options
+                .iter()
+                .any(|candidate| check(value, candidate, path).is_ok())
+            {
+                return Ok(());
+            }
+            bail!("{path}: value does not match any allowed schema");
+        }
+        if let Some(enum_values) = schema.get("enum").and_then(Value::as_array) {
+            if !enum_values.iter().any(|candidate| candidate == value) {
+                bail!("{path}: value is not one of the allowed enum values");
+            }
+        }
+        match schema.get("type").and_then(Value::as_str) {
+            Some("object") => {
+                let object = value.as_object().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "{path}: expected JSON object, received {}",
+                        json_type(value)
+                    )
+                })?;
+                for required in schema
+                    .get("required")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let field = required.as_str().unwrap_or_default();
+                    if !object.contains_key(field) {
+                        bail!("{path}.{field}: required property is missing");
+                    }
+                }
+                if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
+                    for (field, field_schema) in properties {
+                        if let Some(field_value) = object.get(field) {
+                            check(field_value, field_schema, &format!("{path}.{field}"))?;
+                        }
+                    }
+                }
+            }
+            Some("array") => {
+                let array = value.as_array().ok_or_else(|| {
+                    anyhow::anyhow!("{path}: expected JSON array, received {}", json_type(value))
+                })?;
+                if let Some(items) = schema.get("items") {
+                    for (index, item) in array.iter().enumerate() {
+                        check(item, items, &format!("{path}[{index}]"))?;
+                    }
+                }
+            }
+            Some("string") if !value.is_string() => {
+                bail!("{path}: expected string, received {}", json_type(value))
+            }
+            Some("boolean") if !value.is_boolean() => {
+                bail!("{path}: expected boolean, received {}", json_type(value))
+            }
+            Some("number") if !value.is_number() => {
+                bail!("{path}: expected number, received {}", json_type(value))
+            }
+            Some("integer") if value.as_i64().is_none() && value.as_u64().is_none() => {
+                bail!("{path}: expected integer, received {}", json_type(value))
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn json_type(value: &Value) -> &'static str {
+        match value {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        }
+    }
+
+    if !value.is_object() {
+        bail!(
+            "{name}: tool parameters must be a JSON object, received {}",
+            json_type(value)
+        );
+    }
+    check(value, schema, name)
 }
 
 impl Default for ToolRegistry {
@@ -131,4 +254,74 @@ pub fn create_default_registry() -> ToolRegistry {
     }
 
     registry
+}
+
+/// Build the single-chart registry from the already-resolved CLI provider
+/// configuration. This path must not decide whether a professional tool is
+/// available by inspecting only ambient environment variables.
+pub fn create_default_registry_with_visual_config(
+    provider: String,
+    model: String,
+    api_key: Option<String>,
+    base_url: Option<String>,
+) -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+    registry.register(WebSearchTool);
+    registry.register(CalculateTool);
+    registry.register(ModernChartTool);
+    registry.register(CreateChartTool);
+    registry.register(PiVisualizationTool::with_config(
+        provider, model, api_key, base_url,
+    ));
+    registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openai_tools_use_function_envelope() {
+        let mut registry = ToolRegistry::new();
+        registry.register(CalculateTool);
+        let tools = registry.to_openai_tools();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["type"], "function");
+        assert_eq!(tools[0]["function"]["name"], "calculate");
+        assert!(tools[0]["function"]["parameters"].is_object());
+        assert!(tools[0].get("input_schema").is_none());
+    }
+
+    #[tokio::test]
+    async fn rejects_string_parameters_before_tool_execution() {
+        let mut registry = ToolRegistry::new();
+        registry.register(ModernChartTool);
+        let error = registry
+            .execute("create_modern_chart", serde_json::json!("{\"data\":[]}"))
+            .await
+            .expect_err("a string must not reach the chart tool");
+        assert!(error
+            .to_string()
+            .contains("tool parameters must be a JSON object"));
+    }
+
+    #[tokio::test]
+    async fn rejects_array_field_encoded_as_string() {
+        let mut registry = ToolRegistry::new();
+        registry.register(ModernChartTool);
+        let error = registry
+            .execute(
+                "create_modern_chart",
+                serde_json::json!({
+                    "title": "A",
+                    "chart_type": "bar",
+                    "data": "[{\"label\":\"A\",\"value\":1}]"
+                }),
+            )
+            .await
+            .expect_err("data string must be rejected by the schema boundary");
+        assert!(error
+            .to_string()
+            .contains("data: expected JSON array, received string"));
+    }
 }

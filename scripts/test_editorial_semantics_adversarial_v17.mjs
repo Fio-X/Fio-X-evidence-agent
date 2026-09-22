@@ -29,6 +29,9 @@ for(const [relation,expectedForms] of grammarCases){
   assert.equal(gate.editorial_plan.grammar,relation);
   assert.deepEqual(gate.editorial_plan.recommended_forms,expectedForms);
 }
+const correlationAlias=evaluateVisualSemantics({measure_semantics:baseMeasures,claim_spec:{claim_id:'claim:correlation',relation:'correlation',reader_task:'correlation',measure_ids:['a','b']}});
+assert.equal(correlationAlias.editorial_plan.grammar,'relationship','correlation must canonicalize to relationship grammar');
+assert.deepEqual(correlationAlias.editorial_plan.recommended_forms,['scatter'],'correlation alias must retain scatter recommendation');
 
 const recipe=(patch={})=>({schema_version:'2.0.0',analytical_job:'comparison',artifact_mode:'static_editorial',story_family:'backend_negative_matrix',data_profile:{mark_count:10},geography:{enabled:false},network:{enabled:false},annotation:{label_count:4},delivery:{print:true,interactive:false},backend_hints:{required_capabilities:[]},...patch});
 const matrices=[

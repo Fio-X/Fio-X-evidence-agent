@@ -1,26 +1,35 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/art-direction-patch-v2.schema.json",
-  "title": "Art Direction Patch v2",
+  "title": "Art Direction Patch v2.1",
   "type": "object",
   "required": ["schema_version", "patch_id", "story_id", "base_semantic_fingerprint", "base_design_system_hash", "operations"],
   "properties": {
-    "schema_version": {"const": "2.0.0"},
+    "schema_version": {"const": "2.1.0"},
     "patch_id": {"type": "string", "minLength": 1},
     "story_id": {"type": "string", "minLength": 1},
-    "backend": {"type": ["string","null"]},
+    "backend": {"type": ["string", "null"]},
     "base_semantic_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "base_design_system_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "operations": {
-      "type": "array", "minItems": 1,
+      "type": "array",
+      "minItems": 1,
       "items": {
-        "type": "object", "required": ["target_id", "field", "value"],
+        "type": "object",
+        "required": ["operation_id", "validator_rule_id", "scene_id", "object_id", "op", "path"],
         "properties": {
-          "target_id": {"type": "string", "minLength": 1},
-          "field": {"enum": ["title_size","label_top_n","highlight_max","layout_margins","legend_position","label_offsets","visibility","line_breaks","composition"]},
+          "operation_id": {"type": "string", "minLength": 1},
+          "validator_rule_id": {"type": "string", "minLength": 1},
+          "scene_id": {"type": "string", "minLength": 1},
+          "object_id": {"type": "string", "minLength": 1},
+          "op": {"enum": ["add", "replace", "remove"]},
+          "path": {"type": "string", "pattern": "^/(options/(title_size|label_top_n|highlight_max|legend_position|label_offsets|visibility|line_breaks)|design_system/tokens/(outer_left|outer_right|plot_top|plot_bottom)|design_system/composition/[a-z][a-z0-9_]*)$"},
           "value": {},
-          "reason": {"type": ["string","null"]}
+          "previous_value": {},
+          "viewports": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["desktop", "tablet", "mobile", "all"]}},
+          "reason": {"type": ["string", "null"]}
         },
+        "allOf": [{"if": {"properties": {"op": {"enum": ["add", "replace"]}}}, "then": {"required": ["value"]}}],
         "additionalProperties": false
       }
     }

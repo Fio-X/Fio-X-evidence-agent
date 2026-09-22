@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { VISUAL_SKILLS } from './visual_skill_bundle.mjs';
 import { BACKENDS, BACKEND_POLICY_VERSION, backendEligibility, eligibleBackendIds, inferRecipeTopology, scoreBackends } from './backend_policy.mjs';
 import { resolveEditorialDesignSystem } from './editorial_design_system_bundle.mjs';
@@ -23,7 +25,16 @@ export function detectVisualRuntimeHealth(){
   const qgis=declaredStatus('qgis_cartography') ?? commandOk('qgis_process',['--version']);
   const pygmt=declaredStatus('pygmt_scientific') ?? (commandOk('gmt',['--version']) && pythonImports(['pygmt']));
   const ds=declaredStatus('datashader_density') ?? pythonImports(['datashader','dask']);
-  const browser=declared?(['plotly_browser','networkx_graph'].some(b=>declared.has(b))):(pythonImports(['networkx','plotly','playwright']) && commandOk('chromium',['--version']));
+  // Plotly and the native Canvas network renderer are bundled in this Node
+  // runtime. They do not require Python, NetworkX or a browser executable to
+  // produce a self-contained HTML artifact; those dependencies are only
+  // needed for optional browser QA or specialist graph analysis. The previous
+  // health check conflated those concerns and incorrectly marked the portable
+  // fallbacks unavailable on a clean machine.
+  const plotlyBundle=existsSync(fileURLToPath(new URL('./vendor/plotly-3.3.1.min.js',import.meta.url)));
+  const nativeCanvas=existsSync(fileURLToPath(new URL('./publication.mjs',import.meta.url)));
+  const networkx=declaredStatus('networkx_graph') ?? pythonImports(['networkx']);
+  const browser=declared ? (['plotly_browser','networkx_graph'].some(b=>declared.has(b))) : plotlyBundle;
   const web=declared?(['maplibre_deckgl','sigma_graph','echarts_editorial','d3_editorial'].some(b=>declared.has(b))):false;
   return Object.freeze({
     python_publication:py,r_editorial:r,qgis_cartography:qgis,pygmt_scientific:pygmt,datashader_density:ds,
@@ -32,7 +43,8 @@ export function detectVisualRuntimeHealth(){
     echarts_editorial:declaredStatus('echarts_editorial') ?? web,
     d3_editorial:declaredStatus('d3_editorial') ?? web,
     plotly_browser:declaredStatus('plotly_browser') ?? browser,
-    networkx_graph:declaredStatus('networkx_graph') ?? browser,
+    canvas_network:declaredStatus('canvas_network') ?? nativeCanvas,
+    networkx_graph:networkx,
     ggraph_static:declaredStatus('ggraph_static') ?? r,
     sfnetworks_spatial:declaredStatus('sfnetworks_spatial') ?? r,
     adjacency_matrix:declaredStatus('adjacency_matrix') ?? py

@@ -67,6 +67,27 @@ pub fn append_user_goal_event(events_path: &Path, mode: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn append_completion_retry_event(
+    events_path: &Path,
+    attempt: usize,
+    gaps: &[String],
+) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(events_path)
+        .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    let event = json!({
+        "type": "auto_retry_start",
+        "reason": "visual_completion_gate",
+        "attempt": attempt,
+        "gaps": gaps,
+        "recordedAt": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    writeln!(file, "{}", serde_json::to_string(&event)?)?;
+    Ok(())
+}
+
 pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
     let file = File::open(events_path)
         .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
@@ -352,5 +373,29 @@ mod tests {
         assert!(!summary.tool_failure_recovery_observed);
         assert!(summary.follow_up_replanning_observed);
         assert_eq!(summary.follow_up_goals, 1);
+    }
+
+    #[test]
+    fn completion_retry_event_is_counted_and_records_gaps() {
+        let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "newsroom-audit-retry-{}-{fixture_id}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let events_path = root.join("events.jsonl");
+        let output_path = root.join("tools.json");
+        let gaps = vec!["requested desktop/mobile PNG pair is incomplete".to_string()];
+        append_completion_retry_event(&events_path, 1, &gaps).unwrap();
+        let event: Value =
+            serde_json::from_str(&fs::read_to_string(&events_path).unwrap()).unwrap();
+        assert_eq!(event["reason"], "visual_completion_gate");
+        assert_eq!(event["attempt"], 1);
+        assert_eq!(event["gaps"][0], gaps[0]);
+        assert_eq!(
+            build(&events_path, &output_path).unwrap().automatic_retries,
+            1
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

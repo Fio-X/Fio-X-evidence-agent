@@ -16,6 +16,27 @@ def main()->int:
     if len(names)!=len(set(names)):
         raise SystemExit('duplicate tool names in tool registry')
     profiles=set(data.get('profiles') or [])
+    inheritance=data.get('profile_inheritance') or {}
+    if not isinstance(inheritance, dict):
+        raise SystemExit('profile_inheritance must be an object')
+    for profile, parents in inheritance.items():
+        if profile not in profiles:
+            raise SystemExit(f'unknown inherited profile: {profile}')
+        if not isinstance(parents, list) or any(parent not in profiles for parent in parents):
+            raise SystemExit(f'unknown parent profile for {profile}: {parents}')
+
+    def effective_profiles(profile, visiting=None):
+        visiting=set() if visiting is None else visiting
+        if profile in visiting:
+            raise SystemExit(f'profile inheritance cycle at {profile}')
+        visiting.add(profile)
+        result={profile}
+        for parent in inheritance.get(profile, []):
+            result.update(effective_profiles(parent, visiting))
+        visiting.remove(profile)
+        return result
+
+    effective={profile: effective_profiles(profile) for profile in profiles}
     for row in tools:
         if not row.get('phase') or not row.get('capability_class'):
             raise SystemExit(f'incomplete tool metadata: {row}')
@@ -33,7 +54,10 @@ def main()->int:
         "  const meta=toolMetadata(name); if(!meta) return false;\n"
         "  const requested=String(profile??TOOL_REGISTRY.default_profile).trim()||TOOL_REGISTRY.default_profile;\n"
         "  if(!TOOL_REGISTRY.profiles.includes(requested)) return false;\n"
-        "  return meta.agent_visible===true && meta.profiles.includes(requested);\n"
+        "  const seen=new Set(); const enabled=(profile)=>{ if(seen.has(profile)) return false; seen.add(profile);\n"
+        "    if(meta.profiles.includes(profile)) return true;\n"
+        "    return (TOOL_REGISTRY.profile_inheritance?.[profile]??[]).some(enabled); };\n"
+        "  return meta.agent_visible===true && enabled(requested);\n"
         "}\n",
         encoding='utf-8'
     )
@@ -42,7 +66,7 @@ def main()->int:
     profile_consts=[]
     profile_arms=[]
     for profile in data.get('profiles') or []:
-        enabled=','.join(row['name'] for row in tools if profile in (row.get('profiles') or []))
+        enabled=','.join(row['name'] for row in tools if effective[profile].intersection(row.get('profiles') or []))
         const_name='NEWSROOM_TOOLS_'+profile.upper().replace('-','_')
         profile_consts.append(f'pub const {const_name}: &str = "{enabled}";')
         profile_arms.append(f'        "{profile}" => Some({const_name}),')
@@ -67,7 +91,10 @@ def main()->int:
         + '    }\n'
         + '}\n\n'
         + 'pub fn is_capability_class(class: Option<&str>) -> bool {\n'
-        + '    matches!(class, Some("discovery" | "computation" | "evidence" | "synthesis" | "visual" | "publication"))\n'
+        + '    matches!(\n'
+        + '        class,\n'
+        + '        Some("discovery" | "computation" | "evidence" | "synthesis" | "visual" | "publication")\n'
+        + '    )\n'
         + '}\n',
         encoding='utf-8'
     )

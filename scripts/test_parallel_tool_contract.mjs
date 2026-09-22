@@ -56,16 +56,19 @@ const kindMatch = block.match(/kind: StringEnum\(\[([^\]]+)\] as const\)/s);
 assert.ok(kindMatch, 'parallel tool kind enum is missing');
 assert.deepEqual([...kindMatch[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]), expectedKinds);
 assert.doesNotMatch(block, /\bresource_(?:class|key)\b/, 'public parallel schema must not expose scheduler resource controls');
-for (const marker of [
-  'localHash(required("path"))',
-  'localText(required("path"))',
-  'localMetadata(required("path"))',
-  'localImageInfo(required("path"))',
-  'localSpotlight(required("query"), { limit:',
-  'localSqliteQuery(required("path"), required("sql"))',
-]) {
-  assert.ok(block.includes(marker), `runner mapping is missing: ${marker}`);
-}
+assert.ok(block.includes('localHash(required("path"))'), 'local_hash must map the required path');
+assert.match(block, /case "local_text":[\s\S]*?return resultBudget \? localText\(required\("path",?\), \{ full: true \}\) : localText\(required\("path"\)\);/,
+  'local_text must use full mode only for the opt-in result-budget path and preserve the default helper behavior');
+assert.ok(block.includes('localMetadata(required("path"))'), 'local_metadata must map the required path');
+assert.ok(block.includes('localImageInfo(required("path"))'), 'local_image_info must map the required path');
+assert.match(block, /localSpotlight\(required\("query"\), \{ limit: clampInt\(task\.limit, 1, 200, 50\) \}\)/,
+  'local_search must map the required query with its bounded limit');
+assert.match(block, /case "sqlite_query":[\s\S]*?return localSqliteQuery\(required\("path"\), required\("sql"\)\);/,
+  'sqlite_query must hand the complete task result to the scheduler');
+assert.match(block, /const resultBudget = modelResultBudget\(params\.result_budget\);/,
+  'optional result_budget must be normalized through modelResultBudget');
+assert.doesNotMatch(block, /localText\([^\n]*maxBytes|localSqliteQuery\([^\n]*maxRows/,
+  'parallel helpers must not apply model-visible budgets before scheduler persistence');
 assert.match(block, /maxConcurrency = clampInt\(params\.max_concurrency, 1, 8, 8\)/);
 assert.match(block, /artifactRoot: root/);
 assert.match(block, /appendArtifact\("runtime\/parallel-events\.jsonl", event\)/);

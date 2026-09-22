@@ -54,8 +54,11 @@
     }
   ],
   "lint": {
-    "schema_version": "0.8.0",
+    "schema_version": "0.9.0",
     "passed": true,
+    "verification_mode": "verified",
+    "artifact_status": "VERIFIED",
+    "publishable": true,
     "blockers": [],
     "warnings": [],
     "notes": [],

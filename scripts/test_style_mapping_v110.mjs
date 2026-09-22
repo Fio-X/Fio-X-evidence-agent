@@ -13,4 +13,5 @@ const cases=[
 for(const [dimensions,topologies,signals,expected] of cases){const r=resolveEditorialStyle({dimensions,topologies,signals});assert.equal(r.status,'PASS',JSON.stringify(r));assert.equal(r.profile,expected,JSON.stringify(r));assert.ok(r.tokens.font_body);assert.ok(r.tokens.density);assert.ok(r.tokens.annotation);}
 const blocked=resolveEditorialStyle({requested:'investigative_network',dimensions:['uncertainty'],topologies:['tabular']});assert.equal(blocked.status,'BLOCK');
 const nature=resolveEditorialStyle({requested:'nature_scientific_map',dimensions:['spatial','uncertainty'],topologies:['geography']});assert.equal(nature.status,'PASS');assert.equal(nature.tokens.color_strategy,'restrained');assert.equal(nature.tokens.scale_semantics,'required');
-console.log(JSON.stringify({status:'PASS',profiles:cases.map(x=>x[3]),negative:blocked.reasons},null,2));
+const japanese=resolveEditorialStyle({requested:'japanese_editorial',dimensions:['flow','network'],topologies:['flow_edges','graph_edges']});assert.equal(japanese.status,'PASS');assert.equal(japanese.tokens.geometry,'asymmetric_editorial');assert.equal(japanese.tokens.composition,'asymmetric_editorial');
+console.log(JSON.stringify({status:'PASS',profiles:[...cases.map(x=>x[3]),japanese.profile],negative:blocked.reasons},null,2));

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:fact-signature:0.1.0",
+  "title": "Agentic Data Newsroom FactSignature v0.1",
+  "type": "object",
+  "required": ["schema_version", "signature_id", "source", "facts", "calculations", "claims", "graphic_objects", "render_targets", "verification"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "signature_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "source": {"$ref": "#/$defs/stage"},
+    "facts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stage"}},
+    "calculations": {"type": "array", "items": {"$ref": "#/$defs/stage"}},
+    "claims": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stage"}},
+    "graphic_objects": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/graphic"}},
+    "render_targets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/render"}},
+    "verification": {"$ref": "#/$defs/verification"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stage": {
+      "type": "object", "required": ["id", "sha256"],
+      "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 160}, "sha256": {"$ref": "#/$defs/hash"}},
+      "additionalProperties": false
+    },
+    "graphic": {
+      "type": "object", "required": ["id", "claim_ids", "fact_ids", "sha256"],
+      "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 160}, "claim_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "fact_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "sha256": {"$ref": "#/$defs/hash"}},
+      "additionalProperties": false
+    },
+    "render": {
+      "type": "object", "required": ["id", "graphic_object_ids", "artifact_ref", "sha256"],
+      "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 160}, "graphic_object_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "artifact_ref": {"type": "string", "minLength": 1, "maxLength": 500}, "sha256": {"$ref": "#/$defs/hash"}},
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object", "required": ["authority", "source_resolved", "extraction_passed", "computation_replayed", "claim_supported", "publishable"],
+      "properties": {
+        "authority": {"const": "system"},
+        "source_resolved": {"type": "boolean"}, "extraction_passed": {"type": "boolean"},
+        "computation_replayed": {"type": "boolean"}, "claim_supported": {"type": "boolean"},
+        "publishable": {"type": "boolean", "description": "Computed by the system as the conjunction of all four gates; never authored by a model."},
+        "rule_id": {"const": "verification.source+extraction+computation+claim.v1"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

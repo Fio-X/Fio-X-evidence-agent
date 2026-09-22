@@ -104,6 +104,47 @@
       "audience=informed",
       "quality_target=award"
     ],
+    "validators": {
+      "passed": true,
+      "severity_counts": {
+        "FATAL": 0,
+        "ERROR": 0,
+        "WARNING": 0,
+        "INFO": 0
+      },
+      "issues": [],
+      "validators": {
+        "annotation_target_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "visual_channel_owner_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "misleading_quantitative_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "scene_cognitive_budget_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "grammar_compatibility_validator": {
+          "passed": true,
+          "issues": []
+        }
+      }
+    },
+    "synthesis": {
+      "passed": true,
+      "blockers": [],
+      "warnings": [],
+      "notes": [],
+      "metrics": {
+        "enforced": false
+      }
+    },
     "content_hash": "0ff2e6c12aab0f198baaf25f70715b01ea888c055885d736963b43f3b64de2f3"
   },
   "critic": {

@@ -183,6 +183,78 @@
         "pygmt_scientific",
         "qgis_cartography"
       ]
+    },
+    "visual_story": {
+      "topology": [
+        "tabular",
+        "events",
+        "flow_edges",
+        "graph_edges",
+        "geography"
+      ],
+      "requires": [
+        "editorial_discovery",
+        "story_graph",
+        "evidence_bound_modules",
+        "responsive_html",
+        "publication_qa"
+      ],
+      "preferred_backends": [
+        "lieflat_charts",
+        "d3_editorial",
+        "plotly_browser"
+      ]
+    },
+    "lieflat_chart": {
+      "topology": [
+        "tabular"
+      ],
+      "requires": [
+        "catalog_selection",
+        "verified_claim",
+        "offline_html"
+      ],
+      "preferred_backends": [
+        "lieflat_charts"
+      ]
+    },
+    "lieflat_report": {
+      "topology": [
+        "tabular",
+        "events",
+        "flow_edges",
+        "graph_edges",
+        "geography"
+      ],
+      "requires": [
+        "catalog_selection",
+        "story_graph",
+        "four_to_nine_modules",
+        "offline_html",
+        "publication_qa"
+      ],
+      "preferred_backends": [
+        "lieflat_charts"
+      ]
+    },
+    "browser_publication": {
+      "topology": [
+        "tabular",
+        "events",
+        "flow_edges",
+        "graph_edges",
+        "geo_edges"
+      ],
+      "requires": [
+        "real_index_html",
+        "run_root_containment",
+        "offline_or_declared_network",
+        "desktop_mobile_qa"
+      ],
+      "preferred_backends": [
+        "lieflat_charts",
+        "d3_editorial"
+      ]
     }
   }
 }

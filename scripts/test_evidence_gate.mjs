@@ -8,7 +8,10 @@ import {
   assertInlineRowsHaveEvidence,
   assertUsableSourceRecord,
   createSourceAccessCircuit,
+  deriveClaimVerification,
+  evaluateClaimSupport,
   evidenceRefFromFingerprint,
+  isSystemVerifiedClaim,
   requireVerifiedClaim,
 } from "../runtime/pi/evidence_gate.mjs";
 
@@ -25,11 +28,18 @@ const claims = new Map([
     claim: "Evidence-backed fixture claim",
     source_refs: ["data/fixture.csv"],
     computation_refs: ["computations/exact.json"],
+    verification: deriveClaimVerification({ source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true }),
   }],
   ["unsupported", { claim_id: "unsupported", status: "supported", source_refs: ["data/fixture.csv"] }],
 ]);
 
 assert.equal(requireVerifiedClaim(claims, "verified", "computations/exact.json").claim_id, "verified");
+assert.equal(isSystemVerifiedClaim(claims.get("verified")), true);
+assert.equal(isSystemVerifiedClaim({ ...claims.get("verified"), verification: undefined }), false);
+assert.equal(deriveClaimVerification({ source_resolved: true, extraction_passed: true, computation_replayed: false, claim_supported: true }).publishable, false);
+assert.equal(evaluateClaimSupport({ requested_status: 'supported', claim_kind: 'comparative', claim: 'The selected sum increased by 89%.' }).passed, true);
+assert.equal(evaluateClaimSupport({ requested_status: 'supported', claim_kind: 'causal', claim: 'Conflict caused migration.' }).passed, false);
+assert.equal(evaluateClaimSupport({ requested_status: 'supported', claim_kind: 'comparative', claim: '该变化反映危机驱动型迁移。' }).passed, false);
 assert.throws(() => requireVerifiedClaim(claims, "missing"), /VERIFIED_CLAIM_REQUIRED/);
 assert.throws(() => requireVerifiedClaim(claims, "unsupported"), /VERIFIED_CLAIM_REQUIRED/);
 assert.throws(() => requireVerifiedClaim(claims, "verified", "computations/synthetic.json"), /COMPUTATION_PROVENANCE_REQUIRED/);
@@ -75,7 +85,11 @@ assert.throws(() => circuit.assertAvailable(), /SOURCE_ACCESS_BLOCKED/);
 assert.equal(circuit.failureCount(), 3);
 
 const extension = await readFile(new URL("../runtime/pi/newsroom.ts", import.meta.url), "utf8");
-assert.match(extension, /assertEvidenceBackedStatus\(params\.status, params\.source_refs, params\.computation_refs\)/);
+assert.match(extension, /status: StringEnum\(\["hypothesis", "supported", "contested"\]/);
+assert.match(extension, /claim_kind: StringEnum/);
+assert.doesNotMatch(extension, /verification_mode: Type\.Optional/);
+assert.match(extension, /replayComputationEvidence\(computationRefs, sourceRefs, signal\)/);
+assert.match(extension, /COMPUTATION_PROVENANCE_REQUIRED/);
 assert.match(extension, /requireVerifiedClaim\(await verifiedClaimRecords\(\), params\.claim_id, computationRef\)/);
 assert.match(extension, /await validateSourceEvidence\(claim\.source_refs\)/);
 assert.match(extension, /assertInlineRowsHaveEvidence\(safeSql, await hasUsableEvidenceInput\(inputSnapshot\)\)/);

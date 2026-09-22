@@ -1,0 +1,59 @@
+{
+  "schema_version": "0.1.0",
+  "grammars": [
+    {
+      "id": "CUTAWAY",
+      "cognitive_goals": ["ORIENT", "ZOOM", "EXPLAIN"],
+      "required_evidence": ["spatial_structure"],
+      "compatible_supporting": ["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
+      "compatible_visual_grammars": ["spatial", "mechanism", "sequence", "benchmark"],
+      "renderer_capabilities": ["svg", "canvas2d"],
+      "hard_constraints": ["requires_verified_spatial_structure"]
+    },
+    {
+      "id": "SCALE_TRANSLATOR",
+      "cognitive_goals": ["ORIENT", "MEASURE", "COMPARE"],
+      "required_evidence": ["quantity", "human_scale_reference"],
+      "compatible_supporting": ["CUTAWAY", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"],
+      "compatible_visual_grammars": ["rank", "benchmark", "composition", "distribution"],
+      "renderer_capabilities": ["svg", "canvas2d"],
+      "hard_constraints": ["requires_comparable_quantity"]
+    },
+    {
+      "id": "MECHANISM_FLOW",
+      "cognitive_goals": ["EXPLAIN", "CONSEQUENCE"],
+      "required_evidence": ["process_or_causal_relation"],
+      "compatible_supporting": ["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"],
+      "compatible_visual_grammars": ["mechanism", "flow", "sequence", "network"],
+      "renderer_capabilities": ["svg", "canvas2d"],
+      "hard_constraints": ["requires_supported_process"]
+    },
+    {
+      "id": "SPECIMEN_GRID",
+      "cognitive_goals": ["ORIENT", "ZOOM", "COMPARE"],
+      "required_evidence": ["comparable_entities"],
+      "compatible_supporting": ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "THEN_NOW", "ROUTE_SPINE"],
+      "compatible_visual_grammars": ["rank", "composition", "distribution", "relationship", "network"],
+      "renderer_capabilities": ["svg", "canvas2d"],
+      "hard_constraints": ["requires_comparable_entities"]
+    },
+    {
+      "id": "THEN_NOW",
+      "cognitive_goals": ["ORIENT", "MEASURE", "COMPARE", "CONSEQUENCE"],
+      "required_evidence": ["comparable_timepoints"],
+      "compatible_supporting": ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "ROUTE_SPINE"],
+      "compatible_visual_grammars": ["change", "trend", "anomaly", "benchmark", "sequence"],
+      "renderer_capabilities": ["svg", "canvas2d", "webgl_map"],
+      "hard_constraints": ["requires_comparable_timepoints"]
+    },
+    {
+      "id": "ROUTE_SPINE",
+      "cognitive_goals": ["ORIENT", "ZOOM", "MEASURE", "COMPARE", "CONSEQUENCE"],
+      "required_evidence": ["origin_destination_relation", "verified_locations"],
+      "compatible_supporting": ["SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW"],
+      "compatible_visual_grammars": ["spatial", "flow", "network", "trend", "sequence"],
+      "renderer_capabilities": ["svg", "canvas2d", "webgl_map"],
+      "hard_constraints": ["requires_verified_locations", "requires_route_semantics"]
+    }
+  ]
+}

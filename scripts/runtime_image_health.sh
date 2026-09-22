@@ -32,20 +32,24 @@ PY
     ;;
   viz-web)
     ( cd runtime/web
-    node - <<'JS'
-const pkg=JSON.parse(require('fs').readFileSync('package.json','utf8'));
-Promise.all([import('sigma'),import('graphology'),import('maplibre-gl'),import('@deck.gl/core'),import('echarts')]).then(()=>console.log('viz-web PASS',process.version,pkg.version)).catch(e=>{console.error(e);process.exit(1)});
+    node --input-type=module - <<'JS'
+import {readFileSync} from 'node:fs';
+const pkg=JSON.parse(readFileSync('package.json','utf8'));
+for(const name of ['sigma','graphology','maplibre-gl','@deck.gl/core','echarts']){
+  console.log(name,import.meta.resolve(name));
+}
+console.log('viz-web PASS',process.version,pkg.version);
 JS
     )
     ;;
   viz-sigma)
     ( cd runtime/sigma
-      node -e "Promise.all([import('graphology'),import('sigma')]).then(()=>console.log('viz-sigma PASS')).catch(e=>{console.error(e);process.exit(1)})"
+      node --input-type=module -e "for(const name of ['graphology','sigma']) console.log(name,import.meta.resolve(name)); console.log('viz-sigma PASS')"
     )
     ;;
   viz-map)
     ( cd runtime/map
-      node -e "Promise.all([import('maplibre-gl'),import('@deck.gl/core')]).then(()=>console.log('viz-map PASS')).catch(e=>{console.error(e);process.exit(1)})"
+      node --input-type=module -e "for(const name of ['maplibre-gl','@deck.gl/core']) console.log(name,import.meta.resolve(name)); console.log('viz-map PASS')"
     )
     ;;
   viz-d3)

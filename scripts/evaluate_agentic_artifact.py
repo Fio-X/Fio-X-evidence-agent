@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 
+from verify_artifact import system_verified_claim
+
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = json.loads((ROOT / "config" / "tool-registry.json").read_text(encoding="utf-8"))
 CAPABILITY = {
@@ -70,7 +72,7 @@ def main() -> int:
         for name, count in counts.items()
         if count and name in CAPABILITY
     }
-    verified_claims = [claim for claim in claims if claim.get("status") == "verified"]
+    verified_claims = [claim for claim in claims if system_verified_claim(claim)]
     verified = [
         claim
         for claim in verified_claims
