@@ -47,6 +47,7 @@ def main():
         assert payload['matched_scenarios'] is True
         assert payload['candidate_source_commit']==COMMIT
         assert payload['matched_scenario_ids']==scenarios
+        assert payload['scenario_run_counts']=={'s1':1,'s2':1,'s3':1}
 
         write(agent,good_agent[:2])
         assert invoke(agent,baseline,out).returncode!=0
@@ -57,6 +58,11 @@ def main():
 
         bad=[dict(x) for x in good_baseline]; bad[-1]['scenario_id']='different'
         write(agent,good_agent); write(baseline,bad)
+        assert invoke(agent,baseline,out).returncode!=0
+
+        count_agent=[row('agent',1,'s1',COMMIT),row('agent',2,'s1',COMMIT),row('agent',3,'s2',COMMIT)]
+        count_baseline=[row('baseline',1,'s1'),row('baseline',2,'s2'),row('baseline',3,'s2')]
+        write(agent,count_agent); write(baseline,count_baseline)
         assert invoke(agent,baseline,out).returncode!=0
 
         bad=[dict(x) for x in good_agent]; bad[1]['run_id']=bad[0]['run_id']

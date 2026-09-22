@@ -116,6 +116,8 @@ def main() -> None:
         and agentic_checks.get('contextual_follow_up_replanning') is True
         and agentic_checks.get('unsupported_verified_claims_zero') is True
         and int(agentic.get('unsupported_verified_claims',0) or 0)==0
+        and isinstance(agentic.get('scenario_id'),str)
+        and bool(agentic.get('scenario_id').strip())
         and candidate_bound(agentic,expected_commit)
     )
 
@@ -127,6 +129,24 @@ def main() -> None:
         'autonomous_execution_rate',
         'adaptive_replanning_rate',
     )
+    reliability_rows=(reliability or {}).get('rows') or []
+    reliability_scenario=(reliability or {}).get('scenario_id')
+    reliability_rows_consistent=bool(
+        reliability
+        and isinstance(reliability_scenario,str)
+        and reliability_scenario.strip()
+        and isinstance(reliability_rows,list)
+        and len(reliability_rows)>=3
+        and all(
+            isinstance(row,dict)
+            and row.get('passed') is True
+            and row.get('provider')==reliability.get('provider')
+            and row.get('model')==reliability.get('model')
+            and row.get('source_commit')==reliability.get('source_commit')
+            and row.get('scenario_id')==reliability_scenario
+            for row in reliability_rows
+        )
+    )
     reliability_pass=bool(
         reliability
         and reliability.get('qualification_type')=='agentic_reliability'
@@ -135,8 +155,7 @@ def main() -> None:
         and reliability.get('minimum_trials_satisfied') is True
         and reliability.get('configuration_consistent') is True
         and reliability.get('all_pass') is True
-        and isinstance(reliability.get('rows'),list)
-        and len(reliability.get('rows'))>=3
+        and reliability_rows_consistent
         and all(rel_consistency.get(key)==1.0 for key in critical_rates)
         and candidate_bound(reliability,expected_commit)
     )
@@ -156,6 +175,7 @@ def main() -> None:
         isinstance(raw_inputs.get(mode),dict) and valid_sha256(raw_inputs[mode].get('sha256'))
         for mode in ('agent','baseline')
     )
+    scenario_run_counts=(business or {}).get('scenario_run_counts') or {}
     business_pass=bool(
         business
         and business.get('status')=='MEASURED'
@@ -170,6 +190,14 @@ def main() -> None:
         and isinstance(business.get('delta'),dict)
         and isinstance(business.get('scenarios'),dict)
         and set(business.get('matched_scenario_ids'))==set(business.get('scenarios'))
+        and isinstance(scenario_run_counts,dict)
+        and set(scenario_run_counts)==set(business.get('matched_scenario_ids'))
+        and all(
+            isinstance(count,int) and count>0
+            and (business.get('scenarios',{}).get(scenario_id) or {}).get('agent_runs')==count
+            and (business.get('scenarios',{}).get(scenario_id) or {}).get('baseline_runs')==count
+            for scenario_id,count in scenario_run_counts.items()
+        )
         and raw_hashes_ok
         and candidate_bound(business,expected_commit,'candidate_source_commit')
     )

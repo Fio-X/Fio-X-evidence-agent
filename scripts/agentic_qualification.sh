@@ -6,6 +6,7 @@ PROVIDER="${NEWSROOM_PROVIDER:-}"
 MODEL="${NEWSROOM_MODEL:-}"
 FIXTURE="${NEWSROOM_FIXTURE:-$ROOT/fixtures/world-bank-renewable-latest.csv}"
 OUT="${NEWSROOM_AGENTIC_OUT:-$ROOT/.newsroom/agentic-qualification}"
+SCENARIO_ID="${NEWSROOM_AGENTIC_SCENARIO_ID:-renewable-energy-open-goal-v1}"
 
 if [[ -z "$PROVIDER" || -z "$MODEL" ]]; then
   echo "NEWSROOM_PROVIDER and NEWSROOM_MODEL are required" >&2
@@ -52,7 +53,7 @@ ARTIFACT="$after"
 
 "$NEWS_BIN" verify "$ARTIFACT" --recompute
 "$NEWS_BIN" inspect "$ARTIFACT" | tee "$ARTIFACT/inspect.txt"
-python3 "$ROOT/scripts/evaluate_agentic_artifact.py" "$ARTIFACT" --provider "$PROVIDER" --model "$MODEL" | tee "$ARTIFACT/agentic-gate.txt"
+python3 "$ROOT/scripts/evaluate_agentic_artifact.py" "$ARTIFACT" --provider "$PROVIDER" --model "$MODEL" --scenario "$SCENARIO_ID" | tee "$ARTIFACT/agentic-gate.txt"
 python3 "$ROOT/scripts/business_metrics.py" "$ARTIFACT" > "$ARTIFACT/business-metrics.stdout.json"
 
 echo "agentic qualification artifact: $ARTIFACT"

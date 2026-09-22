@@ -7,6 +7,7 @@ matching, or candidate binding are absent.
 """
 from __future__ import annotations
 import argparse, hashlib, json, statistics
+from collections import Counter
 from pathlib import Path
 
 REQUIRED = (
@@ -95,6 +96,10 @@ def main():
     baseline_scenarios={row['scenario_id'] for row in baseline}
     if agent_scenarios != baseline_scenarios:
         raise SystemExit(f'scenario mismatch: agent={sorted(agent_scenarios)} baseline={sorted(baseline_scenarios)}')
+    agent_counts=Counter(row['scenario_id'] for row in agent)
+    baseline_counts=Counter(row['scenario_id'] for row in baseline)
+    if agent_counts != baseline_counts:
+        raise SystemExit(f'scenario run-count mismatch: agent={dict(agent_counts)} baseline={dict(baseline_counts)}')
     commits={row['source_commit'] for row in agent}
     if len(commits)!=1:
         raise SystemExit(f'agent runs must share one source_commit, got {sorted(commits)}')
@@ -128,6 +133,7 @@ def main():
         'baseline_runs':len(baseline),
         'matched_scenarios':True,
         'matched_scenario_ids':sorted(agent_scenarios),
+        'scenario_run_counts':dict(sorted(agent_counts.items())),
         'candidate_source_commit':candidate_source_commit,
         'raw_inputs':{
             'agent':{'path':str(args.agent),'sha256':sha256_file(args.agent)},

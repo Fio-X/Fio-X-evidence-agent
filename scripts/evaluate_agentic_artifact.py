@@ -67,6 +67,7 @@ def main() -> int:
     ap.add_argument("artifact", type=Path)
     ap.add_argument("--provider", default=os.environ.get("NEWSROOM_PROVIDER"))
     ap.add_argument("--model", default=os.environ.get("NEWSROOM_MODEL"))
+    ap.add_argument("--scenario", default=os.environ.get("NEWSROOM_AGENTIC_SCENARIO_ID"))
     args = ap.parse_args()
     root = args.artifact
 
@@ -121,8 +122,9 @@ def main() -> int:
     }
 
     result = {
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "qualification_type": "agentic",
+        "scenario_id": args.scenario,
         "source_commit": git_commit(),
         "status": "PASS" if passed else "FAIL",
         "passed": passed,

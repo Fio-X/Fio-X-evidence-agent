@@ -10,7 +10,7 @@ from selftest_evaluator import build_valid  # noqa: E402
 
 def run_evaluator(root: Path):
     return subprocess.run(
-        [sys.executable,str(ROOT/'scripts'/'evaluate_agentic_artifact.py'),str(root),'--provider','mock-provider','--model','mock-model'],
+        [sys.executable,str(ROOT/'scripts'/'evaluate_agentic_artifact.py'),str(root),'--provider','mock-provider','--model','mock-model','--scenario','fixture-open-goal-v1'],
         capture_output=True,text=True,
     )
 
@@ -37,6 +37,8 @@ def main():
             raise SystemExit('agentic qualification metadata mismatch')
         if not qualification.get('source_commit'):
             raise SystemExit('agentic qualification must bind source_commit')
+        if qualification.get('scenario_id')!='fixture-open-goal-v1':
+            raise SystemExit('agentic qualification must bind scenario_id')
 
         story_path=root/'story.json'
         story=json.loads(story_path.read_text())
@@ -51,6 +53,7 @@ def main():
         base={
             'qualification_type':'agentic','status':'PASS','passed':True,
             'provider':'provider-a','model':'model-a','source_commit':fixture_commit,
+            'scenario_id':'renewable-energy-open-goal-v1',
             'unsupported_verified_claims':0,'verified_source_and_computation_claims':1,
             'agent_wall_ms_total':1000,
             'usage_metrics':{'input_tokens':100,'output_tokens':50,'total_tokens':150,'cost':0.1},
@@ -82,6 +85,16 @@ def main():
         if mixed_summary.get('configuration_consistent') is not False:
             raise SystemExit('mixed reliability config was not detected')
 
+        write(qfiles[-1],dict(base))
+        scenario_mixed=dict(base); scenario_mixed['scenario_id']='different-open-goal-v1'; write(qfiles[-1],scenario_mixed)
+        scenario_run=run_trials(qfiles,Path(tmp)/'scenario-mixed')
+        if scenario_run.returncode==0:
+            raise SystemExit('mixed scenario_id must fail repeated reliability')
+        scenario_summary=json.loads((Path(tmp)/'scenario-mixed'/'summary.json').read_text())
+        if scenario_summary.get('configuration_consistent') is not False:
+            raise SystemExit('mixed reliability scenario was not detected')
+        write(qfiles[-1],dict(base))
+
         evidence=Path(tmp)/'evidence'; evidence.mkdir()
         preflight=evidence/'preflight.json'; rc=evidence/'rc.json'; cold=evidence/'cold.json'
         agentic=evidence/'agentic.json'; reliability=evidence/'reliability.json'
@@ -89,7 +102,7 @@ def main():
         write(preflight,{'status':'PASS'}); write(rc,{'status':'PASS'}); write(cold,{'status':'PASS'})
         write(agentic,{
             'qualification_type':'agentic','passed':True,'source_commit':fixture_commit,
-            'unsupported_verified_claims':0,
+            'scenario_id':'renewable-energy-open-goal-v1','unsupported_verified_claims':0,
             'checks':{
                 'causal_autonomous_execution':True,'adaptive_replanning':True,
                 'hidden_tool_failure_recovery':True,'same_session_follow_up':True,
@@ -99,7 +112,13 @@ def main():
         write(reliability,{
             'qualification_type':'agentic_reliability','status':'PASS','trials':3,
             'minimum_trials_satisfied':True,'configuration_consistent':True,'all_pass':True,
-            'source_commit':fixture_commit,'rows':[{}, {}, {}],
+            'provider':'provider-a','model':'model-a','source_commit':fixture_commit,
+            'scenario_id':'renewable-energy-open-goal-v1',
+            'rows':[
+                {'passed':True,'provider':'provider-a','model':'model-a','source_commit':fixture_commit,'scenario_id':'renewable-energy-open-goal-v1'},
+                {'passed':True,'provider':'provider-a','model':'model-a','source_commit':fixture_commit,'scenario_id':'renewable-energy-open-goal-v1'},
+                {'passed':True,'provider':'provider-a','model':'model-a','source_commit':fixture_commit,'scenario_id':'renewable-energy-open-goal-v1'},
+            ],
             'consistency':{
                 'claim_correctness_rate':1.0,'provenance_integrity_rate':1.0,
                 'recovery_success_rate':1.0,'autonomous_execution_rate':1.0,
