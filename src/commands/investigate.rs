@@ -1,7 +1,7 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::InvestigateArgs;
-use crate::pi::{run_prompt, PiConfig, PiRunResult};
+use crate::pi::{run_prompt, run_prompt_sequence, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
 use anyhow::{bail, Result};
 use serde_json::Value;
@@ -142,6 +142,16 @@ async fn run_prompt_with_empty_recovery(
     }
 }
 
+fn persistent_completion_prompts(topic: &str, initial: &str) -> Vec<String> {
+    let mode_contract = prompt::visual_mode_contract(topic);
+    let correction = |attempt| {
+        format!(
+            "System completion gate attempt {attempt}/2 found unfinished required work. Continue the same session and repair every outstanding visual and publication gate using the real visual-story tools. Do not weaken, remove, relabel, or replace requested visuals with prose or illustrations. Complete the self-contained HTML and requested desktop/mobile PNG files under NEWSROOM_ARTIFACT_DIR. Do not invent evidence or quantitative claims.\n{mode_contract}"
+        )
+    };
+    vec![initial.to_string(), correction(1), correction(2)]
+}
+
 pub async fn run(args: InvestigateArgs) -> Result<()> {
     if args.dry_run {
         let topic = args.topic.join(" ");
@@ -219,7 +229,21 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
     eprintln!("artifact: {}\n", bundle.dir.display());
 
     audit::append_user_goal_event(&bundle.events_path, "initial")?;
-    match run_prompt_with_empty_recovery(&config, &prompt, &prompt, &bundle.events_path).await {
+    let persistent_pi = std::env::var("NEWSROOM_PERSISTENT_PI_EXPERIMENT")
+        .ok()
+        .as_deref()
+        == Some("1");
+    let initial_result = if persistent_pi && prompt::is_complex_visual_request(&topic) {
+        let prompts = persistent_completion_prompts(&topic, &prompt);
+        eprintln!(
+            "[agent] persistent_pi_experiment=enabled prompt_count={}",
+            prompts.len()
+        );
+        run_prompt_sequence(&config, &prompts, Some(&bundle.events_path)).await
+    } else {
+        run_prompt_with_empty_recovery(&config, &prompt, &prompt, &bundle.events_path).await
+    };
+    match initial_result {
         Ok(result) => {
             let persistence_started = Instant::now();
             bundle.append_conversation(&topic, &result.text)?;
@@ -230,7 +254,7 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
             }
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
             let mut completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
-            if prompt::is_complex_visual_request(&topic) {
+            if prompt::is_complex_visual_request(&topic) && !persistent_pi {
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
                         break;

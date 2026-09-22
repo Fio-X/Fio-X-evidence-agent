@@ -415,6 +415,19 @@ pub async fn run_prompt(
     prompt: &str,
     event_log: Option<&Path>,
 ) -> Result<PiRunResult> {
+    run_prompt_sequence(config, &[prompt.to_string()], event_log).await
+}
+
+/// Bounded opt-in/session entry point: send a finite prompt sequence through
+/// one Pi child. The default run_prompt path remains a one-prompt session.
+pub async fn run_prompt_sequence(
+    config: &PiConfig,
+    prompts: &[String],
+    event_log: Option<&Path>,
+) -> Result<PiRunResult> {
+    if prompts.is_empty() {
+        bail!("Pi RPC prompt sequence cannot be empty");
+    }
     let startup = wait_duration("NEWSROOM_RPC_STARTUP_MS", 60_000, false)?;
     let idle = wait_duration("NEWSROOM_RPC_IDLE_MS", 300_000, false)?;
     let finish = wait_duration("NEWSROOM_RPC_FINISH_MS", 30_000, false)?;
@@ -473,7 +486,7 @@ pub async fn run_prompt(
             &json!({
                 "id": "news-prompt",
                 "type": "prompt",
-                "message": prompt
+                "message": prompts[0]
             }),
             startup,
         )
@@ -498,6 +511,7 @@ pub async fn run_prompt(
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
         let mut provider_turn_failed = false;
+        let mut prompt_index = 0_usize;
 
         let mut line = Vec::new();
         loop {
@@ -601,7 +615,7 @@ pub async fn run_prompt(
                             &json!({
                                 "id": format!("news-prompt-retry-{prompt_attempt}"),
                                 "type": "prompt",
-                                "message": prompt
+                                "message": prompts[prompt_index]
                             }),
                             startup,
                         )
@@ -697,8 +711,29 @@ pub async fn run_prompt(
                 }
                 Some("agent_settled") => {
                     saw_settled = true;
-                    finish_started.get_or_insert_with(Instant::now);
-                    if !final_queries_sent {
+                    if prompt_index + 1 < prompts.len() {
+                        prompt_index += 1;
+                        saw_settled = false;
+                        prompt_accepted = false;
+                        active_work = false;
+                        finish_started = None;
+                        final_text_response_received = false;
+                        session_stats_response_received = false;
+                        final_queries_sent = false;
+                        send_json(
+                            &mut stdin,
+                            &json!({
+                                "id": format!("news-prompt-{}", prompt_index + 1),
+                                "type": "prompt",
+                                "message": prompts[prompt_index]
+                            }),
+                            startup,
+                        )
+                        .await?;
+                    } else {
+                        finish_started.get_or_insert_with(Instant::now);
+                    }
+                    if saw_settled && !final_queries_sent {
                         send_json(
                             &mut stdin,
                             &json!({
@@ -805,7 +840,8 @@ pub async fn run_prompt(
                 "rpc_ms": rpc_ms,
                 "first_model_text_ms": first_text_ms,
                 "prompt_attempts": prompt_attempt,
-                "prompt_bytes": prompt.len(),
+                "prompt_bytes": prompts.iter().map(|value| value.len()).sum::<usize>(),
+                "prompt_count": prompts.len(),
                 "tool_profile": effective_profile,
                 "tool_count": tool_count,
                 "continue_session": config.continue_session,
