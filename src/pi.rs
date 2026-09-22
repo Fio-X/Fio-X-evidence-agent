@@ -120,6 +120,38 @@ fn append_node_option(existing: Option<String>, option: &str) -> String {
     }
 }
 
+const VALID_NEWSROOM_PHASES: &[&str] = &[
+    "core",
+    "discover",
+    "verify",
+    "synthesize",
+    "design",
+    "publish",
+    "verify_publication",
+];
+
+fn normalized_newsroom_phase() -> Option<String> {
+    let raw = std::env::var("NEWSROOM_PHASE").ok()?;
+    let value = raw.trim();
+    if value.is_empty() || value == "all" {
+        return Some(value.to_owned());
+    }
+    let phases: Vec<&str> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|phase| !phase.is_empty())
+        .collect();
+    if !phases.is_empty()
+        && phases
+            .iter()
+            .all(|phase| VALID_NEWSROOM_PHASES.contains(phase))
+    {
+        Some(phases.join(","))
+    } else {
+        Some("core".to_owned())
+    }
+}
+
 fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     let diagnostic = event
         .get("error")
@@ -298,6 +330,9 @@ impl PiConfig {
             DEFAULT_TOOL_PROFILE
         };
         cmd.env("NEWSROOM_TOOL_PROFILE", effective_profile);
+        if let Some(phase) = normalized_newsroom_phase() {
+            cmd.env("NEWSROOM_PHASE", phase);
+        }
 
         // Keep the wrapper reproducible and avoid Pi's startup version check / telemetry.
         // Model-provider and explicitly invoked newsroom network tools remain available.
