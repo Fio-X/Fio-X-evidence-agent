@@ -15,7 +15,7 @@ on:
 jobs:
   qualify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     env:
       NEWSROOM_PROVIDER: ${{ inputs.provider }}
       NEWSROOM_MODEL: ${{ inputs.model }}
@@ -45,11 +45,10 @@ jobs:
         run: cargo build --locked --release --bin news
       - name: Strict runtime readiness
         run: target/release/news doctor --strict --json --provider "$NEWSROOM_PROVIDER" --model "$NEWSROOM_MODEL"
-      - name: Run agentic qualification
+      - name: Run repeated agentic qualification
         env:
           NEWSROOM_NEWS_BIN: ${{ github.workspace }}/target/release/news
-          NEWSROOM_AGENTIC_OUT: ${{ github.workspace }}/.newsroom/agentic-qualification
-        run: ./scripts/agentic_qualification.sh
+        run: python3 scripts/agentic_trials.py --trials 3 --out "${{ github.workspace }}/.newsroom/agentic-trials"
       - name: Run integration qualification
         env:
           NEWSROOM_NEWS_BIN: ${{ github.workspace }}/target/release/news
@@ -61,7 +60,7 @@ jobs:
         with:
           name: newsroom-${{ inputs.provider }}-${{ inputs.model }}-qualification
           path: |
-            .newsroom/agentic-qualification
+            .newsroom/agentic-trials
             .newsroom/integration-qualification
           if-no-files-found: warn
           retention-days: 14
