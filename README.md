@@ -1,6 +1,6 @@
 # Agentic Data Newsroom
 
-智能数据新闻编辑室。
+Rust 控制平面 + Pi 驱动的智能数据新闻编辑室。
 
 ## 简介
 
@@ -196,9 +196,20 @@ PJ004/
 
 - **investigate** (默认): 基础调查工具（搜索、数据、可视化）
 - **visual**: 完整视觉合成工具（图表、解释图、插图）
+- **visual-story**: 复杂信息图工具（StoryGraph、GIS/流/网络 publication 与 portable HTML fallback）
 - **publication**: 发布管线工具（排版、QA、竞赛预检）
 - **competition**: 完整竞赛工具集
 - **full**: 所有可用工具
+
+### 可视化请求的数据与交付契约
+
+当 `news investigate` 的目标包含“图表 / 可视化 / 信息图 / SVG / HTML”等视觉交付词时，默认的 `investigate` profile 会自动提升为 `visual` profile。代理必须先检查本地文件；缺少数据时只能通过 `news_search`、`fetch_url`、`download_data` 获取可复现的 CSV/JSON/Parquet/TSV，再用 `duckdb_query` 计算图表行，不能用模型记忆或 `VALUES` 伪造数据。
+
+单图默认输出最小可交付物（SVG 与自包含 HTML 伴随文件）；明确要求完整报告时才生成多模块 HTML。`visual-story` profile 的复杂信息图路径使用其实际暴露的 visual backend、地图/网络分析与发布工具，并通过 `newsroom_publication_plan` → `newsroom_publication_render` → `newsroom_publication_qa` 完成发布链；需要模板保底时可使用 `newsroom_lieflat_catalog` → `newsroom_lieflat_render`。若显式选择 `publication`、`competition` 或 `full` profile，则还可使用这些 profile 暴露的 `newsroom_portable_publication`；该工具不属于 `visual-story` profile。发布路径继续校验 verified claim、source 与 computation 绑定；没有可验证数据时不得生成可发布的事实性图表。
+
+这里的 verified claim 是“发布事实性图表”的门槛，不是加载可视化 skill 或探索图形语法的门槛。`visual-story` 通过 canonical `visual-story` → `visual` profile inheritance 继承 `visual` 工具面，因此其 effective surface 包含 `newsroom_viz_plan` 等视觉规划工具；在探索阶段可使用 draft verification 语义检查布局和交互。`visual-story` 额外使用自身的设计、合成和 publication 工具链，并在最终交付前继续受 evidence、verification、completion、publication 与 browser-QA gate 约束。`newsroom_portable_publication` 只由 `publication`、`competition` 和 `full` profile 暴露，不属于 `visual-story` 的 effective tool surface。
+
+OpenAI Chat Completions 与 Anthropic Messages 的工具协议由客户端分别编码：OpenAI 使用 `type=function` / `function.parameters`，工具调用参数必须解码为 JSON 对象；数组字段（例如 `data`、`modules`）若被模型编码成字符串会在分发边界被拒绝并返回字段路径。
 
 ## 开发
 

@@ -183,12 +183,15 @@
     }
   ],
   "lint": {
-    "schema_version": "0.8.0",
+    "schema_version": "0.9.0",
     "passed": true,
+    "verification_mode": "verified",
+    "artifact_status": "VERIFIED",
+    "publishable": true,
     "blockers": [],
     "warnings": [],
     "notes": [],
-    "data_hash": "8b17da77eec2949d10de27afd5257c9de0b55607a1b7b3086d136096ee680273",
+    "data_hash": "8dce9ded20955214c250fbece083df22e9e992925716e0f5b5e423bac353eba0",
     "row_count": 32
   }
 }

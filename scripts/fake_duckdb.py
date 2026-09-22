@@ -5,7 +5,7 @@ mode = os.environ.get("FAKE_DUCKDB_MODE", "match")
 if mode == "error":
     print("synthetic DuckDB failure", file=sys.stderr)
     raise SystemExit(7)
-rows = [{"country": "A", "value": 1}, {"country": "B", "value": 2}]
+rows = [{"country": "A", "value": 15208319.706770007}, {"country": "B", "value": -0.280294}, {"country": "C", "value": 23747.0703125}]
 if mode == "mismatch":
     rows[1]["value"] = 999
 print(json.dumps(rows, separators=(",", ":")))

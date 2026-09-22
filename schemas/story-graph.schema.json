@@ -23,7 +23,7 @@
         "id":{"type":"string","minLength":1,"maxLength":80},
         "kind":{"enum":["evidence","claim","mechanism","context","outcome","uncertainty"]},
         "summary":{"type":"string","minLength":1,"maxLength":420},
-        "explanatory_dimension":{"enum":["trend","rank","spatial","mechanism","comparison","distribution","uncertainty","human_scale","method","context","outcome"]},
+        "explanatory_dimension":{"enum":["trend","rank","spatial","mechanism","comparison","distribution","uncertainty","human_scale","method","context","outcome","relationship"]},
         "claim_ids":{"type":"array","uniqueItems":true,"maxItems":20,"items":{"type":"string","minLength":1}},
         "evidence_refs":{"type":"array","uniqueItems":true,"maxItems":20,"items":{"type":"string","minLength":1}},
         "module_hint":{"type":"string","maxLength":120}

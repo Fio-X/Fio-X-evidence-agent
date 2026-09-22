@@ -62,7 +62,7 @@ pub struct PiArgs {
     #[arg(long, default_value_t = false)]
     pub approve_project: bool,
 
-    /// Agent-visible tool profile. Use investigate for the compact default surface; visual/publication/competition/full expose broader capabilities.
+    /// Agent-visible tool profile. Use investigate for the compact default surface; visual-story exposes the direct rich publication surface, while visual/publication/competition/full expose broader capabilities.
     #[arg(long, env = "NEWSROOM_TOOL_PROFILE", default_value = "investigate")]
     pub tool_profile: String,
 }

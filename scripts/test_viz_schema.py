@@ -61,6 +61,14 @@ errors = list(validator.iter_errors(bad_annotation))
 if not any("claim_id" in error.message for error in errors):
     raise SystemExit("annotation without claim_id was not rejected")
 
+draft = json.loads(json.dumps(valid))
+draft["verification_mode"] = "draft"
+draft.pop("claim_id")
+draft["annotations"][0].pop("claim_id")
+errors = list(validator.iter_errors(draft))
+if errors:
+    raise SystemExit("draft spec without claim_id failed schema validation: " + " | ".join(error.message for error in errors))
+
 
 valid_sankey = {
     "schema_version": "0.8.0",

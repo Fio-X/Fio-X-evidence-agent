@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 export const STORY_GRAPH_SCHEMA_VERSION = '0.1.0';
 export const STORY_NODE_KINDS = ['evidence','claim','mechanism','context','outcome','uncertainty'];
 export const STORY_EDGE_RELATIONS = ['supports','causes','contributes_to','explains','contrasts_with','qualifies','locates','precedes','benchmarks'];
-export const STORY_DIMENSIONS = ['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome'];
+export const STORY_DIMENSIONS = ['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome','relationship'];
 
 function text(value){ return String(value ?? '').trim(); }
 function uniq(values){ return [...new Set((values ?? []).map((v)=>text(v)).filter(Boolean))]; }

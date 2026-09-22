@@ -424,7 +424,7 @@ fn verify_computations(root: &Path, report: &mut VerificationReport) -> Result<(
         if let (Some(rows), Some(expected)) =
             (rows, value.get("result_hash").and_then(Value::as_str))
         {
-            let actual = sha256_bytes(canonical_json(rows).as_bytes());
+            let actual = sha256_bytes(canonical_rows_json(rows).as_bytes());
             report.check(
                 actual == expected,
                 format!("computation result_hash mismatch in {}", path.display()),
@@ -548,6 +548,16 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
         if claim.get("status").and_then(Value::as_str) != Some("verified") {
             continue;
         }
+        report.check(
+            is_system_verified_claim(&claim),
+            format!(
+                "verified claim on line {} lacks system-derived verification",
+                line_no + 1
+            ),
+        );
+        if !is_system_verified_claim(&claim) {
+            continue;
+        }
         let source_refs = claim
             .get("source_refs")
             .and_then(Value::as_array)
@@ -636,6 +646,13 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             .get("claim_id")
             .and_then(Value::as_str)
             .unwrap_or("");
+        let verification_mode = manifest
+            .get("verification_mode")
+            .and_then(Value::as_str)
+            .unwrap_or("verified");
+        let draft = verification_mode == "draft"
+            || manifest.get("artifact_status").and_then(Value::as_str) == Some("DRAFT")
+            || manifest.get("publishable").and_then(Value::as_bool) == Some(false);
         report.check(
             !plan_ref.is_empty(),
             format!("visualization {name} missing plan_ref"),
@@ -644,10 +661,19 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             !lint_ref.is_empty(),
             format!("visualization {name} missing lint_ref"),
         );
-        report.check(
-            verified_claims.contains(claim_id),
-            format!("visualization {name} claim_id is not verified: {claim_id}"),
-        );
+        if draft {
+            report.check(
+                claim_id.is_empty() || verified_claims.contains(claim_id),
+                format!(
+                    "draft visualization {name} has an unverified optional claim_id: {claim_id}"
+                ),
+            );
+        } else {
+            report.check(
+                verified_claims.contains(claim_id),
+                format!("visualization {name} claim_id is not verified: {claim_id}"),
+            );
+        }
         for (label, reference, prefix) in [
             ("plan", plan_ref, "visualizations/plans/"),
             ("lint", lint_ref, "visualizations/lints/"),
@@ -792,13 +818,33 @@ fn verified_claim_ids(root: &Path) -> Result<HashSet<String>> {
             Ok(value) => value,
             Err(_) => continue,
         };
-        if value.get("status").and_then(Value::as_str) == Some("verified") {
+        if is_system_verified_claim(&value) {
             if let Some(id) = value.get("claim_id").and_then(Value::as_str) {
                 ids.insert(id.to_owned());
             }
         }
     }
     Ok(ids)
+}
+
+fn is_system_verified_claim(value: &Value) -> bool {
+    let verification = match value.get("verification") {
+        Some(value) => value,
+        None => return false,
+    };
+    value.get("status").and_then(Value::as_str) == Some("verified")
+        && verification.get("authority").and_then(Value::as_str) == Some("system")
+        && verification.get("rule_id").and_then(Value::as_str)
+            == Some("verification.source+extraction+computation+claim.v1")
+        && [
+            "source_resolved",
+            "extraction_passed",
+            "computation_replayed",
+            "claim_supported",
+            "publishable",
+        ]
+        .iter()
+        .all(|key| verification.get(key).and_then(Value::as_bool) == Some(true))
 }
 
 fn safe_ref(root: &Path, reference: &str) -> Result<PathBuf> {
@@ -850,6 +896,65 @@ fn canonical_json(value: &Value) -> String {
             format!("{{{body}}}")
         }
     }
+}
+
+/// Canonical wire form for computation rows. JavaScript/V8, serde_json and
+/// Python can choose different decimal spellings and halfway rounding for the
+/// same IEEE-754 value. Hashing non-integral values as six-decimal strings,
+/// rounded explicitly half-away-from-zero, keeps the evidence hash stable
+/// across those runtimes while preserving the precision used by the newsroom
+/// data contracts.
+fn canonical_rows_json(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_owned(),
+        Value::Bool(_) | Value::String(_) => serde_json::to_string(value).unwrap_or_default(),
+        Value::Number(number) => canonical_row_number(number),
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(canonical_rows_json)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Value::Object(map) => {
+            let sorted: BTreeMap<&String, &Value> = map.iter().collect();
+            let body = sorted
+                .into_iter()
+                .map(|(key, value)| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).unwrap_or_default(),
+                        canonical_rows_json(value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{body}}}")
+        }
+    }
+}
+
+fn canonical_row_number(number: &serde_json::Number) -> String {
+    if let Some(value) = number.as_f64() {
+        const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+        if value.is_finite() && value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER {
+            return (value as i64).to_string();
+        }
+        if value.is_finite() {
+            let magnitude = (value.abs() * 1_000_000.0 + 0.5).floor();
+            if magnitude.is_finite() && magnitude <= MAX_SAFE_INTEGER {
+                let scaled = magnitude as u64;
+                let sign = if value.is_sign_negative() { "-" } else { "" };
+                let whole = scaled / 1_000_000;
+                let fraction = scaled % 1_000_000;
+                return serde_json::to_string(&format!("{sign}{whole}.{fraction:06}"))
+                    .unwrap_or_default();
+            }
+            return serde_json::to_string(&format!("{value:.6}")).unwrap_or_default();
+        }
+    }
+    number.to_string()
 }
 
 /// DuckDB's JSON output may spell an integral CSV coordinate as `35.0` while
@@ -944,7 +1049,13 @@ pub async fn recompute_artifact(
             }
         };
 
-        let allowed_dirs = format!("SET allowed_directories = ['{data_dir}', '{source_dir}']");
+        let computation_dir = root
+            .join("computations")
+            .to_string_lossy()
+            .replace('\'', "''");
+        let allowed_dirs = format!(
+            "SET allowed_directories = ['{data_dir}', '{source_dir}', '{computation_dir}']"
+        );
         let mut command = Command::new(duckdb_bin);
         command
             .current_dir(root)
@@ -1020,11 +1131,11 @@ pub async fn recompute_artifact(
             }
         };
         report.check(
-            canonical_json(&actual_rows) == canonical_json(&stored_rows),
+            canonical_rows_json(&actual_rows) == canonical_rows_json(&stored_rows),
             format!("recompute rows mismatch: {}", path.display()),
         );
         if let Some(expected) = value.get("result_hash").and_then(Value::as_str) {
-            let actual = sha256_bytes(canonical_json(&actual_rows).as_bytes());
+            let actual = sha256_bytes(canonical_rows_json(&actual_rows).as_bytes());
             report.check(
                 actual == expected,
                 format!("recompute result_hash mismatch: {}", path.display()),
@@ -1144,6 +1255,18 @@ mod tests {
         assert_eq!(canonical_json(&integer), canonical_json(&float));
         let fractional: Value = serde_json::from_str("35.25").unwrap();
         assert_ne!(canonical_json(&integer), canonical_json(&fractional));
+    }
+
+    #[test]
+    fn canonical_rows_uses_cross_runtime_float_wire_form() {
+        let value: Value = serde_json::from_str(
+            r#"[{"b":15208319.706770007,"a":35.0,"c":-0.28029356075421674,"half":23747.0703125}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            canonical_rows_json(&value),
+            r#"[{"a":35,"b":"15208319.706770","c":"-0.280294","half":"23747.070313"}]"#
+        );
     }
 
     #[test]

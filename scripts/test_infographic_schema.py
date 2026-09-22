@@ -157,3 +157,33 @@ bad_v14.pop('story_graph_ref')
 if not list(validator.iter_errors(bad_v14)):
     raise SystemExit('1.4 infographic without story_graph_ref was accepted')
 print('v1.4 reader-question/story-graph fields: PASS')
+
+valid_v15 = json.loads(json.dumps(valid_v14))
+valid_v15['schema_version'] = '1.5.0'
+valid_v15['editorial_grammar'] = {
+    'schema_version':'0.1.0','project_id':'schema-test','primary':'ROUTE_SPINE','supporting':['THEN_NOW'],
+    'available_renderer_capabilities':['svg'],
+    'evidence_features':['origin_destination_relation','verified_locations'],
+    'cognitive_goals':['ORIENT'],
+    'candidates':[
+        {'grammar':'ROUTE_SPINE','hard_constraints_passed':True,'renderer_capability_passed':True,'soft_score':1,'reason_codes':['route']},
+        {'grammar':'THEN_NOW','hard_constraints_passed':True,'renderer_capability_passed':True,'soft_score':.8,'reason_codes':['time']},
+        {'grammar':'SCALE_TRANSLATOR','hard_constraints_passed':True,'renderer_capability_passed':True,'soft_score':.7,'reason_codes':['scale']},
+    ],
+    'selected':'ROUTE_SPINE','decision_log':[{'stage':'final_selection','grammar':'ROUTE_SPINE','outcome':'select','reason_code':'score'}]
+}
+valid_v15['scene_graph'] = {
+    'schema_version':'0.2.0','scenes':[{
+        'id':'hero-scene','pattern':'hero_sidecar_stack','anchor_module_id':'viz-1','sidecar_module_ids':['stat-1','text-1'],
+        'primary_cognitive_goal':'ORIENT','hero_object_id':'viz-1','supporting_claim_ids':['claim-1'],
+        'scene_budget':{'max_supporting_objects':2,'max_annotations':2,'max_claims':3}
+    }]
+}
+errors = list(validator.iter_errors(valid_v15))
+if errors:
+    raise SystemExit('valid 1.5 infographic rejected: ' + ' | '.join(e.message for e in errors))
+bad_v15 = json.loads(json.dumps(valid_v15))
+bad_v15['scene_graph']['schema_version'] = '0.1.0'
+if not list(validator.iter_errors(bad_v15)):
+    raise SystemExit('1.5 infographic accepted SceneGraph 0.1')
+print('v1.5 cognitive scene/editorial grammar fields: PASS')

@@ -76,6 +76,7 @@ const good = {
 const goodLint = lintVizSpec(good, rows, { verified_claim_ids: [claimId] });
 assert.equal(goodLint.passed, true, goodLint.blockers.join(" | "));
 assert.equal(goodLint.data_hash, hashRows(rows));
+assert.equal(hashRows([{ value: 23747.0703125 }]), hashRows([{ value: "23747.070313" }]));
 const svg = renderVizSvg(good, rows);
 assert.match(svg, /2021/);
 assert.match(svg, /2022/);
@@ -179,6 +180,23 @@ assert.ok(clutterCritic.issues.some((item) => item.code === "too_many_highlights
 const unverified = lintVizSpec({ ...good, claim_id: "claim-not-verified" }, rows, { verified_claim_ids: [claimId] });
 assert.equal(unverified.passed, false);
 assert.ok(unverified.blockers.some((item) => item.includes("not a verified recorded claim")));
+
+// Exploratory visual work may run before a factual claim is reviewed, but the
+// resulting artifact must carry an explicit DRAFT/non-publishable status.
+const draft = {
+  ...good,
+  verification_mode: "draft",
+  claim_id: undefined,
+  annotations: [{ ...good.annotations[0], claim_id: undefined }],
+};
+const draftLint = lintVizSpec(draft, rows, { verified_claim_ids: [] });
+assert.equal(draftLint.passed, true, draftLint.blockers.join(" | "));
+assert.equal(draftLint.artifact_status, "DRAFT");
+assert.equal(draftLint.publishable, false);
+assert.ok(draftLint.warnings.some((item) => item.includes("DRAFT visualization")));
+const missingVerifiedClaim = lintVizSpec({ ...good, verification_mode: "verified", claim_id: undefined }, rows, { verified_claim_ids: [] });
+assert.equal(missingVerifiedClaim.passed, false);
+assert.ok(missingVerifiedClaim.blockers.some((item) => item.includes("requires claim_id")));
 
 if (process.argv.includes("--write-fixture")) {
   await writeFile(new URL("../fixtures/newsroom-viz-v0.5.svg", import.meta.url), responsive.desktop, "utf8");
