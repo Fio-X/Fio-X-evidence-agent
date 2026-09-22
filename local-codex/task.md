@@ -1,115 +1,125 @@
-# Local Codex task: System One R6 production review follow-up
+# Local Codex task: System One R6 macOS-native CI gate
 
-Task ID: `system-one-r6-production-review-followup`
+Task ID: `system-one-r6-macos-native-ci-gate`
 
-Expected branch: `fix/system-one-r6-production-review-blockers`
+Expected branch: `ci/system-one-r6-macos-native-gate`
 
-Current reviewed commit: `dad5b0e31b90e650950c085bb4b9dc9c8cd51a1f`
+Base production-candidate commit: `fd4367cbabe33ae7259d88ad55e537555c3fc1cb`
 
-Parent production-candidate PR: #29
-Target fix PR: #30
+Parent production-candidate PR: #30
 
 ## Objective
 
-Resolve the two remaining PR #30 review findings without changing architecture or adding any new System One mechanism.
+Add a narrow GitHub Actions macOS-native CI job so the repository continuously verifies the local backend and parallel replay contracts that the existing Ubuntu CI cannot execute semantically.
 
-The classifier/completion fix is accepted. The budgeted parallel replay direction is accepted. Preserve both.
+This is CI hardening only. Do not change product/runtime behavior.
 
-## Finding 1: restore strict opt-in behavior for parallel local_text
+Use the stable GitHub-hosted runner label:
 
-Current PR #30 wiring calls:
+`macos-26`
 
-`localText(required("path"), { full: true })`
+Do not use the `xcode-27` public-preview runner as a required production gate.
 
-for every parallel local_text task, including when public `result_budget` is unset.
+## Required CI behavior
 
-That changes the default/unset path relative to the production-candidate baseline, whose helper-level local_text behavior used the existing default cap.
+Modify the existing workflow `.github/workflows/ci.yml` by adding one independent job with a clear name such as `macos-native-contracts`.
 
-Required behavior:
+The job must:
 
-- If `result_budget` is present, the parallel runner must request the complete helper result before scheduler model-visible compaction.
-- If `result_budget` is absent, preserve the pre-existing default local_text helper behavior.
-- The scheduler remains the only model-visible budget owner for the opt-in result-budget path.
-- Do not change the public `result_budget` schema.
-- Do not change the scheduler.
-- SQLite should continue returning its complete successful query result to the scheduler within its existing execution safety bound.
-- Do not reintroduce `maxRows` helper truncation.
+- run on `macos-26`;
+- checkout the repository;
+- use the same pinned Node version as the existing Ubuntu CI unless there is a concrete compatibility reason not to;
+- verify the expected macOS-native executables used by the local backend are present, at minimum:
+  - `/usr/bin/sqlite3`
+  - `/usr/bin/plutil`
+  - `/usr/bin/textutil`
+- run the macOS-relevant existing contracts:
+  - `node scripts/test_local_result_budget.mjs`
+  - `node scripts/test_parallel_tool_contract.mjs`
+  - `node scripts/test_parallel_result_budget.mjs`
+  - `node scripts/test_parallel_replay_wiring.mjs`
+  - `node scripts/test_tool_result_budget_integration.mjs`
+- keep the existing Ubuntu job unchanged except for unavoidable YAML structure/formatting;
+- fail normally if a required native executable or contract fails;
+- avoid installing unnecessary dependencies;
+- avoid duplicating the full Linux CI suite.
 
-The intended local_text wiring is semantically equivalent to:
+The intended coverage is:
 
-`resultBudget ? localText(path, { full: true }) : localText(path)`
+- default `local_text` bounded behavior;
+- explicit `maxBytes` behavior;
+- opt-in full local text behavior;
+- SQLite read-only execution;
+- complete parallel text and SQLite replay before model-visible compaction;
+- scheduler-owned parallel model-visible budgets;
+- no helper-level `maxRows` truncation;
+- the existing 942143 -> 30544 model-visible integration fixture.
 
-Exact syntax is your choice.
+## Architecture and safety invariants
 
-## Finding 2: reconcile stale local result-budget test
-
-`scripts/test_local_result_budget.mjs` still asserts that `runtime/pi/local_backend.mjs` contains the removed `maxRows` helper mechanism.
-
-Update this test to the current semantic contract:
-
-- default local_text behavior remains bounded/default-compatible;
-- explicit bounded `maxBytes` behavior remains bounded;
-- full mode returns the complete local text result for the opt-in parallel data-plane path;
-- SQLite remains read-only;
-- helper-level `maxRows` truncation is absent.
-
-Prefer behavior assertions over source-literal assertions where practical.
-
-## Result report
-
-Update `local-codex/result.md` to reflect the follow-up run.
-
-Do not classify HOLD solely because the Codex sandbox cannot write the outer worktree Git metadata. The user can perform commit/push after validation. Classification must reflect implementation/test quality.
-
-If all required checks pass and no product blocker remains, classify PROMOTE.
+- No product/runtime source changes.
+- No change to result-budget semantics.
+- No change to routing/classifier behavior.
+- No change to evidence, claim, SQL, verification, completion, publication, browser-QA, or replay gates.
+- No new dependency or package lockfile changes.
+- Do not change PR #30 or PR #29 review state.
+- Do not merge any PR.
 
 ## Allowed modifications
 
-- `runtime/pi/newsroom.ts`
-- `scripts/test_parallel_tool_contract.mjs`
-- `scripts/test_parallel_replay_wiring.mjs`
-- `scripts/test_local_result_budget.mjs`
+- `.github/workflows/ci.yml`
 - `local-codex/result.md`
 
 Do not modify any other file.
 
-In particular, do not modify:
+If another file is required, stop and report the smallest necessary scope expansion.
 
-- `runtime/pi/local_backend.mjs`
-- `runtime/pi/parallel_scheduler.mjs`
-- `src/commands/investigate.rs`
-- `src/prompt.rs`
-- phase registry/policy files
-- evidence/claim/fact/SQL gate implementations
-- publication/browser-QA implementations
+## Required local validation
 
-The current GitHub CI Clippy failure in `src/prompt.rs` is inherited from PR #29 and will be handled in a separate task branch. Do not fix it in this task.
+Because this task changes GitHub Actions YAML and the new runner can only be proven remotely after push, perform all locally available checks:
 
-## Required validation
-
-Run:
-
+- inspect the final workflow diff and confirm the existing Ubuntu job is semantically unchanged;
+- parse the workflow as YAML using an available local parser if one is already installed; do not add a dependency just for this;
 - `node scripts/test_local_result_budget.mjs`
 - `node scripts/test_parallel_tool_contract.mjs`
 - `node scripts/test_parallel_result_budget.mjs`
 - `node scripts/test_parallel_replay_wiring.mjs`
 - `node scripts/test_tool_result_budget_integration.mjs`
-- `python3 scripts/test_visual_routing_matrix.py`
-- `python3 scripts/test_round6_combined.py`
-- `cargo fmt --check`
-- `cargo test --locked`
-- `cargo build --release --locked`
 - `git diff --check`
 
-Also confirm:
+Also record local `sw_vers`, `uname -m`, and Node version for non-sensitive environment evidence.
 
-- routing remains exactly 24 cases / 9 intended changes;
-- model-visible measurement remains 942143 -> 30544 (96.76%) unless the actual measured fixture changes;
-- budgeted parallel replay still preserves the complete 96000-byte text result and 240 SQLite rows, or equivalent complete fixtures;
-- unset parallel local_text follows the previous default helper behavior;
-- no evidence/provenance/verification/completion/publication/browser-QA gate changed.
+## Required result report
 
-End `local-codex/result.md` with exactly one classification: PROMOTE, HOLD, REJECT, or INCONCLUSIVE.
+Update `local-codex/result.md` with:
 
+- tested branch/base SHA;
+- files modified;
+- exact job name and runner label;
+- exact commands run;
+- PASS/FAIL/SKIP for every local validation;
+- observed macOS version, architecture, and Node version;
+- observed result-budget/replay metrics from the tests;
+- confirmation that the Ubuntu job was not semantically changed;
+- confirmation that no product/runtime source changed;
+- note that the new GitHub-hosted `macos-26` job requires remote CI to establish final PASS;
+- blockers, if any;
+- no secrets/credentials/tokens/provider diagnostics.
+
+End with exactly one classification:
+
+PROMOTE
+
+HOLD
+
+REJECT
+
+or
+
+INCONCLUSIVE
+
+Use PROMOTE only if the workflow change and all local validations pass, while clearly stating that final production-gate acceptance still depends on the first remote `macos-26` CI run.
+
+Do not commit or push if Git metadata is not writable.
 Do not merge any PR.
 Do not mark any Draft PR Ready for Review.
