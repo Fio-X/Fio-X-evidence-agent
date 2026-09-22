@@ -11,11 +11,28 @@ use std::path::PathBuf;
 use std::path::{Component, Path};
 use std::time::Instant;
 
-fn effective_tool_profile(requested: &str, topic: &str) -> String {
+fn complex_visual_routing_ab_enabled() -> bool {
+    matches!(
+        std::env::var("NEWSROOM_COMPLEX_VISUAL_ROUTING_AB")
+            .ok()
+            .as_deref(),
+        Some("1" | "true" | "split")
+    )
+}
+
+fn is_complex_visual_request(topic: &str, split_classifier: bool) -> bool {
+    if split_classifier {
+        prompt::is_complex_visual_request_split(topic)
+    } else {
+        prompt::is_complex_visual_request(topic)
+    }
+}
+
+fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) -> String {
     if requested != "investigate" {
         return requested.to_string();
     }
-    if prompt::is_complex_visual_request(topic) {
+    if is_complex_visual_request(topic, split_classifier) {
         "visual-story".to_string()
     } else if prompt::is_visual_request(topic) {
         "visual".to_string()
@@ -28,6 +45,7 @@ fn visual_completion_gaps(
     bundle: &InvestigationBundle,
     topic: &str,
     audit: &audit::AuditSummary,
+    split_classifier: bool,
 ) -> Result<Vec<String>> {
     let successful_tool = |name: &str| {
         audit
@@ -37,7 +55,7 @@ fn visual_completion_gaps(
     };
     let mut gaps =
         bundle.visual_delivery_gaps(prompt::requires_html(topic), prompt::requires_png(topic))?;
-    if prompt::is_complex_visual_request(topic) {
+    if is_complex_visual_request(topic, split_classifier) {
         for tool in [
             "newsroom_infographic_plan",
             "newsroom_infographic_lint",
@@ -143,6 +161,7 @@ async fn run_prompt_with_empty_recovery(
 }
 
 pub async fn run(args: InvestigateArgs) -> Result<()> {
+    let split_classifier = complex_visual_routing_ab_enabled();
     if args.dry_run {
         let topic = args.topic.join(" ");
         let declared_local_data: Vec<String> = args
@@ -151,7 +170,8 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
             .filter_map(|path| path.file_name().and_then(|value| value.to_str()))
             .map(|name| format!("data/{name}"))
             .collect();
-        let prompt = prompt::investigation(&topic, &declared_local_data);
+        let prompt =
+            prompt::investigation_with_classifier(&topic, &declared_local_data, split_classifier);
         print!("{prompt}");
         return Ok(());
     }
@@ -163,6 +183,7 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
 /// path from stderr.
 pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
     let run_started = Instant::now();
+    let split_classifier = complex_visual_routing_ab_enabled();
     let topic = args.topic.join(" ");
 
     let output_root = output::resolve_output_dir(&args.out)?;
@@ -177,7 +198,7 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
     for source in &args.data {
         local_data.push(bundle.import_data(source)?);
     }
-    let prompt = prompt::investigation(&topic, &local_data);
+    let prompt = prompt::investigation_with_classifier(&topic, &local_data, split_classifier);
     bundle.write_prompt(&prompt)?;
     let reported_provider = PiConfig::normalize_provider(args.pi.provider.as_deref());
     bundle.write_manifest(
@@ -210,7 +231,7 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
         artifact_dir: Some(bundle.dir.clone()),
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: false,
-        tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic),
+        tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier),
     };
     let reported_provider = config.effective_provider();
 
@@ -229,8 +250,9 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                 bundle.write_session_stats(stats)?;
             }
             let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-            let mut completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
-            if prompt::is_complex_visual_request(&topic) {
+            let mut completion_gaps =
+                visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
+            if is_complex_visual_request(&topic, split_classifier) {
                 for attempt in 1..=2 {
                     if completion_gaps.is_empty() {
                         break;
@@ -261,7 +283,8 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                         bundle.write_session_stats(stats)?;
                     }
                     audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-                    completion_gaps = visual_completion_gaps(&bundle, &topic, &audit)?;
+                    completion_gaps =
+                        visual_completion_gaps(&bundle, &topic, &audit, split_classifier)?;
                 }
             }
             let status = if !completion_gaps.is_empty() {

@@ -1,64 +1,66 @@
-# Local Codex result
+# Result: system-one-r6-macos-native-ci-gate
 
-Task ID: `system-one-observability-followup-v2`
-
-Status: COMPLETE
-
-## Tested revision
-
-- Branch: `feat/system-one-observability-codex-handoff`
-- Commit: `a0a7d3b05868fe750ce80eff5366ea1361aaca18`
+- Tested branch: `ci/system-one-r6-macos-native-gate`
+- Starting task commit SHA (before uncommitted workflow/report changes): `38e1a4071ad65c51971f781f8b141eaefbd79a4f`
+- Task-specified base production-candidate SHA: `fd4367cbabe33ae7259d88ad55e537555c3fc1cb` (confirmed ancestor of tested HEAD)
+- Modified files: `.github/workflows/ci.yml`, `local-codex/result.md`
+- Added job: `macos-native-contracts`
+- Runner label: `macos-26`
+- CI Node version: `22.19.0`, matching the existing Ubuntu job
 
 ## Environment
 
-- OS: Darwin 27.0.0 arm64
-- Rust: `rustc 1.98.1`
-- Cargo: `cargo 1.98.1`
-- Python: `3.14.6`
-
-## Checks
-
-| Check | Status | Evidence / notes |
-| --- | --- | --- |
-| `cargo fmt -- src/artifact.rs` | PASS | `src/artifact.rs` changed only by line wrapping in two locations. |
-| Formatting-only diff inspection | PASS | `git diff -- src/artifact.rs` contains no semantic changes; `git diff --check` passed. |
-| `cargo fmt --check` | PASS | Exit 0. |
-| `cargo test --locked` | PASS | 87 passed, 0 failed, 1 ignored. |
-| `cargo build --release --locked` | PASS | Release build completed successfully. |
-| `python3 scripts/test_rpc_waits.py target/release/news` | PASS | Harness exit 0; all listed mock scenarios completed without watchdog activation. |
-| Mock `events.jsonl` RPC metric event | PASS | One `newsroom_rpc_metrics` event observed. |
-| Mock `run-metrics.jsonl` aggregation | PASS | One aggregate object observed under the `pi_rpc` key. |
-| Real provider route | BLOCKED | Previous local observation was `provider_error`; intentionally not retried. |
-
-## Observed structured metrics
-
-- Mock artifact: `/private/tmp/newsroom-observability-g5VEoH/20260921T033923070Z-observability-mock-investigation`
-- `events.jsonl`: 7 records; `newsroom_rpc_metrics` count: 1.
-- `run-metrics.jsonl`: 1 record; `pi_rpc` aggregate count: 1.
-- Mock investigation process exit: 0.
+- macOS: `27.0` (`26A428`)
+- Architecture: `arm64`
+- Local Node: `v24.14.1`
+- YAML parser: Ruby `2.6.10p210` with installed Psych
+- Local native executables observed: `/usr/bin/sqlite3`, `/usr/bin/plutil`, `/usr/bin/textutil`
 
 ## Commands executed
 
-- `git branch --show-current`
-- `git rev-parse HEAD`
-- `git status --short`
-- `cargo fmt -- src/artifact.rs`
-- `git diff -- src/artifact.rs`
-- `cargo fmt --check`
-- `cargo test --locked`
-- `cargo build --release --locked`
-- `python3 scripts/test_rpc_waits.py target/release/news`
-- `./target/release/news investigate --out <temporary-directory> --pi-bin scripts/perf_mock_pi.py 'observability mock investigation'`
-- Read-only JSONL inspection of the mock `events.jsonl` and `run-metrics.jsonl`.
+```text
+sed -n '1,260p' AGENTS.md && sed -n '1,320p' local-codex/task.md && git branch --show-current && git status --short && git rev-parse HEAD
+sed -n '1,260p' .github/workflows/ci.yml && sed -n '1,260p' local-codex/result.md && git log -1 --format='%H%n%D%n%s' && git diff fd4367cbabe33ae7259d88ad55e537555c3fc1cb..HEAD -- .github/workflows/ci.yml local-codex/result.md
+git diff -- .github/workflows/ci.yml && sw_vers && uname -m && node --version && ruby --version && ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ci.yml'); puts 'YAML parse: PASS (Ruby Psych)'" && command -v /usr/bin/sqlite3 /usr/bin/plutil /usr/bin/textutil
+node scripts/test_local_result_budget.mjs
+node scripts/test_parallel_tool_contract.mjs
+node scripts/test_parallel_result_budget.mjs
+node scripts/test_parallel_replay_wiring.mjs
+node scripts/test_tool_result_budget_integration.mjs
+ruby -e "require 'yaml'; workflow = YAML.load_file('.github/workflows/ci.yml'); jobs = workflow.fetch('jobs'); abort unless jobs.keys == ['rust-and-newsroom', 'macos-native-contracts']; abort unless jobs.fetch('macos-native-contracts').fetch('runs-on') == 'macos-26'; puts jobs.keys.join(', '); puts jobs.fetch('macos-native-contracts').fetch('runs-on')" && git diff --check && git diff --name-only && git merge-base --is-ancestor fd4367cbabe33ae7259d88ad55e537555c3fc1cb HEAD; printf 'base_is_ancestor_exit=%s\n' "$?"
+git diff --check
+git diff --name-only
+git status --short
+```
 
-## Blockers / failures
+## Validation
 
-- No local validation failures.
-- Real provider validation remains blocked by the prior `provider_error` observation and was not retried.
-- No user action required.
+- PASS — final workflow diff inspected. The existing `rust-and-newsroom` Ubuntu job has no changed lines and is semantically unchanged; the diff only appends the independent macOS job.
+- PASS — workflow parsed as YAML with the already-installed Ruby Psych parser; structural assertions found exactly `rust-and-newsroom` and `macos-native-contracts`, with the latter on `macos-26`.
+- PASS — `node scripts/test_local_result_budget.mjs`.
+- PASS — `node scripts/test_parallel_tool_contract.mjs`.
+- PASS — `node scripts/test_parallel_result_budget.mjs`.
+- PASS — `node scripts/test_parallel_replay_wiring.mjs`.
+- PASS — `node scripts/test_tool_result_budget_integration.mjs`.
+- PASS — `git diff --check`.
+- SKIP — execution on the GitHub-hosted `macos-26` runner is not locally available. The first remote CI run is required to establish final production-gate acceptance.
 
-## Safety
+## Structured metrics
 
-- No secrets copied into this report.
-- No product source modified beyond the formatting-only change to `src/artifact.rs`.
-- No perf outputs, credentials, screenshots, or logs were committed.
+- Local result budget: source `3488898` bytes; default `2097152` bytes; explicit bound `65536` bytes; full mode `3488898` bytes. Default and explicit bounds truncated, full mode was complete, SQLite was read-only, and helper-level `maxRows` was absent.
+- Parallel tool contract: one registration; supported kinds were `local_hash`, `local_text`, `local_metadata`, `local_image_info`, `local_search`, and `sqlite_query`.
+- Parallel result budget: `12` tasks; batch limit `32768` bytes; model-visible batch truncated; full batch replayable.
+- Replay wiring: complete text `96000` bytes; complete SQLite result `240` rows; `2` per-task truncations; full task and batch references replayable; scheduler confirmed as model-visible budget owner.
+- Integration fixture: baseline model-visible `942143` bytes; budgeted model-visible `30544` bytes; reduction ratio `0.9676`; behavior remained opt-in; full artifacts remained referenced.
+
+## Scope, safety, and blockers
+
+- No product/runtime source changed. Only the two task-allowlisted files are modified.
+- No dependency or package lockfile changed, and no dependency was installed.
+- No result-budget, routing/classifier, evidence, claim, SQL, verification, completion, publication, browser-QA, or replay semantics/gates were changed.
+- The macOS job fails normally if a required native executable or contract is unavailable or fails.
+- Remote CI remains outstanding; this is an acceptance dependency, not a local implementation blocker. No user action is required for the completed local task.
+- No commit, push, merge, or PR Draft/Ready state change was attempted.
+- No secrets, credentials, tokens, cookies, proxy data, or provider diagnostics were copied into this report.
+
+PROMOTE
