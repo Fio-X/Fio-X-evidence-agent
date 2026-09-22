@@ -13,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: full-release-qualification-iteration-next
+  group: full-release-qualification-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: iteration-next
+          ref: ${{ github.sha }}
       - name: Require materialized source and integrity receipt
         shell: bash
         run: |
@@ -95,7 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: iteration-next
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.19.0'
@@ -134,7 +134,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: iteration-next
+          ref: ${{ github.sha }}
       - name: T18 browser CPU and WebGL capability evidence
         run: python3 scripts/test_macos_browser_capability.py
       - name: Normalize T18 full-tree qualification for T20
