@@ -98,8 +98,30 @@ jobs:
           python3 scripts/test_pi_prompt_retry.py
           python3 scripts/test_browser_qa_bootstrap.py
           python3 scripts/test_artifact_completion.py
+      - name: Qualification contract regressions
+        run: |
+          python3 scripts/test_source_integrity_contract.py
+          python3 scripts/test_business_value_benchmark.py
+          python3 scripts/test_agentic_qualification_harness.py
+          python3 scripts/test_agentic_hardening.py
+          python3 scripts/test_visual_qualification_contract.py
+          python3 scripts/test_final_qualification_contract.py
+          python3 scripts/test_production_qualification_contract_v113.py
       - name: Unified PR release gate
         run: python3 scripts/release_check.py --profile pr --output outputs/ci-release-check-pr.json
+      - name: Recompute candidate source integrity deterministically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/update_source_integrity.py --root . --manifest source-integrity.json
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: Upload rebound source integrity
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-integrity-rebound
+          path: source-integrity.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Visual compiler contract tests
         run: |
           python3 scripts/test_runtime_build_plan_v116.py
