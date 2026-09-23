@@ -59,9 +59,12 @@ def release_manifest_hash(manifest: dict) -> str|None:
     canonical=json.dumps(stable,sort_keys=True,separators=(',',':')).encode()
     return hashlib.sha256(canonical).hexdigest()
 
+def valid_commit(value) -> bool:
+    return isinstance(value,str) and len(value)==40 and all(c in '0123456789abcdefABCDEF' for c in value)
+
 def candidate_bound(value: dict|None, expected_commit: str|None, key: str='source_commit') -> bool:
     if not expected_commit:
-        return True
+        return False
     return bool(value and value.get(key)==expected_commit)
 
 def main() -> None:
@@ -100,9 +103,10 @@ def main() -> None:
     human=load(resolve_path(args.human_attestation)) if args.human_attestation else None
     manifest=load(resolve_path(args.release_manifest)) or {}
     locks=manifest.get('dependency_locks',{})
-    expected_commit=manifest.get('source_commit') if isinstance(manifest.get('source_commit'),str) and manifest.get('source_commit') else None
+    expected_commit=manifest.get('source_commit') if valid_commit(manifest.get('source_commit')) else None
     computed_manifest_hash=release_manifest_hash(manifest)
     manifest_hash_valid=bool(computed_manifest_hash and computed_manifest_hash==manifest.get('manifest_sha256'))
+    manifest_candidate_bound=expected_commit is not None
 
     agentic_checks=(agentic or {}).get('checks') or {}
     agentic_pass=bool(
@@ -217,7 +221,7 @@ def main() -> None:
         'visual_browser_gpu_qualification':visual_pass,
         'business_value_benchmark':business_pass,
         'qualified_human_review':bool(human and human.get('passed') is True and human.get('reviewer_qualification') and human.get('artifact_sha256')),
-        'release_manifest':manifest_hash_valid,
+        'release_manifest':manifest_hash_valid and manifest_candidate_bound,
     }
     blockers=[key for key,value in checks.items() if not value]
     evidence_paths={

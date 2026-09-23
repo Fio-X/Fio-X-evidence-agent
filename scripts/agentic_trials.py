@@ -143,6 +143,11 @@ def main():
             rows.append(trial_row(i,proc.returncode,artifact,qual,round((time.time()-started)*1000)))
     out=reliability_summary(rows)
     (a.out/'summary.json').write_text(json.dumps(out,indent=2)+'\n')
+    representative=a.out/'agentic-qualification.json'
+    if representative.exists():
+        representative.unlink()
+    if out['all_pass'] and rows and isinstance(rows[0].get('qualification'),dict):
+        representative.write_text(json.dumps(rows[0]['qualification'],indent=2)+'\n')
     print(json.dumps(out,indent=2))
     return 0 if out['all_pass'] else 2
 if __name__=='__main__': raise SystemExit(main())
