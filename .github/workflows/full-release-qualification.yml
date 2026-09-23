@@ -98,13 +98,28 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.19.0'
-      - name: Install Rust and pinned Pi runtime
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pinned integration runtime
         shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.98.1 --profile minimal
           npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
           rustup run 1.98.1 cargo build --locked --release --bin news
+      - name: Expose qualified Chromium on PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/newsroom-bin"
+          chromium_path="$(python3 -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          test -x "$chromium_path"
+          ln -sf "$chromium_path" "$RUNNER_TEMP/newsroom-bin/chromium"
+          "$RUNNER_TEMP/newsroom-bin/chromium" --version
+          echo "$RUNNER_TEMP/newsroom-bin" >> "$GITHUB_PATH"
       - name: T17 integration qualification or explicit BLOCKED
         shell: bash
         run: |
