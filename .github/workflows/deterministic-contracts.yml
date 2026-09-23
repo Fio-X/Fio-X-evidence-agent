@@ -2,7 +2,7 @@ name: deterministic-contracts
 
 on:
   pull_request:
-    branches: [import-current]
+    branches: [main, import-current]
   workflow_dispatch:
 
 concurrency:

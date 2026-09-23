@@ -45,6 +45,8 @@ if 'cp "$ARTIFACT/qualification.json" "$OUT/qualification.json"' not in integrat
 live=(ROOT/'.github/workflows/live-qualification.yml').read_text()
 for marker in ['agentic_trials.py --trials 3','.newsroom/agentic-trials']:
     if marker not in live:errors.append('live qualification missing '+marker)
+for marker in ['duckdb-cli==1.5.5','playwright==1.57.0','python3 -m playwright install --with-deps chromium','Expose qualified Chromium on PATH','newsroom-bin/chromium','GITHUB_PATH']:
+    if marker not in live:errors.append('live qualification runtime closure missing '+marker)
 release_gate=(ROOT/'.github/workflows/release-gate.yml').read_text()
 if '.newsroom/agentic-trials' not in release_gate:errors.append('release gate does not retain repeated agentic evidence')
 for marker in ['scipy==1.18.1','geopandas==1.1.2','shapely==2.1.2','pyproj==3.7.2','pyogrio==0.12.1']:
@@ -59,6 +61,10 @@ if 'Expected v1.12 GPU qualification to fail closed on this host' in smoke:error
 full_release=(ROOT/'.github/workflows/full-release-qualification.yml').read_text()
 for job in ['integration','browser-capability']:
     if f'  {job}:\n    needs: macos-locked-and-local\n' in full_release:errors.append('full release '+job+' must run independently of macos locked gate')
+for marker in ['actions/setup-python@v5',"python-version: '3.13'",'duckdb-cli==1.5.5','CairoSVG==2.8.2','playwright==1.57.0','python3 -m playwright install --with-deps chromium','Expose qualified Chromium on PATH','newsroom-bin/chromium','GITHUB_PATH']:
+    if marker not in full_release:errors.append('full release integration runtime closure missing '+marker)
+deterministic=(ROOT/'.github/workflows/deterministic-contracts.yml').read_text()
+if 'branches: [main, import-current]' not in deterministic:errors.append('deterministic contracts must run for pull requests targeting main')
 business=(ROOT/'scripts/business_value_benchmark.py').read_text()
 for marker in ['scenario_id','matched_scenarios','scenario_run_counts','candidate_source_commit','source_commit','sha256_file']:
     if marker not in business:errors.append('business benchmark missing '+marker)
