@@ -76,6 +76,9 @@ def main():
         summary=json.loads((Path(tmp)/'three'/'summary.json').read_text())
         if summary.get('qualification_type')!='agentic_reliability' or summary.get('status')!='PASS':
             raise SystemExit('three consistent trials should produce PASS reliability evidence')
+        representative=Path(tmp)/'three'/'agentic-qualification.json'
+        if not representative.is_file() or json.loads(representative.read_text()).get('source_commit')!=fixture_commit:
+            raise SystemExit('successful repeated trials must publish stable representative agentic evidence')
 
         mixed=dict(base); mixed['model']='model-b'; write(qfiles[-1],mixed)
         mixed_run=run_trials(qfiles,Path(tmp)/'mixed')
@@ -153,6 +156,18 @@ def main():
         dossier2=json.loads(output2.read_text())
         if dossier2['checks'].get('agentic_reliability') is not False:
             raise SystemExit('T15/T17 evidence must not substitute for T16 reliability')
+
+        manifest_without_commit=evidence/'manifest-without-commit.json'
+        write(manifest_without_commit,{'dependency_locks':{},'manifest_sha256':'0'*64})
+        output3=evidence/'final-without-candidate.json'
+        subprocess.run([
+            *common[:-2],'--release-manifest',str(manifest_without_commit),
+            '--agentic-reliability',str(reliability),'--output',str(output3)
+        ],capture_output=True,text=True)
+        dossier3=json.loads(output3.read_text())
+        for key in ['agentic_provider_qualification','agentic_reliability','integration_provider_qualification','business_value_benchmark','release_manifest']:
+            if dossier3['checks'].get(key) is not False:
+                raise SystemExit('missing manifest source_commit must fail closed for '+key)
 
     print('agentic hardening contract: PASS')
     return 0

@@ -52,5 +52,6 @@ ARTIFACT="$after"
 "$NEWS_BIN" inspect "$ARTIFACT" | tee "$ARTIFACT/inspect.txt"
 python3 "$ROOT/scripts/evaluate_artifact.py" "$ARTIFACT" | tee "$ARTIFACT/competition-gate.txt"
 python3 "$ROOT/scripts/write_qualification.py" "$ARTIFACT" --provider "$PROVIDER" --model "$MODEL"
+cp "$ARTIFACT/qualification.json" "$OUT/qualification.json"
 
 echo "integration qualification artifact: $ARTIFACT"

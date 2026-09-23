@@ -36,8 +36,11 @@ for marker in ["'qualification_type':'integration'","'source_commit':git_commit(
     if marker not in writer:errors.append('integration qualification writer missing '+marker)
 
 finalq=(ROOT/'scripts/final_qualification.py').read_text()
-for marker in ["--agentic-reliability","'agentic_reliability':reliability_pass","candidate_source_commit","matched_scenarios"]:
+for marker in ["--agentic-reliability","'agentic_reliability':reliability_pass","candidate_source_commit","matched_scenarios","return False","valid_commit"]:
     if marker not in finalq:errors.append('final qualification missing '+marker)
+trials=(ROOT/'scripts/agentic_trials.py').read_text()
+if "a.out/'agentic-qualification.json'" not in trials:errors.append('agentic trials missing stable representative qualification path')
+if 'cp "$ARTIFACT/qualification.json" "$OUT/qualification.json"' not in integration:errors.append('integration qualification missing stable qualification path')
 
 live=(ROOT/'.github/workflows/live-qualification.yml').read_text()
 for marker in ['agentic_trials.py --trials 3','.newsroom/agentic-trials']:
