@@ -15,7 +15,7 @@
     ".git",
     "release-manifest.json"
   ],
-  "file_count": 1003,
+  "file_count": 1005,
   "generated_visuals_excluded": true,
   "import_strategy": "fill-missing-preserve-hardened-head",
   "materialization": {
@@ -28,7 +28,7 @@
   },
   "restored_vendor_hashes": {
     "fixtures/external/naturalearth_lowres/naturalearth_lowres.dbf": "d2ae1c99adcf8e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1",
-    "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp": "08e341606e8391e458c3f08deb312de664b56bfae376064c5aa0aee6681a5f55",
+    "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp": "08e341606e8391e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1",
     "fixtures/external/naturalearth_lowres/naturalearth_lowres.shx": "8b0be2ad97dd484aee5c2ebc98697d5372e832b8ae58a35a661aeef6b985668d",
     "runtime/pi/vendor/plotly-3.3.1.min.js": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3",
     "runtime/web/vendor/plotly-3.3.1.min.js": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3"
@@ -40,5 +40,5 @@
     "upstream_hardening_archive_sha256": "13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c",
     "verification_evidence": "ci-evidence/source-import-verification.json"
   },
-  "source_tree_sha256": "07129465c355adad4d91e8a0f6c58e098d82bca5fa745409fec347ddcdd2e2e3"
+  "source_tree_sha256": "234231780bf2015503df708c141a95e7e73284e0f6c50a640caffd45eb97d324"
 }
