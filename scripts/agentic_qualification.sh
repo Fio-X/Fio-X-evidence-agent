@@ -28,7 +28,7 @@ mkdir -p "$OUT"
 # failure, recovery action, or execution order.
 export NEWSROOM_FAULT_INJECT_TOOL_ONCE="${NEWSROOM_FAULT_INJECT_TOOL_ONCE:-duckdb_query}"
 
-before="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+before="$(python3 "$ROOT/scripts/latest_artifact_dir.py" "$OUT")"
 "$NEWS_BIN" investigate \
   --tool-profile investigate \
   --out "$OUT" \
@@ -37,7 +37,7 @@ before="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/
   --model "$MODEL" \
   "Analyze the supplied renewable-energy data and identify the strongest defensible story angle. Verify consequential quantitative conclusions, check whether country comparisons use compatible reference periods, and produce a concise evidence-backed newsroom brief with a visual when it materially improves the explanation. Use external context only when it improves confidence or interpretation. Resolve recoverable problems autonomously and state unresolved limitations."
 
-after="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+after="$(python3 "$ROOT/scripts/latest_artifact_dir.py" "$OUT")"
 if [[ -z "$after" || "$after" == "$before" ]]; then
   echo "could not identify the newly created investigation artifact" >&2
   exit 3
