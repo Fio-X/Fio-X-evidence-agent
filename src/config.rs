@@ -172,7 +172,10 @@ mod tests {
             "DRAGONCODE_BASE_URL",
             "DRAGONCODE_MODEL",
         ] {
-            assert!(ALLOWED_KEYS.contains(&key), "missing .env allowlist key: {key}");
+            assert!(
+                ALLOWED_KEYS.contains(&key),
+                "missing .env allowlist key: {key}"
+            );
         }
     }
 
