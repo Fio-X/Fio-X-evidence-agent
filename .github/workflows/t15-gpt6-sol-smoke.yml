@@ -27,9 +27,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.98.1'
+      - name: Require OpenAI qualification credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OPENAI_API_KEY:-}" || { echo "BLOCKED: OPENAI_API_KEY secret is not configured for this repository"; exit 64; }
+      - name: Install pinned Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup run 1.98.1 rustc --version
+          rustup run 1.98.1 cargo --version
       - name: Install pinned qualification runtime
         shell: bash
         run: |
@@ -37,7 +46,7 @@ jobs:
           npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
           python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2
       - name: Build exact-candidate CLI
-        run: cargo build --locked --release --bin news
+        run: rustup run 1.98.1 cargo build --locked --release --bin news
       - name: Verify exact candidate binding
         shell: bash
         run: |
