@@ -28,7 +28,7 @@
   },
   "restored_vendor_hashes": {
     "fixtures/external/naturalearth_lowres/naturalearth_lowres.dbf": "d2ae1c99adcf8e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1",
-    "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp": "08e341606e8391e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1",
+    "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp": "08e341606e8391e458c3f08deb312de664b56bfae376064c5aa0aee6681a5f55",
     "fixtures/external/naturalearth_lowres/naturalearth_lowres.shx": "8b0be2ad97dd484aee5c2ebc98697d5372e832b8ae58a35a661aeef6b985668d",
     "runtime/pi/vendor/plotly-3.3.1.min.js": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3",
     "runtime/web/vendor/plotly-3.3.1.min.js": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3"
