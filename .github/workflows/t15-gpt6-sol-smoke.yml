@@ -1,0 +1,79 @@
+name: t15-gpt6-sol-smoke
+
+on:
+  push:
+    branches:
+      - qualification/t15-gpt6-sol-21fe7e00
+
+permissions:
+  contents: read
+
+jobs:
+  t15-agentic-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NEWSROOM_PROVIDER: openai
+      NEWSROOM_MODEL: gpt-6-sol
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NEWSROOM_AGENTIC_OUT: ${{ github.workspace }}/.newsroom/t15-agentic-smoke
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 21fe7e00f4386f39607663775b232ceb9ee96352
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.98.1'
+      - name: Install pinned qualification runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2
+      - name: Build exact-candidate CLI
+        run: cargo build --locked --release --bin news
+      - name: Verify exact candidate binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "21fe7e00f4386f39607663775b232ceb9ee96352"
+      - name: Strict runtime readiness
+        run: target/release/news doctor --strict --json --provider "$NEWSROOM_PROVIDER" --model "$NEWSROOM_MODEL"
+      - name: Run one real T15 agentic qualification
+        env:
+          NEWSROOM_NEWS_BIN: ${{ github.workspace }}/target/release/news
+        run: ./scripts/agentic_qualification.sh
+      - name: Assert T15 artifact binding
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          q="$(find .newsroom/t15-agentic-smoke -name agentic-qualification.json -print | head -n 1)"
+          test -n "$q"
+          python3 - "$q" <<'PY'
+          import json,sys
+          p=sys.argv[1]
+          d=json.load(open(p))
+          assert d.get('qualification_type')=='agentic'
+          assert d.get('passed') is True
+          assert d.get('status')=='PASS'
+          assert d.get('provider')=='openai'
+          assert d.get('model')=='gpt-6-sol'
+          assert d.get('source_commit')=='21fe7e00f4386f39607663775b232ceb9ee96352'
+          assert d.get('unsupported_verified_claims')==0
+          print(json.dumps({'status':'PASS','artifact':p,'source_commit':d.get('source_commit'),'provider':d.get('provider'),'model':d.get('model')},indent=2))
+          PY
+      - name: Upload T15 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t15-gpt6-sol-21fe7e00
+          path: .newsroom/t15-agentic-smoke
+          if-no-files-found: warn
+          retention-days: 30
