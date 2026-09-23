@@ -80,7 +80,6 @@ jobs:
           retention-days: 30
 
   integration:
-    needs: macos-locked-and-local
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -128,7 +127,6 @@ jobs:
           retention-days: 30
 
   browser-capability:
-    needs: macos-locked-and-local
     runs-on: macos-26
     timeout-minutes: 20
     steps:
