@@ -12,7 +12,8 @@
     "**/__pycache__",
     "*.pyc",
     "**/*.pyc",
-    ".git"
+    ".git",
+    "release-manifest.json"
   ],
   "file_count": 1002,
   "generated_visuals_excluded": true,
