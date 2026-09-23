@@ -122,6 +122,35 @@ jobs:
           path: source-integrity.json
           if-no-files-found: error
           retention-days: 30
+      - name: Build exact-candidate release manifest
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/build_release_manifest.py
+          python3 -c "import json,os; d=json.load(open('release-manifest.json')); assert d.get('source_commit')==os.environ['GITHUB_SHA']; assert isinstance(d.get('manifest_sha256'),str) and len(d['manifest_sha256'])==64"
+      - name: T20 blocked rehearsal on exact candidate
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          python3 scripts/final_qualification.py --release-manifest release-manifest.json --output outputs/v113-final-qualification.json >/tmp/t20-rehearsal.out 2>&1
+          code=$?
+          set -e
+          cat /tmp/t20-rehearsal.out
+          test "$code" -eq 2
+          python3 -c "import json,os; d=json.load(open('outputs/v113-final-qualification.json')); assert d.get('status')=='BLOCKED'; assert d.get('candidate_source_commit')==os.environ['GITHUB_SHA']; assert d.get('checks',{}).get('release_manifest') is True"
+      - name: Upload exact-candidate seal artifacts
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-candidate-seal
+          path: |
+            release-manifest.json
+            outputs/v113-final-qualification.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Visual compiler contract tests
         run: |
           python3 scripts/test_runtime_build_plan_v116.py
