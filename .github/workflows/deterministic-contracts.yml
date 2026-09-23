@@ -48,3 +48,16 @@ jobs:
           set -e
           cat /tmp/integration-no-provider.out
           test "$code" -eq 64
+      - name: Recompute candidate source integrity deterministically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/update_source_integrity.py --root . --manifest source-integrity.json
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: Upload rebound source integrity
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-integrity-rebound
+          path: source-integrity.json
+          if-no-files-found: error
+          retention-days: 30
