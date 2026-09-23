@@ -50,12 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/newsroom-bin"
-          chromium_path="$(python3 - <<'PY'
-from playwright.sync_api import sync_playwright
-with sync_playwright() as p:
-    print(p.chromium.executable_path)
-PY
-)"
+          chromium_path="$(python3 -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
           test -x "$chromium_path"
           ln -sf "$chromium_path" "$RUNNER_TEMP/newsroom-bin/chromium"
           "$RUNNER_TEMP/newsroom-bin/chromium" --version
