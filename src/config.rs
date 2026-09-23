@@ -8,8 +8,12 @@ use std::path::{Path, PathBuf};
 // unrelated child-process settings.
 const ALLOWED_KEYS: &[&str] = &[
     "ANTHROPIC_API_KEY",
+    "DEEPSEEK_API_KEY",
     "DRAGONCODE_API_KEY",
     "DRAGONCODE_BASE_URL",
+    "DRAGONCODE_MODEL",
+    "KIMI_API_KEY",
+    "MOONSHOT_API_KEY",
     "NEWSROOM_API_KEY",
     "NEWSROOM_ARTIFACTS_DIR",
     "NEWSROOM_BASE_URL",
@@ -23,6 +27,8 @@ const ALLOWED_KEYS: &[&str] = &[
     "NEWSROOM_TOOL_PROFILE",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
+    "ZAI_API_KEY",
+    "ZHIPUAI_API_KEY",
 ];
 
 /// Load provider and newsroom settings from a project-local `.env` without
@@ -149,6 +155,25 @@ mod tests {
         );
         assert_eq!(parse_assignment("# ignored"), None);
         assert_eq!(parse_assignment("NOT VALID=value"), None);
+    }
+
+    #[test]
+    fn provider_credentials_required_by_supported_routes_are_whitelisted() {
+        for key in [
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "KIMI_API_KEY",
+            "MOONSHOT_API_KEY",
+            "ZAI_API_KEY",
+            "ZHIPUAI_API_KEY",
+            "DRAGONCODE_API_KEY",
+            "OPENAI_BASE_URL",
+            "DRAGONCODE_BASE_URL",
+            "DRAGONCODE_MODEL",
+        ] {
+            assert!(ALLOWED_KEYS.contains(&key), "missing .env allowlist key: {key}");
+        }
     }
 
     #[test]

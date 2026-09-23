@@ -36,6 +36,19 @@ export ZAI_API_KEY='...'
 export DRAGONCODE_API_KEY='...'
 ```
 
+A project-local `.env` can carry the same values. The CLI imports only an allowlisted set of newsroom/provider variables and preserves values already exported by the shell. For an OpenAI-compatible relay, keep the provider/model identifiers and endpoint exactly as validated by that relay. One locally validated shape is:
+
+```dotenv
+NEWSROOM_PI_PROVIDER=openai
+NEWSROOM_PI_MODEL=claude-sonnet-4-6
+OPENAI_BASE_URL=https://dragoncode.codes
+OPENAI_API_KEY=<secret>
+```
+
+The runtime recognizes the DragonCode endpoint and normalizes the child Pi transport internally. Do not rewrite a known-working relay configuration merely because the upstream model family is Claude.
+
+For native/custom providers, select the matching provider/model and credential variable: `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `KIMI_API_KEY` (with `MOONSHOT_API_KEY` retained as a provider-native alias), or `ZAI_API_KEY`/`ZHIPUAI_API_KEY`. Model IDs remain account/provider-specific and must not be guessed.
+
 Copy `config/pi-models.example.json` into Pi's global model config and edit only the provider/model metadata that your account actually supports:
 
 ```bash
