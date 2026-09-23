@@ -46,6 +46,8 @@ release_gate=(ROOT/'.github/workflows/release-gate.yml').read_text()
 if '.newsroom/agentic-trials' not in release_gate:errors.append('release gate does not retain repeated agentic evidence')
 for marker in ['scipy==1.18.1','geopandas==1.1.2','shapely==2.1.2','pyproj==3.7.2','pyogrio==0.12.1']:
     if marker not in release_gate:errors.append('release gate qualification dependencies missing '+marker)
+for marker in ['Expose qualified Chromium on PATH','p.chromium.executable_path','newsroom-bin/chromium','GITHUB_PATH']:
+    if marker not in release_gate:errors.append('release gate browser runtime exposure missing '+marker)
 full_release=(ROOT/'.github/workflows/full-release-qualification.yml').read_text()
 for job in ['integration','browser-capability']:
     if f'  {job}:\n    needs: macos-locked-and-local\n' in full_release:errors.append('full release '+job+' must run independently of macos locked gate')
