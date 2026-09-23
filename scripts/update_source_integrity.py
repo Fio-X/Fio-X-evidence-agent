@@ -24,7 +24,7 @@ def main() -> int:
     rows=tree_rows(root,exclusions,ignored)
     manifest['file_count']=len(rows)
     manifest['source_tree_sha256']=tree_hash(rows)
-    manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\\n')
+    manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     print(json.dumps({'status':'UPDATED','file_count':len(rows),'source_tree_sha256':manifest['source_tree_sha256']},indent=2,sort_keys=True))
     return 0
 
