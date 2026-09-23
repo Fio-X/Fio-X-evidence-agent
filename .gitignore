@@ -10,3 +10,8 @@ __pycache__/
 /perf-results/
 /ai-conversations/
 /outputs/
+
+# Local qualification credentials. Never commit provider secrets.
+.env
+.env.local
+.env.*.local
