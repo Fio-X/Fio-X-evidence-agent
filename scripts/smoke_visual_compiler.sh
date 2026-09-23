@@ -153,11 +153,18 @@ set +e
 python3 runtime/browser/browser_qa.py --html outputs/v112-trusted/archive.html --spec outputs/v112-trusted/archive-spec.json --output outputs/v112-trusted/gpu-qa --profile gpu >/dev/null
 gpu_code=$?
 set -e
-if [ "$gpu_code" -ne 2 ]; then echo "Expected v1.12 GPU qualification to fail closed on this host, got $gpu_code" >&2; exit 1; fi
-python3 - <<'PYV112'
-import json
+python3 - "$gpu_code" <<'PYV112'
+import json,sys
 for p in ['outputs/v112-trusted/archive-qa/browser-qa.json','outputs/v112-trusted/production-qa/browser-qa.json']:
  r=json.load(open(p)); assert r['status']=='PASS' and r['security']['sandbox'] is True and not r['accessibility_errors'], (p,r.get('errors'))
-g=json.load(open('outputs/v112-trusted/gpu-qa/browser-qa.json')); assert g['status']=='FAIL' and any(str(x).startswith('webgl2_unavailable:') for x in g['errors'])
-print('v1.12 trusted publication qualification PASS; GPU remains fail-closed')
+g=json.load(open('outputs/v112-trusted/gpu-qa/browser-qa.json'))
+code=int(sys.argv[1])
+if code == 0:
+ assert g['status']=='PASS', g
+ print('v1.12 trusted publication qualification PASS; GPU available')
+elif code == 2:
+ assert g['status']=='FAIL' and any(str(x).startswith('webgl2_unavailable:') for x in g['errors']), g
+ print('v1.12 trusted publication qualification PASS; GPU unavailable and fail-closed')
+else:
+ raise AssertionError(f'unexpected GPU qualification exit code: {code}')
 PYV112

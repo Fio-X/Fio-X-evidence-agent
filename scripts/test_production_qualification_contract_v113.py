@@ -49,6 +49,10 @@ for marker in ['scipy==1.18.1','geopandas==1.1.2','shapely==2.1.2','pyproj==3.7.
 for marker in ['Expose qualified Chromium on PATH',"python3 -c 'from playwright.sync_api import sync_playwright;",'p.chromium.executable_path','newsroom-bin/chromium','GITHUB_PATH']:
     if marker not in release_gate:errors.append('release gate browser runtime exposure missing '+marker)
 if "python3 - <<'PY'" in release_gate:errors.append('release gate browser runtime exposure must not use YAML-sensitive heredoc')
+smoke=(ROOT/'scripts/smoke_visual_compiler.sh').read_text()
+for marker in ["python3 - \"$gpu_code\" <<'PYV112'","if code == 0:","elif code == 2:","webgl2_unavailable:"]:
+    if marker not in smoke:errors.append('visual smoke GPU qualification missing adaptive contract '+marker)
+if 'Expected v1.12 GPU qualification to fail closed on this host' in smoke:errors.append('visual smoke must allow qualified GPU hosts')
 full_release=(ROOT/'.github/workflows/full-release-qualification.yml').read_text()
 for job in ['integration','browser-capability']:
     if f'  {job}:\n    needs: macos-locked-and-local\n' in full_release:errors.append('full release '+job+' must run independently of macos locked gate')
