@@ -66,7 +66,9 @@ with tempfile.TemporaryDirectory() as td:
     (root/'source-integrity.json').write_text(json.dumps(manifest))
     proc=subprocess.run([sys.executable,str(UPDATE),'--root',str(root),'--manifest','source-integrity.json'],capture_output=True,text=True)
     assert proc.returncode==0,(proc.stdout,proc.stderr)
-    updated=json.loads((root/'source-integrity.json').read_text())
+    manifest_text=(root/'source-integrity.json').read_text()
+    assert manifest_text.endswith('\n') and not manifest_text.endswith('\\\\n')
+    updated=json.loads(manifest_text)
     before=updated['source_tree_sha256']
     (root/'release-manifest.json').write_text('derived changed\\n')
     proc2=subprocess.run([sys.executable,str(UPDATE),'--root',str(root),'--manifest','source-integrity.json'],capture_output=True,text=True)
