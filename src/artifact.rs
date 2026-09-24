@@ -85,6 +85,12 @@ struct Autonomy {
     follow_up_goals: usize,
     failed_tool_calls: usize,
     automatic_retries: usize,
+    provider_failed_turns: usize,
+    provider_auto_retries: usize,
+    provider_retry_max_attempt: usize,
+    provider_retry_delay_ms_total: u64,
+    provider_failure_observed: bool,
+    provider_error_classes: std::collections::BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -379,6 +385,13 @@ impl InvestigationBundle {
             "adaptive_replanning_observed": audit.map(|a| a.adaptive_replanning_observed),
             "tool_failure_recovery_observed": audit.map(|a| a.tool_failure_recovery_observed),
             "follow_up_replanning_observed": audit.map(|a| a.follow_up_replanning_observed),
+            "automatic_retries": audit.map(|a| a.automatic_retries),
+            "provider_failed_turns": audit.map(|a| a.provider_failed_turns),
+            "provider_auto_retries": audit.map(|a| a.provider_auto_retries),
+            "provider_retry_max_attempt": audit.map(|a| a.provider_retry_max_attempt),
+            "provider_retry_delay_ms_total": audit.map(|a| a.provider_retry_delay_ms_total),
+            "provider_failure_observed": audit.map(|a| a.provider_failure_observed),
+            "provider_error_classes": audit.map(|a| &a.provider_error_classes),
             "pi_rpc": pi_rpc,
         });
         writeln!(file, "{}", serde_json::to_string(&value)?)?;
@@ -409,7 +422,7 @@ impl InvestigationBundle {
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         let created_at = existing_created_at(&self.manifest_path).unwrap_or_else(|| now.clone());
         let empty_audit = AuditSummary {
-            schema_version: "0.7.0",
+            schema_version: "0.8.0",
             generated_at: now.clone(),
             turns: 0,
             tool_calls: 0,
@@ -417,6 +430,12 @@ impl InvestigationBundle {
             successful_capability_tool_calls: 0,
             failed_tool_calls: 0,
             automatic_retries: 0,
+            provider_failed_turns: 0,
+            provider_auto_retries: 0,
+            provider_retry_max_attempt: 0,
+            provider_retry_delay_ms_total: 0,
+            provider_failure_observed: false,
+            provider_error_classes: Default::default(),
             plan_revisions: 0,
             successful_plan_calls: 0,
             follow_up_goals: 0,
@@ -434,7 +453,7 @@ impl InvestigationBundle {
         let delivery = discover_delivery(&self.dir)?;
 
         let manifest = Manifest {
-            schema_version: "0.7.0",
+            schema_version: "0.8.0",
             id: &self.id,
             kind: "investigation",
             created_at,
@@ -480,6 +499,12 @@ impl InvestigationBundle {
                 follow_up_goals: audit.follow_up_goals,
                 failed_tool_calls: audit.failed_tool_calls,
                 automatic_retries: audit.automatic_retries,
+                provider_failed_turns: audit.provider_failed_turns,
+                provider_auto_retries: audit.provider_auto_retries,
+                provider_retry_max_attempt: audit.provider_retry_max_attempt,
+                provider_retry_delay_ms_total: audit.provider_retry_delay_ms_total,
+                provider_failure_observed: audit.provider_failure_observed,
+                provider_error_classes: audit.provider_error_classes.clone(),
             },
             evidence: Evidence {
                 searches: relative_files(&self.dir, "searches")?,
