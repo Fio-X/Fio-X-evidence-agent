@@ -122,7 +122,9 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
         };
         sequence += 1;
         if let Some(class) = event.get("provider_error_class").and_then(Value::as_str) {
-            *provider_error_classes.entry(class.to_string()).or_insert(0usize) += 1;
+            *provider_error_classes
+                .entry(class.to_string())
+                .or_insert(0usize) += 1;
         }
         match event.get("type").and_then(Value::as_str) {
             Some("turn_end") => {
@@ -143,13 +145,12 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     && event.get("delayMs").and_then(Value::as_u64).is_some()
                 {
                     provider_auto_retries += 1;
-                    provider_retry_max_attempt = provider_retry_max_attempt.max(
-                        event.get("attempt").and_then(Value::as_u64).unwrap_or(0) as usize,
-                    );
+                    provider_retry_max_attempt = provider_retry_max_attempt
+                        .max(event.get("attempt").and_then(Value::as_u64).unwrap_or(0) as usize);
                     provider_retry_delay_ms_total +=
                         event.get("delayMs").and_then(Value::as_u64).unwrap_or(0);
                 }
-            },
+            }
             Some("newsroom_user_goal") => {
                 if event.get("mode").and_then(Value::as_str) == Some("follow_up") {
                     follow_up_goal_seqs.push(sequence);
@@ -430,7 +431,10 @@ mod tests {
         assert_eq!(summary.provider_retry_max_attempt, 2);
         assert_eq!(summary.provider_retry_delay_ms_total, 6000);
         assert!(summary.provider_failure_observed);
-        assert_eq!(summary.provider_error_classes.get("provider_unavailable"), Some(&1));
+        assert_eq!(
+            summary.provider_error_classes.get("provider_unavailable"),
+            Some(&1)
+        );
     }
 
     #[test]
