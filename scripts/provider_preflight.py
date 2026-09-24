@@ -20,7 +20,7 @@ def git_commit() -> str | None:
         return None
 
 def token_metric(stderr: str, name: str):
-    m = re.search(rf"\\b{name}=([0-9]+|N/A)\\b", stderr)
+    m = re.search(rf"\b{name}=([0-9]+|N/A)\b", stderr)
     if not m or m.group(1) == "N/A":
         return None
     return int(m.group(1))
