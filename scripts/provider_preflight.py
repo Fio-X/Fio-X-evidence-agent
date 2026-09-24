@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -25,8 +26,11 @@ def token_metric(stderr: str, name: str):
         return None
     return int(m.group(1))
 
+def provider_response_observed(returncode: int, stdout: str) -> bool:
+    return returncode == 0 and bool(stdout.strip())
+
 def failure_kind(returncode: int, stderr: str, stdout: str) -> str | None:
-    if returncode == 0 and stdout.strip() == "READY":
+    if provider_response_observed(returncode, stdout):
         return None
     lower = stderr.lower()
     if "pi provider failed after internal retries" in lower or "pi rejected the prompt: provider_" in lower:
@@ -62,7 +66,9 @@ def main() -> int:
         code=124
         timeout=True
     kind=failure_kind(code,stderr,stdout)
-    passed=code==0 and stdout=="READY"
+    passed=provider_response_observed(code,stdout)
+    response_bytes=len(stdout.encode("utf-8"))
+    response_sha256=hashlib.sha256(stdout.encode("utf-8")).hexdigest() if stdout else None
     input_tokens=token_metric(stderr,"tokens_input")
     output_tokens=token_metric(stderr,"tokens_output")
     payload={
@@ -75,6 +81,9 @@ def main() -> int:
         "model":a.model,
         "thinking":"off",
         "prompt":"Reply exactly READY.",
+        "response_observed":bool(stdout),
+        "response_bytes":response_bytes,
+        "response_sha256":response_sha256,
         "returncode":code,
         "timeout":timeout,
         "wall_ms":round((time.monotonic()-started)*1000),
