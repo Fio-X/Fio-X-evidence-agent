@@ -103,6 +103,7 @@ jobs:
           python3 scripts/test_source_integrity_contract.py
           python3 scripts/test_business_value_benchmark.py
           python3 scripts/test_agentic_qualification_harness.py
+          python3 scripts/test_agentic_trials_batch.py
           python3 scripts/test_latest_artifact_dir.py
           python3 scripts/test_agentic_hardening.py
           python3 scripts/test_visual_qualification_contract.py

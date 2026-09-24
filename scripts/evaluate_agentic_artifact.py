@@ -62,6 +62,22 @@ def flatten_numeric(value, prefix=""):
     return out
 
 
+def usage_number(metrics: dict, suffix: str):
+    suffix = suffix.lower()
+    exact = []
+    fallback = []
+    for key, value in metrics.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        lower = key.lower()
+        if lower == suffix:
+            exact.append(value)
+        elif lower.endswith("." + suffix):
+            fallback.append(value)
+    values = exact or fallback
+    return values[0] if values else None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("artifact", type=Path)
@@ -120,6 +136,25 @@ def main() -> int:
         for key, value in usage_numbers.items()
         if any(token in key.lower() for token in ("token", "cost", "cache", "usage"))
     }
+    fresh_input_tokens = usage_number(usage_numbers, "tokens.input")
+    output_tokens = usage_number(usage_numbers, "tokens.output")
+    cache_read_tokens = usage_number(usage_numbers, "tokens.cacheread")
+    cache_write_tokens = usage_number(usage_numbers, "tokens.cachewrite")
+    reported_cost = usage_number(usage_numbers, "cost")
+    fresh_tokens = (
+        fresh_input_tokens + output_tokens
+        if fresh_input_tokens is not None and output_tokens is not None
+        else None
+    )
+    usage_accounting = {
+        "fresh_input_tokens": fresh_input_tokens,
+        "output_tokens": output_tokens,
+        "fresh_tokens": fresh_tokens,
+        "cache_read_tokens": cache_read_tokens,
+        "cache_write_tokens": cache_write_tokens,
+        "reported_cost": reported_cost,
+        "cost_available": reported_cost is not None,
+    }
 
     result = {
         "schema_version": "1.2.0",
@@ -147,9 +182,16 @@ def main() -> int:
         "plan_revisions": autonomy.get("plan_revisions", 0),
         "failed_tool_calls": autonomy.get("failed_tool_calls", tools.get("failed_tool_calls", 0)),
         "automatic_retries": autonomy.get("automatic_retries", 0),
+        "provider_failed_turns": autonomy.get("provider_failed_turns", 0),
+        "provider_auto_retries": autonomy.get("provider_auto_retries", 0),
+        "provider_retry_max_attempt": autonomy.get("provider_retry_max_attempt", 0),
+        "provider_retry_delay_ms_total": autonomy.get("provider_retry_delay_ms_total", 0),
+        "provider_failure_observed": autonomy.get("provider_failure_observed", False),
+        "provider_error_classes": autonomy.get("provider_error_classes", {}),
         "agent_wall_ms_total": sum(int(row.get("duration_ms", 0) or 0) for row in metrics),
         "run_metrics": metrics,
         "usage_metrics": usage_metrics,
+        "usage_accounting": usage_accounting,
     }
     (root / "agentic-qualification.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n",
