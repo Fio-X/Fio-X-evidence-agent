@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="agentic-batch-test-") as tmp:
     assert summary["fresh_tokens"]["total"]==12
 
     fake=root/"fake-news"
-    fake.write_text("#!/bin/sh\nprintf 'READY\\n'\nprintf '[agent] tokens_input=3 tokens_output=1 tokens_cache_read=5 tokens_cache_write=2\\n' >&2\n")
+    fake.write_text("#!/bin/sh\nprintf 'READY.\\n'\nprintf '[agent] tokens_input=3 tokens_output=1 tokens_cache_read=5 tokens_cache_write=2\\n' >&2\n")
     fake.chmod(0o755)
     out=root/"preflight.json"
     proc=subprocess.run([sys.executable,str(ROOT/"scripts"/"provider_preflight.py"),"--out",str(out),
@@ -47,6 +47,20 @@ with tempfile.TemporaryDirectory(prefix="agentic-batch-test-") as tmp:
     assert proc.returncode==0,proc.stdout+proc.stderr
     payload=json.loads(out.read_text())
     assert payload["status"]=="PASS" and payload["qualification_evidence"] is False
+    assert payload["response_observed"] is True and payload["response_bytes"]>0
+    assert isinstance(payload["response_sha256"],str) and len(payload["response_sha256"])==64
     assert payload["fresh_tokens"]==4 and payload["cache_read_tokens"]==5
+
+    empty=root/"empty-news"
+    empty.write_text("#!/bin/sh\nprintf '[agent] tokens_input=3 tokens_output=0 tokens_cache_read=0 tokens_cache_write=0\\n' >&2\n")
+    empty.chmod(0o755)
+    empty_out=root/"empty-preflight.json"
+    empty_proc=subprocess.run([sys.executable,str(ROOT/"scripts"/"provider_preflight.py"),"--out",str(empty_out),
+                               "--provider","p","--model","m","--news-bin",str(empty)],cwd=ROOT,text=True,capture_output=True)
+    assert empty_proc.returncode==2
+    empty_payload=json.loads(empty_out.read_text())
+    assert empty_payload["status"]=="FAIL"
+    assert empty_payload["response_observed"] is False
+    assert empty_payload["response_sha256"] is None
 
 print("agentic batch and provider preflight contracts: PASS")
