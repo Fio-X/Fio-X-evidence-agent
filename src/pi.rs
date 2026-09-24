@@ -153,31 +153,51 @@ fn normalized_newsroom_phase() -> Option<String> {
 }
 
 fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
-    let diagnostic = event
-        .get("error")
-        .or_else(|| event.get("data"))
-        .or_else(|| {
-            event
-                .get("message")
-                .and_then(|message| message.get("errorMessage"))
-        })
-        .or_else(|| {
-            event
-                .get("message")
-                .and_then(|message| message.get("error"))
-        })
-        .map(Value::to_string)
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let status = [400_u16, 401, 403, 404, 408, 409, 429, 500, 502, 503, 504]
-        .into_iter()
-        .find(|status| diagnostic.contains(&status.to_string()));
+    let diagnostic = [
+        event.get("error"),
+        event.get("data"),
+        event
+            .get("message")
+            .and_then(|message| message.get("errorMessage")),
+        event
+            .get("message")
+            .and_then(|message| message.get("error")),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|value| value.to_string())
+    .collect::<Vec<_>>()
+    .join(" ")
+    .to_ascii_lowercase();
+    let status = [
+        400_u16, 401, 402, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504, 529,
+    ]
+    .into_iter()
+    .find(|status| diagnostic.contains(&status.to_string()));
     let class = match status {
         Some(401 | 403) => "provider_authentication_failed",
         Some(408 | 504) => "provider_timeout",
         Some(429) => "provider_rate_limited",
-        Some(500 | 502 | 503) => "provider_unavailable",
-        Some(400 | 404 | 409) => "provider_request_rejected",
+        Some(500 | 502 | 503 | 529) => "provider_unavailable",
+        Some(400 | 402 | 404 | 409 | 413) => "provider_request_rejected",
+        _ if diagnostic.contains("rate_limit_error") => "provider_rate_limited",
+        _ if diagnostic.contains("timeout_error") => "provider_timeout",
+        _ if diagnostic.contains("authentication_error")
+            || diagnostic.contains("permission_error") =>
+        {
+            "provider_authentication_failed"
+        }
+        _ if diagnostic.contains("api_error") || diagnostic.contains("overloaded_error") => {
+            "provider_unavailable"
+        }
+        _ if diagnostic.contains("invalid_request_error")
+            || diagnostic.contains("billing_error")
+            || diagnostic.contains("not_found_error")
+            || diagnostic.contains("conflict_error")
+            || diagnostic.contains("request_too_large") =>
+        {
+            "provider_request_rejected"
+        }
         _ if diagnostic.contains("no available accounts")
             || diagnostic.contains("service unavailable") =>
         {
@@ -1025,6 +1045,68 @@ mod tests {
             provider_error_class(&timed_out_turn),
             ("provider_timeout", Some(504))
         );
+
+        for (error_type, expected_class) in [
+            ("rate_limit_error", "provider_rate_limited"),
+            ("timeout_error", "provider_timeout"),
+            ("authentication_error", "provider_authentication_failed"),
+            ("permission_error", "provider_authentication_failed"),
+            ("api_error", "provider_unavailable"),
+            ("overloaded_error", "provider_unavailable"),
+            ("invalid_request_error", "provider_request_rejected"),
+            ("billing_error", "provider_request_rejected"),
+            ("not_found_error", "provider_request_rejected"),
+            ("conflict_error", "provider_request_rejected"),
+            ("request_too_large", "provider_request_rejected"),
+        ] {
+            let streamed = json!({
+                "type": "message_end",
+                "message": {
+                    "stopReason": "error",
+                    "errorMessage": format!(
+                        r#"{{"type":"error","error":{{"type":"{error_type}","message":"safe"}}}}"#
+                    )
+                }
+            });
+            assert_eq!(
+                provider_error_class(&streamed),
+                (expected_class, None),
+                "{error_type}"
+            );
+        }
+
+        for (status, expected_class) in [
+            (402, "provider_request_rejected"),
+            (413, "provider_request_rejected"),
+            (529, "provider_unavailable"),
+        ] {
+            let response = json!({
+                "data": {
+                    "status": status,
+                    "message": "safe diagnostic"
+                }
+            });
+            assert_eq!(
+                provider_error_class(&response),
+                (expected_class, Some(status)),
+                "HTTP {status}"
+            );
+        }
+
+        let masked_streamed_rate_limit = json!({
+            "type": "message_end",
+            "data": {"message": "generic failure"},
+            "message": {
+                "stopReason": "error",
+                "errorMessage":
+                    r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#
+            }
+        });
+        assert_eq!(
+            provider_error_class(&masked_streamed_rate_limit),
+            ("provider_rate_limited", None)
+        );
+
         assert_eq!(provider_error_class(&json!({})), ("provider_error", None));
     }
 
