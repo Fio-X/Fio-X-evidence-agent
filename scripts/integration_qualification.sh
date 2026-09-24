@@ -8,6 +8,7 @@ FIXTURE="${NEWSROOM_FIXTURE:-$ROOT/fixtures/world-bank-renewable-latest.csv}"
 OUT="${NEWSROOM_LIVE_OUT:-$ROOT/.newsroom/live-qualification}"
 ILLUSTRATION_ADAPTER="${NEWSROOM_ILLUSTRATION_ADAPTER:-$ROOT/scripts/mock_illustration_adapter.py}"
 export NEWSROOM_ILLUSTRATION_ADAPTER="$ILLUSTRATION_ADAPTER"
+export NEWSROOM_RPC_HEARTBEAT_MS="${NEWSROOM_RPC_HEARTBEAT_MS:-60000}"
 
 if [[ -z "$PROVIDER" || -z "$MODEL" ]]; then
   echo "NEWSROOM_PROVIDER and NEWSROOM_MODEL are required" >&2
