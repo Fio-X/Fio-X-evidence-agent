@@ -135,12 +135,26 @@ def main() -> None:
     )
     reliability_rows=(reliability or {}).get('rows') or []
     reliability_scenario=(reliability or {}).get('scenario_id')
+    reliability_trials=int((reliability or {}).get('trials',0) or 0)
+    reliability_planned=(reliability or {}).get('planned_trials')
+    reliability_attempted=(reliability or {}).get('attempted_trials')
+    reliability_batch_complete=bool(
+        reliability
+        and isinstance(reliability.get('batch_id'),str)
+        and bool(reliability.get('batch_id').strip())
+        and isinstance(reliability_planned,int)
+        and reliability_planned>=3
+        and isinstance(reliability_attempted,int)
+        and reliability_attempted==reliability_planned
+        and reliability_trials==reliability_attempted
+        and reliability.get('stopped_early') is False
+    )
     reliability_rows_consistent=bool(
         reliability
         and isinstance(reliability_scenario,str)
         and reliability_scenario.strip()
         and isinstance(reliability_rows,list)
-        and len(reliability_rows)>=3
+        and len(reliability_rows)==reliability_trials
         and all(
             isinstance(row,dict)
             and row.get('passed') is True
@@ -155,7 +169,8 @@ def main() -> None:
         reliability
         and reliability.get('qualification_type')=='agentic_reliability'
         and reliability.get('status')=='PASS'
-        and int(reliability.get('trials',0) or 0)>=3
+        and reliability_trials>=3
+        and reliability_batch_complete
         and reliability.get('minimum_trials_satisfied') is True
         and reliability.get('configuration_consistent') is True
         and reliability.get('all_pass') is True

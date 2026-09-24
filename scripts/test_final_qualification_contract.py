@@ -32,7 +32,7 @@ def agentic_payload(source_commit):
 
 def reliability_payload(source_commit):
  rows=[{'trial':i,'passed':True,'provider':'fixture-provider','model':'fixture-model','source_commit':source_commit,'scenario_id':'fixture-scenario'} for i in range(1,4)]
- return {'qualification_type':'agentic_reliability','status':'PASS','provider':'fixture-provider','model':'fixture-model','source_commit':source_commit,'scenario_id':'fixture-scenario','trials':3,'minimum_trials_satisfied':True,'configuration_consistent':True,'all_pass':True,'rows':rows,'consistency':{
+ return {'schema_version':'1.3.0','qualification_type':'agentic_reliability','batch_id':'fixture-batch','status':'PASS','provider':'fixture-provider','model':'fixture-model','source_commit':source_commit,'scenario_id':'fixture-scenario','planned_trials':3,'attempted_trials':3,'stopped_early':False,'trials':3,'minimum_trials_satisfied':True,'configuration_consistent':True,'all_pass':True,'rows':rows,'consistency':{
   'claim_correctness_rate':1.0,'provenance_integrity_rate':1.0,'recovery_success_rate':1.0,'autonomous_execution_rate':1.0,'adaptive_replanning_rate':1.0}}
 
 def business_payload(source_commit):
@@ -40,7 +40,7 @@ def business_payload(source_commit):
   'agent':{},'baseline':{},'delta':{},'scenarios':{'s1':{'agent_runs':3,'baseline_runs':3}},'scenario_run_counts':{'s1':3},
   'raw_inputs':{'agent':{'sha256':'a'*64},'baseline':{'sha256':'b'*64}},'candidate_source_commit':source_commit}
 
-def run(tmp: Path, agentic=True, reliability=True, gpu='PASS', source='PASS', source_extra=None, tamper_manifest=False, manifest_commit=FIXTURE_COMMIT, evidence_commit=FIXTURE_COMMIT):
+def run(tmp: Path, agentic=True, reliability=True, gpu='PASS', source='PASS', source_extra=None, tamper_manifest=False, manifest_commit=FIXTURE_COMMIT, evidence_commit=FIXTURE_COMMIT, reliability_updates=None):
  for name,status in [('source',source),('cargo','PASS'),('local','PASS'),('scheduler','PASS'),('pre','PASS'),('rc','PASS'),('cold','PASS')]:
   payload={'status':status}
   if name=='source' and source_extra is not None: payload['marker']=source_extra
@@ -51,7 +51,10 @@ def run(tmp: Path, agentic=True, reliability=True, gpu='PASS', source='PASS', so
  write(tmp/'human.json',{'passed':True,'reviewer_qualification':'fixture','artifact_sha256':'a'*64})
  write(tmp/'manifest.json',signed_manifest(source_commit=manifest_commit,tamper=tamper_manifest))
  if agentic: write(tmp/'agentic.json',agentic_payload(evidence_commit))
- if reliability: write(tmp/'reliability.json',reliability_payload(evidence_commit))
+ if reliability:
+  rel=reliability_payload(evidence_commit)
+  rel.update(reliability_updates or {})
+  write(tmp/'reliability.json',rel)
  out=tmp/'final.json'
  cmd=[sys.executable,str(ROOT/'scripts/final_qualification.py'),
   '--source-integrity',str(tmp/'source.json'),'--macos-cargo',str(tmp/'cargo.json'),'--local-backend',str(tmp/'local.json'),
@@ -123,6 +126,14 @@ with tempfile.TemporaryDirectory() as td:
  assert dossier['checks']['integration_provider_qualification'] is True
  assert dossier['checks']['agentic_reliability'] is False
  assert_indexed(dossier,'agentic_reliability',present=False)
+
+ tmp=base/'stopped-batch'; tmp.mkdir(); proc,dossier=run(tmp,reliability_updates={'stopped_early':True})
+ assert proc.returncode==2 and dossier['status']=='BLOCKED'
+ assert dossier['checks']['agentic_reliability'] is False
+
+ tmp=base/'partial-batch'; tmp.mkdir(); proc,dossier=run(tmp,reliability_updates={'attempted_trials':2})
+ assert proc.returncode==2 and dossier['status']=='BLOCKED'
+ assert dossier['checks']['agentic_reliability'] is False
 
  tmp=base/'no-gpu'; tmp.mkdir(); proc,dossier=run(tmp,gpu='UNAVAILABLE')
  assert proc.returncode==2 and 'visual_browser_gpu_qualification' in dossier['blockers']

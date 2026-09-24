@@ -49,6 +49,12 @@ def load_rows(path: Path, expected_mode: str, require_source_commit: bool=False)
         source_commit=row.get('source_commit')
         if require_source_commit and (not isinstance(source_commit,str) or not source_commit.strip()):
             raise SystemExit(f'{path}: agent run {index} requires non-empty source_commit')
+        model_cost_source=row.get('model_cost_source')
+        if not isinstance(model_cost_source,str) or not model_cost_source.strip():
+            raise SystemExit(f'{path}: run {index} requires non-empty model_cost_source')
+        normalized_cost_source=model_cost_source.strip().lower()
+        if expected_mode=='agent' and normalized_cost_source in {'unknown','unavailable','assumed_zero','missing'}:
+            raise SystemExit(f'{path}: agent run {index} model_cost_source is not measured or attributable')
         missing=[key for key in REQUIRED if key not in row or row[key] is None]
         if missing:
             raise SystemExit(f'{path}: run {index} missing metrics: {", ".join(missing)}')
@@ -57,6 +63,7 @@ def load_rows(path: Path, expected_mode: str, require_source_commit: bool=False)
             'run_id':str(run_id),
             'scenario_id':scenario_id.strip(),
             'source_commit':source_commit.strip() if isinstance(source_commit,str) and source_commit.strip() else None,
+            'model_cost_source':model_cost_source.strip(),
         }
         for key in REQUIRED:
             value=row[key]
@@ -139,6 +146,7 @@ def main():
             'agent':{'path':str(args.agent),'sha256':sha256_file(args.agent)},
             'baseline':{'path':str(args.baseline),'sha256':sha256_file(args.baseline)},
         },
+        'model_cost_policy':'every run requires explicit cost provenance; agent cost may not use unknown, unavailable, assumed_zero, or missing provenance',
         'agent':a,
         'baseline':b,
         'delta':deltas,
