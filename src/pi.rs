@@ -156,8 +156,16 @@ fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     let diagnostic = event
         .get("error")
         .or_else(|| event.get("data"))
-        .or_else(|| event.get("message").and_then(|message| message.get("errorMessage")))
-        .or_else(|| event.get("message").and_then(|message| message.get("error")))
+        .or_else(|| {
+            event
+                .get("message")
+                .and_then(|message| message.get("errorMessage"))
+        })
+        .or_else(|| {
+            event
+                .get("message")
+                .and_then(|message| message.get("error"))
+        })
         .map(Value::to_string)
         .unwrap_or_default()
         .to_ascii_lowercase();
