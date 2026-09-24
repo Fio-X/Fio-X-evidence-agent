@@ -4,6 +4,13 @@ import json, subprocess, sys, tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
+harness=(ROOT/'scripts'/'agentic_qualification.sh').read_text()
+investigate_prompt=(ROOT/'prompts'/'investigate.md').read_text()
+assert 'change the editorial objective from identifying the strongest story angle to stress-testing' in harness
+assert 'NEWSROOM_RPC_HEARTBEAT_MS="${NEWSROOM_RPC_HEARTBEAT_MS:-60000}"' in harness
+assert 'explicitly changes the editorial objective' in investigate_prompt
+assert 'trigger=user_followup before substantive follow-up work' in investigate_prompt
+
 def write_artifact(root: Path, unsupported: bool=False):
     (root/'story.json').write_text(json.dumps({'id':root.name,'autonomy':{
       'persistent_session':True,'multi_turn_context':True,'session_resumed':True,

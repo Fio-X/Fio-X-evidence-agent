@@ -7,6 +7,7 @@ MODEL="${NEWSROOM_MODEL:-}"
 FIXTURE="${NEWSROOM_FIXTURE:-$ROOT/fixtures/world-bank-renewable-latest.csv}"
 OUT="${NEWSROOM_AGENTIC_OUT:-$ROOT/.newsroom/agentic-qualification}"
 SCENARIO_ID="${NEWSROOM_AGENTIC_SCENARIO_ID:-renewable-energy-open-goal-v1}"
+export NEWSROOM_RPC_HEARTBEAT_MS="${NEWSROOM_RPC_HEARTBEAT_MS:-60000}"
 
 if [[ -z "$PROVIDER" || -z "$MODEL" ]]; then
   echo "NEWSROOM_PROVIDER and NEWSROOM_MODEL are required" >&2
@@ -49,7 +50,7 @@ ARTIFACT="$after"
   --provider "$PROVIDER" \
   --model "$MODEL" \
   "$ARTIFACT" \
-  "Revisit the strongest conclusion from the previous turn. Check whether reference-period comparability or another material caveat changes it. Correct only what needs correction, preserve evidence that remains valid, and update the deliverable accordingly."
+  "For this follow-up, change the editorial objective from identifying the strongest story angle to stress-testing whether that angle remains publishable under strict reference-period comparability. Revisit the strongest conclusion from the previous turn, determine whether the comparison needs to be narrowed, reframed, or caveated, and update the deliverable so the revised objective is satisfied. Preserve evidence that remains valid and state clearly when the core conclusion survives the stricter test."
 
 "$NEWS_BIN" verify "$ARTIFACT" --recompute
 "$NEWS_BIN" inspect "$ARTIFACT" | tee "$ARTIFACT/inspect.txt"
