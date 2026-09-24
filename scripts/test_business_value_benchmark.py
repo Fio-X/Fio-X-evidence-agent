@@ -19,6 +19,7 @@ def row(mode,index,scenario,source_commit=None):
         'human_interventions':0 if mode=='agent' else 1,
         'editorial_corrections':0,
         'model_cost':0.01*index if mode=='agent' else 0,
+        'model_cost_source':'fixture-billing' if mode=='agent' else 'no-model-baseline',
     }
     if source_commit is not None:
         out['source_commit']=source_commit
@@ -70,6 +71,14 @@ def main():
         assert invoke(agent,baseline,out).returncode!=0
 
         bad=[dict(x) for x in good_agent]; bad[-1]['source_commit']='e'*40
+        write(agent,bad)
+        assert invoke(agent,baseline,out).returncode!=0
+
+        bad=[dict(x) for x in good_agent]; bad[0].pop('model_cost_source')
+        write(agent,bad); write(baseline,good_baseline)
+        assert invoke(agent,baseline,out).returncode!=0
+
+        bad=[dict(x) for x in good_agent]; bad[0]['model_cost']=0; bad[0]['model_cost_source']='unavailable'
         write(agent,bad)
         assert invoke(agent,baseline,out).returncode!=0
 

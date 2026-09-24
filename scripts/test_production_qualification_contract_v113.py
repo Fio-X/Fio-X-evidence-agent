@@ -39,7 +39,13 @@ finalq=(ROOT/'scripts/final_qualification.py').read_text()
 for marker in ["--agentic-reliability","'agentic_reliability':reliability_pass","candidate_source_commit","matched_scenarios","return False","valid_commit"]:
     if marker not in finalq:errors.append('final qualification missing '+marker)
 trials=(ROOT/'scripts/agentic_trials.py').read_text()
-if "a.out/'agentic-qualification.json'" not in trials:errors.append('agentic trials missing stable representative qualification path')
+if not re.search(r"representative\s*=\s*a\.out\s*/\s*['\"]agentic-qualification\.json['\"]",trials):
+    errors.append('agentic trials missing stable representative qualification path')
+for marker in ['provider_preflight.py','batch_id','planned_trials','attempted_trials','stopped_early','failure_kind']:
+    if marker not in trials:errors.append('agentic trials missing batch reliability contract '+marker)
+preflight_script=(ROOT/'scripts/provider_preflight.py').read_text()
+for marker in ['qualification_evidence','Reply exactly READY.','fresh_tokens','PROVIDER_RUNTIME_FAILURE']:
+    if marker not in preflight_script:errors.append('provider preflight missing '+marker)
 if 'cp "$ARTIFACT/qualification.json" "$OUT/qualification.json"' not in integration:errors.append('integration qualification missing stable qualification path')
 
 live=(ROOT/'.github/workflows/live-qualification.yml').read_text()
@@ -66,7 +72,7 @@ for marker in ['actions/setup-python@v5',"python-version: '3.13'",'duckdb-cli==1
 deterministic=(ROOT/'.github/workflows/deterministic-contracts.yml').read_text()
 if 'branches: [main, import-current]' not in deterministic:errors.append('deterministic contracts must run for pull requests targeting main')
 business=(ROOT/'scripts/business_value_benchmark.py').read_text()
-for marker in ['scenario_id','matched_scenarios','scenario_run_counts','candidate_source_commit','source_commit','sha256_file']:
+for marker in ['scenario_id','matched_scenarios','scenario_run_counts','candidate_source_commit','source_commit','sha256_file','model_cost_source']:
     if marker not in business:errors.append('business benchmark missing '+marker)
 
 registry=json.loads((ROOT/'config/tool-registry.json').read_text())

@@ -113,7 +113,9 @@ def main():
             },
         })
         write(reliability,{
-            'qualification_type':'agentic_reliability','status':'PASS','trials':3,
+            'schema_version':'1.3.0','qualification_type':'agentic_reliability',
+            'batch_id':'fixture-batch','status':'PASS','planned_trials':3,
+            'attempted_trials':3,'stopped_early':False,'trials':3,
             'minimum_trials_satisfied':True,'configuration_consistent':True,'all_pass':True,
             'provider':'provider-a','model':'model-a','source_commit':fixture_commit,
             'scenario_id':'renewable-energy-open-goal-v1',
