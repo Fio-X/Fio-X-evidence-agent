@@ -156,6 +156,8 @@ fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     let diagnostic = event
         .get("error")
         .or_else(|| event.get("data"))
+        .or_else(|| event.get("message").and_then(|message| message.get("errorMessage")))
+        .or_else(|| event.get("message").and_then(|message| message.get("error")))
         .map(Value::to_string)
         .unwrap_or_default()
         .to_ascii_lowercase();
@@ -195,6 +197,32 @@ fn assistant_provider_turn_failed(event: &Value) -> bool {
         .and_then(|message| message.get("stopReason"))
         .and_then(Value::as_str)
         == Some("error")
+}
+
+fn provider_failure_event(event: &Value) -> bool {
+    event.get("type").and_then(Value::as_str) == Some("extension_error")
+        || (event.get("type").and_then(Value::as_str) == Some("response")
+            && event.get("success").and_then(Value::as_bool) == Some(false))
+        || assistant_provider_turn_failed(event)
+}
+
+fn sanitize_provider_event(event: &mut Value, secrets: &[String]) -> Result<()> {
+    let classification = provider_failure_event(event).then(|| provider_error_class(event));
+    redact_event(event, secrets);
+    if let Some((error_class, http_status)) = classification {
+        let object = event.as_object_mut().context("invalid RPC event")?;
+        object.remove("error");
+        object.remove("data");
+        object.insert("diagnostic_suppressed".into(), Value::Bool(true));
+        object.insert(
+            "provider_error_class".into(),
+            Value::String(error_class.to_string()),
+        );
+        if let Some(status) = http_status {
+            object.insert("provider_http_status".into(), Value::from(status));
+        }
+    }
+    Ok(())
 }
 
 impl PiConfig {
@@ -580,25 +608,8 @@ pub async fn run_prompt(
             last_activity = Instant::now();
 
             let mut event = event;
-            redact_event(&mut event, &secrets);
-            // Provider/extension diagnostics are untrusted and may contain credentials.
-            if event.get("type").and_then(Value::as_str) == Some("extension_error")
-                || (event.get("type").and_then(Value::as_str) == Some("response")
-                    && event.get("success").and_then(Value::as_bool) == Some(false))
-            {
-                let (error_class, http_status) = provider_error_class(&event);
-                let object = event.as_object_mut().context("invalid RPC event")?;
-                object.remove("error");
-                object.remove("data");
-                object.insert("diagnostic_suppressed".into(), Value::Bool(true));
-                object.insert(
-                    "provider_error_class".into(),
-                    Value::String(error_class.to_string()),
-                );
-                if let Some(status) = http_status {
-                    object.insert("provider_http_status".into(), Value::from(status));
-                }
-            }
+            // Classify provider failures before redaction, then retain only the safe class/status.
+            sanitize_provider_event(&mut event, &secrets)?;
             if let Some(file) = log.as_mut() {
                 let mut logged_event = event.clone();
                 if let Some(object) = logged_event.as_object_mut() {
@@ -995,7 +1006,46 @@ mod tests {
             provider_error_class(&rate_limited),
             ("provider_rate_limited", Some(429))
         );
+        let timed_out_turn = json!({
+            "type": "message_end",
+            "message": {
+                "stopReason": "error",
+                "errorMessage": "HTTP 504 upstream timeout secret-token"
+            }
+        });
+        assert_eq!(
+            provider_error_class(&timed_out_turn),
+            ("provider_timeout", Some(504))
+        );
         assert_eq!(provider_error_class(&json!({})), ("provider_error", None));
+    }
+
+    #[test]
+    fn provider_failure_is_classified_before_diagnostics_are_redacted() {
+        let mut event = json!({
+            "type": "message_end",
+            "message": {
+                "stopReason": "error",
+                "errorMessage": "HTTP 429 retry later secret-token"
+            }
+        });
+        sanitize_provider_event(&mut event, &["secret-token".to_string()]).unwrap();
+        assert_eq!(
+            event.get("provider_error_class").and_then(Value::as_str),
+            Some("provider_rate_limited")
+        );
+        assert_eq!(
+            event.get("provider_http_status").and_then(Value::as_u64),
+            Some(429)
+        );
+        assert_eq!(
+            event
+                .get("message")
+                .and_then(|message| message.get("errorMessage"))
+                .and_then(Value::as_str),
+            Some("diagnostic suppressed")
+        );
+        assert!(!event.to_string().contains("secret-token"));
     }
 
     #[test]
