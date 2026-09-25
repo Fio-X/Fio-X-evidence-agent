@@ -22,6 +22,14 @@ with tempfile.TemporaryDirectory(prefix="agentic-batch-test-") as tmp:
     }}))
     assert mod.classify_failure(1,artifact,{})=="PROVIDER_RUNTIME_FAILURE"
 
+    (artifact/"verification.json").write_text(json.dumps({
+        "passed":False,
+        "integrity":{"passed":True,"errors":[]},
+        "recompute":{"passed":False,"errors":["fixture recompute failure"]},
+    }))
+    assert mod.classify_failure(1,artifact,{})=="ARTIFACT_VERIFICATION_FAILURE"
+    (artifact/"verification.json").unlink()
+
     expected={"provider":"p","model":"m","source_commit":"a"*40,"scenario_id":"s"}
     good={"qualification_type":"agentic","status":"PASS","passed":True,"provider":"p","model":"m",
           "source_commit":"a"*40,"scenario_id":"s","unsupported_verified_claims":0,

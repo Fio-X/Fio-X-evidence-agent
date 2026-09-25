@@ -63,10 +63,14 @@ def classify_failure(exit_code: int, artifact: Path|None, qual: dict):
         return None
     if qual and (qual.get("status")=="FAIL" or qual.get("passed") is False):
         return "AGENTIC_GATE_FAILURE"
-    if observed_provider_failure(artifact):
-        return "PROVIDER_RUNTIME_FAILURE"
+    if artifact is not None:
+        verification=load_json(artifact/"verification.json")
+        if verification.get("passed") is False:
+            return "ARTIFACT_VERIFICATION_FAILURE"
     if exit_code==64:
         return "CONFIGURATION_FAILURE"
+    if observed_provider_failure(artifact):
+        return "PROVIDER_RUNTIME_FAILURE"
     return "INFRASTRUCTURE_FAILURE"
 
 def usage_accounting(qual: dict):
