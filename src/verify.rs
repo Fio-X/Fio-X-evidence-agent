@@ -973,6 +973,108 @@ fn canonical_number(number: &serde_json::Number) -> String {
     number.to_string()
 }
 
+struct RecomputeScratch {
+    path: PathBuf,
+}
+
+impl RecomputeScratch {
+    fn new() -> Result<Self> {
+        let path =
+            std::env::temp_dir().join(format!("newsroom-recompute-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&path)
+            .with_context(|| format!("failed to create recompute scratch {}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for RecomputeScratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn valid_computation_row_ref(reference: &str) -> bool {
+    let Some(name) = reference.strip_prefix("computations/") else {
+        return false;
+    };
+    let Some(hash) = name.strip_suffix(".json") else {
+        return false;
+    };
+    !hash.contains('/') && hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn computation_row_refs(sql: &str) -> Vec<String> {
+    let bytes = sql.as_bytes();
+    let mut refs = Vec::new();
+    let mut index = 0usize;
+
+    while index < bytes.len() {
+        let quote = bytes[index];
+        if quote != b'\'' && quote != b'"' {
+            index += 1;
+            continue;
+        }
+
+        let start = index + 1;
+        let mut end = start;
+        while end < bytes.len() && bytes[end] != quote {
+            end += 1;
+        }
+        if end >= bytes.len() {
+            break;
+        }
+
+        let candidate = &sql[start..end];
+        if valid_computation_row_ref(candidate) {
+            refs.push(candidate.to_owned());
+        }
+        index = end + 1;
+    }
+
+    refs.sort();
+    refs.dedup();
+    refs
+}
+
+fn materialize_recompute_rows(root: &Path, sql: &str, scratch: &Path) -> Result<String> {
+    let mut rewritten = sql.to_owned();
+
+    for reference in computation_row_refs(sql) {
+        let path = safe_ref(root, &reference)?;
+        let computation = read_json(&path)
+            .with_context(|| format!("failed reading chained computation {reference}"))?;
+        let rows = computation
+            .get("rows")
+            .and_then(Value::as_array)
+            .with_context(|| format!("chained computation {reference} does not contain rows"))?;
+
+        let filename = Path::new(&reference)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .context("invalid chained computation filename")?;
+        let rows_path = scratch.join(filename);
+
+        fs::write(&rows_path, format!("{}\n", serde_json::to_string(rows)?)).with_context(
+            || {
+                format!(
+                    "failed writing recompute row projection {}",
+                    rows_path.display()
+                )
+            },
+        )?;
+
+        let normalized = rows_path.to_string_lossy().replace('\\', "/");
+        let single_quoted = normalized.replace('\'', "''");
+        let double_quoted = normalized.replace('"', "\"\"");
+
+        rewritten = rewritten
+            .replace(&format!("'{reference}'"), &format!("'{single_quoted}'"))
+            .replace(&format!("\"{reference}\""), &format!("\"{double_quoted}\""));
+    }
+
+    Ok(rewritten)
+}
+
 #[derive(Debug, Default, Serialize)]
 pub struct RecomputeReport {
     pub passed: bool,
@@ -1022,6 +1124,8 @@ pub async fn recompute_artifact(
 
     let data_dir = root.join("data").to_string_lossy().replace('\'', "''");
     let source_dir = root.join("sources").to_string_lossy().replace('\'', "''");
+    let scratch = RecomputeScratch::new()?;
+    let scratch_dir = scratch.path.to_string_lossy().replace('\'', "''");
 
     for path in computations {
         let value = read_json(&path)?;
@@ -1041,6 +1145,20 @@ pub async fn recompute_artifact(
                 continue;
             }
         };
+        let sql = match materialize_recompute_rows(root, &sql, &scratch.path) {
+            Ok(sql) => sql,
+            Err(error) => {
+                report.check(
+                    false,
+                    format!(
+                        "recompute could not materialize chained computation rows for {}: {error}",
+                        path.display()
+                    ),
+                );
+                continue;
+            }
+        };
+
         let stored_rows = match value.get("rows").and_then(Value::as_array) {
             Some(_) => value.get("rows").cloned().unwrap_or(Value::Array(vec![])),
             None => {
@@ -1054,7 +1172,7 @@ pub async fn recompute_artifact(
             .to_string_lossy()
             .replace('\'', "''");
         let allowed_dirs = format!(
-            "SET allowed_directories = ['{data_dir}', '{source_dir}', '{computation_dir}']"
+            "SET allowed_directories = ['{data_dir}', '{source_dir}', '{computation_dir}', '{scratch_dir}']"
         );
         let mut command = Command::new(duckdb_bin);
         command
@@ -1266,6 +1384,52 @@ mod tests {
         assert_eq!(
             canonical_rows_json(&value),
             r#"[{"a":35,"b":"15208319.706770","c":"-0.280294","half":"23747.070313"}]"#
+        );
+    }
+
+    #[test]
+    fn recompute_materializes_chained_computation_rows_without_mutating_artifact() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("computations")).unwrap();
+
+        let hash = "a".repeat(64);
+        let reference = format!("computations/{hash}.json");
+        let upstream_rows = serde_json::json!([
+            {"label": "A", "value": 10},
+            {"label": "B", "value": 20}
+        ]);
+        fs::write(
+            root.join(&reference),
+            format!(
+                "{}\n",
+                serde_json::to_string(&serde_json::json!({
+                    "schema_version": "0.7.0",
+                    "rows": upstream_rows
+                }))
+                .unwrap()
+            ),
+        )
+        .unwrap();
+
+        let scratch = RecomputeScratch::new().unwrap();
+        let sql = format!("SELECT label, value FROM '{reference}' ORDER BY label");
+        let rewritten = materialize_recompute_rows(root, &sql, &scratch.path).unwrap();
+
+        assert!(!rewritten.contains(&format!("'{reference}'")));
+
+        let projected = read_json(&scratch.path.join(format!("{hash}.json"))).unwrap();
+        assert_eq!(
+            projected,
+            serde_json::json!([
+                {"label": "A", "value": 10},
+                {"label": "B", "value": 20}
+            ])
+        );
+
+        assert!(
+            !root.join("runtime/query-rows").exists(),
+            "recompute must not mutate artifact runtime sidecars"
         );
     }
 
