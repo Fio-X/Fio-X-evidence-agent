@@ -119,6 +119,14 @@ def path_traversal_claim(root: Path):
     set_claim(root, c)
 
 
+def forge_model_verified_claim(root: Path):
+    c = claim(root)
+    c.pop("verification", None)
+    c.pop("requested_status", None)
+    c["status"] = "verified"
+    set_claim(root, c)
+
+
 def tamper_run_metrics(root: Path):
     rows = (root / "run-metrics.jsonl").read_text(encoding="utf-8").splitlines()
     first = json.loads(rows[0])
@@ -181,6 +189,7 @@ def main():
         ("computation-path-not-content-addressed", rename_computation_off_hash),
         ("missing-mobile-svg", remove_mobile_svg),
         ("unsafe-claim-reference", path_traversal_claim),
+        ("model-forged-verified-status", forge_model_verified_claim),
         ("invalid-run-metric", tamper_run_metrics),
         ("infographic-svg-hash-mismatch", tamper_infographic_svg),
         ("infographic-missing-upstream-visual", remove_infographic_upstream_visual),

@@ -79,6 +79,47 @@
       "claim_references=3",
       "unique_sources=1"
     ],
+    "validators": {
+      "passed": true,
+      "severity_counts": {
+        "FATAL": 0,
+        "ERROR": 0,
+        "WARNING": 0,
+        "INFO": 0
+      },
+      "issues": [],
+      "validators": {
+        "annotation_target_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "visual_channel_owner_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "misleading_quantitative_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "scene_cognitive_budget_validator": {
+          "passed": true,
+          "issues": []
+        },
+        "grammar_compatibility_validator": {
+          "passed": true,
+          "issues": []
+        }
+      }
+    },
+    "synthesis": {
+      "passed": true,
+      "blockers": [],
+      "warnings": [],
+      "notes": [],
+      "metrics": {
+        "enforced": false
+      }
+    },
     "content_hash": "9f14795c0b6542b9c31171bc91e0f228ef44f78e3b2dbfe5f903eb47e3aca845"
   },
   "critic": {

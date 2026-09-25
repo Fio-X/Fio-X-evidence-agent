@@ -1,0 +1,151 @@
+year,rank_within_year,origin_iso3,origin_name,destination_iso3,destination_name,estimated_flow_mean,estimated_flow_std,estimate_semantics
+1990,1,IRN,Iran (Islamic Republic of),AFG,Afghanistan,523189.625000,350581.031250,model_estimated_annual_origin_destination_flow
+1990,2,MEX,Mexico,USA,United States of America (the),511696.406250,140667.281250,model_estimated_annual_origin_destination_flow
+1990,3,PAK,Pakistan,AFG,Afghanistan,468510.031250,345961.093750,model_estimated_annual_origin_destination_flow
+1990,4,MWI,Malawi,MOZ,Mozambique,259990.718750,218855.359375,model_estimated_annual_origin_destination_flow
+1990,5,KAZ,Kazakhstan,RUS,Russian Federation (the),254886.453125,218625.625000,model_estimated_annual_origin_destination_flow
+1990,6,UKR,Ukraine,RUS,Russian Federation (the),201271.593750,159466.703125,model_estimated_annual_origin_destination_flow
+1990,7,SOM,Somalia,ETH,Ethiopia,196464.375000,130606.359375,model_estimated_annual_origin_destination_flow
+1990,8,SDN,Sudan (the),ETH,Ethiopia,165177.656250,110405.609375,model_estimated_annual_origin_destination_flow
+1990,9,BGD,Bangladesh,IND,India,141742.359375,102795.265625,model_estimated_annual_origin_destination_flow
+1990,10,JPN,Japan,USA,United States of America (the),140783.093750,79299.828125,model_estimated_annual_origin_destination_flow
+1990,11,PAK,Pakistan,IND,India,122891.625000,73307.320312,model_estimated_annual_origin_destination_flow
+1990,12,ETH,Ethiopia,SDN,Sudan (the),102115.539062,108461.039062,model_estimated_annual_origin_destination_flow
+1990,13,BIH,Bosnia and Herzegovina,DEU,Germany,101421.648438,99820.851562,model_estimated_annual_origin_destination_flow
+1990,14,TUR,Turkey,DEU,Germany,98246.375000,91856.539062,model_estimated_annual_origin_destination_flow
+1990,15,PAK,Pakistan,IRN,Iran (Islamic Republic of),98137.179688,110466.656250,model_estimated_annual_origin_destination_flow
+1990,16,USA,United States of America (the),DEU,Germany,97995.734375,59927.121094,model_estimated_annual_origin_destination_flow
+1990,17,POL,Poland,USA,United States of America (the),95235.695312,60434.851562,model_estimated_annual_origin_destination_flow
+1990,18,BIH,Bosnia and Herzegovina,HRV,Croatia,91323.796875,68637.914062,model_estimated_annual_origin_destination_flow
+1990,19,IND,India,SAU,Saudi Arabia,87013.414062,77487.140625,model_estimated_annual_origin_destination_flow
+1990,20,IND,India,ARE,United Arab Emirates (the),86016.703125,45757.417969,model_estimated_annual_origin_destination_flow
+1990,21,PSE,"Palestine, State of",JOR,Jordan,79973.007812,89062.140625,model_estimated_annual_origin_destination_flow
+1990,22,IDN,Indonesia,MYS,Malaysia,79327.273438,57291.105469,model_estimated_annual_origin_destination_flow
+1990,23,IRN,Iran (Islamic Republic of),IRQ,Iraq,77127.226562,113756.773438,model_estimated_annual_origin_destination_flow
+1990,24,IND,India,NPL,Nepal,76006.210938,63602.191406,model_estimated_annual_origin_destination_flow
+1990,25,BIH,Bosnia and Herzegovina,SRB,Serbia,74106.187500,64569.750000,model_estimated_annual_origin_destination_flow
+1990,26,IND,India,PAK,Pakistan,70036.328125,67381.492188,model_estimated_annual_origin_destination_flow
+1990,27,ETH,Ethiopia,UGA,Uganda,69873.929688,70203.062500,model_estimated_annual_origin_destination_flow
+1990,28,THA,Thailand,LAO,Lao People's Democratic Republic (the),69227.039062,38620.136719,model_estimated_annual_origin_destination_flow
+1990,29,KOR,Korea (the Republic of),JPN,Japan,68080.843750,42807.964844,model_estimated_annual_origin_destination_flow
+1990,30,PHL,Philippines (the),USA,United States of America (the),65291.324219,37885.445312,model_estimated_annual_origin_destination_flow
+2000,1,MEX,Mexico,USA,United States of America (the),433711.156250,57492.070312,model_estimated_annual_origin_destination_flow
+2000,2,IRN,Iran (Islamic Republic of),IRQ,Iraq,143854.953125,107542.531250,model_estimated_annual_origin_destination_flow
+2000,3,IND,India,USA,United States of America (the),92418.703125,24893.937500,model_estimated_annual_origin_destination_flow
+2000,4,IDN,Indonesia,MYS,Malaysia,84634.562500,46376.242188,model_estimated_annual_origin_destination_flow
+2000,5,IND,India,ARE,United Arab Emirates (the),82940.468750,38024.699219,model_estimated_annual_origin_destination_flow
+2000,6,MMR,Myanmar,THA,Thailand,79586.015625,26017.896484,model_estimated_annual_origin_destination_flow
+2000,7,IDN,Indonesia,TLS,Timor-Leste,78873.257812,97538.390625,model_estimated_annual_origin_destination_flow
+2000,8,KAZ,Kazakhstan,RUS,Russian Federation (the),78017.820312,32139.511719,model_estimated_annual_origin_destination_flow
+2000,9,CHN,China,USA,United States of America (the),75420.531250,19657.158203,model_estimated_annual_origin_destination_flow
+2000,10,PHL,Philippines (the),USA,United States of America (the),71568.703125,12083.964844,model_estimated_annual_origin_destination_flow
+2000,11,ETH,Ethiopia,SOM,Somalia,67803.593750,55156.183594,model_estimated_annual_origin_destination_flow
+2000,12,PAK,Pakistan,IND,India,64325.343750,36847.250000,model_estimated_annual_origin_destination_flow
+2000,13,IND,India,BGD,Bangladesh,61479.179688,29081.300781,model_estimated_annual_origin_destination_flow
+2000,14,JPN,Japan,KOR,Korea (the Republic of),59346.363281,21892.558594,model_estimated_annual_origin_destination_flow
+2000,15,RUS,Russian Federation (the),DEU,Germany,56865.652344,25432.478516,model_estimated_annual_origin_destination_flow
+2000,16,UKR,Ukraine,RUS,Russian Federation (the),56139.761719,37595.484375,model_estimated_annual_origin_destination_flow
+2000,17,VNM,Viet Nam,USA,United States of America (the),51732.261719,15069.567383,model_estimated_annual_origin_destination_flow
+2000,18,BFA,Burkina Faso,CIV,Côte d'Ivoire,46475.691406,16096.455078,model_estimated_annual_origin_destination_flow
+2000,19,CHN,China,HKG,Hong Kong,45957.621094,19316.611328,model_estimated_annual_origin_destination_flow
+2000,20,USA,United States of America (the),MEX,Mexico,44430.312500,19440.761719,model_estimated_annual_origin_destination_flow
+2000,21,PRI,Puerto Rico,USA,United States of America (the),43370.820312,12198.473633,model_estimated_annual_origin_destination_flow
+2000,22,NPL,Nepal,IND,India,42429.113281,18600.898438,model_estimated_annual_origin_destination_flow
+2000,23,CHN,China,CAN,Canada,42120.445312,11656.830078,model_estimated_annual_origin_destination_flow
+2000,24,IND,India,SAU,Saudi Arabia,41387.351562,12964.865234,model_estimated_annual_origin_destination_flow
+2000,25,MYS,Malaysia,SGP,Singapore,41260.898438,13987.603516,model_estimated_annual_origin_destination_flow
+2000,26,UZB,Uzbekistan,RUS,Russian Federation (the),40019.265625,21982.974609,model_estimated_annual_origin_destination_flow
+2000,27,JPN,Japan,USA,United States of America (the),39596.421875,18270.427734,model_estimated_annual_origin_destination_flow
+2000,28,EGY,Egypt,SAU,Saudi Arabia,39447.578125,25222.271484,model_estimated_annual_origin_destination_flow
+2000,29,AZE,Azerbaijan,RUS,Russian Federation (the),38923.164062,28421.630859,model_estimated_annual_origin_destination_flow
+2000,30,GTM,Guatemala,USA,United States of America (the),38682.667969,7710.063477,model_estimated_annual_origin_destination_flow
+2010,1,MEX,Mexico,USA,United States of America (the),286959.093750,90292.367188,model_estimated_annual_origin_destination_flow
+2010,2,BGD,Bangladesh,SAU,Saudi Arabia,276706.812500,81695.289062,model_estimated_annual_origin_destination_flow
+2010,3,USA,United States of America (the),MEX,Mexico,242675.671875,87440.765625,model_estimated_annual_origin_destination_flow
+2010,4,IND,India,ARE,United Arab Emirates (the),225064.093750,37143.980469,model_estimated_annual_origin_destination_flow
+2010,5,IND,India,SAU,Saudi Arabia,220768.328125,52018.644531,model_estimated_annual_origin_destination_flow
+2010,6,YEM,Yemen,SAU,Saudi Arabia,188220.984375,99462.187500,model_estimated_annual_origin_destination_flow
+2010,7,PAK,Pakistan,AFG,Afghanistan,180869.593750,78925.890625,model_estimated_annual_origin_destination_flow
+2010,8,IDN,Indonesia,MYS,Malaysia,176696.578125,57064.941406,model_estimated_annual_origin_destination_flow
+2010,9,MYS,Malaysia,IDN,Indonesia,171664.734375,57152.500000,model_estimated_annual_origin_destination_flow
+2010,10,MMR,Myanmar,THA,Thailand,160285.109375,64479.937500,model_estimated_annual_origin_destination_flow
+2010,11,EGY,Egypt,SAU,Saudi Arabia,130014.593750,49860.316406,model_estimated_annual_origin_destination_flow
+2010,12,IND,India,USA,United States of America (the),127703.289062,25287.548828,model_estimated_annual_origin_destination_flow
+2010,13,IND,India,QAT,Qatar,125498.687500,37785.273438,model_estimated_annual_origin_destination_flow
+2010,14,SAU,Saudi Arabia,IND,India,116955.671875,61130.117188,model_estimated_annual_origin_destination_flow
+2010,15,IRQ,Iraq,SYR,Syrian Arab Republic,112386.718750,100980.929688,model_estimated_annual_origin_destination_flow
+2010,16,ROU,Romania,ITA,Italy,108245.257812,14916.788086,model_estimated_annual_origin_destination_flow
+2010,17,ARE,United Arab Emirates (the),IND,India,104830.476562,46403.160156,model_estimated_annual_origin_destination_flow
+2010,18,PAK,Pakistan,SAU,Saudi Arabia,99108.859375,35802.625000,model_estimated_annual_origin_destination_flow
+2010,19,RUS,Russian Federation (the),UKR,Ukraine,94159.164062,47612.917969,model_estimated_annual_origin_destination_flow
+2010,20,CHN,China,KOR,Korea (the Republic of),87352.000000,19053.257812,model_estimated_annual_origin_destination_flow
+2010,21,SYR,Syrian Arab Republic,JOR,Jordan,86435.835938,40833.812500,model_estimated_annual_origin_destination_flow
+2010,22,MYS,Malaysia,SGP,Singapore,83726.171875,41447.761719,model_estimated_annual_origin_destination_flow
+2010,23,CHN,China,USA,United States of America (the),79632.031250,19612.330078,model_estimated_annual_origin_destination_flow
+2010,24,THA,Thailand,MMR,Myanmar,79256.093750,37997.828125,model_estimated_annual_origin_destination_flow
+2010,25,SDN,Sudan (the),SAU,Saudi Arabia,76158.789062,37943.156250,model_estimated_annual_origin_destination_flow
+2010,26,NPL,Nepal,IND,India,76034.523438,21046.394531,model_estimated_annual_origin_destination_flow
+2010,27,PHL,Philippines (the),SAU,Saudi Arabia,70472.695312,57227.320312,model_estimated_annual_origin_destination_flow
+2010,28,BGD,Bangladesh,ARE,United Arab Emirates (the),66635.531250,21553.347656,model_estimated_annual_origin_destination_flow
+2010,29,PHL,Philippines (the),USA,United States of America (the),66275.132812,11244.815430,model_estimated_annual_origin_destination_flow
+2010,30,IND,India,PAK,Pakistan,64462.179688,45693.996094,model_estimated_annual_origin_destination_flow
+2020,1,USA,United States of America (the),MEX,Mexico,459726.281250,151151.328125,model_estimated_annual_origin_destination_flow
+2020,2,VEN,Venezuela (Bolivarian Republic of),COL,Colombia,348418.593750,47337.039062,model_estimated_annual_origin_destination_flow
+2020,3,SAU,Saudi Arabia,IND,India,307297.593750,46207.824219,model_estimated_annual_origin_destination_flow
+2020,4,ARE,United Arab Emirates (the),IND,India,277122.250000,45643.175781,model_estimated_annual_origin_destination_flow
+2020,5,THA,Thailand,MMR,Myanmar,225170.312500,40670.652344,model_estimated_annual_origin_destination_flow
+2020,6,SAU,Saudi Arabia,PAK,Pakistan,215782.406250,27765.613281,model_estimated_annual_origin_destination_flow
+2020,7,MYS,Malaysia,IDN,Indonesia,207735.531250,29849.486328,model_estimated_annual_origin_destination_flow
+2020,8,SAU,Saudi Arabia,EGY,Egypt,205503.046875,29825.142578,model_estimated_annual_origin_destination_flow
+2020,9,IND,India,ARE,United Arab Emirates (the),205032.390625,30545.304688,model_estimated_annual_origin_destination_flow
+2020,10,MEX,Mexico,USA,United States of America (the),184017.453125,53254.550781,model_estimated_annual_origin_destination_flow
+2020,11,IND,India,NPL,Nepal,167485.906250,35598.355469,model_estimated_annual_origin_destination_flow
+2020,12,IND,India,SAU,Saudi Arabia,166957.937500,33199.667969,model_estimated_annual_origin_destination_flow
+2020,13,BGD,Bangladesh,SAU,Saudi Arabia,162123.375000,38382.187500,model_estimated_annual_origin_destination_flow
+2020,14,AFG,Afghanistan,IRN,Iran (Islamic Republic of),157252.000000,214680.546875,model_estimated_annual_origin_destination_flow
+2020,15,ARE,United Arab Emirates (the),PAK,Pakistan,145618.812500,44280.710938,model_estimated_annual_origin_destination_flow
+2020,16,SAU,Saudi Arabia,BGD,Bangladesh,137936.968750,33277.933594,model_estimated_annual_origin_destination_flow
+2020,17,SAU,Saudi Arabia,PHL,Philippines (the),131403.906250,34776.812500,model_estimated_annual_origin_destination_flow
+2020,18,PAK,Pakistan,SAU,Saudi Arabia,131101.625000,24749.761719,model_estimated_annual_origin_destination_flow
+2020,19,EGY,Egypt,SAU,Saudi Arabia,129900.531250,17368.744141,model_estimated_annual_origin_destination_flow
+2020,20,MYS,Malaysia,SGP,Singapore,126792.398438,21473.078125,model_estimated_annual_origin_destination_flow
+2020,21,RUS,Russian Federation (the),UKR,Ukraine,125962.906250,59359.691406,model_estimated_annual_origin_destination_flow
+2020,22,VNM,Viet Nam,JPN,Japan,110370.406250,28780.294922,model_estimated_annual_origin_destination_flow
+2020,23,KWT,Kuwait,IND,India,110237.398438,32274.058594,model_estimated_annual_origin_destination_flow
+2020,24,IND,India,PAK,Pakistan,102529.117188,59827.714844,model_estimated_annual_origin_destination_flow
+2020,25,COL,Colombia,VEN,Venezuela (Bolivarian Republic of),102076.335938,17061.400391,model_estimated_annual_origin_destination_flow
+2020,26,PAK,Pakistan,ARE,United Arab Emirates (the),98943.085938,25453.039062,model_estimated_annual_origin_destination_flow
+2020,27,PHL,Philippines (the),SAU,Saudi Arabia,97859.906250,28587.500000,model_estimated_annual_origin_destination_flow
+2020,28,IDN,Indonesia,MYS,Malaysia,95342.421875,21366.408203,model_estimated_annual_origin_destination_flow
+2020,29,CHN,China,KOR,Korea (the Republic of),91687.562500,17463.593750,model_estimated_annual_origin_destination_flow
+2020,30,OMN,Oman,IND,India,84072.742188,24313.255859,model_estimated_annual_origin_destination_flow
+2023,1,VEN,Venezuela (Bolivarian Republic of),COL,Colombia,779873.187500,187110.484375,model_estimated_annual_origin_destination_flow
+2023,2,SSD,South Sudan,SDN,Sudan (the),600291.437500,241757.546875,model_estimated_annual_origin_destination_flow
+2023,3,SDN,Sudan (the),TCD,Chad,587986.500000,80893.968750,model_estimated_annual_origin_destination_flow
+2023,4,MEX,Mexico,USA,United States of America (the),552298.125000,110985.390625,model_estimated_annual_origin_destination_flow
+2023,5,VEN,Venezuela (Bolivarian Republic of),PER,Peru,438872.343750,170238.656250,model_estimated_annual_origin_destination_flow
+2023,6,UKR,Ukraine,RUS,Russian Federation (the),378902.312500,297755.718750,model_estimated_annual_origin_destination_flow
+2023,7,SDN,Sudan (the),EGY,Egypt,357766.687500,52392.703125,model_estimated_annual_origin_destination_flow
+2023,8,IDN,Indonesia,MYS,Malaysia,350461.187500,69419.625000,model_estimated_annual_origin_destination_flow
+2023,9,IND,India,USA,United States of America (the),313296.625000,102775.406250,model_estimated_annual_origin_destination_flow
+2023,10,IND,India,SAU,Saudi Arabia,259325.531250,46016.687500,model_estimated_annual_origin_destination_flow
+2023,11,SAU,Saudi Arabia,IND,India,253565.312500,43018.226562,model_estimated_annual_origin_destination_flow
+2023,12,IND,India,ARE,United Arab Emirates (the),251391.187500,61331.554688,model_estimated_annual_origin_destination_flow
+2023,13,ARE,United Arab Emirates (the),IND,India,249104.171875,33022.500000,model_estimated_annual_origin_destination_flow
+2023,14,CHN,China,USA,United States of America (the),247777.390625,192821.703125,model_estimated_annual_origin_destination_flow
+2023,15,USA,United States of America (the),MEX,Mexico,225164.453125,88605.937500,model_estimated_annual_origin_destination_flow
+2023,16,PAK,Pakistan,SAU,Saudi Arabia,216601.984375,56591.718750,model_estimated_annual_origin_destination_flow
+2023,17,UKR,Ukraine,DEU,Germany,215488.000000,62704.378906,model_estimated_annual_origin_destination_flow
+2023,18,PHL,Philippines (the),SAU,Saudi Arabia,210584.875000,27791.455078,model_estimated_annual_origin_destination_flow
+2023,19,SAU,Saudi Arabia,PAK,Pakistan,199706.390625,57109.003906,model_estimated_annual_origin_destination_flow
+2023,20,SAU,Saudi Arabia,EGY,Egypt,188027.312500,36546.804688,model_estimated_annual_origin_destination_flow
+2023,21,BGD,Bangladesh,SAU,Saudi Arabia,187391.375000,42548.882812,model_estimated_annual_origin_destination_flow
+2023,22,UKR,Ukraine,POL,Poland,185422.859375,59648.976562,model_estimated_annual_origin_destination_flow
+2023,23,UKR,Ukraine,GBR,United Kingdom of Great Britain and Northern Ireland (the),183197.500000,33646.007812,model_estimated_annual_origin_destination_flow
+2023,24,SYR,Syrian Arab Republic,JOR,Jordan,183003.468750,48957.863281,model_estimated_annual_origin_destination_flow
+2023,25,ERI,Eritrea,SDN,Sudan (the),180392.812500,43830.476562,model_estimated_annual_origin_destination_flow
+2023,26,EGY,Egypt,SAU,Saudi Arabia,176532.765625,44673.148438,model_estimated_annual_origin_destination_flow
+2023,27,SAU,Saudi Arabia,BGD,Bangladesh,174849.500000,38183.535156,model_estimated_annual_origin_destination_flow
+2023,28,CHN,China,TWN,Taiwan (Province of China),165865.031250,42894.238281,model_estimated_annual_origin_destination_flow
+2023,29,SAU,Saudi Arabia,PHL,Philippines (the),165361.046875,55828.753906,model_estimated_annual_origin_destination_flow
+2023,30,AFG,Afghanistan,PAK,Pakistan,161259.812500,168338.578125,model_estimated_annual_origin_destination_flow

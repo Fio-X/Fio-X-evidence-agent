@@ -1,0 +1,7797 @@
+{
+  "calculations": [
+    {
+      "code_ref": "scripts/build_migration_story_ir.py",
+      "id": "calc-top30-sum-1990",
+      "input_fact_ids": [
+        "q-1990-01",
+        "q-1990-02",
+        "q-1990-03",
+        "q-1990-04",
+        "q-1990-05",
+        "q-1990-06",
+        "q-1990-07",
+        "q-1990-08",
+        "q-1990-09",
+        "q-1990-10",
+        "q-1990-11",
+        "q-1990-12",
+        "q-1990-13",
+        "q-1990-14",
+        "q-1990-15",
+        "q-1990-16",
+        "q-1990-17",
+        "q-1990-18",
+        "q-1990-19",
+        "q-1990-20",
+        "q-1990-21",
+        "q-1990-22",
+        "q-1990-23",
+        "q-1990-24",
+        "q-1990-25",
+        "q-1990-26",
+        "q-1990-27",
+        "q-1990-28",
+        "q-1990-29",
+        "q-1990-30"
+      ],
+      "operation": "sum estimated_flow_mean for the ranked top-30 selection in 1990",
+      "replay_status": "passed",
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
+    },
+    {
+      "code_ref": "scripts/build_migration_story_ir.py",
+      "id": "calc-top30-sum-2000",
+      "input_fact_ids": [
+        "q-2000-01",
+        "q-2000-02",
+        "q-2000-03",
+        "q-2000-04",
+        "q-2000-05",
+        "q-2000-06",
+        "q-2000-07",
+        "q-2000-08",
+        "q-2000-09",
+        "q-2000-10",
+        "q-2000-11",
+        "q-2000-12",
+        "q-2000-13",
+        "q-2000-14",
+        "q-2000-15",
+        "q-2000-16",
+        "q-2000-17",
+        "q-2000-18",
+        "q-2000-19",
+        "q-2000-20",
+        "q-2000-21",
+        "q-2000-22",
+        "q-2000-23",
+        "q-2000-24",
+        "q-2000-25",
+        "q-2000-26",
+        "q-2000-27",
+        "q-2000-28",
+        "q-2000-29",
+        "q-2000-30"
+      ],
+      "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2000",
+      "replay_status": "passed",
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
+    },
+    {
+      "code_ref": "scripts/build_migration_story_ir.py",
+      "id": "calc-top30-sum-2010",
+      "input_fact_ids": [
+        "q-2010-01",
+        "q-2010-02",
+        "q-2010-03",
+        "q-2010-04",
+        "q-2010-05",
+        "q-2010-06",
+        "q-2010-07",
+        "q-2010-08",
+        "q-2010-09",
+        "q-2010-10",
+        "q-2010-11",
+        "q-2010-12",
+        "q-2010-13",
+        "q-2010-14",
+        "q-2010-15",
+        "q-2010-16",
+        "q-2010-17",
+        "q-2010-18",
+        "q-2010-19",
+        "q-2010-20",
+        "q-2010-21",
+        "q-2010-22",
+        "q-2010-23",
+        "q-2010-24",
+        "q-2010-25",
+        "q-2010-26",
+        "q-2010-27",
+        "q-2010-28",
+        "q-2010-29",
+        "q-2010-30"
+      ],
+      "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2010",
+      "replay_status": "passed",
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
+    },
+    {
+      "code_ref": "scripts/build_migration_story_ir.py",
+      "id": "calc-top30-sum-2020",
+      "input_fact_ids": [
+        "q-2020-01",
+        "q-2020-02",
+        "q-2020-03",
+        "q-2020-04",
+        "q-2020-05",
+        "q-2020-06",
+        "q-2020-07",
+        "q-2020-08",
+        "q-2020-09",
+        "q-2020-10",
+        "q-2020-11",
+        "q-2020-12",
+        "q-2020-13",
+        "q-2020-14",
+        "q-2020-15",
+        "q-2020-16",
+        "q-2020-17",
+        "q-2020-18",
+        "q-2020-19",
+        "q-2020-20",
+        "q-2020-21",
+        "q-2020-22",
+        "q-2020-23",
+        "q-2020-24",
+        "q-2020-25",
+        "q-2020-26",
+        "q-2020-27",
+        "q-2020-28",
+        "q-2020-29",
+        "q-2020-30"
+      ],
+      "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2020",
+      "replay_status": "passed",
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
+    },
+    {
+      "code_ref": "scripts/build_migration_story_ir.py",
+      "id": "calc-top30-sum-2023",
+      "input_fact_ids": [
+        "q-2023-01",
+        "q-2023-02",
+        "q-2023-03",
+        "q-2023-04",
+        "q-2023-05",
+        "q-2023-06",
+        "q-2023-07",
+        "q-2023-08",
+        "q-2023-09",
+        "q-2023-10",
+        "q-2023-11",
+        "q-2023-12",
+        "q-2023-13",
+        "q-2023-14",
+        "q-2023-15",
+        "q-2023-16",
+        "q-2023-17",
+        "q-2023-18",
+        "q-2023-19",
+        "q-2023-20",
+        "q-2023-21",
+        "q-2023-22",
+        "q-2023-23",
+        "q-2023-24",
+        "q-2023-25",
+        "q-2023-26",
+        "q-2023-27",
+        "q-2023-28",
+        "q-2023-29",
+        "q-2023-30"
+      ],
+      "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2023",
+      "replay_status": "passed",
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
+    }
+  ],
+  "entities": [
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:AFG",
+      "kind": "country",
+      "label": "Afghanistan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:ARE",
+      "kind": "country",
+      "label": "United Arab Emirates"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:AZE",
+      "kind": "country",
+      "label": "Azerbaijan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:BFA",
+      "kind": "country",
+      "label": "Burkina Faso"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:BGD",
+      "kind": "country",
+      "label": "Bangladesh"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:BIH",
+      "kind": "country",
+      "label": "Bosnia and Herzegovina"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:CAN",
+      "kind": "country",
+      "label": "Canada"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:CHN",
+      "kind": "country",
+      "label": "China"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:CIV",
+      "kind": "country",
+      "label": "Ivory Coast"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:COL",
+      "kind": "country",
+      "label": "Colombia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:DEU",
+      "kind": "country",
+      "label": "Germany"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:EGY",
+      "kind": "country",
+      "label": "Egypt"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:ERI",
+      "kind": "country",
+      "label": "Eritrea"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:ETH",
+      "kind": "country",
+      "label": "Ethiopia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:GBR",
+      "kind": "country",
+      "label": "United Kingdom"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:GTM",
+      "kind": "country",
+      "label": "Guatemala"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:HKG",
+      "kind": "country",
+      "label": "Hong Kong S.A.R."
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:HRV",
+      "kind": "country",
+      "label": "Croatia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:IDN",
+      "kind": "country",
+      "label": "Indonesia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:IND",
+      "kind": "country",
+      "label": "India"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:IRN",
+      "kind": "country",
+      "label": "Iran"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:IRQ",
+      "kind": "country",
+      "label": "Iraq"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:ITA",
+      "kind": "country",
+      "label": "Italy"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:JOR",
+      "kind": "country",
+      "label": "Jordan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:JPN",
+      "kind": "country",
+      "label": "Japan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:KAZ",
+      "kind": "country",
+      "label": "Kazakhstan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:KOR",
+      "kind": "country",
+      "label": "South Korea"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:KWT",
+      "kind": "country",
+      "label": "Kuwait"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:LAO",
+      "kind": "country",
+      "label": "Laos"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:MEX",
+      "kind": "country",
+      "label": "Mexico"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:MMR",
+      "kind": "country",
+      "label": "Myanmar"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:MOZ",
+      "kind": "country",
+      "label": "Mozambique"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:MWI",
+      "kind": "country",
+      "label": "Malawi"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:MYS",
+      "kind": "country",
+      "label": "Malaysia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:NPL",
+      "kind": "country",
+      "label": "Nepal"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:OMN",
+      "kind": "country",
+      "label": "Oman"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:PAK",
+      "kind": "country",
+      "label": "Pakistan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:PER",
+      "kind": "country",
+      "label": "Peru"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:PHL",
+      "kind": "country",
+      "label": "Philippines"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:POL",
+      "kind": "country",
+      "label": "Poland"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:PRI",
+      "kind": "country",
+      "label": "Puerto Rico"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:PSE",
+      "kind": "country",
+      "label": "Palestine"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:QAT",
+      "kind": "country",
+      "label": "Qatar"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:ROU",
+      "kind": "country",
+      "label": "Romania"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:RUS",
+      "kind": "country",
+      "label": "Russia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SAU",
+      "kind": "country",
+      "label": "Saudi Arabia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SDN",
+      "kind": "country",
+      "label": "Sudan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SGP",
+      "kind": "country",
+      "label": "Singapore"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SOM",
+      "kind": "country",
+      "label": "Somalia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SRB",
+      "kind": "country",
+      "label": "Republic of Serbia"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SSD",
+      "kind": "country",
+      "label": "South Sudan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:SYR",
+      "kind": "country",
+      "label": "Syria"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:TCD",
+      "kind": "country",
+      "label": "Chad"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:THA",
+      "kind": "country",
+      "label": "Thailand"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:TLS",
+      "kind": "country",
+      "label": "East Timor"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:TUR",
+      "kind": "country",
+      "label": "Turkey"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:TWN",
+      "kind": "country",
+      "label": "Taiwan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:UGA",
+      "kind": "country",
+      "label": "Uganda"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:UKR",
+      "kind": "country",
+      "label": "Ukraine"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:USA",
+      "kind": "country",
+      "label": "United States of America"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:UZB",
+      "kind": "country",
+      "label": "Uzbekistan"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:VEN",
+      "kind": "country",
+      "label": "Venezuela"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:VNM",
+      "kind": "country",
+      "label": "Vietnam"
+    },
+    {
+      "evidence_ids": [
+        "ev-migration",
+        "ev-geography"
+      ],
+      "id": "country:YEM",
+      "kind": "country",
+      "label": "Yemen"
+    }
+  ],
+  "evidence": [
+    {
+      "extraction_method": "structured_import",
+      "extraction_status": "passed",
+      "id": "ev-migration",
+      "locator": "all 150 rows",
+      "retrieved_at": "2026-09-19T14:50:57Z",
+      "source_ref": "fixtures/migration/deep-learning-human-migration-top-corridors.csv",
+      "source_sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0"
+    },
+    {
+      "extraction_method": "structured_import",
+      "extraction_status": "passed",
+      "id": "ev-geography",
+      "locator": "ISO_A3/ADM0_A3 and LABEL_X/LABEL_Y",
+      "retrieved_at": "2026-09-20T00:30:00Z",
+      "source_ref": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_50m_admin_0_countries.geojson",
+      "source_sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb"
+    }
+  ],
+  "fact_graph_id": "migration-four-decades",
+  "locations": [
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:AFG",
+      "label": "Afghanistan",
+      "latitude": 34.164262,
+      "longitude": 66.496586
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:ARE",
+      "label": "United Arab Emirates",
+      "latitude": 23.466285,
+      "longitude": 54.547256
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:AZE",
+      "label": "Azerbaijan",
+      "latitude": 40.402387,
+      "longitude": 47.210994
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:BFA",
+      "label": "Burkina Faso",
+      "latitude": 12.673048,
+      "longitude": -1.36388
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:BGD",
+      "label": "Bangladesh",
+      "latitude": 24.214956,
+      "longitude": 89.684963
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:BIH",
+      "label": "Bosnia and Herzegovina",
+      "latitude": 44.091051,
+      "longitude": 18.06841
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:CAN",
+      "label": "Canada",
+      "latitude": 60.324287,
+      "longitude": -101.9107
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:CHN",
+      "label": "China",
+      "latitude": 32.498178,
+      "longitude": 106.337289
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:CIV",
+      "label": "Ivory Coast",
+      "latitude": 7.49139,
+      "longitude": -5.568618
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:COL",
+      "label": "Colombia",
+      "latitude": 3.373111,
+      "longitude": -73.174347
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:DEU",
+      "label": "Germany",
+      "latitude": 50.961733,
+      "longitude": 9.678348
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:EGY",
+      "label": "Egypt",
+      "latitude": 26.186173,
+      "longitude": 29.445837
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:ERI",
+      "label": "Eritrea",
+      "latitude": 15.787401,
+      "longitude": 38.285566
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:ETH",
+      "label": "Ethiopia",
+      "latitude": 8.032795,
+      "longitude": 39.0886
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:GBR",
+      "label": "United Kingdom",
+      "latitude": 54.402739,
+      "longitude": -2.116346
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:GTM",
+      "label": "Guatemala",
+      "latitude": 14.982133,
+      "longitude": -90.497134
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:HKG",
+      "label": "Hong Kong S.A.R.",
+      "latitude": 22.448829,
+      "longitude": 114.097769
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:HRV",
+      "label": "Croatia",
+      "latitude": 45.805799,
+      "longitude": 16.37241
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:IDN",
+      "label": "Indonesia",
+      "latitude": -0.954404,
+      "longitude": 101.892949
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:IND",
+      "label": "India",
+      "latitude": 22.686852,
+      "longitude": 79.358105
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:IRN",
+      "label": "Iran",
+      "latitude": 32.166225,
+      "longitude": 54.931495
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:IRQ",
+      "label": "Iraq",
+      "latitude": 33.09403,
+      "longitude": 43.26181
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:ITA",
+      "label": "Italy",
+      "latitude": 44.732482,
+      "longitude": 11.076907
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:JOR",
+      "label": "Jordan",
+      "latitude": 30.805025,
+      "longitude": 36.375991
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:JPN",
+      "label": "Japan",
+      "latitude": 36.142538,
+      "longitude": 138.44217
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:KAZ",
+      "label": "Kazakhstan",
+      "latitude": 49.054149,
+      "longitude": 68.685548
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:KOR",
+      "label": "South Korea",
+      "latitude": 36.384924,
+      "longitude": 128.129504
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:KWT",
+      "label": "Kuwait",
+      "latitude": 29.413628,
+      "longitude": 47.313999
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:LAO",
+      "label": "Laos",
+      "latitude": 19.431821,
+      "longitude": 102.533912
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:MEX",
+      "label": "Mexico",
+      "latitude": 23.919988,
+      "longitude": -102.289448
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:MMR",
+      "label": "Myanmar",
+      "latitude": 21.573855,
+      "longitude": 95.804497
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:MOZ",
+      "label": "Mozambique",
+      "latitude": -13.94323,
+      "longitude": 37.83789
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:MWI",
+      "label": "Malawi",
+      "latitude": -13.386737,
+      "longitude": 33.608082
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:MYS",
+      "label": "Malaysia",
+      "latitude": 2.528667,
+      "longitude": 113.83708
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:NPL",
+      "label": "Nepal",
+      "latitude": 28.297925,
+      "longitude": 83.639914
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:OMN",
+      "label": "Oman",
+      "latitude": 22.120427,
+      "longitude": 57.336553
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:PAK",
+      "label": "Pakistan",
+      "latitude": 29.328389,
+      "longitude": 68.545632
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:PER",
+      "label": "Peru",
+      "latitude": -12.976679,
+      "longitude": -72.90016
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:PHL",
+      "label": "Philippines",
+      "latitude": 11.198,
+      "longitude": 122.465
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:POL",
+      "label": "Poland",
+      "latitude": 51.990316,
+      "longitude": 19.490468
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:PRI",
+      "label": "Puerto Rico",
+      "latitude": 18.234668,
+      "longitude": -66.481065
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:PSE",
+      "label": "Palestine",
+      "latitude": 32.047431,
+      "longitude": 35.291341
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:QAT",
+      "label": "Qatar",
+      "latitude": 25.237383,
+      "longitude": 51.143509
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:ROU",
+      "label": "Romania",
+      "latitude": 45.733237,
+      "longitude": 24.972624
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:RUS",
+      "label": "Russia",
+      "latitude": 58.249357,
+      "longitude": 44.686469
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SAU",
+      "label": "Saudi Arabia",
+      "latitude": 23.806908,
+      "longitude": 44.6996
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SDN",
+      "label": "Sudan",
+      "latitude": 16.330746,
+      "longitude": 29.260657
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SGP",
+      "label": "Singapore",
+      "latitude": 1.366587,
+      "longitude": 103.816925
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SOM",
+      "label": "Somalia",
+      "latitude": 3.568925,
+      "longitude": 45.19238
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SRB",
+      "label": "Republic of Serbia",
+      "latitude": 44.189919,
+      "longitude": 20.787989
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SSD",
+      "label": "South Sudan",
+      "latitude": 7.230477,
+      "longitude": 30.390151
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:SYR",
+      "label": "Syria",
+      "latitude": 35.006636,
+      "longitude": 38.277783
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:TCD",
+      "label": "Chad",
+      "latitude": 15.142959,
+      "longitude": 18.645041
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:THA",
+      "label": "Thailand",
+      "latitude": 15.45974,
+      "longitude": 101.073198
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:TLS",
+      "label": "East Timor",
+      "latitude": -8.803705,
+      "longitude": 125.854679
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:TUR",
+      "label": "Turkey",
+      "latitude": 39.345388,
+      "longitude": 34.508268
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:TWN",
+      "label": "Taiwan",
+      "latitude": 23.652408,
+      "longitude": 120.868204
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:UGA",
+      "label": "Uganda",
+      "latitude": 1.972589,
+      "longitude": 32.948555
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:UKR",
+      "label": "Ukraine",
+      "latitude": 49.724739,
+      "longitude": 32.140865
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:USA",
+      "label": "United States of America",
+      "latitude": 39.538479,
+      "longitude": -97.482602
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:UZB",
+      "label": "Uzbekistan",
+      "latitude": 41.693603,
+      "longitude": 64.005429
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:VEN",
+      "label": "Venezuela",
+      "latitude": 7.182476,
+      "longitude": -64.599381
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:VNM",
+      "label": "Vietnam",
+      "latitude": 21.715416,
+      "longitude": 105.387292
+    },
+    {
+      "evidence_ids": [
+        "ev-geography"
+      ],
+      "geometry_semantics": "point",
+      "id": "location:YEM",
+      "label": "Yemen",
+      "latitude": 15.328226,
+      "longitude": 45.874383
+    }
+  ],
+  "processes": [
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "process:model-estimated-bilateral-migration",
+      "label": "Model-estimated annual bilateral migration",
+      "participant_ids": [
+        "country:AFG",
+        "country:ARE",
+        "country:AZE",
+        "country:BFA",
+        "country:BGD",
+        "country:BIH",
+        "country:CAN",
+        "country:CHN",
+        "country:CIV",
+        "country:COL",
+        "country:DEU",
+        "country:EGY",
+        "country:ERI",
+        "country:ETH",
+        "country:GBR",
+        "country:GTM",
+        "country:HKG",
+        "country:HRV",
+        "country:IDN",
+        "country:IND",
+        "country:IRN",
+        "country:IRQ",
+        "country:ITA",
+        "country:JOR",
+        "country:JPN",
+        "country:KAZ",
+        "country:KOR",
+        "country:KWT",
+        "country:LAO",
+        "country:MEX",
+        "country:MMR",
+        "country:MOZ",
+        "country:MWI",
+        "country:MYS",
+        "country:NPL",
+        "country:OMN",
+        "country:PAK",
+        "country:PER",
+        "country:PHL",
+        "country:POL",
+        "country:PRI",
+        "country:PSE",
+        "country:QAT",
+        "country:ROU",
+        "country:RUS",
+        "country:SAU",
+        "country:SDN",
+        "country:SGP",
+        "country:SOM",
+        "country:SRB",
+        "country:SSD",
+        "country:SYR",
+        "country:TCD",
+        "country:THA",
+        "country:TLS",
+        "country:TUR",
+        "country:TWN",
+        "country:UGA",
+        "country:UKR",
+        "country:USA",
+        "country:UZB",
+        "country:VEN",
+        "country:VNM",
+        "country:YEM"
+      ],
+      "relation_ids": [
+        "route-1990-01",
+        "route-1990-02",
+        "route-1990-03",
+        "route-1990-04",
+        "route-1990-05",
+        "route-1990-06",
+        "route-1990-07",
+        "route-1990-08",
+        "route-1990-09",
+        "route-1990-10",
+        "route-1990-11",
+        "route-1990-12",
+        "route-1990-13",
+        "route-1990-14",
+        "route-1990-15",
+        "route-1990-16",
+        "route-1990-17",
+        "route-1990-18",
+        "route-1990-19",
+        "route-1990-20",
+        "route-1990-21",
+        "route-1990-22",
+        "route-1990-23",
+        "route-1990-24",
+        "route-1990-25",
+        "route-1990-26",
+        "route-1990-27",
+        "route-1990-28",
+        "route-1990-29",
+        "route-1990-30",
+        "route-2000-01",
+        "route-2000-02",
+        "route-2000-03",
+        "route-2000-04",
+        "route-2000-05",
+        "route-2000-06",
+        "route-2000-07",
+        "route-2000-08",
+        "route-2000-09",
+        "route-2000-10",
+        "route-2000-11",
+        "route-2000-12",
+        "route-2000-13",
+        "route-2000-14",
+        "route-2000-15",
+        "route-2000-16",
+        "route-2000-17",
+        "route-2000-18",
+        "route-2000-19",
+        "route-2000-20",
+        "route-2000-21",
+        "route-2000-22",
+        "route-2000-23",
+        "route-2000-24",
+        "route-2000-25",
+        "route-2000-26",
+        "route-2000-27",
+        "route-2000-28",
+        "route-2000-29",
+        "route-2000-30",
+        "route-2010-01",
+        "route-2010-02",
+        "route-2010-03",
+        "route-2010-04",
+        "route-2010-05",
+        "route-2010-06",
+        "route-2010-07",
+        "route-2010-08",
+        "route-2010-09",
+        "route-2010-10",
+        "route-2010-11",
+        "route-2010-12",
+        "route-2010-13",
+        "route-2010-14",
+        "route-2010-15",
+        "route-2010-16",
+        "route-2010-17",
+        "route-2010-18",
+        "route-2010-19",
+        "route-2010-20",
+        "route-2010-21",
+        "route-2010-22",
+        "route-2010-23",
+        "route-2010-24",
+        "route-2010-25",
+        "route-2010-26",
+        "route-2010-27",
+        "route-2010-28",
+        "route-2010-29",
+        "route-2010-30",
+        "route-2020-01",
+        "route-2020-02",
+        "route-2020-03",
+        "route-2020-04",
+        "route-2020-05",
+        "route-2020-06",
+        "route-2020-07",
+        "route-2020-08",
+        "route-2020-09",
+        "route-2020-10",
+        "route-2020-11",
+        "route-2020-12",
+        "route-2020-13",
+        "route-2020-14",
+        "route-2020-15",
+        "route-2020-16",
+        "route-2020-17",
+        "route-2020-18",
+        "route-2020-19",
+        "route-2020-20",
+        "route-2020-21",
+        "route-2020-22",
+        "route-2020-23",
+        "route-2020-24",
+        "route-2020-25",
+        "route-2020-26",
+        "route-2020-27",
+        "route-2020-28",
+        "route-2020-29",
+        "route-2020-30",
+        "route-2023-01",
+        "route-2023-02",
+        "route-2023-03",
+        "route-2023-04",
+        "route-2023-05",
+        "route-2023-06",
+        "route-2023-07",
+        "route-2023-08",
+        "route-2023-09",
+        "route-2023-10",
+        "route-2023-11",
+        "route-2023-12",
+        "route-2023-13",
+        "route-2023-14",
+        "route-2023-15",
+        "route-2023-16",
+        "route-2023-17",
+        "route-2023-18",
+        "route-2023-19",
+        "route-2023-20",
+        "route-2023-21",
+        "route-2023-22",
+        "route-2023-23",
+        "route-2023-24",
+        "route-2023-25",
+        "route-2023-26",
+        "route-2023-27",
+        "route-2023-28",
+        "route-2023-29",
+        "route-2023-30"
+      ]
+    }
+  ],
+  "quantities": [
+    {
+      "entity_ids": [
+        "country:IRN",
+        "country:AFG"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-01",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-01"
+      ],
+      "unit": "persons_per_year",
+      "value": 523189.625
+    },
+    {
+      "entity_ids": [
+        "country:MEX",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-02",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-02"
+      ],
+      "unit": "persons_per_year",
+      "value": 511696.40625
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:AFG"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-03",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-03"
+      ],
+      "unit": "persons_per_year",
+      "value": 468510.03125
+    },
+    {
+      "entity_ids": [
+        "country:MWI",
+        "country:MOZ"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-04",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-04"
+      ],
+      "unit": "persons_per_year",
+      "value": 259990.71875
+    },
+    {
+      "entity_ids": [
+        "country:KAZ",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-05",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-05"
+      ],
+      "unit": "persons_per_year",
+      "value": 254886.453125
+    },
+    {
+      "entity_ids": [
+        "country:UKR",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-06",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-06"
+      ],
+      "unit": "persons_per_year",
+      "value": 201271.59375
+    },
+    {
+      "entity_ids": [
+        "country:SOM",
+        "country:ETH"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-07",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-07"
+      ],
+      "unit": "persons_per_year",
+      "value": 196464.375
+    },
+    {
+      "entity_ids": [
+        "country:SDN",
+        "country:ETH"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-08",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-08"
+      ],
+      "unit": "persons_per_year",
+      "value": 165177.65625
+    },
+    {
+      "entity_ids": [
+        "country:BGD",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-09",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-09"
+      ],
+      "unit": "persons_per_year",
+      "value": 141742.359375
+    },
+    {
+      "entity_ids": [
+        "country:JPN",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-10",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-10"
+      ],
+      "unit": "persons_per_year",
+      "value": 140783.09375
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-11",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-11"
+      ],
+      "unit": "persons_per_year",
+      "value": 122891.625
+    },
+    {
+      "entity_ids": [
+        "country:ETH",
+        "country:SDN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-12",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-12"
+      ],
+      "unit": "persons_per_year",
+      "value": 102115.539062
+    },
+    {
+      "entity_ids": [
+        "country:BIH",
+        "country:DEU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-13",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-13"
+      ],
+      "unit": "persons_per_year",
+      "value": 101421.648438
+    },
+    {
+      "entity_ids": [
+        "country:TUR",
+        "country:DEU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-14",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-14"
+      ],
+      "unit": "persons_per_year",
+      "value": 98246.375
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:IRN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-15",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-15"
+      ],
+      "unit": "persons_per_year",
+      "value": 98137.179688
+    },
+    {
+      "entity_ids": [
+        "country:USA",
+        "country:DEU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-16",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-16"
+      ],
+      "unit": "persons_per_year",
+      "value": 97995.734375
+    },
+    {
+      "entity_ids": [
+        "country:POL",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-17",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-17"
+      ],
+      "unit": "persons_per_year",
+      "value": 95235.695312
+    },
+    {
+      "entity_ids": [
+        "country:BIH",
+        "country:HRV"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-18",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-18"
+      ],
+      "unit": "persons_per_year",
+      "value": 91323.796875
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-19",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-19"
+      ],
+      "unit": "persons_per_year",
+      "value": 87013.414062
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-20",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-20"
+      ],
+      "unit": "persons_per_year",
+      "value": 86016.703125
+    },
+    {
+      "entity_ids": [
+        "country:PSE",
+        "country:JOR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-21",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-21"
+      ],
+      "unit": "persons_per_year",
+      "value": 79973.007812
+    },
+    {
+      "entity_ids": [
+        "country:IDN",
+        "country:MYS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-22",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-22"
+      ],
+      "unit": "persons_per_year",
+      "value": 79327.273438
+    },
+    {
+      "entity_ids": [
+        "country:IRN",
+        "country:IRQ"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-23",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-23"
+      ],
+      "unit": "persons_per_year",
+      "value": 77127.226562
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:NPL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-24",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-24"
+      ],
+      "unit": "persons_per_year",
+      "value": 76006.210938
+    },
+    {
+      "entity_ids": [
+        "country:BIH",
+        "country:SRB"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-25",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-25"
+      ],
+      "unit": "persons_per_year",
+      "value": 74106.1875
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-26",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-26"
+      ],
+      "unit": "persons_per_year",
+      "value": 70036.328125
+    },
+    {
+      "entity_ids": [
+        "country:ETH",
+        "country:UGA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-27",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-27"
+      ],
+      "unit": "persons_per_year",
+      "value": 69873.929688
+    },
+    {
+      "entity_ids": [
+        "country:THA",
+        "country:LAO"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-28",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-28"
+      ],
+      "unit": "persons_per_year",
+      "value": 69227.039062
+    },
+    {
+      "entity_ids": [
+        "country:KOR",
+        "country:JPN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-29",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-29"
+      ],
+      "unit": "persons_per_year",
+      "value": 68080.84375
+    },
+    {
+      "entity_ids": [
+        "country:PHL",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-1990-30",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:1990"
+      ],
+      "uncertainty_ids": [
+        "u-1990-30"
+      ],
+      "unit": "persons_per_year",
+      "value": 65291.324219
+    },
+    {
+      "entity_ids": [
+        "country:MEX",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-01",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-01"
+      ],
+      "unit": "persons_per_year",
+      "value": 433711.15625
+    },
+    {
+      "entity_ids": [
+        "country:IRN",
+        "country:IRQ"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-02",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-02"
+      ],
+      "unit": "persons_per_year",
+      "value": 143854.953125
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-03",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-03"
+      ],
+      "unit": "persons_per_year",
+      "value": 92418.703125
+    },
+    {
+      "entity_ids": [
+        "country:IDN",
+        "country:MYS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-04",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-04"
+      ],
+      "unit": "persons_per_year",
+      "value": 84634.5625
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-05",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-05"
+      ],
+      "unit": "persons_per_year",
+      "value": 82940.46875
+    },
+    {
+      "entity_ids": [
+        "country:MMR",
+        "country:THA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-06",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-06"
+      ],
+      "unit": "persons_per_year",
+      "value": 79586.015625
+    },
+    {
+      "entity_ids": [
+        "country:IDN",
+        "country:TLS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-07",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-07"
+      ],
+      "unit": "persons_per_year",
+      "value": 78873.257812
+    },
+    {
+      "entity_ids": [
+        "country:KAZ",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-08",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-08"
+      ],
+      "unit": "persons_per_year",
+      "value": 78017.820312
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-09",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-09"
+      ],
+      "unit": "persons_per_year",
+      "value": 75420.53125
+    },
+    {
+      "entity_ids": [
+        "country:PHL",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-10",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-10"
+      ],
+      "unit": "persons_per_year",
+      "value": 71568.703125
+    },
+    {
+      "entity_ids": [
+        "country:ETH",
+        "country:SOM"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-11",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-11"
+      ],
+      "unit": "persons_per_year",
+      "value": 67803.59375
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-12",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-12"
+      ],
+      "unit": "persons_per_year",
+      "value": 64325.34375
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:BGD"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-13",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-13"
+      ],
+      "unit": "persons_per_year",
+      "value": 61479.179688
+    },
+    {
+      "entity_ids": [
+        "country:JPN",
+        "country:KOR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-14",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-14"
+      ],
+      "unit": "persons_per_year",
+      "value": 59346.363281
+    },
+    {
+      "entity_ids": [
+        "country:RUS",
+        "country:DEU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-15",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-15"
+      ],
+      "unit": "persons_per_year",
+      "value": 56865.652344
+    },
+    {
+      "entity_ids": [
+        "country:UKR",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-16",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-16"
+      ],
+      "unit": "persons_per_year",
+      "value": 56139.761719
+    },
+    {
+      "entity_ids": [
+        "country:VNM",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-17",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-17"
+      ],
+      "unit": "persons_per_year",
+      "value": 51732.261719
+    },
+    {
+      "entity_ids": [
+        "country:BFA",
+        "country:CIV"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-18",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-18"
+      ],
+      "unit": "persons_per_year",
+      "value": 46475.691406
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:HKG"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-19",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-19"
+      ],
+      "unit": "persons_per_year",
+      "value": 45957.621094
+    },
+    {
+      "entity_ids": [
+        "country:USA",
+        "country:MEX"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-20",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-20"
+      ],
+      "unit": "persons_per_year",
+      "value": 44430.3125
+    },
+    {
+      "entity_ids": [
+        "country:PRI",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-21",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-21"
+      ],
+      "unit": "persons_per_year",
+      "value": 43370.820312
+    },
+    {
+      "entity_ids": [
+        "country:NPL",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-22",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-22"
+      ],
+      "unit": "persons_per_year",
+      "value": 42429.113281
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:CAN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-23",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-23"
+      ],
+      "unit": "persons_per_year",
+      "value": 42120.445312
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-24",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-24"
+      ],
+      "unit": "persons_per_year",
+      "value": 41387.351562
+    },
+    {
+      "entity_ids": [
+        "country:MYS",
+        "country:SGP"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-25",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-25"
+      ],
+      "unit": "persons_per_year",
+      "value": 41260.898438
+    },
+    {
+      "entity_ids": [
+        "country:UZB",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-26",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-26"
+      ],
+      "unit": "persons_per_year",
+      "value": 40019.265625
+    },
+    {
+      "entity_ids": [
+        "country:JPN",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-27",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-27"
+      ],
+      "unit": "persons_per_year",
+      "value": 39596.421875
+    },
+    {
+      "entity_ids": [
+        "country:EGY",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-28",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-28"
+      ],
+      "unit": "persons_per_year",
+      "value": 39447.578125
+    },
+    {
+      "entity_ids": [
+        "country:AZE",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-29",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-29"
+      ],
+      "unit": "persons_per_year",
+      "value": 38923.164062
+    },
+    {
+      "entity_ids": [
+        "country:GTM",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2000-30",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2000"
+      ],
+      "uncertainty_ids": [
+        "u-2000-30"
+      ],
+      "unit": "persons_per_year",
+      "value": 38682.667969
+    },
+    {
+      "entity_ids": [
+        "country:MEX",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-01",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-01"
+      ],
+      "unit": "persons_per_year",
+      "value": 286959.09375
+    },
+    {
+      "entity_ids": [
+        "country:BGD",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-02",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-02"
+      ],
+      "unit": "persons_per_year",
+      "value": 276706.8125
+    },
+    {
+      "entity_ids": [
+        "country:USA",
+        "country:MEX"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-03",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-03"
+      ],
+      "unit": "persons_per_year",
+      "value": 242675.671875
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-04",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-04"
+      ],
+      "unit": "persons_per_year",
+      "value": 225064.09375
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-05",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-05"
+      ],
+      "unit": "persons_per_year",
+      "value": 220768.328125
+    },
+    {
+      "entity_ids": [
+        "country:YEM",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-06",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-06"
+      ],
+      "unit": "persons_per_year",
+      "value": 188220.984375
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:AFG"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-07",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-07"
+      ],
+      "unit": "persons_per_year",
+      "value": 180869.59375
+    },
+    {
+      "entity_ids": [
+        "country:IDN",
+        "country:MYS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-08",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-08"
+      ],
+      "unit": "persons_per_year",
+      "value": 176696.578125
+    },
+    {
+      "entity_ids": [
+        "country:MYS",
+        "country:IDN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-09",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-09"
+      ],
+      "unit": "persons_per_year",
+      "value": 171664.734375
+    },
+    {
+      "entity_ids": [
+        "country:MMR",
+        "country:THA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-10",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-10"
+      ],
+      "unit": "persons_per_year",
+      "value": 160285.109375
+    },
+    {
+      "entity_ids": [
+        "country:EGY",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-11",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-11"
+      ],
+      "unit": "persons_per_year",
+      "value": 130014.59375
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-12",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-12"
+      ],
+      "unit": "persons_per_year",
+      "value": 127703.289062
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:QAT"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-13",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-13"
+      ],
+      "unit": "persons_per_year",
+      "value": 125498.6875
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-14",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-14"
+      ],
+      "unit": "persons_per_year",
+      "value": 116955.671875
+    },
+    {
+      "entity_ids": [
+        "country:IRQ",
+        "country:SYR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-15",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-15"
+      ],
+      "unit": "persons_per_year",
+      "value": 112386.71875
+    },
+    {
+      "entity_ids": [
+        "country:ROU",
+        "country:ITA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-16",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-16"
+      ],
+      "unit": "persons_per_year",
+      "value": 108245.257812
+    },
+    {
+      "entity_ids": [
+        "country:ARE",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-17",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-17"
+      ],
+      "unit": "persons_per_year",
+      "value": 104830.476562
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-18",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-18"
+      ],
+      "unit": "persons_per_year",
+      "value": 99108.859375
+    },
+    {
+      "entity_ids": [
+        "country:RUS",
+        "country:UKR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-19",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-19"
+      ],
+      "unit": "persons_per_year",
+      "value": 94159.164062
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:KOR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-20",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-20"
+      ],
+      "unit": "persons_per_year",
+      "value": 87352.0
+    },
+    {
+      "entity_ids": [
+        "country:SYR",
+        "country:JOR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-21",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-21"
+      ],
+      "unit": "persons_per_year",
+      "value": 86435.835938
+    },
+    {
+      "entity_ids": [
+        "country:MYS",
+        "country:SGP"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-22",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-22"
+      ],
+      "unit": "persons_per_year",
+      "value": 83726.171875
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-23",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-23"
+      ],
+      "unit": "persons_per_year",
+      "value": 79632.03125
+    },
+    {
+      "entity_ids": [
+        "country:THA",
+        "country:MMR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-24",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-24"
+      ],
+      "unit": "persons_per_year",
+      "value": 79256.09375
+    },
+    {
+      "entity_ids": [
+        "country:SDN",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-25",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-25"
+      ],
+      "unit": "persons_per_year",
+      "value": 76158.789062
+    },
+    {
+      "entity_ids": [
+        "country:NPL",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-26",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-26"
+      ],
+      "unit": "persons_per_year",
+      "value": 76034.523438
+    },
+    {
+      "entity_ids": [
+        "country:PHL",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-27",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-27"
+      ],
+      "unit": "persons_per_year",
+      "value": 70472.695312
+    },
+    {
+      "entity_ids": [
+        "country:BGD",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-28",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-28"
+      ],
+      "unit": "persons_per_year",
+      "value": 66635.53125
+    },
+    {
+      "entity_ids": [
+        "country:PHL",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-29",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-29"
+      ],
+      "unit": "persons_per_year",
+      "value": 66275.132812
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2010-30",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2010"
+      ],
+      "uncertainty_ids": [
+        "u-2010-30"
+      ],
+      "unit": "persons_per_year",
+      "value": 64462.179688
+    },
+    {
+      "entity_ids": [
+        "country:USA",
+        "country:MEX"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-01",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-01"
+      ],
+      "unit": "persons_per_year",
+      "value": 459726.28125
+    },
+    {
+      "entity_ids": [
+        "country:VEN",
+        "country:COL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-02",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-02"
+      ],
+      "unit": "persons_per_year",
+      "value": 348418.59375
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-03",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-03"
+      ],
+      "unit": "persons_per_year",
+      "value": 307297.59375
+    },
+    {
+      "entity_ids": [
+        "country:ARE",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-04",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-04"
+      ],
+      "unit": "persons_per_year",
+      "value": 277122.25
+    },
+    {
+      "entity_ids": [
+        "country:THA",
+        "country:MMR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-05",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-05"
+      ],
+      "unit": "persons_per_year",
+      "value": 225170.3125
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-06",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-06"
+      ],
+      "unit": "persons_per_year",
+      "value": 215782.40625
+    },
+    {
+      "entity_ids": [
+        "country:MYS",
+        "country:IDN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-07",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-07"
+      ],
+      "unit": "persons_per_year",
+      "value": 207735.53125
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:EGY"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-08",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-08"
+      ],
+      "unit": "persons_per_year",
+      "value": 205503.046875
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-09",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-09"
+      ],
+      "unit": "persons_per_year",
+      "value": 205032.390625
+    },
+    {
+      "entity_ids": [
+        "country:MEX",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-10",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-10"
+      ],
+      "unit": "persons_per_year",
+      "value": 184017.453125
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:NPL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-11",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-11"
+      ],
+      "unit": "persons_per_year",
+      "value": 167485.90625
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-12",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-12"
+      ],
+      "unit": "persons_per_year",
+      "value": 166957.9375
+    },
+    {
+      "entity_ids": [
+        "country:BGD",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-13",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-13"
+      ],
+      "unit": "persons_per_year",
+      "value": 162123.375
+    },
+    {
+      "entity_ids": [
+        "country:AFG",
+        "country:IRN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-14",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-14"
+      ],
+      "unit": "persons_per_year",
+      "value": 157252.0
+    },
+    {
+      "entity_ids": [
+        "country:ARE",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-15",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-15"
+      ],
+      "unit": "persons_per_year",
+      "value": 145618.8125
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:BGD"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-16",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-16"
+      ],
+      "unit": "persons_per_year",
+      "value": 137936.96875
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:PHL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-17",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-17"
+      ],
+      "unit": "persons_per_year",
+      "value": 131403.90625
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-18",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-18"
+      ],
+      "unit": "persons_per_year",
+      "value": 131101.625
+    },
+    {
+      "entity_ids": [
+        "country:EGY",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-19",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-19"
+      ],
+      "unit": "persons_per_year",
+      "value": 129900.53125
+    },
+    {
+      "entity_ids": [
+        "country:MYS",
+        "country:SGP"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-20",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-20"
+      ],
+      "unit": "persons_per_year",
+      "value": 126792.398438
+    },
+    {
+      "entity_ids": [
+        "country:RUS",
+        "country:UKR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-21",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-21"
+      ],
+      "unit": "persons_per_year",
+      "value": 125962.90625
+    },
+    {
+      "entity_ids": [
+        "country:VNM",
+        "country:JPN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-22",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-22"
+      ],
+      "unit": "persons_per_year",
+      "value": 110370.40625
+    },
+    {
+      "entity_ids": [
+        "country:KWT",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-23",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-23"
+      ],
+      "unit": "persons_per_year",
+      "value": 110237.398438
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-24",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-24"
+      ],
+      "unit": "persons_per_year",
+      "value": 102529.117188
+    },
+    {
+      "entity_ids": [
+        "country:COL",
+        "country:VEN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-25",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-25"
+      ],
+      "unit": "persons_per_year",
+      "value": 102076.335938
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-26",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-26"
+      ],
+      "unit": "persons_per_year",
+      "value": 98943.085938
+    },
+    {
+      "entity_ids": [
+        "country:PHL",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-27",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-27"
+      ],
+      "unit": "persons_per_year",
+      "value": 97859.90625
+    },
+    {
+      "entity_ids": [
+        "country:IDN",
+        "country:MYS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-28",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-28"
+      ],
+      "unit": "persons_per_year",
+      "value": 95342.421875
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:KOR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-29",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-29"
+      ],
+      "unit": "persons_per_year",
+      "value": 91687.5625
+    },
+    {
+      "entity_ids": [
+        "country:OMN",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2020-30",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2020"
+      ],
+      "uncertainty_ids": [
+        "u-2020-30"
+      ],
+      "unit": "persons_per_year",
+      "value": 84072.742188
+    },
+    {
+      "entity_ids": [
+        "country:VEN",
+        "country:COL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-01",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-01"
+      ],
+      "unit": "persons_per_year",
+      "value": 779873.1875
+    },
+    {
+      "entity_ids": [
+        "country:SSD",
+        "country:SDN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-02",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-02"
+      ],
+      "unit": "persons_per_year",
+      "value": 600291.4375
+    },
+    {
+      "entity_ids": [
+        "country:SDN",
+        "country:TCD"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-03",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-03"
+      ],
+      "unit": "persons_per_year",
+      "value": 587986.5
+    },
+    {
+      "entity_ids": [
+        "country:MEX",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-04",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-04"
+      ],
+      "unit": "persons_per_year",
+      "value": 552298.125
+    },
+    {
+      "entity_ids": [
+        "country:VEN",
+        "country:PER"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-05",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-05"
+      ],
+      "unit": "persons_per_year",
+      "value": 438872.34375
+    },
+    {
+      "entity_ids": [
+        "country:UKR",
+        "country:RUS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-06",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-06"
+      ],
+      "unit": "persons_per_year",
+      "value": 378902.3125
+    },
+    {
+      "entity_ids": [
+        "country:SDN",
+        "country:EGY"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-07",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-07"
+      ],
+      "unit": "persons_per_year",
+      "value": 357766.6875
+    },
+    {
+      "entity_ids": [
+        "country:IDN",
+        "country:MYS"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-08",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-08"
+      ],
+      "unit": "persons_per_year",
+      "value": 350461.1875
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-09",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-09"
+      ],
+      "unit": "persons_per_year",
+      "value": 313296.625
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-10",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-10"
+      ],
+      "unit": "persons_per_year",
+      "value": 259325.53125
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-11",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-11"
+      ],
+      "unit": "persons_per_year",
+      "value": 253565.3125
+    },
+    {
+      "entity_ids": [
+        "country:IND",
+        "country:ARE"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-12",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-12"
+      ],
+      "unit": "persons_per_year",
+      "value": 251391.1875
+    },
+    {
+      "entity_ids": [
+        "country:ARE",
+        "country:IND"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-13",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-13"
+      ],
+      "unit": "persons_per_year",
+      "value": 249104.171875
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:USA"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-14",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-14"
+      ],
+      "unit": "persons_per_year",
+      "value": 247777.390625
+    },
+    {
+      "entity_ids": [
+        "country:USA",
+        "country:MEX"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-15",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-15"
+      ],
+      "unit": "persons_per_year",
+      "value": 225164.453125
+    },
+    {
+      "entity_ids": [
+        "country:PAK",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-16",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-16"
+      ],
+      "unit": "persons_per_year",
+      "value": 216601.984375
+    },
+    {
+      "entity_ids": [
+        "country:UKR",
+        "country:DEU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-17",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-17"
+      ],
+      "unit": "persons_per_year",
+      "value": 215488.0
+    },
+    {
+      "entity_ids": [
+        "country:PHL",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-18",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-18"
+      ],
+      "unit": "persons_per_year",
+      "value": 210584.875
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-19",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-19"
+      ],
+      "unit": "persons_per_year",
+      "value": 199706.390625
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:EGY"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-20",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-20"
+      ],
+      "unit": "persons_per_year",
+      "value": 188027.3125
+    },
+    {
+      "entity_ids": [
+        "country:BGD",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-21",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-21"
+      ],
+      "unit": "persons_per_year",
+      "value": 187391.375
+    },
+    {
+      "entity_ids": [
+        "country:UKR",
+        "country:POL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-22",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-22"
+      ],
+      "unit": "persons_per_year",
+      "value": 185422.859375
+    },
+    {
+      "entity_ids": [
+        "country:UKR",
+        "country:GBR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-23",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-23"
+      ],
+      "unit": "persons_per_year",
+      "value": 183197.5
+    },
+    {
+      "entity_ids": [
+        "country:SYR",
+        "country:JOR"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-24",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-24"
+      ],
+      "unit": "persons_per_year",
+      "value": 183003.46875
+    },
+    {
+      "entity_ids": [
+        "country:ERI",
+        "country:SDN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-25",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-25"
+      ],
+      "unit": "persons_per_year",
+      "value": 180392.8125
+    },
+    {
+      "entity_ids": [
+        "country:EGY",
+        "country:SAU"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-26",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-26"
+      ],
+      "unit": "persons_per_year",
+      "value": 176532.765625
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:BGD"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-27",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-27"
+      ],
+      "unit": "persons_per_year",
+      "value": 174849.5
+    },
+    {
+      "entity_ids": [
+        "country:CHN",
+        "country:TWN"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-28",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-28"
+      ],
+      "unit": "persons_per_year",
+      "value": 165865.03125
+    },
+    {
+      "entity_ids": [
+        "country:SAU",
+        "country:PHL"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-29",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-29"
+      ],
+      "unit": "persons_per_year",
+      "value": 165361.046875
+    },
+    {
+      "entity_ids": [
+        "country:AFG",
+        "country:PAK"
+      ],
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-2023-30",
+      "origin": "source_extraction",
+      "phenomenon": "model_estimated_annual_origin_destination_migration_flow",
+      "scale_id": "scale:global-corridor",
+      "time_ids": [
+        "year:2023"
+      ],
+      "uncertainty_ids": [
+        "u-2023-30"
+      ],
+      "unit": "persons_per_year",
+      "value": 161259.8125
+    },
+    {
+      "calculation_id": "calc-top30-sum-1990",
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-top30-sum-1990",
+      "origin": "calculation",
+      "phenomenon": "selected_top30_model_estimated_flow_sum",
+      "scale_id": "scale:global-selection",
+      "time_ids": [
+        "year:1990"
+      ],
+      "unit": "persons_per_year",
+      "value": 4573159.394531
+    },
+    {
+      "calculation_id": "calc-top30-sum-2000",
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-top30-sum-2000",
+      "origin": "calculation",
+      "phenomenon": "selected_top30_model_estimated_flow_sum",
+      "scale_id": "scale:global-selection",
+      "time_ids": [
+        "year:2000"
+      ],
+      "unit": "persons_per_year",
+      "value": 2182819.679686
+    },
+    {
+      "calculation_id": "calc-top30-sum-2010",
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-top30-sum-2010",
+      "origin": "calculation",
+      "phenomenon": "selected_top30_model_estimated_flow_sum",
+      "scale_id": "scale:global-selection",
+      "time_ids": [
+        "year:2010"
+      ],
+      "unit": "persons_per_year",
+      "value": 3985254.703123
+    },
+    {
+      "calculation_id": "calc-top30-sum-2020",
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-top30-sum-2020",
+      "origin": "calculation",
+      "phenomenon": "selected_top30_model_estimated_flow_sum",
+      "scale_id": "scale:global-selection",
+      "time_ids": [
+        "year:2020"
+      ],
+      "unit": "persons_per_year",
+      "value": 5111461.203128
+    },
+    {
+      "calculation_id": "calc-top30-sum-2023",
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "q-top30-sum-2023",
+      "origin": "calculation",
+      "phenomenon": "selected_top30_model_estimated_flow_sum",
+      "scale_id": "scale:global-selection",
+      "time_ids": [
+        "year:2023"
+      ],
+      "unit": "persons_per_year",
+      "value": 8639761.1875
+    }
+  ],
+  "relations": [
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-01",
+      "object_id": "country:AFG",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IRN",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-02",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MEX",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-03",
+      "object_id": "country:AFG",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-04",
+      "object_id": "country:MOZ",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MWI",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-05",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:KAZ",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-06",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UKR",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-07",
+      "object_id": "country:ETH",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SOM",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-08",
+      "object_id": "country:ETH",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SDN",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-09",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BGD",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-10",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:JPN",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-11",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-12",
+      "object_id": "country:SDN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ETH",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-13",
+      "object_id": "country:DEU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BIH",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-14",
+      "object_id": "country:DEU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:TUR",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-15",
+      "object_id": "country:IRN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-16",
+      "object_id": "country:DEU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:USA",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-17",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:POL",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-18",
+      "object_id": "country:HRV",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BIH",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-19",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-20",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-21",
+      "object_id": "country:JOR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PSE",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-22",
+      "object_id": "country:MYS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IDN",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-23",
+      "object_id": "country:IRQ",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IRN",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-24",
+      "object_id": "country:NPL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-25",
+      "object_id": "country:SRB",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BIH",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-26",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-27",
+      "object_id": "country:UGA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ETH",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-28",
+      "object_id": "country:LAO",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:THA",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-29",
+      "object_id": "country:JPN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:KOR",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-1990-30",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PHL",
+      "time_ids": [
+        "year:1990"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-01",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MEX",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-02",
+      "object_id": "country:IRQ",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IRN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-03",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-04",
+      "object_id": "country:MYS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IDN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-05",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-06",
+      "object_id": "country:THA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MMR",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-07",
+      "object_id": "country:TLS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IDN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-08",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:KAZ",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-09",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-10",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PHL",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-11",
+      "object_id": "country:SOM",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ETH",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-12",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-13",
+      "object_id": "country:BGD",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-14",
+      "object_id": "country:KOR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:JPN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-15",
+      "object_id": "country:DEU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:RUS",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-16",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UKR",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-17",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:VNM",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-18",
+      "object_id": "country:CIV",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BFA",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-19",
+      "object_id": "country:HKG",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-20",
+      "object_id": "country:MEX",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:USA",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-21",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PRI",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-22",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:NPL",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-23",
+      "object_id": "country:CAN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-24",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-25",
+      "object_id": "country:SGP",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MYS",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-26",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UZB",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-27",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:JPN",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-28",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:EGY",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-29",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:AZE",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2000-30",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:GTM",
+      "time_ids": [
+        "year:2000"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-01",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MEX",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-02",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BGD",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-03",
+      "object_id": "country:MEX",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:USA",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-04",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-05",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-06",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:YEM",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-07",
+      "object_id": "country:AFG",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-08",
+      "object_id": "country:MYS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IDN",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-09",
+      "object_id": "country:IDN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MYS",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-10",
+      "object_id": "country:THA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MMR",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-11",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:EGY",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-12",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-13",
+      "object_id": "country:QAT",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-14",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-15",
+      "object_id": "country:SYR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IRQ",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-16",
+      "object_id": "country:ITA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ROU",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-17",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ARE",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-18",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-19",
+      "object_id": "country:UKR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:RUS",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-20",
+      "object_id": "country:KOR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-21",
+      "object_id": "country:JOR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SYR",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-22",
+      "object_id": "country:SGP",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MYS",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-23",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-24",
+      "object_id": "country:MMR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:THA",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-25",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SDN",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-26",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:NPL",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-27",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PHL",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-28",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BGD",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-29",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PHL",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2010-30",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2010"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-01",
+      "object_id": "country:MEX",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:USA",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-02",
+      "object_id": "country:COL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:VEN",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-03",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-04",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ARE",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-05",
+      "object_id": "country:MMR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:THA",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-06",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-07",
+      "object_id": "country:IDN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MYS",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-08",
+      "object_id": "country:EGY",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-09",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-10",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MEX",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-11",
+      "object_id": "country:NPL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-12",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-13",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BGD",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-14",
+      "object_id": "country:IRN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:AFG",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-15",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ARE",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-16",
+      "object_id": "country:BGD",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-17",
+      "object_id": "country:PHL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-18",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-19",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:EGY",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-20",
+      "object_id": "country:SGP",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MYS",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-21",
+      "object_id": "country:UKR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:RUS",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-22",
+      "object_id": "country:JPN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:VNM",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-23",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:KWT",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-24",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-25",
+      "object_id": "country:VEN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:COL",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-26",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-27",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PHL",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-28",
+      "object_id": "country:MYS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IDN",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-29",
+      "object_id": "country:KOR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2020-30",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:OMN",
+      "time_ids": [
+        "year:2020"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-01",
+      "object_id": "country:COL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:VEN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-02",
+      "object_id": "country:SDN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SSD",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-03",
+      "object_id": "country:TCD",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SDN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-04",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:MEX",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-05",
+      "object_id": "country:PER",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:VEN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-06",
+      "object_id": "country:RUS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UKR",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-07",
+      "object_id": "country:EGY",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SDN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-08",
+      "object_id": "country:MYS",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IDN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-09",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-10",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-11",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-12",
+      "object_id": "country:ARE",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:IND",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-13",
+      "object_id": "country:IND",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ARE",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-14",
+      "object_id": "country:USA",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-15",
+      "object_id": "country:MEX",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:USA",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-16",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PAK",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-17",
+      "object_id": "country:DEU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UKR",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-18",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:PHL",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-19",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-20",
+      "object_id": "country:EGY",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-21",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:BGD",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-22",
+      "object_id": "country:POL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UKR",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-23",
+      "object_id": "country:GBR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:UKR",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-24",
+      "object_id": "country:JOR",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SYR",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-25",
+      "object_id": "country:SDN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:ERI",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-26",
+      "object_id": "country:SAU",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:EGY",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-27",
+      "object_id": "country:BGD",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-28",
+      "object_id": "country:TWN",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:CHN",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-29",
+      "object_id": "country:PHL",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:SAU",
+      "time_ids": [
+        "year:2023"
+      ]
+    },
+    {
+      "evidence_ids": [
+        "ev-migration"
+      ],
+      "id": "route-2023-30",
+      "object_id": "country:PAK",
+      "predicate": "model_estimated_migration_flow_to",
+      "subject_id": "country:AFG",
+      "time_ids": [
+        "year:2023"
+      ]
+    }
+  ],
+  "scale": [
+    {
+      "id": "scale:global-corridor",
+      "level": "global"
+    },
+    {
+      "denominator": "30 largest model-estimated routes within each selected year",
+      "id": "scale:global-selection",
+      "level": "global"
+    }
+  ],
+  "schema_version": "0.1.0",
+  "time": [
+    {
+      "end": "1990-12-31",
+      "id": "year:1990",
+      "kind": "year",
+      "label": "1990",
+      "start": "1990-01-01"
+    },
+    {
+      "end": "2000-12-31",
+      "id": "year:2000",
+      "kind": "year",
+      "label": "2000",
+      "start": "2000-01-01"
+    },
+    {
+      "end": "2010-12-31",
+      "id": "year:2010",
+      "kind": "year",
+      "label": "2010",
+      "start": "2010-01-01"
+    },
+    {
+      "end": "2020-12-31",
+      "id": "year:2020",
+      "kind": "year",
+      "label": "2020",
+      "start": "2020-01-01"
+    },
+    {
+      "end": "2023-12-31",
+      "id": "year:2023",
+      "kind": "year",
+      "label": "2023",
+      "start": "2023-01-01"
+    }
+  ],
+  "uncertainty": [
+    {
+      "description": "Model-estimate standard deviation: 350581.031250 persons per year.",
+      "id": "u-1990-01",
+      "kind": "model",
+      "lower": 0,
+      "upper": 350581.03125
+    },
+    {
+      "description": "Model-estimate standard deviation: 140667.281250 persons per year.",
+      "id": "u-1990-02",
+      "kind": "model",
+      "lower": 0,
+      "upper": 140667.28125
+    },
+    {
+      "description": "Model-estimate standard deviation: 345961.093750 persons per year.",
+      "id": "u-1990-03",
+      "kind": "model",
+      "lower": 0,
+      "upper": 345961.09375
+    },
+    {
+      "description": "Model-estimate standard deviation: 218855.359375 persons per year.",
+      "id": "u-1990-04",
+      "kind": "model",
+      "lower": 0,
+      "upper": 218855.359375
+    },
+    {
+      "description": "Model-estimate standard deviation: 218625.625000 persons per year.",
+      "id": "u-1990-05",
+      "kind": "model",
+      "lower": 0,
+      "upper": 218625.625
+    },
+    {
+      "description": "Model-estimate standard deviation: 159466.703125 persons per year.",
+      "id": "u-1990-06",
+      "kind": "model",
+      "lower": 0,
+      "upper": 159466.703125
+    },
+    {
+      "description": "Model-estimate standard deviation: 130606.359375 persons per year.",
+      "id": "u-1990-07",
+      "kind": "model",
+      "lower": 0,
+      "upper": 130606.359375
+    },
+    {
+      "description": "Model-estimate standard deviation: 110405.609375 persons per year.",
+      "id": "u-1990-08",
+      "kind": "model",
+      "lower": 0,
+      "upper": 110405.609375
+    },
+    {
+      "description": "Model-estimate standard deviation: 102795.265625 persons per year.",
+      "id": "u-1990-09",
+      "kind": "model",
+      "lower": 0,
+      "upper": 102795.265625
+    },
+    {
+      "description": "Model-estimate standard deviation: 79299.828125 persons per year.",
+      "id": "u-1990-10",
+      "kind": "model",
+      "lower": 0,
+      "upper": 79299.828125
+    },
+    {
+      "description": "Model-estimate standard deviation: 73307.320312 persons per year.",
+      "id": "u-1990-11",
+      "kind": "model",
+      "lower": 0,
+      "upper": 73307.320312
+    },
+    {
+      "description": "Model-estimate standard deviation: 108461.039062 persons per year.",
+      "id": "u-1990-12",
+      "kind": "model",
+      "lower": 0,
+      "upper": 108461.039062
+    },
+    {
+      "description": "Model-estimate standard deviation: 99820.851562 persons per year.",
+      "id": "u-1990-13",
+      "kind": "model",
+      "lower": 0,
+      "upper": 99820.851562
+    },
+    {
+      "description": "Model-estimate standard deviation: 91856.539062 persons per year.",
+      "id": "u-1990-14",
+      "kind": "model",
+      "lower": 0,
+      "upper": 91856.539062
+    },
+    {
+      "description": "Model-estimate standard deviation: 110466.656250 persons per year.",
+      "id": "u-1990-15",
+      "kind": "model",
+      "lower": 0,
+      "upper": 110466.65625
+    },
+    {
+      "description": "Model-estimate standard deviation: 59927.121094 persons per year.",
+      "id": "u-1990-16",
+      "kind": "model",
+      "lower": 0,
+      "upper": 59927.121094
+    },
+    {
+      "description": "Model-estimate standard deviation: 60434.851562 persons per year.",
+      "id": "u-1990-17",
+      "kind": "model",
+      "lower": 0,
+      "upper": 60434.851562
+    },
+    {
+      "description": "Model-estimate standard deviation: 68637.914062 persons per year.",
+      "id": "u-1990-18",
+      "kind": "model",
+      "lower": 0,
+      "upper": 68637.914062
+    },
+    {
+      "description": "Model-estimate standard deviation: 77487.140625 persons per year.",
+      "id": "u-1990-19",
+      "kind": "model",
+      "lower": 0,
+      "upper": 77487.140625
+    },
+    {
+      "description": "Model-estimate standard deviation: 45757.417969 persons per year.",
+      "id": "u-1990-20",
+      "kind": "model",
+      "lower": 0,
+      "upper": 45757.417969
+    },
+    {
+      "description": "Model-estimate standard deviation: 89062.140625 persons per year.",
+      "id": "u-1990-21",
+      "kind": "model",
+      "lower": 0,
+      "upper": 89062.140625
+    },
+    {
+      "description": "Model-estimate standard deviation: 57291.105469 persons per year.",
+      "id": "u-1990-22",
+      "kind": "model",
+      "lower": 0,
+      "upper": 57291.105469
+    },
+    {
+      "description": "Model-estimate standard deviation: 113756.773438 persons per year.",
+      "id": "u-1990-23",
+      "kind": "model",
+      "lower": 0,
+      "upper": 113756.773438
+    },
+    {
+      "description": "Model-estimate standard deviation: 63602.191406 persons per year.",
+      "id": "u-1990-24",
+      "kind": "model",
+      "lower": 0,
+      "upper": 63602.191406
+    },
+    {
+      "description": "Model-estimate standard deviation: 64569.750000 persons per year.",
+      "id": "u-1990-25",
+      "kind": "model",
+      "lower": 0,
+      "upper": 64569.75
+    },
+    {
+      "description": "Model-estimate standard deviation: 67381.492188 persons per year.",
+      "id": "u-1990-26",
+      "kind": "model",
+      "lower": 0,
+      "upper": 67381.492188
+    },
+    {
+      "description": "Model-estimate standard deviation: 70203.062500 persons per year.",
+      "id": "u-1990-27",
+      "kind": "model",
+      "lower": 0,
+      "upper": 70203.0625
+    },
+    {
+      "description": "Model-estimate standard deviation: 38620.136719 persons per year.",
+      "id": "u-1990-28",
+      "kind": "model",
+      "lower": 0,
+      "upper": 38620.136719
+    },
+    {
+      "description": "Model-estimate standard deviation: 42807.964844 persons per year.",
+      "id": "u-1990-29",
+      "kind": "model",
+      "lower": 0,
+      "upper": 42807.964844
+    },
+    {
+      "description": "Model-estimate standard deviation: 37885.445312 persons per year.",
+      "id": "u-1990-30",
+      "kind": "model",
+      "lower": 0,
+      "upper": 37885.445312
+    },
+    {
+      "description": "Model-estimate standard deviation: 57492.070312 persons per year.",
+      "id": "u-2000-01",
+      "kind": "model",
+      "lower": 0,
+      "upper": 57492.070312
+    },
+    {
+      "description": "Model-estimate standard deviation: 107542.531250 persons per year.",
+      "id": "u-2000-02",
+      "kind": "model",
+      "lower": 0,
+      "upper": 107542.53125
+    },
+    {
+      "description": "Model-estimate standard deviation: 24893.937500 persons per year.",
+      "id": "u-2000-03",
+      "kind": "model",
+      "lower": 0,
+      "upper": 24893.9375
+    },
+    {
+      "description": "Model-estimate standard deviation: 46376.242188 persons per year.",
+      "id": "u-2000-04",
+      "kind": "model",
+      "lower": 0,
+      "upper": 46376.242188
+    },
+    {
+      "description": "Model-estimate standard deviation: 38024.699219 persons per year.",
+      "id": "u-2000-05",
+      "kind": "model",
+      "lower": 0,
+      "upper": 38024.699219
+    },
+    {
+      "description": "Model-estimate standard deviation: 26017.896484 persons per year.",
+      "id": "u-2000-06",
+      "kind": "model",
+      "lower": 0,
+      "upper": 26017.896484
+    },
+    {
+      "description": "Model-estimate standard deviation: 97538.390625 persons per year.",
+      "id": "u-2000-07",
+      "kind": "model",
+      "lower": 0,
+      "upper": 97538.390625
+    },
+    {
+      "description": "Model-estimate standard deviation: 32139.511719 persons per year.",
+      "id": "u-2000-08",
+      "kind": "model",
+      "lower": 0,
+      "upper": 32139.511719
+    },
+    {
+      "description": "Model-estimate standard deviation: 19657.158203 persons per year.",
+      "id": "u-2000-09",
+      "kind": "model",
+      "lower": 0,
+      "upper": 19657.158203
+    },
+    {
+      "description": "Model-estimate standard deviation: 12083.964844 persons per year.",
+      "id": "u-2000-10",
+      "kind": "model",
+      "lower": 0,
+      "upper": 12083.964844
+    },
+    {
+      "description": "Model-estimate standard deviation: 55156.183594 persons per year.",
+      "id": "u-2000-11",
+      "kind": "model",
+      "lower": 0,
+      "upper": 55156.183594
+    },
+    {
+      "description": "Model-estimate standard deviation: 36847.250000 persons per year.",
+      "id": "u-2000-12",
+      "kind": "model",
+      "lower": 0,
+      "upper": 36847.25
+    },
+    {
+      "description": "Model-estimate standard deviation: 29081.300781 persons per year.",
+      "id": "u-2000-13",
+      "kind": "model",
+      "lower": 0,
+      "upper": 29081.300781
+    },
+    {
+      "description": "Model-estimate standard deviation: 21892.558594 persons per year.",
+      "id": "u-2000-14",
+      "kind": "model",
+      "lower": 0,
+      "upper": 21892.558594
+    },
+    {
+      "description": "Model-estimate standard deviation: 25432.478516 persons per year.",
+      "id": "u-2000-15",
+      "kind": "model",
+      "lower": 0,
+      "upper": 25432.478516
+    },
+    {
+      "description": "Model-estimate standard deviation: 37595.484375 persons per year.",
+      "id": "u-2000-16",
+      "kind": "model",
+      "lower": 0,
+      "upper": 37595.484375
+    },
+    {
+      "description": "Model-estimate standard deviation: 15069.567383 persons per year.",
+      "id": "u-2000-17",
+      "kind": "model",
+      "lower": 0,
+      "upper": 15069.567383
+    },
+    {
+      "description": "Model-estimate standard deviation: 16096.455078 persons per year.",
+      "id": "u-2000-18",
+      "kind": "model",
+      "lower": 0,
+      "upper": 16096.455078
+    },
+    {
+      "description": "Model-estimate standard deviation: 19316.611328 persons per year.",
+      "id": "u-2000-19",
+      "kind": "model",
+      "lower": 0,
+      "upper": 19316.611328
+    },
+    {
+      "description": "Model-estimate standard deviation: 19440.761719 persons per year.",
+      "id": "u-2000-20",
+      "kind": "model",
+      "lower": 0,
+      "upper": 19440.761719
+    },
+    {
+      "description": "Model-estimate standard deviation: 12198.473633 persons per year.",
+      "id": "u-2000-21",
+      "kind": "model",
+      "lower": 0,
+      "upper": 12198.473633
+    },
+    {
+      "description": "Model-estimate standard deviation: 18600.898438 persons per year.",
+      "id": "u-2000-22",
+      "kind": "model",
+      "lower": 0,
+      "upper": 18600.898438
+    },
+    {
+      "description": "Model-estimate standard deviation: 11656.830078 persons per year.",
+      "id": "u-2000-23",
+      "kind": "model",
+      "lower": 0,
+      "upper": 11656.830078
+    },
+    {
+      "description": "Model-estimate standard deviation: 12964.865234 persons per year.",
+      "id": "u-2000-24",
+      "kind": "model",
+      "lower": 0,
+      "upper": 12964.865234
+    },
+    {
+      "description": "Model-estimate standard deviation: 13987.603516 persons per year.",
+      "id": "u-2000-25",
+      "kind": "model",
+      "lower": 0,
+      "upper": 13987.603516
+    },
+    {
+      "description": "Model-estimate standard deviation: 21982.974609 persons per year.",
+      "id": "u-2000-26",
+      "kind": "model",
+      "lower": 0,
+      "upper": 21982.974609
+    },
+    {
+      "description": "Model-estimate standard deviation: 18270.427734 persons per year.",
+      "id": "u-2000-27",
+      "kind": "model",
+      "lower": 0,
+      "upper": 18270.427734
+    },
+    {
+      "description": "Model-estimate standard deviation: 25222.271484 persons per year.",
+      "id": "u-2000-28",
+      "kind": "model",
+      "lower": 0,
+      "upper": 25222.271484
+    },
+    {
+      "description": "Model-estimate standard deviation: 28421.630859 persons per year.",
+      "id": "u-2000-29",
+      "kind": "model",
+      "lower": 0,
+      "upper": 28421.630859
+    },
+    {
+      "description": "Model-estimate standard deviation: 7710.063477 persons per year.",
+      "id": "u-2000-30",
+      "kind": "model",
+      "lower": 0,
+      "upper": 7710.063477
+    },
+    {
+      "description": "Model-estimate standard deviation: 90292.367188 persons per year.",
+      "id": "u-2010-01",
+      "kind": "model",
+      "lower": 0,
+      "upper": 90292.367188
+    },
+    {
+      "description": "Model-estimate standard deviation: 81695.289062 persons per year.",
+      "id": "u-2010-02",
+      "kind": "model",
+      "lower": 0,
+      "upper": 81695.289062
+    },
+    {
+      "description": "Model-estimate standard deviation: 87440.765625 persons per year.",
+      "id": "u-2010-03",
+      "kind": "model",
+      "lower": 0,
+      "upper": 87440.765625
+    },
+    {
+      "description": "Model-estimate standard deviation: 37143.980469 persons per year.",
+      "id": "u-2010-04",
+      "kind": "model",
+      "lower": 0,
+      "upper": 37143.980469
+    },
+    {
+      "description": "Model-estimate standard deviation: 52018.644531 persons per year.",
+      "id": "u-2010-05",
+      "kind": "model",
+      "lower": 0,
+      "upper": 52018.644531
+    },
+    {
+      "description": "Model-estimate standard deviation: 99462.187500 persons per year.",
+      "id": "u-2010-06",
+      "kind": "model",
+      "lower": 0,
+      "upper": 99462.1875
+    },
+    {
+      "description": "Model-estimate standard deviation: 78925.890625 persons per year.",
+      "id": "u-2010-07",
+      "kind": "model",
+      "lower": 0,
+      "upper": 78925.890625
+    },
+    {
+      "description": "Model-estimate standard deviation: 57064.941406 persons per year.",
+      "id": "u-2010-08",
+      "kind": "model",
+      "lower": 0,
+      "upper": 57064.941406
+    },
+    {
+      "description": "Model-estimate standard deviation: 57152.500000 persons per year.",
+      "id": "u-2010-09",
+      "kind": "model",
+      "lower": 0,
+      "upper": 57152.5
+    },
+    {
+      "description": "Model-estimate standard deviation: 64479.937500 persons per year.",
+      "id": "u-2010-10",
+      "kind": "model",
+      "lower": 0,
+      "upper": 64479.9375
+    },
+    {
+      "description": "Model-estimate standard deviation: 49860.316406 persons per year.",
+      "id": "u-2010-11",
+      "kind": "model",
+      "lower": 0,
+      "upper": 49860.316406
+    },
+    {
+      "description": "Model-estimate standard deviation: 25287.548828 persons per year.",
+      "id": "u-2010-12",
+      "kind": "model",
+      "lower": 0,
+      "upper": 25287.548828
+    },
+    {
+      "description": "Model-estimate standard deviation: 37785.273438 persons per year.",
+      "id": "u-2010-13",
+      "kind": "model",
+      "lower": 0,
+      "upper": 37785.273438
+    },
+    {
+      "description": "Model-estimate standard deviation: 61130.117188 persons per year.",
+      "id": "u-2010-14",
+      "kind": "model",
+      "lower": 0,
+      "upper": 61130.117188
+    },
+    {
+      "description": "Model-estimate standard deviation: 100980.929688 persons per year.",
+      "id": "u-2010-15",
+      "kind": "model",
+      "lower": 0,
+      "upper": 100980.929688
+    },
+    {
+      "description": "Model-estimate standard deviation: 14916.788086 persons per year.",
+      "id": "u-2010-16",
+      "kind": "model",
+      "lower": 0,
+      "upper": 14916.788086
+    },
+    {
+      "description": "Model-estimate standard deviation: 46403.160156 persons per year.",
+      "id": "u-2010-17",
+      "kind": "model",
+      "lower": 0,
+      "upper": 46403.160156
+    },
+    {
+      "description": "Model-estimate standard deviation: 35802.625000 persons per year.",
+      "id": "u-2010-18",
+      "kind": "model",
+      "lower": 0,
+      "upper": 35802.625
+    },
+    {
+      "description": "Model-estimate standard deviation: 47612.917969 persons per year.",
+      "id": "u-2010-19",
+      "kind": "model",
+      "lower": 0,
+      "upper": 47612.917969
+    },
+    {
+      "description": "Model-estimate standard deviation: 19053.257812 persons per year.",
+      "id": "u-2010-20",
+      "kind": "model",
+      "lower": 0,
+      "upper": 19053.257812
+    },
+    {
+      "description": "Model-estimate standard deviation: 40833.812500 persons per year.",
+      "id": "u-2010-21",
+      "kind": "model",
+      "lower": 0,
+      "upper": 40833.8125
+    },
+    {
+      "description": "Model-estimate standard deviation: 41447.761719 persons per year.",
+      "id": "u-2010-22",
+      "kind": "model",
+      "lower": 0,
+      "upper": 41447.761719
+    },
+    {
+      "description": "Model-estimate standard deviation: 19612.330078 persons per year.",
+      "id": "u-2010-23",
+      "kind": "model",
+      "lower": 0,
+      "upper": 19612.330078
+    },
+    {
+      "description": "Model-estimate standard deviation: 37997.828125 persons per year.",
+      "id": "u-2010-24",
+      "kind": "model",
+      "lower": 0,
+      "upper": 37997.828125
+    },
+    {
+      "description": "Model-estimate standard deviation: 37943.156250 persons per year.",
+      "id": "u-2010-25",
+      "kind": "model",
+      "lower": 0,
+      "upper": 37943.15625
+    },
+    {
+      "description": "Model-estimate standard deviation: 21046.394531 persons per year.",
+      "id": "u-2010-26",
+      "kind": "model",
+      "lower": 0,
+      "upper": 21046.394531
+    },
+    {
+      "description": "Model-estimate standard deviation: 57227.320312 persons per year.",
+      "id": "u-2010-27",
+      "kind": "model",
+      "lower": 0,
+      "upper": 57227.320312
+    },
+    {
+      "description": "Model-estimate standard deviation: 21553.347656 persons per year.",
+      "id": "u-2010-28",
+      "kind": "model",
+      "lower": 0,
+      "upper": 21553.347656
+    },
+    {
+      "description": "Model-estimate standard deviation: 11244.815430 persons per year.",
+      "id": "u-2010-29",
+      "kind": "model",
+      "lower": 0,
+      "upper": 11244.81543
+    },
+    {
+      "description": "Model-estimate standard deviation: 45693.996094 persons per year.",
+      "id": "u-2010-30",
+      "kind": "model",
+      "lower": 0,
+      "upper": 45693.996094
+    },
+    {
+      "description": "Model-estimate standard deviation: 151151.328125 persons per year.",
+      "id": "u-2020-01",
+      "kind": "model",
+      "lower": 0,
+      "upper": 151151.328125
+    },
+    {
+      "description": "Model-estimate standard deviation: 47337.039062 persons per year.",
+      "id": "u-2020-02",
+      "kind": "model",
+      "lower": 0,
+      "upper": 47337.039062
+    },
+    {
+      "description": "Model-estimate standard deviation: 46207.824219 persons per year.",
+      "id": "u-2020-03",
+      "kind": "model",
+      "lower": 0,
+      "upper": 46207.824219
+    },
+    {
+      "description": "Model-estimate standard deviation: 45643.175781 persons per year.",
+      "id": "u-2020-04",
+      "kind": "model",
+      "lower": 0,
+      "upper": 45643.175781
+    },
+    {
+      "description": "Model-estimate standard deviation: 40670.652344 persons per year.",
+      "id": "u-2020-05",
+      "kind": "model",
+      "lower": 0,
+      "upper": 40670.652344
+    },
+    {
+      "description": "Model-estimate standard deviation: 27765.613281 persons per year.",
+      "id": "u-2020-06",
+      "kind": "model",
+      "lower": 0,
+      "upper": 27765.613281
+    },
+    {
+      "description": "Model-estimate standard deviation: 29849.486328 persons per year.",
+      "id": "u-2020-07",
+      "kind": "model",
+      "lower": 0,
+      "upper": 29849.486328
+    },
+    {
+      "description": "Model-estimate standard deviation: 29825.142578 persons per year.",
+      "id": "u-2020-08",
+      "kind": "model",
+      "lower": 0,
+      "upper": 29825.142578
+    },
+    {
+      "description": "Model-estimate standard deviation: 30545.304688 persons per year.",
+      "id": "u-2020-09",
+      "kind": "model",
+      "lower": 0,
+      "upper": 30545.304688
+    },
+    {
+      "description": "Model-estimate standard deviation: 53254.550781 persons per year.",
+      "id": "u-2020-10",
+      "kind": "model",
+      "lower": 0,
+      "upper": 53254.550781
+    },
+    {
+      "description": "Model-estimate standard deviation: 35598.355469 persons per year.",
+      "id": "u-2020-11",
+      "kind": "model",
+      "lower": 0,
+      "upper": 35598.355469
+    },
+    {
+      "description": "Model-estimate standard deviation: 33199.667969 persons per year.",
+      "id": "u-2020-12",
+      "kind": "model",
+      "lower": 0,
+      "upper": 33199.667969
+    },
+    {
+      "description": "Model-estimate standard deviation: 38382.187500 persons per year.",
+      "id": "u-2020-13",
+      "kind": "model",
+      "lower": 0,
+      "upper": 38382.1875
+    },
+    {
+      "description": "Model-estimate standard deviation: 214680.546875 persons per year.",
+      "id": "u-2020-14",
+      "kind": "model",
+      "lower": 0,
+      "upper": 214680.546875
+    },
+    {
+      "description": "Model-estimate standard deviation: 44280.710938 persons per year.",
+      "id": "u-2020-15",
+      "kind": "model",
+      "lower": 0,
+      "upper": 44280.710938
+    },
+    {
+      "description": "Model-estimate standard deviation: 33277.933594 persons per year.",
+      "id": "u-2020-16",
+      "kind": "model",
+      "lower": 0,
+      "upper": 33277.933594
+    },
+    {
+      "description": "Model-estimate standard deviation: 34776.812500 persons per year.",
+      "id": "u-2020-17",
+      "kind": "model",
+      "lower": 0,
+      "upper": 34776.8125
+    },
+    {
+      "description": "Model-estimate standard deviation: 24749.761719 persons per year.",
+      "id": "u-2020-18",
+      "kind": "model",
+      "lower": 0,
+      "upper": 24749.761719
+    },
+    {
+      "description": "Model-estimate standard deviation: 17368.744141 persons per year.",
+      "id": "u-2020-19",
+      "kind": "model",
+      "lower": 0,
+      "upper": 17368.744141
+    },
+    {
+      "description": "Model-estimate standard deviation: 21473.078125 persons per year.",
+      "id": "u-2020-20",
+      "kind": "model",
+      "lower": 0,
+      "upper": 21473.078125
+    },
+    {
+      "description": "Model-estimate standard deviation: 59359.691406 persons per year.",
+      "id": "u-2020-21",
+      "kind": "model",
+      "lower": 0,
+      "upper": 59359.691406
+    },
+    {
+      "description": "Model-estimate standard deviation: 28780.294922 persons per year.",
+      "id": "u-2020-22",
+      "kind": "model",
+      "lower": 0,
+      "upper": 28780.294922
+    },
+    {
+      "description": "Model-estimate standard deviation: 32274.058594 persons per year.",
+      "id": "u-2020-23",
+      "kind": "model",
+      "lower": 0,
+      "upper": 32274.058594
+    },
+    {
+      "description": "Model-estimate standard deviation: 59827.714844 persons per year.",
+      "id": "u-2020-24",
+      "kind": "model",
+      "lower": 0,
+      "upper": 59827.714844
+    },
+    {
+      "description": "Model-estimate standard deviation: 17061.400391 persons per year.",
+      "id": "u-2020-25",
+      "kind": "model",
+      "lower": 0,
+      "upper": 17061.400391
+    },
+    {
+      "description": "Model-estimate standard deviation: 25453.039062 persons per year.",
+      "id": "u-2020-26",
+      "kind": "model",
+      "lower": 0,
+      "upper": 25453.039062
+    },
+    {
+      "description": "Model-estimate standard deviation: 28587.500000 persons per year.",
+      "id": "u-2020-27",
+      "kind": "model",
+      "lower": 0,
+      "upper": 28587.5
+    },
+    {
+      "description": "Model-estimate standard deviation: 21366.408203 persons per year.",
+      "id": "u-2020-28",
+      "kind": "model",
+      "lower": 0,
+      "upper": 21366.408203
+    },
+    {
+      "description": "Model-estimate standard deviation: 17463.593750 persons per year.",
+      "id": "u-2020-29",
+      "kind": "model",
+      "lower": 0,
+      "upper": 17463.59375
+    },
+    {
+      "description": "Model-estimate standard deviation: 24313.255859 persons per year.",
+      "id": "u-2020-30",
+      "kind": "model",
+      "lower": 0,
+      "upper": 24313.255859
+    },
+    {
+      "description": "Model-estimate standard deviation: 187110.484375 persons per year.",
+      "id": "u-2023-01",
+      "kind": "model",
+      "lower": 0,
+      "upper": 187110.484375
+    },
+    {
+      "description": "Model-estimate standard deviation: 241757.546875 persons per year.",
+      "id": "u-2023-02",
+      "kind": "model",
+      "lower": 0,
+      "upper": 241757.546875
+    },
+    {
+      "description": "Model-estimate standard deviation: 80893.968750 persons per year.",
+      "id": "u-2023-03",
+      "kind": "model",
+      "lower": 0,
+      "upper": 80893.96875
+    },
+    {
+      "description": "Model-estimate standard deviation: 110985.390625 persons per year.",
+      "id": "u-2023-04",
+      "kind": "model",
+      "lower": 0,
+      "upper": 110985.390625
+    },
+    {
+      "description": "Model-estimate standard deviation: 170238.656250 persons per year.",
+      "id": "u-2023-05",
+      "kind": "model",
+      "lower": 0,
+      "upper": 170238.65625
+    },
+    {
+      "description": "Model-estimate standard deviation: 297755.718750 persons per year.",
+      "id": "u-2023-06",
+      "kind": "model",
+      "lower": 0,
+      "upper": 297755.71875
+    },
+    {
+      "description": "Model-estimate standard deviation: 52392.703125 persons per year.",
+      "id": "u-2023-07",
+      "kind": "model",
+      "lower": 0,
+      "upper": 52392.703125
+    },
+    {
+      "description": "Model-estimate standard deviation: 69419.625000 persons per year.",
+      "id": "u-2023-08",
+      "kind": "model",
+      "lower": 0,
+      "upper": 69419.625
+    },
+    {
+      "description": "Model-estimate standard deviation: 102775.406250 persons per year.",
+      "id": "u-2023-09",
+      "kind": "model",
+      "lower": 0,
+      "upper": 102775.40625
+    },
+    {
+      "description": "Model-estimate standard deviation: 46016.687500 persons per year.",
+      "id": "u-2023-10",
+      "kind": "model",
+      "lower": 0,
+      "upper": 46016.6875
+    },
+    {
+      "description": "Model-estimate standard deviation: 43018.226562 persons per year.",
+      "id": "u-2023-11",
+      "kind": "model",
+      "lower": 0,
+      "upper": 43018.226562
+    },
+    {
+      "description": "Model-estimate standard deviation: 61331.554688 persons per year.",
+      "id": "u-2023-12",
+      "kind": "model",
+      "lower": 0,
+      "upper": 61331.554688
+    },
+    {
+      "description": "Model-estimate standard deviation: 33022.500000 persons per year.",
+      "id": "u-2023-13",
+      "kind": "model",
+      "lower": 0,
+      "upper": 33022.5
+    },
+    {
+      "description": "Model-estimate standard deviation: 192821.703125 persons per year.",
+      "id": "u-2023-14",
+      "kind": "model",
+      "lower": 0,
+      "upper": 192821.703125
+    },
+    {
+      "description": "Model-estimate standard deviation: 88605.937500 persons per year.",
+      "id": "u-2023-15",
+      "kind": "model",
+      "lower": 0,
+      "upper": 88605.9375
+    },
+    {
+      "description": "Model-estimate standard deviation: 56591.718750 persons per year.",
+      "id": "u-2023-16",
+      "kind": "model",
+      "lower": 0,
+      "upper": 56591.71875
+    },
+    {
+      "description": "Model-estimate standard deviation: 62704.378906 persons per year.",
+      "id": "u-2023-17",
+      "kind": "model",
+      "lower": 0,
+      "upper": 62704.378906
+    },
+    {
+      "description": "Model-estimate standard deviation: 27791.455078 persons per year.",
+      "id": "u-2023-18",
+      "kind": "model",
+      "lower": 0,
+      "upper": 27791.455078
+    },
+    {
+      "description": "Model-estimate standard deviation: 57109.003906 persons per year.",
+      "id": "u-2023-19",
+      "kind": "model",
+      "lower": 0,
+      "upper": 57109.003906
+    },
+    {
+      "description": "Model-estimate standard deviation: 36546.804688 persons per year.",
+      "id": "u-2023-20",
+      "kind": "model",
+      "lower": 0,
+      "upper": 36546.804688
+    },
+    {
+      "description": "Model-estimate standard deviation: 42548.882812 persons per year.",
+      "id": "u-2023-21",
+      "kind": "model",
+      "lower": 0,
+      "upper": 42548.882812
+    },
+    {
+      "description": "Model-estimate standard deviation: 59648.976562 persons per year.",
+      "id": "u-2023-22",
+      "kind": "model",
+      "lower": 0,
+      "upper": 59648.976562
+    },
+    {
+      "description": "Model-estimate standard deviation: 33646.007812 persons per year.",
+      "id": "u-2023-23",
+      "kind": "model",
+      "lower": 0,
+      "upper": 33646.007812
+    },
+    {
+      "description": "Model-estimate standard deviation: 48957.863281 persons per year.",
+      "id": "u-2023-24",
+      "kind": "model",
+      "lower": 0,
+      "upper": 48957.863281
+    },
+    {
+      "description": "Model-estimate standard deviation: 43830.476562 persons per year.",
+      "id": "u-2023-25",
+      "kind": "model",
+      "lower": 0,
+      "upper": 43830.476562
+    },
+    {
+      "description": "Model-estimate standard deviation: 44673.148438 persons per year.",
+      "id": "u-2023-26",
+      "kind": "model",
+      "lower": 0,
+      "upper": 44673.148438
+    },
+    {
+      "description": "Model-estimate standard deviation: 38183.535156 persons per year.",
+      "id": "u-2023-27",
+      "kind": "model",
+      "lower": 0,
+      "upper": 38183.535156
+    },
+    {
+      "description": "Model-estimate standard deviation: 42894.238281 persons per year.",
+      "id": "u-2023-28",
+      "kind": "model",
+      "lower": 0,
+      "upper": 42894.238281
+    },
+    {
+      "description": "Model-estimate standard deviation: 55828.753906 persons per year.",
+      "id": "u-2023-29",
+      "kind": "model",
+      "lower": 0,
+      "upper": 55828.753906
+    },
+    {
+      "description": "Model-estimate standard deviation: 168338.578125 persons per year.",
+      "id": "u-2023-30",
+      "kind": "model",
+      "lower": 0,
+      "upper": 168338.578125
+    }
+  ]
+}

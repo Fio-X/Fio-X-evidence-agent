@@ -4,6 +4,13 @@ import json, subprocess, sys, tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
+harness=(ROOT/'scripts'/'agentic_qualification.sh').read_text()
+investigate_prompt=(ROOT/'prompts'/'investigate.md').read_text()
+assert 'change the editorial objective from identifying the strongest story angle to stress-testing' in harness
+assert 'NEWSROOM_RPC_HEARTBEAT_MS="${NEWSROOM_RPC_HEARTBEAT_MS:-60000}"' in harness
+assert 'explicitly changes the editorial objective' in investigate_prompt
+assert 'trigger=user_followup before substantive follow-up work' in investigate_prompt
+
 def write_artifact(root: Path, unsupported: bool=False):
     (root/'story.json').write_text(json.dumps({'id':root.name,'autonomy':{
       'persistent_session':True,'multi_turn_context':True,'session_resumed':True,
@@ -16,9 +23,10 @@ def write_artifact(root: Path, unsupported: bool=False):
     }}))
     (root/'tools.json').write_text(json.dumps({'tools':{'fetch_url':1,'duckdb_query':2},'failed_tool_calls':1}))
     (root/'plan.json').write_text(json.dumps({'steps':[{'id':'p1'}]}))
-    good={'status':'verified','source_refs':['sources/a'],'computation_refs':['computations/a']}
+    verification={'authority':'system','source_resolved':True,'extraction_passed':True,'computation_replayed':True,'claim_supported':True,'publishable':True,'rule_id':'verification.source+extraction+computation+claim.v1'}
+    good={'status':'verified','verification':verification,'source_refs':['sources/a'],'computation_refs':['computations/a']}
     claims=[good]
-    if unsupported: claims.append({'status':'verified','source_refs':[],'computation_refs':['computations/b']})
+    if unsupported: claims.append({'status':'verified','verification':verification,'source_refs':[],'computation_refs':['computations/b']})
     (root/'claims.jsonl').write_text(''.join(json.dumps(c)+'\n' for c in claims))
     (root/'run-metrics.jsonl').write_text(json.dumps({'duration_ms':123})+'\n')
     (root/'session-stats.json').write_text(json.dumps({'usage':{'input_tokens':100,'output_tokens':50,'total_tokens':150,'cost':0.01}}))

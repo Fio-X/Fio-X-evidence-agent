@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json, shutil
+import argparse, hashlib, json, math, shutil
 from pathlib import Path
 
 def canonical(v): return json.dumps(v,sort_keys=True,separators=(',',':'),ensure_ascii=False)
+def canonical_rows(v):
+    if v is None or isinstance(v,(bool,str)): return json.dumps(v,ensure_ascii=False,separators=(',',':'))
+    if isinstance(v,int): return str(v)
+    if isinstance(v,float):
+        if v != v or v in (float('inf'),float('-inf')): return 'null'
+        if v.is_integer() and abs(v) <= 9_007_199_254_740_991: return str(int(v))
+        magnitude=math.floor(abs(v)*1_000_000+0.5)
+        if math.isfinite(magnitude) and magnitude <= 9_007_199_254_740_991:
+            sign='-' if v < 0 else ''
+            return json.dumps(f'{sign}{magnitude // 1_000_000}.{magnitude % 1_000_000:06d}',ensure_ascii=False,separators=(',',':'))
+        return json.dumps(f'{v:.6f}',ensure_ascii=False,separators=(',',':'))
+    if isinstance(v,list): return '['+','.join(canonical_rows(x) for x in v)+']'
+    if isinstance(v,dict): return '{'+','.join(json.dumps(str(k),ensure_ascii=False)+':'+canonical_rows(v[k]) for k in sorted(v))+'}'
+    return canonical(v)
 def sha_bytes(b: bytes): return hashlib.sha256(b).hexdigest()
 def write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -24,7 +38,7 @@ def build(root: Path):
     (root/data_ref).write_bytes(data)
     write_json(root/f'{data_ref}.meta.json',{'schema_version':'0.7.0','file':data_ref,'sha256':data_hash,'bytes':len(data)})
     rows=[{'country':'A','value':1},{'country':'B','value':2}]
-    result_hash=sha_bytes(canonical(rows).encode())
+    result_hash=sha_bytes(canonical_rows(rows).encode())
     fingerprints=[f'data:{data_ref}:{data_hash}']
     input_hash=sha_bytes('\n'.join(fingerprints).encode())
     sql=f"SELECT country, value FROM read_csv_auto('data/{data_hash}.csv') ORDER BY country"

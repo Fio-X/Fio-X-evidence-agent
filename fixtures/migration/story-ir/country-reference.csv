@@ -1,0 +1,65 @@
+iso3,name,continent,region_un,subregion,label_longitude,label_latitude
+AFG,Afghanistan,Asia,Asia,Southern Asia,66.496586,34.164262
+ARE,United Arab Emirates,Asia,Asia,Western Asia,54.547256,23.466285
+AZE,Azerbaijan,Asia,Asia,Western Asia,47.210994,40.402387
+BFA,Burkina Faso,Africa,Africa,Western Africa,-1.36388,12.673048
+BGD,Bangladesh,Asia,Asia,Southern Asia,89.684963,24.214956
+BIH,Bosnia and Herzegovina,Europe,Europe,Southern Europe,18.06841,44.091051
+CAN,Canada,North America,Americas,Northern America,-101.9107,60.324287
+CHN,China,Asia,Asia,Eastern Asia,106.337289,32.498178
+CIV,Ivory Coast,Africa,Africa,Western Africa,-5.568618,7.49139
+COL,Colombia,South America,Americas,South America,-73.174347,3.373111
+DEU,Germany,Europe,Europe,Western Europe,9.678348,50.961733
+EGY,Egypt,Africa,Africa,Northern Africa,29.445837,26.186173
+ERI,Eritrea,Africa,Africa,Eastern Africa,38.285566,15.787401
+ETH,Ethiopia,Africa,Africa,Eastern Africa,39.0886,8.032795
+GBR,United Kingdom,Europe,Europe,Northern Europe,-2.116346,54.402739
+GTM,Guatemala,North America,Americas,Central America,-90.497134,14.982133
+HKG,Hong Kong S.A.R.,Asia,Asia,Eastern Asia,114.097769,22.448829
+HRV,Croatia,Europe,Europe,Southern Europe,16.37241,45.805799
+IDN,Indonesia,Asia,Asia,South-Eastern Asia,101.892949,-0.954404
+IND,India,Asia,Asia,Southern Asia,79.358105,22.686852
+IRN,Iran,Asia,Asia,Southern Asia,54.931495,32.166225
+IRQ,Iraq,Asia,Asia,Western Asia,43.26181,33.09403
+ITA,Italy,Europe,Europe,Southern Europe,11.076907,44.732482
+JOR,Jordan,Asia,Asia,Western Asia,36.375991,30.805025
+JPN,Japan,Asia,Asia,Eastern Asia,138.44217,36.142538
+KAZ,Kazakhstan,Asia,Asia,Central Asia,68.685548,49.054149
+KOR,South Korea,Asia,Asia,Eastern Asia,128.129504,36.384924
+KWT,Kuwait,Asia,Asia,Western Asia,47.313999,29.413628
+LAO,Laos,Asia,Asia,South-Eastern Asia,102.533912,19.431821
+MEX,Mexico,North America,Americas,Central America,-102.289448,23.919988
+MMR,Myanmar,Asia,Asia,South-Eastern Asia,95.804497,21.573855
+MOZ,Mozambique,Africa,Africa,Eastern Africa,37.83789,-13.94323
+MWI,Malawi,Africa,Africa,Eastern Africa,33.608082,-13.386737
+MYS,Malaysia,Asia,Asia,South-Eastern Asia,113.83708,2.528667
+NPL,Nepal,Asia,Asia,Southern Asia,83.639914,28.297925
+OMN,Oman,Asia,Asia,Western Asia,57.336553,22.120427
+PAK,Pakistan,Asia,Asia,Southern Asia,68.545632,29.328389
+PER,Peru,South America,Americas,South America,-72.90016,-12.976679
+PHL,Philippines,Asia,Asia,South-Eastern Asia,122.465,11.198
+POL,Poland,Europe,Europe,Eastern Europe,19.490468,51.990316
+PRI,Puerto Rico,North America,Americas,Caribbean,-66.481065,18.234668
+PSE,Palestine,Asia,Asia,Western Asia,35.291341,32.047431
+QAT,Qatar,Asia,Asia,Western Asia,51.143509,25.237383
+ROU,Romania,Europe,Europe,Eastern Europe,24.972624,45.733237
+RUS,Russia,Europe,Europe,Eastern Europe,44.686469,58.249357
+SAU,Saudi Arabia,Asia,Asia,Western Asia,44.6996,23.806908
+SDN,Sudan,Africa,Africa,Northern Africa,29.260657,16.330746
+SGP,Singapore,Asia,Asia,South-Eastern Asia,103.816925,1.366587
+SOM,Somalia,Africa,Africa,Eastern Africa,45.19238,3.568925
+SRB,Republic of Serbia,Europe,Europe,Southern Europe,20.787989,44.189919
+SSD,South Sudan,Africa,Africa,Eastern Africa,30.390151,7.230477
+SYR,Syria,Asia,Asia,Western Asia,38.277783,35.006636
+TCD,Chad,Africa,Africa,Middle Africa,18.645041,15.142959
+THA,Thailand,Asia,Asia,South-Eastern Asia,101.073198,15.45974
+TLS,East Timor,Asia,Asia,South-Eastern Asia,125.854679,-8.803705
+TUR,Turkey,Asia,Asia,Western Asia,34.508268,39.345388
+TWN,Taiwan,Asia,Asia,Eastern Asia,120.868204,23.652408
+UGA,Uganda,Africa,Africa,Eastern Africa,32.948555,1.972589
+UKR,Ukraine,Europe,Europe,Eastern Europe,32.140865,49.724739
+USA,United States of America,North America,Americas,Northern America,-97.482602,39.538479
+UZB,Uzbekistan,Asia,Asia,Central Asia,64.005429,41.693603
+VEN,Venezuela,South America,Americas,South America,-64.599381,7.182476
+VNM,Vietnam,Asia,Asia,South-Eastern Asia,105.387292,21.715416
+YEM,Yemen,Asia,Asia,Western Asia,45.874383,15.328226

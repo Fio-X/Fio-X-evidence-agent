@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct InvestigationBundle {
@@ -38,6 +38,7 @@ struct Manifest<'a> {
     files: Files,
     autonomy: Autonomy,
     evidence: Evidence,
+    delivery: Delivery,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,6 +85,12 @@ struct Autonomy {
     follow_up_goals: usize,
     failed_tool_calls: usize,
     automatic_retries: usize,
+    provider_failed_turns: usize,
+    provider_auto_retries: usize,
+    provider_retry_max_attempt: usize,
+    provider_retry_delay_ms_total: u64,
+    provider_failure_observed: bool,
+    provider_error_classes: std::collections::BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +102,18 @@ struct Evidence {
     claims: Vec<Value>,
     visualizations: Vec<String>,
     infographics: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct Delivery {
+    /// The file a user should open first. JSON manifests stay evidence
+    /// metadata and are never selected as the primary visual deliverable.
+    primary_artifact: Option<String>,
+    primary_kind: Option<String>,
+    primary_mime_type: Option<String>,
+    html: Vec<String>,
+    images: Vec<String>,
+    manifests: Vec<String>,
 }
 
 impl InvestigationBundle {
@@ -344,6 +363,7 @@ impl InvestigationBundle {
                         .unwrap_or(false)
             })
             .count();
+        let pi_rpc = read_rpc_metrics(&self.events_path);
         let value = serde_json::json!({
             "schema_version": "0.8.0",
             "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
@@ -365,6 +385,14 @@ impl InvestigationBundle {
             "adaptive_replanning_observed": audit.map(|a| a.adaptive_replanning_observed),
             "tool_failure_recovery_observed": audit.map(|a| a.tool_failure_recovery_observed),
             "follow_up_replanning_observed": audit.map(|a| a.follow_up_replanning_observed),
+            "automatic_retries": audit.map(|a| a.automatic_retries),
+            "provider_failed_turns": audit.map(|a| a.provider_failed_turns),
+            "provider_auto_retries": audit.map(|a| a.provider_auto_retries),
+            "provider_retry_max_attempt": audit.map(|a| a.provider_retry_max_attempt),
+            "provider_retry_delay_ms_total": audit.map(|a| a.provider_retry_delay_ms_total),
+            "provider_failure_observed": audit.map(|a| a.provider_failure_observed),
+            "provider_error_classes": audit.map(|a| &a.provider_error_classes),
+            "pi_rpc": pi_rpc,
         });
         writeln!(file, "{}", serde_json::to_string(&value)?)?;
         Ok(())
@@ -394,7 +422,7 @@ impl InvestigationBundle {
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         let created_at = existing_created_at(&self.manifest_path).unwrap_or_else(|| now.clone());
         let empty_audit = AuditSummary {
-            schema_version: "0.7.0",
+            schema_version: "0.8.0",
             generated_at: now.clone(),
             turns: 0,
             tool_calls: 0,
@@ -402,6 +430,12 @@ impl InvestigationBundle {
             successful_capability_tool_calls: 0,
             failed_tool_calls: 0,
             automatic_retries: 0,
+            provider_failed_turns: 0,
+            provider_auto_retries: 0,
+            provider_retry_max_attempt: 0,
+            provider_retry_delay_ms_total: 0,
+            provider_failure_observed: false,
+            provider_error_classes: Default::default(),
             plan_revisions: 0,
             successful_plan_calls: 0,
             follow_up_goals: 0,
@@ -416,9 +450,10 @@ impl InvestigationBundle {
         };
         let audit = audit.unwrap_or(&empty_audit);
         let user_messages = read_user_messages(&self.session_stats_path).unwrap_or(0);
+        let delivery = discover_delivery(&self.dir)?;
 
         let manifest = Manifest {
-            schema_version: "0.7.0",
+            schema_version: "0.8.0",
             id: &self.id,
             kind: "investigation",
             created_at,
@@ -464,6 +499,12 @@ impl InvestigationBundle {
                 follow_up_goals: audit.follow_up_goals,
                 failed_tool_calls: audit.failed_tool_calls,
                 automatic_retries: audit.automatic_retries,
+                provider_failed_turns: audit.provider_failed_turns,
+                provider_auto_retries: audit.provider_auto_retries,
+                provider_retry_max_attempt: audit.provider_retry_max_attempt,
+                provider_retry_delay_ms_total: audit.provider_retry_delay_ms_total,
+                provider_failure_observed: audit.provider_failure_observed,
+                provider_error_classes: audit.provider_error_classes.clone(),
             },
             evidence: Evidence {
                 searches: relative_files(&self.dir, "searches")?,
@@ -474,12 +515,129 @@ impl InvestigationBundle {
                 visualizations: relative_files(&self.dir, "visualizations")?,
                 infographics: relative_files(&self.dir, "infographics")?,
             },
+            delivery,
         };
 
         let json = serde_json::to_string_pretty(&manifest)?;
         fs::write(&self.manifest_path, format!("{json}\n"))
             .with_context(|| format!("failed to write {}", self.manifest_path.display()))
     }
+
+    pub fn primary_artifact(&self) -> Result<Option<(String, String)>> {
+        let delivery = discover_delivery(&self.dir)?;
+        Ok(delivery.primary_artifact.zip(delivery.primary_kind))
+    }
+
+    pub fn visual_delivery_gaps(
+        &self,
+        require_html: bool,
+        require_png_pair: bool,
+    ) -> Result<Vec<String>> {
+        let delivery = discover_delivery(&self.dir)?;
+        let mut gaps = Vec::new();
+        if require_html && delivery.html.is_empty() {
+            gaps.push("requested self-contained HTML is missing".to_string());
+        }
+        if require_png_pair {
+            let png_count = delivery
+                .images
+                .iter()
+                .filter(|path| path.to_ascii_lowercase().ends_with(".png"))
+                .count();
+            if png_count < 2 {
+                gaps.push(format!(
+                    "requested desktop/mobile PNG pair is incomplete ({png_count}/2 found)"
+                ));
+            }
+        }
+        Ok(gaps)
+    }
+}
+
+fn read_rpc_metrics(path: &Path) -> Value {
+    let mut calls = 0_u64;
+    let mut rpc_ms_total = 0_u64;
+    let mut startup_ms_total = 0_u64;
+    let mut first_model_text_ms_min: Option<u64> = None;
+    let mut first_model_text_ms_max: Option<u64> = None;
+    let mut prompt_attempts_total = 0_u64;
+    let mut prompt_bytes_total = 0_u64;
+    let mut tokens_input_total = 0_u64;
+    let mut tokens_output_total = 0_u64;
+    let mut tokens_cache_read_total = 0_u64;
+    let mut tokens_cache_write_total = 0_u64;
+    let mut tool_count_max = 0_u64;
+    let mut tool_profiles: Vec<String> = Vec::new();
+
+    if let Ok(file) = fs::File::open(path) {
+        for line in BufReader::new(file).lines() {
+            let Ok(line) = line else {
+                continue;
+            };
+            let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            if event.get("type").and_then(Value::as_str) != Some("newsroom_rpc_metrics") {
+                continue;
+            }
+            calls += 1;
+            rpc_ms_total += event.get("rpc_ms").and_then(Value::as_u64).unwrap_or(0);
+            startup_ms_total += event.get("startup_ms").and_then(Value::as_u64).unwrap_or(0);
+            if let Some(value) = event.get("first_model_text_ms").and_then(Value::as_u64) {
+                first_model_text_ms_min =
+                    Some(first_model_text_ms_min.map_or(value, |current| current.min(value)));
+                first_model_text_ms_max =
+                    Some(first_model_text_ms_max.map_or(value, |current| current.max(value)));
+            }
+            prompt_attempts_total += event
+                .get("prompt_attempts")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            prompt_bytes_total += event
+                .get("prompt_bytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_input_total += event
+                .get("tokens_input")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_output_total += event
+                .get("tokens_output")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_cache_read_total += event
+                .get("tokens_cache_read")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tokens_cache_write_total += event
+                .get("tokens_cache_write")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            tool_count_max =
+                tool_count_max.max(event.get("tool_count").and_then(Value::as_u64).unwrap_or(0));
+            if let Some(profile) = event.get("tool_profile").and_then(Value::as_str) {
+                if !tool_profiles.iter().any(|known| known == profile) {
+                    tool_profiles.push(profile.to_string());
+                }
+            }
+        }
+    }
+
+    serde_json::json!({
+        "calls": calls,
+        "rpc_ms_total": rpc_ms_total,
+        "startup_ms_total": startup_ms_total,
+        "first_model_text_ms_min": first_model_text_ms_min,
+        "first_model_text_ms_max": first_model_text_ms_max,
+        "prompt_attempts_total": prompt_attempts_total,
+        "prompt_bytes_total": prompt_bytes_total,
+        "tool_profiles": tool_profiles,
+        "tool_count_max": tool_count_max,
+        "tokens_input_total": tokens_input_total,
+        "tokens_output_total": tokens_output_total,
+        "tokens_cache_read_total": tokens_cache_read_total,
+        "tokens_cache_write_total": tokens_cache_write_total,
+    })
 }
 
 fn read_user_messages(path: &Path) -> Option<usize> {
@@ -520,6 +678,97 @@ fn relative_files(root: &Path, child: &str) -> Result<Vec<String>> {
     walk(root, &root.join(child), &mut values)?;
     values.sort();
     Ok(values)
+}
+
+fn discover_delivery(root: &Path) -> Result<Delivery> {
+    let mut html = Vec::new();
+    let mut images = Vec::new();
+    let mut manifests = Vec::new();
+    for child in ["publications", "infographics", "visualizations"] {
+        for path in relative_files(root, child)? {
+            let lower = path.to_ascii_lowercase();
+            if lower.ends_with(".html") {
+                html.push(path);
+            } else if lower.ends_with(".svg") || lower.ends_with(".png") {
+                images.push(path);
+            } else if lower.ends_with(".json")
+                && !lower.contains("/critics/")
+                && !lower.contains("/lints/")
+                && !lower.contains("/plans/")
+            {
+                manifests.push(path);
+            }
+        }
+    }
+    html.sort();
+    images.sort();
+    manifests.sort();
+    let declared_primary = fs::read_to_string(root.join("story.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|story| {
+            story
+                .pointer("/delivery/primary_artifact")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|path| {
+            let candidate = Path::new(path);
+            !candidate.is_absolute()
+                && !candidate
+                    .components()
+                    .any(|component| matches!(component, Component::ParentDir))
+                && root.join(candidate).is_file()
+        });
+    let primary = declared_primary
+        .or_else(|| {
+            html.iter()
+                .find(|path| path.starts_with("publications/") && path.ends_with("/index.html"))
+                .cloned()
+        })
+        .or_else(|| html.first().cloned())
+        .or_else(|| {
+            images
+                .iter()
+                .find(|path| {
+                    path.starts_with("infographics/")
+                        && path.matches('/').count() == 1
+                        && !path.ends_with(".mobile.svg")
+                })
+                .cloned()
+        })
+        .or_else(|| {
+            images
+                .iter()
+                .find(|path| !path.ends_with(".mobile.svg"))
+                .cloned()
+        });
+    let (primary_artifact, primary_kind, primary_mime_type) = match primary {
+        Some(path) if path.to_ascii_lowercase().ends_with(".html") => (
+            Some(path.clone()),
+            Some("html".to_string()),
+            Some("text/html".to_string()),
+        ),
+        Some(path) if path.to_ascii_lowercase().ends_with(".png") => (
+            Some(path.clone()),
+            Some("png".to_string()),
+            Some("image/png".to_string()),
+        ),
+        Some(path) => (
+            Some(path.clone()),
+            Some("svg".to_string()),
+            Some("image/svg+xml".to_string()),
+        ),
+        None => (None, None, None),
+    };
+    Ok(Delivery {
+        primary_artifact,
+        primary_kind,
+        primary_mime_type,
+        html,
+        images,
+        manifests,
+    })
 }
 
 fn read_claims(path: &Path) -> Result<Vec<Value>> {
@@ -572,7 +821,42 @@ pub fn slugify(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::slugify;
+    use super::{discover_delivery, read_rpc_metrics, slugify};
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn aggregates_structured_rpc_metrics() {
+        let root = tempdir().unwrap();
+        let events = root.path().join("events.jsonl");
+        fs::write(
+            &events,
+            concat!(
+                "{\"type\":\"turn_end\"}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"startup_ms\":12,\"rpc_ms\":100,\"first_model_text_ms\":40,\"prompt_attempts\":1,\"prompt_bytes\":50,\"tool_profile\":\"investigate\",\"tool_count\":14,\"tokens_input\":120,\"tokens_output\":20,\"tokens_cache_read\":10,\"tokens_cache_write\":2}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"startup_ms\":8,\"rpc_ms\":80,\"first_model_text_ms\":30,\"prompt_attempts\":2,\"prompt_bytes\":30,\"tool_profile\":\"visual-story\",\"tool_count\":47,\"tokens_input\":80,\"tokens_output\":10,\"tokens_cache_read\":5,\"tokens_cache_write\":1}\n"
+            ),
+        )
+        .unwrap();
+
+        let metrics = read_rpc_metrics(&events);
+        assert_eq!(metrics["calls"], 2);
+        assert_eq!(metrics["rpc_ms_total"], 180);
+        assert_eq!(metrics["startup_ms_total"], 20);
+        assert_eq!(metrics["first_model_text_ms_min"], 30);
+        assert_eq!(metrics["first_model_text_ms_max"], 40);
+        assert_eq!(metrics["prompt_attempts_total"], 3);
+        assert_eq!(metrics["prompt_bytes_total"], 80);
+        assert_eq!(metrics["tool_count_max"], 47);
+        assert_eq!(metrics["tokens_input_total"], 200);
+        assert_eq!(metrics["tokens_output_total"], 30);
+        assert_eq!(metrics["tokens_cache_read_total"], 15);
+        assert_eq!(metrics["tokens_cache_write_total"], 3);
+        assert_eq!(
+            metrics["tool_profiles"],
+            serde_json::json!(["investigate", "visual-story"])
+        );
+    }
 
     #[test]
     fn slugifies_ascii_topic() {
@@ -637,5 +921,27 @@ mod tests {
         assert_eq!(slugify("测试数据"), "story");
         assert_eq!(slugify("Тест"), "story");
         assert_eq!(slugify("🚀 rocket"), "rocket");
+    }
+
+    #[test]
+    fn delivery_prefers_declared_primary_over_lexical_first_publication() {
+        let dir = tempdir().expect("temp dir");
+        let old = dir.path().join("publications/000-old");
+        let current = dir.path().join("publications/999-current");
+        fs::create_dir_all(&old).expect("old dir");
+        fs::create_dir_all(&current).expect("current dir");
+        fs::write(old.join("index.html"), "old").expect("old html");
+        fs::write(current.join("index.html"), "current").expect("current html");
+        fs::write(
+            dir.path().join("story.json"),
+            r#"{"delivery":{"primary_artifact":"publications/999-current/index.html"}}"#,
+        )
+        .expect("story");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(
+            delivery.primary_artifact.as_deref(),
+            Some("publications/999-current/index.html")
+        );
     }
 }

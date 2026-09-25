@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import subprocess
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 required=[
@@ -8,6 +9,9 @@ required=[
 ]
 missing=[p for p in required if not (ROOT/p).is_file()]
 if missing: raise SystemExit('missing source distribution files: '+', '.join(missing))
-source_files=[p for p in ROOT.rglob('*') if p.is_file() and 'outputs' not in p.parts and '.git' not in p.parts and '__pycache__' not in p.parts]
+raw=subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','-z'],cwd=ROOT)
+source_files=[ROOT/part.decode() for part in raw.split(b'\0') if part and (ROOT/part.decode()).is_file()]
+if any('.env' == p.relative_to(ROOT).as_posix() or 'target' in p.parts for p in source_files):
+    raise SystemExit('source distribution includes ignored credentials or build outputs')
 if len(source_files)<600: raise SystemExit(f'source tree unexpectedly small: {len(source_files)} files')
 print(f'source distribution v1.12 PASS ({len(source_files)} files)')

@@ -24,7 +24,14 @@ def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
         "NEWSROOM_PI_THINKING",
         "OPENAI_BASE_URL",
         "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "KIMI_API_KEY",
+        "MOONSHOT_API_KEY",
+        "ZAI_API_KEY",
+        "ZHIPUAI_API_KEY",
         "DRAGONCODE_API_KEY",
+        "DRAGONCODE_MODEL",
     ):
         env.pop(key, None)
     env.update(
@@ -55,10 +62,17 @@ with tempfile.TemporaryDirectory(prefix="news-env-cwd-") as cwd_name, tempfile.T
     external = Path(external_name) / "credentials.env"
     external.write_text(
         "# A project-managed external file; this test value is not a real key.\n"
-        "NEWSROOM_PI_PROVIDER=dragoncode\n"
+        "NEWSROOM_PI_PROVIDER=openai\n"
         "NEWSROOM_PI_MODEL='claude-sonnet-4-6'\n"
         "OPENAI_BASE_URL=https://dragoncode.codes\n"
-        "OPENAI_API_KEY=test-only-env-value\n"
+        "OPENAI_API_KEY=test-only-openai-value\n"
+        "ANTHROPIC_API_KEY=test-only-anthropic-value\n"
+        "DEEPSEEK_API_KEY=test-only-deepseek-value\n"
+        "KIMI_API_KEY=test-only-kimi-value\n"
+        "MOONSHOT_API_KEY=test-only-moonshot-value\n"
+        "ZAI_API_KEY=test-only-zai-value\n"
+        "ZHIPUAI_API_KEY=test-only-zhipu-value\n"
+        "DRAGONCODE_MODEL=claude-sonnet-4-6\n"
         "UNRELATED_ENV=must-not-be-imported\n",
         encoding="utf-8",
     )
@@ -69,8 +83,17 @@ with tempfile.TemporaryDirectory(prefix="news-env-cwd-") as cwd_name, tempfile.T
         raise SystemExit(f".env workflow failed: {result.stderr}")
     if "provider=dragoncode model=claude-sonnet-4-6" not in result.stderr:
         raise SystemExit(".env provider/model did not reach the Pi runtime")
-    if "test-only-env-value" in result.stdout or "test-only-env-value" in result.stderr:
-        raise SystemExit("test key leaked into CLI output")
+    for marker in (
+        "test-only-openai-value",
+        "test-only-anthropic-value",
+        "test-only-deepseek-value",
+        "test-only-kimi-value",
+        "test-only-moonshot-value",
+        "test-only-zai-value",
+        "test-only-zhipu-value",
+    ):
+        if marker in result.stdout or marker in result.stderr:
+            raise SystemExit("test key leaked into CLI output")
     if external.read_bytes() != before:
         raise SystemExit("external .env was modified")
     runs = list((cwd / ".newsroom" / "artifacts").glob("*/story.json"))

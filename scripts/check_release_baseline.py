@@ -57,9 +57,10 @@ must(f"CairoSVG==${{CAIROSVG_VERSION}}" in dockerfile, "Docker CairoSVG install"
 must(f"ARG CAIROSVG_VERSION={versions['cairosvg']}" in dockerfile, "Docker CairoSVG pin")
 must(
     "workflow_dispatch" in live_ci
-    and "agentic_qualification.sh" in live_ci
+    and "agentic_trials.py --trials 3" in live_ci
+    and ".newsroom/agentic-trials" in live_ci
     and "integration_qualification.sh" in live_ci,
-    "manual agentic and integration qualification workflows",
+    "manual repeated-agentic and integration qualification workflows",
 )
 
 print("release baseline: PASS")

@@ -1,0 +1,540 @@
+{
+  "alt": "A world flow map, continent Sankey, bounded trend, then-now comparison, and method panel explain changes in model-estimated annual international migration flows.",
+  "asset_plan_ref": "editorial/assets/migration-four-decades.json",
+  "audience": "general",
+  "competition_profile": "editorial",
+  "complexity_budget": "medium",
+  "date_label": "Source snapshots retrieved 19–20 September 2026",
+  "dek": "A route-led view of how the largest model-estimated international migration corridors, destination hubs, and bounded selected scale changed across five snapshots.",
+  "editorial_discovery_ref": "editorial/discovery/migration-four-decades.json",
+  "editorial_grammar": {
+    "available_renderer_capabilities": [
+      "svg",
+      "canvas2d"
+    ],
+    "candidates": [
+      {
+        "grammar": "ROUTE_SPINE",
+        "hard_constraints_passed": true,
+        "reason_codes": [
+          "evidence_requirements_met",
+          "renderer_available",
+          "cognitive_goal_match"
+        ],
+        "renderer_capability_passed": true,
+        "soft_score": 1
+      },
+      {
+        "grammar": "THEN_NOW",
+        "hard_constraints_passed": true,
+        "reason_codes": [
+          "evidence_requirements_met",
+          "renderer_available",
+          "cognitive_goal_match"
+        ],
+        "renderer_capability_passed": true,
+        "soft_score": 0.94
+      },
+      {
+        "grammar": "SCALE_TRANSLATOR",
+        "hard_constraints_passed": true,
+        "reason_codes": [
+          "evidence_requirements_met",
+          "renderer_available",
+          "cognitive_goal_match"
+        ],
+        "renderer_capability_passed": true,
+        "soft_score": 0.88
+      }
+    ],
+    "cognitive_goals": [
+      "ORIENT",
+      "ZOOM",
+      "MEASURE",
+      "COMPARE",
+      "CONSEQUENCE"
+    ],
+    "decision_log": [
+      {
+        "grammar": "ROUTE_SPINE",
+        "outcome": "pass",
+        "reason_code": "verified_origin_destination_locations",
+        "stage": "hard_constraint"
+      },
+      {
+        "grammar": "ROUTE_SPINE",
+        "outcome": "pass",
+        "reason_code": "svg_canvas_available",
+        "stage": "renderer_capability"
+      },
+      {
+        "grammar": "ROUTE_SPINE",
+        "outcome": "select",
+        "reason_code": "highest_eligible_score",
+        "stage": "final_selection"
+      }
+    ],
+    "evidence_features": [
+      "origin_destination_relation",
+      "verified_locations",
+      "comparable_timepoints",
+      "quantity",
+      "human_scale_reference"
+    ],
+    "primary": "ROUTE_SPINE",
+    "project_id": "migration-four-decades",
+    "schema_version": "0.1.0",
+    "selected": "ROUTE_SPINE",
+    "supporting": [
+      "THEN_NOW",
+      "SCALE_TRANSLATOR"
+    ]
+  },
+  "intent": "Explain changing migration-route geography while preserving model uncertainty and selection bounds.",
+  "kicker": "Model-estimated migration, 1990–2023",
+  "layout": "feature",
+  "mobile_module_order": [
+    "world-routes",
+    "orient-context",
+    "continent-flow",
+    "zoom-context",
+    "selected-scale",
+    "measure-context",
+    "then-now",
+    "compare-context",
+    "consequence",
+    "method"
+  ],
+  "modules": [
+    {
+      "annotations": [
+        {
+          "claim_id": "claim:route-shift",
+          "id": "route-semantics",
+          "target_object_id": "route-spine",
+          "text": "Arcs encode origin-destination relationships, not physical journeys."
+        }
+      ],
+      "caption": "Abstract arcs connect Natural Earth label points; width encodes model-estimated annual flow.",
+      "claim_set": [
+        "claim:route-shift"
+      ],
+      "emphasis": "hero",
+      "graphic_object_ids": [
+        "route-spine"
+      ],
+      "id": "world-routes",
+      "manifest_ref": "visualizations/migration-world-routes.json",
+      "priority": 1,
+      "quantitative_encoding": {
+        "baseline_policy": "not_applicable",
+        "disclosure": "Model-estimated annual flow means are shown; the source provides a standard deviation for every corridor.",
+        "mark_semantics": "flow_width",
+        "quantity_kind": "estimated_flow",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "span": "full",
+      "story_node_ids": [
+        "orient-routes"
+      ],
+      "story_role": "hook",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "size",
+          "field": "estimated_flow_mean",
+          "role": "quantitative"
+        },
+        {
+          "channel": "connection",
+          "field": "origin_destination",
+          "role": "identity"
+        }
+      ],
+      "visual_grammar": "spatial"
+    },
+    {
+      "caption": "Continent aggregates are calculated only from each year's selected top 30 routes.",
+      "claim_set": [
+        "claim:destination-shift"
+      ],
+      "emphasis": "primary",
+      "graphic_object_ids": [
+        "continent-links"
+      ],
+      "id": "continent-flow",
+      "manifest_ref": "visualizations/migration-continent-sankey.json",
+      "priority": 2,
+      "quantitative_encoding": {
+        "baseline_policy": "not_applicable",
+        "disclosure": "Model-estimated annual flow means are shown; the source provides a standard deviation for every corridor.",
+        "mark_semantics": "flow_width",
+        "quantity_kind": "estimated_flow",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "span": "two_thirds",
+      "story_node_ids": [
+        "zoom-hubs"
+      ],
+      "story_role": "evidence",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "length",
+          "field": "selected_estimated_flow_sum",
+          "role": "quantitative"
+        },
+        {
+          "channel": "connection",
+          "field": "origin_destination_continent",
+          "role": "identity"
+        }
+      ],
+      "visual_grammar": "flow"
+    },
+    {
+      "annotations": [
+        {
+          "claim_id": "claim:selected-scale",
+          "id": "bounded-selection",
+          "target_object_id": "selected-scale-line",
+          "text": "Every point sums 30 selected model-estimated routes."
+        }
+      ],
+      "caption": "This trend is the sum of a bounded top-30 selection, not a global migration total.",
+      "claim_set": [
+        "claim:selected-scale"
+      ],
+      "emphasis": "primary",
+      "graphic_object_ids": [
+        "selected-scale-line"
+      ],
+      "id": "selected-scale",
+      "manifest_ref": "visualizations/migration-selected-scale.json",
+      "priority": 2,
+      "quantitative_encoding": {
+        "baseline_policy": "not_applicable",
+        "disclosure": "Model-estimated annual flow means are shown; the source provides a standard deviation for every corridor.",
+        "mark_semantics": "position",
+        "quantity_kind": "estimated_flow",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "span": "half",
+      "story_node_ids": [
+        "measure-scale"
+      ],
+      "story_role": "evidence",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "position",
+          "field": "selected_estimated_flow_sum",
+          "role": "quantitative"
+        },
+        {
+          "channel": "color",
+          "field": "year",
+          "role": "categorical"
+        }
+      ],
+      "visual_grammar": "trend"
+    },
+    {
+      "caption": "The highest-ranked corridors in 1990 and 2023 connect different origin-destination pairs.",
+      "claim_set": [
+        "claim:route-shift",
+        "claim:destination-shift"
+      ],
+      "emphasis": "primary",
+      "graphic_object_ids": [
+        "then-now-routes"
+      ],
+      "id": "then-now",
+      "manifest_ref": "visualizations/migration-then-now.json",
+      "priority": 2,
+      "quantitative_encoding": {
+        "baseline_policy": "not_applicable",
+        "disclosure": "Model-estimated annual flow means are shown; the source provides a standard deviation for every corridor.",
+        "mark_semantics": "position",
+        "quantity_kind": "estimated_flow",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "span": "half",
+      "story_node_ids": [
+        "compare-then-now"
+      ],
+      "story_role": "turn",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "position",
+          "field": "estimated_flow_mean",
+          "role": "quantitative"
+        },
+        {
+          "channel": "color",
+          "field": "year",
+          "role": "categorical"
+        }
+      ],
+      "visual_grammar": "change"
+    },
+    {
+      "body": "These are neural-network model estimates with supplied standard deviations. They are neither observed journeys nor migrant stocks or stock changes. Route and aggregate comparisons remain bounded to the checked-in top-30 fixture.",
+      "claim_ids": [
+        "claim:model-uncertainty"
+      ],
+      "claim_set": [
+        "claim:model-uncertainty"
+      ],
+      "emphasis": "support",
+      "heading": "What these flows mean",
+      "id": "method",
+      "priority": 1,
+      "span": "third",
+      "story_node_ids": [
+        "qualify-model"
+      ],
+      "story_role": "method",
+      "type": "text"
+    },
+    {
+      "body": "Start with the origin-destination spine: the map locates the selected corridors before any aggregate comparison.",
+      "claim_ids": [
+        "claim:route-shift"
+      ],
+      "claim_set": [
+        "claim:route-shift"
+      ],
+      "emphasis": "support",
+      "heading": "Read the routes first",
+      "id": "orient-context",
+      "priority": 3,
+      "span": "third",
+      "story_node_ids": [
+        "orient-routes"
+      ],
+      "story_role": "context",
+      "type": "text"
+    },
+    {
+      "body": "The Sankey groups only the selected corridors by continent so destination structure can be compared without implying a global total.",
+      "claim_ids": [
+        "claim:destination-shift"
+      ],
+      "claim_set": [
+        "claim:destination-shift"
+      ],
+      "emphasis": "support",
+      "heading": "From routes to regions",
+      "id": "zoom-context",
+      "priority": 3,
+      "span": "third",
+      "story_node_ids": [
+        "zoom-hubs"
+      ],
+      "story_role": "explanation",
+      "type": "text"
+    },
+    {
+      "body": "Each point adds the 30 largest model-estimated routes retained for that year; changes may reflect both estimates and selection membership.",
+      "claim_ids": [
+        "claim:selected-scale"
+      ],
+      "claim_set": [
+        "claim:selected-scale"
+      ],
+      "emphasis": "support",
+      "heading": "A bounded scale",
+      "id": "measure-context",
+      "priority": 3,
+      "span": "third",
+      "story_node_ids": [
+        "measure-scale"
+      ],
+      "story_role": "explanation",
+      "type": "text"
+    },
+    {
+      "body": "The leading pair and the largest destination aggregate within the selection differ between the first and last snapshots.",
+      "claim_ids": [
+        "claim:route-shift",
+        "claim:destination-shift"
+      ],
+      "claim_set": [
+        "claim:route-shift",
+        "claim:destination-shift"
+      ],
+      "emphasis": "support",
+      "heading": "Then and now",
+      "id": "compare-context",
+      "priority": 3,
+      "span": "third",
+      "story_node_ids": [
+        "compare-then-now"
+      ],
+      "story_role": "turn",
+      "type": "text"
+    },
+    {
+      "caption": "A bounded network detail reconnects route changes to destination structure; it remains a view of model estimates, not observed journeys.",
+      "claim_set": [
+        "claim:route-shift",
+        "claim:destination-shift",
+        "claim:selected-scale",
+        "claim:model-uncertainty"
+      ],
+      "emphasis": "primary",
+      "graphic_object_ids": [
+        "network-detail"
+      ],
+      "id": "consequence",
+      "manifest_ref": "visualizations/migration-network-detail.json",
+      "priority": 1,
+      "quantitative_encoding": {
+        "area_proportional": true,
+        "baseline_policy": "not_applicable",
+        "disclosure": "Model-estimated annual flow means are shown; the source provides a standard deviation for every corridor.",
+        "mark_semantics": "size",
+        "quantity_kind": "estimated_flow",
+        "scale_type": "linear",
+        "uncertainty_disclosed": true
+      },
+      "span": "two_thirds",
+      "story_node_ids": [
+        "compare-then-now",
+        "qualify-model"
+      ],
+      "story_role": "resolution",
+      "type": "visual",
+      "visual_channels": [
+        {
+          "channel": "size",
+          "field": "estimated_flow_mean",
+          "role": "quantitative"
+        },
+        {
+          "channel": "connection",
+          "field": "origin_destination",
+          "role": "identity"
+        }
+      ],
+      "visual_grammar": "network"
+    }
+  ],
+  "novelty_ref": "editorial/novelty/migration-four-decades.json",
+  "primary_message": "The leading estimated route, destination structure, and summed scale of the selected top corridors changed together.",
+  "quality_target": "publishable",
+  "reader_question": "How did the geography and scale of model-estimated international migration routes change from 1990 to 2023?",
+  "scene_graph": {
+    "scenes": [
+      {
+        "anchor_module_id": "world-routes",
+        "hero_object_id": "route-spine",
+        "id": "orient",
+        "pattern": "hero_with_rail",
+        "primary_cognitive_goal": "ORIENT",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 3,
+          "max_supporting_objects": 1
+        },
+        "sidecar_module_ids": [
+          "orient-context"
+        ],
+        "supporting_claim_ids": [
+          "claim:route-shift"
+        ]
+      },
+      {
+        "anchor_module_id": "continent-flow",
+        "hero_object_id": "continent-links",
+        "id": "zoom",
+        "pattern": "hero_sidecar_stack",
+        "primary_cognitive_goal": "ZOOM",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 3,
+          "max_supporting_objects": 1
+        },
+        "sidecar_module_ids": [
+          "zoom-context"
+        ],
+        "supporting_claim_ids": [
+          "claim:destination-shift"
+        ]
+      },
+      {
+        "anchor_module_id": "selected-scale",
+        "hero_object_id": "selected-scale-line",
+        "id": "measure",
+        "pattern": "hero_with_rail",
+        "primary_cognitive_goal": "MEASURE",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 3,
+          "max_supporting_objects": 1
+        },
+        "sidecar_module_ids": [
+          "measure-context"
+        ],
+        "supporting_claim_ids": [
+          "claim:selected-scale"
+        ]
+      },
+      {
+        "anchor_module_id": "then-now",
+        "hero_object_id": "then-now-routes",
+        "id": "compare",
+        "pattern": "hero_sidecar_stack",
+        "primary_cognitive_goal": "COMPARE",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 3,
+          "max_supporting_objects": 1
+        },
+        "sidecar_module_ids": [
+          "compare-context"
+        ],
+        "supporting_claim_ids": [
+          "claim:route-shift",
+          "claim:destination-shift"
+        ]
+      },
+      {
+        "anchor_module_id": "consequence",
+        "hero_object_id": "network-detail",
+        "id": "consequence",
+        "pattern": "hero_with_rail",
+        "primary_cognitive_goal": "CONSEQUENCE",
+        "scene_budget": {
+          "max_annotations": 2,
+          "max_claims": 4,
+          "max_supporting_objects": 1
+        },
+        "sidecar_module_ids": [
+          "method"
+        ],
+        "supporting_claim_ids": [
+          "claim:route-shift",
+          "claim:destination-shift",
+          "claim:selected-scale",
+          "claim:model-uncertainty"
+        ]
+      }
+    ],
+    "schema_version": "0.2.0"
+  },
+  "schema_version": "1.5.0",
+  "selected_concept_id": "route-spine",
+  "source_note": "Gaskin and Abel model-estimated annual bilateral flows; Natural Earth label points. Values are estimates, not observations or stock changes.",
+  "story_arc": "question_answer",
+  "story_graph_ref": "fixtures/migration/story-ir/story-graph.json",
+  "title": "The leading routes moved",
+  "visual_concept_ref": "editorial/concepts/migration-four-decades.json",
+  "visual_thesis": "A route-led world view shows that the leading estimated corridor, destination hubs, and bounded top-route scale changed together, while uncertainty remains explicit."
+}

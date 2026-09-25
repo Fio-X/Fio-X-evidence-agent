@@ -3,6 +3,7 @@ import hashlib, json, subprocess, sys, tempfile
 from pathlib import Path
 
 CHECK = Path(__file__).with_name('check_source_integrity.py')
+UPDATE = Path(__file__).with_name('update_source_integrity.py')
 
 def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 
@@ -52,4 +53,27 @@ with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as ad:
     receipt=json.loads((root/evidence_rel).read_text()); receipt['archive_sha256']='0'*64; (root/evidence_rel).write_text(json.dumps(receipt)); assert run(root,2)['status']=='FAIL'
     (root/evidence_rel).unlink(); bad_archive=Path(ad)/'bad.tar'; bad_archive.write_bytes(b'wrong'); assert run(root,2,bad_archive)['status']=='FAIL'
 
-print(json.dumps({'status':'PASS','tree_tamper_detection':True,'vendor_hash_gate':True,'regenerated_fixture_hash_gate':True,'archive_recompute_gate':True,'archive_receipt_gate':True,'transport_not_required_in_release_tree':True}))
+with tempfile.TemporaryDirectory() as td:
+    root=Path(td); (root/'src').mkdir(); (root/'ci-evidence').mkdir()
+    (root/'src/a.txt').write_text('alpha\\n')
+    (root/'release-manifest.json').write_text('derived\\n')
+    manifest={
+      'schema_version':'2.1.0','file_count':0,'source_tree_sha256':'0'*64,
+      'excluded_paths':['release-manifest.json'],
+      'source_archive':{'name':'source.tar','sha256':'a'*64,'verification_evidence':'ci-evidence/source-import-verification.json'},
+      'restored_vendor_hashes':{},'regenerated_fixture_hashes':{},
+    }
+    (root/'source-integrity.json').write_text(json.dumps(manifest))
+    proc=subprocess.run([sys.executable,str(UPDATE),'--root',str(root),'--manifest','source-integrity.json'],capture_output=True,text=True)
+    assert proc.returncode==0,(proc.stdout,proc.stderr)
+    manifest_text=(root/'source-integrity.json').read_text()
+    assert manifest_text.endswith('\n') and not manifest_text.endswith('\\\\n')
+    updated=json.loads(manifest_text)
+    before=updated['source_tree_sha256']
+    (root/'release-manifest.json').write_text('derived changed\\n')
+    proc2=subprocess.run([sys.executable,str(UPDATE),'--root',str(root),'--manifest','source-integrity.json'],capture_output=True,text=True)
+    assert proc2.returncode==0,(proc2.stdout,proc2.stderr)
+    updated2=json.loads((root/'source-integrity.json').read_text())
+    assert updated2['source_tree_sha256']==before
+
+print(json.dumps({'status':'PASS','tree_tamper_detection':True,'vendor_hash_gate':True,'regenerated_fixture_hash_gate':True,'archive_recompute_gate':True,'archive_receipt_gate':True,'source_integrity_update_round_trip':True,'release_manifest_excluded_from_source_tree':True,'transport_not_required_in_release_tree':True}))

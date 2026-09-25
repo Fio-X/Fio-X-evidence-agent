@@ -13,7 +13,7 @@ on:
         type: string
 
 concurrency:
-  group: full-release-qualification-iteration-next
+  group: full-release-qualification-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: iteration-next
+          ref: ${{ github.sha }}
       - name: Require materialized source and integrity receipt
         shell: bash
         run: |
@@ -80,7 +80,6 @@ jobs:
           retention-days: 30
 
   integration:
-    needs: macos-locked-and-local
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -89,23 +88,39 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
       MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
       ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
       ZHIPUAI_API_KEY: ${{ secrets.ZHIPUAI_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: iteration-next
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.19.0'
-      - name: Install Rust and pinned Pi runtime
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pinned integration runtime
         shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.98.1 --profile minimal
           npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.85.1
+          python3 -m pip install --disable-pip-version-check jsonschema==4.26.0 duckdb-cli==1.5.5 CairoSVG==2.8.2 playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
           rustup run 1.98.1 cargo build --locked --release --bin news
+      - name: Expose qualified Chromium on PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/newsroom-bin"
+          chromium_path="$(python3 -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          test -x "$chromium_path"
+          ln -sf "$chromium_path" "$RUNNER_TEMP/newsroom-bin/chromium"
+          "$RUNNER_TEMP/newsroom-bin/chromium" --version
+          echo "$RUNNER_TEMP/newsroom-bin" >> "$GITHUB_PATH"
       - name: T17 integration qualification or explicit BLOCKED
         shell: bash
         run: |
@@ -128,13 +143,12 @@ jobs:
           retention-days: 30
 
   browser-capability:
-    needs: macos-locked-and-local
     runs-on: macos-26
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: iteration-next
+          ref: ${{ github.sha }}
       - name: T18 browser CPU and WebGL capability evidence
         run: python3 scripts/test_macos_browser_capability.py
       - name: Normalize T18 full-tree qualification for T20

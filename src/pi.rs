@@ -19,6 +19,8 @@ pub struct PiConfig {
     pub binary: PathBuf,
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
     pub thinking: Option<String>,
     pub approve_project: bool,
     pub extension: Option<PathBuf>,
@@ -118,6 +120,139 @@ fn append_node_option(existing: Option<String>, option: &str) -> String {
     }
 }
 
+const VALID_NEWSROOM_PHASES: &[&str] = &[
+    "core",
+    "discover",
+    "verify",
+    "synthesize",
+    "design",
+    "publish",
+    "verify_publication",
+];
+
+fn normalized_newsroom_phase() -> Option<String> {
+    let raw = std::env::var("NEWSROOM_PHASE").ok()?;
+    let value = raw.trim();
+    if value.is_empty() || value == "all" {
+        return Some(value.to_owned());
+    }
+    let phases: Vec<&str> = value
+        .split(',')
+        .map(str::trim)
+        .filter(|phase| !phase.is_empty())
+        .collect();
+    if !phases.is_empty()
+        && phases
+            .iter()
+            .all(|phase| VALID_NEWSROOM_PHASES.contains(phase))
+    {
+        Some(phases.join(","))
+    } else {
+        Some("core".to_owned())
+    }
+}
+
+fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
+    let diagnostic = [
+        event.get("error"),
+        event.get("data"),
+        event
+            .get("message")
+            .and_then(|message| message.get("errorMessage")),
+        event
+            .get("message")
+            .and_then(|message| message.get("error")),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|value| value.to_string())
+    .collect::<Vec<_>>()
+    .join(" ")
+    .to_ascii_lowercase();
+    let status = [
+        400_u16, 401, 402, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504, 529,
+    ]
+    .into_iter()
+    .find(|status| diagnostic.contains(&status.to_string()));
+    let class = match status {
+        Some(401 | 403) => "provider_authentication_failed",
+        Some(408 | 504) => "provider_timeout",
+        Some(429) => "provider_rate_limited",
+        Some(500 | 502 | 503 | 529) => "provider_unavailable",
+        Some(400 | 402 | 404 | 409 | 413) => "provider_request_rejected",
+        _ if diagnostic.contains("rate_limit_error") => "provider_rate_limited",
+        _ if diagnostic.contains("timeout_error") => "provider_timeout",
+        _ if diagnostic.contains("authentication_error")
+            || diagnostic.contains("permission_error") =>
+        {
+            "provider_authentication_failed"
+        }
+        _ if diagnostic.contains("api_error") || diagnostic.contains("overloaded_error") => {
+            "provider_unavailable"
+        }
+        _ if diagnostic.contains("invalid_request_error")
+            || diagnostic.contains("billing_error")
+            || diagnostic.contains("not_found_error")
+            || diagnostic.contains("conflict_error")
+            || diagnostic.contains("request_too_large") =>
+        {
+            "provider_request_rejected"
+        }
+        _ if diagnostic.contains("no available accounts")
+            || diagnostic.contains("service unavailable") =>
+        {
+            "provider_unavailable"
+        }
+        _ => "provider_error",
+    };
+    (class, status)
+}
+
+fn prompt_retry_allowed(event: &Value, prompt_accepted: bool, attempt: u8) -> bool {
+    !prompt_accepted
+        && attempt < 3
+        && event.get("type").and_then(Value::as_str) == Some("response")
+        && event.get("command").and_then(Value::as_str) == Some("prompt")
+        && event.get("success").and_then(Value::as_bool) == Some(false)
+}
+
+fn assistant_provider_turn_failed(event: &Value) -> bool {
+    matches!(
+        event.get("type").and_then(Value::as_str),
+        Some("message_start" | "message_end")
+    ) && event
+        .get("message")
+        .and_then(|message| message.get("stopReason"))
+        .and_then(Value::as_str)
+        == Some("error")
+}
+
+fn provider_failure_event(event: &Value) -> bool {
+    event.get("type").and_then(Value::as_str) == Some("extension_error")
+        || (event.get("type").and_then(Value::as_str) == Some("response")
+            && event.get("success").and_then(Value::as_bool) == Some(false))
+        || assistant_provider_turn_failed(event)
+}
+
+fn sanitize_provider_event(event: &mut Value, secrets: &[String]) -> Result<()> {
+    let classification = provider_failure_event(event).then(|| provider_error_class(event));
+    redact_event(event, secrets);
+    if let Some((error_class, http_status)) = classification {
+        let object = event.as_object_mut().context("invalid RPC event")?;
+        object.remove("error");
+        object.remove("data");
+        object.insert("diagnostic_suppressed".into(), Value::Bool(true));
+        object.insert(
+            "provider_error_class".into(),
+            Value::String(error_class.to_string()),
+        );
+        if let Some(status) = http_status {
+            object.insert("provider_http_status".into(), Value::from(status));
+        }
+    }
+    Ok(())
+}
+
 impl PiConfig {
     fn dragoncode_endpoint(value: &str) -> bool {
         let authority = value
@@ -136,10 +271,14 @@ impl PiConfig {
         authority.eq_ignore_ascii_case("dragoncode.codes")
     }
 
-    pub fn normalize_provider(provider: Option<&str>) -> Option<String> {
+    fn normalize_provider_with_base(
+        provider: Option<&str>,
+        configured_base_url: Option<&str>,
+    ) -> Option<String> {
         let provider = provider?;
-        let dragoncode_base = std::env::var("DRAGONCODE_BASE_URL")
-            .ok()
+        let dragoncode_base = configured_base_url
+            .map(str::to_owned)
+            .or_else(|| std::env::var("DRAGONCODE_BASE_URL").ok())
             .or_else(|| std::env::var("OPENAI_BASE_URL").ok());
         if provider.eq_ignore_ascii_case("openai")
             && dragoncode_base
@@ -152,8 +291,12 @@ impl PiConfig {
         }
     }
 
+    pub fn normalize_provider(provider: Option<&str>) -> Option<String> {
+        Self::normalize_provider_with_base(provider, None)
+    }
+
     pub fn effective_provider(&self) -> Option<String> {
-        Self::normalize_provider(self.provider.as_deref())
+        Self::normalize_provider_with_base(self.provider.as_deref(), self.base_url.as_deref())
     }
 
     pub fn command(&self) -> Command {
@@ -177,6 +320,24 @@ impl PiConfig {
             }
             cmd.arg("--provider").arg(&provider);
             cmd.env("NEWSROOM_ACTIVE_PROVIDER", &provider);
+            if let Some(api_key) = self.api_key.as_deref().filter(|value| !value.is_empty()) {
+                let key_name = match provider.as_str() {
+                    "anthropic" => "ANTHROPIC_API_KEY",
+                    "openai" => "OPENAI_API_KEY",
+                    "dragoncode" => "DRAGONCODE_API_KEY",
+                    _ => "NEWSROOM_API_KEY",
+                };
+                cmd.env(key_name, api_key);
+            }
+            if let Some(base_url) = self.base_url.as_deref().filter(|value| !value.is_empty()) {
+                let base_name = match provider.as_str() {
+                    "anthropic" => "ANTHROPIC_BASE_URL",
+                    "openai" => "OPENAI_BASE_URL",
+                    "dragoncode" => "DRAGONCODE_BASE_URL",
+                    _ => "NEWSROOM_BASE_URL",
+                };
+                cmd.env(base_name, base_url);
+            }
             if provider == "dragoncode" && std::env::var("DRAGONCODE_API_KEY").is_err() {
                 if let Ok(key) = std::env::var("OPENAI_API_KEY") {
                     // The existing external .env uses the OpenAI-compatible name
@@ -225,6 +386,9 @@ impl PiConfig {
             DEFAULT_TOOL_PROFILE
         };
         cmd.env("NEWSROOM_TOOL_PROFILE", effective_profile);
+        if let Some(phase) = normalized_newsroom_phase() {
+            cmd.env("NEWSROOM_PHASE", phase);
+        }
 
         // Keep the wrapper reproducible and avoid Pi's startup version check / telemetry.
         // Model-provider and explicitly invoked newsroom network tools remain available.
@@ -412,16 +576,19 @@ pub async fn run_prompt(
         let mut session_stats: Option<Value> = None;
         let mut session_stats_response_received = false;
         let mut prompt_accepted = false;
+        let mut prompt_attempt = 1_u8;
         let mut saw_settled = false;
         let mut final_queries_sent = false;
         let mut active_work = false;
         let mut last_activity = Instant::now();
         let mut finish_started = None;
         let mut first_text_ms: Option<u128> = None;
+        let mut startup_ms: Option<u128> = None;
         let mut ticks = tokio::time::interval(heartbeat.min(Duration::from_millis(100)));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
+        let mut provider_turn_failed = false;
 
         let mut line = Vec::new();
         loop {
@@ -469,17 +636,8 @@ pub async fn run_prompt(
             last_activity = Instant::now();
 
             let mut event = event;
-            redact_event(&mut event, &secrets);
-            // Provider/extension diagnostics are untrusted and may contain credentials.
-            if event.get("type").and_then(Value::as_str) == Some("extension_error")
-                || (event.get("type").and_then(Value::as_str) == Some("response")
-                    && event.get("success").and_then(Value::as_bool) == Some(false))
-            {
-                let object = event.as_object_mut().context("invalid RPC event")?;
-                object.remove("error");
-                object.remove("data");
-                object.insert("diagnostic_suppressed".into(), Value::Bool(true));
-            }
+            // Classify provider failures before redaction, then retain only the safe class/status.
+            sanitize_provider_event(&mut event, &secrets)?;
             if let Some(file) = log.as_mut() {
                 let mut logged_event = event.clone();
                 if let Some(object) = logged_event.as_object_mut() {
@@ -492,15 +650,49 @@ pub async fn run_prompt(
                 file.flush()?;
             }
 
+            if assistant_provider_turn_failed(&event) {
+                provider_turn_failed = true;
+            }
+
             match event.get("type").and_then(Value::as_str) {
                 Some("response")
                     if event.get("command").and_then(Value::as_str) == Some("prompt") =>
                 {
                     if event.get("success").and_then(Value::as_bool) == Some(true) {
                         prompt_accepted = true;
-                        eprintln!("[agent] startup_ms={}", started.elapsed().as_millis());
+                        let accepted_ms = started.elapsed().as_millis();
+                        startup_ms = Some(accepted_ms);
+                        eprintln!("[agent] startup_ms={accepted_ms}");
+                    } else if prompt_retry_allowed(&event, prompt_accepted, prompt_attempt) {
+                        prompt_attempt += 1;
+                        eprintln!(
+                            "[agent] prompt_not_accepted retry={prompt_attempt}/3 elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        send_json(
+                            &mut stdin,
+                            &json!({
+                                "id": format!("news-prompt-retry-{prompt_attempt}"),
+                                "type": "prompt",
+                                "message": prompt
+                            }),
+                            startup,
+                        )
+                        .await?;
                     } else {
-                        bail!("Pi rejected the prompt (provider diagnostic suppressed)");
+                        let class = event
+                            .get("provider_error_class")
+                            .and_then(Value::as_str)
+                            .unwrap_or("provider_error");
+                        let status = event
+                            .get("provider_http_status")
+                            .and_then(Value::as_u64)
+                            .map(|value| format!(" HTTP {value}"))
+                            .unwrap_or_default();
+                        bail!(
+                            "Pi rejected the prompt: {class}{status} (raw diagnostic suppressed)"
+                        );
                     }
                 }
                 Some("response")
@@ -632,28 +824,73 @@ pub async fn run_prompt(
 
         let answer = final_answer.unwrap_or(streamed_answer);
         if answer.trim().is_empty() {
+            if provider_turn_failed {
+                bail!("Pi provider failed after internal retries (diagnostic suppressed)");
+            }
             bail!("Pi returned an empty final answer (provider diagnostic suppressed)");
         }
         if !answer.ends_with('\n') {
             println!();
         }
 
+        let rpc_ms = started.elapsed().as_millis();
         eprintln!(
             "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
-            started.elapsed().as_millis(),
+            rpc_ms,
             first_text_ms
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "N/A".into())
         );
-        if let Some(tokens) = session_stats.as_ref().and_then(|s| s.get("tokens")) {
-            let numeric = |key: &str| {
-                tokens
-                    .get(key)
-                    .and_then(Value::as_u64)
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| "N/A".into())
+        let token_value = |key: &str| {
+            session_stats
+                .as_ref()
+                .and_then(|stats| stats.get("tokens"))
+                .and_then(|tokens| tokens.get(key))
+                .and_then(Value::as_u64)
+        };
+        eprintln!(
+            "[agent] tokens_input={} tokens_output={} tokens_cache_read={} tokens_cache_write={}",
+            token_value("input")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into()),
+            token_value("output")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into()),
+            token_value("cacheRead")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into()),
+            token_value("cacheWrite")
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".into())
+        );
+        if let Some(file) = log.as_mut() {
+            let effective_profile = if tools_for_profile(&config.tool_profile).is_some() {
+                config.tool_profile.as_str()
+            } else {
+                DEFAULT_TOOL_PROFILE
             };
-            eprintln!("[agent] tokens_input={} tokens_output={} tokens_cache_read={} tokens_cache_write={}", numeric("input"), numeric("output"), numeric("cacheRead"), numeric("cacheWrite"));
+            let tool_count = tools_for_profile(effective_profile)
+                .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
+                .unwrap_or(0);
+            let metric_event = json!({
+                "type": "newsroom_rpc_metrics",
+                "schema_version": "0.1.0",
+                "startup_ms": startup_ms,
+                "rpc_ms": rpc_ms,
+                "first_model_text_ms": first_text_ms,
+                "prompt_attempts": prompt_attempt,
+                "prompt_bytes": prompt.len(),
+                "tool_profile": effective_profile,
+                "tool_count": tool_count,
+                "continue_session": config.continue_session,
+                "tokens_input": token_value("input"),
+                "tokens_output": token_value("output"),
+                "tokens_cache_read": token_value("cacheRead"),
+                "tokens_cache_write": token_value("cacheWrite"),
+                "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            });
+            writeln!(file, "{}", serde_json::to_string(&metric_event)?)?;
+            file.flush()?;
         }
         Ok(PiRunResult {
             text: answer,
@@ -737,6 +974,8 @@ mod tests {
             binary: "pi".into(),
             provider: None,
             model: None,
+            api_key: None,
+            base_url: None,
             thinking: None,
             approve_project: false,
             extension: None,
@@ -777,6 +1016,152 @@ mod tests {
             append_node_option(Some("--use-env-proxy".to_string()), "--use-env-proxy"),
             "--use-env-proxy"
         );
+    }
+
+    #[test]
+    fn provider_errors_are_safely_classified_without_returning_diagnostics() {
+        let unavailable = json!({
+            "type": "response",
+            "success": false,
+            "error": "HTTP 503 no available accounts secret-token"
+        });
+        assert_eq!(
+            provider_error_class(&unavailable),
+            ("provider_unavailable", Some(503))
+        );
+        let rate_limited = json!({"data": {"status": 429, "message": "secret-token"}});
+        assert_eq!(
+            provider_error_class(&rate_limited),
+            ("provider_rate_limited", Some(429))
+        );
+        let timed_out_turn = json!({
+            "type": "message_end",
+            "message": {
+                "stopReason": "error",
+                "errorMessage": "HTTP 504 upstream timeout secret-token"
+            }
+        });
+        assert_eq!(
+            provider_error_class(&timed_out_turn),
+            ("provider_timeout", Some(504))
+        );
+
+        for (error_type, expected_class) in [
+            ("rate_limit_error", "provider_rate_limited"),
+            ("timeout_error", "provider_timeout"),
+            ("authentication_error", "provider_authentication_failed"),
+            ("permission_error", "provider_authentication_failed"),
+            ("api_error", "provider_unavailable"),
+            ("overloaded_error", "provider_unavailable"),
+            ("invalid_request_error", "provider_request_rejected"),
+            ("billing_error", "provider_request_rejected"),
+            ("not_found_error", "provider_request_rejected"),
+            ("conflict_error", "provider_request_rejected"),
+            ("request_too_large", "provider_request_rejected"),
+        ] {
+            let streamed = json!({
+                "type": "message_end",
+                "message": {
+                    "stopReason": "error",
+                    "errorMessage": format!(
+                        r#"{{"type":"error","error":{{"type":"{error_type}","message":"safe"}}}}"#
+                    )
+                }
+            });
+            assert_eq!(
+                provider_error_class(&streamed),
+                (expected_class, None),
+                "{error_type}"
+            );
+        }
+
+        for (status, expected_class) in [
+            (402, "provider_request_rejected"),
+            (413, "provider_request_rejected"),
+            (529, "provider_unavailable"),
+        ] {
+            let response = json!({
+                "data": {
+                    "status": status,
+                    "message": "safe diagnostic"
+                }
+            });
+            assert_eq!(
+                provider_error_class(&response),
+                (expected_class, Some(status)),
+                "HTTP {status}"
+            );
+        }
+
+        let masked_streamed_rate_limit = json!({
+            "type": "message_end",
+            "data": {"message": "generic failure"},
+            "message": {
+                "stopReason": "error",
+                "errorMessage":
+                    r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#
+            }
+        });
+        assert_eq!(
+            provider_error_class(&masked_streamed_rate_limit),
+            ("provider_rate_limited", None)
+        );
+
+        assert_eq!(provider_error_class(&json!({})), ("provider_error", None));
+    }
+
+    #[test]
+    fn provider_failure_is_classified_before_diagnostics_are_redacted() {
+        let mut event = json!({
+            "type": "message_end",
+            "message": {
+                "stopReason": "error",
+                "errorMessage": "HTTP 429 retry later secret-token"
+            }
+        });
+        sanitize_provider_event(&mut event, &["secret-token".to_string()]).unwrap();
+        assert_eq!(
+            event.get("provider_error_class").and_then(Value::as_str),
+            Some("provider_rate_limited")
+        );
+        assert_eq!(
+            event.get("provider_http_status").and_then(Value::as_u64),
+            Some(429)
+        );
+        assert_eq!(
+            event
+                .get("message")
+                .and_then(|message| message.get("errorMessage"))
+                .and_then(Value::as_str),
+            Some("diagnostic suppressed")
+        );
+        assert!(!event.to_string().contains("secret-token"));
+    }
+
+    #[test]
+    fn prompt_retries_are_bounded_and_only_pre_acceptance() {
+        let rejected = json!({"type": "response", "command": "prompt", "success": false});
+        assert!(prompt_retry_allowed(&rejected, false, 1));
+        assert!(prompt_retry_allowed(&rejected, false, 2));
+        assert!(!prompt_retry_allowed(&rejected, false, 3));
+        assert!(!prompt_retry_allowed(&rejected, true, 1));
+        assert!(!prompt_retry_allowed(
+            &json!({"type": "response", "command": "prompt", "success": true}),
+            false,
+            1
+        ));
+    }
+
+    #[test]
+    fn assistant_error_turns_are_not_misreported_as_empty_answers() {
+        assert!(assistant_provider_turn_failed(&json!({
+            "type": "message_end",
+            "message": {"stopReason": "error", "errorMessage": "diagnostic suppressed"}
+        })));
+        assert!(!assistant_provider_turn_failed(&json!({
+            "type": "message_end",
+            "message": {"stopReason": "stop"}
+        })));
     }
 
     #[cfg(target_os = "macos")]

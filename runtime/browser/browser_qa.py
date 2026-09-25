@@ -2,10 +2,31 @@
 from __future__ import annotations
 import argparse, hashlib, json, os, pwd, shutil, tempfile, time
 from pathlib import Path
-from playwright.sync_api import sync_playwright
 
 QA_SCHEMA='0.2.0'
 def sha_file(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+def resolve_chromium_executable(env=None):
+    """Resolve an installed Chrome/Chromium binary without importing Playwright."""
+    env = os.environ if env is None else env
+    explicit = str(env.get('CHROMIUM_BIN', '')).strip()
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        if candidate.is_file() and os.access(candidate, os.X_OK): return str(candidate)
+        return None
+    for name in ('chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable', 'chrome'):
+        found = shutil.which(name, path=env.get('PATH'))
+        if found: return found
+    for raw in ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/google-chrome', '/snap/bin/chromium'):
+        candidate = Path(raw)
+        if candidate.is_file() and os.access(candidate, os.X_OK): return str(candidate)
+    return None
+
+def write_startup_failure(out: Path, profile: str, error: str, html=None):
+    report = {'schema_version': QA_SCHEMA, 'profile': profile, 'status': 'FAIL', 'errors': [error]}
+    if html is not None and Path(html).is_file(): report['html_sha256'] = sha_file(html)
+    (out / 'browser-qa.json').write_text(json.dumps(report, indent=2) + '\n')
+    return report
 
 def drop_root_if_needed(out: Path):
     if os.geteuid()!=0: return {'mode':'native-user','sandbox':True}
@@ -58,6 +79,15 @@ def inspect_page(page):
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--html',required=True);ap.add_argument('--spec',required=True);ap.add_argument('--output',required=True);ap.add_argument('--profile',choices=['cpu','gpu'],default='cpu');args=ap.parse_args()
     html=Path(args.html).resolve();spec=json.loads(Path(args.spec).read_text());out=Path(args.output).resolve();out.mkdir(parents=True,exist_ok=True)
+    try:
+        from playwright.sync_api import sync_playwright
+    except (ImportError, ModuleNotFoundError):
+        write_startup_failure(out, args.profile, 'playwright_dependency_unavailable', html)
+        raise SystemExit(2)
+    chromium = resolve_chromium_executable()
+    if not chromium:
+        write_startup_failure(out, args.profile, 'chromium_executable_unavailable', html)
+        raise SystemExit(2)
     security=drop_root_if_needed(out)
     html_text=html.read_text()
     import re
@@ -71,7 +101,7 @@ def main():
     if args.profile=='cpu': launch_args.append('--disable-gpu')
     if not security['sandbox']: launch_args.append('--no-sandbox')
     with sync_playwright() as p:
-        browser=p.chromium.launch(executable_path=os.environ.get('CHROMIUM_BIN','/usr/bin/chromium'),headless=True,args=launch_args)
+        browser=p.chromium.launch(executable_path=chromium,headless=True,args=launch_args)
         for width in widths:
             page=browser.new_page(viewport={'width':width,'height':900},device_scale_factor=1)
             page.on('console',lambda msg: errors.append(f'console:{msg.type}:{msg.text}') if msg.type=='error' else None)

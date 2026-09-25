@@ -6,7 +6,7 @@ export const EDITORIAL_GRAMMAR_VERSION='1.0.0';
 // `comparison` is a reader-facing task exposed by the newsroom tool schema.
 // Keep it as a first-class claim relation so the model can declare a direct
 // comparison without being rejected before the chart grammar is evaluated.
-const RELATIONS=new Set(['rank','comparison','change','trend','anomaly','benchmark','composition','distribution','relationship','uncertainty','flow','geography','network']);
+const RELATIONS=new Set(['rank','comparison','change','trend','anomaly','benchmark','composition','distribution','relationship','correlation','uncertainty','flow','geography','network']);
 const DERIVED_METRICS=new Set(['percent_change','absolute_change','percentage_point_change','ratio']);
 
 function object(v,name){ if(!v||typeof v!=='object'||Array.isArray(v)) throw new Error(`${name} must be an object`); }
@@ -24,8 +24,11 @@ function strings(v,name){
 export function normalizeClaimSpec(input,measures=[]){
   if(input==null) return null;
   object(input,'claim_spec');
-  const relation=string(input.relation,'claim_spec.relation');
-  if(!RELATIONS.has(relation)) throw new Error(`unsupported claim_spec.relation: ${relation}`);
+  const requestedRelation=string(input.relation,'claim_spec.relation');
+  if(!RELATIONS.has(requestedRelation)) throw new Error(`unsupported claim_spec.relation: ${requestedRelation}`);
+  // Accept the reader-facing term and canonicalize it to the newsroom
+  // relationship grammar before deriving recommended visual forms.
+  const relation=requestedRelation==='correlation'?'relationship':requestedRelation;
   const target=string(input.target_measure,'claim_spec.target_measure',{required:false});
   const baseline=string(input.baseline_measure,'claim_spec.baseline_measure',{required:false});
   const contexts=strings(input.context_measures,'claim_spec.context_measures');
@@ -44,7 +47,9 @@ export function normalizeClaimSpec(input,measures=[]){
   }
   return Object.freeze({
     schema_version:CLAIM_SPEC_VERSION,
-    claim_id:string(input.claim_id,'claim_spec.claim_id'),
+    // Draft visual plans may declare the comparison grammar before a factual
+    // claim is reviewed; publishable plans still bind a verified claim_id.
+    claim_id:string(input.claim_id,'claim_spec.claim_id',{required:false}),
     relation,
     reader_task:string(input.reader_task,'claim_spec.reader_task'),
     target_measure:target,

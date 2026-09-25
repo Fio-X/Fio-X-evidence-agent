@@ -6,6 +6,8 @@ PROVIDER="${NEWSROOM_PROVIDER:-}"
 MODEL="${NEWSROOM_MODEL:-}"
 FIXTURE="${NEWSROOM_FIXTURE:-$ROOT/fixtures/world-bank-renewable-latest.csv}"
 OUT="${NEWSROOM_AGENTIC_OUT:-$ROOT/.newsroom/agentic-qualification}"
+SCENARIO_ID="${NEWSROOM_AGENTIC_SCENARIO_ID:-renewable-energy-open-goal-v1}"
+export NEWSROOM_RPC_HEARTBEAT_MS="${NEWSROOM_RPC_HEARTBEAT_MS:-60000}"
 
 if [[ -z "$PROVIDER" || -z "$MODEL" ]]; then
   echo "NEWSROOM_PROVIDER and NEWSROOM_MODEL are required" >&2
@@ -27,7 +29,7 @@ mkdir -p "$OUT"
 # failure, recovery action, or execution order.
 export NEWSROOM_FAULT_INJECT_TOOL_ONCE="${NEWSROOM_FAULT_INJECT_TOOL_ONCE:-duckdb_query}"
 
-before="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2- || true)"
+before="$(python3 "$ROOT/scripts/latest_artifact_dir.py" "$OUT")"
 "$NEWS_BIN" investigate \
   --tool-profile investigate \
   --out "$OUT" \
@@ -36,7 +38,7 @@ before="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/
   --model "$MODEL" \
   "Analyze the supplied renewable-energy data and identify the strongest defensible story angle. Verify consequential quantitative conclusions, check whether country comparisons use compatible reference periods, and produce a concise evidence-backed newsroom brief with a visual when it materially improves the explanation. Use external context only when it improves confidence or interpretation. Resolve recoverable problems autonomously and state unresolved limitations."
 
-after="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+after="$(python3 "$ROOT/scripts/latest_artifact_dir.py" "$OUT")"
 if [[ -z "$after" || "$after" == "$before" ]]; then
   echo "could not identify the newly created investigation artifact" >&2
   exit 3
@@ -48,11 +50,11 @@ ARTIFACT="$after"
   --provider "$PROVIDER" \
   --model "$MODEL" \
   "$ARTIFACT" \
-  "Revisit the strongest conclusion from the previous turn. Check whether reference-period comparability or another material caveat changes it. Correct only what needs correction, preserve evidence that remains valid, and update the deliverable accordingly."
+  "For this follow-up, change the editorial objective from identifying the strongest story angle to stress-testing whether that angle remains publishable under strict reference-period comparability. Revisit the strongest conclusion from the previous turn, determine whether the comparison needs to be narrowed, reframed, or caveated, and update the deliverable so the revised objective is satisfied. Preserve evidence that remains valid and state clearly when the core conclusion survives the stricter test."
 
 "$NEWS_BIN" verify "$ARTIFACT" --recompute
 "$NEWS_BIN" inspect "$ARTIFACT" | tee "$ARTIFACT/inspect.txt"
-python3 "$ROOT/scripts/evaluate_agentic_artifact.py" "$ARTIFACT" --provider "$PROVIDER" --model "$MODEL" | tee "$ARTIFACT/agentic-gate.txt"
+python3 "$ROOT/scripts/evaluate_agentic_artifact.py" "$ARTIFACT" --provider "$PROVIDER" --model "$MODEL" --scenario "$SCENARIO_ID" | tee "$ARTIFACT/agentic-gate.txt"
 python3 "$ROOT/scripts/business_metrics.py" "$ARTIFACT" > "$ARTIFACT/business-metrics.stdout.json"
 
 echo "agentic qualification artifact: $ARTIFACT"

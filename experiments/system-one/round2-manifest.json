@@ -1,0 +1,109 @@
+{
+  "schema_version": "0.2.0",
+  "round": 2,
+  "baseline_branch": "feat/system-one-observability-codex-handoff",
+  "policy": {
+    "common_checks": [
+      "cargo fmt --check",
+      "cargo test --locked",
+      "cargo build --release --locked"
+    ],
+    "invariant": "AutoRepair ∩ {Fact, Claim, SQL, Evidence} = empty",
+    "result_classes": [
+      "PROMOTE",
+      "HOLD",
+      "REJECT",
+      "INCONCLUSIVE"
+    ]
+  },
+  "experiments": [
+    {
+      "id": "r2-01-rpc-metric-correctness",
+      "title": "Operation-local and failed-RPC metrics",
+      "hypothesis": "Accurate operation-local and terminal failure metrics can be added without changing runtime behavior or leaking provider diagnostics.",
+      "allowed_files": [
+        "src/pi.rs",
+        "src/artifact.rs",
+        "scripts/test_rpc_waits.py"
+      ],
+      "acceptance": [
+        "successful RPC metrics remain backward-readable",
+        "failed RPCs emit one sanitized terminal metric with outcome and bounded failure phase/class",
+        "run metrics expose operation-local Pi RPC values without removing cumulative observability",
+        "provider_error mock preserves secret redaction",
+        "tests cover initial plus continuation scope"
+      ]
+    },
+    {
+      "id": "r2-02-phase-surface-observability",
+      "title": "Effective phase tool surface",
+      "hypothesis": "Runtime can report the actual phase-scoped registered tool count and schema bytes, making phase A/B experiments measurable without changing default routing.",
+      "allowed_files": [
+        "src/pi.rs",
+        "runtime/pi/newsroom.ts",
+        "runtime/pi/tool_phase_policy.mjs",
+        "scripts/test_phase_tool_scope_v112.mjs"
+      ],
+      "acceptance": [
+        "default phase=all behavior is unchanged",
+        "metrics distinguish profile count from effective phase count",
+        "metrics record phase and serialized schema-byte estimate or exact runtime value",
+        "existing profile/phase contract tests pass",
+        "no evidence or publication gate changes"
+      ]
+    },
+    {
+      "id": "r2-03-persistent-pi-prototype",
+      "title": "Persistent Pi process prototype",
+      "hypothesis": "Reusing one Pi child for initial plus continuation can remove repeated process startup while preserving session semantics and bounded waits.",
+      "allowed_files": [
+        "src/pi.rs",
+        "src/commands/continue_investigation.rs",
+        "scripts/test_control_plane.sh",
+        "scripts/test_rpc_waits.py"
+      ],
+      "acceptance": [
+        "prototype is opt-in or test-only; default behavior remains unchanged",
+        "one child process can serve initial plus continuation in a deterministic mock",
+        "bounded timeout and provider-error behavior still fail closed",
+        "measure process launch count and E2E delta against baseline",
+        "no provider-specific dependency"
+      ]
+    },
+    {
+      "id": "r2-04-stage-packet-prototype",
+      "title": "Typed Stage Packet prototype",
+      "hypothesis": "A content-addressed Stage Packet can reduce boundary payload by at least 80% while fail-closed resolving existing IR refs and hashes.",
+      "allowed_files": [
+        "runtime/pi/stage_packet.mjs",
+        "scripts/test_stage_packet.mjs"
+      ],
+      "acceptance": [
+        "packet contains refs, hashes, reason codes, allowed scope, and schema version",
+        "tampered or missing referenced artifact fails closed",
+        "no duplicate FactGraph/ClaimGraph/StoryGraph state is introduced",
+        "migration fixture demonstrates >=80% serialized boundary-byte reduction",
+        "packet does not embed full facts/claims/evidence bodies"
+      ]
+    },
+    {
+      "id": "r2-05-sparse-checkpoint-prototype",
+      "title": "Sparse macro checkpoint controller",
+      "hypothesis": "An opt-in RESEARCH/DESIGN/PUBLISH controller can express deterministic boundaries around existing IR while leaving open semantic decisions to Pi.",
+      "allowed_files": [
+        "src/commands/investigate.rs",
+        "src/pi.rs",
+        "src/prompt.rs",
+        "scripts/test_system_one_checkpoints.py"
+      ],
+      "acceptance": [
+        "prototype is opt-in; default investigate path is unchanged",
+        "only three macro checkpoints are introduced",
+        "checkpoint events include scope, elapsed time, reason codes, and pass/fail",
+        "existing evidence/verification/completion gates remain authoritative",
+        "no generic new RunState or parallel memory system",
+        "mock A/B reports RPC count, prompt bytes, retries, and E2E"
+      ]
+    }
+  ]
+}

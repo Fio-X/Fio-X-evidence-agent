@@ -13,7 +13,7 @@ const req=JSON.parse(fs.readFileSync(reqPath,'utf8')); const outdir=req.output_d
 let manifest;
 if(req.backend==='echarts_editorial'){
   const scene=compileEchartsEditorialScene({dataPath:req.inputs?.table,options:req.options??{},designSystem:req.design_system??{}});
-  const { default: echarts }=await import('echarts');
+  const echarts=await import('echarts');
   const width=Number(req.options?.width||1280),height=Number(req.options?.height||760);
   const option=structuredClone(scene.option);
   if(scene.source_note){

@@ -1,12 +1,44 @@
 {
-  "excluded_paths": ["fixtures/*.png","fixtures/**/*.png","bootstrap-staging","transport","target","node_modules",".newsroom","outputs","__pycache__","**/__pycache__","*.pyc","**/*.pyc",".git"],
-  "file_count": 724,
+  "excluded_paths": [
+    "fixtures/*.png",
+    "fixtures/**/*.png",
+    "bootstrap-staging",
+    "transport",
+    "target",
+    "node_modules",
+    ".newsroom",
+    "outputs",
+    "__pycache__",
+    "**/__pycache__",
+    "*.pyc",
+    "**/*.pyc",
+    ".git",
+    "release-manifest.json"
+  ],
+  "file_count": 1007,
   "generated_visuals_excluded": true,
   "import_strategy": "fill-missing-preserve-hardened-head",
-  "materialization": {"copied_missing_files": 644,"preserved_existing_files": 15},
-  "regenerated_fixture_hashes": {"fixtures/v110-systems/large-network-5000.json":"5d0112b3493b62a5a9ba738f46e0533151074ac911f0028e64828a8bb0fb1dee","fixtures/v110-systems/world-outline.json":"0adf5b7a8af2cae68f5a13ae427861bbe332235405b117e51028681a9f028ca0"},
-  "restored_vendor_hashes": {"fixtures/external/naturalearth_lowres/naturalearth_lowres.dbf":"d2ae1c99adcf8e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1","fixtures/external/naturalearth_lowres/naturalearth_lowres.shp":"08e341606e8391e458c3f08deb312de664b56bfae376064c5aa0aee6681a5f55","fixtures/external/naturalearth_lowres/naturalearth_lowres.shx":"8b0be2ad97dd484aee5c2ebc98697d5372e832b8ae58a35a661aeef6b985668d","runtime/pi/vendor/plotly-3.3.1.min.js":"9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3","runtime/web/vendor/plotly-3.3.1.min.js":"9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3"},
-  "schema_version":"1.1.0",
-  "source_archive":{"name":"agentic-data-newsroom-v1.13.0-rc1-agentic-hardening.zip","sha256":"aeadda6880610411d9527d1eb2d7377229f0345305177ebd42dabc8fab89ffed","upstream_hardening_archive_sha256":"13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c","verification_evidence":"ci-evidence/source-import-verification.json"},
-  "source_tree_sha256":"4208849b1924bb99f8b3b7f1ec50bcf438f44a5a66b95e70f05cb2e72956ddd9"
+  "materialization": {
+    "copied_missing_files": 644,
+    "preserved_existing_files": 15
+  },
+  "regenerated_fixture_hashes": {
+    "fixtures/v110-systems/large-network-5000.json": "5d0112b3493b62a5a9ba738f46e0533151074ac911f0028e64828a8bb0fb1dee",
+    "fixtures/v110-systems/world-outline.json": "0adf5b7a8af2cae68f5a13ae427861bbe332235405b117e51028681a9f028ca0"
+  },
+  "restored_vendor_hashes": {
+    "fixtures/external/naturalearth_lowres/naturalearth_lowres.dbf": "d2ae1c99adcf8e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1",
+    "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp": "08e341606e8391e458c3f08deb312de664b56bfae376064c5aa0aee6681a5f55",
+    "fixtures/external/naturalearth_lowres/naturalearth_lowres.shx": "8b0be2ad97dd484aee5c2ebc98697d5372e832b8ae58a35a661aeef6b985668d",
+    "runtime/pi/vendor/plotly-3.3.1.min.js": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3",
+    "runtime/web/vendor/plotly-3.3.1.min.js": "9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3"
+  },
+  "schema_version": "1.1.0",
+  "source_archive": {
+    "name": "agentic-data-newsroom-v1.13.0-rc1-agentic-hardening.zip",
+    "sha256": "aeadda6880610411d9527d1eb2d7377229f0345305177ebd42dabc8fab89ffed",
+    "upstream_hardening_archive_sha256": "13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c",
+    "verification_evidence": "ci-evidence/source-import-verification.json"
+  },
+  "source_tree_sha256": "2de9c67604ab005fe7a07e16f49ffee02a9c564e804bea1adfce315cbf39db1a"
 }

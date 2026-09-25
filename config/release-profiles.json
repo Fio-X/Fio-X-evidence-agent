@@ -19,6 +19,7 @@
         "python3 scripts/test_map_schema_v112.py",
         "python3 scripts/test_production_qualification_contract_v113.py",
         "python3 scripts/test_agentic_hardening.py",
+        "python3 scripts/test_business_value_benchmark.py",
         "python3 scripts/test_release_manifest_reproducibility_v113.py"
       ],
       "required_files": []
@@ -46,7 +47,7 @@
         "bash scripts/qualify_production_browser_v113.sh",
         "python3 scripts/production_preflight.py --output outputs/v113-production-preflight.json",
         "python3 scripts/check_cold_story_ledger.py --output outputs/v113-cold-story-gate.json",
-        "bash scripts/agentic_qualification.sh",
+        "python3 scripts/agentic_trials.py --trials 3 --out .newsroom/agentic-trials",
         "bash scripts/integration_qualification.sh"
       ],
       "required_files": [

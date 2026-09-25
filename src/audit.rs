@@ -18,6 +18,12 @@ pub struct AuditSummary {
     pub successful_capability_tool_calls: usize,
     pub failed_tool_calls: usize,
     pub automatic_retries: usize,
+    pub provider_failed_turns: usize,
+    pub provider_auto_retries: usize,
+    pub provider_retry_max_attempt: usize,
+    pub provider_retry_delay_ms_total: u64,
+    pub provider_failure_observed: bool,
+    pub provider_error_classes: BTreeMap<String, usize>,
     pub plan_revisions: usize,
     pub successful_plan_calls: usize,
     pub follow_up_goals: usize,
@@ -67,6 +73,27 @@ pub fn append_user_goal_event(events_path: &Path, mode: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn append_completion_retry_event(
+    events_path: &Path,
+    attempt: usize,
+    gaps: &[String],
+) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(events_path)
+        .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    let event = json!({
+        "type": "auto_retry_start",
+        "reason": "visual_completion_gate",
+        "attempt": attempt,
+        "gaps": gaps,
+        "recordedAt": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    writeln!(file, "{}", serde_json::to_string(&event)?)?;
+    Ok(())
+}
+
 pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
     let file = File::open(events_path)
         .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
@@ -75,6 +102,11 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
     let mut calls: Vec<ToolCall> = Vec::new();
     let mut turns = 0usize;
     let mut retries = 0usize;
+    let mut provider_failed_turns = 0usize;
+    let mut provider_auto_retries = 0usize;
+    let mut provider_retry_max_attempt = 0usize;
+    let mut provider_retry_delay_ms_total = 0u64;
+    let mut provider_error_classes: BTreeMap<String, usize> = BTreeMap::new();
     let mut turn_end_seqs = Vec::new();
     let mut follow_up_goal_seqs = Vec::new();
     let mut sequence = 0usize;
@@ -89,12 +121,36 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
             Err(_) => continue,
         };
         sequence += 1;
+        if let Some(class) = event.get("provider_error_class").and_then(Value::as_str) {
+            *provider_error_classes
+                .entry(class.to_string())
+                .or_insert(0usize) += 1;
+        }
         match event.get("type").and_then(Value::as_str) {
             Some("turn_end") => {
                 turns += 1;
                 turn_end_seqs.push(sequence);
+                if event
+                    .get("message")
+                    .and_then(|message| message.get("stopReason"))
+                    .and_then(Value::as_str)
+                    == Some("error")
+                {
+                    provider_failed_turns += 1;
+                }
             }
-            Some("auto_retry_start") => retries += 1,
+            Some("auto_retry_start") => {
+                retries += 1;
+                if event.get("reason").and_then(Value::as_str) != Some("visual_completion_gate")
+                    && event.get("delayMs").and_then(Value::as_u64).is_some()
+                {
+                    provider_auto_retries += 1;
+                    provider_retry_max_attempt = provider_retry_max_attempt
+                        .max(event.get("attempt").and_then(Value::as_u64).unwrap_or(0) as usize);
+                    provider_retry_delay_ms_total +=
+                        event.get("delayMs").and_then(Value::as_u64).unwrap_or(0);
+                }
+            }
             Some("newsroom_user_goal") => {
                 if event.get("mode").and_then(Value::as_str) == Some("follow_up") {
                     follow_up_goal_seqs.push(sequence);
@@ -232,7 +288,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
     }
 
     let summary = AuditSummary {
-        schema_version: "0.7.0",
+        schema_version: "0.8.0",
         generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         turns,
         tool_calls: calls.len(),
@@ -240,6 +296,12 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
         successful_capability_tool_calls,
         failed_tool_calls: failed,
         automatic_retries: retries,
+        provider_failed_turns,
+        provider_auto_retries,
+        provider_retry_max_attempt,
+        provider_retry_delay_ms_total,
+        provider_failure_observed: provider_failed_turns > 0 || !provider_error_classes.is_empty(),
+        provider_error_classes,
         plan_revisions,
         successful_plan_calls,
         follow_up_goals: follow_up_goal_seqs.len(),
@@ -352,5 +414,50 @@ mod tests {
         assert!(!summary.tool_failure_recovery_observed);
         assert!(summary.follow_up_replanning_observed);
         assert_eq!(summary.follow_up_goals, 1);
+    }
+
+    #[test]
+    fn provider_failures_and_backoff_are_safely_counted() {
+        let events = vec![
+            json!({"type":"turn_end","message":{"stopReason":"error","errorMessage":"diagnostic suppressed"}}),
+            json!({"type":"auto_retry_start","attempt":1,"delayMs":2000}),
+            json!({"type":"turn_end","message":{"stopReason":"error","errorMessage":"diagnostic suppressed"}}),
+            json!({"type":"auto_retry_start","attempt":2,"delayMs":4000}),
+            json!({"type":"response","success":false,"provider_error_class":"provider_unavailable","provider_http_status":503}),
+        ];
+        let summary = build_fixture(events);
+        assert_eq!(summary.provider_failed_turns, 2);
+        assert_eq!(summary.provider_auto_retries, 2);
+        assert_eq!(summary.provider_retry_max_attempt, 2);
+        assert_eq!(summary.provider_retry_delay_ms_total, 6000);
+        assert!(summary.provider_failure_observed);
+        assert_eq!(
+            summary.provider_error_classes.get("provider_unavailable"),
+            Some(&1)
+        );
+    }
+
+    #[test]
+    fn completion_retry_event_is_counted_and_records_gaps() {
+        let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "newsroom-audit-retry-{}-{fixture_id}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let events_path = root.join("events.jsonl");
+        let output_path = root.join("tools.json");
+        let gaps = vec!["requested desktop/mobile PNG pair is incomplete".to_string()];
+        append_completion_retry_event(&events_path, 1, &gaps).unwrap();
+        let event: Value =
+            serde_json::from_str(&fs::read_to_string(&events_path).unwrap()).unwrap();
+        assert_eq!(event["reason"], "visual_completion_gate");
+        assert_eq!(event["attempt"], 1);
+        assert_eq!(event["gaps"][0], gaps[0]);
+        assert_eq!(
+            build(&events_path, &output_path).unwrap().automatic_retries,
+            1
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }
