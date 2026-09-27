@@ -1,0 +1,11 @@
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {performance} from 'node:perf_hooks';
+import {BASEMAP_CONTENT_HASH,BASEMAP_ID,BASEMAP_LICENSE,BASEMAP_SOURCE_URL} from '../runtime/pi/cartography.mjs';
+import {renderVizBundle} from '../runtime/pi/viz.mjs';
+const ROOT=new URL('..',import.meta.url).pathname;
+function csv(path){const [h,...ls]=readFileSync(path,'utf8').trim().split(/\r?\n/),fs=h.split(',');return ls.map(l=>{const vs=l.split(',');return Object.fromEntries(fs.map((f,i)=>[f,/^-?\d+(\.\d+)?$/.test(vs[i])?Number(vs[i]):vs[i]]));});}
+const rows=csv(join(ROOT,'fixtures','v09-realdata','eia-us-crude-imports-2024.csv')).map(r=>({source:r.country,target:r.target,source_lat:r.source_lat,source_lon:r.source_lon,target_lat:r.target_lat,target_lon:r.target_lon,value:r.thousand_bpd}));
+const spec={schema_version:'1.0.0',chart_type:'cartographic_flow_map',reader_task:'flow',visual_family:'spatial',data_topology:'geo_edges',title:'Cartographic benchmark',subtitle:'Six real EIA origin-destination relationships',alt:'Cartographic benchmark with six real EIA origin-destination relationships and semantics disclosure.',source_note:'EIA 2024 crude oil import fixture.',note:'Arcs encode relationships and do not show physical tanker or pipeline routes.',unit:'thousand b/d',claim_id:'claim-bench',sql:'SELECT * FROM eia',value_field:'value',source_field:'source',target_field:'target',source_lat_field:'source_lat',source_lon_field:'source_lon',target_lat_field:'target_lat',target_lon_field:'target_lon',geometry_semantics:'abstract_od',geometry_crs:'EPSG:4326',projection:'natural_earth_1',basemap_id:BASEMAP_ID,basemap_source_url:BASEMAP_SOURCE_URL,basemap_license:BASEMAP_LICENSE,basemap_content_hash:BASEMAP_CONTENT_HASH,aggregation_policy:'none'};
+for(let i=0;i<25;i++)renderVizBundle(spec,rows);
+const times=[];for(let i=0;i<300;i++){const t=performance.now();renderVizBundle(spec,rows);times.push(performance.now()-t);}times.sort((a,b)=>a-b);const q=p=>times[Math.min(times.length-1,Math.floor((times.length-1)*p))];const result={iterations:times.length,p50_ms:q(.5),p95_ms:q(.95),max_ms:times.at(-1),budget_p95_ms:8};console.log(JSON.stringify(result,null,2));if(result.p95_ms>result.budget_p95_ms)process.exit(1);

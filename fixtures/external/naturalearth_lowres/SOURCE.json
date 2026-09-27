@@ -1,0 +1,40 @@
+{
+  "schema_version": "0.1.0",
+  "dataset": "Natural Earth low-resolution Admin 0 country polygons",
+  "scale": "1:110m class",
+  "local_fixture_origin": "Copied from the installed pyogrio test fixture named naturalearth_lowres to keep the regression offline and reproducible.",
+  "upstream_lineage": "Natural Earth Admin 0 country polygons. The installed fixture does not expose an authoritative upstream version number, so this repository does not claim a Natural Earth release version for these exact bytes.",
+  "official_source_url": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/",
+  "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+  "license": "Public domain",
+  "credit": "Made with Natural Earth",
+  "use_limit": "Geographic context only. The NASA benchmark does not encode station locations, station density, temperature anomaly values or political comparisons on this basemap.",
+  "bundle_sha256": "af470a91164be210df9b29c05db27a1e1bb6f716791670df894abcce855f3abc",
+  "files": [
+    {
+      "file": "naturalearth_lowres.cpg",
+      "bytes": 10,
+      "sha256": "09fc313075748ce8ead962229ed89c919d5a9ff71974ee725a0b48bb87d975a2"
+    },
+    {
+      "file": "naturalearth_lowres.dbf",
+      "bytes": 48869,
+      "sha256": "d2ae1c99adcf8e4586a5b12c639672035fa2f3f469e7255947de00401c3ed7e1"
+    },
+    {
+      "file": "naturalearth_lowres.prj",
+      "bytes": 143,
+      "sha256": "98aaf3d1c0ecadf1a424a4536de261c3daf4e373697cb86c40c43b989daf52eb"
+    },
+    {
+      "file": "naturalearth_lowres.shp",
+      "bytes": 180924,
+      "sha256": "08e341606e8391e458c3f08deb312de664b56bfae376064c5aa0aee6681a5f55"
+    },
+    {
+      "file": "naturalearth_lowres.shx",
+      "bytes": 1516,
+      "sha256": "8b0be2ad97dd484aee5c2ebc98697d5372e832b8ae58a35a661aeef6b985668d"
+    }
+  ]
+}

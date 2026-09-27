@@ -1,0 +1,10 @@
+{
+  "title": "Bilateral Remittance Matrix (new)",
+  "publisher": "World Bank",
+  "published": "2022-12-19",
+  "url": "https://blogs.worldbank.org/en/peoplemove/bilateral-remittance-matrix-new",
+  "values": "Published 2021 top bilateral remittance corridor estimates: United States-Mexico $52bn; United Arab Emirates-India $20bn; Saudi Arabia-India $13bn; United States-India $6bn.",
+  "coordinate_method": "Country-capital coordinates are representative anchors supplied by the test fixture. They are not financial infrastructure locations.",
+  "geometry_semantics": "abstract_od",
+  "caveat": "World Bank describes these as estimates allocated from migrant-stock and income assumptions. Map arcs encode bilateral relationships and do not trace money-transfer infrastructure."
+}

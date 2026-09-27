@@ -1,0 +1,5 @@
+source,source_lat,source_lon,target,target_lat,target_lon,usd_billion
+United States,38.9072,-77.0369,Mexico,19.4326,-99.1332,52
+United Arab Emirates,24.4539,54.3773,India,28.6139,77.2090,20
+Saudi Arabia,24.7136,46.6753,India,28.6139,77.2090,13
+United States,38.9072,-77.0369,India,28.6139,77.2090,6

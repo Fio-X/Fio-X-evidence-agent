@@ -1,0 +1,23 @@
+{
+  "release": "1.13.0-rc1",
+  "rust": "1.98.1",
+  "node_for_pi": "22.19.0",
+  "pi_coding_agent": "0.85.1",
+  "duckdb": "1.5.5",
+  "python_ci": "3.13",
+  "notes": "v1.13.0-rc1 Production Qualification. Hardens final-release preflight, tool registration closure, live browser publication qualification, dependency-lock workflows, cold-story dossier and unified machine/manual release evidence.",
+  "news_artifact_schema": "0.7.0",
+  "newsroom_viz_spec": "1.1.0",
+  "infographic_spec": "1.4.0",
+  "cairosvg": "2.8.2",
+  "story_graph": "0.1.0",
+  "publication_spec": "0.3.0",
+  "model_spec": "0.2.0",
+  "networkx": "3.6.1",
+  "plotly_python": "6.5.2",
+  "plotly_js": "3.3.1",
+  "playwright": "1.57.0",
+  "chromium_qualified": "144.0.7559.96",
+  "map_spec": "0.2.0",
+  "style_mapping": "0.2.0"
+}

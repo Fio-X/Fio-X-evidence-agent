@@ -1,0 +1,167 @@
+{
+  "spec": {
+    "schema_version": "1.1.0",
+    "kicker": "SYSTEMS / DATA FEATURE",
+    "title": "A system is easier to understand when the parts share one page",
+    "dek": "This regression feature combines verified numbers, explanatory copy and two upstream newsroom visuals into a single responsive editorial composition.",
+    "alt": "A magazine-style data feature with a large headline, two hero statistics, a ranking chart, a Sankey diagram and explanatory text.",
+    "byline": "Newsroom Agent",
+    "date_label": "Regression edition",
+    "layout": "feature",
+    "complexity_budget": "medium",
+    "source_note": "Synthetic infographic regression fixture",
+    "modules": [
+      {
+        "id": "section-1",
+        "type": "section_header",
+        "span": "full",
+        "eyebrow": "The premise",
+        "heading": "Build the reading path before decorating the page",
+        "deck": "A hook, evidence, turn and resolution create editorial rhythm.",
+        "story_role": "context",
+        "priority": 2,
+        "emphasis": "secondary"
+      },
+      {
+        "id": "stat-total",
+        "type": "hero_stat",
+        "span": "third",
+        "tone": "accent",
+        "value": "100",
+        "unit": "PJ",
+        "label": "Total energy entering the synthetic system",
+        "detail": "Verified claim fixture",
+        "claim_id": "claim-infographic",
+        "story_role": "hook",
+        "priority": 1,
+        "emphasis": "primary"
+      },
+      {
+        "id": "bar",
+        "type": "visual",
+        "span": "two_thirds",
+        "label": "The ranking",
+        "manifest_ref": "visualizations/bar.json",
+        "story_role": "evidence",
+        "priority": 2,
+        "emphasis": "primary"
+      },
+      {
+        "id": "flow",
+        "type": "visual",
+        "span": "full",
+        "label": "The system",
+        "manifest_ref": "visualizations/flow.json",
+        "story_role": "evidence",
+        "priority": 1,
+        "emphasis": "hero"
+      },
+      {
+        "id": "stat-loss",
+        "type": "hero_stat",
+        "span": "third",
+        "tone": "dark",
+        "value": "20",
+        "unit": "PJ",
+        "label": "Energy represented as losses",
+        "detail": "One fifth of the synthetic total",
+        "claim_id": "claim-infographic",
+        "story_role": "turn",
+        "priority": 3,
+        "emphasis": "primary"
+      },
+      {
+        "id": "text",
+        "type": "text",
+        "span": "two_thirds",
+        "label": "Why it matters",
+        "heading": "One feature, two reading speeds",
+        "body": "The headline and anchor visual provide the fast reading path. Supporting statistics and explanatory prose provide the slower path for readers who want evidence and context.",
+        "claim_ids": [
+          "claim-infographic"
+        ],
+        "story_role": "resolution",
+        "priority": 3,
+        "emphasis": "secondary"
+      }
+    ],
+    "intent": "Explain how verified evidence, narrative hierarchy and multiple visual forms combine into one coherent magazine feature.",
+    "primary_message": "A strong infographic gives readers one fast takeaway and a deeper evidence path without breaking provenance.",
+    "story_arc": "explain",
+    "audience": "informed",
+    "quality_target": "award"
+  },
+  "lint": {
+    "schema_version": "1.1.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [
+      "visual_modules=2",
+      "claim_references=3",
+      "unique_sources=1",
+      "story_arc=explain",
+      "audience=informed",
+      "quality_target=award"
+    ],
+    "content_hash": "0ff2e6c12aab0f198baaf25f70715b01ea888c055885d736963b43f3b64de2f3"
+  },
+  "critic": {
+    "schema_version": "1.1.0",
+    "quality_target": "award",
+    "competition_profile": "editorial",
+    "passed": true,
+    "score": 97,
+    "rubric": {
+      "impact_story_focus": 100,
+      "engagement": 93,
+      "clarity_information_flow": 100,
+      "effectiveness": 100,
+      "hierarchy": 95,
+      "editorial_rhythm": 100,
+      "inclusion_accessibility": 100,
+      "responsive_execution": 100,
+      "craft_geometry": 89,
+      "originality_variety": 80
+    },
+    "viewports": {
+      "desktop": {
+        "passed": true,
+        "score": 97,
+        "threshold": 92,
+        "rubric": {
+          "impact_story_focus": 100,
+          "engagement": 93,
+          "clarity_information_flow": 100,
+          "effectiveness": 100,
+          "hierarchy": 95,
+          "editorial_rhythm": 100,
+          "inclusion_accessibility": 100,
+          "responsive_execution": 100,
+          "craft_geometry": 89,
+          "originality_variety": 80
+        },
+        "issues": []
+      },
+      "mobile": {
+        "passed": true,
+        "score": 98,
+        "threshold": 92,
+        "rubric": {
+          "impact_story_focus": 100,
+          "engagement": 93,
+          "clarity_information_flow": 100,
+          "effectiveness": 100,
+          "hierarchy": 95,
+          "editorial_rhythm": 100,
+          "inclusion_accessibility": 100,
+          "responsive_execution": 100,
+          "craft_geometry": 100,
+          "originality_variety": 80
+        },
+        "issues": []
+      }
+    },
+    "issues": []
+  }
+}

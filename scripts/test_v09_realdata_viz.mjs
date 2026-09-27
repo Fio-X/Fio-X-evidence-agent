@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { lintVizSpec, renderVizBundle, critiqueViz } from "../runtime/pi/viz.mjs";
+
+function csv(text){const [head,...lines]=text.trim().split(/\r?\n/);const keys=head.split(',');return lines.map(line=>{const vals=line.split(',');return Object.fromEntries(keys.map((k,i)=>[k,/^-?\d+(?:\.\d+)?$/.test(vals[i])?Number(vals[i]):vals[i]]));});}
+const eiaRows=csv(await readFile(new URL('../fixtures/v09-realdata/eia-us-crude-imports-2024.csv',import.meta.url),'utf8'));
+const titanicRows=csv(await readFile(new URL('../fixtures/v09-realdata/titanic-r-datasets.csv',import.meta.url),'utf8'));
+assert.equal(Math.round(titanicRows.reduce((s,r)=>s+r.Freq,0)),2201);
+const claim='claim-v09-real';
+const common={schema_version:'0.9.0',claim_id:claim,sql:'SELECT * FROM fixture',complexity_budget:'medium',annotations:[],highlight_values:[]};
+const geo={...common,reader_task:'spatial',visual_family:'spatial',data_topology:'geo_edges',chart_type:'geo_flow_map',takeaway:'Canada dominated selected U.S. crude-oil import flows in 2024.',title:'Canada dwarfed other selected U.S. crude-oil suppliers in 2024',subtitle:'Average thousand barrels per day, calculated from EIA monthly 2024 import volumes',alt:'A schematic flow map shows selected countries supplying crude oil to the United States in 2024. The route from Canada is much thicker than routes from Mexico, Saudi Arabia, Brazil, Colombia and Iraq.',source_note:'U.S. Energy Information Administration, Petroleum & Other Liquids; 2024 monthly crude-oil imports',note:'Representative country coordinates; curves show country-to-country relationships, not physical pipelines or tanker routes.',unit:'thousand b/d',source_field:'country',target_field:'target',source_lat_field:'source_lat',source_lon_field:'source_lon',target_lat_field:'target_lat',target_lon_field:'target_lon',value_field:'thousand_bpd',highlight_values:['Canada']};
+let lint=lintVizSpec(geo,eiaRows,{verified_claim_ids:[claim]});assert.equal(lint.passed,true,lint.blockers.join(' | '));let bundle=renderVizBundle(geo,eiaRows);let c1=critiqueViz(geo,eiaRows,lint,bundle.desktop),c2=critiqueViz(geo,eiaRows,lint,bundle.mobile);assert.equal(c1.passed,true);assert.equal(c2.passed,true);
+assert.equal((bundle.desktop.match(/data-role="geo-value"/g)??[]).length,3,'dense geo flow should directly label only the three largest routes');
+assert.equal((bundle.mobile.match(/data-role="geo-value"/g)??[]).length,3,'mobile dense geo flow should directly label only the three largest routes');
+const parallel={...common,reader_task:'flow',visual_family:'flow',data_topology:'categorical_flow',chart_type:'parallel_sets',takeaway:'Survival outcomes varied sharply by class, sex and age.',title:'Class, sex and age shaped survival on the Titanic',subtitle:'British Board of Trade-derived contingency table in the R datasets package; 2,201 people',alt:'Parallel sets trace 2,201 Titanic passengers and crew from class through sex and age to survival outcome, with ribbon width proportional to the number of people.',source_note:'R datasets::Titanic; Dawson (1995), based on British Board of Trade data',note:'Historical sources do not completely agree on exact numbers aboard, rescued or lost.',unit:'people',dimension_fields:['Class','Sex','Age','Survived'],value_field:'Freq'};
+lint=lintVizSpec(parallel,titanicRows,{verified_claim_ids:[claim]});assert.equal(lint.passed,true,lint.blockers.join(' | '));bundle=renderVizBundle(parallel,titanicRows);c1=critiqueViz(parallel,titanicRows,lint,bundle.desktop);c2=critiqueViz(parallel,titanicRows,lint,bundle.mobile);assert.equal(c1.passed,true);assert.equal(c2.passed,true);
+await mkdir(new URL('../outputs/v09-realdata/',import.meta.url),{recursive:true});
+for(const [name,spec,rows] of [['eia-us-crude-imports-2024',geo,eiaRows],['titanic-parallel-sets',parallel,titanicRows]]){const b=renderVizBundle(spec,rows);await writeFile(new URL(`../outputs/v09-realdata/${name}.svg`,import.meta.url),b.desktop);await writeFile(new URL(`../outputs/v09-realdata/${name}.mobile.svg`,import.meta.url),b.mobile);}
+console.log('v0.9 real-data viz: PASS');
+console.log(`EIA selected flows=${eiaRows.length}, top=${eiaRows.sort((a,b)=>b.thousand_bpd-a.thousand_bpd)[0].country} ${eiaRows[0].thousand_bpd} thousand b/d`);
+console.log(`Titanic contingency total=${titanicRows.reduce((s,r)=>s+r.Freq,0)} people`);

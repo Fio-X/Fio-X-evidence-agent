@@ -1,0 +1,265 @@
+{
+  "schema_version": "0.2.0",
+  "profiles": {
+    "analytical_precision": {
+      "description": "Neutral, high-legibility analytical reporting for comparisons and statistical evidence.",
+      "compatible_dimensions": [
+        "trend",
+        "rank",
+        "comparison",
+        "distribution",
+        "context",
+        "outcome",
+        "method",
+        "hierarchy"
+      ],
+      "compatible_topologies": [
+        "tabular",
+        "hierarchy",
+        "flow_edges",
+        "graph_edges",
+        "geo_edges"
+      ],
+      "tokens": {
+        "font_display": "Georgia, 'Times New Roman', serif",
+        "font_body": "Arial, Helvetica, sans-serif",
+        "paper": "#fffdf9",
+        "ink": "#1d2329",
+        "muted": "#69727a",
+        "panel": "#f5f3ef",
+        "grid": "#d9dde1",
+        "accent": "#8d3c34",
+        "density": "medium",
+        "annotation": "selective",
+        "geometry": "rectilinear",
+        "motion": "minimal",
+        "surface": "flat",
+        "interaction_depth": "focused"
+      }
+    },
+    "systems_explainer": {
+      "description": "Structured systems reporting for flows, mechanisms, dependencies and causal chains.",
+      "compatible_dimensions": [
+        "flow",
+        "mechanism",
+        "model",
+        "hierarchy",
+        "context",
+        "outcome"
+      ],
+      "compatible_topologies": [
+        "flow_edges",
+        "hierarchy",
+        "process_graph",
+        "graph_edges"
+      ],
+      "tokens": {
+        "font_display": "Georgia, 'Times New Roman', serif",
+        "font_body": "Arial, Helvetica, sans-serif",
+        "paper": "#fbfaf6",
+        "ink": "#17242b",
+        "muted": "#64727a",
+        "panel": "#eef2ef",
+        "grid": "#d4dbd7",
+        "accent": "#476b5b",
+        "density": "medium",
+        "annotation": "explanatory",
+        "geometry": "flowing",
+        "motion": "minimal",
+        "surface": "layered",
+        "interaction_depth": "guided"
+      }
+    },
+    "investigative_network": {
+      "description": "Dense but restrained relationship reporting for ownership, influence and entity networks.",
+      "compatible_dimensions": [
+        "network",
+        "hierarchy",
+        "context",
+        "comparison",
+        "outcome",
+        "method",
+        "human_scale"
+      ],
+      "compatible_topologies": [
+        "graph_edges",
+        "hierarchy",
+        "spatial_network"
+      ],
+      "tokens": {
+        "font_display": "Arial, Helvetica, sans-serif",
+        "font_body": "Arial, Helvetica, sans-serif",
+        "paper": "#f7f6f2",
+        "ink": "#202428",
+        "muted": "#6d7175",
+        "panel": "#eceae4",
+        "grid": "#d3d0c8",
+        "accent": "#9a4337",
+        "density": "high",
+        "annotation": "entity_first",
+        "geometry": "network",
+        "motion": "none",
+        "surface": "documentary",
+        "interaction_depth": "deep_focus"
+      }
+    },
+    "uncertainty_forecast": {
+      "description": "Calibrated forecast reporting that visually preserves ranges, probability and epistemic restraint.",
+      "compatible_dimensions": [
+        "uncertainty",
+        "trend",
+        "context",
+        "outcome"
+      ],
+      "compatible_topologies": [
+        "tabular",
+        "events",
+        "geo_edges"
+      ],
+      "tokens": {
+        "font_display": "Georgia, 'Times New Roman', serif",
+        "font_body": "Arial, Helvetica, sans-serif",
+        "paper": "#fbfcfd",
+        "ink": "#17212b",
+        "muted": "#64717d",
+        "panel": "#edf3f7",
+        "grid": "#d4dee6",
+        "accent": "#486c8b",
+        "density": "medium",
+        "annotation": "probability_explicit",
+        "geometry": "interval",
+        "motion": "none",
+        "surface": "calm",
+        "interaction_depth": "explanatory"
+      }
+    },
+    "spatial_monitor": {
+      "description": "Operational spatial monitoring for live geographic distributions and linked local context.",
+      "compatible_dimensions": [
+        "spatial",
+        "trend",
+        "distribution",
+        "context",
+        "outcome"
+      ],
+      "compatible_topologies": [
+        "geography",
+        "geo_edges",
+        "tabular"
+      ],
+      "tokens": {
+        "font_display": "Arial, Helvetica, sans-serif",
+        "font_body": "Arial, Helvetica, sans-serif",
+        "paper": "#fbfbfa",
+        "ink": "#18232b",
+        "muted": "#65717a",
+        "panel": "#edf1f2",
+        "grid": "#d5dcdf",
+        "accent": "#456d78",
+        "density": "high",
+        "annotation": "location_first",
+        "geometry": "spatial",
+        "motion": "minimal",
+        "surface": "operational",
+        "interaction_depth": "linked"
+      }
+    },
+    "nature_scientific_map": {
+      "description": "Scientific spatial reporting with restrained Nature-like figure discipline: physical context, explicit projection/scale semantics, editable labels, calibrated annotation and minimal decorative styling.",
+      "compatible_dimensions": [
+        "spatial",
+        "uncertainty",
+        "distribution",
+        "context",
+        "outcome",
+        "mechanism",
+        "method"
+      ],
+      "compatible_topologies": [
+        "geography",
+        "geo_edges",
+        "trajectory",
+        "tabular"
+      ],
+      "tokens": {
+        "font_display": "Arial, Helvetica, sans-serif",
+        "font_body": "Arial, Helvetica, sans-serif",
+        "paper": "#ffffff",
+        "ink": "#17191b",
+        "muted": "#62686d",
+        "panel": "#f4f6f4",
+        "grid": "#d8ddd8",
+        "accent": "#3f675c",
+        "density": "medium",
+        "annotation": "scientific_explicit",
+        "geometry": "cartographic",
+        "motion": "none",
+        "surface": "scientific",
+        "interaction_depth": "linked",
+        "map_context": "physical",
+        "map_line_weight": "fine",
+        "coordinate_context": "explicit",
+        "scale_semantics": "required",
+        "uncertainty": "explicit",
+        "color_strategy": "restrained"
+      }
+    }
+  },
+  "rules": [
+    {
+      "profile": "uncertainty_forecast",
+      "requires_any_dimension": [
+        "uncertainty"
+      ],
+      "priority": 100
+    },
+    {
+      "profile": "investigative_network",
+      "requires_any_dimension": [
+        "network"
+      ],
+      "priority": 90
+    },
+    {
+      "profile": "nature_scientific_map",
+      "requires_any_dimension": [
+        "spatial"
+      ],
+      "requires_any_signal": [
+        "scientific_spatial",
+        "physical_geography",
+        "nature_map"
+      ],
+      "priority": 95
+    },
+    {
+      "profile": "spatial_monitor",
+      "requires_any_dimension": [
+        "spatial"
+      ],
+      "priority": 80
+    },
+    {
+      "profile": "systems_explainer",
+      "requires_any_dimension": [
+        "flow",
+        "mechanism",
+        "model"
+      ],
+      "priority": 70
+    },
+    {
+      "profile": "analytical_precision",
+      "requires_any_dimension": [
+        "trend",
+        "rank",
+        "comparison",
+        "distribution",
+        "context",
+        "outcome",
+        "method"
+      ],
+      "priority": 10
+    }
+  ]
+}

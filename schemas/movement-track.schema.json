@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-data-newsroom.local/schemas/movement-track.schema.json",
+  "title": "MovementTrack",
+  "type": "object",
+  "required": ["schema_version","track_id","object_type","source","processing","raw_points","clean_points","publication_points","metrics"],
+  "properties": {
+    "schema_version": {"const":"1.0.0"},
+    "track_id": {"type":"string","minLength":1},
+    "object_type": {"type":"string","minLength":1},
+    "source": {"type":"string"},
+    "source_id": {"type":"string"},
+    "processing": {
+      "type":"object","required":["gap_seconds","simplify_tolerance_m","rejected_points"],
+      "properties":{"gap_seconds":{"type":"number","minimum":0},"simplify_tolerance_m":{"type":"number","minimum":0},"rejected_points":{"type":"integer","minimum":0}},
+      "additionalProperties":false
+    },
+    "raw_points":{"type":"array","minItems":2},
+    "clean_points":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/point"}},
+    "publication_points":{"type":"array","minItems":2,"items":{"$ref":"#/$defs/point"}},
+    "metrics":{"type":"object","required":["raw_point_count","clean_point_count","publication_point_count","rejected_point_count","segment_count","observed_duration_s","largest_time_gap_s","observed_distance_m","publication_retention_ratio"]}
+  },
+  "$defs": {
+    "point": {
+      "type":"object","required":["lon","lat","elapsed_s","segment"],
+      "properties":{"lon":{"type":"number","minimum":-180,"maximum":180},"lat":{"type":"number","minimum":-90,"maximum":90},"elapsed_s":{"type":"number","minimum":0},"segment":{"type":"number"}},
+      "additionalProperties":true
+    }
+  },
+  "additionalProperties":false
+}

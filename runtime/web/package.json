@@ -1,0 +1,21 @@
+{
+  "name": "adn-viz-web",
+  "private": true,
+  "version": "1.13.0-rc1",
+  "type": "module",
+  "dependencies": {
+    "sigma": "3.0.3",
+    "graphology": "0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "graphology-communities-louvain": "2.0.2",
+    "maplibre-gl": "6.9.0",
+    "deck.gl": "9.4.0",
+    "@deck.gl/core": "9.4.0",
+    "@deck.gl/layers": "9.4.0",
+    "@deck.gl/geo-layers": "9.4.0",
+    "echarts": "6.0.0",
+    "d3": "7.9.0",
+    "vega-lite": "6.4.3",
+    "plotly.js-dist": "3.3.1"
+  }
+}

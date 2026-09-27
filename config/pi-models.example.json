@@ -1,0 +1,60 @@
+{
+  "providers": {
+    "kimi": {
+      "baseUrl": "https://api.moonshot.cn/v1",
+      "api": "openai-completions",
+      "apiKey": "$KIMI_API_KEY",
+      "compat": {
+        "deferredToolsMode": "kimi"
+      },
+      "models": [
+        {
+          "id": "kimi-k3",
+          "name": "Kimi K3",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 128000,
+          "maxTokens": 16384
+        },
+        {
+          "id": "kimi-k2.6",
+          "name": "Kimi K2.6",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 128000,
+          "maxTokens": 16384
+        }
+      ]
+    },
+    "zai": {
+      "baseUrl": "https://api.z.ai/api/paas/v4",
+      "api": "openai-completions",
+      "apiKey": "$ZAI_API_KEY",
+      "models": [
+        {
+          "id": "glm-5.1",
+          "name": "GLM 5.1",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 200000,
+          "maxTokens": 32768
+        }
+      ]
+    },
+    "dragoncode": {
+      "baseUrl": "${DRAGONCODE_BASE_URL}",
+      "api": "anthropic-messages",
+      "apiKey": "$DRAGONCODE_API_KEY",
+      "models": [
+        {
+          "id": "${DRAGONCODE_MODEL}",
+          "name": "DragonCode routed model",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 16384
+        }
+      ]
+    }
+  }
+}

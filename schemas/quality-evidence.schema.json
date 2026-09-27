@@ -1,0 +1,10 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","title":"QualityEvidenceManifest","type":"object",
+ "required":["schema_version","hard_gates","diagnostics","human_evidence"],
+ "properties":{
+  "schema_version":{"const":"0.1.0"},
+  "hard_gates":{"type":"array","items":{"type":"object","required":["id","passed"],"properties":{"id":{"type":"string"},"passed":{"type":"boolean"},"evidence_ref":{"type":"string"}},"additionalProperties":true}},
+  "diagnostics":{"type":"array","items":{"type":"object"}},
+  "human_evidence":{"type":"array","items":{"type":"object","required":["reviewer_ref","qualified","result"],"properties":{"reviewer_ref":{"type":"string"},"qualified":{"type":"boolean"},"result":{"enum":["preferred","tie","not_preferred"]}},"additionalProperties":true}}
+ },"additionalProperties":false
+}

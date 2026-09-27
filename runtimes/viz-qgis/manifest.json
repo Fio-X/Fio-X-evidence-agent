@@ -1,0 +1,38 @@
+{
+  "id": "viz-qgis",
+  "version": "1.26.0",
+  "execution": "container",
+  "target_versions": {
+    "qgis": "3.44.14 LTR"
+  },
+  "capabilities": [
+    "publication_cartography",
+    "local_cartography",
+    "dense_labels",
+    "pal_labeling",
+    "print_layout",
+    "atlas",
+    "vector_export"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "qgis_process",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": ">=3.44.14,<3.45"
+    },
+    {
+      "type": "python_module",
+      "name": "qgis.core",
+      "required": true
+    }
+  ],
+  "build": {
+    "definition": "Dockerfile",
+    "network_required": true,
+    "note": "Pin QGIS LTR; QGIS 4.2 becomes the first 4.x LTR only after its October 2026 LTR promotion."
+  }
+}

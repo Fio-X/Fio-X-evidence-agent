@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"urn:agentic-data-newsroom:schema:model-spec:0.2.0",
+  "title":"Analytical Model Spec v0.2",
+  "type":"object",
+  "required":["schema_version","type"],
+  "properties":{
+    "schema_version":{"enum":["0.1.0","0.2.0"]},
+    "type":{"enum":["conserved_flow_system","causal_dag","state_transition","scenario_model","network_model","probabilistic_interval_series"]},
+    "entities":{"type":"array","items":{"type":"object","required":["id"],"properties":{"id":{"type":"string"},"label":{"type":"string"},"role":{"enum":["source","transform","sink","stock","state","actor"]}},"additionalProperties":true}},
+    "flows":{"type":"array","items":{"type":"object","required":["source","target","value"],"properties":{"source":{"type":"string"},"target":{"type":"string"},"value":{"type":"number","minimum":0},"unit":{"type":"string"}},"additionalProperties":true}},
+    "conservation":{"type":"object","properties":{"nodes":{"type":"array","items":{"type":"string"}},"tolerance":{"type":"number","minimum":0}},"additionalProperties":false},
+    "uncertainty":{"type":"object","properties":{"coverage":{"type":"number","exclusiveMinimum":0,"exclusiveMaximum":1},"coverage_semantics":{"enum":["empirical_historical_error","prediction_interval","credible_interval","confidence_interval"]}},"required":["coverage","coverage_semantics"],"additionalProperties":false},
+    "series":{"type":"array","minItems":2,"items":{"type":"object","required":["horizon","lower","central","upper","unit"],"properties":{"horizon":{},"lower":{"type":"number"},"central":{"type":"number"},"upper":{"type":"number"},"unit":{"type":"string","minLength":1}},"additionalProperties":true}}
+  },
+  "allOf":[
+    {"if":{"properties":{"type":{"const":"probabilistic_interval_series"}}},"then":{"required":["uncertainty","series"]},"else":{"required":["entities","flows"]}}
+  ],
+  "additionalProperties":true
+}

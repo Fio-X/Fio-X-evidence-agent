@@ -1,0 +1,1 @@
+Revise the investigation using the existing context. I care more about meaningful scale than spectacular percentage growth from tiny starting values. Re-rank the findings with a defensible small-base rule, explain why you chose that rule, verify the top three again, and regenerate the chart if the editorial conclusion changes.

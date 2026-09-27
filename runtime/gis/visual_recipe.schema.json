@@ -1,0 +1,563 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/visual-recipe-v2.schema.json",
+  "title": "Agentic Data Newsroom VisualRecipe 2.0",
+  "type": "object",
+  "required": [
+    "analytical_job",
+    "artifact_mode",
+    "story_family",
+    "data_profile",
+    "geography",
+    "network",
+    "annotation",
+    "delivery"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0.0"
+    },
+    "analytical_job": {
+      "enum": [
+        "comparison",
+        "time_change",
+        "distribution",
+        "composition",
+        "flow",
+        "network",
+        "hierarchy",
+        "geography",
+        "explanatory"
+      ]
+    },
+    "artifact_mode": {
+      "enum": [
+        "static_editorial",
+        "interactive",
+        "print",
+        "hybrid"
+      ]
+    },
+    "story_family": {
+      "type": "string",
+      "minLength": 1
+    },
+    "data_profile": {
+      "type": "object",
+      "required": [
+        "mark_count"
+      ],
+      "properties": {
+        "geometry": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mark_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "node_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "temporal": {
+          "type": "boolean"
+        },
+        "estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "geography": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "scale": {
+          "enum": [
+            "global",
+            "regional",
+            "local",
+            "site"
+          ]
+        },
+        "projection_policy": {
+          "type": "string"
+        },
+        "terrain": {
+          "type": "boolean"
+        },
+        "bathymetry": {
+          "type": "boolean"
+        },
+        "context_layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "network": {
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "spatial": {
+          "type": "boolean"
+        },
+        "directed": {
+          "type": "boolean"
+        },
+        "weighted": {
+          "type": "boolean"
+        },
+        "community_structure": {
+          "type": "boolean"
+        },
+        "comparison_dense": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "annotation": {
+      "type": "object",
+      "required": [
+        "label_count"
+      ],
+      "properties": {
+        "label_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "direct_labels": {
+          "type": "boolean"
+        },
+        "locator": {
+          "type": "boolean"
+        },
+        "scale_bar": {
+          "type": "boolean"
+        },
+        "source_note": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "print",
+        "interactive"
+      ],
+      "properties": {
+        "print": {
+          "type": "boolean"
+        },
+        "interactive": {
+          "type": "boolean"
+        },
+        "mobile": {
+          "type": "boolean"
+        },
+        "vector_required": {
+          "type": "boolean"
+        },
+        "animation": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "backend_hints": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "qualification_mode": {
+          "type": "boolean"
+        },
+        "challenger_mode": {
+          "type": "boolean"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "claim_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "source_ledger_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generated_imagery": {
+      "type": "boolean"
+    },
+    "measure_semantics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "phenomenon",
+          "unit",
+          "measure_kind",
+          "temporal_basis"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "phenomenon": {
+            "type": "string",
+            "minLength": 1
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "measure_kind": {
+            "enum": [
+              "level",
+              "flow",
+              "stock",
+              "rate",
+              "share",
+              "capacity",
+              "change",
+              "cumulative",
+              "count",
+              "index",
+              "duration",
+              "distance",
+              "price"
+            ]
+          },
+          "temporal_basis": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "point_in_time",
+                  "period",
+                  "annual_average",
+                  "rolling",
+                  "structural",
+                  "cumulative",
+                  "timeless"
+                ]
+              },
+              "date": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "start": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "end": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": true
+          },
+          "observation_status": {
+            "enum": [
+              "observed",
+              "estimate",
+              "forecast",
+              "target",
+              "capacity",
+              "scenario",
+              "modeled",
+              "reference"
+            ]
+          },
+          "aggregation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "denominator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "adjustment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "price_basis": {
+            "enum": [
+              "nominal",
+              "real",
+              "not_applicable"
+            ]
+          },
+          "seasonal_adjustment": {
+            "enum": [
+              "none",
+              "seasonally_adjusted",
+              "not_seasonally_adjusted",
+              "not_applicable"
+            ]
+          },
+          "base_period": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "claim_spec": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "relation",
+        "reader_task"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation": {
+          "enum": [
+            "rank",
+            "change",
+            "trend",
+            "anomaly",
+            "benchmark",
+            "composition",
+            "distribution",
+            "relationship",
+            "uncertainty",
+            "flow",
+            "geography",
+            "network"
+          ]
+        },
+        "reader_task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_measure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseline_measure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context_measures": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "measure_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "derived_metric": {
+          "oneOf": [
+            {
+              "enum": [
+                "percent_change",
+                "absolute_change",
+                "percentage_point_change",
+                "ratio"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "percent_change",
+                    "absolute_change",
+                    "percentage_point_change",
+                    "ratio"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "network": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "analytical_job": {
+            "enum": [
+              "network",
+              "flow",
+              "hierarchy",
+              "explanatory"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifact_mode": {
+            "const": "interactive"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "delivery": {
+            "properties": {
+              "interactive": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "measure_semantics"
+        ]
+      },
+      "then": {
+        "required": [
+          "claim_spec"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "claim_spec"
+        ]
+      },
+      "then": {
+        "required": [
+          "measure_semantics"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

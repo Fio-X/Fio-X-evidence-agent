@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 863" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">Countries split into two observation years</title>
+<desc id="viz-desc-mobile">Two panels separate countries observed in 2021 from countries observed in 2022, preventing a misleading single ranking across mixed years.</desc>
+<rect width="640" height="863" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">Countries split into two observation</text>
+<text x="32" y="65" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">years</text>
+<text x="32" y="98" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">Renewable energy consumption as a share of total final</text>
+<text x="32" y="118" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="400" fill="#687076">energy consumption</text>
+<text x="32" y="166" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#202124">2021</text>
+<line x1="170" y1="184" x2="170" y2="400" stroke="#d9dde1"/>
+<text x="170" y="178" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">0%</text>
+<line x1="386" y1="184" x2="386" y2="400" stroke="#d9dde1"/>
+<text x="386" y="178" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">50%</text>
+<line x1="602" y1="184" x2="602" y2="400" stroke="#d9dde1"/>
+<text x="602" y="178" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">100%</text>
+<text x="162" y="208.96" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Congo, Dem. Rep.</text>
+<line x1="170" y1="204.96" x2="586.016" y2="204.96" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="586.016" cy="204.96" r="5.7" fill="#d1493f"/>
+<text x="592.016" y="208.96" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">96.3%</text>
+<line data-role="annotation-leader" x1="586.016" y1="204.96" x2="577.016" y2="195.96" stroke="#687076" stroke-width="1"/>
+<text data-role="annotation" x="574.016" y="191.96" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="600" fill="#202124">Highest 2021 value in this fixture</text>
+<text x="162" y="244.29333333333335" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Zambia</text>
+<line x1="170" y1="240.29333333333335" x2="528.56" y2="240.29333333333335" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="528.56" cy="240.29333333333335" r="4.5" fill="#2f6f8f"/>
+<text x="534.56" y="244.29333333333335" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">83%</text>
+<text x="162" y="279.62666666666667" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Nigeria</text>
+<line x1="170" y1="275.62666666666667" x2="516.896" y2="275.62666666666667" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="516.896" cy="275.62666666666667" r="4.5" fill="#2f6f8f"/>
+<text x="522.896" y="279.62666666666667" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">80.3%</text>
+<text x="162" y="314.96" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Niger</text>
+<line x1="170" y1="310.96" x2="513.872" y2="310.96" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="513.872" cy="310.96" r="4.5" fill="#2f6f8f"/>
+<text x="519.872" y="314.96" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">79.6%</text>
+<text x="162" y="350.29333333333335" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Congo, Rep.</text>
+<line x1="170" y1="346.29333333333335" x2="478.44800000000004" y2="346.29333333333335" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="478.44800000000004" cy="346.29333333333335" r="4.5" fill="#2f6f8f"/>
+<text x="484.44800000000004" y="350.29333333333335" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">71.4%</text>
+<text x="162" y="385.62666666666667" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">South Sudan</text>
+<line x1="170" y1="381.62666666666667" x2="309.968" y2="381.62666666666667" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="309.968" cy="381.62666666666667" r="4.5" fill="#2f6f8f"/>
+<text x="315.968" y="385.62666666666667" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">32.4%</text>
+<text x="32" y="484" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#202124">2022</text>
+<line x1="170" y1="502" x2="170" y2="718" stroke="#d9dde1"/>
+<text x="170" y="496" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">0%</text>
+<line x1="386" y1="502" x2="386" y2="718" stroke="#d9dde1"/>
+<text x="386" y="496" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">50%</text>
+<line x1="602" y1="502" x2="602" y2="718" stroke="#d9dde1"/>
+<text x="602" y="496" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">100%</text>
+<text x="162" y="530.352" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Liberia</text>
+<line x1="170" y1="526.352" x2="570.896" y2="526.352" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="570.896" cy="526.352" r="4.5" fill="#2f6f8f"/>
+<text x="576.896" y="530.352" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">92.8%</text>
+<text x="162" y="572.752" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Sierra Leone</text>
+<line x1="170" y1="568.752" x2="479.312" y2="568.752" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="479.312" cy="568.752" r="4.5" fill="#2f6f8f"/>
+<text x="485.312" y="572.752" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">71.6%</text>
+<text x="162" y="615.1519999999999" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Chad</text>
+<line x1="170" y1="611.1519999999999" x2="472.4" y2="611.1519999999999" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="472.4" cy="611.1519999999999" r="4.5" fill="#2f6f8f"/>
+<text x="478.4" y="615.1519999999999" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">70%</text>
+<text x="162" y="657.552" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Guinea</text>
+<line x1="170" y1="653.552" x2="457.712" y2="653.552" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="457.712" cy="653.552" r="4.5" fill="#2f6f8f"/>
+<text x="463.712" y="657.552" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">66.6%</text>
+<text x="162" y="699.952" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#202124">Mauritania</text>
+<line x1="170" y1="695.952" x2="254.672" y2="695.952" stroke="#d9dde1" stroke-width="1.4"/>
+<circle cx="254.672" cy="695.952" r="4.5" fill="#2f6f8f"/>
+<text x="260.672" y="699.952" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">19.6%</text>
+<line x1="32" y1="770" x2="608" y2="770" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="786" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Note: Observation years differ across countries in the fixture.</text>
+<text x="32" y="804" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: World Bank fixture, indicator EG.FEC.RNEW.ZS</text>
+</svg>

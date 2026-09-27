@@ -1,0 +1,109 @@
+name: parallel-audit-contract
+
+on:
+  push:
+    branches: [import-current]
+    paths:
+      - 'contracts/parallel-audit/**'
+      - 'src/audit.rs'
+      - 'src/artifact.rs'
+      - '.github/workflows/parallel-audit-contract.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust-audit-projection:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Tahoe Arm64 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sw_vers -productVersion)"
+          arch="$(uname -m)"
+          case "$version" in 26.*) ;; *) echo "Expected macOS 26.x, got $version" >&2; exit 2 ;; esac
+          test "$arch" = "arm64" || { echo "Expected arm64, got $arch" >&2; exit 2; }
+      - name: Install Rust 1.98.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup run 1.98.1 rustc --version
+          rustup run 1.98.1 cargo --version
+      - name: Reconstruct and verify production Rust snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rust-audit-contract/production rust-audit-contract/src rust-audit-contract/tests
+          cat contracts/parallel-audit/audit.part-* > rust-audit-contract/production/audit.rs
+          cat contracts/parallel-audit/artifact.part-* > rust-audit-contract/production/artifact.rs
+          audit_sha="$(shasum -a 256 rust-audit-contract/production/audit.rs | awk '{print $1}')"
+          artifact_sha="$(shasum -a 256 rust-audit-contract/production/artifact.rs | awk '{print $1}')"
+          test "$audit_sha" = "749b25e4538a7d71148af69ef2bfdcf5cc60bc77d0e0545ab66bdb5ad9d41774" || { echo "audit snapshot SHA mismatch: $audit_sha" >&2; exit 3; }
+          test "$artifact_sha" = "df0b2e2c0096b3f407f6e11a934ede567de0e7edec397866b1e99e0ee55eaa4d" || { echo "artifact snapshot SHA mismatch: $artifact_sha" >&2; exit 3; }
+          grep -q 'parallel_blocked_tasks' rust-audit-contract/production/audit.rs
+          grep -q 'parallel_batch_duration_ms' rust-audit-contract/production/audit.rs
+          grep -q 'parallel_resource_peak_concurrency' rust-audit-contract/production/audit.rs
+          grep -q 'parallel_backend_distribution' rust-audit-contract/production/audit.rs
+          grep -q 'parallel_blocked_tasks' rust-audit-contract/production/artifact.rs
+          grep -q 'parallel_batch_duration_ms' rust-audit-contract/production/artifact.rs
+          grep -q 'parallel_resource_peak_concurrency' rust-audit-contract/production/artifact.rs
+          grep -q 'parallel_backend_distribution' rust-audit-contract/production/artifact.rs
+          echo "audit snapshot: $audit_sha"
+          echo "artifact snapshot: $artifact_sha"
+      - name: Build contract crate around production audit and artifact modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > rust-audit-contract/Cargo.toml <<'EOF'
+          [package]
+          name = "parallel-audit-contract"
+          version = "0.1.0"
+          edition = "2021"
+
+          [dependencies]
+          anyhow = "1.0"
+          chrono = { version = "0.4", features = ["serde"] }
+          serde = { version = "1.0", features = ["derive"] }
+          serde_json = "1.0"
+          EOF
+          cat > rust-audit-contract/src/lib.rs <<'EOF'
+          pub mod tool_registry {
+              pub fn capability_class(name: &str) -> Option<&'static str> {
+                  match name {
+                      "newsroom_update_plan" => Some("planning"),
+                      "duckdb_query" => Some("computation"),
+                      "fetch_url" => Some("discovery"),
+                      _ => None,
+                  }
+              }
+              pub fn is_capability_class(class: Option<&str>) -> bool {
+                  matches!(class, Some("discovery" | "computation" | "evidence" | "synthesis" | "visual" | "publication"))
+              }
+          }
+
+          pub mod hash {
+              use std::io::Result as IoResult;
+              use std::path::Path;
+              pub fn sha256_bytes(_data: &[u8]) -> String { "0".repeat(64) }
+              pub fn sha256_file(_path: &Path) -> IoResult<String> { Ok("0".repeat(64)) }
+          }
+
+          #[path = "../production/audit.rs"]
+          pub mod audit;
+          #[path = "../production/artifact.rs"]
+          pub mod artifact;
+          EOF
+      - name: Compile and run production Rust audit contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.98.1 cargo test --manifest-path rust-audit-contract/Cargo.toml --all-targets

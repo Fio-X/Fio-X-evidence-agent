@@ -1,0 +1,74 @@
+name: dependency-lock-bootstrap
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-lock-bootstrap-iteration-next
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  generate-runtime-locks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: iteration-next
+          fetch-depth: 1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.19.0'
+      - name: Require full runtime package sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f src/main.rs || { echo 'BLOCKED: T01 full source is not materialized' >&2; exit 64; }
+          test -s source-integrity.json || { echo 'BLOCKED: T02 source integrity manifest missing' >&2; exit 64; }
+          test -s ci-evidence/source-import-verification.json || { echo 'BLOCKED: T02 import receipt missing' >&2; exit 64; }
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+          for dir in runtime/web runtime/sigma runtime/map runtime/d3; do test -f "$dir/package.json"; done
+      - name: Generate real npm lockfiles without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in runtime/web runtime/sigma runtime/map runtime/d3; do
+            (cd "$dir" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
+            test -s "$dir/package-lock.json"
+          done
+      - name: Commit runtime lockfiles
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime/*/package-lock.json
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'runtime lockfiles already current'
+          else
+            git commit -m 'Add runtime npm locks for qualification'
+            git push origin HEAD:iteration-next
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify all qualification locks exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          for lock in Cargo.lock runtime/web/package-lock.json runtime/sigma/package-lock.json runtime/map/package-lock.json runtime/d3/package-lock.json; do
+            test -s "$lock" || { echo "missing dependency lock: $lock" >&2; exit 2; }
+            shasum -a 256 "$lock"
+          done
+      - name: Dispatch full release qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run full-release-qualification.yml --ref iteration-next
+          echo 'dispatched full-release-qualification on iteration-next without provider inputs'

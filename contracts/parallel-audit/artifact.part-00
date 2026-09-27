@@ -1,0 +1,201 @@
+use crate::audit::AuditSummary;
+use crate::hash::{sha256_bytes, sha256_file};
+use anyhow::{bail, Context, Result};
+use chrono::{SecondsFormat, Utc};
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct InvestigationBundle {
+    pub id: String,
+    pub dir: PathBuf,
+    pub prompt_path: PathBuf,
+    pub answer_path: PathBuf,
+    pub conversation_path: PathBuf,
+    pub events_path: PathBuf,
+    pub tools_path: PathBuf,
+    pub session_stats_path: PathBuf,
+    pub run_metrics_path: PathBuf,
+    pub plan_path: PathBuf,
+    pub claims_path: PathBuf,
+    pub manifest_path: PathBuf,
+    pub session_dir: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+struct Manifest<'a> {
+    schema_version: &'static str,
+    id: &'a str,
+    kind: &'static str,
+    created_at: String,
+    updated_at: String,
+    topic: &'a str,
+    status: &'a str,
+    runtime: Runtime<'a>,
+    files: Files,
+    autonomy: Autonomy,
+    evidence: Evidence,
+}
+
+#[derive(Debug, Serialize)]
+struct Runtime<'a> {
+    backend: &'static str,
+    provider: Option<&'a str>,
+    model: Option<&'a str>,
+    session_dir: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct Files {
+    prompt: &'static str,
+    latest_answer: &'static str,
+    conversation: &'static str,
+    events: &'static str,
+    tool_audit: &'static str,
+    session_stats: &'static str,
+    run_metrics: &'static str,
+    plan: &'static str,
+    claims: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct Autonomy {
+    persistent_session: bool,
+    session_resumed: bool,
+    multi_turn_context: bool,
+    observable_planning: bool,
+    agent_loop_observed: bool,
+    autonomous_execution_observed: bool,
+    adaptive_replanning_observed: bool,
+    tool_failure_recovery_observed: bool,
+    follow_up_replanning_observed: bool,
+    parallel_execution_observed: bool,
+    parallel_batches: usize,
+    parallel_tasks: usize,
+    failed_parallel_tasks: usize,
+    parallel_blocked_tasks: usize,
+    parallel_batch_duration_ms: u64,
+    max_observed_parallelism: usize,
+    parallel_resource_task_counts: BTreeMap<String, usize>,
+    parallel_resource_duration_ms: BTreeMap<String, u64>,
+    parallel_resource_peak_concurrency: BTreeMap<String, usize>,
+    parallel_backend_distribution: BTreeMap<String, usize>,
+    user_messages: usize,
+    turns: usize,
+    tool_calls: usize,
+    capability_tool_calls: usize,
+    successful_capability_tool_calls: usize,
+    distinct_tools: usize,
+    distinct_capability_classes: usize,
+    plan_revisions: usize,
+    successful_plan_calls: usize,
+    follow_up_goals: usize,
+    failed_tool_calls: usize,
+    automatic_retries: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct Evidence {
+    searches: Vec<String>,
+    sources: Vec<String>,
+    datasets: Vec<String>,
+    computations: Vec<String>,
+    claims: Vec<Value>,
+    visualizations: Vec<String>,
+    infographics: Vec<String>,
+}
+
+impl InvestigationBundle {
+    pub fn create(root: &Path, topic: &str) -> Result<Self> {
+        let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ").to_string();
+        let slug = slugify(topic);
+        let id = format!("{timestamp}-{slug}");
+        let dir = root.join(&id);
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create artifact directory: {}", dir.display()))?;
+        Self::from_dir(dir, id)
+    }
+
+    pub fn open(dir: &Path) -> Result<Self> {
+        if !dir.is_dir() {
+            bail!("investigation directory does not exist: {}", dir.display());
+        }
+        let manifest_path = dir.join("story.json");
+        if !manifest_path.is_file() {
+            bail!("missing story.json in {}", dir.display());
+        }
+        let manifest: Value = serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
+        let id = manifest
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| dir.file_name().and_then(|value| value.to_str()).map(str::to_owned))
+            .context("story.json has no id")?;
+        Self::from_dir(dir.to_path_buf(), id)
+    }
+
+    fn from_dir(dir: PathBuf, id: String) -> Result<Self> {
+        for child in ["session", "runtime", "searches", "sources", "data", "computations", "visualizations", "infographics"] {
+            fs::create_dir_all(dir.join(child)).with_context(|| {
+                format!("failed to create artifact subdirectory: {}", dir.join(child).display())
+            })?;
+        }
+
+        Ok(Self {
+            id,
+            prompt_path: dir.join("prompt.md"),
+            answer_path: dir.join("answer.md"),
+            conversation_path: dir.join("conversation.md"),
+            events_path: dir.join("events.jsonl"),
+            tools_path: dir.join("tools.json"),
+            session_stats_path: dir.join("session-stats.json"),
+            run_metrics_path: dir.join("run-metrics.jsonl"),
+            plan_path: dir.join("plan.json"),
+            claims_path: dir.join("claims.jsonl"),
+            manifest_path: dir.join("story.json"),
+            session_dir: dir.join("session"),
+            dir,
+        })
+    }
+
+    pub fn topic(&self) -> Result<String> {
+        let manifest: Value = serde_json::from_str(&fs::read_to_string(&self.manifest_path)?)?;
+        manifest
+            .get("topic")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .context("story.json has no topic")
+    }
+
+    pub fn import_data(&self, source: &Path) -> Result<String> {
+        if !source.is_file() {
+            bail!("local data file does not exist or is not a regular file: {}", source.display());
+        }
+        let original_name = source
+            .file_name()
+            .and_then(|value| value.to_str())
+            .context("local data filename is not valid UTF-8")?;
+        let safe_name: String = original_name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' })
+            .collect();
+        if safe_name.is_empty() || safe_name.starts_with('.') {
+            bail!("local data filename is not safe: {original_name}");
+        }
+        let extension = Path::new(&safe_name)
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !matches!(extension.as_str(), "csv" | "json" | "jsonl" | "ndjson" | "tsv" | "parquet") {
+            bail!("unsupported local data extension '.{extension}'; use CSV, JSON, JSONL, NDJSON, TSV, or Parquet");
+        }
+        let sha256 = sha256_file(source)
+            .with_context(|| format!("failed to hash local data {}", source.display()))?;
+        let stored_name = if extension.is_empty() { sha256.clone() } else { format!("{sha256}.{extension}") };
+        let relative_file = format!("data/{stored_name}");
+        let destination = self.dir.join(&relative

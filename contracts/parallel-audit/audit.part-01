@@ -1,0 +1,176 @@
+= active_parallel_tasks.saturating_sub(1);
+                let resource_class = event
+                    .get("resource_class")
+                    .or_else(|| event.get("resourceClass"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("default")
+                    .to_string();
+                let duration = event
+                    .get("duration_ms")
+                    .or_else(|| event.get("durationMs"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                *parallel_resource_duration_ms.entry(resource_class).or_insert(0) += duration;
+            }
+            Some("newsroom_task_blocked") => parallel_blocked_tasks += 1,
+            Some("newsroom_parallel_batch_end") => {
+                if let Some(value) = event
+                    .get("max_observed_parallelism")
+                    .or_else(|| event.get("maxObservedParallelism"))
+                    .and_then(Value::as_u64)
+                {
+                    max_observed_parallelism = max_observed_parallelism.max(value as usize);
+                }
+                parallel_batch_duration_ms += event
+                    .get("duration_ms")
+                    .or_else(|| event.get("durationMs"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+            }
+            Some("newsroom_user_goal") => {
+                if event.get("mode").and_then(Value::as_str) == Some("follow_up") {
+                    follow_up_goal_seqs.push(sequence);
+                }
+            }
+            Some("tool_execution_start") => {
+                let id = event
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let tool = event
+                    .get("toolName")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let args = event.get("args").cloned().unwrap_or(Value::Null);
+                starts.insert(id, (tool, args, sequence));
+            }
+            Some("tool_execution_end") => {
+                let id = event
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let (tool, args, start_seq) = starts
+                    .remove(&id)
+                    .unwrap_or_else(|| ("unknown".to_string(), Value::Null, sequence));
+                let class = capability_class(&tool);
+                calls.push(ToolCall {
+                    id,
+                    tool,
+                    args,
+                    is_error: event.get("isError").and_then(Value::as_bool),
+                    start_seq,
+                    end_seq: sequence,
+                    capability_class: class,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    for (id, (tool, args, start_seq)) in starts {
+        let class = capability_class(&tool);
+        calls.push(ToolCall {
+            id,
+            tool,
+            args,
+            is_error: None,
+            start_seq,
+            end_seq: sequence.saturating_add(1),
+            capability_class: class,
+        });
+    }
+    calls.sort_by_key(|call| (call.start_seq, call.end_seq));
+
+    let mut tools = BTreeMap::new();
+    let mut capability_classes = BTreeMap::new();
+    let mut failed = 0usize;
+    let mut plan_revisions = 0usize;
+    let mut successful_plan_calls = 0usize;
+    let mut capability_tool_calls = 0usize;
+    let mut successful_capability_tool_calls = 0usize;
+
+    for call in &calls {
+        *tools.entry(call.tool.clone()).or_insert(0usize) += 1;
+        if call.is_error == Some(true) {
+            failed += 1;
+        }
+        if call.tool == "newsroom_update_plan" {
+            plan_revisions += 1;
+            if call.is_error == Some(false) {
+                successful_plan_calls += 1;
+            }
+        }
+        if is_capability_class(call.capability_class) {
+            capability_tool_calls += 1;
+            if let Some(class) = call.capability_class {
+                *capability_classes.entry(class.to_string()).or_insert(0usize) += 1;
+            }
+            if call.is_error == Some(false) {
+                successful_capability_tool_calls += 1;
+            }
+        }
+    }
+
+    let successful_plans: Vec<&ToolCall> = calls
+        .iter()
+        .filter(|call| call.tool == "newsroom_update_plan" && call.is_error == Some(false))
+        .collect();
+    let successful_capabilities: Vec<&ToolCall> = calls
+        .iter()
+        .filter(|call| is_capability_class(call.capability_class) && call.is_error == Some(false))
+        .collect();
+
+    let autonomous_execution_observed = successful_plans.iter().any(|plan| {
+        successful_capabilities.iter().any(|capability| {
+            if capability.start_seq <= plan.end_seq {
+                return false;
+            }
+            let later_tool_decision = calls.iter().any(|next| next.start_seq > capability.end_seq);
+            let later_turn_decision = turn_end_seqs.iter().any(|seq| *seq > capability.end_seq);
+            later_tool_decision || later_turn_decision
+        })
+    });
+
+    let mut adaptive_replanning_observed = false;
+    let mut tool_failure_recovery_observed = false;
+    let mut follow_up_replanning_observed = false;
+    for (index, revision) in successful_plans.iter().enumerate().skip(1) {
+        let previous_plan_end = successful_plans[index - 1].end_seq;
+        let failed_since_previous_plan = calls.iter().any(|call| {
+            call.is_error == Some(true)
+                && call.end_seq > previous_plan_end
+                && call.end_seq < revision.start_seq
+        });
+        let follow_up_since_previous_plan = follow_up_goal_seqs
+            .iter()
+            .any(|seq| *seq > previous_plan_end && *seq < revision.start_seq);
+        let post_revision_action = successful_capabilities
+            .iter()
+            .any(|call| call.start_seq > revision.end_seq);
+        if post_revision_action && (failed_since_previous_plan || follow_up_since_previous_plan) {
+            adaptive_replanning_observed = true;
+        }
+        if post_revision_action && failed_since_previous_plan {
+            tool_failure_recovery_observed = true;
+        }
+        if post_revision_action && follow_up_since_previous_plan {
+            follow_up_replanning_observed = true;
+        }
+    }
+
+    let summary = AuditSummary {
+        schema_version: "0.8.0",
+        generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        turns,
+        tool_calls: calls.len(),
+        capability_tool_calls,
+        successful_capability_tool_calls,
+        failed_tool_calls: failed,
+        automatic_retries: retries,
+        plan_revisions,
+        successful_plan_calls,
+        follow_up_goals: follow_up_goal_seqs.len(),
+        distinct_capability_cla

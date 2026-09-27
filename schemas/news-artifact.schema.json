@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:news-artifact:0.7.0",
+  "title": "Agentic Data Newsroom Investigation Artifact",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "kind",
+    "created_at",
+    "updated_at",
+    "topic",
+    "status",
+    "runtime",
+    "files",
+    "autonomy",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.7.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "const": "investigation"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "incomplete",
+        "verified",
+        "published",
+        "failed"
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "backend",
+        "session_dir"
+      ],
+      "properties": {
+        "backend": {
+          "const": "pi-rpc"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_dir": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "object",
+      "required": [
+        "prompt",
+        "latest_answer",
+        "conversation",
+        "events",
+        "tool_audit",
+        "session_stats",
+        "plan",
+        "claims",
+        "run_metrics"
+      ],
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "latest_answer": {
+          "type": "string"
+        },
+        "conversation": {
+          "type": "string"
+        },
+        "events": {
+          "type": "string"
+        },
+        "tool_audit": {
+          "type": "string"
+        },
+        "session_stats": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "claims": {
+          "type": "string"
+        },
+        "run_metrics": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "autonomy": {
+      "type": "object",
+      "required": [
+        "persistent_session",
+        "multi_turn_context",
+        "observable_planning",
+        "agent_loop_observed",
+        "user_messages",
+        "turns",
+        "tool_calls",
+        "capability_tool_calls",
+        "distinct_tools",
+        "plan_revisions",
+        "failed_tool_calls",
+        "automatic_retries"
+      ],
+      "properties": {
+        "persistent_session": {
+          "type": "boolean"
+        },
+        "multi_turn_context": {
+          "type": "boolean"
+        },
+        "observable_planning": {
+          "type": "boolean"
+        },
+        "agent_loop_observed": {
+          "type": "boolean"
+        },
+        "user_messages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capability_tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "distinct_tools": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plan_revisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "automatic_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "session_resumed": {
+          "type": "boolean"
+        },
+        "autonomous_execution_observed": {
+          "type": "boolean"
+        },
+        "adaptive_replanning_observed": {
+          "type": "boolean"
+        },
+        "tool_failure_recovery_observed": {
+          "type": "boolean"
+        },
+        "successful_capability_tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "distinct_capability_classes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "successful_plan_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "follow_up_goals": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "follow_up_replanning_observed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "searches",
+        "sources",
+        "datasets",
+        "computations",
+        "claims",
+        "visualizations"
+      ],
+      "properties": {
+        "searches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "datasets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "computations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "visualizations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "infographics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

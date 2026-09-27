@@ -1,0 +1,18 @@
+[package]
+name = "agentic-data-newsroom"
+version = "1.13.0-rc1"
+edition = "2021"
+license = "MIT"
+description = "Rust CLI control plane for a Pi-powered agentic data newsroom"
+
+[[bin]]
+name = "news"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "signal", "time"] }

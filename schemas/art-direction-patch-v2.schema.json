@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/art-direction-patch-v2.schema.json",
+  "title": "Art Direction Patch v2",
+  "type": "object",
+  "required": ["schema_version", "patch_id", "story_id", "base_semantic_fingerprint", "base_design_system_hash", "operations"],
+  "properties": {
+    "schema_version": {"const": "2.0.0"},
+    "patch_id": {"type": "string", "minLength": 1},
+    "story_id": {"type": "string", "minLength": 1},
+    "backend": {"type": ["string","null"]},
+    "base_semantic_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "base_design_system_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "operations": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["target_id", "field", "value"],
+        "properties": {
+          "target_id": {"type": "string", "minLength": 1},
+          "field": {"enum": ["title_size","label_top_n","highlight_max","layout_margins","legend_position","label_offsets","visibility","line_breaks","composition"]},
+          "value": {},
+          "reason": {"type": ["string","null"]}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

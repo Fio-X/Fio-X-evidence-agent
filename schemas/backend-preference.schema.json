@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/backend-preference.schema.json",
+  "type": "object",
+  "required": [
+    "story_id",
+    "story_family",
+    "backend_a",
+    "backend_b",
+    "winner",
+    "confidence",
+    "reviewer_class",
+    "reviewer_id"
+  ],
+  "properties": {
+    "story_id": {
+      "type": "string"
+    },
+    "story_family": {
+      "type": "string"
+    },
+    "backend_a": {
+      "type": "string"
+    },
+    "backend_b": {
+      "type": "string"
+    },
+    "winner": {
+      "enum": [
+        "a",
+        "b",
+        "tie"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "reason_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reviewer_class": {
+      "enum": [
+        "qualified_human",
+        "editor",
+        "designer"
+      ]
+    },
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "additionalProperties": false
+}

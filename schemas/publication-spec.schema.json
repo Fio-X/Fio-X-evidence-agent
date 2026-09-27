@@ -1,0 +1,430 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:publication-spec:0.3.0",
+  "title": "Agentic Data Newsroom Publication Spec v0.3",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "title",
+    "dek",
+    "reader_question",
+    "visual_thesis",
+    "story_graph_ref",
+    "infographic_plan_ref",
+    "delivery",
+    "modules"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "0.1.0",
+        "0.2.0",
+        "0.3.0"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 180
+    },
+    "dek": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "reader_question": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 320
+    },
+    "visual_thesis": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 420
+    },
+    "story_graph_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "source_note": {
+      "type": "string",
+      "maxLength": 1200
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "mode",
+        "self_contained",
+        "static_fallback",
+        "breakpoints"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "html",
+            "scrollytelling",
+            "hybrid"
+          ]
+        },
+        "self_contained": {
+          "type": "boolean"
+        },
+        "static_fallback": {
+          "enum": [
+            "svg",
+            "png",
+            "svg_png"
+          ]
+        },
+        "breakpoints": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 320,
+            "maximum": 2560
+          }
+        },
+        "max_initial_bytes": {
+          "type": "integer",
+          "minimum": 100000,
+          "maximum": 20000000
+        },
+        "max_ready_ms": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 30000
+        },
+        "packaging": {
+          "enum": [
+            "archive",
+            "production"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "interaction": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "hover",
+              "focus",
+              "filter",
+              "select",
+              "linked_view",
+              "step",
+              "scroll"
+            ]
+          }
+        },
+        "replay": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/replayStep"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "infographic_plan_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "style_profile": {
+      "enum": [
+        "analytical_precision",
+        "systems_explainer",
+        "investigative_network",
+        "uncertainty_forecast",
+        "spatial_monitor",
+        "nature_scientific_map"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "replayStep": {
+      "type": "object",
+      "required": [
+        "action",
+        "target"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "click",
+            "hover",
+            "focus"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "expect_state": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "expect_module_id": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "expect_plotly_title": {
+          "type": "string",
+          "maxLength": 240
+        }
+      },
+      "additionalProperties": false
+    },
+    "module": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "story_node_ids",
+        "explanatory_dimension"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "maxLength": 80
+        },
+        "type": {
+          "enum": [
+            "plotly",
+            "d3",
+            "sigma",
+            "static_svg",
+            "stat",
+            "text",
+            "model"
+          ]
+        },
+        "engine": {
+          "enum": [
+            "plotly",
+            "d3",
+            "sigma",
+            "native_svg",
+            "static",
+            "native_canvas"
+          ]
+        },
+        "visual_type": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "dek": {
+          "type": "string",
+          "maxLength": 320
+        },
+        "story_node_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "claim_ids": {
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "explanatory_dimension": {
+          "enum": [
+            "trend",
+            "rank",
+            "spatial",
+            "mechanism",
+            "comparison",
+            "distribution",
+            "uncertainty",
+            "human_scale",
+            "method",
+            "context",
+            "outcome",
+            "flow",
+            "network",
+            "hierarchy",
+            "model"
+          ]
+        },
+        "width": {
+          "enum": [
+            "full",
+            "wide",
+            "half",
+            "third"
+          ]
+        },
+        "spec": {
+          "type": "object"
+        },
+        "fallback_svg": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "value": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "interaction_purpose": {
+          "type": "string",
+          "maxLength": 320
+        },
+        "model_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "view_spec": {
+          "type": "object"
+        },
+        "analysis_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "map_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "asset_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "evidence_binding": {
+          "$ref": "#/$defs/evidenceBinding"
+        },
+        "accessibility": {
+          "$ref": "#/$defs/accessibility"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceBinding": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ref",
+        "result_hash"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "computation",
+            "analysis",
+            "map",
+            "model",
+            "asset"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "result_hash": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "field_mapping": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "accessibility": {
+      "type": "object",
+      "required": [
+        "summary",
+        "long_description"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 240
+        },
+        "long_description": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 2000
+        },
+        "data_table_ref": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "keyboard_navigation": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "enum": [
+              "0.2.0",
+              "0.3.0"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "style_profile"
+        ]
+      }
+    }
+  ]
+}

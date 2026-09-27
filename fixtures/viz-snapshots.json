@@ -1,0 +1,14 @@
+{
+  "dumbbell": {
+    "desktop": "9686186ef9cc6314dccef78ca94ebbbd9a37cac07b79eca9b45797c7c7328956",
+    "mobile": "8816f7b3b4c3bbaa03c5e2efaf64de7445b8863f35d3fb85be8e38b00876e080"
+  },
+  "multi_line": {
+    "desktop": "a6f0e715d2898dde5d8ef9f835d35852544ae68a71b69d535e22f6006bbcc747",
+    "mobile": "a4bbbb46238daba27c39fb3f86d95a6c2d44e7813be451c56cf4f22ceee1342e"
+  },
+  "heatmap": {
+    "desktop": "f188ce1b57ff8f6fa2a286f93fdb9e76dd13a87dbd8673be4cc212f20eabadf7",
+    "mobile": "b23571781184a36ffb3a63ad19e9aef211e15d0546eedbbc93d258d8555c76c7"
+  }
+}

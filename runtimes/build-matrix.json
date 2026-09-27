@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.1.0",
+  "runtimes": {
+    "viz-python": {
+      "definition": "runtimes/viz-python/Dockerfile",
+      "image": "adn/viz-python:1.26.0"
+    },
+    "viz-r": {
+      "definition": "runtimes/viz-r/Dockerfile",
+      "image": "adn/viz-r:1.26.0"
+    },
+    "viz-qgis": {
+      "definition": "runtimes/viz-qgis/Dockerfile",
+      "image": "adn/viz-qgis:1.26.0"
+    },
+    "viz-pygmt": {
+      "definition": "runtimes/viz-pygmt/Dockerfile",
+      "image": "adn/viz-pygmt:1.26.0"
+    },
+    "viz-density": {
+      "definition": "runtimes/viz-density/Dockerfile",
+      "image": "adn/viz-density:1.26.0"
+    },
+    "viz-web": {
+      "definition": "runtimes/viz-web/Dockerfile",
+      "image": "adn/viz-web:1.26.0"
+    },
+    "viz-graph-extract": {
+      "definition": "runtimes/viz-graph-extract/Dockerfile",
+      "image": "adn/viz-graph-extract:1.26.0"
+    },
+    "viz-sigma": {
+      "definition": "runtimes/viz-sigma/Dockerfile",
+      "image": "adn/viz-sigma:1.12.0-rc1"
+    },
+    "viz-map": {
+      "definition": "runtimes/viz-map/Dockerfile",
+      "image": "adn/viz-map:1.12.0-rc1"
+    },
+    "viz-d3": {
+      "definition": "runtimes/viz-d3/Dockerfile",
+      "image": "adn/viz-d3:1.12.0-rc1"
+    }
+  },
+  "policy": {
+    "production_install_during_request": false,
+    "pin_image_digest_after_ci_build": true,
+    "require_health_probe_before_enable": true,
+    "promotion_requires_digest_lock": true,
+    "runtime_lock_schema": "runtimes/runtime-lock.schema.json"
+  }
+}

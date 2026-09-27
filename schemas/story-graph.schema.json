@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:story-graph:0.1.0",
+  "title": "Agentic Data Newsroom StoryGraph v0.1",
+  "type": "object",
+  "required": ["schema_version","story_id","reader_question","visual_thesis","nodes","edges","entry_node_ids","answer_node_ids"],
+  "properties": {
+    "schema_version": {"const":"0.1.0"},
+    "story_id": {"type":"string","minLength":1,"maxLength":100},
+    "reader_question": {"type":"string","minLength":8,"maxLength":320},
+    "visual_thesis": {"type":"string","minLength":8,"maxLength":420},
+    "nodes": {"type":"array","minItems":3,"maxItems":24,"items":{"$ref":"#/$defs/node"}},
+    "edges": {"type":"array","minItems":2,"maxItems":48,"items":{"$ref":"#/$defs/edge"}},
+    "entry_node_ids": {"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "answer_node_ids": {"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type":"object",
+      "required":["id","kind","summary","explanatory_dimension"],
+      "properties":{
+        "id":{"type":"string","minLength":1,"maxLength":80},
+        "kind":{"enum":["evidence","claim","mechanism","context","outcome","uncertainty"]},
+        "summary":{"type":"string","minLength":1,"maxLength":420},
+        "explanatory_dimension":{"enum":["trend","rank","spatial","mechanism","comparison","distribution","uncertainty","human_scale","method","context","outcome"]},
+        "claim_ids":{"type":"array","uniqueItems":true,"maxItems":20,"items":{"type":"string","minLength":1}},
+        "evidence_refs":{"type":"array","uniqueItems":true,"maxItems":20,"items":{"type":"string","minLength":1}},
+        "module_hint":{"type":"string","maxLength":120}
+      },
+      "additionalProperties":false
+    },
+    "edge": {
+      "type":"object",
+      "required":["from","to","relation"],
+      "properties":{
+        "from":{"type":"string","minLength":1},
+        "to":{"type":"string","minLength":1},
+        "relation":{"enum":["supports","causes","contributes_to","explains","contrasts_with","qualifies","locates","precedes","benchmarks"]},
+        "note":{"type":"string","maxLength":280}
+      },
+      "additionalProperties":false
+    }
+  }
+}

@@ -1,0 +1,12 @@
+source,target,quadrillion_btu
+Petroleum,U.S. primary energy,35.3
+Natural gas,U.S. primary energy,34.2
+Renewable energy,U.S. primary energy,8.6
+Nuclear,U.S. primary energy,8.2
+Coal,U.S. primary energy,7.9
+U.S. primary energy,End-use sectors,74.9
+U.S. primary energy,Electrical system energy losses,19.3
+End-use sectors,Transportation,28.1
+End-use sectors,Industrial,26.1
+End-use sectors,Residential,11.2
+End-use sectors,Commercial,9.5

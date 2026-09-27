@@ -1,0 +1,4065 @@
+{
+  "schema_version": "1.0.0",
+  "status": "qualification_corpus_v1",
+  "target_case_count": 32,
+  "cases": [
+    {
+      "id": "syros_ais_local",
+      "story_family": "maritime_trajectory",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "qgis_cartography"
+      ],
+      "source_ref": "fixtures/v16-movement/ais-syros-sampled.json",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "geography",
+        "artifact_mode": "static_editorial",
+        "story_family": "maritime_trajectory",
+        "data_profile": {
+          "mark_count": 15,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": true,
+          "scale": "local",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 2,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": true,
+          "scale_bar": true
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:syros:observed-track"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v16-movement/ais-syros-sampled.json",
+          "runtime/gis/assets/syros-upstream-shoreline-excerpt.geojson",
+          "runtime/pi/assets/gshhs-i-syros-local.geojson"
+        ],
+        "claim_ids": [
+          "claim:syros:observed-track"
+        ],
+        "semantics": {
+          "geometry": "observed_trajectory",
+          "gap_policy": "elapsed_gap>=1800_or_segment_change",
+          "speed_field": "ground_speed_kt",
+          "crs_policy": "local_metric",
+          "context": [
+            "local_shoreline",
+            "island_locator"
+          ]
+        },
+        "source_ledger": {
+          "track": "ITSLab-UAegean vesseltrack-tools AIS sample"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "track": "fixtures/v16-movement/ais-syros-sampled.json",
+            "shoreline": "runtime/gis/assets/syros-upstream-shoreline-excerpt.geojson",
+            "island": "runtime/pi/assets/gshhs-i-syros-local.geojson"
+          },
+          "options": {
+            "svg_filename": "figure.svg",
+            "png_filename": "figure.png"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "track": "fixtures/v16-movement/ais-syros-sampled.json",
+            "shoreline": "runtime/gis/assets/syros-upstream-shoreline-excerpt.geojson"
+          },
+          "options": {
+            "filename": "figure.svg"
+          }
+        },
+        "qgis_cartography": {
+          "inputs": {
+            "track": "fixtures/v16-movement/ais-syros-sampled.json",
+            "shoreline": "runtime/gis/assets/syros-upstream-shoreline-excerpt.geojson",
+            "island": "runtime/pi/assets/gshhs-i-syros-local.geojson"
+          },
+          "options": {
+            "renderer": "trajectory_map",
+            "map_scale": "local",
+            "crs": "EPSG:32635",
+            "filename": "figure.svg",
+            "title": "A slow harbour manoeuvre, reconstructed from AIS fixes",
+            "subtitle": "Syros, Greece · observed positions only",
+            "source_note": "Source: ITSLab-UAegean/vesseltrack-tools",
+            "scale_bar": true,
+            "scale_segment_m": 250
+          }
+        }
+      }
+    },
+    {
+      "id": "dal1812_flight",
+      "story_family": "flight_route",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "qgis_cartography"
+      ],
+      "source_ref": "fixtures/v16-movement/adsb-dal1812-sampled.json",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "geography",
+        "artifact_mode": "static_editorial",
+        "story_family": "flight_route",
+        "data_profile": {
+          "mark_count": 14,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": true,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 2,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": true,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:dal1812:observed-route"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v16-movement/adsb-dal1812-sampled.json",
+          "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+        ],
+        "claim_ids": [
+          "claim:dal1812:observed-route"
+        ],
+        "semantics": {
+          "geometry": "observed_trajectory",
+          "gap_policy": "segment_change_unjoined",
+          "speed_field": "ground_speed_kt",
+          "profile_field": "altitude_ft",
+          "crs_policy": "regional_metric"
+        },
+        "source_ledger": {
+          "track": "xoolive/traffic readsb sample",
+          "basemap": "Natural Earth lowres"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "track": "fixtures/v16-movement/adsb-dal1812-sampled.json",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "trajectory_map",
+            "title": "Delta 1812 descends across the central United States",
+            "subtitle": "Selected ADS-B fixes from a Belize-to-Minneapolis flight; segment breaks remain unjoined",
+            "color_field": "ground_speed_kt",
+            "color_label": "sampled ground speed · knots",
+            "profile_field": "altitude_ft",
+            "profile_label": "altitude · ft",
+            "source_note": "Source: xoolive/traffic readsb sample; basemap: Natural Earth"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "track": "fixtures/v16-movement/adsb-dal1812-sampled.json",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "trajectory_map",
+            "title": "Delta 1812 descends across the central United States",
+            "subtitle": "Selected ADS-B fixes from a Belize-to-Minneapolis flight; segment breaks remain unjoined",
+            "color_field": "ground_speed_kt",
+            "color_label": "sampled ground speed · knots",
+            "profile_field": "altitude_ft",
+            "profile_label": "altitude · ft",
+            "source_note": "Source: xoolive/traffic readsb sample; basemap: Natural Earth"
+          }
+        },
+        "qgis_cartography": {
+          "inputs": {
+            "track": "fixtures/v16-movement/adsb-dal1812-sampled.json",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "trajectory_map",
+            "title": "Delta 1812 descends across the central United States",
+            "subtitle": "Selected ADS-B fixes from a Belize-to-Minneapolis flight; segment breaks remain unjoined",
+            "color_field": "ground_speed_kt",
+            "color_label": "sampled ground speed · knots",
+            "profile_field": "altitude_ft",
+            "profile_label": "altitude · ft",
+            "source_note": "Source: xoolive/traffic readsb sample; basemap: Natural Earth",
+            "crs": "EPSG:5070",
+            "filename": "figure.svg",
+            "scale_bar": false
+          }
+        }
+      }
+    },
+    {
+      "id": "eia_energy_flow",
+      "story_family": "energy_flow",
+      "candidate_backends": [
+        "echarts_editorial",
+        "r_editorial"
+      ],
+      "source_ref": "fixtures/realdata/eia-us-energy-flow-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "flow",
+        "artifact_mode": "static_editorial",
+        "story_family": "energy_flow",
+        "data_profile": {
+          "mark_count": 11,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 8,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:eia:energy-flow-2024"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/eia-us-energy-flow-2024.csv"
+        ],
+        "claim_ids": [
+          "claim:eia:energy-flow-2024"
+        ],
+        "semantics": {
+          "geometry": "directed_weighted_flow",
+          "source_field": "source",
+          "target_field": "target",
+          "value_field": "quadrillion_btu",
+          "unit": "quadrillion Btu"
+        },
+        "source_ledger": {
+          "dataset": "U.S. EIA 2024 energy flow fixture"
+        }
+      },
+      "render_requests": {
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/eia-us-energy-flow-2024.csv"
+          },
+          "options": {
+            "chart_type": "sankey",
+            "source_field": "source",
+            "target_field": "target",
+            "value_field": "quadrillion_btu",
+            "title": "Follow 94.2 quads from source to use",
+            "subtitle": "Primary energy, end-use sectors and electrical-system losses, 2024",
+            "source_note": "Source: U.S. Energy Information Administration, Monthly Energy Review, 2024 energy flow",
+            "y_label": "Quadrillion Btu"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/eia-us-energy-flow-2024.csv"
+          },
+          "options": {
+            "renderer": "energy_flow",
+            "source_field": "source",
+            "target_field": "target",
+            "value_field": "quadrillion_btu",
+            "title": "Follow 94.2 quads from source to use",
+            "subtitle": "Primary energy, end-use sectors and electrical-system losses, 2024",
+            "source_note": "Source: U.S. Energy Information Administration, Monthly Energy Review, 2024 energy flow",
+            "y_label": "Quadrillion Btu",
+            "filename": "figure.svg"
+          }
+        }
+      }
+    },
+    {
+      "id": "nasa_climate_trend",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "time_change",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 46,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": true
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 1,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:nasa:annual-warming"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+          "fixtures/realdata/nasa-gistemp-source.json"
+        ],
+        "claim_ids": [
+          "claim:nasa:annual-warming"
+        ],
+        "semantics": {
+          "chart": "line",
+          "x": "year",
+          "y": "anomaly_c",
+          "unit": "degC anomaly"
+        },
+        "source_ledger": {
+          "dataset": "NASA GISTEMP"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/nasa-gistemp-1980-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "line",
+            "title": "Global temperature anomaly has climbed markedly since 1980",
+            "subtitle": "Annual anomaly relative to NASA GISTEMP baseline",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "x_field": "year",
+            "y_field": "anomaly_c",
+            "x_label": "Year",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/nasa-gistemp-1980-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "line",
+            "title": "Global temperature anomaly has climbed markedly since 1980",
+            "subtitle": "Annual anomaly relative to NASA GISTEMP baseline",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "x_field": "year",
+            "y_field": "anomaly_c",
+            "x_label": "Year",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/nasa-gistemp-1980-2025.csv"
+          },
+          "options": {
+            "chart_type": "line",
+            "title": "Global temperature anomaly has climbed markedly since 1980",
+            "subtitle": "Annual anomaly relative to NASA GISTEMP baseline",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "x_field": "year",
+            "y_field": "anomaly_c",
+            "x_label": "Year",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        }
+      }
+    },
+    {
+      "id": "world_bank_renewable",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/world-bank-renewable-latest.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 11,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 11,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:worldbank:renewable-ranking"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/world-bank-renewable-latest.csv"
+        ],
+        "claim_ids": [
+          "claim:worldbank:renewable-ranking"
+        ],
+        "semantics": {
+          "chart": "bar",
+          "category": "country",
+          "value": "renewable_energy_consumption_pct",
+          "unit": "percent",
+          "label": "year"
+        },
+        "source_ledger": {
+          "dataset": "World Bank renewable-energy fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/world-bank-renewable-latest.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewables dominate final energy use in several surveyed economies",
+            "subtitle": "Latest available year varies by country; year is shown beside each value",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "renewable_energy_consumption_pct",
+            "label_field": "year",
+            "x_label": "Renewable energy consumption (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/world-bank-renewable-latest.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewables dominate final energy use in several surveyed economies",
+            "subtitle": "Latest available year varies by country; year is shown beside each value",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "renewable_energy_consumption_pct",
+            "label_field": "year",
+            "x_label": "Renewable energy consumption (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/world-bank-renewable-latest.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Renewables dominate final energy use in several surveyed economies",
+            "subtitle": "Latest available year varies by country; year is shown beside each value",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "renewable_energy_consumption_pct",
+            "label_field": "year",
+            "x_label": "Renewable energy consumption (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "complex_network_fixture",
+      "story_family": "static_network",
+      "candidate_backends": [
+        "ggraph_static",
+        "adjacency_matrix"
+      ],
+      "source_ref": "fixtures/complex/node-link.json",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "network",
+        "artifact_mode": "static_editorial",
+        "story_family": "static_network",
+        "data_profile": {
+          "mark_count": 12,
+          "node_count": 8,
+          "edge_count": 12,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": true,
+          "spatial": false,
+          "directed": true,
+          "weighted": true,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 8,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:network:topology"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/complex/node-link.json"
+        ],
+        "claim_ids": [
+          "claim:network:topology"
+        ],
+        "semantics": {
+          "graph": "directed_weighted",
+          "source": "source",
+          "target": "target",
+          "weight": "value"
+        },
+        "source_ledger": {
+          "dataset": "ADN synthetic topology regression fixture"
+        }
+      },
+      "render_requests": {
+        "ggraph_static": {
+          "inputs": {
+            "table": "fixtures/complex/node-link.json"
+          },
+          "options": {
+            "source_field": "source",
+            "target_field": "target",
+            "value_field": "value",
+            "title": "A newsroom relationship network",
+            "source_note": "Synthetic topology regression fixture"
+          }
+        },
+        "adjacency_matrix": {
+          "inputs": {
+            "table": "fixtures/complex/node-link.json"
+          },
+          "options": {
+            "source_field": "source",
+            "target_field": "target",
+            "value_field": "value",
+            "title": "The same newsroom relationships as a matrix",
+            "source_note": "Synthetic topology regression fixture",
+            "unit": "relationship weight"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_renewable_change",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-renewables-2021-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 0,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:renewable-change"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-renewables-2021-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:renewable-change"
+        ],
+        "semantics": {
+          "chart": "bar",
+          "category_field": "country",
+          "value_field": "change_pp"
+        },
+        "source_ledger": {
+          "dataset": "Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-renewables-2021-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewable electricity shares moved unevenly from 2021 to 2025",
+            "subtitle": "Percentage-point change among selected economies",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "change_pp",
+            "x_label": "Change in renewable electricity share (pp)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-renewables-2021-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewable electricity shares moved unevenly from 2021 to 2025",
+            "subtitle": "Percentage-point change among selected economies",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "change_pp",
+            "x_label": "Change in renewable electricity share (pp)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-renewables-2021-2025.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Renewable electricity shares moved unevenly from 2021 to 2025",
+            "subtitle": "Percentage-point change among selected economies",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "change_pp",
+            "x_label": "Change in renewable electricity share (pp)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_renewable_2025",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-renewables-2021-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 0,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:renewable-2025"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-renewables-2021-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:renewable-2025"
+        ],
+        "semantics": {
+          "chart": "bar",
+          "category_field": "country",
+          "value_field": "renewables_2025"
+        },
+        "source_ledger": {
+          "dataset": "Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-renewables-2021-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewable electricity shares vary widely in 2025",
+            "subtitle": "Selected economies in the benchmark fixture",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_2025",
+            "x_label": "Renewable electricity share (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-renewables-2021-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewable electricity shares vary widely in 2025",
+            "subtitle": "Selected economies in the benchmark fixture",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_2025",
+            "x_label": "Renewable electricity share (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-renewables-2021-2025.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Renewable electricity shares vary widely in 2025",
+            "subtitle": "Selected economies in the benchmark fixture",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_2025",
+            "x_label": "Renewable electricity share (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_solar_vs_renewables",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-solar-renewables-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "distribution",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 11,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 11,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:solar-renewables"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-solar-renewables-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:solar-renewables"
+        ],
+        "semantics": {
+          "chart": "scatter",
+          "x_field": "renewables_share",
+          "y_field": "solar_share",
+          "label_field": "country"
+        },
+        "source_ledger": {
+          "dataset": "Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-solar-renewables-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "scatter",
+            "title": "High renewable shares do not imply the same solar mix",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "x_field": "renewables_share",
+            "y_field": "solar_share",
+            "label_field": "country",
+            "x_label": "Renewables share (%)",
+            "y_label": "Solar share (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-solar-renewables-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "scatter",
+            "title": "High renewable shares do not imply the same solar mix",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "x_field": "renewables_share",
+            "y_field": "solar_share",
+            "label_field": "country",
+            "x_label": "Renewables share (%)",
+            "y_label": "Solar share (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/owid-solar-renewables-2025.csv"
+          },
+          "options": {
+            "chart_type": "scatter",
+            "title": "High renewable shares do not imply the same solar mix",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "x_field": "renewables_share",
+            "y_field": "solar_share",
+            "label_field": "country",
+            "x_label": "Renewables share (%)",
+            "y_label": "Solar share (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "worldbank_gdp_life",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/worldbank-gdp-life-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "distribution",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 12,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 12,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:worldbank:gdp-life"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/worldbank-gdp-life-2024.csv"
+        ],
+        "claim_ids": [
+          "claim:worldbank:gdp-life"
+        ],
+        "semantics": {
+          "chart": "scatter",
+          "x_field": "gdp_per_capita_usd",
+          "y_field": "life_expectancy_years",
+          "label_field": "country",
+          "x_scale": "log"
+        },
+        "source_ledger": {
+          "dataset": "World Bank fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "scatter",
+            "title": "Income and longevity remain related, with important exceptions",
+            "subtitle": "Selected economies, 2024",
+            "source_note": "Source: World Bank fixture",
+            "x_field": "gdp_per_capita_usd",
+            "y_field": "life_expectancy_years",
+            "label_field": "country",
+            "x_scale": "log",
+            "x_label": "GDP per capita (USD, log scale)",
+            "y_label": "Life expectancy (years)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "scatter",
+            "title": "Income and longevity remain related, with important exceptions",
+            "subtitle": "Selected economies, 2024",
+            "source_note": "Source: World Bank fixture",
+            "x_field": "gdp_per_capita_usd",
+            "y_field": "life_expectancy_years",
+            "label_field": "country",
+            "x_scale": "log",
+            "x_label": "GDP per capita (USD, log scale)",
+            "y_label": "Life expectancy (years)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "chart_type": "scatter",
+            "title": "Income and longevity remain related, with important exceptions",
+            "subtitle": "Selected economies, 2024",
+            "source_note": "Source: World Bank fixture",
+            "x_field": "gdp_per_capita_usd",
+            "y_field": "life_expectancy_years",
+            "label_field": "country",
+            "x_scale": "log",
+            "x_label": "GDP per capita (USD, log scale)",
+            "y_label": "Life expectancy (years)"
+          }
+        }
+      }
+    },
+    {
+      "id": "worldbank_gdp_rank",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/worldbank-gdp-life-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 12,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 0,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:worldbank:gdp-rank"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/worldbank-gdp-life-2024.csv"
+        ],
+        "claim_ids": [
+          "claim:worldbank:gdp-rank"
+        ],
+        "semantics": {
+          "chart": "bar",
+          "category_field": "country",
+          "value_field": "gdp_per_capita_usd"
+        },
+        "source_ledger": {
+          "dataset": "World Bank fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Income per person differs sharply across the selected economies",
+            "subtitle": "GDP per capita, 2024",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "gdp_per_capita_usd",
+            "x_label": "GDP per capita (USD)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Income per person differs sharply across the selected economies",
+            "subtitle": "GDP per capita, 2024",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "gdp_per_capita_usd",
+            "x_label": "GDP per capita (USD)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Income per person differs sharply across the selected economies",
+            "subtitle": "GDP per capita, 2024",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "gdp_per_capita_usd",
+            "x_label": "GDP per capita (USD)"
+          }
+        }
+      }
+    },
+    {
+      "id": "worldbank_life_rank",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/worldbank-gdp-life-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 12,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "regional",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 0,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:worldbank:life-rank"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/worldbank-gdp-life-2024.csv"
+        ],
+        "claim_ids": [
+          "claim:worldbank:life-rank"
+        ],
+        "semantics": {
+          "chart": "bar",
+          "category_field": "country",
+          "value_field": "life_expectancy_years"
+        },
+        "source_ledger": {
+          "dataset": "World Bank fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Life expectancy spans a wide range across the selected economies",
+            "subtitle": "Life expectancy at birth, 2024",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "life_expectancy_years",
+            "x_label": "Life expectancy (years)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Life expectancy spans a wide range across the selected economies",
+            "subtitle": "Life expectancy at birth, 2024",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "life_expectancy_years",
+            "x_label": "Life expectancy (years)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/realdata/worldbank-gdp-life-2024.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Life expectancy spans a wide range across the selected economies",
+            "subtitle": "Life expectancy at birth, 2024",
+            "source_note": "Source: World Bank fixture",
+            "category_field": "country",
+            "value_field": "life_expectancy_years",
+            "x_label": "Life expectancy (years)"
+          }
+        }
+      }
+    },
+    {
+      "id": "eia_crude_imports_flow",
+      "story_family": "global_flow",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "flow",
+        "artifact_mode": "static_editorial",
+        "story_family": "global_flow",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": true,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 7,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": true,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:eia:crude-imports"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+          "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+        ],
+        "claim_ids": [
+          "claim:eia:crude-imports"
+        ],
+        "semantics": {
+          "geometry": "geodesic_origin_destination",
+          "value_field": "thousand_bpd",
+          "direction": "source_to_target",
+          "projection_policy": "equal_area"
+        },
+        "source_ledger": {
+          "dataset": "U.S. Energy Information Administration fixture",
+          "basemap": "Natural Earth lowres"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "flow_map",
+            "source_field": "country",
+            "target_field": "target",
+            "value_field": "thousand_bpd",
+            "source_lon_field": "source_lon",
+            "source_lat_field": "source_lat",
+            "target_lon_field": "target_lon",
+            "target_lat_field": "target_lat",
+            "crs": "EPSG:8857",
+            "label_top_n": 6,
+            "title": "U.S. crude imports remain dominated by Canada",
+            "subtitle": "Average crude-oil imports by source country, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "flow_map",
+            "source_field": "country",
+            "target_field": "target",
+            "value_field": "thousand_bpd",
+            "source_lon_field": "source_lon",
+            "source_lat_field": "source_lat",
+            "target_lon_field": "target_lon",
+            "target_lat_field": "target_lat",
+            "crs": "EPSG:8857",
+            "label_top_n": 6,
+            "title": "U.S. crude imports remain dominated by Canada",
+            "subtitle": "Average crude-oil imports by source country, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture",
+            "filename": "figure.svg"
+          }
+        }
+      }
+    },
+    {
+      "id": "worldbank_remittance_corridors",
+      "story_family": "global_flow",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial"
+      ],
+      "source_ref": "fixtures/v15-cartographic-flow/world-bank-remittance-corridors-2021.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "CORPUS_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "flow",
+        "artifact_mode": "static_editorial",
+        "story_family": "global_flow",
+        "data_profile": {
+          "mark_count": 4,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": true,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 5,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": true,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:worldbank:remittance-corridors"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v15-cartographic-flow/world-bank-remittance-corridors-2021.csv",
+          "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+        ],
+        "claim_ids": [
+          "claim:worldbank:remittance-corridors"
+        ],
+        "semantics": {
+          "geometry": "geodesic_origin_destination",
+          "value_field": "usd_billion",
+          "direction": "source_to_target",
+          "projection_policy": "equal_area"
+        },
+        "source_ledger": {
+          "dataset": "World Bank bilateral remittance fixture",
+          "basemap": "Natural Earth lowres"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/v15-cartographic-flow/world-bank-remittance-corridors-2021.csv",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "flow_map",
+            "source_field": "source",
+            "target_field": "target",
+            "value_field": "usd_billion",
+            "source_lon_field": "source_lon",
+            "source_lat_field": "source_lat",
+            "target_lon_field": "target_lon",
+            "target_lat_field": "target_lat",
+            "crs": "EPSG:8857",
+            "label_top_n": 6,
+            "title": "A handful of corridors carry very large remittance flows",
+            "subtitle": "Selected bilateral remittance corridors, 2021",
+            "source_note": "Source: World Bank bilateral remittance fixture"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/v15-cartographic-flow/world-bank-remittance-corridors-2021.csv",
+            "basemap": "fixtures/external/naturalearth_lowres/naturalearth_lowres.shp"
+          },
+          "options": {
+            "renderer": "flow_map",
+            "source_field": "source",
+            "target_field": "target",
+            "value_field": "usd_billion",
+            "source_lon_field": "source_lon",
+            "source_lat_field": "source_lat",
+            "target_lon_field": "target_lon",
+            "target_lat_field": "target_lat",
+            "crs": "EPSG:8857",
+            "label_top_n": 6,
+            "title": "A handful of corridors carry very large remittance flows",
+            "subtitle": "Selected bilateral remittance corridors, 2021",
+            "source_note": "Source: World Bank bilateral remittance fixture",
+            "filename": "figure.svg"
+          }
+        }
+      }
+    },
+    {
+      "id": "nasa_hottest_years",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 10,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 10,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:nasa:hottest-years"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+          "fixtures/benchmarks/v2/data/nasa-hottest-10.csv"
+        ],
+        "claim_ids": [
+          "claim:nasa:hottest-years"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "annual_temperature_anomaly",
+          "selection": "top_10_by_anomaly"
+        },
+        "source_ledger": {
+          "source": "Source: NASA GISTEMP fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-hottest-10.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "The warmest years in the series cluster near the present",
+            "subtitle": "Top 10 annual global temperature anomalies in the benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "category_field": "year",
+            "value_field": "anomaly_c",
+            "x_label": "Temperature anomaly (°C)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-hottest-10.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "The warmest years in the series cluster near the present",
+            "subtitle": "Top 10 annual global temperature anomalies in the benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "category_field": "year",
+            "value_field": "anomaly_c",
+            "x_label": "Temperature anomaly (°C)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-hottest-10.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "The warmest years in the series cluster near the present",
+            "subtitle": "Top 10 annual global temperature anomalies in the benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "category_field": "year",
+            "value_field": "anomaly_c",
+            "x_label": "Temperature anomaly (°C)"
+          }
+        }
+      }
+    },
+    {
+      "id": "nasa_decade_means",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "time_change",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 5,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": true
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 5,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:nasa:decade-means"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+          "fixtures/benchmarks/v2/data/nasa-decade-means.csv"
+        ],
+        "claim_ids": [
+          "claim:nasa:decade-means"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "decadal_mean_temperature_anomaly",
+          "aggregation": "mean_by_decade"
+        },
+        "source_ledger": {
+          "source": "Source: NASA GISTEMP fixture; ADN deterministic decade aggregation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-decade-means.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Average temperature anomaly rises across successive decades",
+            "subtitle": "Decadal means derived from the annual NASA benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP fixture; ADN deterministic decade aggregation",
+            "category_field": "decade",
+            "value_field": "anomaly_c",
+            "x_label": "Mean temperature anomaly (°C)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-decade-means.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Average temperature anomaly rises across successive decades",
+            "subtitle": "Decadal means derived from the annual NASA benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP fixture; ADN deterministic decade aggregation",
+            "category_field": "decade",
+            "value_field": "anomaly_c",
+            "x_label": "Mean temperature anomaly (°C)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-decade-means.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Average temperature anomaly rises across successive decades",
+            "subtitle": "Decadal means derived from the annual NASA benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP fixture; ADN deterministic decade aggregation",
+            "category_field": "decade",
+            "value_field": "anomaly_c",
+            "x_label": "Mean temperature anomaly (°C)"
+          }
+        }
+      }
+    },
+    {
+      "id": "nasa_recent_trend",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "time_change",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 26,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": true
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 12,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:nasa:recent-trend"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/nasa-gistemp-1980-2025.csv",
+          "fixtures/benchmarks/v2/data/nasa-2000-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:nasa:recent-trend"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "annual_temperature_anomaly",
+          "window": "2000-2025"
+        },
+        "source_ledger": {
+          "source": "Source: NASA GISTEMP fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-2000-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "line",
+            "title": "The recent warming trend is visible across the 21st century",
+            "subtitle": "Annual global temperature anomaly, 2000 to 2025",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "x_field": "year",
+            "y_field": "anomaly_c",
+            "x_label": "Year",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-2000-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "line",
+            "title": "The recent warming trend is visible across the 21st century",
+            "subtitle": "Annual global temperature anomaly, 2000 to 2025",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "x_field": "year",
+            "y_field": "anomaly_c",
+            "x_label": "Year",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-2000-2025.csv"
+          },
+          "options": {
+            "chart_type": "line",
+            "title": "The recent warming trend is visible across the 21st century",
+            "subtitle": "Annual global temperature anomaly, 2000 to 2025",
+            "source_note": "Source: NASA GISTEMP fixture",
+            "x_field": "year",
+            "y_field": "anomaly_c",
+            "x_label": "Year",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        }
+      }
+    },
+    {
+      "id": "nasa_monthly_2025",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/nasa-gistemp-monthly-2023-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 12,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": true
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 12,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:nasa:monthly-2025"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/nasa-gistemp-monthly-2023-2025.csv",
+          "fixtures/benchmarks/v2/data/nasa-monthly-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:nasa:monthly-2025"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "monthly_temperature_anomaly",
+          "year": 2025
+        },
+        "source_ledger": {
+          "source": "Source: NASA GISTEMP monthly fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-monthly-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Monthly temperature anomalies remained elevated through 2025",
+            "subtitle": "Monthly anomaly values in the benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP monthly fixture",
+            "category_field": "month",
+            "value_field": "anomaly_c",
+            "x_label": "Temperature anomaly (°C)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-monthly-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Monthly temperature anomalies remained elevated through 2025",
+            "subtitle": "Monthly anomaly values in the benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP monthly fixture",
+            "category_field": "month",
+            "value_field": "anomaly_c",
+            "x_label": "Temperature anomaly (°C)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-monthly-2025.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Monthly temperature anomalies remained elevated through 2025",
+            "subtitle": "Monthly anomaly values in the benchmark snapshot",
+            "source_note": "Source: NASA GISTEMP monthly fixture",
+            "category_field": "month",
+            "value_field": "anomaly_c",
+            "x_label": "Temperature anomaly (°C)"
+          }
+        }
+      }
+    },
+    {
+      "id": "nasa_monthly_sequence",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/nasa-gistemp-monthly-2023-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "time_change",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 36,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": true
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 12,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:nasa:monthly-sequence"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/nasa-gistemp-monthly-2023-2025.csv",
+          "fixtures/benchmarks/v2/data/nasa-monthly-sequence-2023-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:nasa:monthly-sequence"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "monthly_temperature_anomaly",
+          "window": "2023-2025"
+        },
+        "source_ledger": {
+          "source": "Source: NASA GISTEMP monthly fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-monthly-sequence-2023-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "line",
+            "title": "Monthly anomalies stay elevated across the latest three-year window",
+            "subtitle": "January 2023 through December 2025, indexed by month",
+            "source_note": "Source: NASA GISTEMP monthly fixture",
+            "x_field": "month_index",
+            "y_field": "anomaly_c",
+            "x_label": "Month index from Jan 2023",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-monthly-sequence-2023-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "line",
+            "title": "Monthly anomalies stay elevated across the latest three-year window",
+            "subtitle": "January 2023 through December 2025, indexed by month",
+            "source_note": "Source: NASA GISTEMP monthly fixture",
+            "x_field": "month_index",
+            "y_field": "anomaly_c",
+            "x_label": "Month index from Jan 2023",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/nasa-monthly-sequence-2023-2025.csv"
+          },
+          "options": {
+            "chart_type": "line",
+            "title": "Monthly anomalies stay elevated across the latest three-year window",
+            "subtitle": "January 2023 through December 2025, indexed by month",
+            "source_note": "Source: NASA GISTEMP monthly fixture",
+            "x_field": "month_index",
+            "y_field": "anomaly_c",
+            "x_label": "Month index from Jan 2023",
+            "y_label": "Temperature anomaly (°C)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_renewable_2021",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-renewables-2021-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 6,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:renewables-2021"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-renewables-2021-2025.csv",
+          "fixtures/benchmarks/v2/data/owid-renewables-2021.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:renewables-2021"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "renewable_electricity_share",
+          "year": 2021
+        },
+        "source_ledger": {
+          "source": "Source: Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-2021.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewable electricity shares already differed widely in 2021",
+            "subtitle": "Selected economies in the benchmark snapshot",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_2021",
+            "x_label": "Renewable electricity share (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-2021.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Renewable electricity shares already differed widely in 2021",
+            "subtitle": "Selected economies in the benchmark snapshot",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_2021",
+            "x_label": "Renewable electricity share (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-2021.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Renewable electricity shares already differed widely in 2021",
+            "subtitle": "Selected economies in the benchmark snapshot",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_2021",
+            "x_label": "Renewable electricity share (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_renewable_2021_vs_2025",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-renewables-2021-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 6,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:renewables-2021-vs-2025"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-renewables-2021-2025.csv",
+          "fixtures/benchmarks/v2/data/owid-renewables-2021-vs-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:renewables-2021-vs-2025"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "renewable_electricity_share",
+          "comparison": "2021_vs_2025"
+        },
+        "source_ledger": {
+          "source": "Source: Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-2021-vs-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "scatter",
+            "title": "Countries started from very different renewable shares before the latest gains",
+            "subtitle": "Renewable electricity share in 2021 versus 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "x_field": "renewables_2021",
+            "y_field": "renewables_2025",
+            "label_field": "country",
+            "x_label": "Renewable electricity share, 2021 (%)",
+            "y_label": "Renewable electricity share, 2025 (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-2021-vs-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "scatter",
+            "title": "Countries started from very different renewable shares before the latest gains",
+            "subtitle": "Renewable electricity share in 2021 versus 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "x_field": "renewables_2021",
+            "y_field": "renewables_2025",
+            "label_field": "country",
+            "x_label": "Renewable electricity share, 2021 (%)",
+            "y_label": "Renewable electricity share, 2025 (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-2021-vs-2025.csv"
+          },
+          "options": {
+            "chart_type": "scatter",
+            "title": "Countries started from very different renewable shares before the latest gains",
+            "subtitle": "Renewable electricity share in 2021 versus 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "x_field": "renewables_2021",
+            "y_field": "renewables_2025",
+            "label_field": "country",
+            "x_label": "Renewable electricity share, 2021 (%)",
+            "y_label": "Renewable electricity share, 2025 (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_renewable_gains",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-renewables-2021-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 5,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 5,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:renewable-gains"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-renewables-2021-2025.csv",
+          "fixtures/benchmarks/v2/data/owid-renewable-gains.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:renewable-gains"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "renewable_share_change",
+          "selection": "positive_change"
+        },
+        "source_ledger": {
+          "source": "Source: Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewable-gains.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Renewable-electricity gains are uneven across selected economies",
+            "subtitle": "Positive percentage-point change from 2021 to 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "change_pp",
+            "x_label": "Change in renewable electricity share (pp)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewable-gains.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Renewable-electricity gains are uneven across selected economies",
+            "subtitle": "Positive percentage-point change from 2021 to 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "change_pp",
+            "x_label": "Change in renewable electricity share (pp)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewable-gains.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Renewable-electricity gains are uneven across selected economies",
+            "subtitle": "Positive percentage-point change from 2021 to 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "change_pp",
+            "x_label": "Change in renewable electricity share (pp)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_solar_rank_2025",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-solar-renewables-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 11,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 11,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:solar-rank-2025"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-solar-renewables-2025.csv",
+          "fixtures/benchmarks/v2/data/owid-solar-rank-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:solar-rank-2025"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "solar_electricity_share",
+          "year": 2025
+        },
+        "source_ledger": {
+          "source": "Source: Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-solar-rank-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Solar supplies very different shares of electricity across the sample",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "solar_share",
+            "x_label": "Solar electricity share (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-solar-rank-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Solar supplies very different shares of electricity across the sample",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "solar_share",
+            "x_label": "Solar electricity share (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-solar-rank-2025.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Solar supplies very different shares of electricity across the sample",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "solar_share",
+            "x_label": "Solar electricity share (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "owid_renewable_mix_rank_2025",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/realdata/owid-solar-renewables-2025.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 11,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 11,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:owid:renewable-mix-rank-2025"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/realdata/owid-solar-renewables-2025.csv",
+          "fixtures/benchmarks/v2/data/owid-renewables-mix-rank-2025.csv"
+        ],
+        "claim_ids": [
+          "claim:owid:renewable-mix-rank-2025"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "renewable_electricity_share",
+          "year": 2025
+        },
+        "source_ledger": {
+          "source": "Source: Our World in Data fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-mix-rank-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Total renewable share varies even among solar-heavy economies",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_share",
+            "x_label": "Renewable electricity share (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-mix-rank-2025.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Total renewable share varies even among solar-heavy economies",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_share",
+            "x_label": "Renewable electricity share (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/owid-renewables-mix-rank-2025.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Total renewable share varies even among solar-heavy economies",
+            "subtitle": "Selected economies, 2025",
+            "source_note": "Source: Our World in Data fixture",
+            "category_field": "country",
+            "value_field": "renewables_share",
+            "x_label": "Renewable electricity share (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "titanic_survival_class",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/titanic-r-datasets.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 4,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 4,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:titanic:survival-class"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/titanic-r-datasets.csv",
+          "fixtures/benchmarks/v2/data/titanic-survival-by-class.csv"
+        ],
+        "claim_ids": [
+          "claim:titanic:survival-class"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "survival_rate",
+          "group": "Class",
+          "weight": "Freq"
+        },
+        "source_ledger": {
+          "source": "Source: R datasets Titanic fixture; ADN deterministic aggregation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-class.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Titanic survival rates differed sharply by passenger class",
+            "subtitle": "Weighted from the classic R datasets contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-class.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Titanic survival rates differed sharply by passenger class",
+            "subtitle": "Weighted from the classic R datasets contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-class.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Titanic survival rates differed sharply by passenger class",
+            "subtitle": "Weighted from the classic R datasets contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "titanic_survival_sex",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/titanic-r-datasets.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 2,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 2,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:titanic:survival-sex"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/titanic-r-datasets.csv",
+          "fixtures/benchmarks/v2/data/titanic-survival-by-sex.csv"
+        ],
+        "claim_ids": [
+          "claim:titanic:survival-sex"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "survival_rate",
+          "group": "Sex",
+          "weight": "Freq"
+        },
+        "source_ledger": {
+          "source": "Source: R datasets Titanic fixture; ADN deterministic aggregation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-sex.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Titanic survival rates differed dramatically by sex",
+            "subtitle": "Weighted from the classic R datasets contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Sex",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-sex.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Titanic survival rates differed dramatically by sex",
+            "subtitle": "Weighted from the classic R datasets contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Sex",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-sex.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Titanic survival rates differed dramatically by sex",
+            "subtitle": "Weighted from the classic R datasets contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Sex",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "titanic_survival_age",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/titanic-r-datasets.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 2,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 2,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:titanic:survival-age"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/titanic-r-datasets.csv",
+          "fixtures/benchmarks/v2/data/titanic-survival-by-age.csv"
+        ],
+        "claim_ids": [
+          "claim:titanic:survival-age"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "survival_rate",
+          "group": "Age",
+          "weight": "Freq"
+        },
+        "source_ledger": {
+          "source": "Source: R datasets Titanic fixture; ADN deterministic aggregation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-age.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Children had a higher survival rate in the Titanic table",
+            "subtitle": "Child and adult groups, weighted by frequency",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Age",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-age.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Children had a higher survival rate in the Titanic table",
+            "subtitle": "Child and adult groups, weighted by frequency",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Age",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survival-by-age.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Children had a higher survival rate in the Titanic table",
+            "subtitle": "Child and adult groups, weighted by frequency",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Age",
+            "value_field": "survival_pct",
+            "x_label": "Survival rate (%)"
+          }
+        }
+      }
+    },
+    {
+      "id": "titanic_passengers_class",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/titanic-r-datasets.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 4,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 4,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:titanic:passengers-class"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/titanic-r-datasets.csv",
+          "fixtures/benchmarks/v2/data/titanic-passengers-by-class.csv"
+        ],
+        "claim_ids": [
+          "claim:titanic:passengers-class"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "population_count",
+          "group": "Class",
+          "aggregation": "sum_Freq"
+        },
+        "source_ledger": {
+          "source": "Source: R datasets Titanic fixture; ADN deterministic aggregation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-passengers-by-class.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Third class and crew dominate the Titanic contingency table",
+            "subtitle": "People represented by class or crew status",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "passengers",
+            "x_label": "People"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-passengers-by-class.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Third class and crew dominate the Titanic contingency table",
+            "subtitle": "People represented by class or crew status",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "passengers",
+            "x_label": "People"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-passengers-by-class.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Third class and crew dominate the Titanic contingency table",
+            "subtitle": "People represented by class or crew status",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "passengers",
+            "x_label": "People"
+          }
+        }
+      }
+    },
+    {
+      "id": "titanic_survivors_class",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/titanic-r-datasets.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 4,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 4,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:titanic:survivors-class"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/titanic-r-datasets.csv",
+          "fixtures/benchmarks/v2/data/titanic-survivors-by-class.csv"
+        ],
+        "claim_ids": [
+          "claim:titanic:survivors-class"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "survivor_count",
+          "group": "Class",
+          "aggregation": "sum_Freq_where_survived_yes"
+        },
+        "source_ledger": {
+          "source": "Source: R datasets Titanic fixture; ADN deterministic aggregation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survivors-by-class.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Survivor counts reflect both class size and survival probability",
+            "subtitle": "Survivors represented in the Titanic contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "survivors",
+            "x_label": "Survivors"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survivors-by-class.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Survivor counts reflect both class size and survival probability",
+            "subtitle": "Survivors represented in the Titanic contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "survivors",
+            "x_label": "Survivors"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/titanic-survivors-by-class.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Survivor counts reflect both class size and survival probability",
+            "subtitle": "Survivors represented in the Titanic contingency table",
+            "source_note": "Source: R datasets Titanic fixture; ADN deterministic aggregation",
+            "category_field": "Class",
+            "value_field": "survivors",
+            "x_label": "Survivors"
+          }
+        }
+      }
+    },
+    {
+      "id": "eia_crude_import_rank",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 6,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:eia:crude-import-rank"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+          "fixtures/benchmarks/v2/data/eia-crude-imports-rank-bpd.csv"
+        ],
+        "claim_ids": [
+          "claim:eia:crude-import-rank"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "average_crude_imports",
+          "unit": "thousand_bpd"
+        },
+        "source_ledger": {
+          "source": "Source: U.S. Energy Information Administration fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/eia-crude-imports-rank-bpd.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "Canada dominates U.S. crude-oil imports",
+            "subtitle": "Average crude imports by source country, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture",
+            "category_field": "country",
+            "value_field": "thousand_bpd",
+            "x_label": "Thousand barrels per day"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/eia-crude-imports-rank-bpd.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "Canada dominates U.S. crude-oil imports",
+            "subtitle": "Average crude imports by source country, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture",
+            "category_field": "country",
+            "value_field": "thousand_bpd",
+            "x_label": "Thousand barrels per day"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/eia-crude-imports-rank-bpd.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "Canada dominates U.S. crude-oil imports",
+            "subtitle": "Average crude imports by source country, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture",
+            "category_field": "country",
+            "value_field": "thousand_bpd",
+            "x_label": "Thousand barrels per day"
+          }
+        }
+      }
+    },
+    {
+      "id": "eia_crude_distance_vs_volume",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "distribution",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 6,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 6,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:eia:crude-distance-vs-volume"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
+          "fixtures/benchmarks/v2/data/eia-crude-distance-vs-volume.csv"
+        ],
+        "claim_ids": [
+          "claim:eia:crude-distance-vs-volume"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "average_crude_imports",
+          "derived_metric": "great_circle_distance_km"
+        },
+        "source_ledger": {
+          "source": "Source: U.S. Energy Information Administration fixture; distance derived with a spherical great-circle calculation"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/eia-crude-distance-vs-volume.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "scatter",
+            "title": "Import volume is concentrated in a nearby supplier despite a global source network",
+            "subtitle": "Great-circle source distance versus average U.S. crude imports, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture; distance derived with a spherical great-circle calculation",
+            "x_field": "distance_km",
+            "y_field": "thousand_bpd",
+            "label_field": "country",
+            "x_label": "Great-circle distance to U.S. reference point (km)",
+            "y_label": "Thousand barrels per day"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/eia-crude-distance-vs-volume.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "scatter",
+            "title": "Import volume is concentrated in a nearby supplier despite a global source network",
+            "subtitle": "Great-circle source distance versus average U.S. crude imports, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture; distance derived with a spherical great-circle calculation",
+            "x_field": "distance_km",
+            "y_field": "thousand_bpd",
+            "label_field": "country",
+            "x_label": "Great-circle distance to U.S. reference point (km)",
+            "y_label": "Thousand barrels per day"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/eia-crude-distance-vs-volume.csv"
+          },
+          "options": {
+            "chart_type": "scatter",
+            "title": "Import volume is concentrated in a nearby supplier despite a global source network",
+            "subtitle": "Great-circle source distance versus average U.S. crude imports, 2024",
+            "source_note": "Source: U.S. Energy Information Administration fixture; distance derived with a spherical great-circle calculation",
+            "x_field": "distance_km",
+            "y_field": "thousand_bpd",
+            "label_field": "country",
+            "x_label": "Great-circle distance to U.S. reference point (km)",
+            "y_label": "Thousand barrels per day"
+          }
+        }
+      }
+    },
+    {
+      "id": "worldbank_remittance_corridor_rank",
+      "story_family": "statistical_editorial",
+      "candidate_backends": [
+        "python_publication",
+        "r_editorial",
+        "echarts_editorial"
+      ],
+      "source_ref": "fixtures/v15-cartographic-flow/world-bank-remittance-corridors-2021.csv",
+      "human_evidence": "PENDING",
+      "qualification_stage": "MULTI_BACKEND_WIRED",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "statistical_editorial",
+        "data_profile": {
+          "mark_count": 4,
+          "node_count": 0,
+          "edge_count": 0,
+          "temporal": false
+        },
+        "geography": {
+          "enabled": false,
+          "scale": "global",
+          "projection_policy": "editorial_auto",
+          "terrain": false,
+          "bathymetry": false,
+          "context_layers": []
+        },
+        "network": {
+          "enabled": false,
+          "spatial": false,
+          "directed": false,
+          "weighted": false,
+          "community_structure": false,
+          "comparison_dense": false
+        },
+        "annotation": {
+          "label_count": 4,
+          "direct_labels": true,
+          "callouts": false,
+          "locator": false,
+          "scale_bar": false
+        },
+        "delivery": {
+          "print": true,
+          "interactive": false,
+          "mobile": true,
+          "vector_required": true,
+          "animation": false
+        },
+        "backend_hints": {
+          "qualification_mode": true,
+          "challenger_mode": false
+        },
+        "claim_ids": [
+          "claim:worldbank:remittance-corridor-rank"
+        ],
+        "generated_imagery": false
+      },
+      "semantic_contract": {
+        "evidence_paths": [
+          "fixtures/v15-cartographic-flow/world-bank-remittance-corridors-2021.csv",
+          "fixtures/benchmarks/v2/data/worldbank-remittance-corridor-rank.csv"
+        ],
+        "claim_ids": [
+          "claim:worldbank:remittance-corridor-rank"
+        ],
+        "semantics": {
+          "geometry": "statistical_marks",
+          "transformation": "deterministic_derived_snapshot",
+          "measure": "bilateral_remittance_flow",
+          "unit": "usd_billion"
+        },
+        "source_ledger": {
+          "source": "Source: World Bank bilateral remittance fixture"
+        }
+      },
+      "render_requests": {
+        "python_publication": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/worldbank-remittance-corridor-rank.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "chart_type": "bar",
+            "title": "The largest selected remittance corridor is U.S. to Mexico",
+            "subtitle": "Selected bilateral corridors, 2021",
+            "source_note": "Source: World Bank bilateral remittance fixture",
+            "category_field": "corridor",
+            "value_field": "usd_billion",
+            "x_label": "Remittances (USD billions)"
+          }
+        },
+        "r_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/worldbank-remittance-corridor-rank.csv"
+          },
+          "options": {
+            "renderer": "editorial_chart",
+            "filename": "figure.svg",
+            "chart_type": "bar",
+            "title": "The largest selected remittance corridor is U.S. to Mexico",
+            "subtitle": "Selected bilateral corridors, 2021",
+            "source_note": "Source: World Bank bilateral remittance fixture",
+            "category_field": "corridor",
+            "value_field": "usd_billion",
+            "x_label": "Remittances (USD billions)"
+          }
+        },
+        "echarts_editorial": {
+          "inputs": {
+            "table": "fixtures/benchmarks/v2/data/worldbank-remittance-corridor-rank.csv"
+          },
+          "options": {
+            "chart_type": "bar",
+            "title": "The largest selected remittance corridor is U.S. to Mexico",
+            "subtitle": "Selected bilateral corridors, 2021",
+            "source_note": "Source: World Bank bilateral remittance fixture",
+            "category_field": "corridor",
+            "value_field": "usd_billion",
+            "x_label": "Remittances (USD billions)"
+          }
+        }
+      }
+    }
+  ],
+  "corpus_version": "1.0.0",
+  "coverage_note": "32 cases from repository evidence snapshots; terrain, local urban cartography, and true multi-runtime output remain qualification gaps."
+}

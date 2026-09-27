@@ -1,0 +1,84 @@
+{
+  "spec": {
+    "schema_version": "0.9.0",
+    "takeaway": "Topology-aware visual fixture",
+    "title": "Major routes connect Asian, European and American ports",
+    "alt": "A schematic geographic flow map shows five weighted routes between major ports across Asia, Europe, North America and South America.",
+    "source_note": "Synthetic v0.9 regression fixture",
+    "claim_id": "claim-v09-spatial",
+    "sql": "SELECT * FROM synthetic",
+    "unit": "units",
+    "complexity_budget": "medium",
+    "annotations": [],
+    "highlight_values": [],
+    "reader_task": "spatial",
+    "visual_family": "spatial",
+    "data_topology": "geo_edges",
+    "chart_type": "geo_flow_map",
+    "source_field": "source",
+    "target_field": "target",
+    "source_lat_field": "slat",
+    "source_lon_field": "slon",
+    "target_lat_field": "tlat",
+    "target_lon_field": "tlon",
+    "value_field": "value"
+  },
+  "rows": [
+    {
+      "source": "Singapore",
+      "slat": 1.3521,
+      "slon": 103.8198,
+      "target": "Rotterdam",
+      "tlat": 51.9244,
+      "tlon": 4.4777,
+      "value": 18
+    },
+    {
+      "source": "Shanghai",
+      "slat": 31.2304,
+      "slon": 121.4737,
+      "target": "Los Angeles",
+      "tlat": 34.0522,
+      "tlon": -118.2437,
+      "value": 15
+    },
+    {
+      "source": "Busan",
+      "slat": 35.1796,
+      "slon": 129.0756,
+      "target": "Long Beach",
+      "tlat": 33.7701,
+      "tlon": -118.1937,
+      "value": 11
+    },
+    {
+      "source": "Dubai",
+      "slat": 25.2048,
+      "slon": 55.2708,
+      "target": "Hamburg",
+      "tlat": 53.5511,
+      "tlon": 9.9937,
+      "value": 8
+    },
+    {
+      "source": "Santos",
+      "slat": -23.9608,
+      "slon": -46.3336,
+      "target": "Antwerp",
+      "tlat": 51.2194,
+      "tlon": 4.4025,
+      "value": 7
+    }
+  ],
+  "lint": {
+    "schema_version": "0.9.0",
+    "passed": true,
+    "blockers": [],
+    "warnings": [],
+    "notes": [
+      "geo_flow_map uses a schematic equirectangular coordinate frame without administrative boundary geometry; do not imply boundary precision"
+    ],
+    "data_hash": "32cec1daf20ce6a281eae82a360d6dca2f43c5fc72844fa748b2241845954a68",
+    "row_count": 5
+  }
+}

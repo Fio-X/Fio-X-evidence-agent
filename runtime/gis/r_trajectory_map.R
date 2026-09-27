@@ -1,0 +1,10 @@
+#!/usr/bin/env Rscript
+suppressPackageStartupMessages({library(jsonlite); library(sf); library(ggplot2); library(svglite)})
+args <- commandArgs(trailingOnly=TRUE); if (length(args)!=1) stop('usage: r_trajectory_map.R REQUEST_JSON')
+req <- fromJSON(args[[1]],simplifyDataFrame=TRUE); if (!identical(req$backend,'r_editorial')) stop('request backend must be r_editorial')
+obj <- fromJSON(req$inputs$track,simplifyDataFrame=TRUE); pts <- st_as_sf(obj$points,coords=c('lon','lat'),crs=4326,remove=FALSE); lat0 <- mean(obj$points$lat); lon0 <- mean(obj$points$lon); crs <- sprintf('+proj=aeqd +lat_0=%.8f +lon_0=%.8f +datum=WGS84 +units=m +no_defs',lat0,lon0); pts <- st_transform(pts,crs)
+base <- NULL; if (!is.null(req$inputs$basemap)) base <- st_transform(st_read(req$inputs$basemap,quiet=TRUE),crs)
+coords <- st_coordinates(pts); segs <- list(); for (i in 1:(nrow(pts)-1)) { if ('segment' %in% names(pts) && pts$segment[i] != pts$segment[i+1]) next; segs[[length(segs)+1]] <- st_linestring(coords[c(i,i+1),1:2]) }; lines <- st_sf(geometry=st_sfc(segs,crs=st_crs(pts)))
+p <- ggplot() + {if(!is.null(base)) geom_sf(data=base,fill='#ece8de',colour='#b7b1a8',linewidth=.2) else NULL} + geom_sf(data=lines,colour='#155f63',linewidth=.8) + geom_sf(data=pts,aes(colour=ground_speed_kt),size=1.2) + scale_colour_viridis_c(name='knots') + coord_sf(datum=NA) + labs(title=req$options$title,subtitle=req$options$subtitle,caption=req$options$source_note) + theme_void(base_size=10) + theme(plot.title=element_text(size=18,face='bold'),plot.caption=element_text(size=7.5,colour='#666666',hjust=0),legend.position='bottom')
+outdir <- req$output_dir; dir.create(outdir,recursive=TRUE,showWarnings=FALSE); out <- file.path(outdir,ifelse(is.null(req$options$filename),'figure.svg',req$options$filename)); ggsave(out,p,width=12,height=7.5,device=svglite)
+writeLines(toJSON(list(schema_version='1.0.0',backend='r_editorial',renderer='trajectory_map',output=out,track_points=nrow(pts)),auto_unbox=TRUE,pretty=TRUE),file.path(outdir,'manifest.json'))

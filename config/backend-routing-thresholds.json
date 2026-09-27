@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "basis": {
+    "benchmark": "ci-evidence/local-backend-benchmark-baseline.json",
+    "decision_rule": "Apply a latency preference only when the compared operations are semantically substitutable and the preferred backend's measured p95 is below the alternative backend's measured p50. Otherwise route by required capability/semantics and report latency without forcing substitution.",
+    "mandatory_speedup_threshold": null
+  },
+  "routes": {
+    "hash_sha256": {"semantic_equivalence": true,"preferred_backend": "portable:node-crypto","preferred_row": "hash_portable_crypto","alternative_row": "hash_local_first","decision": "clear_latency_preference"},
+    "http_fetch": {"semantic_equivalence": true,"preferred_backend": "portable:node-fetch","preferred_row": "http_node_fetch","alternative_row": "http_curl","decision": "clear_latency_preference"},
+    "basic_file_metadata": {"semantic_equivalence": "conditional","preferred_backend": "portable:fs-stat","preferred_row": "metadata_portable_stat","alternative_row": "metadata_local_first","decision": "prefer_portable_for_posix_stat_fields_only","capability_guard": "use macos:mdls when Spotlight/extended metadata fields are required"},
+    "text_read_or_conversion": {"semantic_equivalence": false,"decision": "route_by_input_semantics","routes": {"plain_text": "portable:fs","rich_text_conversion": "macos:textutil"}},
+    "local_search": {"semantic_equivalence": false,"decision": "route_by_capability_then_fallback","preferred_when_supported": "macos:mdfind","fallback": "portable:filename-walk"},
+    "image_probe": {"semantic_equivalence": false,"decision": "specialized_local_backend","preferred_backend": "macos:sips"},
+    "sqlite_readonly": {"semantic_equivalence": false,"decision": "specialized_local_backend","preferred_backend": "macos:sqlite3"}
+  }
+}

@@ -1,0 +1,239 @@
+{
+  "schema_version": "1.0.0",
+  "systems": [
+    {
+      "id": "scientific",
+      "description": "Evidence-forward scientific and environmental graphics with restrained annotation and high tonal clarity.",
+      "story_families": [
+        "statistical_editorial",
+        "terrain_environmental"
+      ],
+      "tokens": {
+        "background": "#fbfaf7",
+        "panel": "#fbfaf7",
+        "text": "#151515",
+        "muted": "#5f625f",
+        "grid": "#d8d5cd",
+        "primary": "#235f74",
+        "secondary": "#6f8f95",
+        "accent": "#a84a32",
+        "land": "#ece8df",
+        "water": "#e8f0f2",
+        "border": "#bdb8ae",
+        "title_size": 22,
+        "subtitle_size": 10.5,
+        "source_size": 7.5,
+        "label_size": 8.2,
+        "title_weight": "bold",
+        "grid_alpha": 0.62,
+        "line_width": 2.0,
+        "bar_height": 0.58,
+        "point_size": 30,
+        "outer_left": 0.08,
+        "outer_right": 0.93,
+        "plot_top": 0.8,
+        "plot_bottom": 0.15,
+        "bar_mode": "bar"
+      },
+      "composition": {
+        "chart": "calm_full_width",
+        "map": "map_with_evidence_rail"
+      }
+    },
+    {
+      "id": "economic",
+      "description": "Dense but orderly economic graphics emphasizing comparison, ranked values, and compact source notes.",
+      "story_families": [
+        "energy_flow",
+        "global_flow"
+      ],
+      "tokens": {
+        "background": "#faf8f3",
+        "panel": "#faf8f3",
+        "text": "#171717",
+        "muted": "#67635b",
+        "grid": "#d9d3c7",
+        "primary": "#203c55",
+        "secondary": "#758899",
+        "accent": "#9a542f",
+        "land": "#ebe6dc",
+        "water": "#edf1f2",
+        "border": "#bdb6aa",
+        "title_size": 22,
+        "subtitle_size": 10.5,
+        "source_size": 7.4,
+        "label_size": 8.0,
+        "title_weight": "bold",
+        "grid_alpha": 0.55,
+        "line_width": 2.0,
+        "bar_height": 0.66,
+        "point_size": 32,
+        "outer_left": 0.075,
+        "outer_right": 0.92,
+        "plot_top": 0.8,
+        "plot_bottom": 0.15,
+        "bar_mode": "lollipop"
+      },
+      "composition": {
+        "chart": "ranked_editorial",
+        "map": "flow_map_with_direct_labels"
+      }
+    },
+    {
+      "id": "movement",
+      "description": "Movement stories with map-first hierarchy, direct route annotation, and compact quantitative side evidence.",
+      "story_families": [
+        "maritime_trajectory",
+        "flight_route"
+      ],
+      "tokens": {
+        "background": "#f7f6f2",
+        "panel": "#f7f6f2",
+        "text": "#111111",
+        "muted": "#66625e",
+        "grid": "#d9d4cb",
+        "primary": "#155f63",
+        "secondary": "#748b8d",
+        "accent": "#9d5738",
+        "land": "#ece8de",
+        "water": "#e9f0f1",
+        "border": "#b7b1a8",
+        "title_size": 23,
+        "subtitle_size": 11,
+        "source_size": 7.5,
+        "label_size": 8.5,
+        "title_weight": "bold",
+        "grid_alpha": 0.5,
+        "line_width": 2.7,
+        "bar_height": 0.6,
+        "point_size": 16,
+        "outer_left": 0.05,
+        "outer_right": 0.97,
+        "plot_top": 0.84,
+        "plot_bottom": 0.08,
+        "bar_mode": "bar"
+      },
+      "composition": {
+        "chart": "movement_profile",
+        "map": "map_plus_sidecar"
+      }
+    },
+    {
+      "id": "network",
+      "description": "Relationship graphics with restrained context, high-contrast topology, and space reserved for annotation.",
+      "story_families": [
+        "static_network",
+        "interactive_network"
+      ],
+      "tokens": {
+        "background": "#fbfaf7",
+        "panel": "#fbfaf7",
+        "text": "#202124",
+        "muted": "#676b70",
+        "grid": "#e0ddd6",
+        "primary": "#343a40",
+        "secondary": "#7f878c",
+        "accent": "#a53d31",
+        "land": "#ece9e1",
+        "water": "#edf1f2",
+        "border": "#c6c1b8",
+        "title_size": 21,
+        "subtitle_size": 10.3,
+        "source_size": 7.3,
+        "label_size": 7.8,
+        "title_weight": "bold",
+        "grid_alpha": 0.45,
+        "line_width": 1.6,
+        "bar_height": 0.58,
+        "point_size": 28,
+        "outer_left": 0.09,
+        "outer_right": 0.94,
+        "plot_top": 0.82,
+        "plot_bottom": 0.12,
+        "bar_mode": "bar"
+      },
+      "composition": {
+        "chart": "relationship_focus",
+        "map": "spatial_network"
+      }
+    },
+    {
+      "id": "investigative",
+      "description": "Investigative graphics using stronger contrast, compact prose, and deliberate emphasis for people, institutions, and accountability stories.",
+      "story_families": [
+        "investigative",
+        "human_outcomes"
+      ],
+      "tokens": {
+        "background": "#f6f2e9",
+        "panel": "#f6f2e9",
+        "text": "#161616",
+        "muted": "#625d55",
+        "grid": "#d9d0c1",
+        "primary": "#313131",
+        "secondary": "#7a756d",
+        "accent": "#a4372f",
+        "land": "#e9e3d7",
+        "water": "#e9eff0",
+        "border": "#bdb5a8",
+        "title_size": 23,
+        "subtitle_size": 10.8,
+        "source_size": 7.4,
+        "label_size": 8.2,
+        "title_weight": "bold",
+        "grid_alpha": 0.42,
+        "line_width": 2.1,
+        "bar_height": 0.64,
+        "point_size": 34,
+        "outer_left": 0.08,
+        "outer_right": 0.92,
+        "plot_top": 0.79,
+        "plot_bottom": 0.15,
+        "bar_mode": "contrast_bar"
+      },
+      "composition": {
+        "chart": "accountability_rank",
+        "map": "annotated_context"
+      }
+    },
+    {
+      "id": "explainer",
+      "description": "General explanatory graphics with clear reading order, moderate annotation, and robust mobile-friendly hierarchy.",
+      "story_families": [
+        "local_cartography",
+        "explainer"
+      ],
+      "tokens": {
+        "background": "#fffdf8",
+        "panel": "#fffdf8",
+        "text": "#171717",
+        "muted": "#626262",
+        "grid": "#ddd8ce",
+        "primary": "#285d78",
+        "secondary": "#7691a0",
+        "accent": "#b96534",
+        "land": "#ebe7de",
+        "water": "#eaf1f3",
+        "border": "#bdb8af",
+        "title_size": 22,
+        "subtitle_size": 10.5,
+        "source_size": 7.5,
+        "label_size": 8.1,
+        "title_weight": "bold",
+        "grid_alpha": 0.56,
+        "line_width": 2.0,
+        "bar_height": 0.61,
+        "point_size": 31,
+        "outer_left": 0.08,
+        "outer_right": 0.93,
+        "plot_top": 0.8,
+        "plot_bottom": 0.14,
+        "bar_mode": "bar"
+      },
+      "composition": {
+        "chart": "guided_explainer",
+        "map": "map_with_callouts"
+      }
+    }
+  ]
+}

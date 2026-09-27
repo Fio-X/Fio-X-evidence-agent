@@ -1,0 +1,7 @@
+{
+  "archive_name": "agentic-data-newsroom-v1.13.0-rc1-agentic-hardening.zip",
+  "archive_sha256": "aeadda6880610411d9527d1eb2d7377229f0345305177ebd42dabc8fab89ffed",
+  "expected_sha256": "aeadda6880610411d9527d1eb2d7377229f0345305177ebd42dabc8fab89ffed",
+  "schema_version": "1.0.0",
+  "status": "PASS"
+}

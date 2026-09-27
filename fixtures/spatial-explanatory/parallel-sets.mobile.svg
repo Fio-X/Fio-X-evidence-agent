@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 646" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">
+<title id="viz-title-mobile">Trips move through origin, mode and outcome</title>
+<desc id="viz-desc-mobile">Parallel sets show weighted trip paths from urban and rural origins through transport mode to on-time or delayed outcomes.</desc>
+<rect width="640" height="646" fill="#ffffff"/>
+<text x="32" y="34" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">Trips move through origin, mode and</text>
+<text x="32" y="65" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#202124">outcome</text>
+<path data-role="parallel-ribbon" d="M71,220.5 C179.9,220.5 204.1,430.625 313,430.625" fill="none" stroke="#2f6f8f" stroke-width="125" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M71,438.4375 C179.9,438.4375 204.1,212.6875 313,212.6875" fill="none" stroke="#d1493f" stroke-width="109.375" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M71,329.875 C179.9,329.875 204.1,314.25 313,314.25" fill="none" stroke="#3c7d5a" stroke-width="93.75" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M71,516.5625 C179.9,516.5625 204.1,516.5625 313,516.5625" fill="none" stroke="#7b6ba8" stroke-width="46.875" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M327,433.75 C435.9,433.75 460.1,223.625 569,223.625" fill="none" stroke="#2f6f8f" stroke-width="131.25" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M327,211.125 C435.9,211.125 460.1,342.375 569,342.375" fill="none" stroke="#d1493f" stroke-width="106.25" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M327,312.6875 C435.9,312.6875 460.1,450.9375 569,450.9375" fill="none" stroke="#3c7d5a" stroke-width="96.875" stroke-opacity=".42"/>
+<path data-role="parallel-ribbon" d="M327,519.6875 C435.9,519.6875 460.1,519.6875 569,519.6875" fill="none" stroke="#7b6ba8" stroke-width="40.625" stroke-opacity=".42"/>
+<text x="64" y="138" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="700" fill="#687076">origin</text>
+<rect data-role="parallel-node" x="57" y="158" width="14" height="218.75" rx="2" fill="#202124" opacity=".84"/>
+<rect data-role="parallel-label-bg" x="72" y="260.275" width="29.96" height="15.2" rx="2" fill="#fff" fill-opacity=".82"/>
+<text data-role="parallel-label" x="75" y="270.375" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="600" fill="#202124">Urban</text>
+<rect data-role="parallel-node" x="57" y="383.75" width="14" height="156.25" rx="2" fill="#202124" opacity=".84"/>
+<rect data-role="parallel-label-bg" x="72" y="454.775" width="29.96" height="15.2" rx="2" fill="#fff" fill-opacity=".82"/>
+<text data-role="parallel-label" x="75" y="464.875" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="600" fill="#202124">Rural</text>
+<text x="320" y="138" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="700" fill="#687076">mode</text>
+<rect data-role="parallel-node" x="313" y="158" width="14" height="203.125" rx="2" fill="#202124" opacity=".84"/>
+<rect data-role="parallel-label-bg" x="283.632" y="252.4625" width="25.368" height="15.2" rx="2" fill="#fff" fill-opacity=".82"/>
+<text data-role="parallel-label" x="309" y="262.5625" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="600" fill="#202124">Road</text>
+<rect data-role="parallel-node" x="313" y="368.125" width="14" height="171.875" rx="2" fill="#202124" opacity=".84"/>
+<rect data-role="parallel-label-bg" x="283.632" y="446.9625" width="25.368" height="15.2" rx="2" fill="#fff" fill-opacity=".82"/>
+<text data-role="parallel-label" x="309" y="457.0625" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="600" fill="#202124">Rail</text>
+<text x="576" y="138" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="700" fill="#687076">outcome</text>
+<rect data-role="parallel-node" x="569" y="158" width="14" height="237.5" rx="2" fill="#202124" opacity=".84"/>
+<rect data-role="parallel-label-bg" x="525.856" y="269.65" width="39.144" height="15.2" rx="2" fill="#fff" fill-opacity=".82"/>
+<text data-role="parallel-label" x="565" y="279.75" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="600" fill="#202124">On time</text>
+<rect data-role="parallel-node" x="569" y="402.5" width="14" height="137.5" rx="2" fill="#202124" opacity=".84"/>
+<rect data-role="parallel-label-bg" x="525.856" y="464.15" width="39.144" height="15.2" rx="2" fill="#fff" fill-opacity=".82"/>
+<text data-role="parallel-label" x="565" y="474.25" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="8.2" font-weight="600" fill="#202124">Delayed</text>
+<line x1="32" y1="568" x2="608" y2="568" stroke="#d9dde1" stroke-width="1"/>
+<text x="32" y="587" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#687076">Source: Synthetic v0.9 regression fixture</text>
+</svg>

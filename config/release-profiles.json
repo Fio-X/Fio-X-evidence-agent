@@ -1,0 +1,64 @@
+{
+  "schema_version": "0.2.0",
+  "profiles": {
+    "pr": {
+      "commands": [
+        "python3 scripts/check_version_consistency.py",
+        "python3 scripts/check_runtime_contract.py",
+        "node scripts/test_browser_publication_v19.mjs",
+        "node scripts/test_trusted_publication_v112.mjs",
+        "python3 scripts/test_publication_schema_v19.py",
+        "node scripts/test_editorial_semantics_adversarial_v17.mjs",
+        "node scripts/test_runtime_visual_synthesis_v18.mjs",
+        "node scripts/test_capability_registry_v19.mjs",
+        "node scripts/test_style_mapping_v110.mjs",
+        "node scripts/test_multiscale_map_v112.mjs",
+        "python3 scripts/test_network_overview_v112.py",
+        "node scripts/test_phase_tool_scope_v112.mjs",
+        "python3 scripts/test_source_distribution_v112.py",
+        "python3 scripts/test_map_schema_v112.py",
+        "python3 scripts/test_production_qualification_contract_v113.py",
+        "python3 scripts/test_agentic_hardening.py",
+        "python3 scripts/test_release_manifest_reproducibility_v113.py"
+      ],
+      "required_files": []
+    },
+    "rc": {
+      "extends": "pr",
+      "commands": [
+        "bash scripts/smoke_visual_compiler.sh",
+        "bash scripts/qualify_production_browser_v113.sh"
+      ],
+      "required_files": [
+        "schemas/publication-spec.schema.json",
+        "runtime/pi/publication.mjs",
+        "runtime/pi/publication_binding.mjs",
+        "runtime/pi/svg_security.mjs",
+        "schemas/map-spec.schema.json",
+        "runtime/pi/networkx_reduce.py",
+        "runtime/pi/scientific_basemap_prepare.py"
+      ]
+    },
+    "final": {
+      "extends": "rc",
+      "commands": [
+        "python3 scripts/verify_dependency_locks.py",
+        "bash scripts/qualify_production_browser_v113.sh",
+        "python3 scripts/production_preflight.py --output outputs/v113-production-preflight.json",
+        "python3 scripts/check_cold_story_ledger.py --output outputs/v113-cold-story-gate.json",
+        "bash scripts/agentic_qualification.sh",
+        "bash scripts/integration_qualification.sh"
+      ],
+      "required_files": [
+        "Cargo.lock",
+        "runtime/web/package-lock.json",
+        "runtime/sigma/package-lock.json",
+        "runtime/map/package-lock.json",
+        "runtime/d3/package-lock.json"
+      ],
+      "manual_gates": [
+        "qualified-human editorial review with artifact hash attestation"
+      ]
+    }
+  }
+}

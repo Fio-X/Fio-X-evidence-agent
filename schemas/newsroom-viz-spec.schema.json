@@ -1,0 +1,927 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentic-data-newsroom:schema:newsroom-viz-spec:1.0.0",
+  "title": "Newsroom Visualization Spec v1.0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "reader_task",
+    "takeaway",
+    "chart_type",
+    "title",
+    "alt",
+    "source_note",
+    "claim_id",
+    "sql",
+    "unit"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "0.7.0",
+        "0.8.0",
+        "0.9.0",
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reader_task": {
+      "enum": [
+        "ranking",
+        "comparison",
+        "change",
+        "distribution",
+        "correlation",
+        "part_to_whole",
+        "spatial",
+        "flow",
+        "relationship",
+        "hierarchy",
+        "sequence",
+        "process"
+      ]
+    },
+    "takeaway": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chart_type": {
+      "enum": [
+        "horizontal_bar",
+        "dot",
+        "dumbbell",
+        "slope",
+        "line",
+        "multi_line",
+        "small_multiples",
+        "scatter",
+        "diverging_bar",
+        "heatmap",
+        "sankey",
+        "alluvial",
+        "node_link",
+        "adjacency_matrix",
+        "hierarchy_tree",
+        "timeline",
+        "streamgraph",
+        "parallel_sets",
+        "chord",
+        "geo_flow_map",
+        "cartographic_flow_map",
+        "trajectory_profile",
+        "process_schematic"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 180
+    },
+    "subtitle": {
+      "type": "string",
+      "maxLength": 320
+    },
+    "alt": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 1000
+    },
+    "source_note": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 600
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 700
+    },
+    "claim_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sql": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unit": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "category_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "x_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "y_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "value_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "start_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "end_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "start_label": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "end_label": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "series_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "facet_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "panel_mark": {
+      "enum": [
+        "line",
+        "dot"
+      ]
+    },
+    "label_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reference_period_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mixed_period_strategy": {
+      "enum": [
+        "reject",
+        "facet",
+        "explicit"
+      ]
+    },
+    "sort": {
+      "enum": [
+        "asc",
+        "desc",
+        "none"
+      ]
+    },
+    "highlight_values": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "direct_labels": {
+      "type": "boolean"
+    },
+    "x_unit": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "y_unit": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "annotations": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/annotation"
+      }
+    },
+    "visual_family": {
+      "enum": [
+        "statistical",
+        "flow",
+        "relationship",
+        "hierarchy",
+        "temporal",
+        "spatial",
+        "explanatory"
+      ]
+    },
+    "data_topology": {
+      "enum": [
+        "tabular",
+        "flow_edges",
+        "graph_edges",
+        "hierarchy",
+        "events",
+        "categorical_flow",
+        "geo_edges",
+        "process_graph"
+      ]
+    },
+    "complexity_budget": {
+      "enum": [
+        "low",
+        "medium",
+        "exploratory"
+      ]
+    },
+    "source_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "node_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "x_scale": {
+      "enum": [
+        "linear",
+        "log"
+      ]
+    },
+    "y_scale": {
+      "enum": [
+        "linear",
+        "log"
+      ]
+    },
+    "x_label": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "y_label": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "flow_conservation": {
+      "enum": [
+        "off",
+        "warn",
+        "strict"
+      ]
+    },
+    "flow_tolerance": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.5
+    },
+    "dimension_fields": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "source_lat_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_lon_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_lat_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_lon_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "edge_label_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "geometry_semantics": {
+      "enum": [
+        "abstract_od",
+        "great_circle_reference",
+        "verified_route",
+        "observed_trajectory",
+        "network_constrained"
+      ]
+    },
+    "geometry_crs": {
+      "enum": [
+        "EPSG:4326"
+      ]
+    },
+    "projection": {
+      "enum": [
+        "natural_earth_1",
+        "equirectangular"
+      ]
+    },
+    "basemap_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "basemap_source_url": {
+      "type": "string",
+      "minLength": 3
+    },
+    "basemap_license": {
+      "type": "string",
+      "minLength": 3
+    },
+    "basemap_content_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "route_geometry_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_provenance_note": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 600
+    },
+    "route_provenance_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "time_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregation_policy": {
+      "enum": [
+        "none",
+        "top_n"
+      ]
+    },
+    "top_n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 80
+    },
+    "trajectory_points_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extent_mode": {
+      "enum": [
+        "world",
+        "data"
+      ]
+    },
+    "extent_padding_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.35
+    },
+    "reference_path": {
+      "enum": [
+        "none",
+        "great_circle"
+      ]
+    },
+    "locator_inset": {
+      "type": "boolean"
+    },
+    "altitude_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "speed_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "segment_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "altitude_unit": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "speed_unit": {
+      "type": "string",
+      "maxLength": 64
+    }
+  },
+  "$defs": {
+    "annotation": {
+      "type": "object",
+      "required": [
+        "type",
+        "text",
+        "claim_id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "point",
+            "node"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "claim_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match_field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match_value": {
+          "type": [
+            "string",
+            "number",
+            "integer"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "point",
+                  "node"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "match_field",
+              "match_value"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "horizontal_bar",
+              "dot",
+              "diverging_bar"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "dumbbell",
+              "slope"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "start_field",
+          "end_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "line"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "multi_line"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "value_field",
+          "series_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "small_multiples"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "value_field",
+          "facet_field",
+          "panel_mark"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "scatter"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "y_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "heatmap"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "y_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "sankey",
+              "alluvial"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_field",
+          "target_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "node_link",
+              "adjacency_matrix"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_field",
+          "target_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "hierarchy_tree"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "node_field",
+          "parent_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "timeline"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "label_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "streamgraph"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "x_field",
+          "value_field",
+          "series_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "parallel_sets"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "dimension_fields",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "chord"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_field",
+          "target_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "geo_flow_map"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_lat_field",
+          "source_lon_field",
+          "target_lat_field",
+          "target_lon_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "enum": [
+              "process_schematic"
+            ]
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_field",
+          "target_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "cartographic_flow_map"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "value_field",
+          "geometry_semantics",
+          "geometry_crs",
+          "projection",
+          "basemap_id",
+          "basemap_source_url",
+          "basemap_license",
+          "basemap_content_hash"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "cartographic_flow_map"
+          },
+          "geometry_semantics": {
+            "enum": [
+              "abstract_od",
+              "great_circle_reference"
+            ]
+          }
+        },
+        "required": [
+          "chart_type",
+          "geometry_semantics"
+        ]
+      },
+      "then": {
+        "required": [
+          "source_lat_field",
+          "source_lon_field",
+          "target_lat_field",
+          "target_lon_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "cartographic_flow_map"
+          },
+          "geometry_semantics": {
+            "enum": [
+              "verified_route",
+              "network_constrained"
+            ]
+          }
+        },
+        "required": [
+          "chart_type",
+          "geometry_semantics"
+        ]
+      },
+      "then": {
+        "required": [
+          "route_geometry_field",
+          "route_provenance_note"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "cartographic_flow_map"
+          },
+          "geometry_semantics": {
+            "const": "observed_trajectory"
+          }
+        },
+        "required": [
+          "chart_type",
+          "geometry_semantics"
+        ]
+      },
+      "then": {
+        "required": [
+          "route_provenance_note"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "trajectory_points_field"
+            ]
+          },
+          {
+            "required": [
+              "route_geometry_field",
+              "time_field"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

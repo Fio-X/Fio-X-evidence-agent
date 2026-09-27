@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 569" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">Policy implementation timeline</title>
+<desc id="viz-desc">A timeline shows four dated milestones from announcement to the second implementation phase.</desc>
+<rect width="1040" height="569" fill="#ffffff"/>
+<text x="54" y="38" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#202124">Policy implementation timeline</text>
+<text x="54" y="74" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#687076">Synthetic topology fixture used to exercise deterministic complex-visual rules</text>
+<line x1="90" y1="303" x2="950" y2="303" stroke="#d9dde1" stroke-width="2"/>
+<line x1="90" y1="303" x2="90" y2="261" stroke="#a9afb5"/>
+<circle cx="90" cy="303" r="4.5" fill="#2f6f8f"/>
+<text x="90" y="254" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="700" fill="#687076">2024-01-01</text>
+<text x="90" y="225" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="500" fill="#202124">Policy announced</text>
+<line x1="270.9289617486339" y1="303" x2="270.9289617486339" y2="345" stroke="#a9afb5"/>
+<circle cx="270.9289617486339" cy="303" r="4.5" fill="#2f6f8f"/>
+<text x="270.9289617486339" y="354" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="700" fill="#687076">2024-03-18</text>
+<text x="270.9289617486339" y="375" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="500" fill="#202124">First implementation</text>
+<text x="270.9289617486339" y="388" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="500" fill="#202124">phase</text>
+<line x1="517.6502732240438" y1="303" x2="517.6502732240438" y2="261" stroke="#a9afb5"/>
+<circle cx="517.6502732240438" cy="303" r="4.5" fill="#2f6f8f"/>
+<text x="517.6502732240438" y="254" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="700" fill="#687076">2024-07-01</text>
+<text x="517.6502732240438" y="225" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="500" fill="#202124">Mid-year review</text>
+<line x1="950" y1="303" x2="950" y2="345" stroke="#a9afb5"/>
+<circle cx="950" cy="303" r="4.5" fill="#2f6f8f"/>
+<text x="950" y="354" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="700" fill="#687076">2025-01-01</text>
+<text x="950" y="375" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="500" fill="#202124">Second phase begins</text>
+<line x1="54" y1="498" x2="986" y2="498" stroke="#d9dde1" stroke-width="1"/>
+<text x="54" y="517" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#687076">Source: Synthetic topology regression fixture</text>
+</svg>

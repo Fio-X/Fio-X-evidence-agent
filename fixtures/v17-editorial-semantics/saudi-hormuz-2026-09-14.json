@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "story_date": "2026-09-14",
+  "story": "Saudi East-West pipeline disruption and Strait of Hormuz traffic collapse",
+  "provenance_note": "Offline replay of the newsroom qualification run. Evidence labels are retained from the original deterministic requests; this fixture does not claim a fresh network fetch.",
+  "sources": [
+    "Reuters/Kpler, Sept. 11, 2026",
+    "Guardian context, Sept. 14, 2026",
+    "IEA Oil Market Report, Sept. 11, 2026",
+    "Saudi Aramco Q1 2026"
+  ],
+  "cases": [
+    {
+      "id": "hormuz-collapse",
+      "expected_compile_status": "READY",
+      "expected_semantic_status": "PASS",
+      "expected_grammar": "change",
+      "expected_percent_change": -94.4,
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "time_change",
+        "artifact_mode": "static_editorial",
+        "story_family": "hormuz_transit_collapse",
+        "data_profile": {"mark_count": 2, "temporal": true},
+        "geography": {"enabled": false},
+        "network": {"enabled": false},
+        "annotation": {"label_count": 3},
+        "delivery": {"print": true, "interactive": false, "mobile": true, "vector_required": true},
+        "backend_hints": {},
+        "measure_semantics": [
+          {"id":"current","phenomenon":"vessel_transits","unit":"vessels/day","measure_kind":"rate","temporal_basis":{"type":"point_in_time","date":"2026-09-14"},"observation_status":"observed","aggregation":"daily","value":7,"evidence_ref":"claim:hormuz:7-transits"},
+          {"id":"prewar","phenomenon":"vessel_transits","unit":"vessels/day","measure_kind":"rate","temporal_basis":{"type":"point_in_time"},"observation_status":"observed","aggregation":"daily","value":125,"evidence_ref":"claim:hormuz:125-prewar"}
+        ],
+        "claim_spec": {"claim_id":"claim:hormuz:collapse","relation":"change","reader_task":"magnitude_of_change","target_measure":"current","baseline_measure":"prewar","derived_metric":"percent_change"}
+      }
+    },
+    {
+      "id": "supply-shock-mixed-semantics",
+      "expected_compile_status": "BLOCKED",
+      "expected_semantic_status": "BLOCK",
+      "recipe": {
+        "schema_version": "2.0.0",
+        "analytical_job": "comparison",
+        "artifact_mode": "static_editorial",
+        "story_family": "supply_shock_scale",
+        "data_profile": {"mark_count": 4},
+        "geography": {"enabled": false},
+        "network": {"enabled": false},
+        "annotation": {"label_count": 4},
+        "delivery": {"print": true, "interactive": false, "mobile": true, "vector_required": true},
+        "backend_hints": {},
+        "measure_semantics": [
+          {"id":"recent_flow","phenomenon":"crude_oil_flow","unit":"mbd","measure_kind":"flow","temporal_basis":{"type":"point_in_time","date":"2026-09-14"},"observation_status":"observed","aggregation":"daily","value":4,"evidence_ref":"claim:pipeline:recent-flow-4"},
+          {"id":"pipeline_capacity","phenomenon":"crude_oil_flow","unit":"mbd","measure_kind":"capacity","temporal_basis":{"type":"structural"},"observation_status":"capacity","aggregation":"daily","value":7,"evidence_ref":"claim:pipeline:max-7"},
+          {"id":"annual_supply_change","phenomenon":"crude_oil_flow","unit":"mbd","measure_kind":"change","temporal_basis":{"type":"annual_average","start":"2026-01-01","end":"2026-12-31"},"observation_status":"forecast","aggregation":"annual_average","value":-5.7,"evidence_ref":"claim:iea:2026-supply-decline-5.7"},
+          {"id":"gulf_shut_in","phenomenon":"crude_oil_flow","unit":"mbd","measure_kind":"flow","temporal_basis":{"type":"point_in_time","date":"2026-09-14"},"observation_status":"observed","aggregation":"daily","value":10,"evidence_ref":"claim:gulf:shutin-gt10"}
+        ],
+        "claim_spec": {"claim_id":"claim:supply-shock","relation":"benchmark","reader_task":"compare_scale","target_measure":"recent_flow","context_measures":["pipeline_capacity","annual_supply_change","gulf_shut_in"]}
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 588" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">Major routes connect Asian, European and American ports</title>
+<desc id="viz-desc">A schematic geographic flow map shows five weighted routes between major ports across Asia, Europe, North America and South America.</desc>
+<rect width="1040" height="588" fill="#ffffff"/>
+<text x="54" y="38" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#202124">Major routes connect Asian, European and American ports</text>
+<rect x="72" y="108" width="896" height="358" rx="3" fill="#f2f3f4" stroke="#d9dde1"/>
+<line x1="221.33333333333331" y1="108" x2="221.33333333333331" y2="466" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="370.66666666666663" y1="108" x2="370.66666666666663" y2="466" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="520" y1="108" x2="520" y2="466" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="669.3333333333333" y1="108" x2="669.3333333333333" y2="466" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="818.6666666666667" y1="108" x2="818.6666666666667" y2="466" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="72" y1="442.9032258064516" x2="968" y2="442.9032258064516" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="72" y1="373.61290322580646" x2="968" y2="373.61290322580646" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="72" y1="304.3225806451613" x2="968" y2="304.3225806451613" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="72" y1="235.03225806451613" x2="968" y2="235.03225806451613" stroke="#e2e5e8" stroke-width=".8"/>
+<line x1="72" y1="165.74193548387098" x2="968" y2="165.74193548387098" stroke="#e2e5e8" stroke-width=".8"/>
+<path data-role="geo-flow" d="M404.6808177777778,359.6642993548387 Q467.8190755555555,238.49084105085677 530.9573333333333,186.02228903225807" fill="none" stroke="#2f6f8f" stroke-width="8.73053390247253" stroke-opacity=".5" stroke-linecap="round"/>
+<circle cx="404.6808177777778" cy="359.6642993548387" r="3.5" fill="#202124"/>
+<circle cx="530.9573333333333" cy="186.02228903225807" r="3.5" fill="#d1493f"/>
+<path data-role="geo-flow" d="M657.5628800000001,246.10762322580644 Q601.2180444444446,192.51973795682693 544.8732088888889,180.63681419354845" fill="none" stroke="#d1493f" stroke-width="9.333333333333332" stroke-opacity=".5" stroke-linecap="round"/>
+<circle cx="657.5628800000001" cy="246.10762322580644" r="3.5" fill="#202124"/>
+<circle cx="544.8732088888889" cy="180.63681419354845" r="3.5" fill="#d1493f"/>
+<path data-role="geo-flow" d="M841.2548266666666,223.0690529032258 Q533.54192,154.69679806451614 225.8290133333333,226.32454322580645" fill="none" stroke="#3c7d5a" stroke-width="10.944303439588003" stroke-opacity=".5" stroke-linecap="round"/>
+<circle cx="841.2548266666666" cy="223.0690529032258" r="3.5" fill="#202124"/>
+<circle cx="225.8290133333333" cy="226.32454322580645" r="3.5" fill="#d1493f"/>
+<path data-role="geo-flow" d="M822.3345422222222,232.19043096774192 Q524.0195555555556,158.93170709677418 225.70456888888887,225.67298322580643" fill="none" stroke="#7b6ba8" stroke-width="12.780193008453876" stroke-opacity=".5" stroke-linecap="round"/>
+<circle cx="822.3345422222222" cy="232.19043096774192" r="3.5" fill="#202124"/>
+<circle cx="225.70456888888887" cy="225.67298322580643" r="3.5" fill="#d1493f"/>
+<path data-role="geo-flow" d="M778.3959466666665,301.1996658064516 Q654.7702222222222,199.04424626492772 531.1444977777778,184.39396645161293" fill="none" stroke="#b7843e" stroke-width="14" stroke-opacity=".5" stroke-linecap="round"/>
+<circle cx="778.3959466666665" cy="301.1996658064516" r="3.5" fill="#202124"/>
+<circle cx="531.1444977777778" cy="184.39396645161293" r="3.5" fill="#d1493f"/>
+<rect data-role="geo-value-bg" x="630.5302222222222" y="208.72053119698" width="48.48" height="16.2" rx="2" fill="#fff" fill-opacity=".8"/>
+<text data-role="geo-value" x="654.7702222222222" y="220.92053119698" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.2" font-weight="600" fill="#687076">18 units</text>
+<rect data-role="geo-value-bg" x="499.7795555555556" y="181.7317070967742" width="48.48" height="16.2" rx="2" fill="#fff" fill-opacity=".8"/>
+<text data-role="geo-value" x="524.0195555555556" y="193.93170709677418" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.2" font-weight="600" fill="#687076">15 units</text>
+<rect data-role="geo-value-bg" x="509.30192" y="177.49679806451616" width="48.48" height="16.2" rx="2" fill="#fff" fill-opacity=".8"/>
+<text data-role="geo-value" x="533.54192" y="189.69679806451614" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.2" font-weight="600" fill="#687076">11 units</text>
+<rect data-role="geo-label-bg" x="491.45720888888894" y="165.83681419354843" width="46.41600000000001" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="537.8732088888889" y="176.63681419354845" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Hamburg</text>
+<line data-role="geo-label-leader" x1="531.1444977777778" y1="184.39396645161293" x2="527.1444977777778" y2="191.63681419354845" stroke="#687076" stroke-width=".7"/>
+<rect data-role="geo-label-bg" x="466.7524977777778" y="179.83681419354843" width="57.392" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="524.1444977777778" y="190.63681419354845" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Rotterdam</text>
+<line data-role="geo-label-leader" x1="530.9573333333333" y1="186.02228903225807" x2="526.9573333333333" y2="205.63681419354845" stroke="#687076" stroke-width=".7"/>
+<rect data-role="geo-label-bg" x="477.5413333333333" y="193.83681419354843" width="46.41600000000001" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="523.9573333333333" y="204.63681419354845" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Antwerp</text>
+<rect data-role="geo-label-bg" x="798.8148266666667" y="208.2690529032258" width="35.44" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="834.2548266666666" y="219.0690529032258" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Busan</text>
+<rect data-role="geo-label-bg" x="763.4305422222222" y="222.2690529032258" width="51.90400000000001" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="815.3345422222222" y="233.0690529032258" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Shanghai</text>
+<rect data-role="geo-label-bg" x="615.1228800000001" y="236.2690529032258" width="35.44" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="650.5628800000001" y="247.0690529032258" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Dubai</text>
+<rect data-role="geo-label-bg" x="714.0039466666665" y="286.3996658064516" width="57.392" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="771.3959466666665" y="297.1996658064516" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Singapore</text>
+<rect data-role="geo-label-bg" x="229.70456888888887" y="210.87298322580642" width="68.36800000000001" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="232.70456888888887" y="221.67298322580643" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Los Angeles</text>
+<line data-role="geo-label-leader" x1="225.8290133333333" y1="226.32454322580645" x2="229.8290133333333" y2="236.67298322580643" stroke="#687076" stroke-width=".7"/>
+<rect data-role="geo-label-bg" x="229.8290133333333" y="224.87298322580642" width="62.88" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="232.8290133333333" y="235.67298322580643" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Long Beach</text>
+<rect data-role="geo-label-bg" x="408.6808177777778" y="344.8642993548387" width="40.928000000000004" height="16.8" rx="2" fill="#fff" fill-opacity=".86"/>
+<text data-role="geo-label" x="411.6808177777778" y="355.6642993548387" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Santos</text>
+<text x="968" y="488" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="9.5" fill="#687076">Schematic equirectangular projection; route geometry is approximate</text>
+<line x1="54" y1="517" x2="986" y2="517" stroke="#d9dde1" stroke-width="1"/>
+<text x="54" y="536" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#687076">Source: Synthetic v0.9 regression fixture</text>
+</svg>

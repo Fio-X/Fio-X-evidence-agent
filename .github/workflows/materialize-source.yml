@@ -1,0 +1,183 @@
+name: materialize-source
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [import-current]
+    paths:
+      - 'config/t01-comment-transport.json'
+
+concurrency:
+  group: materialize-source-iteration-next
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: read
+  actions: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: iteration-next
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Reassemble authenticated T01 comment transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f config/t01-comment-transport.json || { echo 'T01 comment transport marker missing' >&2; exit 64; }
+          mkdir -p /tmp/t01
+          python3 - <<'PY'
+          import base64, hashlib, json, os, urllib.request
+          from pathlib import Path
+
+          cfg = json.loads(Path('config/t01-comment-transport.json').read_text())
+          required = ['issue_number','transport_id','chunk_count','archive_bytes','archive_sha256','archive_file_count','author_login']
+          missing = [key for key in required if key not in cfg]
+          if missing:
+              raise SystemExit(f'transport config missing fields: {missing}')
+          issue = int(cfg['issue_number'])
+          expected_total = int(cfg['chunk_count'])
+          repo = os.environ['GH_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          comments = []
+          page = 1
+          while True:
+              url = f'https://api.github.com/repos/{repo}/issues/{issue}/comments?per_page=100&page={page}'
+              req = urllib.request.Request(url, headers={
+                  'Authorization': f'Bearer {token}',
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              })
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  batch = json.load(r)
+              comments.extend(batch)
+              if len(batch) < 100:
+                  break
+              page += 1
+
+          prefix = 'T01_TRANSPORT_CHUNK v1\n'
+          chunks = {}
+          for comment in comments:
+              body = comment.get('body') or ''
+              if not body.startswith(prefix):
+                  continue
+              if (comment.get('user') or {}).get('login') != cfg['author_login']:
+                  raise SystemExit(f"transport chunk from unexpected author: {comment.get('id')}")
+              header, sep, fenced = body.partition('```base64\n')
+              if not sep or not fenced.endswith('\n```\n'):
+                  raise SystemExit(f"malformed transport comment: {comment.get('id')}")
+              meta = {}
+              for line in header.splitlines()[1:]:
+                  if '=' not in line:
+                      raise SystemExit(f"malformed metadata line in comment {comment.get('id')}: {line!r}")
+                  key, value = line.split('=', 1)
+                  meta[key] = value
+              if meta.get('transport_id') != cfg['transport_id']:
+                  continue
+              index = int(meta['index'])
+              total = int(meta['total'])
+              if total != expected_total or not (0 <= index < expected_total):
+                  raise SystemExit(f'invalid chunk index/total in comment {comment.get("id")}')
+              if index in chunks:
+                  raise SystemExit(f'duplicate chunk index {index}')
+              payload = fenced[:-5]
+              try:
+                  raw = base64.b64decode(payload, validate=True)
+              except Exception as exc:
+                  raise SystemExit(f'invalid base64 for chunk {index}: {exc}')
+              expected_bytes = int(meta['raw_bytes'])
+              expected_sha = meta['raw_sha256']
+              actual_sha = hashlib.sha256(raw).hexdigest()
+              if len(raw) != expected_bytes:
+                  raise SystemExit(f'chunk {index} length mismatch: {len(raw)} != {expected_bytes}')
+              if actual_sha != expected_sha:
+                  raise SystemExit(f'chunk {index} sha mismatch: {actual_sha} != {expected_sha}')
+              chunks[index] = raw
+
+          missing_indexes = [i for i in range(expected_total) if i not in chunks]
+          if missing_indexes:
+              raise SystemExit(f'missing transport chunks: {missing_indexes}')
+          archive = b''.join(chunks[i] for i in range(expected_total))
+          actual_archive_sha = hashlib.sha256(archive).hexdigest()
+          if len(archive) != int(cfg['archive_bytes']):
+              raise SystemExit(f'archive length mismatch: {len(archive)} != {cfg["archive_bytes"]}')
+          if actual_archive_sha != cfg['archive_sha256']:
+              raise SystemExit(f'archive sha mismatch: {actual_archive_sha} != {cfg["archive_sha256"]}')
+          out = Path('/tmp/t01/core.tar.xz')
+          out.write_bytes(archive)
+          print(json.dumps({'status':'PASS','chunks':expected_total,'bytes':len(archive),'sha256':actual_archive_sha}, sort_keys=True))
+          PY
+          actual_files="$(tar -tJf /tmp/t01/core.tar.xz | wc -l | tr -d ' ')"
+          expected_files="$(python3 -c 'import json; print(json.load(open("config/t01-comment-transport.json"))["archive_file_count"])')"
+          test "$actual_files" = "$expected_files" || { echo "archive file count mismatch: $actual_files != $expected_files" >&2; exit 2; }
+      - name: Restore pinned external bytes and deterministic fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check pyogrio==0.12.1 networkx==3.6.1 pyshp==2.3.1
+          python3 - <<'PY'
+          from pathlib import Path
+          import pyogrio
+          root=Path(pyogrio.__file__).resolve().parent
+          hits=list(root.rglob('tests/fixtures/naturalearth_lowres/naturalearth_lowres.shp'))
+          if len(hits)!=1: raise SystemExit(f'expected one Natural Earth fixture, found {len(hits)}')
+          print(hits[0].parent)
+          Path('/tmp/t01/natural-earth-dir').write_text(str(hits[0].parent))
+          PY
+          curl --fail --location --silent --show-error https://cdn.plot.ly/plotly-3.3.1.min.js -o /tmp/t01/plotly-3.3.1.min.js
+          echo '9666a0e617e211ef2fbab8e9c9e07b224de1a67f56802d532ad59a42d5822df3  /tmp/t01/plotly-3.3.1.min.js' | shasum -a 256 -c -
+      - name: Fill missing release source without overwriting hardened head
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/materialize_release_source.py \
+            --root . \
+            --archive /tmp/t01/core.tar.xz \
+            --plotly-source /tmp/t01/plotly-3.3.1.min.js \
+            --natural-earth-dir "$(cat /tmp/t01/natural-earth-dir)"
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json --archive /tmp/t01/core.tar.xz
+          rm -rf bootstrap-staging
+          rm -f config/t01-comment-transport.json
+          python3 scripts/check_source_integrity.py --root . --manifest source-integrity.json
+      - name: Assert full release source shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in src/main.rs src/audit.rs src/artifact.rs runtime/pi/newsroom.ts runtime/pi/local_backend.mjs runtime/pi/parallel_scheduler.mjs runtime/pi/browser_qa.py schemas/news-artifact.schema.json scripts/release_check.py scripts/integration_qualification.sh scripts/agentic_qualification.sh fixtures/v110-systems/large-network-5000.json fixtures/v110-systems/world-outline.json; do
+            test -f "$path" || { echo "missing release path: $path" >&2; exit 2; }
+          done
+          test ! -d bootstrap-staging
+          test ! -f config/t01-comment-transport.json
+          test "$(find . -type f -name '*.png' -path './fixtures/*' | wc -l | tr -d ' ')" = 0
+      - name: Commit materialized release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'no materialization changes'
+          else
+            git commit -m 'Materialize complete hardened release source'
+            git push origin HEAD:iteration-next
+          fi
+      - name: Dispatch dependency lock bootstrap
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run dependency-lock-bootstrap.yml --ref iteration-next
+          echo 'dispatched dependency-lock-bootstrap on iteration-next'

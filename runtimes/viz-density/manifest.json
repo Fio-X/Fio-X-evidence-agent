@@ -1,0 +1,36 @@
+{
+  "id": "viz-density",
+  "version": "1.26.0",
+  "execution": "container",
+  "target_versions": {
+    "datashader": "0.19.1"
+  },
+  "capabilities": [
+    "million_point_density",
+    "trajectory_density",
+    "raster_aggregation",
+    "large_point_cloud"
+  ],
+  "probes": [
+    {
+      "type": "python_module",
+      "name": "datashader",
+      "required": true,
+      "version_spec": "==0.19.1"
+    },
+    {
+      "type": "python_module",
+      "name": "dask",
+      "required": true
+    },
+    {
+      "type": "python_module",
+      "name": "xarray",
+      "required": true
+    }
+  ],
+  "build": {
+    "definition": "environment.yml",
+    "network_required": true
+  }
+}

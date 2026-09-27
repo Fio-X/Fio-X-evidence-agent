@@ -1,0 +1,30 @@
+{
+  "sankey": {
+    "desktop": "a03b45a9a7ccae95e97afe2cf402308e6b60179f3b78273fa35292488e95ee66",
+    "mobile": "de4925661ff4bad0f20a55c8aea7605227ac0c9a2ccd5f5924c490f090e07054"
+  },
+  "node-link": {
+    "desktop": "f9f1f41d128e7c576b3bdb00fd84f0128f7314155bd803c6df958d7ef0ee65fa",
+    "mobile": "815ed12dd91c306edc255ca568d5c9be40392617be1c84ace39eb144ab923826"
+  },
+  "matrix": {
+    "desktop": "f93ade20a55f6e9c915caff9930a3c6bc843f93dea9ce80541fc8cba730ac481",
+    "mobile": "ea198de3424f98a985a5a9839b5fd0ff8d4671880c60aa395e2a9405861dd680"
+  },
+  "hierarchy": {
+    "desktop": "3a7331192a8deea257fdcdf149f200c49443c11c24d683046b66f7424111d63b",
+    "mobile": "e1ba9ef87103c222e126e725c3d8ed9ac606398c61e4bcf06b1ede2cc77cfbc0"
+  },
+  "timeline": {
+    "desktop": "145f3b69c69452696ddf9ed4a96553d6ed29f3b9c198effd6df07092856fe2b4",
+    "mobile": "c57a6e686c5caf3c89c56740f0a5f68a3e458517846afd05a2f100c0e51ea035"
+  },
+  "streamgraph": {
+    "desktop": "d52d99100a28c72c4670d96f92a990048cf5e4078d5dff9e6b4e5d82b9cd858d",
+    "mobile": "efdc26be6640528401dd20a658d6c8d8c3cf85e20b50255f9fba3c9108b26b31"
+  },
+  "log-scatter": {
+    "desktop": "d8179a2b539217ddbeb21470a31b8b95137c8c05da320c301d7011a2cd7d985f",
+    "mobile": "41a493ca339a5f16948560b503e2e5bd776cf8b66b42c116aaf93549426611ff"
+  }
+}

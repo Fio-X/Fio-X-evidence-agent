@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+<title id="title">Offline fixture: latest renewable energy share</title>
+<desc id="desc">bar chart of value by country</desc>
+<rect width="100%" height="100%" fill="white"/>
+<text x="88" y="34" font-family="system-ui, sans-serif" font-size="24" font-weight="700">Offline fixture: latest renewable energy share</text>
+<text x="88" y="56" font-family="system-ui, sans-serif" font-size="13" fill="#555">Reference years differ across countries</text>
+<line x1="88" y1="430" x2="928" y2="430" stroke="#444" stroke-width="1"/>
+<line x1="88" y1="64" x2="88" y2="430" stroke="#444" stroke-width="1"/>
+<line x1="88" y1="430" x2="928" y2="430" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="434" text-anchor="end" font-family="system-ui, sans-serif" font-size="12" fill="#444">0</text>
+<line x1="88" y1="338.5" x2="928" y2="338.5" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="342.5" text-anchor="end" font-family="system-ui, sans-serif" font-size="12" fill="#444">24.07</text>
+<line x1="88" y1="247" x2="928" y2="247" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="251" text-anchor="end" font-family="system-ui, sans-serif" font-size="12" fill="#444">48.15</text>
+<line x1="88" y1="155.5" x2="928" y2="155.5" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="159.5" text-anchor="end" font-family="system-ui, sans-serif" font-size="12" fill="#444">72.22</text>
+<line x1="88" y1="64" x2="928" y2="64" stroke="#ddd" stroke-width="1"/>
+<text x="78" y="68" text-anchor="end" font-family="system-ui, sans-serif" font-size="12" fill="#444">96.3</text>
+<rect x="98.69090909090909" y="64" width="54.98181818181818" height="366" fill="#44546a"><title>Congo, Dem. Rep.: 96.3</title></rect>
+<rect x="175.05454545454546" y="77.30218068535828" width="54.98181818181818" height="352.6978193146417" fill="#44546a"><title>Liberia: 92.8</title></rect>
+<rect x="251.4181818181818" y="114.54828660436135" width="54.98181818181818" height="315.45171339563865" fill="#44546a"><title>Zambia: 83</title></rect>
+<rect x="327.78181818181815" y="124.80996884735202" width="54.98181818181818" height="305.190031152648" fill="#44546a"><title>Nigeria: 80.3</title></rect>
+<rect x="404.1454545454545" y="127.47040498442368" width="54.98181818181818" height="302.5295950155763" fill="#44546a"><title>Niger: 79.6</title></rect>
+<rect x="480.5090909090909" y="157.8753894080997" width="54.98181818181818" height="272.1246105919003" fill="#44546a"><title>Sierra Leone: 71.6</title></rect>
+<rect x="556.8727272727273" y="158.63551401869154" width="54.98181818181818" height="271.36448598130846" fill="#44546a"><title>Congo, Rep.: 71.4</title></rect>
+<rect x="633.2363636363636" y="163.95638629283485" width="54.98181818181818" height="266.04361370716515" fill="#44546a"><title>Chad: 70</title></rect>
+<rect x="709.6" y="176.8785046728972" width="54.98181818181818" height="253.1214953271028" fill="#44546a"><title>Guinea: 66.6</title></rect>
+<rect x="785.9636363636364" y="306.85981308411215" width="54.98181818181818" height="123.14018691588785" fill="#44546a"><title>South Sudan: 32.4</title></rect>
+<rect x="862.3272727272728" y="355.50778816199374" width="54.98181818181818" height="74.49221183800626" fill="#44546a"><title>Mauritania: 19.6</title></rect>
+<text x="126.18181818181819" y="450" transform="rotate(35 126.18181818181819 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Congo, Dem. Rep.</text>
+<text x="202.54545454545456" y="450" transform="rotate(35 202.54545454545456 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Liberia</text>
+<text x="278.9090909090909" y="450" transform="rotate(35 278.9090909090909 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Zambia</text>
+<text x="355.27272727272725" y="450" transform="rotate(35 355.27272727272725 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Nigeria</text>
+<text x="431.6363636363636" y="450" transform="rotate(35 431.6363636363636 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Niger</text>
+<text x="508" y="450" transform="rotate(35 508 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Sierra Leone</text>
+<text x="584.3636363636363" y="450" transform="rotate(35 584.3636363636363 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Congo, Rep.</text>
+<text x="660.7272727272726" y="450" transform="rotate(35 660.7272727272726 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Chad</text>
+<text x="737.090909090909" y="450" transform="rotate(35 737.090909090909 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Guinea</text>
+<text x="813.4545454545454" y="450" transform="rotate(35 813.4545454545454 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">South Sudan</text>
+<text x="889.8181818181818" y="450" transform="rotate(35 889.8181818181818 450)" text-anchor="start" font-family="system-ui, sans-serif" font-size="11" fill="#444">Mauritania</text>
+<text x="22" y="247" transform="rotate(-90 22 247)" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#333">% of final energy</text>
+<text x="88" y="506" font-family="system-ui, sans-serif" font-size="10.5" fill="#555">Note: Rows mix 2021 and 2022; ranking shown only for visual regression.</text>
+<text x="88" y="526" font-family="system-ui, sans-serif" font-size="10.5" fill="#555">Source: World Bank WDI, EG.FEC.RNEW.ZS</text>
+</svg>

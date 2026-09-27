@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { runTaskDag } from '../runtime/pi/parallel_scheduler.mjs';
-import { localBackendStatus, localHash, localMetadata, localPlistJson, localSqliteQuery } from '../runtime/pi/local_backend.mjs';
+import { localBackendStatus, localHash, localMetadata, localPlistJson, localSqliteQuery, localText } from '../runtime/pi/local_backend.mjs';
 
 assert.equal(process.platform, 'darwin', 'this smoke test is intended for macOS');
 const root = await mkdtemp(path.join(os.tmpdir(), 'newsroom-macos-smoke-'));
@@ -20,9 +20,14 @@ try {
   await writeFile(path.join(root, 'note.txt'), 'newsroom local backend');
   const metadata = await localMetadata('note.txt');
   assert.match(metadata.backend, /^macos:/);
+  const plainText = await localText('note.txt');
+  assert.equal(plainText.backend, 'portable:fs', 'plain text should use deterministic in-process fallback');
   const hash = await localHash('note.txt');
   assert.equal(hash.backend, 'macos:shasum');
   assert.match(hash.digest, /^[0-9a-f]{64}$/);
+  await assert.rejects(() => localMetadata('../outside.txt'), /escapes NEWSROOM_ARTIFACT_DIR/i);
+  await symlink('/etc/hosts', path.join(root, 'escape-link'));
+  await assert.rejects(() => localText('escape-link'), /resolved path escapes NEWSROOM_ARTIFACT_DIR/i);
 
   const plist = path.join(root, 'sample.plist');
   await writeFile(plist, '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>name</key><string>newsroom</string></dict></plist>');
@@ -36,13 +41,43 @@ try {
   assert.deepEqual(rows.rows, [{ id: 1, label: 'alpha' }, { id: 2, label: 'beta' }]);
   await assert.rejects(() => localSqliteQuery('sample.sqlite', 'delete from items'), /read-only/i);
 
+  const backendEvents = [];
+  const audited = await runTaskDag([
+    { id: 'audit-hash', kind: 'local_hash', path: 'note.txt' },
+    { id: 'audit-text', kind: 'local_text', path: 'note.txt' },
+    { id: 'audit-sqlite', kind: 'sqlite_query', path: 'sample.sqlite', sql: 'select count(*) as n from items' },
+  ], async (task) => {
+    if (task.id === 'audit-hash') return localHash(task.path);
+    if (task.id === 'audit-text') return localText(task.path);
+    if (task.id === 'audit-sqlite') return localSqliteQuery(task.path, task.sql);
+    throw new Error(`unexpected task: ${task.id}`);
+  }, {
+    maxConcurrency: 3,
+    emit: async (event) => backendEvents.push(event),
+  });
+  assert.equal(audited.status, 'ok');
+  const completedBackendByTask = Object.fromEntries(
+    backendEvents
+      .filter((event) => event.type === 'newsroom_task_completed')
+      .map((event) => [event.task_id, event.backend]),
+  );
+  assert.equal(completedBackendByTask['audit-hash'], 'macos:shasum');
+  assert.equal(completedBackendByTask['audit-text'], 'portable:fs');
+  assert.equal(completedBackendByTask['audit-sqlite'], 'macos:sqlite3');
+  assert.deepEqual(audited.backend_distribution, {
+    'macos:shasum': 1,
+    'macos:sqlite3': 1,
+    'portable:fs': 1,
+  });
+
   let sameHost = 0;
   let maxSameHost = 0;
   const tasks = [
-    ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, kind: 'fetch_url', resource_class: 'network', resource_key: 'network:example.com' })),
-    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i}`, kind: 'fetch_url', resource_class: 'network', resource_key: 'network:example.org' })),
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, kind: 'fetch_url', url: `https://example.com/${i}` })),
+    ...Array.from({ length: 2 }, (_, i) => ({ id: `b${i}`, kind: 'fetch_url', url: `https://example.org/${i}` })),
   ];
   const dag = await runTaskDag(tasks, async (task) => {
+    assert.equal(task.resource_class, 'network');
     if (task.resource_key === 'network:example.com') {
       sameHost += 1;
       maxSameHost = Math.max(maxSameHost, sameHost);
@@ -65,7 +100,7 @@ try {
   for (const file of files) await localHash(file);
   const serialMs = performance.now() - serialStart;
   const parallelStart = performance.now();
-  const parallel = await runTaskDag(files.map((file, i) => ({ id: `h${i}`, kind: 'local_hash', path: file, resource_class: 'local' })), (task) => localHash(task.path), { maxConcurrency: 6, resourceLimits: { local: 6 } });
+  const parallel = await runTaskDag(files.map((file, i) => ({ id: `h${i}`, kind: 'local_hash', path: file })), (task) => localHash(task.path), { maxConcurrency: 6, resourceLimits: { local: 6 } });
   const parallelMs = performance.now() - parallelStart;
 
   console.log(JSON.stringify({
@@ -73,6 +108,10 @@ try {
     platform: process.platform,
     arch: process.arch,
     native_tools: status.tools,
+    sandbox: { traversal_rejected: true, symlink_escape_rejected: true },
+    fallback: { plain_text_backend: plainText.backend },
+    audit_backend_selection: completedBackendByTask,
+    audit_backend_distribution: audited.backend_distribution,
     scheduler: { max_observed_parallelism: dag.max_observed_parallelism, per_host_max: maxSameHost },
     benchmark: { serial_ms: Number(serialMs.toFixed(3)), parallel_ms: Number(parallelMs.toFixed(3)), speedup: Number((serialMs / Math.max(parallelMs, 0.001)).toFixed(3)), max_observed_parallelism: parallel.max_observed_parallelism },
   }, null, 2));

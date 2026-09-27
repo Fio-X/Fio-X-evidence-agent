@@ -1,0 +1,154 @@
+     .create(true)
+            .append(true)
+            .open(&self.conversation_path)
+            .with_context(|| format!("failed to open {}", self.conversation_path.display()))?;
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+        writeln!(file, "\n## Turn {now}\n")?;
+        writeln!(file, "### User\n\n{user}\n")?;
+        writeln!(file, "### Agent\n\n{assistant}\n")?;
+        Ok(())
+    }
+
+    pub fn write_manifest(
+        &self,
+        topic: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+        status: &str,
+        audit: Option<&AuditSummary>,
+    ) -> Result<()> {
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+        let created_at = existing_created_at(&self.manifest_path).unwrap_or_else(|| now.clone());
+        let empty_audit = AuditSummary {
+            schema_version: "0.7.0",
+            generated_at: now.clone(),
+            turns: 0,
+            tool_calls: 0,
+            capability_tool_calls: 0,
+            successful_capability_tool_calls: 0,
+            failed_tool_calls: 0,
+            automatic_retries: 0,
+            plan_revisions: 0,
+            successful_plan_calls: 0,
+            follow_up_goals: 0,
+            distinct_capability_classes: 0,
+            capability_classes: Default::default(),
+            autonomous_execution_observed: false,
+            adaptive_replanning_observed: false,
+            tool_failure_recovery_observed: false,
+            follow_up_replanning_observed: false,
+            parallel_batches: 0,
+            parallel_tasks: 0,
+            failed_parallel_tasks: 0,
+            parallel_blocked_tasks: 0,
+            parallel_batch_duration_ms: 0,
+            max_observed_parallelism: 0,
+            parallel_resource_task_counts: Default::default(),
+            parallel_resource_duration_ms: Default::default(),
+            parallel_resource_peak_concurrency: Default::default(),
+            parallel_backend_distribution: Default::default(),
+            parallel_execution_observed: false,
+            tools: Default::default(),
+            calls: vec![],
+        };
+        let audit = audit.unwrap_or(&empty_audit);
+        let user_messages = read_user_messages(&self.session_stats_path).unwrap_or(0);
+
+        let manifest = Manifest {
+            schema_version: "0.7.0",
+            id: &self.id,
+            kind: "investigation",
+            created_at,
+            updated_at: now,
+            topic,
+            status,
+            runtime: Runtime {
+                backend: "pi-rpc",
+                provider,
+                model,
+                session_dir: "session/",
+            },
+            files: Files {
+                prompt: "prompt.md",
+                latest_answer: "answer.md",
+                conversation: "conversation.md",
+                events: "events.jsonl",
+                tool_audit: "tools.json",
+                session_stats: "session-stats.json",
+                run_metrics: "run-metrics.jsonl",
+                plan: "plan.json",
+                claims: "claims.jsonl",
+            },
+            autonomy: Autonomy {
+                persistent_session: self.session_dir.is_dir(),
+                session_resumed: user_messages > 1 && audit.follow_up_goals > 0,
+                multi_turn_context: user_messages > 1 && audit.follow_up_goals > 0,
+                observable_planning: self.plan_path.is_file() && audit.successful_plan_calls > 0,
+                agent_loop_observed: audit.has_agent_loop_evidence(),
+                autonomous_execution_observed: audit.autonomous_execution_observed,
+                adaptive_replanning_observed: audit.adaptive_replanning_observed,
+                tool_failure_recovery_observed: audit.tool_failure_recovery_observed,
+                follow_up_replanning_observed: audit.follow_up_replanning_observed,
+                parallel_execution_observed: audit.parallel_execution_observed,
+                parallel_batches: audit.parallel_batches,
+                parallel_tasks: audit.parallel_tasks,
+                failed_parallel_tasks: audit.failed_parallel_tasks,
+                parallel_blocked_tasks: audit.parallel_blocked_tasks,
+                parallel_batch_duration_ms: audit.parallel_batch_duration_ms,
+                max_observed_parallelism: audit.max_observed_parallelism,
+                parallel_resource_task_counts: audit.parallel_resource_task_counts.clone(),
+                parallel_resource_duration_ms: audit.parallel_resource_duration_ms.clone(),
+                parallel_resource_peak_concurrency: audit.parallel_resource_peak_concurrency.clone(),
+                parallel_backend_distribution: audit.parallel_backend_distribution.clone(),
+                user_messages,
+                turns: audit.turns,
+                tool_calls: audit.tool_calls,
+                capability_tool_calls: audit.capability_tool_calls,
+                successful_capability_tool_calls: audit.successful_capability_tool_calls,
+                distinct_tools: audit.tools.len(),
+                distinct_capability_classes: audit.distinct_capability_classes,
+                plan_revisions: audit.plan_revisions,
+                successful_plan_calls: audit.successful_plan_calls,
+                follow_up_goals: audit.follow_up_goals,
+                failed_tool_calls: audit.failed_tool_calls,
+                automatic_retries: audit.automatic_retries,
+            },
+            evidence: Evidence {
+                searches: relative_files(&self.dir, "searches")?,
+                sources: relative_files(&self.dir, "sources")?,
+                datasets: relative_files(&self.dir, "data")?,
+                computations: relative_files(&self.dir, "computations")?,
+                claims: read_claims(&self.claims_path)?,
+                visualizations: relative_files(&self.dir, "visualizations")?,
+                infographics: relative_files(&self.dir, "infographics")?,
+            },
+        };
+
+        let json = serde_json::to_string_pretty(&manifest)?;
+        fs::write(&self.manifest_path, format!("{json}\n"))
+            .with_context(|| format!("failed to write {}", self.manifest_path.display()))
+    }
+}
+
+
+fn read_user_messages(path: &Path) -> Option<usize> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    value.get("userMessages")?.as_u64().map(|value| value as usize)
+}
+
+fn existing_created_at(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    value.get("created_at")?.as_str().map(str::to_owned)
+}
+
+fn relative_files(root: &Path, child: &str) -> Result<Vec<String>> {
+    fn walk(root: &Path, dir: &Path, values: &mut Vec<String>) -> Result<()> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?

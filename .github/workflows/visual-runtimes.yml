@@ -1,0 +1,100 @@
+name: visual-runtimes
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'runtimes/**'
+      - 'runtime/gis/**'
+      - 'runtime/graph/**'
+      - 'runtime/web/**'
+      - 'scripts/runtime_*'
+      - 'scripts/promote_visual_runtime_locks.py'
+      - '.github/workflows/visual-runtimes.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - viz-python
+          - viz-r
+          - viz-qgis
+          - viz-pygmt
+          - viz-density
+          - viz-web
+          - viz-sigma
+          - viz-map
+          - viz-d3
+          - viz-graph-extract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve image metadata
+        id: meta
+        shell: bash
+        run: |
+          OWNER="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${OWNER}/adn-${{ matrix.runtime }}:v1.26.0"
+          DEF="$(python3 - <<'PY'
+          import json
+          print(json.load(open('runtimes/build-matrix.json'))['runtimes']['${{ matrix.runtime }}']['definition'])
+          PY
+          )"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "definition=$DEF" >> "$GITHUB_OUTPUT"
+      - name: Login to GHCR
+        if: github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build runtime image
+        run: docker build --pull -f '${{ steps.meta.outputs.definition }}' -t '${{ steps.meta.outputs.image }}' .
+      - name: Probe, lock and optionally push
+        shell: bash
+        run: |
+          mkdir -p runtime-locks
+          PUSH=0
+          if [[ '${{ github.event_name }}' == 'workflow_dispatch' || '${{ github.ref }}' == 'refs/heads/${{ github.event.repository.default_branch }}' ]]; then PUSH=1; fi
+          ./scripts/runtime_ci_fragment.sh '${{ matrix.runtime }}' '${{ steps.meta.outputs.image }}' 'runtime-locks/${{ matrix.runtime }}.json' "$PUSH"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-lock-${{ matrix.runtime }}
+          path: |
+            runtime-locks/${{ matrix.runtime }}.json
+            runtime-locks/${{ matrix.runtime }}.health.txt
+            runtime-locks/${{ matrix.runtime }}.deps.txt
+          retention-days: 30
+
+  promote-lock:
+    if: github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: build-and-probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runtime-lock-*
+          path: runtime-locks-download
+          merge-multiple: true
+      - name: Promote immutable runtime registry
+        run: |
+          python3 scripts/promote_visual_runtime_locks.py \
+            --fragments-dir runtime-locks-download \
+            --source-commit '${{ github.sha }}' \
+            --output runtime-lock.json \
+            --require-all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: visual-runtime-lock
+          path: runtime-lock.json
+          retention-days: 90

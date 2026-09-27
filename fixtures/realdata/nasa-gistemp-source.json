@@ -1,0 +1,9 @@
+{
+  "dataset": "NASA GISS Surface Temperature Analysis v4 (GISTEMP v4), Global Land-Ocean Temperature Index",
+  "source_url": "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.txt",
+  "baseline": "1951-1980 mean",
+  "units": "degrees Celsius anomaly",
+  "retrieved": "2026-09-13",
+  "coverage_used": "1980-2025 annual means; 2023-2025 monthly means",
+  "notes": "NASA table values are hundredths of a degree Celsius; fixture divides by 100. 2026 is excluded because the annual value is incomplete."
+}

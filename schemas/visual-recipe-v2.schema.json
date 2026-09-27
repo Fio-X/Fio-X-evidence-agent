@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/visual-recipe-v2.schema.json",
+  "title": "VisualRecipe 2.0",
+  "type": "object",
+  "required": [
+    "analytical_job",
+    "artifact_mode",
+    "story_family",
+    "data_profile",
+    "delivery"
+  ],
+  "properties": {
+    "analytical_job": {
+      "enum": [
+        "comparison",
+        "time_change",
+        "distribution",
+        "flow",
+        "network",
+        "geography",
+        "explanatory",
+        "hierarchy"
+      ]
+    },
+    "artifact_mode": {
+      "enum": [
+        "static_editorial",
+        "interactive",
+        "print",
+        "hybrid"
+      ]
+    },
+    "story_family": {
+      "type": "string",
+      "minLength": 1
+    },
+    "data_profile": {
+      "type": "object",
+      "required": [
+        "mark_count"
+      ],
+      "properties": {
+        "geometry": {
+          "type": "string"
+        },
+        "mark_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "node_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "temporal": {
+          "type": "boolean"
+        },
+        "raster_cells": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "geography": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "scale": {
+          "enum": [
+            "global",
+            "regional",
+            "local",
+            "site"
+          ]
+        },
+        "projection_policy": {
+          "enum": [
+            "source",
+            "equal_area",
+            "local_metric",
+            "web_mercator",
+            "editorial_auto"
+          ]
+        },
+        "terrain": {
+          "type": "boolean"
+        },
+        "bathymetry": {
+          "type": "boolean"
+        },
+        "context_layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "spatial": {
+          "type": "boolean"
+        },
+        "directed": {
+          "type": "boolean"
+        },
+        "weighted": {
+          "type": "boolean"
+        },
+        "community_structure": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "visual_encoding": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "annotation": {
+      "type": "object",
+      "properties": {
+        "label_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "direct_labels": {
+          "type": "boolean"
+        },
+        "callouts": {
+          "type": "boolean"
+        },
+        "locator": {
+          "type": "boolean"
+        },
+        "scale_bar": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "print",
+        "interactive"
+      ],
+      "properties": {
+        "print": {
+          "type": "boolean"
+        },
+        "interactive": {
+          "type": "boolean"
+        },
+        "mobile": {
+          "type": "boolean"
+        },
+        "vector_required": {
+          "type": "boolean"
+        },
+        "animation": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "backend_hints": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "qualification_mode": {
+          "type": "boolean"
+        },
+        "challenger_mode": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "claim_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "generated_imagery": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

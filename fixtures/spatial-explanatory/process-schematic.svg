@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 420" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">A verified newsroom claim moves through six stages</title>
+<desc id="viz-desc">A process schematic shows a report moving from fact extraction and source verification through deterministic computation, drafting, visual review and publication.</desc>
+<rect width="1040" height="420" fill="#ffffff"/>
+<text x="54" y="38" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#202124">A verified newsroom claim moves through six stages</text>
+<defs><marker id="proc-arrow-d" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a9afb5"/></marker></defs>
+<path data-role="process-edge" d="M132.8,218 C153.33333333333334,218 153.33333333333334,218 173.86666666666667,218" fill="none" stroke="#a9afb5" stroke-width="1.8" marker-end="url(#proc-arrow-d)"/>
+<path data-role="process-edge" d="M279.46666666666664,218 C300,218 300,218 320.5333333333333,218" fill="none" stroke="#a9afb5" stroke-width="1.8" marker-end="url(#proc-arrow-d)"/>
+<path data-role="process-edge" d="M426.1333333333333,218 C446.66666666666663,218 446.66666666666663,218 467.2,218" fill="none" stroke="#a9afb5" stroke-width="1.8" marker-end="url(#proc-arrow-d)"/>
+<path data-role="process-edge" d="M572.8,218 C593.3333333333333,218 593.3333333333333,218 613.8666666666667,218" fill="none" stroke="#a9afb5" stroke-width="1.8" marker-end="url(#proc-arrow-d)"/>
+<path data-role="process-edge" d="M719.4666666666666,218 C740,218 740,218 760.5333333333334,218" fill="none" stroke="#a9afb5" stroke-width="1.8" marker-end="url(#proc-arrow-d)"/>
+<path data-role="process-edge" d="M866.1333333333333,218 C886.6666666666667,218 886.6666666666667,218 907.2,218" fill="none" stroke="#a9afb5" stroke-width="1.8" marker-end="url(#proc-arrow-d)"/>
+<rect data-role="process-node" x="27.200000000000003" y="193" width="105.6" height="50" rx="6" fill="#f2f3f4" stroke="#a9afb5" stroke-width="1.3"/>
+<text x="80" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Report arrives</text>
+<rect data-role="process-node" x="173.86666666666667" y="193" width="105.6" height="50" rx="6" fill="#f2f3f4" stroke="#a9afb5" stroke-width="1.3"/>
+<text x="226.66666666666666" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Extract facts</text>
+<rect data-role="process-node" x="320.5333333333333" y="193" width="105.6" height="50" rx="6" fill="#d1493f" stroke="#d1493f" stroke-width="1.3"/>
+<text x="373.3333333333333" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="700" fill="#fff">Verify sources</text>
+<rect data-role="process-node" x="467.2" y="193" width="105.6" height="50" rx="6" fill="#f2f3f4" stroke="#a9afb5" stroke-width="1.3"/>
+<text x="520" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Compute metrics</text>
+<rect data-role="process-node" x="613.8666666666667" y="193" width="105.6" height="50" rx="6" fill="#f2f3f4" stroke="#a9afb5" stroke-width="1.3"/>
+<text x="666.6666666666666" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Draft finding</text>
+<rect data-role="process-node" x="760.5333333333334" y="193" width="105.6" height="50" rx="6" fill="#f2f3f4" stroke="#a9afb5" stroke-width="1.3"/>
+<text x="813.3333333333334" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Visual review</text>
+<rect data-role="process-node" x="907.2" y="193" width="105.6" height="50" rx="6" fill="#f2f3f4" stroke="#a9afb5" stroke-width="1.3"/>
+<text x="960" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9.8" font-weight="600" fill="#202124">Publish</text>
+<line x1="54" y1="349" x2="986" y2="349" stroke="#d9dde1" stroke-width="1"/>
+<text x="54" y="368" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#687076">Source: Synthetic v0.9 regression fixture</text>
+</svg>

@@ -1,0 +1,21 @@
+{
+  "dataset": "Observed ADS-B / readsb sample trace for DAL1812",
+  "upstream_repository": "xoolive/traffic",
+  "upstream_path": "src/traffic/data/samples/readsb/trace_full_ac671b.json",
+  "upstream_blob_sha": "9c610eef4b979d67d5f10ac0971a172869a3a72c",
+  "aircraft": {
+    "icao24": "ac671b",
+    "registration": "N899DN",
+    "type": "B739",
+    "operator": "DELTA AIR LINES INC"
+  },
+  "flight_identifier": "DAL1812",
+  "coverage": {
+    "start_utc": "2025-02-04T21:13:42Z",
+    "end_utc": "2025-02-05T01:12:26Z",
+    "duration_seconds": 14323.46,
+    "incomplete_route": true
+  },
+  "provenance_note": "The local fixture copies selected exact coordinates, timestamps and flight-state values from the upstream readsb trace. It does not contain all upstream samples. The trace begins mid-flight and therefore must not be presented as full-route observational coverage.",
+  "route_context_note": "Contemporary flight-schedule sources identify DL1812 as Liberia (LIR) to Minneapolis (MSP); that schedule context is supporting context and does not convert the partial readsb sample into complete observed coverage."
+}

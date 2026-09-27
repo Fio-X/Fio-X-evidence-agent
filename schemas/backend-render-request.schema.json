@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/backend-render-request.schema.json",
+  "title": "Backend Render Request",
+  "type": "object",
+  "required": [
+    "backend",
+    "story_id",
+    "recipe_path",
+    "output_dir",
+    "semantic_fingerprint",
+    "evidence_hashes"
+  ],
+  "properties": {
+    "backend": {
+      "type": "string"
+    },
+    "recipe_path": {
+      "type": "string"
+    },
+    "output_dir": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "template": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "story_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "semantic_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidence_hashes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "claim_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "design_system": {
+      "type": "object",
+      "required": [
+        "id",
+        "tokens",
+        "content_hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "composition": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "art_direction_patch": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

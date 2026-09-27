@@ -1,0 +1,18 @@
+{
+  "parallel-sets": {
+    "desktop": "eeb5a68b860e070a02dcc4dc8c29e457c440eeb6a71bc400be32f5ee943dd8df",
+    "mobile": "ea340fe4e4e1bab44e911c16c1edb37a7d9ac8a864f253f27d433e65b28e16e9"
+  },
+  "chord": {
+    "desktop": "dd727f53591e61cb85ef07f58265477ef1a6a4854e3973ea82ceb17c89854d8b",
+    "mobile": "a76a24bff3c8386d79c37310e8b6ae8e4345cb39a657cff68b056b186b93e522"
+  },
+  "geo-flow-map": {
+    "desktop": "6d410b4673ece0129d641974af00817fbf8bf2136b3ed0fa416d4b9f26e32da6",
+    "mobile": "b22df0ee55a0d7937c7fce3cf3d8088c55a820c3416a9d7a3505154ee2567d03"
+  },
+  "process-schematic": {
+    "desktop": "b38078cf0d1466459831abac2ceb9fe960048465acb5844b0a4f6a475820a18d",
+    "mobile": "7e13a821b8ce19915dad05ad6f8938f0b01a65bff249b2e04c55a33e40333744"
+  }
+}

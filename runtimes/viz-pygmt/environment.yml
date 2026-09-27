@@ -1,0 +1,11 @@
+name: adn-viz-pygmt
+channels: [conda-forge]
+dependencies:
+  - python=3.13
+  - gmt=6.6.0
+  - pygmt
+  - gdal
+  - ghostscript
+  - xarray
+  - numpy
+  - pandas

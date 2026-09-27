@@ -1,0 +1,44 @@
+name: t18-browser-capability
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  browser-capability:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Tahoe Arm64 baseline and bundled browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sw_vers -productVersion)"
+          arch="$(uname -m)"
+          case "$version" in 26.*) ;; *) echo "Expected macOS 26.x, got $version" >&2; exit 2 ;; esac
+          test "$arch" = "arm64" || { echo "Expected arm64, got $arch" >&2; exit 2; }
+          command -v chromedriver
+          test -x '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+          chromedriver --version
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --version
+      - name: Run real Chrome CPU and WebGL capability probe
+        run: python3 scripts/test_macos_browser_capability.py
+      - name: Upload browser capability evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: t18-browser-capability-macos-26
+          path: |
+            ci-evidence/t18-browser-capability.json
+            ci-evidence/t18-browser-capability.png
+            ci-evidence/t18-browser-capability.html
+            ci-evidence/t18-chromedriver.log
+          if-no-files-found: error
+          retention-days: 30

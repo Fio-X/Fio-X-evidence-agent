@@ -1,0 +1,38 @@
+{
+  "id": "viz-pygmt",
+  "version": "1.26.0",
+  "execution": "container",
+  "target_versions": {
+    "gmt": "6.6.0",
+    "pygmt": "0.19.0"
+  },
+  "capabilities": [
+    "terrain",
+    "bathymetry",
+    "contours",
+    "scientific_map",
+    "global_projection",
+    "vector_export"
+  ],
+  "probes": [
+    {
+      "type": "command",
+      "name": "gmt",
+      "required": true,
+      "version_args": [
+        "--version"
+      ],
+      "version_spec": "==6.6.0"
+    },
+    {
+      "type": "python_module",
+      "name": "pygmt",
+      "required": true,
+      "version_spec": "==0.19.0"
+    }
+  ],
+  "build": {
+    "definition": "environment.yml",
+    "network_required": true
+  }
+}
