@@ -10,3 +10,28 @@ __pycache__/
 /perf-results/
 /ai-conversations/
 /outputs/
+
+# Planning notes kept in local checkouts only. Nothing refers to them:
+# no manifest, ledger, workflow or README link.
+/docs/AGENT_REDESIGN.md
+/docs/API_ALTERNATIVES.md
+/docs/CHART_TOOL_COMPLETION.md
+/docs/COMPETITION_AUDIT.md
+/docs/CORRECTED_TEST_COMMANDS.md
+/docs/MODERN_VS_PI_COMPARISON.md
+/docs/PHASE1_TESTING.md
+/docs/PHASE2A_COMPLETION_REPORT.md
+/docs/PHASE2A_IMPLEMENTATION_GUIDE.md
+/docs/PHASE2_3_COMPLETION_REPORT.md
+/docs/PHASE2_3_IMPLEMENTATION_PLAN.md
+/docs/PHASE3_MODERN_VISUALIZATION_PLAN.md
+/docs/PLAN_PHASE2A_PROFESSIONAL_VIZ.md
+/docs/QUICK_COMPETITION_GUIDE.md
+/docs/SUMMARY_AND_NEXT_STEPS.md
+/docs/TESTING_PROFESSIONAL_VIZ.md
+/docs/VISUALIZATION_QUALITY_ANALYSIS.md
+/docs/editorial-chart-quality.md
+/docs/geo-flow-layers.md
+/docs/output-layout.md
+/docs/performance-waits.md
+/docs/visualization-best-practices.md
