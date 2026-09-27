@@ -35,3 +35,10 @@ __pycache__/
 /docs/output-layout.md
 /docs/performance-waits.md
 /docs/visualization-best-practices.md
+
+# Kept in local checkouts only, at the owner's request (2026-09-27): project
+# docs and the agent handoff files. Files that checks read are in ci-evidence/.
+/docs/
+/AGENTS.md
+/.codex/
+/local-codex/
