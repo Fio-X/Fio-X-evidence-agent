@@ -10,3 +10,10 @@ __pycache__/
 /perf-results/
 /ai-conversations/
 /outputs/
+
+# Kept in local checkouts only, at the owner's request (2026-09-27): project
+# docs and the agent handoff files. Files that checks read are in ci-evidence/.
+/docs/
+/AGENTS.md
+/.codex/
+/local-codex/
