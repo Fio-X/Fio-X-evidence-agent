@@ -19,6 +19,10 @@ if(!toolEnabled('newsroom_parallel_tasks',{profile:'investigate',phase:'verify'}
 if(toolEnabled('newsroom_parallel_tasks',{profile:'publication',phase:'verify'})) throw new Error('publication profile must hide parallel tasks');
 if(!toolEnabled('newsroom_chart',{profile:'investigate'})) throw new Error('investigate profile must include fallback chart');
 if(toolEnabled('newsroom_chart',{profile:'visual'})) throw new Error('visual profile must use the critic-backed viz pipeline');
-const investigateCount=TOOL_REGISTRY.tools.filter(t=>t.profiles.includes('investigate')).length;
+const investigateCount=TOOL_REGISTRY.tools.filter(t=>toolEnabled(t.name,{profile:'investigate'})).length;
 if(investigateCount>15) throw new Error(`investigate profile is too broad: ${investigateCount}`);
-console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,phases:VALID_TOOL_PHASES},null,2));
+const visualStoryCounts=Object.fromEntries([['all','all'],['discover','discover'],['verify','verify'],['design','design']].map(([label,phase])=>[
+  label,TOOL_REGISTRY.tools.filter(tool=>toolEnabled(tool.name,{profile:'visual-story',phase})).length
+]));
+if(JSON.stringify(visualStoryCounts)!==JSON.stringify({all:47,discover:7,verify:7,design:25})) throw new Error(`unexpected visual-story counts: ${JSON.stringify(visualStoryCounts)}`);
+console.log(JSON.stringify({status:'PASS',tool_count:names.length,investigate_count:investigateCount,phases:VALID_TOOL_PHASES,visual_story_counts:visualStoryCounts},null,2));
