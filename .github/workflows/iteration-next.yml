@@ -56,7 +56,7 @@ jobs:
           test -f runtime/pi/local_backend.mjs
           test -f scripts/test_parallel_scheduler.mjs
           test -f scripts/benchmark_local_backend_matrix.mjs
-          test -f docs/iteration-next-plan.md
+          test -f ci-evidence/iteration-next-plan.md
           test -f config/tool-registry.json
           test -f config/backend-policy.json
           test -f scripts/sync_backend_policy.py
