@@ -37,7 +37,7 @@
       ],
       "operation": "sum estimated_flow_mean for the ranked top-30 selection in 1990",
       "replay_status": "passed",
-      "result_sha256": "c608088f3325f118cbf684ea1365daa0247a5c69bccfe29db8574683dd433559"
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
     },
     {
       "code_ref": "scripts/build_migration_story_ir.py",
@@ -76,7 +76,7 @@
       ],
       "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2000",
       "replay_status": "passed",
-      "result_sha256": "c608088f3325f118cbf684ea1365daa0247a5c69bccfe29db8574683dd433559"
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
     },
     {
       "code_ref": "scripts/build_migration_story_ir.py",
@@ -115,7 +115,7 @@
       ],
       "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2010",
       "replay_status": "passed",
-      "result_sha256": "c608088f3325f118cbf684ea1365daa0247a5c69bccfe29db8574683dd433559"
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
     },
     {
       "code_ref": "scripts/build_migration_story_ir.py",
@@ -154,7 +154,7 @@
       ],
       "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2020",
       "replay_status": "passed",
-      "result_sha256": "c608088f3325f118cbf684ea1365daa0247a5c69bccfe29db8574683dd433559"
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
     },
     {
       "code_ref": "scripts/build_migration_story_ir.py",
@@ -193,7 +193,7 @@
       ],
       "operation": "sum estimated_flow_mean for the ranked top-30 selection in 2023",
       "replay_status": "passed",
-      "result_sha256": "c608088f3325f118cbf684ea1365daa0247a5c69bccfe29db8574683dd433559"
+      "result_sha256": "e9a496d139aa1598a8bc8a7a846aa0e2a7b3579392ebbe87a26be0644cd776e1"
     }
   ],
   "entities": [
@@ -782,7 +782,7 @@
       "locator": "all 150 rows",
       "retrieved_at": "2026-09-19T14:50:57Z",
       "source_ref": "fixtures/migration/deep-learning-human-migration-top-corridors.csv",
-      "source_sha256": "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4"
+      "source_sha256": "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0"
     },
     {
       "extraction_method": "structured_import",

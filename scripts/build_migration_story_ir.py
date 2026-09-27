@@ -10,7 +10,7 @@ from collections import defaultdict
 from decimal import Decimal
 from pathlib import Path
 
-FIXTURE_SHA256 = "156b218170d022e5c87770b1be8c3d6faa989d17228deff4f017103dce871ea4"
+FIXTURE_SHA256 = "b30cc7bc540c78d09ca2203b9e5e467b9e17dff5f1f2768dfb3cac8ec49308a0"
 NATURAL_EARTH_SHA256 = "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb"
 NATURAL_EARTH_REVISION = "ca96624a56bd078437bca8184e78163e5039ad19"
 GENERATOR = "scripts/build_migration_story_ir.py"

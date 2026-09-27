@@ -1,0 +1,63 @@
+{
+  "schema_version": "0.6.0",
+  "round": 6,
+  "name": "combined-production-candidate",
+  "baseline_branch": "feat/system-one-observability-codex-handoff",
+  "inputs": [
+    "origin/exp/system-one-r5-02-unified-tool-result-budget",
+    "origin/exp/system-one-r5-03-phase-routing-corrected-ab",
+    "origin/exp/system-one-r5-05-classifier-routing-cost-ab"
+  ],
+  "policy": {
+    "common_checks": [
+      "cargo fmt --check",
+      "cargo test --locked",
+      "cargo build --release --locked"
+    ],
+    "result_classes": [
+      "PROMOTE",
+      "HOLD",
+      "REJECT",
+      "INCONCLUSIVE"
+    ],
+    "invariants": [
+      "AutoRepair ∩ {Fact, Claim, SQL, Evidence} = empty",
+      "full source/data/computation artifacts remain replayable",
+      "default behavior remains unchanged when opt-in controls are unset",
+      "canonical profile inheritance must be used for phase counts",
+      "no evidence/provenance/verification/completion/publication/browser-QA gate weakening"
+    ]
+  },
+  "experiment": {
+    "id": "r6-01-combined-token-curve-candidate",
+    "title": "Combine Round 5 winners",
+    "allowed_files": [
+      "runtime/pi/newsroom.ts",
+      "runtime/pi/local_backend.mjs",
+      "src/pi.rs",
+      "src/prompt.rs",
+      "src/commands/investigate.rs",
+      "scripts/test_duckdb_result_budget.mjs",
+      "scripts/test_fetch_result_budget.mjs",
+      "scripts/test_local_result_budget.mjs",
+      "scripts/test_parallel_result_budget.mjs",
+      "scripts/test_tool_result_budget_integration.mjs",
+      "scripts/test_phase_tool_scope_v112.mjs",
+      "scripts/test_phase_env_plumbing.py",
+      "scripts/test_phase_runtime_surface.mjs",
+      "scripts/test_visual_routing_matrix.py",
+      "scripts/test_visual_routing_cost.py",
+      "scripts/test_round6_combined.py"
+    ],
+    "acceptance": [
+      "integrate the three listed R5 mechanisms manually; do not blindly merge conflicting newsroom.ts changes",
+      "all default paths remain behaviorally unchanged when opt-ins are absent",
+      "combined result-budget integration reports >=75% model-visible byte reduction",
+      "visual-story inherited counts remain all=47, discover=7, verify=7, design=25 unless registry changed and exact delta is explained",
+      "actual TypeBox parameter-schema bytes are measured for all/verify/design",
+      "24-case routing matrix still reports the intended delivery-only and true-multi-module behavior",
+      "combined harness reports prompt bytes, selected profile, effective tool count/schema bytes, and result-byte reduction",
+      "all focused safety/evidence tests and common checks pass"
+    ]
+  }
+}
