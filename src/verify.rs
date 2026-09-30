@@ -544,9 +544,467 @@ fn verify_computations(root: &Path, report: &mut VerificationReport) -> Result<(
                     ),
                 );
             }
+            verify_computation_read_inputs(root, &path, &value, report);
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Read-input binding (issue #36). Mirrors runtime/pi/computation_rows.mjs: a
+// computation only supports a claim when the files its SQL really reads
+// (recorded as `read_inputs`, re-derivable with DuckDB) include data/ or
+// sources/ artifacts the claim cites. Literal-only (VALUES, constants,
+// generate_series), unresolved and legacy (unrecorded) computations never do.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputBinding {
+    Legacy,
+    SourceBound,
+    LiteralOnly,
+    Unresolved,
+}
+
+impl InputBinding {
+    fn label(self) -> &'static str {
+        match self {
+            InputBinding::Legacy => "legacy",
+            InputBinding::SourceBound => "source_bound",
+            InputBinding::LiteralOnly => "literal_only",
+            InputBinding::Unresolved => "unresolved",
+        }
+    }
+}
+
+const MAX_CHAIN_DEPTH: usize = 16;
+const FILE_READER_FUNCTIONS: &[&str] = &[
+    "read_csv",
+    "read_csv_auto",
+    "read_json",
+    "read_json_auto",
+    "read_ndjson",
+    "read_ndjson_auto",
+    "read_json_objects",
+    "read_json_objects_auto",
+    "read_ndjson_objects",
+    "read_parquet",
+    "parquet_scan",
+    "read_text",
+    "read_blob",
+    "parquet_metadata",
+    "parquet_schema",
+    "parquet_file_metadata",
+    "parquet_kv_metadata",
+    "sniff_csv",
+];
+const LITERAL_TABLE_FUNCTIONS: &[&str] = &[
+    "range",
+    "generate_series",
+    "unnest",
+    "repeat_row",
+    "generate_subscripts",
+    "json_each",
+    "json_tree",
+];
+
+fn is_computation_path(path: &str) -> bool {
+    path.strip_prefix("computations/")
+        .and_then(|rest| rest.strip_suffix(".json"))
+        .is_some_and(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
+
+fn canonical_input_path(raw: &str) -> Option<String> {
+    if raw.is_empty()
+        || raw.len() > 512
+        || !raw
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._/-".contains(&byte))
+        || raw.starts_with('/')
+        || raw.contains("//")
+        || raw.ends_with('/')
+        || raw
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
+    {
+        return None;
+    }
+    if raw.starts_with("data/") || raw.starts_with("sources/") || is_computation_path(raw) {
+        Some(raw.to_owned())
+    } else {
+        None
+    }
+}
+
+fn constant_strings(expr: &Value) -> Option<Vec<String>> {
+    match expr.get("class").and_then(Value::as_str)? {
+        "CONSTANT" => {
+            let value = expr.get("value")?;
+            if value.get("is_null").and_then(Value::as_bool) == Some(false)
+                && value.pointer("/type/id").and_then(Value::as_str) == Some("VARCHAR")
+            {
+                Some(vec![value.get("value")?.as_str()?.to_owned()])
+            } else {
+                None
+            }
+        }
+        "FUNCTION" if expr.get("function_name").and_then(Value::as_str) == Some("list_value") => {
+            let children = expr.get("children")?.as_array()?;
+            if children.is_empty() {
+                return None;
+            }
+            let mut out = Vec::new();
+            for child in children {
+                let inner = constant_strings(child)?;
+                if inner.len() != 1 {
+                    return None;
+                }
+                out.push(inner.into_iter().next()?);
+            }
+            Some(out)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SqlReads {
+    paths: Vec<String>,
+    unresolved: Vec<String>,
+}
+
+fn collect_cte_names(node: &Value, names: &mut HashSet<String>) {
+    match node {
+        Value::Array(items) => items.iter().for_each(|item| collect_cte_names(item, names)),
+        Value::Object(map) => {
+            if let Some(entries) = map
+                .get("cte_map")
+                .and_then(|v| v.get("map"))
+                .and_then(Value::as_array)
+            {
+                for entry in entries {
+                    if let Some(key) = entry.get("key").and_then(Value::as_str) {
+                        names.insert(key.to_owned());
+                    }
+                }
+            }
+            map.values()
+                .for_each(|value| collect_cte_names(value, names));
+        }
+        _ => {}
+    }
+}
+
+fn walk_sql_reads(
+    node: &Value,
+    ctes: &HashSet<String>,
+    paths: &mut std::collections::BTreeSet<String>,
+    unresolved: &mut std::collections::BTreeSet<String>,
+) {
+    match node {
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| walk_sql_reads(item, ctes, paths, unresolved)),
+        Value::Object(map) => {
+            match map.get("type").and_then(Value::as_str) {
+                Some("BASE_TABLE") => {
+                    let table = map.get("table_name").and_then(Value::as_str).unwrap_or("");
+                    let qualified = map
+                        .get("schema_name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|v| !v.is_empty())
+                        || map
+                            .get("catalog_name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| !v.is_empty());
+                    if !qualified
+                        && !ctes.contains(table)
+                        && table.contains(['/', '.', '*', '\\', ':'])
+                    {
+                        match canonical_input_path(table) {
+                            Some(path) => {
+                                paths.insert(path);
+                            }
+                            None => {
+                                unresolved.insert(
+                                    "table reference is not a plain data/, sources/ or computations/ path"
+                                        .to_owned(),
+                                );
+                            }
+                        }
+                    }
+                }
+                Some("TABLE_FUNCTION") => {
+                    let function = map.get("function").cloned().unwrap_or(Value::Null);
+                    let name = function
+                        .get("function_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    if FILE_READER_FUNCTIONS.contains(&name.as_str()) {
+                        let positional: Vec<&Value> = function
+                            .get("children")
+                            .and_then(Value::as_array)
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .filter(|child| {
+                                        child
+                                            .get("alias")
+                                            .and_then(Value::as_str)
+                                            .is_none_or(str::is_empty)
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let listed = if positional.len() == 1 {
+                            constant_strings(positional[0])
+                        } else {
+                            None
+                        };
+                        match listed {
+                            None => {
+                                unresolved.insert(format!(
+                                    "{name}: path is not a single constant string or list"
+                                ));
+                            }
+                            Some(raws) => {
+                                for raw in raws {
+                                    match canonical_input_path(&raw) {
+                                        Some(path) => {
+                                            paths.insert(path);
+                                        }
+                                        None => {
+                                            unresolved.insert(format!(
+                                                "{name}: path is not a plain data/, sources/ or computations/ path"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if !LITERAL_TABLE_FUNCTIONS.contains(&name.as_str()) {
+                        unresolved.insert(format!("table function {name} is not recognized"));
+                    }
+                }
+                _ => {}
+            }
+            map.values()
+                .for_each(|value| walk_sql_reads(value, ctes, paths, unresolved));
+        }
+        _ => {}
+    }
+}
+
+/// Pure walk of a `json_serialize_sql` document.
+fn collect_sql_reads(ast: &Value) -> SqlReads {
+    let single = ast.get("error").and_then(Value::as_bool) == Some(false)
+        && ast
+            .get("statements")
+            .and_then(Value::as_array)
+            .is_some_and(|statements| statements.len() == 1);
+    if !single {
+        return SqlReads {
+            paths: Vec::new(),
+            unresolved: vec!["SQL is not a single serializable SELECT statement".to_owned()],
+        };
+    }
+    let mut ctes = HashSet::new();
+    collect_cte_names(ast, &mut ctes);
+    let mut paths = std::collections::BTreeSet::new();
+    let mut unresolved = std::collections::BTreeSet::new();
+    walk_sql_reads(ast, &ctes, &mut paths, &mut unresolved);
+    SqlReads {
+        paths: paths.into_iter().collect(),
+        unresolved: unresolved.into_iter().collect(),
+    }
+}
+
+/// Classify a set of directly read paths, following chained computations.
+fn classify_inputs(
+    root: &Path,
+    paths: &[String],
+    had_unresolved: bool,
+    depth: usize,
+    seen: &[String],
+) -> (InputBinding, std::collections::BTreeSet<String>) {
+    let mut effective = std::collections::BTreeSet::new();
+    let mut unresolved = had_unresolved;
+    for path in paths {
+        if path.starts_with("data/") || path.starts_with("sources/") {
+            effective.insert(path.clone());
+            continue;
+        }
+        if !is_computation_path(path) || seen.contains(path) || depth >= MAX_CHAIN_DEPTH {
+            unresolved = true;
+            continue;
+        }
+        let dependency = read_json(&root.join(path)).unwrap_or(Value::Null);
+        let mut chain = seen.to_vec();
+        chain.push(path.clone());
+        let (binding, inner) = recorded_input_state(root, &dependency, depth + 1, &chain);
+        if matches!(binding, InputBinding::Legacy | InputBinding::Unresolved) {
+            unresolved = true;
+        }
+        effective.extend(inner);
+    }
+    let binding = if unresolved {
+        InputBinding::Unresolved
+    } else if effective.is_empty() {
+        InputBinding::LiteralOnly
+    } else {
+        InputBinding::SourceBound
+    };
+    (binding, effective)
+}
+
+fn recorded_read_paths(record: &Value) -> Option<Vec<String>> {
+    let items = record.get("read_inputs")?.as_array()?;
+    Some(
+        items
+            .iter()
+            .map(|item| {
+                item.get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned()
+            })
+            .collect(),
+    )
+}
+
+fn recorded_binding_label(record: &Value) -> Option<InputBinding> {
+    match record.get("input_binding").and_then(Value::as_str)? {
+        "source_bound" => Some(InputBinding::SourceBound),
+        "literal_only" => Some(InputBinding::LiteralOnly),
+        "unresolved" => Some(InputBinding::Unresolved),
+        _ => None,
+    }
+}
+
+/// Binding implied by what a stored record says it read.
+fn recorded_input_state(
+    root: &Path,
+    record: &Value,
+    depth: usize,
+    seen: &[String],
+) -> (InputBinding, std::collections::BTreeSet<String>) {
+    let (Some(paths), Some(label)) = (recorded_read_paths(record), recorded_binding_label(record))
+    else {
+        return (InputBinding::Legacy, Default::default());
+    };
+    if depth > MAX_CHAIN_DEPTH {
+        return (InputBinding::Unresolved, Default::default());
+    }
+    classify_inputs(root, &paths, label == InputBinding::Unresolved, depth, seen)
+}
+
+/// Record-level checks for computations that carry read_inputs (new builds).
+/// Legacy records are not rewritten or flagged here; claims resting on them are
+/// judged in `verify_claims`.
+fn verify_computation_read_inputs(
+    root: &Path,
+    path: &Path,
+    value: &Value,
+    report: &mut VerificationReport,
+) {
+    let has_inputs = value.get("read_inputs").is_some();
+    let has_binding = value.get("input_binding").is_some();
+    if !has_inputs && !has_binding {
+        return;
+    }
+    let name = path.display();
+    let (Some(items), Some(label)) = (
+        value.get("read_inputs").and_then(Value::as_array),
+        recorded_binding_label(value),
+    ) else {
+        report.error(format!(
+            "computation {name} must carry both a valid read_inputs array and input_binding"
+        ));
+        return;
+    };
+    let mut listed: Vec<String> = Vec::new();
+    let mut shape_ok = true;
+    for item in items {
+        let input_path = item.get("path").and_then(Value::as_str).unwrap_or("");
+        let sha = item.get("sha256").and_then(Value::as_str).unwrap_or("");
+        let canonical = canonical_input_path(input_path);
+        if canonical.is_none() || sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            report.error(format!(
+                "computation {name} has an invalid read_inputs entry: {input_path}"
+            ));
+            shape_ok = false;
+            continue;
+        }
+        listed.push(input_path.to_owned());
+        match sha256_file(&root.join(input_path)) {
+            Ok(actual) => report.check(
+                actual == sha,
+                format!("computation {name} read input {input_path} no longer matches its recorded sha256"),
+            ),
+            Err(_) => report.error(format!(
+                "computation {name} read input {input_path} is missing"
+            )),
+        }
+    }
+    let mut sorted = listed.clone();
+    sorted.sort();
+    sorted.dedup();
+    report.check(
+        listed == sorted,
+        format!("read_inputs must be sorted and unique: {name}"),
+    );
+    if !shape_ok {
+        return;
+    }
+    let (implied, _) = classify_inputs(root, &listed, label == InputBinding::Unresolved, 0, &[]);
+    report.check(
+        implied == label,
+        format!(
+            "computation {name} input_binding {} does not match its read_inputs ({})",
+            label.label(),
+            implied.label()
+        ),
+    );
+}
+
+/// A verified claim may rest only on computations that read, at run time, at
+/// least one cited data/ or sources/ artifact.
+fn verify_claim_computation_binding(
+    root: &Path,
+    line_no: usize,
+    source_refs: &[String],
+    computation_ref: &str,
+    report: &mut VerificationReport,
+) {
+    let Ok(path) = safe_ref(root, computation_ref) else {
+        return;
+    };
+    let Ok(record) = read_json(&path) else {
+        return;
+    };
+    let (binding, effective) =
+        recorded_input_state(root, &record, 0, &[computation_ref.to_owned()]);
+    if binding != InputBinding::SourceBound {
+        report.error(format!(
+            "COMPUTATION_PROVENANCE_REQUIRED: verified claim on line {} rests on computation {computation_ref} whose recorded inputs are {}; literal-only, unresolved or unrecorded (legacy) computations cannot verify a claim",
+            line_no + 1,
+            binding.label()
+        ));
+        return;
+    }
+    report.check(
+        source_refs.iter().any(|source| effective.contains(source)),
+        format!(
+            "COMPUTATION_PROVENANCE_REQUIRED: verified claim on line {} cites no source read by computation {computation_ref}",
+            line_no + 1
+        ),
+    );
 }
 
 fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
@@ -605,6 +1063,10 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
                 line_no + 1
             ),
         );
+        let cited_sources: Vec<String> = source_refs
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_owned))
+            .collect();
         for item in source_refs {
             if let Some(reference) = item.as_str() {
                 match safe_ref(root, reference) {
@@ -626,6 +1088,7 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
                     ));
                     continue;
                 }
+                verify_claim_computation_binding(root, line_no, &cited_sources, reference, report);
                 match safe_ref(root, reference) {
                     Ok(path) => report.check(
                         path.is_file(),
@@ -3210,6 +3673,55 @@ impl RecomputeReport {
     }
 }
 
+/// Re-derive the read inputs of a stored SQL statement with DuckDB's parser
+/// (no data access) and classify them like the runtime did at query time.
+async fn derive_read_inputs(
+    root: &Path,
+    duckdb_bin: &Path,
+    sql: &str,
+    timeout_seconds: u64,
+) -> Result<(Vec<(String, String)>, InputBinding)> {
+    use tokio::process::Command;
+    use tokio::time::{timeout, Duration};
+
+    let literal = sql.replace('\'', "''");
+    let mut command = Command::new(duckdb_bin);
+    command
+        .current_dir(root)
+        .kill_on_drop(true)
+        .arg("-noheader")
+        .arg("-list")
+        .arg(":memory:")
+        .arg("-cmd")
+        .arg("SET enable_external_access = false")
+        .arg("-cmd")
+        .arg("SET lock_configuration = true")
+        .arg("-c")
+        .arg(format!(
+            "SELECT json_serialize_sql('{literal}', skip_null := true, skip_empty := true)"
+        ));
+    let output = timeout(Duration::from_secs(timeout_seconds), command.output())
+        .await
+        .context("read-input analysis timed out")??;
+    if !output.status.success() {
+        bail!("DuckDB could not analyze the SQL");
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let ast: Value = serde_json::from_str(text.trim())?;
+    let reads = collect_sql_reads(&ast);
+    let mut inputs = Vec::new();
+    let mut unresolved = !reads.unresolved.is_empty();
+    for path in &reads.paths {
+        match sha256_file(&root.join(path)) {
+            Ok(sha) => inputs.push((path.clone(), sha)),
+            Err(_) => unresolved = true,
+        }
+    }
+    let paths: Vec<String> = inputs.iter().map(|(path, _)| path.clone()).collect();
+    let (binding, _) = classify_inputs(root, &paths, unresolved, 0, &[]);
+    Ok((inputs, binding))
+}
+
 pub async fn recompute_artifact(
     root: &Path,
     duckdb_bin: &Path,
@@ -3271,6 +3783,45 @@ pub async fn recompute_artifact(
                 continue;
             }
         };
+        // New-format records (read_inputs present) must match what DuckDB
+        // derives from the stored SQL now; legacy records have nothing to
+        // compare and are judged by verify_claims instead.
+        if let Some(recorded) = value.get("read_inputs").and_then(Value::as_array) {
+            let recorded_pairs: Vec<(String, String)> = recorded
+                .iter()
+                .map(|item| {
+                    (
+                        item.get("path")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        item.get("sha256")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                    )
+                })
+                .collect();
+            match derive_read_inputs(root, duckdb_bin, &sql, timeout_seconds).await {
+                Ok((derived, binding)) => {
+                    report.check(
+                        derived == recorded_pairs
+                            && Some(binding) == recorded_binding_label(&value),
+                        format!(
+                            "recompute read_inputs mismatch: recorded inputs do not match the SQL of {}",
+                            path.display()
+                        ),
+                    );
+                }
+                Err(error) => report.check(
+                    false,
+                    format!(
+                        "recompute could not derive read inputs for {}: {error}",
+                        path.display()
+                    ),
+                ),
+            }
+        }
         let sql = match materialize_recompute_rows(root, &sql, &scratch.path) {
             Ok(sql) => sql,
             Err(error) => {
@@ -5954,5 +6505,158 @@ mod tests {
         fs::write(&path, serde_json::to_string_pretty(&record).unwrap()).unwrap();
         let errors = source_errors(temp.path());
         assert_error(&errors, "source content_hash mismatch");
+    }
+
+    // ---- read-input binding (issue #36) ----
+
+    fn reader_ast(function: &str, path: &str) -> Value {
+        serde_json::json!({
+            "error": false,
+            "statements": [{"node": {"from_table": {
+                "type": "TABLE_FUNCTION",
+                "function": {"function_name": function, "children": [
+                    {"class": "CONSTANT", "value": {"is_null": false, "type": {"id": "VARCHAR"}, "value": path}}
+                ]}
+            }}}]
+        })
+    }
+
+    #[test]
+    fn sql_reads_classify_files_literals_and_unresolved() {
+        let reads = collect_sql_reads(&reader_ast("read_csv_auto", "data/x.csv"));
+        assert_eq!(reads.paths, vec!["data/x.csv".to_owned()]);
+        assert!(reads.unresolved.is_empty());
+        for bad in [
+            "data/*.csv",
+            "../etc/passwd",
+            "/abs/data/x.csv",
+            "other/x.csv",
+        ] {
+            let reads = collect_sql_reads(&reader_ast("read_csv_auto", bad));
+            assert!(
+                reads.paths.is_empty() && !reads.unresolved.is_empty(),
+                "{bad}"
+            );
+        }
+        assert!(!collect_sql_reads(&reader_ast("mystery_fn", "data/x.csv"))
+            .unresolved
+            .is_empty());
+        assert!(!collect_sql_reads(&serde_json::json!({"error": true}))
+            .unresolved
+            .is_empty());
+        let literal = serde_json::json!({"error": false, "statements": [{"node": {"from_table": {
+            "type": "TABLE_FUNCTION", "function": {"function_name": "generate_series", "children": []}}}}]});
+        assert_eq!(collect_sql_reads(&literal), SqlReads::default());
+    }
+
+    const BIND_DATA_SHA: &str = "492d5ea496056f1a6a6592241032fab764c321596317930b4fa0e1e8bc3b7470";
+
+    /// Artifact with data/a.csv, one computation and one verified claim citing it.
+    fn build_binding_fixture(computation_extra: Value, source_ref: &str) -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("data")).unwrap();
+        fs::create_dir_all(root.join("computations")).unwrap();
+        fs::write(root.join("data/a.csv"), "a,b\n1,2\n").unwrap();
+        let mut record =
+            serde_json::json!({"schema_version": "0.7.0", "sql": "SELECT 1", "rows": []});
+        for (key, value) in computation_extra.as_object().unwrap() {
+            record[key] = value.clone();
+        }
+        let computation = format!("computations/{}.json", "c".repeat(64));
+        fs::write(root.join(&computation), record.to_string()).unwrap();
+        let claim = serde_json::json!({
+            "schema_version": "0.8.0", "claim_id": "claim-1", "status": "verified",
+            "source_refs": [source_ref], "computation_refs": [computation],
+            "verification": {"authority": "system", "source_resolved": true, "extraction_passed": true,
+                "computation_replayed": true, "claim_supported": true, "publishable": true,
+                "rule_id": "verification.source+extraction+computation+claim.v1"}
+        });
+        fs::write(root.join("claims.jsonl"), format!("{claim}\n")).unwrap();
+        temp
+    }
+
+    fn claim_errors(root: &Path) -> Vec<String> {
+        let mut report = VerificationReport::default();
+        verify_claims(root, &mut report).unwrap();
+        report.errors
+    }
+
+    #[test]
+    fn verified_claim_over_legacy_computation_is_an_integrity_error() {
+        // (c) no read_inputs at all: a legacy record, possibly a VALUES table.
+        let temp = build_binding_fixture(serde_json::json!({}), "data/a.csv");
+        let errors = claim_errors(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.starts_with("COMPUTATION_PROVENANCE_REQUIRED") && e.contains("legacy")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn verified_claim_over_literal_only_computation_is_an_integrity_error() {
+        let temp = build_binding_fixture(
+            serde_json::json!({"read_inputs": [], "input_binding": "literal_only"}),
+            "data/a.csv",
+        );
+        let errors = claim_errors(temp.path());
+        assert!(
+            errors.iter().any(|e| e.contains("literal_only")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn verified_claim_over_computation_reading_the_cited_file_passes() {
+        // (b)
+        let temp = build_binding_fixture(
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": BIND_DATA_SHA}], "input_binding": "source_bound"}),
+            "data/a.csv",
+        );
+        assert_eq!(claim_errors(temp.path()), Vec::<String>::new());
+        let mut report = VerificationReport::default();
+        let path = temp
+            .path()
+            .join(format!("computations/{}.json", "c".repeat(64)));
+        let value = read_json(&path).unwrap();
+        verify_computation_read_inputs(temp.path(), &path, &value, &mut report);
+        assert_eq!(report.errors, Vec::<String>::new());
+    }
+
+    #[test]
+    fn claim_citing_a_source_the_computation_did_not_read_is_refused() {
+        let temp = build_binding_fixture(
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": BIND_DATA_SHA}], "input_binding": "source_bound"}),
+            "data/other.csv",
+        );
+        let errors = claim_errors(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("cites no source read by computation")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn forged_or_stale_read_inputs_fail_record_validation() {
+        for extra in [
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": "0".repeat(64)}], "input_binding": "source_bound"}),
+            serde_json::json!({"read_inputs": [], "input_binding": "source_bound"}),
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": BIND_DATA_SHA}], "input_binding": "literal_only"}),
+            serde_json::json!({"read_inputs": [{"path": "../x", "sha256": BIND_DATA_SHA}], "input_binding": "source_bound"}),
+            serde_json::json!({"input_binding": "source_bound"}),
+        ] {
+            let temp = build_binding_fixture(extra.clone(), "data/a.csv");
+            let path = temp
+                .path()
+                .join(format!("computations/{}.json", "c".repeat(64)));
+            let value = read_json(&path).unwrap();
+            let mut report = VerificationReport::default();
+            verify_computation_read_inputs(temp.path(), &path, &value, &mut report);
+            assert!(!report.errors.is_empty(), "{extra}");
+        }
     }
 }

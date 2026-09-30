@@ -29,13 +29,13 @@ import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, rea
 import { extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, evidenceRefFromFingerprint, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
-import { materializeComputationRowTables, safeDuckDbDiagnostic } from "./computation_rows.mjs";
+import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const DEFAULT_RESULT_BUDGET_BYTES = 12 * 1024;
@@ -1118,27 +1118,50 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
     if (computationRelativePath(sql, inputSnapshotHash, recordedResultHash) !== ref) {
       throw new Error(`INVALID_COMPUTATION_EVIDENCE: content-addressed path does not match computation: ${ref}`);
     }
-    const inputs = Array.isArray(computation.input_fingerprints) ? computation.input_fingerprints.map(String) : [];
-    const isBound = sourceRefs.some((sourceRef) => sourceRef.startsWith("data/")
-      ? inputs.some((fingerprint: string) => fingerprint.startsWith(`data:${sourceRef}:`))
-      : inputs.some((fingerprint: string) => fingerprint.startsWith(`source:${sourceRef.slice("sources/".length)}:`)));
-    if (!isBound) throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} does not consume any cited source artifact`);
+    // Bind on what the SQL really reads, re-derived now and required to match
+    // what was recorded at query time. Legacy records (no read_inputs) and
+    // literal-only or unresolved computations can never support a claim.
+    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"));
+    if (recorded.binding === "legacy") {
+      throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} has no recorded read inputs (legacy record); rerun the query`);
+    }
+    const derived = await deriveInputsForSql(sql, signal);
+    if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
+      throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
+    }
+    assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs);
     if (hashRows(await queryDuckDb(sql, signal)) !== recordedResultHash) {
       throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}`);
     }
   }
 }
 
-async function hasUsableEvidenceInput(snapshot: { fingerprints: string[] }) {
-  for (const fingerprint of snapshot.fingerprints) {
-    const ref = evidenceRefFromFingerprint(fingerprint);
-    if (!ref) continue;
-    try {
-      await validateSourceEvidence([ref]);
-      return true;
-    } catch {}
-  }
-  return false;
+// Parse SQL with DuckDB's own parser (no data access) so the inputs a
+// computation really reads can be derived deterministically.
+async function serializeSqlAst(sql: string, signal?: AbortSignal) {
+  const bin = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
+  const literal = String(sql).replace(/'/g, "''");
+  const args = [
+    "-noheader", "-list", ":memory:",
+    "-cmd", "SET enable_external_access = false",
+    "-cmd", "SET lock_configuration = true",
+    "-c", `SELECT json_serialize_sql('${literal}', skip_null := true, skip_empty := true)`,
+  ];
+  const { stdout, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES * 4, 20_000, true);
+  if (code !== 0) throw new Error("SQL could not be analyzed");
+  return JSON.parse(stdout.trim());
+}
+
+async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
+  return deriveComputationInputs(sql, {
+    root,
+    serializeSql: (text: string) => serializeSqlAst(text, signal),
+    readComputation: (ref: string) => readArtifactJson(ref, "computations/"),
+  });
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -1453,7 +1476,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const safeSql = validateReadOnlySql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
-      assertInlineRowsHaveEvidence(safeSql, await hasUsableEvidenceInput(inputSnapshot));
+      const derivedInputs = await deriveInputsForSql(safeSql, signal);
+      assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");
       const inputSnapshotHash = inputSnapshot.hash;
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
@@ -1463,6 +1487,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         sql: safeSql,
         input_snapshot_hash: inputSnapshotHash,
         input_fingerprints: inputSnapshot.fingerprints,
+        read_inputs: derivedInputs.read_inputs,
+        input_binding: derivedInputs.input_binding,
         result_hash: resultHash,
         rows,
       };
@@ -2022,11 +2048,14 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const inputSnapshot = await evidenceSnapshot();
       const inputSnapshotHash = inputSnapshot.hash;
       const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
+      const lintInputs = await deriveInputsForSql(spec.sql, signal);
       await writeArtifactIfAbsent(computationRef, {
         schema_version: "0.7.0",
         sql: spec.sql,
         input_snapshot_hash: inputSnapshotHash,
         input_fingerprints: inputSnapshot.fingerprints,
+        read_inputs: lintInputs.read_inputs,
+        input_binding: lintInputs.input_binding,
         result_hash: lint.data_hash,
         data_hash: lint.data_hash,
         rows,
