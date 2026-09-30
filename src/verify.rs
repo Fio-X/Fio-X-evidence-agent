@@ -986,6 +986,10 @@ fn verify_claim_computation_binding(
         return;
     };
     let Ok(record) = read_json(&path) else {
+        report.error(format!(
+            "COMPUTATION_PROVENANCE_REQUIRED: computation {computation_ref} cited by verified claim on line {} is unreadable",
+            line_no + 1
+        ));
         return;
     };
     let (binding, effective) =
