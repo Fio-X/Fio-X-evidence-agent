@@ -98,11 +98,9 @@ pub fn is_complex_visual_request(text: &str) -> bool {
             "视觉文章",
             "复杂的信息图",
             "组合",
-            // 地图 covers every map phrasing (世界地图, 流向地图, 分级统计地图);
-            // 流向地图 stays listed on its own so narrowing the bare word later
-            // cannot silently drop flow maps.  The bare English "map" is not
-            // listed: a single English map request is routed as a simple visual.
-            "地图",
+            // A single map request ("画一张各省GDP地图") stays on the simple
+            // visual profile, symmetric with the bare English "map".  Flow
+            // maps are still listed explicitly as complex.
             "流向地图",
             "流向图",
             "flow map",
@@ -453,7 +451,6 @@ mod tests {
             "long scroll infographic of trade routes",
             "a chart with a static fallback",
             "draw a flow map of grain trade",
-            "画一张中国地图",
             "资金流向图",
         ] {
             assert!(is_visual_request(goal), "visual: {goal}");
@@ -485,8 +482,14 @@ mod tests {
 
     #[test]
     fn routing_keeps_single_english_maps_and_charts_simple() {
-        // These are pinned by the routing matrix: only the Chinese bare 地图
-        // and phrase-level English terms widen the baseline classifier.
+        // These are pinned by the routing matrix: only phrase-level terms
+        // (flow map, 长图, ...) widen the baseline classifier; a single map,
+        // English or Chinese, stays simple.
+        assert!(is_visual_request("画一张各省GDP地图"));
+        assert!(!is_complex_visual_request("画一张各省GDP地图"));
+        assert!(!is_complex_visual_request("画一张中国地图"));
+        assert!(is_complex_visual_request("画一张流向地图"));
+        assert!(is_complex_visual_request("画一张流向图"));
         assert!(is_visual_request("make a map"));
         assert!(!is_complex_visual_request("make a map"));
         assert!(!is_complex_visual_request("make a chart"));

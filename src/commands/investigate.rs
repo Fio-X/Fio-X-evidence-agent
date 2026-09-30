@@ -447,6 +447,9 @@ mod completion_tests {
 
     #[test]
     fn lieflat_only_run_cannot_complete_the_long_image_goal() {
+        // The goal is complex through 信息长图, not the bare 地图, so the full
+        // chain is required even with no recorded profile.
+        assert!(completion_chain_required(SCMP_LONG_IMAGE_GOAL, false, None));
         let root = tempfile::tempdir().unwrap();
         let (bundle, audit) = lieflat_only_run(root.path(), SCMP_LONG_IMAGE_GOAL);
         for profile in [None, Some("visual"), Some("visual-story")] {
