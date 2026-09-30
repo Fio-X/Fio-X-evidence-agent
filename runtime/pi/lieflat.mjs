@@ -909,16 +909,26 @@ async function renderModuleHtml(root, module, asset, language, index, selectedMe
   return `<article class="lf-module lf-role-${esc(module.story_role)}${scrollClass}" data-module-id="${esc(module.id)}" data-story-role="${esc(module.story_role)}" data-story-state="${index + 1}" data-analytical-job="${esc(module.analytical_job)}"><p class="lf-role">${esc(roleLabel(module.story_role, language))}</p><h2>${esc(module.title || module.reader_question)}</h2><p class="lf-reader-question">${esc(module.reader_question)}</p>${module.annotation ? `<p class="lf-annotation">${esc(module.annotation)}</p>` : ""}${chart}<p class="lf-binding" data-claim-ids="${esc(moduleClaimIds.join(","))}" data-source-refs="${esc(moduleSourceRefs.join(","))}">${esc(bindingLine)}</p></article>`;
 }
 
+// A Lieflat page is rendered by this module alone. It is never run through the
+// measured infographic lint/critic or the browser QA, so nothing it writes may
+// read as a pass: the status is UNQUALIFIED and every lint, critic and QA
+// artifact below is explicitly UNMEASURED (no passed flag, no score).
+const UNMEASURED_REASON = "rendered by the Lieflat fallback without measured infographic lint, critic or browser QA";
+const LIEFLAT_QUALIFICATION = Object.freeze({
+  status: "UNQUALIFIED",
+  measured: false,
+  reason: UNMEASURED_REASON,
+  deliverable: false,
+  required_chain: ["newsroom_infographic_plan", "newsroom_infographic_lint", "newsroom_infographic_render", "newsroom_infographic_critic", "newsroom_publication_plan", "newsroom_publication_render", "newsroom_publication_qa"],
+});
+
 function reportMarkdown(input, manifest, moduleRows) {
   const language = input.language === "zh" ? "zh" : "en";
-  const mobilePages = input.mobile_pages === true;
   const title = language === "zh" ? "# 数据新闻信息图报告" : "# Data-news infographic report";
   const labels = language === "zh"
     ? { thesis: "核心命题", graph: "Story Graph 摘要", modules: "模块", sources: "来源", limits: "限制", qa: "QA 状态", html: "HTML 路径", manifest: "Manifest 路径" }
     : { thesis: "Core thesis", graph: "Story Graph summary", modules: "Modules", sources: "Sources", limits: "Limitations", qa: "QA status", html: "HTML path", manifest: "Manifest path" };
-  // desktop is always rendered; mobile is a phone-facing page that only
-  // exists when the caller (newsroom.ts) turned it on - see mobilePages.
-  const qaLines = `- publication: PASS\n- desktop: PASS\n${mobilePages ? "- mobile: PASS\n" : ""}- self-contained: PASS\n- network requests: 0\n- artifact status: PUBLISHABLE\n`;
+  const qaLines = `- publication QA: UNMEASURED (${UNMEASURED_REASON})\n- artifact status: UNQUALIFIED (not a completed deliverable)\n- network requests: none by construction (CSP, no remote assets)\n`;
   return `${title}\n\n- ${labels.thesis}: ${input.dek}\n- ${labels.html}: ${manifest.html_path}\n- ${labels.manifest}: ${manifest.manifest_path}\n- Story JSON: ${manifest.story_json_path}\n- Editorial discovery: ${manifest.editorial_discovery_ref}\n- Infographic plan: ${manifest.infographic_plan_ref}\n- Infographic lint: ${manifest.infographic_lint_ref}\n- Infographic critic: ${manifest.infographic_critic_ref}\n- Publication QA: ${manifest.publication_qa_ref}\n\n## ${labels.thesis}\n\n${input.title}\n\n${input.dek}\n\n## ${labels.graph}\n\n- Reference: ${input.story_graph_ref}\n- Roles: ${manifest.story_completion.story_roles_covered.join(", ")}\n- Distinct findings: ${manifest.story_completion.distinct_findings}\n- Distinct analytical jobs: ${manifest.story_completion.distinct_analytical_jobs}\n\n## ${labels.modules}\n\n${moduleRows.map((module) => `- ${module.id}: ${module.story_role} / ${module.analytical_job} / template ${module.chart_template_id || "text"} / claims ${unique(module.claim_ids).join(", ")} / sources ${unique(module.source_refs).join(", ")}`).join("\n")}\n\n## ${labels.sources}\n\n${unique(input.source_refs).map((ref) => `- ${ref}`).join("\n") || "- none"}\n\n## ${labels.limits}\n\n- Claims are limited to the verified snapshots and computations bound to each module.\n- No synthetic data, template demo data, or unsupported Lieflat template was used.\n- ${language === "zh" ? "页面为离线静态 HTML；没有远程脚本、字体或图片。" : "The page is offline static HTML; it has no remote scripts, fonts, or images."}\n\n## ${labels.qa}\n\n${qaLines}`;
 }
 
@@ -1074,6 +1084,7 @@ async function renderLieflatChart(input = {}) {
     network_requests: 0,
     desktop_qa: "PASS",
     ...(mobilePages ? { mobile_qa: "PASS" } : {}),
+    qualification: { ...LIEFLAT_QUALIFICATION, note: "desktop_qa and mobile_qa are renderer constants, not measured render QA" },
   };
   const style = `${extractTemplateStyle(sourceTemplate)}\n.lieflat-chart-page{background:#f7f2eb;color:#081f5c;max-width:1080px;margin:auto;padding:clamp(20px,5vw,64px);font:16px/1.5 Arial,sans-serif}.lieflat-chart-page h1{font:700 clamp(30px,6vw,64px)/1.08 Georgia,serif}.lieflat-chart-page .dek{color:#5f5d57;font-size:clamp(16px,2.3vw,23px);max-width:760px}.chart-wrap{border-top:2px solid #081f5c;border-bottom:1px solid #c9c7c0;margin-top:28px;padding:18px 0}.chart-wrap svg{display:block;width:100%;height:auto}.data-table{border-collapse:collapse;width:100%;margin-top:18px;font-size:13px}.data-table th,.data-table td{border-bottom:1px solid #c9c7c0;text-align:left;padding:5px}.source{color:#5f5d57;font-size:12px;overflow-wrap:anywhere}@media(max-width:720px){.lieflat-chart-page{padding:24px 16px}.chart-wrap{overflow-x:auto}.chart-wrap svg{min-width:520px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}`;
   const chartHeaders = unique(projectedRows.flatMap((row) => (row.series || []).map((series) => series.label)));
@@ -1116,6 +1127,7 @@ async function renderLieflatChart(input = {}) {
     desktop_qa: "PASS",
     ...(mobilePages ? { mobile_qa: "PASS" } : {}),
     publication_qa: "NOT_APPLICABLE",
+    qualification: LIEFLAT_QUALIFICATION,
   };
 }
 
@@ -1328,7 +1340,8 @@ export async function renderLieflatPublication(input = {}) {
   const manifest = {
     schema_version: "1.0.0",
     kind: "lieflat_publication",
-    artifact_status: "PUBLISHABLE",
+    artifact_status: "UNQUALIFIED",
+    qualification: LIEFLAT_QUALIFICATION,
     selected_method: selectedMethod,
     selected_skill: selectedMethod,
     renderer_skill: "lieflat-charts",
@@ -1362,20 +1375,18 @@ export async function renderLieflatPublication(input = {}) {
       distinct_analytical_jobs: analyticalJobs.length,
       verified_visual_asset_count: visualAssets.length,
       chart_grammar_count: distinctChartTemplates.length,
-      infographic_plan_passed: true,
-      infographic_rendered: true,
-      infographic_critic_passed: true,
-      publication_html_verified: true,
-      publication_qa_passed: true,
+      infographic_plan_passed: false,
+      infographic_rendered: false,
+      infographic_critic_passed: false,
+      publication_html_verified: false,
+      publication_qa_passed: false,
       source_bound_module_count: moduleRows.filter((module) => module.source_refs?.length > 0).length,
       module_count: moduleRows.length,
       single_chart_fallback: false,
     },
     html_bytes: Buffer.byteLength(html),
     html_sha256: sha(html),
-    desktop_qa: "PASS",
-    ...(mobilePages ? { mobile_qa: "PASS" } : {}),
-    publication_qa: "PASS",
+    publication_qa: "UNMEASURED",
     story_json_ref: "story.json",
     story_json_path: storyJsonPath,
     editorial_discovery_ref: editorialDiscoveryRef,
@@ -1383,10 +1394,10 @@ export async function renderLieflatPublication(input = {}) {
     infographic_critic_ref: criticRef,
     publication_qa_ref: publicationQaRef,
   };
-  await safeWrite(root, planRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_plan", story_graph_ref: input.story_graph_ref, modules: manifest.modules, passed: true }, null, 2)}\n`);
-  await safeWrite(root, lintRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_lint", plan_ref: planRef, passed: true, blockers: [], checks: { ordered_modules: true, required_story_roles: true, distinct_findings: true, distinct_analytical_jobs: true, source_bound_modules: true, quantitative_computation_bindings: true, complementary_chart_grammars: distinctChartTemplates.length >= 2 || assets.length < 4, duplicate_conclusions: false, single_chart_fallback: false } }, null, 2)}\n`);
-  await safeWrite(root, criticRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_critic", plan_ref: planRef, manifest_ref: manifestRef, passed: true, score: 100, dimensions: { hierarchy: "PASS", legibility: "PASS", evidence_binding: "PASS", responsive_structure: "PASS", accessibility: "PASS" } }, null, 2)}\n`);
-  await safeWrite(root, publicationQaRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "publication_qa", manifest_ref: manifestRef, passed: true, publication_qa: "PASS", desktop_qa: "PASS", ...(mobilePages ? { mobile_qa: "PASS" } : {}), self_contained: true, network_requests: 0, remote_scripts: false, remote_fonts: false, remote_images: false, reduced_motion: true, no_js_core_information: true }, null, 2)}\n`);
+  await safeWrite(root, planRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_plan", status: "UNMEASURED", measured: false, reason: UNMEASURED_REASON, story_graph_ref: input.story_graph_ref, modules: manifest.modules }, null, 2)}\n`);
+  await safeWrite(root, lintRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_lint", status: "UNMEASURED", measured: false, reason: UNMEASURED_REASON, plan_ref: planRef }, null, 2)}\n`);
+  await safeWrite(root, criticRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_critic", status: "UNMEASURED", measured: false, reason: UNMEASURED_REASON, plan_ref: planRef, manifest_ref: manifestRef }, null, 2)}\n`);
+  await safeWrite(root, publicationQaRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_publication_qa", status: "UNMEASURED", measured: false, reason: UNMEASURED_REASON, manifest_ref: manifestRef, self_contained_by_construction: true }, null, 2)}\n`);
   await safeWrite(root, manifestRef, `${JSON.stringify(manifest, null, 2)}\n`);
   const reportRef = "report.md";
   const reportPath = await safeWrite(root, reportRef, reportMarkdown({ ...input, language }, { ...manifest, manifest_path: resolve(root, manifestRef) }, moduleRows));
@@ -1412,9 +1423,9 @@ export async function renderLieflatPublication(input = {}) {
     self_contained: true,
     network_required: false,
     html_bytes: Buffer.byteLength(html),
-    desktop_qa: "PASS",
-    ...(mobilePages ? { mobile_qa: "PASS" } : {}),
-    publication_qa: "PASS",
+    artifact_status: "UNQUALIFIED",
+    qualification: LIEFLAT_QUALIFICATION,
+    publication_qa: "UNMEASURED",
     story_completion: manifest.story_completion,
     story_json_path: storyJsonPath,
     editorial_discovery_ref: editorialDiscoveryRef,

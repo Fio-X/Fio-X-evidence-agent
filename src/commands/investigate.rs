@@ -49,11 +49,31 @@ fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) 
     }
 }
 
+/// Whether completion must go through the measured infographic, publication
+/// and browser-QA chain. The goal text can only add this requirement; an
+/// explicit visual-story tool profile adds it regardless of the wording.
+fn completion_chain_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
+    is_complex_visual_request(topic, split_classifier) || profile == Some("visual-story")
+}
+
 fn visual_completion_gaps(
     bundle: &InvestigationBundle,
     topic: &str,
     audit: &audit::AuditSummary,
     split_classifier: bool,
+) -> Result<Vec<String>> {
+    // The effective profile is what the Pi run recorded, so an explicit
+    // `--tool-profile visual-story` is seen here without touching the run loop.
+    let profile = bundle.recorded_tool_profile();
+    visual_completion_gaps_for_profile(bundle, topic, audit, split_classifier, profile.as_deref())
+}
+
+fn visual_completion_gaps_for_profile(
+    bundle: &InvestigationBundle,
+    topic: &str,
+    audit: &audit::AuditSummary,
+    split_classifier: bool,
+    profile: Option<&str>,
 ) -> Result<Vec<String>> {
     let successful_tool = |name: &str| {
         audit
@@ -67,7 +87,7 @@ fn visual_completion_gaps(
         (true, true) => 2,
     };
     let mut gaps = bundle.visual_delivery_gaps(prompt::requires_html(topic), required_pngs)?;
-    if is_complex_visual_request(topic, split_classifier) {
+    if completion_chain_required(topic, split_classifier, profile) {
         for tool in [
             "newsroom_infographic_plan",
             "newsroom_infographic_lint",
@@ -80,6 +100,9 @@ fn visual_completion_gaps(
             if !successful_tool(tool) {
                 gaps.push(format!("required complex-visual gate did not pass: {tool}"));
             }
+        }
+        if let Some(reason) = bundle.measured_publication_gap()? {
+            gaps.push(format!("no measured publication: {reason}"));
         }
         gaps.extend(requested_visual_mode_gaps(bundle, topic, audit));
     }
@@ -101,7 +124,9 @@ fn requested_visual_mode_gaps(
         .rev()
         .find(|call| call.tool == "newsroom_infographic_render" && call.is_error != Some(true))
     else {
-        return Vec::new();
+        // Nothing was rendered, so every requested mode (a requested map
+        // included) is still missing.
+        return missing_visual_modes(topic, &Value::Null);
     };
     let Some(plan_ref) = render.args.get("plan_ref").and_then(Value::as_str) else {
         return vec!["rendered infographic is missing its plan_ref".to_string()];
@@ -382,8 +407,107 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod completion_tests {
-    use super::{is_transient_completion_provider_error, missing_visual_modes};
+    use super::{
+        completion_chain_required, is_transient_completion_provider_error, missing_visual_modes,
+        visual_completion_gaps_for_profile,
+    };
+    use crate::artifact::InvestigationBundle;
+    use crate::audit;
     use serde_json::json;
+    use std::fs;
+
+    const SCMP_LONG_IMAGE_GOAL: &str = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
+
+    /// A run that only ever called newsroom_lieflat_render and left a Lieflat
+    /// publication behind: the shape of the run behind issue #37.
+    fn lieflat_only_run(
+        root: &std::path::Path,
+        goal: &str,
+    ) -> (InvestigationBundle, audit::AuditSummary) {
+        let bundle = InvestigationBundle::create(root, goal).unwrap();
+        let page = bundle.dir.join("publications/lieflat-page");
+        fs::create_dir_all(&page).unwrap();
+        fs::write(page.join("index.html"), "<html>lieflat</html>").unwrap();
+        fs::write(
+            page.join("manifest.json"),
+            r#"{"kind":"lieflat_publication","html_ref":"publications/lieflat-page/index.html"}"#,
+        )
+        .unwrap();
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"tool_execution_start\",\"toolCallId\":\"c1\",\"toolName\":\"newsroom_lieflat_render\",\"args\":{}}\n",
+                "{\"type\":\"tool_execution_end\",\"toolCallId\":\"c1\",\"isError\":false}\n"
+            ),
+        )
+        .unwrap();
+        let audit = audit::build(&bundle.events_path, &bundle.tools_path).unwrap();
+        (bundle, audit)
+    }
+
+    #[test]
+    fn lieflat_only_run_cannot_complete_the_long_image_goal() {
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = lieflat_only_run(root.path(), SCMP_LONG_IMAGE_GOAL);
+        for profile in [None, Some("visual"), Some("visual-story")] {
+            let gaps = visual_completion_gaps_for_profile(
+                &bundle,
+                SCMP_LONG_IMAGE_GOAL,
+                &audit,
+                false,
+                profile,
+            )
+            .unwrap();
+            for tool in [
+                "newsroom_infographic_plan",
+                "newsroom_infographic_lint",
+                "newsroom_infographic_render",
+                "newsroom_infographic_critic",
+                "newsroom_publication_plan",
+                "newsroom_publication_render",
+                "newsroom_publication_qa",
+            ] {
+                assert!(
+                    gaps.iter().any(|gap| gap.contains(tool)),
+                    "{profile:?} missing {tool}: {gaps:?}"
+                );
+            }
+            assert!(
+                gaps.iter().any(|gap| gap.contains("map/spatial")),
+                "{profile:?} missing map gap: {gaps:?}"
+            );
+            assert!(
+                gaps.iter()
+                    .any(|gap| gap.contains("only a Lieflat page exists")),
+                "{profile:?} missing publication gap: {gaps:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_visual_story_profile_requires_the_chain_for_any_goal() {
+        let goal = "show a chart of exports";
+        assert!(!completion_chain_required(goal, false, None));
+        assert!(!completion_chain_required(goal, false, Some("visual")));
+        assert!(completion_chain_required(goal, false, Some("visual-story")));
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = lieflat_only_run(root.path(), goal);
+        let plain =
+            visual_completion_gaps_for_profile(&bundle, goal, &audit, false, Some("visual"))
+                .unwrap();
+        assert!(!plain
+            .iter()
+            .any(|gap| gap.contains("newsroom_publication_qa")));
+        let story =
+            visual_completion_gaps_for_profile(&bundle, goal, &audit, false, Some("visual-story"))
+                .unwrap();
+        assert!(story
+            .iter()
+            .any(|gap| gap.contains("newsroom_publication_qa")));
+        assert!(story
+            .iter()
+            .any(|gap| gap.contains("no measured publication")));
+    }
 
     #[test]
     fn explicit_visual_modes_cannot_be_silently_replaced_by_rank_charts() {
