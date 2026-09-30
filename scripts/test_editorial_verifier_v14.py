@@ -41,7 +41,19 @@ def install(root: Path):
     aref="editorial/assets/a.json"; write(root/aref,asset)
     pref=with_hash({"schema_version":"0.1.0","kind":"expert_pairwise_preference","baseline_ref":"baseline.png","candidate_ref":"candidate.png","minimum_reviewers":3,"candidate_threshold":0.7,"reviews":[],"counts":{"candidate":0,"baseline":0,"tie":0,"total":0},"candidate_decisive_share":0.0,"status":"PENDING","human_evidence_required":True})
     prefref="editorial/preferences/a.json"; write(root/prefref,pref)
-    page_ref="infographics/award-page.json"; write(root/page_ref,{"kind":"test-page"})
+    # award_mode_status.refs.page_ref only needs to name an existing
+    # infographics/ file (see verify_artifact.py's award-mode check: it
+    # requires page_ref to start with "infographics/" and resolve to a
+    # real file - it does not itself inspect the page's shape). Before
+    # f581bb0 closed F7, every top-level infographics/*.json is now fully
+    # gated (schema_version in range, plan_ref/lint_ref/variants present
+    # and linked, a passing critic, etc.), so a bare {"kind":"test-page"}
+    # stub with no schema_version failed closed as an unsupported
+    # version - it was never a real page, and no schema_version "fixes"
+    # a shape with no variants/plan_ref/lint_ref at all. Point page_ref at
+    # build_valid()'s own already-gated, already-passing top-level
+    # manifest instead of inventing a second, non-gated one.
+    page_ref="infographics/page.json"
     run=with_hash({"schema_version":"0.1.0","kind":"award_mode_status","refs":{"discovery_ref":dref,"concepts_ref":cref,"asset_plan_ref":aref,"novelty_ref":nref,"page_ref":page_ref,"preference_ref":prefref},"metrics":{"concepts_generated":8,"concepts_killed":5,"research_gap_requests":1,"prototype_count":2,"raster_revision_count":1,"provider_tokens":0,"provider_cost_usd":0,"wall_time_ms":0,"human_review_count":0},"gates":{"concept_search_budget_ok":True,"prototype_budget_ok":True,"raster_review_observed":True},"preference_status":"PENDING","status":"READY_FOR_HUMAN","blockers":[],"human_evidence_required":True})
     runref="editorial/award-runs/a.json"; write(root/runref,run)
     return {"d":root/dref,"c":root/cref,"n":root/nref,"a":root/aref,"p":root/prefref,"r":root/runref}

@@ -362,7 +362,7 @@
       "required": ["quantity_kind", "mark_semantics", "scale_type", "baseline_policy", "uncertainty_disclosed"],
       "properties": {
         "quantity_kind": {"enum": ["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"]},
-        "mark_semantics": {"enum": ["position", "length", "area", "size", "angle", "connection", "flow_width"]},
+        "mark_semantics": {"enum": ["position", "length", "area", "size", "angle", "connection", "flow_width", "color"]},
         "scale_type": {"enum": ["linear", "log", "sqrt", "symlog", "ordinal"]},
         "baseline_policy": {"enum": ["zero", "symmetric_zero", "included", "not_applicable"]},
         "domain_min": {"type": "number"},
@@ -400,7 +400,7 @@
       },
       "additionalProperties": false
     },
-    "editorialGrammar": {"enum": ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"]},
+    "editorialGrammar": {"enum": ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"]},
     "editorialGrammarCandidate": {
       "type": "object",
       "required": ["grammar", "hard_constraints_passed", "renderer_capability_passed", "soft_score", "reason_codes"],

@@ -1,5 +1,5 @@
 export const EDITORIAL_GRAMMAR_SCHEMA_VERSION = '0.1.0';
-export const EDITORIAL_GRAMMARS = ['CUTAWAY', 'SCALE_TRANSLATOR', 'MECHANISM_FLOW', 'SPECIMEN_GRID', 'THEN_NOW', 'ROUTE_SPINE'];
+export const EDITORIAL_GRAMMARS = ['CUTAWAY', 'SCALE_TRANSLATOR', 'MECHANISM_FLOW', 'SPECIMEN_GRID', 'THEN_NOW', 'ROUTE_SPINE', 'THEMATIC_MAP', 'FLOW_LEDGER'];
 
 function issue(severity, rule_id, message, path = '') {
   return { severity, rule_id, message, path };

@@ -1,14 +1,58 @@
 {
   "dumbbell": {
-    "desktop": "9686186ef9cc6314dccef78ca94ebbbd9a37cac07b79eca9b45797c7c7328956",
-    "mobile": "8816f7b3b4c3bbaa03c5e2efaf64de7445b8863f35d3fb85be8e38b00876e080"
+    "desktop": "d9b0c25e6aecd26066fdd7f745bfc629096f13b88dd85eda7e5254e795256f2e",
+    "mobile": "c44aa46d4d0a17cf8f0e3f7978cd9aec184902c616bf721c53d06c9163d46f08"
   },
   "multi_line": {
-    "desktop": "a6f0e715d2898dde5d8ef9f835d35852544ae68a71b69d535e22f6006bbcc747",
-    "mobile": "a4bbbb46238daba27c39fb3f86d95a6c2d44e7813be451c56cf4f22ceee1342e"
+    "desktop": "36179aeb39b18ab0f2072078cce70869c8ec458ca6e3ed4c746cda5e8aed3469",
+    "mobile": "a8564542325db4921ca1e68c9442a4a8daa952e15f69975f67e94964f37c8467"
   },
   "heatmap": {
-    "desktop": "f188ce1b57ff8f6fa2a286f93fdb9e76dd13a87dbd8673be4cc212f20eabadf7",
-    "mobile": "b23571781184a36ffb3a63ad19e9aef211e15d0546eedbbc93d258d8555c76c7"
+    "desktop": "1afab2f99621d5b2b357ce6112058b750fb2a10a1f7e092f60137d2b528855b8",
+    "mobile": "15f7aeb3c0e10bbeea58adbc66f441b352eb1cb0a30ef593f9a637d62768e71a"
+  },
+  "horizontal_bar_reference_line": {
+    "desktop": "0c64c2a7a351f728097f915f64a4bc4fb28d9082d4cd317fda42d26aa91d66e4",
+    "mobile": "1fce12eeb2689c0534d7236564716671825a4e7911e95772a7b04e3e0ff67ca9"
+  },
+  "dot_grouped_reference_line": {
+    "desktop": "915e1746efd32b43535b74c7069841c10afebfad9e53972a24fac49d77e07bab",
+    "mobile": "0c44f677ee80e3b726e99dbbdfdfd0f4071e2f44cf0d12b63bb6b4b10226e389"
+  },
+  "dumbbell_reference_line": {
+    "desktop": "5761644a1823fa6b211fbb65bd1fbe667babccf4a7b36c6c7e644b1643588113",
+    "mobile": "389663a13cb399c785b84333ff2faf0e810c2be89c0dae3a083389a0fd86134b"
+  },
+  "small_multiples_dot_reference_line": {
+    "desktop": "004e8faa29ad28e274960604020b0b9a1c0ed902f70c043adc7352c9e2cfdfed",
+    "mobile": "ac30708736a6813d1d905470d385cc8489d3df453b73e381a9056a65a2cf8aaa"
+  },
+  "small_multiples_line_reference_line": {
+    "desktop": "9b8e342c445c5cc5446b8dce2eaaa0488b0b3770ce9753c0e5f9b93c533f17cd",
+    "mobile": "7c04a18354534913502dddafbde246b428295fe82cdb6e76e575e787314418ea"
+  },
+  "horizontal_bar_zh": {
+    "desktop": "f880eead893b7ede5bafdd398d0a703ad1d287880894330e3b8d01fed15ab6fb",
+    "mobile": "b841ecd213933d83b8c91380652d760acd577614739d45359e07cd42f7593137"
+  },
+  "waffle": {
+    "desktop": "a32b83b7963640685616d1b9f69c8cd5ce26d1ab4459e14fc60ea9e5593fe25f",
+    "mobile": "427b3e64a771794e583c5c0e78db1608c6cb152d79fb6037602267114d6afbd7"
+  },
+  "horizontal_bar_range_bracket": {
+    "desktop": "d2be4a6e2bdff340f6861dfff05b479bb1432048f88a94c3c48ccb8cce415db1",
+    "mobile": "b64c6286953f02f03172ab4b694896b76ddb46b738ca3d983ee0df1118755fe7"
+  },
+  "dot_range_bracket_category_names_zh": {
+    "desktop": "b4fea25070b8912fae5d5d328feaefc88c89b18280ad31cd296d1fde966bcd07",
+    "mobile": "2eb9cb0c10f690ecdf36275ae86f9e447ccd2a1a38b734fd2cb72a7a2419247e"
+  },
+  "treemap": {
+    "desktop": "75c13c65768fe2f09541da7e2991400ed7d63258964cd313151c6f6f78b29e84",
+    "mobile": "7978bb74ae706d401da54d54713b1274a81cf55e6a5f39ac039b059706a5384b"
+  },
+  "choropleth": {
+    "desktop": "c286618d66333ea42d0c52545d75b68521aebeefedd77c7f47eef45f4522770d",
+    "mobile": "601fb0094e982e454a20afbaf4f637407ea1003102c26f6da9206212eadaca57"
   }
 }

@@ -34,11 +34,23 @@ export async function readBodyBytes(body, maxBytes, { truncate = false } = {}) {
   return { bytes: out, truncated };
 }
 
+// Pure decode+truncate step, split out so callers that must peek at raw
+// bytes before deciding how to decode them (fetchText's PDF sniff in
+// newsroom.ts) can still get this exact truncation accounting instead of
+// reimplementing it. The truncated flag MUST be computed from the full
+// decoded length before slicing - slicing first would always report
+// truncated:false for the decoded text itself, hiding any body between
+// maxChars and the caller's byte cap that silently got cut.
+export function decodeBoundedText(bytes, maxChars) {
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  return { text: text.slice(0, maxChars), truncated: text.length > maxChars };
+}
+
 export async function readBodyText(body, maxChars) {
   const maxBytes = Math.max(4096, maxChars * 4);
   const { bytes, truncated: byteTruncated } = await readBodyBytes(body, maxBytes, { truncate: true });
-  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  return { text: text.slice(0, maxChars), truncated: byteTruncated || text.length > maxChars };
+  const decoded = decodeBoundedText(bytes, maxChars);
+  return { text: decoded.text, truncated: byteTruncated || decoded.truncated };
 }
 
 // RFC 2544 reserves 198.18.0.0/15 for benchmarking. Transparent proxy/TUN

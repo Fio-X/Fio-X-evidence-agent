@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/render-qa-report.schema.json",
+  "title": "RenderQaReport",
+  "description": "Deterministic, hash-bound reader-facing render QA report for one rendered visual (chart or infographic page), covering both responsive viewports. Produced by runtime/pi/render_qa.mjs's runRenderQa() and bound by src/verify.rs to the actual rendered SVG bytes. Unmeasured geometry/contrast elements are recorded and counted but never by themselves fail a viewport or the report; only an explicit rule failure does.",
+  "type": "object",
+  "required": ["schema_version", "geometry_check_version", "contrast_check_version", "passed", "failure_count", "viewports"],
+  "properties": {
+    "schema_version": { "const": "render-qa/1.0.0" },
+    "geometry_check_version": { "type": "string" },
+    "contrast_check_version": { "type": "string" },
+    "passed": {
+      "type": "boolean",
+      "description": "True only if every viewport present in this report (desktop, and mobile when included) passes both the geometry and contrast checks."
+    },
+    "failure_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total geometry + contrast rule failures across both viewports."
+    },
+    "viewports": {
+      "type": "object",
+      "required": ["desktop"],
+      "additionalProperties": false,
+      "properties": {
+        "desktop": { "$ref": "#/$defs/viewportReport" },
+        "mobile": { "$ref": "#/$defs/viewportReport" }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "viewportReport": {
+      "type": "object",
+      "required": ["svg_sha256", "passed", "geometry", "contrast"],
+      "additionalProperties": false,
+      "properties": {
+        "svg_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 hex of this viewport's rendered SVG text, using the same hash function the runtime uses for content-addressed artifacts."
+        },
+        "passed": { "type": "boolean" },
+        "geometry": {
+          "type": "object",
+          "required": ["passed", "failures", "notes", "summary"],
+          "additionalProperties": false,
+          "properties": {
+            "passed": { "type": "boolean" },
+            "failures": { "type": "array", "items": { "type": "object" } },
+            "notes": { "type": "array", "items": { "type": "object" } },
+            "summary": { "type": "object" }
+          }
+        },
+        "contrast": {
+          "type": "object",
+          "required": ["passed", "failures", "unmeasured"],
+          "additionalProperties": false,
+          "properties": {
+            "passed": { "type": "boolean" },
+            "failures": { "type": "array", "items": { "type": "object" } },
+            "unmeasured": { "type": "array", "items": { "type": "object" } }
+          }
+        }
+      }
+    }
+  }
+}

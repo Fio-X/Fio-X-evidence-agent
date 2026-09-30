@@ -528,26 +528,34 @@ impl InvestigationBundle {
         Ok(delivery.primary_artifact.zip(delivery.primary_kind))
     }
 
+    /// `required_pngs` is how many PNG renders a PNG/screenshot request
+    /// needs: 0 when none was requested, 1 for the desktop page alone, 2 for
+    /// the desktop/mobile pair when mobile pages are enabled.
     pub fn visual_delivery_gaps(
         &self,
         require_html: bool,
-        require_png_pair: bool,
+        required_pngs: usize,
     ) -> Result<Vec<String>> {
-        let delivery = discover_delivery(&self.dir)?;
+        // Both checks below are manifest-backed, unlike story.json's own
+        // `delivery.html`/`.images` inventory (still an unrestricted
+        // recursive listing - see discover_delivery): require_html is only
+        // satisfied by a top-level publication's html_ref, and a PNG only
+        // counts when a PASSing publications/qa/ report binds it to one.
+        let candidates = delivery_candidates(&self.dir)?;
         let mut gaps = Vec::new();
-        if require_html && delivery.html.is_empty() {
+        if require_html && !candidates.iter().any(is_publication_html) {
             gaps.push("requested self-contained HTML is missing".to_string());
         }
-        if require_png_pair {
-            let png_count = delivery
-                .images
-                .iter()
-                .filter(|path| path.to_ascii_lowercase().ends_with(".png"))
-                .count();
-            if png_count < 2 {
-                gaps.push(format!(
-                    "requested desktop/mobile PNG pair is incomplete ({png_count}/2 found)"
-                ));
+        if required_pngs > 0 {
+            let png_count = qualifying_publication_screenshots(&self.dir, &candidates)?.len();
+            if png_count < required_pngs {
+                gaps.push(if required_pngs == 1 {
+                    format!("requested desktop PNG is missing ({png_count}/1 found)")
+                } else {
+                    format!(
+                        "requested desktop/mobile PNG pair is incomplete ({png_count}/{required_pngs} found)"
+                    )
+                });
             }
         }
         Ok(gaps)
@@ -703,6 +711,14 @@ fn discover_delivery(root: &Path) -> Result<Delivery> {
     html.sort();
     images.sort();
     manifests.sort();
+    // The delivered primary must be the output of a top-level manifest the
+    // verifiers check (publications/<k>/manifest.json, infographics/*.json,
+    // visualizations/*.json) - never a render-QA rejection, an orphaned file
+    // a critic's rejection left behind, a publication moved to
+    // publications/rejected/, or a QA screenshot. `html`/`images`/`manifests`
+    // above stay an unrestricted recursive listing; only primary selection
+    // is narrowed to `candidates`.
+    let candidates = delivery_candidates(root)?;
     let declared_primary = fs::read_to_string(root.join("story.json"))
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
@@ -712,37 +728,31 @@ fn discover_delivery(root: &Path) -> Result<Delivery> {
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         })
-        .filter(|path| {
-            let candidate = Path::new(path);
-            !candidate.is_absolute()
-                && !candidate
-                    .components()
-                    .any(|component| matches!(component, Component::ParentDir))
-                && root.join(candidate).is_file()
+        .filter(|declared| {
+            candidates
+                .iter()
+                .any(|candidate| &candidate.path == declared)
         });
     let primary = declared_primary
         .or_else(|| {
-            html.iter()
-                .find(|path| path.starts_with("publications/") && path.ends_with("/index.html"))
-                .cloned()
-        })
-        .or_else(|| html.first().cloned())
-        .or_else(|| {
-            images
+            candidates
                 .iter()
-                .find(|path| {
-                    path.starts_with("infographics/")
-                        && path.matches('/').count() == 1
-                        && !path.ends_with(".mobile.svg")
-                })
-                .cloned()
+                .find(|candidate| is_publication_html(candidate))
+                .map(|candidate| candidate.path.clone())
         })
         .or_else(|| {
-            images
+            candidates
                 .iter()
-                .find(|path| !path.ends_with(".mobile.svg"))
-                .cloned()
-        });
+                .find(|candidate| candidate.path.to_ascii_lowercase().ends_with(".html"))
+                .map(|candidate| candidate.path.clone())
+        })
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.origin == ManifestOrigin::Infographic)
+                .map(|candidate| candidate.path.clone())
+        })
+        .or_else(|| candidates.first().map(|candidate| candidate.path.clone()));
     let (primary_artifact, primary_kind, primary_mime_type) = match primary {
         Some(path) if path.to_ascii_lowercase().ends_with(".html") => (
             Some(path.clone()),
@@ -769,6 +779,233 @@ fn discover_delivery(root: &Path) -> Result<Delivery> {
         images,
         manifests,
     })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ManifestOrigin {
+    Publication,
+    Infographic,
+    Visualization,
+}
+
+/// A rendered-output path a top-level manifest declares as its own: a
+/// publication's `html_ref`, or an infographic/visualization's
+/// `variants.desktop` (falling back to its top-level `svg` field).
+struct DeliveryCandidate {
+    path: String,
+    origin: ManifestOrigin,
+}
+
+/// True only for a publication's own HTML entry point - the sole thing an
+/// HTML request (`discover_delivery`'s primary selection and
+/// `visual_delivery_gaps`'s `require_html`) may treat as "the requested
+/// HTML". An infographic/visualization candidate is never HTML in
+/// practice, but this checks the extension too rather than trusting origin
+/// alone.
+fn is_publication_html(candidate: &DeliveryCandidate) -> bool {
+    candidate.origin == ManifestOrigin::Publication
+        && candidate.path.to_ascii_lowercase().ends_with(".html")
+}
+
+/// Every path a top-level manifest can hand a reader as its delivered
+/// output - the same manifests `verify.rs` and `verify_artifact.py` check:
+/// `publications/<k>/manifest.json` for a direct child `k` of
+/// `publications/` other than `plans`, `qa` or `rejected`, plus direct-child
+/// `infographics/*.json` and `visualizations/*.json`. A rejected render
+/// (kept only under `<dir>/rejected/<key>/`), an orphaned SVG whose manifest
+/// a critic rejected, a publication moved to `publications/rejected/<k>/`,
+/// and a QA screenshot under `publications/qa/<k>/` all fall outside this
+/// set, so none of them can ever be picked as the primary. A manifest that
+/// fails to parse, or that has no usable ref, contributes nothing.
+fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
+    let mut candidates = Vec::new();
+
+    let publications_dir = root.join("publications");
+    if publications_dir.is_dir() {
+        for entry in fs::read_dir(&publications_dir)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            if matches!(
+                entry.file_name().to_str(),
+                Some("plans" | "qa" | "rejected")
+            ) {
+                continue;
+            }
+            let Some(manifest) = read_manifest_json(&entry.path().join("manifest.json")) else {
+                continue;
+            };
+            let Some(html_ref) = manifest.get("html_ref").and_then(Value::as_str) else {
+                continue;
+            };
+            if let Some(path) = accept_ref(root, html_ref) {
+                candidates.push(DeliveryCandidate {
+                    path,
+                    origin: ManifestOrigin::Publication,
+                });
+            }
+        }
+    }
+
+    for (child, origin) in [
+        ("infographics", ManifestOrigin::Infographic),
+        ("visualizations", ManifestOrigin::Visualization),
+    ] {
+        let dir = root.join(child);
+        if !dir.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("json")
+            {
+                continue;
+            }
+            let Some(manifest) = read_manifest_json(&path) else {
+                continue;
+            };
+            let reference = manifest
+                .pointer("/variants/desktop")
+                .and_then(Value::as_str)
+                .or_else(|| manifest.get("svg").and_then(Value::as_str));
+            let Some(reference) = reference else {
+                continue;
+            };
+            if let Some(path) = accept_ref(root, reference) {
+                candidates.push(DeliveryCandidate { path, origin });
+            }
+        }
+    }
+
+    candidates.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(candidates)
+}
+
+fn read_manifest_json(path: &Path) -> Option<Value> {
+    let text = fs::read_to_string(path).ok()?;
+    let manifest: Value = serde_json::from_str(&text).ok()?;
+    Some(manifest)
+}
+
+/// True if `reference` is a relative path with no `..` component and no
+/// path segment literally named `rejected` or `qa`. A top-level manifest is
+/// itself never stored in either subtree, but its own declared ref must not
+/// be allowed to reach into one either - those trees hold evidence of a
+/// failure, not something to deliver.
+fn is_safe_relative_ref(reference: &str) -> bool {
+    let candidate = Path::new(reference);
+    if candidate.is_absolute() {
+        return false;
+    }
+    !candidate.components().any(|component| match component {
+        Component::ParentDir => true,
+        Component::Normal(part) => matches!(part.to_str(), Some("rejected" | "qa")),
+        _ => false,
+    })
+}
+
+/// Accepts `reference` only if it is a relative path with no `..` component
+/// and no `rejected`/`qa` path segment, that names a file under `root`,
+/// returning it unchanged - every ref the runtime writes is already
+/// root-relative, so this also serves as the membership test for a
+/// declared `story.json` primary.
+fn accept_ref(root: &Path, reference: &str) -> Option<String> {
+    if !is_safe_relative_ref(reference) {
+        return None;
+    }
+    if root.join(reference).is_file() {
+        Some(reference.to_string())
+    } else {
+        None
+    }
+}
+
+/// Every distinct screenshot PNG that a PASSing
+/// `publications/qa/<qakey>/browser-qa.json` report binds to one of
+/// `candidates`' publication HTML files - see `runtime/pi/browser_qa.py`
+/// for the report shape (`status`, `html_sha256`, `screenshots: [{width,
+/// path, sha256}]`, `archive_fallback: {path, sha256, source_width} |
+/// null`). These are the only files `visual_delivery_gaps` may count
+/// toward `required_pngs`: a FAIL report, a report whose `html_sha256`
+/// does not match a publication candidate (another HTML, or one that was
+/// since rejected), and anything outside `publications/qa/` (an
+/// infographic/visualization preview PNG, a rejected render, ...) all
+/// contribute nothing, no matter how many PNG files sit on disk.
+fn qualifying_publication_screenshots(
+    root: &Path,
+    candidates: &[DeliveryCandidate],
+) -> Result<std::collections::BTreeSet<String>> {
+    let mut files = std::collections::BTreeSet::new();
+
+    let mut publication_html_hashes = std::collections::BTreeSet::new();
+    for candidate in candidates {
+        if !is_publication_html(candidate) {
+            continue;
+        }
+        if let Ok(hash) = sha256_file(&root.join(&candidate.path)) {
+            publication_html_hashes.insert(hash);
+        }
+    }
+    if publication_html_hashes.is_empty() {
+        return Ok(files);
+    }
+
+    let qa_dir = root.join("publications/qa");
+    if !qa_dir.is_dir() {
+        return Ok(files);
+    }
+    for entry in fs::read_dir(&qa_dir)? {
+        let report_dir = entry?.path();
+        if !report_dir.is_dir() {
+            continue;
+        }
+        let Some(report) = read_manifest_json(&report_dir.join("browser-qa.json")) else {
+            continue;
+        };
+        if report.get("status").and_then(Value::as_str) != Some("PASS") {
+            continue;
+        }
+        let bound_to_a_candidate = report
+            .get("html_sha256")
+            .and_then(Value::as_str)
+            .is_some_and(|hash| publication_html_hashes.contains(hash));
+        if !bound_to_a_candidate {
+            continue;
+        }
+
+        let mut refs: Vec<&str> = report
+            .get("screenshots")
+            .and_then(Value::as_array)
+            .map(|shots| {
+                shots
+                    .iter()
+                    .filter_map(|shot| shot.get("path").and_then(Value::as_str))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(path) = report
+            .pointer("/archive_fallback/path")
+            .and_then(Value::as_str)
+        {
+            refs.push(path);
+        }
+
+        for reference in refs {
+            if !is_safe_relative_ref(reference) {
+                continue;
+            }
+            let file = report_dir.join(reference);
+            if !file.is_file() {
+                continue;
+            }
+            if let Ok(relative) = file.strip_prefix(root) {
+                files.insert(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+
+    Ok(files)
 }
 
 fn read_claims(path: &Path) -> Result<Vec<Value>> {
@@ -859,6 +1096,195 @@ mod tests {
     }
 
     #[test]
+    fn png_request_needs_the_desktop_render_alone_or_the_pair() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "png gate").unwrap();
+        // A PNG only counts once it is the screenshot of a PASSing QA report
+        // bound (by html_sha256) to a real, top-level publication - so that
+        // publication has to exist first.
+        let pub_dir = bundle.dir.join("publications/pubkey");
+        fs::create_dir_all(&pub_dir).unwrap();
+        fs::write(pub_dir.join("index.html"), "<html>pub</html>").unwrap();
+        fs::write(
+            pub_dir.join("manifest.json"),
+            r#"{"html_ref":"publications/pubkey/index.html"}"#,
+        )
+        .unwrap();
+        let html_sha256 = crate::hash::sha256_file(&pub_dir.join("index.html")).unwrap();
+
+        assert!(bundle.visual_delivery_gaps(false, 0).unwrap().is_empty());
+        assert_eq!(
+            bundle.visual_delivery_gaps(false, 1).unwrap(),
+            vec!["requested desktop PNG is missing (0/1 found)".to_string()]
+        );
+
+        let shots = bundle.dir.join("publications/qa/x");
+        fs::create_dir_all(&shots).unwrap();
+        fs::write(shots.join("1440.png"), b"png").unwrap();
+        fs::write(
+            shots.join("browser-qa.json"),
+            serde_json::json!({
+                "status": "PASS",
+                "html_sha256": html_sha256,
+                "screenshots": [{"width": 1440, "path": "1440.png", "sha256": "irrelevant"}],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(bundle.visual_delivery_gaps(false, 1).unwrap().is_empty());
+        assert_eq!(
+            bundle.visual_delivery_gaps(false, 2).unwrap(),
+            vec!["requested desktop/mobile PNG pair is incomplete (1/2 found)".to_string()]
+        );
+
+        fs::write(shots.join("390.png"), b"png").unwrap();
+        fs::write(
+            shots.join("browser-qa.json"),
+            serde_json::json!({
+                "status": "PASS",
+                "html_sha256": html_sha256,
+                "screenshots": [
+                    {"width": 1440, "path": "1440.png", "sha256": "irrelevant"},
+                    {"width": 390, "path": "390.png", "sha256": "irrelevant"},
+                ],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(bundle.visual_delivery_gaps(false, 2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn visual_delivery_gaps_html_requirement_ignores_rejected_publication() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "rejected html gate").unwrap();
+        let rejected = bundle.dir.join("publications/rejected/deadbeef");
+        fs::create_dir_all(&rejected).unwrap();
+        fs::write(rejected.join("index.html"), "rejected").unwrap();
+        fs::write(rejected.join("manifest.json"), "{}").unwrap();
+
+        assert_eq!(
+            bundle.visual_delivery_gaps(true, 0).unwrap(),
+            vec!["requested self-contained HTML is missing".to_string()]
+        );
+    }
+
+    #[test]
+    fn visual_delivery_gaps_html_requirement_ignores_manifest_less_html() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "bare html gate").unwrap();
+        let pub_dir = bundle.dir.join("publications/bare");
+        fs::create_dir_all(&pub_dir).unwrap();
+        fs::write(
+            pub_dir.join("index.html"),
+            "bare, no manifest.json next to it",
+        )
+        .unwrap();
+
+        assert_eq!(
+            bundle.visual_delivery_gaps(true, 0).unwrap(),
+            vec!["requested self-contained HTML is missing".to_string()]
+        );
+    }
+
+    #[test]
+    fn visual_delivery_gaps_html_requirement_is_satisfied_by_a_top_level_publication() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "real html gate").unwrap();
+        let pub_dir = bundle.dir.join("publications/pubkey");
+        fs::create_dir_all(&pub_dir).unwrap();
+        fs::write(pub_dir.join("index.html"), "<html></html>").unwrap();
+        fs::write(
+            pub_dir.join("manifest.json"),
+            r#"{"html_ref":"publications/pubkey/index.html"}"#,
+        )
+        .unwrap();
+
+        assert!(bundle.visual_delivery_gaps(true, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn visual_delivery_gaps_png_requirement_ignores_a_failing_reports_screenshots() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "fail report gate").unwrap();
+        let pub_dir = bundle.dir.join("publications/pubkey");
+        fs::create_dir_all(&pub_dir).unwrap();
+        fs::write(pub_dir.join("index.html"), "<html>pub</html>").unwrap();
+        fs::write(
+            pub_dir.join("manifest.json"),
+            r#"{"html_ref":"publications/pubkey/index.html"}"#,
+        )
+        .unwrap();
+        let html_sha256 = crate::hash::sha256_file(&pub_dir.join("index.html")).unwrap();
+
+        let qa_dir = bundle.dir.join("publications/qa/qakey");
+        fs::create_dir_all(&qa_dir).unwrap();
+        fs::write(qa_dir.join("1440.png"), b"png").unwrap();
+        fs::write(
+            qa_dir.join("browser-qa.json"),
+            serde_json::json!({
+                "status": "FAIL",
+                "html_sha256": html_sha256,
+                "screenshots": [{"width": 1440, "path": "1440.png", "sha256": "irrelevant"}],
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            bundle.visual_delivery_gaps(false, 1).unwrap(),
+            vec!["requested desktop PNG is missing (0/1 found)".to_string()]
+        );
+    }
+
+    #[test]
+    fn visual_delivery_gaps_png_requirement_ignores_a_rejected_publications_report() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "rejected pub gate").unwrap();
+        let rejected = bundle.dir.join("publications/rejected/deadbeef");
+        fs::create_dir_all(&rejected).unwrap();
+        fs::write(rejected.join("index.html"), "<html>rejected</html>").unwrap();
+        fs::write(rejected.join("manifest.json"), "{}").unwrap();
+        let html_sha256 = crate::hash::sha256_file(&rejected.join("index.html")).unwrap();
+
+        // The report still says PASS and still names this exact HTML by
+        // hash, but the publication behind it was rejected, so it is no
+        // longer a candidate to bind a screenshot to.
+        let qa_dir = bundle.dir.join("publications/qa/qakey");
+        fs::create_dir_all(&qa_dir).unwrap();
+        fs::write(qa_dir.join("1440.png"), b"png").unwrap();
+        fs::write(
+            qa_dir.join("browser-qa.json"),
+            serde_json::json!({
+                "status": "PASS",
+                "html_sha256": html_sha256,
+                "screenshots": [{"width": 1440, "path": "1440.png", "sha256": "irrelevant"}],
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            bundle.visual_delivery_gaps(false, 1).unwrap(),
+            vec!["requested desktop PNG is missing (0/1 found)".to_string()]
+        );
+    }
+
+    #[test]
+    fn visual_delivery_gaps_png_requirement_ignores_an_infographic_preview_png() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "preview gate").unwrap();
+        let preview = bundle.dir.join("infographics/previews/somekey");
+        fs::create_dir_all(&preview).unwrap();
+        fs::write(preview.join("desktop.png"), b"png").unwrap();
+
+        assert_eq!(
+            bundle.visual_delivery_gaps(false, 1).unwrap(),
+            vec!["requested desktop PNG is missing (0/1 found)".to_string()]
+        );
+    }
+
+    #[test]
     fn slugifies_ascii_topic() {
         assert_eq!(
             slugify("US Electricity Prices 2026"),
@@ -932,6 +1358,19 @@ mod tests {
         fs::create_dir_all(&current).expect("current dir");
         fs::write(old.join("index.html"), "old").expect("old html");
         fs::write(current.join("index.html"), "current").expect("current html");
+        // Both publications need a top-level manifest to be delivery
+        // candidates at all; without one, neither the lexical-first pick
+        // nor the declared override below would have anything to choose.
+        fs::write(
+            old.join("manifest.json"),
+            r#"{"html_ref":"publications/000-old/index.html"}"#,
+        )
+        .expect("old manifest");
+        fs::write(
+            current.join("manifest.json"),
+            r#"{"html_ref":"publications/999-current/index.html"}"#,
+        )
+        .expect("current manifest");
         fs::write(
             dir.path().join("story.json"),
             r#"{"delivery":{"primary_artifact":"publications/999-current/index.html"}}"#,
@@ -943,5 +1382,175 @@ mod tests {
             delivery.primary_artifact.as_deref(),
             Some("publications/999-current/index.html")
         );
+    }
+
+    #[test]
+    fn render_qa_rejected_svg_is_never_the_primary() {
+        let dir = tempdir().expect("temp dir");
+        let rejected = dir.path().join("visualizations/rejected/deadbeef");
+        fs::create_dir_all(&rejected).expect("rejected dir");
+        fs::write(rejected.join("desktop.svg"), "<svg>rejected</svg>").expect("rejected svg");
+        fs::write(rejected.join("render-qa.json"), "{}").expect("render qa report");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(delivery.primary_artifact, None);
+    }
+
+    #[test]
+    fn orphaned_infographic_svg_is_never_the_primary_but_its_sibling_page_is() {
+        let dir = tempdir().expect("temp dir");
+        fs::create_dir_all(dir.path().join("infographics")).expect("infographics dir");
+
+        // A critic rejected "orphan"'s manifest, moving it to rejected/; the
+        // SVG it used to describe is still sitting at the top level with no
+        // manifest of its own.
+        fs::write(
+            dir.path().join("infographics/orphan.svg"),
+            "<svg>orphan</svg>",
+        )
+        .expect("orphan svg");
+        let rejected = dir.path().join("infographics/rejected/orphan");
+        fs::create_dir_all(&rejected).expect("rejected dir");
+        fs::write(rejected.join("manifest.json"), "{}").expect("rejected manifest");
+
+        // A sibling page still has its top-level manifest and is the only
+        // real candidate.
+        fs::write(dir.path().join("infographics/page.svg"), "<svg>page</svg>").expect("page svg");
+        fs::write(
+            dir.path().join("infographics/page.json"),
+            r#"{"variants":{"desktop":"infographics/page.svg"}}"#,
+        )
+        .expect("page manifest");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(
+            delivery.primary_artifact.as_deref(),
+            Some("infographics/page.svg")
+        );
+    }
+
+    #[test]
+    fn rejected_publication_is_never_the_primary() {
+        let dir = tempdir().expect("temp dir");
+        let rejected = dir.path().join("publications/rejected/deadbeef");
+        fs::create_dir_all(&rejected).expect("rejected dir");
+        fs::write(rejected.join("index.html"), "rejected").expect("rejected html");
+        fs::write(rejected.join("manifest.json"), "{}").expect("rejected manifest");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(delivery.primary_artifact, None);
+    }
+
+    #[test]
+    fn qa_screenshot_is_never_the_primary() {
+        let dir = tempdir().expect("temp dir");
+        let qa = dir.path().join("publications/qa/deadbeef");
+        fs::create_dir_all(&qa).expect("qa dir");
+        fs::write(qa.join("1440.png"), b"png").expect("qa screenshot");
+        fs::write(qa.join("browser-qa.json"), "{}").expect("qa report");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(delivery.primary_artifact, None);
+    }
+
+    #[test]
+    fn declared_primary_outside_the_candidate_set_is_ignored_but_inside_is_kept() {
+        let dir = tempdir().expect("temp dir");
+        fs::create_dir_all(dir.path().join("infographics")).expect("infographics dir");
+        fs::write(dir.path().join("infographics/page.svg"), "<svg>page</svg>").expect("page svg");
+        fs::write(
+            dir.path().join("infographics/page.json"),
+            r#"{"variants":{"desktop":"infographics/page.svg"}}"#,
+        )
+        .expect("page manifest");
+
+        // This SVG exists on disk but no top-level manifest names it, so it
+        // is not a candidate: a declared primary pointing at it must be
+        // ignored in favor of the real candidate.
+        fs::write(
+            dir.path().join("infographics/orphan.svg"),
+            "<svg>orphan</svg>",
+        )
+        .expect("orphan svg");
+        fs::write(
+            dir.path().join("story.json"),
+            r#"{"delivery":{"primary_artifact":"infographics/orphan.svg"}}"#,
+        )
+        .expect("story outside set");
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(
+            delivery.primary_artifact.as_deref(),
+            Some("infographics/page.svg")
+        );
+
+        // Declaring the actual candidate is honored.
+        fs::write(
+            dir.path().join("story.json"),
+            r#"{"delivery":{"primary_artifact":"infographics/page.svg"}}"#,
+        )
+        .expect("story inside set");
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(
+            delivery.primary_artifact.as_deref(),
+            Some("infographics/page.svg")
+        );
+    }
+
+    #[test]
+    fn top_level_publication_manifest_still_picks_its_index_html() {
+        let dir = tempdir().expect("temp dir");
+        let pub_dir = dir.path().join("publications/abc123");
+        fs::create_dir_all(&pub_dir).expect("publication dir");
+        fs::write(pub_dir.join("index.html"), "<html></html>").expect("index html");
+        fs::write(
+            pub_dir.join("manifest.json"),
+            r#"{"html_ref":"publications/abc123/index.html"}"#,
+        )
+        .expect("manifest");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(
+            delivery.primary_artifact.as_deref(),
+            Some("publications/abc123/index.html")
+        );
+        assert_eq!(delivery.primary_kind.as_deref(), Some("html"));
+    }
+
+    #[test]
+    fn manifest_ref_pointing_into_rejected_or_qa_is_not_a_candidate() {
+        let dir = tempdir().expect("temp dir");
+
+        // A top-level manifest is itself fine, but its own declared ref
+        // reaches into rejected/ - evidence of a failure, not a deliverable.
+        fs::create_dir_all(dir.path().join("infographics/rejected/orphan")).expect("rejected dir");
+        fs::write(
+            dir.path().join("infographics/rejected/orphan/desktop.svg"),
+            "<svg>rejected</svg>",
+        )
+        .expect("rejected svg");
+        fs::write(
+            dir.path().join("infographics/page.json"),
+            r#"{"variants":{"desktop":"infographics/rejected/orphan/desktop.svg"}}"#,
+        )
+        .expect("manifest pointing into rejected/");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(delivery.primary_artifact, None);
+
+        // Same for a ref that reaches into qa/.
+        fs::create_dir_all(dir.path().join("infographics/qa/orphan")).expect("qa dir");
+        fs::write(
+            dir.path().join("infographics/qa/orphan/desktop.svg"),
+            "<svg>qa</svg>",
+        )
+        .expect("qa svg");
+        fs::write(
+            dir.path().join("infographics/other.json"),
+            r#"{"variants":{"desktop":"infographics/qa/orphan/desktop.svg"}}"#,
+        )
+        .expect("manifest pointing into qa/");
+
+        let delivery = discover_delivery(dir.path()).expect("delivery");
+        assert_eq!(delivery.primary_artifact, None);
     }
 }

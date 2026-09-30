@@ -1,0 +1,1616 @@
+{
+  "schema_version": "0.1.0",
+  "generated_by": "scripts/build_economy_names.mjs",
+  "versions": {
+    "node": "24.14.1",
+    "icu": "78.2",
+    "cldr": "48.0"
+  },
+  "sources": {
+    "wb_country_en": {
+      "file": "fixtures/external/worldbank_country_list/wb-country-en.json",
+      "bytes": 113590,
+      "sha256": "d29d57f8adf954c5e2a1520a02fb2c7b45575d8db3bd327a9dff47d66914231c"
+    },
+    "wb_country_zh": {
+      "file": "fixtures/external/worldbank_country_list/wb-country-zh.json",
+      "bytes": 112475,
+      "sha256": "a27d8b5480bf7c0bbfbfdf15a0d63e118ba322f6f6b5a6765fa67226c9ea7edf"
+    }
+  },
+  "economies": [
+    {
+      "iso3": "ABW",
+      "iso2": "AW",
+      "wb_name": "Aruba",
+      "zh": "阿鲁巴",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "AFG",
+      "iso2": "AF",
+      "wb_name": "Afghanistan",
+      "zh": "阿富汗",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "AGO",
+      "iso2": "AO",
+      "wb_name": "Angola",
+      "zh": "安哥拉",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ALB",
+      "iso2": "AL",
+      "wb_name": "Albania",
+      "zh": "阿尔巴尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "AND",
+      "iso2": "AD",
+      "wb_name": "Andorra",
+      "zh": "安道尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ARE",
+      "iso2": "AE",
+      "wb_name": "United Arab Emirates",
+      "zh": "阿拉伯联合酋长国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ARG",
+      "iso2": "AR",
+      "wb_name": "Argentina",
+      "zh": "阿根廷",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ARM",
+      "iso2": "AM",
+      "wb_name": "Armenia",
+      "zh": "亚美尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ASM",
+      "iso2": "AS",
+      "wb_name": "American Samoa",
+      "zh": "美属萨摩亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ATG",
+      "iso2": "AG",
+      "wb_name": "Antigua and Barbuda",
+      "zh": "安提瓜和巴布达",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "AUS",
+      "iso2": "AU",
+      "wb_name": "Australia",
+      "zh": "澳大利亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "AUT",
+      "iso2": "AT",
+      "wb_name": "Austria",
+      "zh": "奥地利",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "AZE",
+      "iso2": "AZ",
+      "wb_name": "Azerbaijan",
+      "zh": "阿塞拜疆",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BDI",
+      "iso2": "BI",
+      "wb_name": "Burundi",
+      "zh": "布隆迪",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BEL",
+      "iso2": "BE",
+      "wb_name": "Belgium",
+      "zh": "比利时",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BEN",
+      "iso2": "BJ",
+      "wb_name": "Benin",
+      "zh": "贝宁",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BFA",
+      "iso2": "BF",
+      "wb_name": "Burkina Faso",
+      "zh": "布基纳法索",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BGD",
+      "iso2": "BD",
+      "wb_name": "Bangladesh",
+      "zh": "孟加拉国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BGR",
+      "iso2": "BG",
+      "wb_name": "Bulgaria",
+      "zh": "保加利亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BHR",
+      "iso2": "BH",
+      "wb_name": "Bahrain",
+      "zh": "巴林",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BHS",
+      "iso2": "BS",
+      "wb_name": "Bahamas, The",
+      "zh": "巴哈马",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BIH",
+      "iso2": "BA",
+      "wb_name": "Bosnia and Herzegovina",
+      "zh": "波斯尼亚和黑塞哥维那",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BLR",
+      "iso2": "BY",
+      "wb_name": "Belarus",
+      "zh": "白俄罗斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BLZ",
+      "iso2": "BZ",
+      "wb_name": "Belize",
+      "zh": "伯利兹",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BMU",
+      "iso2": "BM",
+      "wb_name": "Bermuda",
+      "zh": "百慕大",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BOL",
+      "iso2": "BO",
+      "wb_name": "Bolivia",
+      "zh": "玻利维亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BRA",
+      "iso2": "BR",
+      "wb_name": "Brazil",
+      "zh": "巴西",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BRB",
+      "iso2": "BB",
+      "wb_name": "Barbados",
+      "zh": "巴巴多斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BRN",
+      "iso2": "BN",
+      "wb_name": "Brunei Darussalam",
+      "zh": "文莱",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BTN",
+      "iso2": "BT",
+      "wb_name": "Bhutan",
+      "zh": "不丹",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "BWA",
+      "iso2": "BW",
+      "wb_name": "Botswana",
+      "zh": "博茨瓦纳",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CAF",
+      "iso2": "CF",
+      "wb_name": "Central African Republic",
+      "zh": "中非共和国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CAN",
+      "iso2": "CA",
+      "wb_name": "Canada",
+      "zh": "加拿大",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CHE",
+      "iso2": "CH",
+      "wb_name": "Switzerland",
+      "zh": "瑞士",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CHI",
+      "iso2": "JG",
+      "wb_name": "Channel Islands",
+      "zh": "海峡群岛",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "CHL",
+      "iso2": "CL",
+      "wb_name": "Chile",
+      "zh": "智利",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CHN",
+      "iso2": "CN",
+      "wb_name": "China",
+      "zh": "中国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CIV",
+      "iso2": "CI",
+      "wb_name": "Cote d'Ivoire",
+      "zh": "科特迪瓦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CMR",
+      "iso2": "CM",
+      "wb_name": "Cameroon",
+      "zh": "喀麦隆",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "COD",
+      "iso2": "CD",
+      "wb_name": "Congo, Dem. Rep.",
+      "zh": "刚果（金）",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "COG",
+      "iso2": "CG",
+      "wb_name": "Congo, Rep.",
+      "zh": "刚果（布）",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "COL",
+      "iso2": "CO",
+      "wb_name": "Colombia",
+      "zh": "哥伦比亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "COM",
+      "iso2": "KM",
+      "wb_name": "Comoros",
+      "zh": "科摩罗",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CPV",
+      "iso2": "CV",
+      "wb_name": "Cabo Verde",
+      "zh": "佛得角",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CRI",
+      "iso2": "CR",
+      "wb_name": "Costa Rica",
+      "zh": "哥斯达黎加",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CUB",
+      "iso2": "CU",
+      "wb_name": "Cuba",
+      "zh": "古巴",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CUW",
+      "iso2": "CW",
+      "wb_name": "Curacao",
+      "zh": "库拉索",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CYM",
+      "iso2": "KY",
+      "wb_name": "Cayman Islands",
+      "zh": "开曼群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CYP",
+      "iso2": "CY",
+      "wb_name": "Cyprus",
+      "zh": "塞浦路斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "CZE",
+      "iso2": "CZ",
+      "wb_name": "Czechia",
+      "zh": "捷克",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "DEU",
+      "iso2": "DE",
+      "wb_name": "Germany",
+      "zh": "德国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "DJI",
+      "iso2": "DJ",
+      "wb_name": "Djibouti",
+      "zh": "吉布提",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "DMA",
+      "iso2": "DM",
+      "wb_name": "Dominica",
+      "zh": "多米尼克",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "DNK",
+      "iso2": "DK",
+      "wb_name": "Denmark",
+      "zh": "丹麦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "DOM",
+      "iso2": "DO",
+      "wb_name": "Dominican Republic",
+      "zh": "多米尼加共和国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "DZA",
+      "iso2": "DZ",
+      "wb_name": "Algeria",
+      "zh": "阿尔及利亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ECU",
+      "iso2": "EC",
+      "wb_name": "Ecuador",
+      "zh": "厄瓜多尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "EGY",
+      "iso2": "EG",
+      "wb_name": "Egypt, Arab Rep.",
+      "zh": "埃及",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ERI",
+      "iso2": "ER",
+      "wb_name": "Eritrea",
+      "zh": "厄立特里亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ESP",
+      "iso2": "ES",
+      "wb_name": "Spain",
+      "zh": "西班牙",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "EST",
+      "iso2": "EE",
+      "wb_name": "Estonia",
+      "zh": "爱沙尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ETH",
+      "iso2": "ET",
+      "wb_name": "Ethiopia",
+      "zh": "埃塞俄比亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "FIN",
+      "iso2": "FI",
+      "wb_name": "Finland",
+      "zh": "芬兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "FJI",
+      "iso2": "FJ",
+      "wb_name": "Fiji",
+      "zh": "斐济",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "FRA",
+      "iso2": "FR",
+      "wb_name": "France",
+      "zh": "法国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "FRO",
+      "iso2": "FO",
+      "wb_name": "Faroe Islands",
+      "zh": "法罗群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "FSM",
+      "iso2": "FM",
+      "wb_name": "Micronesia, Fed. Sts.",
+      "zh": "密克罗尼西亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GAB",
+      "iso2": "GA",
+      "wb_name": "Gabon",
+      "zh": "加蓬",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GBR",
+      "iso2": "GB",
+      "wb_name": "United Kingdom",
+      "zh": "英国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GEO",
+      "iso2": "GE",
+      "wb_name": "Georgia",
+      "zh": "格鲁吉亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GHA",
+      "iso2": "GH",
+      "wb_name": "Ghana",
+      "zh": "加纳",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GIB",
+      "iso2": "GI",
+      "wb_name": "Gibraltar",
+      "zh": "直布罗陀",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GIN",
+      "iso2": "GN",
+      "wb_name": "Guinea",
+      "zh": "几内亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GMB",
+      "iso2": "GM",
+      "wb_name": "Gambia, The",
+      "zh": "冈比亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GNB",
+      "iso2": "GW",
+      "wb_name": "Guinea-Bissau",
+      "zh": "几内亚比绍",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GNQ",
+      "iso2": "GQ",
+      "wb_name": "Equatorial Guinea",
+      "zh": "赤道几内亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GRC",
+      "iso2": "GR",
+      "wb_name": "Greece",
+      "zh": "希腊",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GRD",
+      "iso2": "GD",
+      "wb_name": "Grenada",
+      "zh": "格林纳达",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GRL",
+      "iso2": "GL",
+      "wb_name": "Greenland",
+      "zh": "格陵兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GTM",
+      "iso2": "GT",
+      "wb_name": "Guatemala",
+      "zh": "危地马拉",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GUM",
+      "iso2": "GU",
+      "wb_name": "Guam",
+      "zh": "关岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "GUY",
+      "iso2": "GY",
+      "wb_name": "Guyana",
+      "zh": "圭亚那",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "HKG",
+      "iso2": "HK",
+      "wb_name": "Hong Kong SAR, China",
+      "zh": "中国香港特别行政区",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "HND",
+      "iso2": "HN",
+      "wb_name": "Honduras",
+      "zh": "洪都拉斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "HRV",
+      "iso2": "HR",
+      "wb_name": "Croatia",
+      "zh": "克罗地亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "HTI",
+      "iso2": "HT",
+      "wb_name": "Haiti",
+      "zh": "海地",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "HUN",
+      "iso2": "HU",
+      "wb_name": "Hungary",
+      "zh": "匈牙利",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "IDN",
+      "iso2": "ID",
+      "wb_name": "Indonesia",
+      "zh": "印度尼西亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "IMN",
+      "iso2": "IM",
+      "wb_name": "Isle of Man",
+      "zh": "马恩岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "IND",
+      "iso2": "IN",
+      "wb_name": "India",
+      "zh": "印度",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "IRL",
+      "iso2": "IE",
+      "wb_name": "Ireland",
+      "zh": "爱尔兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "IRN",
+      "iso2": "IR",
+      "wb_name": "Iran, Islamic Rep.",
+      "zh": "伊朗",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "IRQ",
+      "iso2": "IQ",
+      "wb_name": "Iraq",
+      "zh": "伊拉克",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ISL",
+      "iso2": "IS",
+      "wb_name": "Iceland",
+      "zh": "冰岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ISR",
+      "iso2": "IL",
+      "wb_name": "Israel",
+      "zh": "以色列",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ITA",
+      "iso2": "IT",
+      "wb_name": "Italy",
+      "zh": "意大利",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "JAM",
+      "iso2": "JM",
+      "wb_name": "Jamaica",
+      "zh": "牙买加",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "JOR",
+      "iso2": "JO",
+      "wb_name": "Jordan",
+      "zh": "约旦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "JPN",
+      "iso2": "JP",
+      "wb_name": "Japan",
+      "zh": "日本",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KAZ",
+      "iso2": "KZ",
+      "wb_name": "Kazakhstan",
+      "zh": "哈萨克斯坦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KEN",
+      "iso2": "KE",
+      "wb_name": "Kenya",
+      "zh": "肯尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KGZ",
+      "iso2": "KG",
+      "wb_name": "Kyrgyz Republic",
+      "zh": "吉尔吉斯斯坦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KHM",
+      "iso2": "KH",
+      "wb_name": "Cambodia",
+      "zh": "柬埔寨",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KIR",
+      "iso2": "KI",
+      "wb_name": "Kiribati",
+      "zh": "基里巴斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KNA",
+      "iso2": "KN",
+      "wb_name": "St. Kitts and Nevis",
+      "zh": "圣基茨和尼维斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KOR",
+      "iso2": "KR",
+      "wb_name": "Korea, Rep.",
+      "zh": "韩国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "KWT",
+      "iso2": "KW",
+      "wb_name": "Kuwait",
+      "zh": "科威特",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LAO",
+      "iso2": "LA",
+      "wb_name": "Lao PDR",
+      "zh": "老挝",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LBN",
+      "iso2": "LB",
+      "wb_name": "Lebanon",
+      "zh": "黎巴嫩",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LBR",
+      "iso2": "LR",
+      "wb_name": "Liberia",
+      "zh": "利比里亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LBY",
+      "iso2": "LY",
+      "wb_name": "Libya",
+      "zh": "利比亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LCA",
+      "iso2": "LC",
+      "wb_name": "St. Lucia",
+      "zh": "圣卢西亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LIE",
+      "iso2": "LI",
+      "wb_name": "Liechtenstein",
+      "zh": "列支敦士登",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LKA",
+      "iso2": "LK",
+      "wb_name": "Sri Lanka",
+      "zh": "斯里兰卡",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LSO",
+      "iso2": "LS",
+      "wb_name": "Lesotho",
+      "zh": "莱索托",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LTU",
+      "iso2": "LT",
+      "wb_name": "Lithuania",
+      "zh": "立陶宛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LUX",
+      "iso2": "LU",
+      "wb_name": "Luxembourg",
+      "zh": "卢森堡",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "LVA",
+      "iso2": "LV",
+      "wb_name": "Latvia",
+      "zh": "拉脱维亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MAC",
+      "iso2": "MO",
+      "wb_name": "Macao SAR, China",
+      "zh": "中国澳门特别行政区",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MAF",
+      "iso2": "MF",
+      "wb_name": "St. Martin (French part)",
+      "zh": "法属圣马丁",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MAR",
+      "iso2": "MA",
+      "wb_name": "Morocco",
+      "zh": "摩洛哥",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MCO",
+      "iso2": "MC",
+      "wb_name": "Monaco",
+      "zh": "摩纳哥",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MDA",
+      "iso2": "MD",
+      "wb_name": "Moldova",
+      "zh": "摩尔多瓦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MDG",
+      "iso2": "MG",
+      "wb_name": "Madagascar",
+      "zh": "马达加斯加",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MDV",
+      "iso2": "MV",
+      "wb_name": "Maldives",
+      "zh": "马尔代夫",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MEX",
+      "iso2": "MX",
+      "wb_name": "Mexico",
+      "zh": "墨西哥",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MHL",
+      "iso2": "MH",
+      "wb_name": "Marshall Islands",
+      "zh": "马绍尔群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MKD",
+      "iso2": "MK",
+      "wb_name": "North Macedonia",
+      "zh": "北马其顿",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MLI",
+      "iso2": "ML",
+      "wb_name": "Mali",
+      "zh": "马里",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MLT",
+      "iso2": "MT",
+      "wb_name": "Malta",
+      "zh": "马耳他",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MMR",
+      "iso2": "MM",
+      "wb_name": "Myanmar",
+      "zh": "缅甸",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MNE",
+      "iso2": "ME",
+      "wb_name": "Montenegro",
+      "zh": "黑山",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MNG",
+      "iso2": "MN",
+      "wb_name": "Mongolia",
+      "zh": "蒙古",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MNP",
+      "iso2": "MP",
+      "wb_name": "Northern Mariana Islands",
+      "zh": "北马里亚纳群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MOZ",
+      "iso2": "MZ",
+      "wb_name": "Mozambique",
+      "zh": "莫桑比克",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MRT",
+      "iso2": "MR",
+      "wb_name": "Mauritania",
+      "zh": "毛里塔尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MUS",
+      "iso2": "MU",
+      "wb_name": "Mauritius",
+      "zh": "毛里求斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MWI",
+      "iso2": "MW",
+      "wb_name": "Malawi",
+      "zh": "马拉维",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "MYS",
+      "iso2": "MY",
+      "wb_name": "Malaysia",
+      "zh": "马来西亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NAM",
+      "iso2": "NA",
+      "wb_name": "Namibia",
+      "zh": "纳米比亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NCL",
+      "iso2": "NC",
+      "wb_name": "New Caledonia",
+      "zh": "新喀里多尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NER",
+      "iso2": "NE",
+      "wb_name": "Niger",
+      "zh": "尼日尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NGA",
+      "iso2": "NG",
+      "wb_name": "Nigeria",
+      "zh": "尼日利亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NIC",
+      "iso2": "NI",
+      "wb_name": "Nicaragua",
+      "zh": "尼加拉瓜",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NLD",
+      "iso2": "NL",
+      "wb_name": "Netherlands",
+      "zh": "荷兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NOR",
+      "iso2": "NO",
+      "wb_name": "Norway",
+      "zh": "挪威",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NPL",
+      "iso2": "NP",
+      "wb_name": "Nepal",
+      "zh": "尼泊尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NRU",
+      "iso2": "NR",
+      "wb_name": "Naoero",
+      "zh": "瑙鲁",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "NZL",
+      "iso2": "NZ",
+      "wb_name": "New Zealand",
+      "zh": "新西兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "OMN",
+      "iso2": "OM",
+      "wb_name": "Oman",
+      "zh": "阿曼",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PAK",
+      "iso2": "PK",
+      "wb_name": "Pakistan",
+      "zh": "巴基斯坦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PAN",
+      "iso2": "PA",
+      "wb_name": "Panama",
+      "zh": "巴拿马",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PER",
+      "iso2": "PE",
+      "wb_name": "Peru",
+      "zh": "秘鲁",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PHL",
+      "iso2": "PH",
+      "wb_name": "Philippines",
+      "zh": "菲律宾",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PLW",
+      "iso2": "PW",
+      "wb_name": "Palau",
+      "zh": "帕劳",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PNG",
+      "iso2": "PG",
+      "wb_name": "Papua New Guinea",
+      "zh": "巴布亚新几内亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "POL",
+      "iso2": "PL",
+      "wb_name": "Poland",
+      "zh": "波兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PRI",
+      "iso2": "PR",
+      "wb_name": "Puerto Rico (US)",
+      "zh": "波多黎各",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PRK",
+      "iso2": "KP",
+      "wb_name": "Korea, Dem. People's Rep.",
+      "zh": "朝鲜",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PRT",
+      "iso2": "PT",
+      "wb_name": "Portugal",
+      "zh": "葡萄牙",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PRY",
+      "iso2": "PY",
+      "wb_name": "Paraguay",
+      "zh": "巴拉圭",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PSE",
+      "iso2": "PS",
+      "wb_name": "West Bank and Gaza",
+      "zh": "巴勒斯坦领土",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "PYF",
+      "iso2": "PF",
+      "wb_name": "French Polynesia",
+      "zh": "法属波利尼西亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "QAT",
+      "iso2": "QA",
+      "wb_name": "Qatar",
+      "zh": "卡塔尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ROU",
+      "iso2": "RO",
+      "wb_name": "Romania",
+      "zh": "罗马尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "RUS",
+      "iso2": "RU",
+      "wb_name": "Russian Federation",
+      "zh": "俄罗斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "RWA",
+      "iso2": "RW",
+      "wb_name": "Rwanda",
+      "zh": "卢旺达",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SAU",
+      "iso2": "SA",
+      "wb_name": "Saudi Arabia",
+      "zh": "沙特阿拉伯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SDN",
+      "iso2": "SD",
+      "wb_name": "Sudan",
+      "zh": "苏丹",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SEN",
+      "iso2": "SN",
+      "wb_name": "Senegal",
+      "zh": "塞内加尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SGP",
+      "iso2": "SG",
+      "wb_name": "Singapore",
+      "zh": "新加坡",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SLB",
+      "iso2": "SB",
+      "wb_name": "Solomon Islands",
+      "zh": "所罗门群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SLE",
+      "iso2": "SL",
+      "wb_name": "Sierra Leone",
+      "zh": "塞拉利昂",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SLV",
+      "iso2": "SV",
+      "wb_name": "El Salvador",
+      "zh": "萨尔瓦多",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SMR",
+      "iso2": "SM",
+      "wb_name": "San Marino",
+      "zh": "圣马力诺",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SOM",
+      "iso2": "SO",
+      "wb_name": "Somalia, Fed. Rep.",
+      "zh": "索马里",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SRB",
+      "iso2": "RS",
+      "wb_name": "Serbia",
+      "zh": "塞尔维亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SSD",
+      "iso2": "SS",
+      "wb_name": "South Sudan",
+      "zh": "南苏丹",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "STP",
+      "iso2": "ST",
+      "wb_name": "Sao Tome and Principe",
+      "zh": "圣多美和普林西比",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SUR",
+      "iso2": "SR",
+      "wb_name": "Suriname",
+      "zh": "苏里南",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SVK",
+      "iso2": "SK",
+      "wb_name": "Slovak Republic",
+      "zh": "斯洛伐克",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SVN",
+      "iso2": "SI",
+      "wb_name": "Slovenia",
+      "zh": "斯洛文尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SWE",
+      "iso2": "SE",
+      "wb_name": "Sweden",
+      "zh": "瑞典",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SWZ",
+      "iso2": "SZ",
+      "wb_name": "Eswatini",
+      "zh": "斯威士兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SXM",
+      "iso2": "SX",
+      "wb_name": "Sint Maarten (Dutch part)",
+      "zh": "荷属圣马丁",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SYC",
+      "iso2": "SC",
+      "wb_name": "Seychelles",
+      "zh": "塞舌尔",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "SYR",
+      "iso2": "SY",
+      "wb_name": "Syrian Arab Republic",
+      "zh": "叙利亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TCA",
+      "iso2": "TC",
+      "wb_name": "Turks and Caicos Islands",
+      "zh": "特克斯和凯科斯群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TCD",
+      "iso2": "TD",
+      "wb_name": "Chad",
+      "zh": "乍得",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TGO",
+      "iso2": "TG",
+      "wb_name": "Togo",
+      "zh": "多哥",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "THA",
+      "iso2": "TH",
+      "wb_name": "Thailand",
+      "zh": "泰国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TJK",
+      "iso2": "TJ",
+      "wb_name": "Tajikistan",
+      "zh": "塔吉克斯坦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TKM",
+      "iso2": "TM",
+      "wb_name": "Turkmenistan",
+      "zh": "土库曼斯坦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TLS",
+      "iso2": "TL",
+      "wb_name": "Timor-Leste",
+      "zh": "东帝汶",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TON",
+      "iso2": "TO",
+      "wb_name": "Tonga",
+      "zh": "汤加",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TTO",
+      "iso2": "TT",
+      "wb_name": "Trinidad and Tobago",
+      "zh": "特立尼达和多巴哥",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TUN",
+      "iso2": "TN",
+      "wb_name": "Tunisia",
+      "zh": "突尼斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TUR",
+      "iso2": "TR",
+      "wb_name": "Turkiye",
+      "zh": "土耳其",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TUV",
+      "iso2": "TV",
+      "wb_name": "Tuvalu",
+      "zh": "图瓦卢",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "TZA",
+      "iso2": "TZ",
+      "wb_name": "Tanzania",
+      "zh": "坦桑尼亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "UGA",
+      "iso2": "UG",
+      "wb_name": "Uganda",
+      "zh": "乌干达",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "UKR",
+      "iso2": "UA",
+      "wb_name": "Ukraine",
+      "zh": "乌克兰",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "URY",
+      "iso2": "UY",
+      "wb_name": "Uruguay",
+      "zh": "乌拉圭",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "USA",
+      "iso2": "US",
+      "wb_name": "United States",
+      "zh": "美国",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "UZB",
+      "iso2": "UZ",
+      "wb_name": "Uzbekistan",
+      "zh": "乌兹别克斯坦",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "VCT",
+      "iso2": "VC",
+      "wb_name": "St. Vincent and the Grenadines",
+      "zh": "圣文森特和格林纳丁斯",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "VEN",
+      "iso2": "VE",
+      "wb_name": "Venezuela, RB",
+      "zh": "委内瑞拉",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "VGB",
+      "iso2": "VG",
+      "wb_name": "British Virgin Islands",
+      "zh": "英属维尔京群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "VIR",
+      "iso2": "VI",
+      "wb_name": "Virgin Islands (U.S.)",
+      "zh": "美属维尔京群岛",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "VNM",
+      "iso2": "VN",
+      "wb_name": "Viet Nam",
+      "zh": "越南",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "VUT",
+      "iso2": "VU",
+      "wb_name": "Vanuatu",
+      "zh": "瓦努阿图",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "WSM",
+      "iso2": "WS",
+      "wb_name": "Samoa",
+      "zh": "萨摩亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "XKX",
+      "iso2": "XK",
+      "wb_name": "Kosovo",
+      "zh": "科索沃",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "YEM",
+      "iso2": "YE",
+      "wb_name": "Yemen, Rep.",
+      "zh": "也门",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ZAF",
+      "iso2": "ZA",
+      "wb_name": "South Africa",
+      "zh": "南非",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ZMB",
+      "iso2": "ZM",
+      "wb_name": "Zambia",
+      "zh": "赞比亚",
+      "zh_source": "cldr"
+    },
+    {
+      "iso3": "ZWE",
+      "iso2": "ZW",
+      "wb_name": "Zimbabwe",
+      "zh": "津巴布韦",
+      "zh_source": "cldr"
+    }
+  ],
+  "aggregates": [
+    {
+      "iso3": "EAS",
+      "wb_name": "East Asia & Pacific",
+      "zh": "东亚与太平洋地区",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "ECS",
+      "wb_name": "Europe & Central Asia",
+      "zh": "欧洲与中亚地区",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "HIC",
+      "wb_name": "High income",
+      "zh": "高收入国家",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "LCN",
+      "wb_name": "Latin America & Caribbean",
+      "zh": "拉丁美洲与加勒比海地区",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "LIC",
+      "wb_name": "Low income",
+      "zh": "低收入国家",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "LMC",
+      "wb_name": "Lower middle income",
+      "zh": "中低等收入国家",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "MEA",
+      "wb_name": "Middle East, North Africa, Afghanistan & Pakistan",
+      "zh": "中东、北非、阿富汗与巴基斯坦",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "NAC",
+      "wb_name": "North America",
+      "zh": "北美",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "SAS",
+      "wb_name": "South Asia",
+      "zh": "南亚",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "SSF",
+      "wb_name": "Sub-Saharan Africa",
+      "zh": "撒哈拉以南非洲地区",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "UMC",
+      "wb_name": "Upper middle income",
+      "zh": "中高等收入国家",
+      "zh_source": "worldbank"
+    },
+    {
+      "iso3": "WLD",
+      "wb_name": "World",
+      "zh": "世界",
+      "zh_source": "worldbank"
+    }
+  ]
+}

@@ -54,6 +54,24 @@
       "compatible_visual_grammars": ["spatial", "flow", "network", "trend", "sequence"],
       "renderer_capabilities": ["svg", "canvas2d", "webgl_map"],
       "hard_constraints": ["requires_verified_locations", "requires_route_semantics"]
+    },
+    {
+      "id": "THEMATIC_MAP",
+      "cognitive_goals": ["ORIENT", "MEASURE", "COMPARE"],
+      "required_evidence": ["spatial_structure", "quantity"],
+      "compatible_supporting": ["SCALE_TRANSLATOR", "THEN_NOW", "SPECIMEN_GRID"],
+      "compatible_visual_grammars": ["spatial"],
+      "renderer_capabilities": ["svg", "canvas2d"],
+      "hard_constraints": ["requires_comparable_quantity"]
+    },
+    {
+      "id": "FLOW_LEDGER",
+      "cognitive_goals": ["ORIENT", "MEASURE", "COMPARE"],
+      "required_evidence": ["origin_destination_relation", "quantity"],
+      "compatible_supporting": ["SCALE_TRANSLATOR", "SPECIMEN_GRID", "THEN_NOW"],
+      "compatible_visual_grammars": ["flow", "composition", "rank"],
+      "renderer_capabilities": ["svg", "canvas2d"],
+      "hard_constraints": ["requires_origin_destination_relation", "requires_comparable_quantity"]
     }
   ]
 }
