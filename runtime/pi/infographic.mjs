@@ -1,19 +1,112 @@
 import { createHash } from "node:crypto";
-import { wrapText } from "./viz.mjs";
+import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
 import { evaluateQuestionClosure } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
 import { evaluateClaimSupport } from "./evidence_gate.mjs";
 
-const INK = "#1d2329";
-const MUTED = "#69727a";
-const GRID = "#d9dde1";
+// Fix 7 (house style wiring): page chrome - header/footer rules, kickers,
+// section heads, body text, pull quotes, the sources footer - now follows
+// runtime/pi/viz.mjs's house palette by default, so a composed page matches
+// the charts embedded in it.
+//
+// Fix 9 (hero_stat restyle, its own separate/droppable commit): under house
+// style, hero_stat no longer draws its old solid tone-coloured card at all
+// (see drawHeroStat) - the LEGACY_INK/LEGACY_MUTED/LEGACY_ACCENT/FAINT/DARK
+// constants below now serve *only* hero_stat's legacy-style rendering
+// (style_id/style:"legacy" or NEWSROOM_HOUSE_STYLE=legacy), which stays
+// byte-for-byte on these exact old values, tone included.
+//
+// Fix 12 (font unification): LEGACY_SANS/LEGACY_SERIF are the same Arial/
+// Georgia stacks this file always used, renamed to match the LEGACY_* colour
+// constants' own naming; style_id/style:"legacy" (or
+// NEWSROOM_HOUSE_STYLE=legacy) still resolves to exactly these two, byte-
+// for-byte. House style instead collapses both to viz.mjs's own
+// HOUSE_FONT_SANS (imported below, not re-declared here - "don't create a
+// new constant" per the user's font decision): one CJK sans stack for page
+// title, section heads, chart titles, hero numerals, body text and chart
+// labels alike, weight (700/400) carrying the hierarchy a second typeface
+// used to. Importing HOUSE_FONT_SANS carries none of the leakage risk the
+// comment below warns about for the HOUSE_* colours: unlike viz.mjs's
+// mutable PALETTE, it is a plain, never-reassigned exported const.
+const LEGACY_INK = "#1d2329";
+const LEGACY_MUTED = "#69727a";
+const LEGACY_GRID = "#d9dde1";
 const FAINT = "#f4f2ee";
-const ACCENT = "#c9473d";
+const LEGACY_ACCENT = "#c9473d";
 const DARK = "#24313a";
-const PAPER = "#fffdf9";
-const SANS = "Arial, Helvetica, sans-serif";
-const SERIF = "Georgia, 'Times New Roman', serif";
+const LEGACY_PAPER = "#fffdf9";
+const LEGACY_SANS = "Arial, Helvetica, sans-serif";
+const LEGACY_SERIF = "Georgia, 'Times New Roman', serif";
+
+// Same hex values as runtime/pi/viz.mjs's HOUSE_PALETTES.house (paper/ink/
+// muted/grid/accent) - kept as separate constants here rather than an
+// import, since importing them would need viz.mjs to export its mutable
+// per-render style state too (PALETTE/applyStyle/HOUSE_STYLE_ACTIVE are not
+// exported, and are reassigned by whichever chart last rendered - reading
+// them from here would make a page's own chrome depend on unrelated prior
+// viz.mjs calls' leftover state rather than this page's own spec).
+const HOUSE_INK = "#1A1A1A";
+const HOUSE_MUTED = "#666666";
+const HOUSE_GRID = "#E5E5E5";
+const HOUSE_ACCENT = "#D0021B";
+const HOUSE_PAPER = "#FFFFFF";
+
+// Mutable "current style" bindings, mirroring viz.mjs's own PALETTE/
+// applyStyle pattern: reassigned once per render by applyInfographicStyle,
+// read via plain identifier by every drawing function below. Safe for the
+// same reason viz.mjs's own comment gives for PALETTE - composeOne (this
+// file's only synchronous render entry point; see composeInfographicBundle)
+// runs start-to-finish with no other exported function touching these
+// bindings in between. "house" is the default; style_id/style: "legacy" (or
+// NEWSROOM_HOUSE_STYLE=legacy) restores today's exact chrome colours.
+let INK = LEGACY_INK;
+let MUTED = LEGACY_MUTED;
+let GRID = LEGACY_GRID;
+let ACCENT = LEGACY_ACCENT;
+let PAPER = LEGACY_PAPER;
+let SANS = LEGACY_SANS;
+let SERIF = LEGACY_SERIF;
+// Mirrors viz.mjs's own HOUSE_STYLE_ACTIVE: set alongside the colours above,
+// read by lines()/headline-mode wrapping (fix 8) to decide whether a title
+// or section heading gets the new punctuation-aware/balanced break instead
+// of plain greedy wrapText. Local to this module for the same reason the
+// colours above are - reading viz.mjs's own flag here would depend on
+// whichever chart rendered last, not this page's own spec.
+let INFOGRAPHIC_HOUSE_STYLE_ACTIVE = false;
+
+// Mirrors viz.mjs's styleFor exactly (same precedence, same env var, same
+// "legacy"/"default" trigger strings) so one NEWSROOM_HOUSE_STYLE=legacy
+// toggle reverts a whole page - its charts and its own chrome - together.
+// style_id/style is not part of schemas/infographic-spec.schema.json (an
+// additionalProperties:false schema), so a real, schema-validated spec can
+// never set it - exactly the pre-existing relationship between viz.mjs's
+// own styleFor and schemas/newsroom-viz-spec.schema.json, which does not
+// declare style_id either. Kept here for the same reason viz.mjs keeps it:
+// direct-call testability and manual override, without a schema change.
+function infographicStyleFor(spec) {
+  const requested = spec?.style_id ?? spec?.style;
+  if (requested === "legacy" || requested === "default") return "legacy";
+  if (requested === "house") return "house";
+  if (process.env.NEWSROOM_HOUSE_STYLE === "legacy") return "legacy";
+  return "house";
+}
+
+function applyInfographicStyle(spec) {
+  const style = infographicStyleFor(spec);
+  if (style === "legacy") {
+    INK = LEGACY_INK; MUTED = LEGACY_MUTED; GRID = LEGACY_GRID; ACCENT = LEGACY_ACCENT; PAPER = LEGACY_PAPER;
+    SANS = LEGACY_SANS; SERIF = LEGACY_SERIF;
+  } else {
+    INK = HOUSE_INK; MUTED = HOUSE_MUTED; GRID = HOUSE_GRID; ACCENT = HOUSE_ACCENT; PAPER = HOUSE_PAPER;
+    // Fix 12: all sans under house style - SERIF collapses onto the same CJK
+    // stack as SANS instead of keeping its own (formerly Georgia-only) face,
+    // so every page-chrome text element reads one typeface family.
+    SANS = HOUSE_FONT_SANS; SERIF = HOUSE_FONT_SANS;
+  }
+  INFOGRAPHIC_HOUSE_STYLE_ACTIVE = style !== "legacy";
+  return style;
+}
 
 export const INFOGRAPHIC_SCHEMA_VERSIONS = ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 export const INFOGRAPHIC_MODULE_TYPES = ["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"];
@@ -35,12 +128,12 @@ const VISUAL_GRAMMAR_FORMS = Object.freeze({
   trend: new Set(["line", "multi_line", "small_multiples", "streamgraph"]),
   anomaly: new Set(["diverging_bar", "dot", "small_multiples"]),
   benchmark: new Set(["dot", "dumbbell", "horizontal_bar"]),
-  composition: new Set(["horizontal_bar", "heatmap", "parallel_sets", "alluvial"]),
+  composition: new Set(["horizontal_bar", "heatmap", "parallel_sets", "alluvial", "waffle"]),
   distribution: new Set(["dot", "heatmap", "small_multiples"]),
   relationship: new Set(["scatter", "node_link", "chord"]),
   uncertainty: new Set(["line", "multi_line", "small_multiples"]),
   flow: new Set(["sankey", "alluvial", "parallel_sets", "geo_flow_map", "cartographic_flow_map"]),
-  spatial: new Set(["geo_flow_map", "cartographic_flow_map"]),
+  spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
   network: new Set(["node_link", "adjacency_matrix", "chord"]),
   mechanism: new Set(["process_schematic"]),
   sequence: new Set(["timeline", "trajectory_profile", "line"]),
@@ -58,6 +151,78 @@ function esc(value) {
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function uniq(values) { return [...new Set(values.filter(Boolean).map(String))]; }
 function hash(value) { return createHash("sha256").update(typeof value === "string" ? value : JSON.stringify(value)).digest("hex"); }
+
+// A generic, topic-blind verbatim quote check for a saved source's text
+// (runtime/pi/pdf_extract.mjs's `[page N]\n...` marker convention for PDFs;
+// a source with no such markers - HTML/plain-text extraction - has no page
+// concept, so it collapses to a single implicit page 1, keeping every
+// source_quote module shaped identically regardless of source format).
+// Normalization is deliberately narrow - whitespace-collapse and
+// line-break-hyphenation joins only - nothing semantic, so a lint/verifier
+// pass here can never paper over an edited quote.
+export function normalizeSourceQuoteText(value) {
+  return String(value ?? "").replace(/-\n/g, "").replace(/\s+/g, " ").trim();
+}
+
+export function extractSourcePageText(sourceText, page) {
+  const text = String(sourceText ?? "");
+  const marker = /\[page (\d+)\]\n/g;
+  const marks = [];
+  let m;
+  while ((m = marker.exec(text))) marks.push({ page: Number(m[1]), start: m.index, contentStart: marker.lastIndex });
+  if (marks.length === 0) return Number(page) === 1 ? text : null;
+  const index = marks.findIndex((mk) => mk.page === Number(page));
+  if (index === -1) return null;
+  const end = index + 1 < marks.length ? marks[index + 1].start : text.length;
+  return text.slice(marks[index].contentStart, end);
+}
+
+export function sourceQuoteMatches(sourceText, page, quote) {
+  const pageText = extractSourcePageText(sourceText, page);
+  if (pageText === null) return false;
+  const needle = normalizeSourceQuoteText(quote);
+  if (!needle) return false;
+  return normalizeSourceQuoteText(pageText).includes(needle);
+}
+
+// A text module's body/heading sit right beside its source_quote, but
+// neither is bound to the quote or to any claim - so, unlike an ordinary
+// claim_ids-backed text module (which can carry up to 900 characters of
+// claim-bound prose), free text next to a source quote must never be able
+// to read like a verified number of its own: short, and no digits (ASCII
+// or full-width) or percent signs. Mirrored exactly in src/verify.rs and
+// scripts/verify_artifact.py so both independent verifiers reject the same
+// inputs the lint does.
+const SOURCE_QUOTE_PROSE_MAX_CHARS = 60;
+const SOURCE_QUOTE_PROSE_FORBIDDEN = /[0-9０-９%]/;
+export function sourceQuoteProseFieldErrors(moduleId, field, value) {
+  const errors = [];
+  const text = String(value ?? "");
+  if (text.length > SOURCE_QUOTE_PROSE_MAX_CHARS) errors.push(`text module '${moduleId}' source_quote ${field} must be at most ${SOURCE_QUOTE_PROSE_MAX_CHARS} characters`);
+  if (SOURCE_QUOTE_PROSE_FORBIDDEN.test(text)) errors.push(`text module '${moduleId}' source_quote ${field} must not contain digits or a percent sign: a source-only note must never look like a verified figure`);
+  return errors;
+}
+
+// Page language (B1, mirrors runtime/pi/viz.mjs's vizLang): defaults to
+// "en". Gates the functional chrome labels this composer adds on its own
+// (kicker/hero/eyebrow defaults, the byline prefix, the sources footer
+// heading). Brand strings ("AGENTIC DATA NEWSROOM ...") are deliberately
+// left out of this table and stay in English on every page.
+function pageLang(spec) {
+  return spec?.language === "zh" ? "zh" : "en";
+}
+const INFOGRAPHIC_STRINGS = {
+  en: { kicker: "DATA FEATURE", primaryVisual: "PRIMARY VISUAL", theStory: "THE STORY", byPrefix: "By ", sourcesMethods: "SOURCES &amp; METHODS", sourceQuoteLabel: "SOURCE QUOTE", sourceQuotePage: "p.", sourceQuoteTranslation: "translation" },
+  zh: { kicker: "数据专题", primaryVisual: "核心图示", theStory: "新闻故事", byPrefix: "撰稿：", sourcesMethods: "资料来源与方法", sourceQuoteLabel: "原文引述", sourceQuotePage: "页码", sourceQuoteTranslation: "译述" },
+};
+// True if `svg` visibly carries the localized "sources & methods" footer
+// heading for this spec's page language. English keeps checking both the
+// escaped and literal ampersand spellings the SVG string builder can emit;
+// zh's heading has no ampersand to escape.
+function hasSourcesMethodsLabel(svg, spec) {
+  const t = INFOGRAPHIC_STRINGS[pageLang(spec)];
+  return pageLang(spec) === "zh" ? svg.includes(t.sourcesMethods) : (svg.includes("SOURCES &amp; METHODS") || svg.includes("SOURCES & METHODS"));
+}
 
 function svgInfo(svg) {
   const match = String(svg ?? "").match(/<svg\b[^>]*viewBox=["']([^"']+)["'][^>]*>([\s\S]*)<\/svg>\s*$/i);
@@ -83,9 +248,18 @@ function namespaceSvgInner(inner, prefix) {
   return output;
 }
 
-function lines(text, maxChars, maxLines = 99) {
-  const out = wrapText(String(text ?? ""), maxChars).slice(0, maxLines);
-  if (out.length === maxLines && wrapText(String(text ?? ""), maxChars).length > maxLines) {
+// `headline` (fix 8, house style only) switches the wrap algorithm from
+// plain greedy wrapText to wrapHeadline - prefer breaking after full-width
+// punctuation when the rest still fits, else balance the lines, never leave
+// 3 characters or fewer on the last line - for CJK page titles and section
+// headings only (see drawHeader/drawSectionHeader). Every other caller
+// (deks, body text, captions, pull quotes) leaves it false and is
+// unaffected; legacy style is unaffected regardless, since
+// INFOGRAPHIC_HOUSE_STYLE_ACTIVE is only ever true under house style.
+function lines(text, maxChars, maxLines = 99, headline = false) {
+  const wrap = headline && INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? wrapHeadline : wrapText;
+  const out = wrap(String(text ?? ""), maxChars).slice(0, maxLines);
+  if (out.length === maxLines && wrap(String(text ?? ""), maxChars).length > maxLines) {
     out[maxLines - 1] = out[maxLines - 1].replace(/…?$/, "…");
   }
   return out;
@@ -94,7 +268,7 @@ function lines(text, maxChars, maxLines = 99) {
 function textBlock(parts, text, x, y, opts = {}) {
   const size = opts.size ?? 16;
   const lineHeight = opts.lineHeight ?? Math.round(size * 1.35);
-  const rows = lines(text, opts.maxChars ?? 70, opts.maxLines ?? 99);
+  const rows = lines(text, opts.maxChars ?? 70, opts.maxLines ?? 99, opts.headline ?? false);
   const family = opts.family ?? SANS;
   const fill = opts.fill ?? INK;
   const weight = opts.weight ?? 400;
@@ -116,6 +290,7 @@ export function validateInfographicSpec(spec) {
   if (String(spec.dek ?? "").length > 520) errors.push("dek exceeds 520 characters");
   if (!String(spec.alt ?? "").trim() || String(spec.alt).length < 30) errors.push("alt must be at least 30 characters");
   if (!INFOGRAPHIC_LAYOUTS.includes(spec.layout ?? "feature")) errors.push(`layout must be one of ${INFOGRAPHIC_LAYOUTS.join(", ")}`);
+  if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
   if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     if (!String(spec.intent ?? "").trim()) errors.push("intent is required in InfographicSpec 1.1+");
     if (!String(spec.primary_message ?? "").trim()) errors.push("primary_message is required in InfographicSpec 1.1+");
@@ -132,6 +307,7 @@ export function validateInfographicSpec(spec) {
     else if (seen.has(module.id)) errors.push(`duplicate module id '${module.id}'`);
     else seen.add(module.id);
     if (!INFOGRAPHIC_MODULE_TYPES.includes(module?.type)) errors.push(`module '${module?.id ?? "?"}' has unsupported type '${module?.type}'`);
+    if (module?.source_quote !== undefined && module?.type !== "text") errors.push(`module '${module?.id ?? "?"}' source_quote is only supported on 'text' modules`);
     if (!INFOGRAPHIC_SPANS.includes(module?.span ?? "full")) errors.push(`module '${module?.id ?? "?"}' has unsupported span '${module?.span}'`);
     if (module?.story_role !== undefined && !INFOGRAPHIC_STORY_ROLES.includes(module.story_role)) errors.push(`module '${module?.id ?? "?"}' has unsupported story_role '${module.story_role}'`);
     if (module?.priority !== undefined && (!Number.isInteger(module.priority) || module.priority < 1 || module.priority > 5)) errors.push(`module '${module?.id ?? "?"}' priority must be an integer from 1 to 5`);
@@ -156,8 +332,36 @@ export function validateInfographicSpec(spec) {
       if (!String(module.claim_id ?? "").trim()) errors.push(`hero_stat '${module.id}' requires claim_id`);
     }
     if (module?.type === "text") {
-      if (!String(module.body ?? "").trim()) errors.push(`text module '${module.id}' requires body`);
-      if (!Array.isArray(module.claim_ids) || module.claim_ids.length === 0) errors.push(`text module '${module.id}' requires claim_ids`);
+      const hasSourceQuote = module.source_quote !== undefined && module.source_quote !== null;
+      if (hasSourceQuote) {
+        // A source quote is a non-asserting definitional/scope note (e.g. a
+        // PDF metadata caveat): it may never also carry claim_ids, because
+        // that would let unverifiable source-only text ride in on the back
+        // of a claim binding it never earned.
+        if (Array.isArray(module.claim_ids) && module.claim_ids.length > 0) errors.push(`text module '${module.id}' cannot combine source_quote with claim_ids: a source quote never counts as a verified finding`);
+        // Body is optional beside a source_quote (the quote block itself
+        // carries the content); if given, neither body nor heading is bound
+        // to a claim or to the quote, so both must stay short and free of
+        // anything that could pass for a verified figure.
+        if (String(module.body ?? "").trim()) errors.push(...sourceQuoteProseFieldErrors(module.id, "body", module.body));
+        if (String(module.heading ?? "").trim()) errors.push(...sourceQuoteProseFieldErrors(module.id, "heading", module.heading));
+        const sq = module.source_quote;
+        if (!sq || typeof sq !== "object") {
+          errors.push(`text module '${module.id}' source_quote must be an object`);
+        } else {
+          if (!/^sources\/[0-9a-f]{64}\.json$/.test(String(sq.source_ref ?? ""))) errors.push(`text module '${module.id}' source_quote.source_ref must be a content-addressed sources/<sha256>.json path`);
+          if (!String(sq.quote ?? "").trim()) errors.push(`text module '${module.id}' source_quote requires a verbatim quote`);
+          if (!Number.isInteger(sq.page) || sq.page < 1) errors.push(`text module '${module.id}' source_quote requires a positive integer page`);
+          if (sq.translation !== undefined && !String(sq.translation ?? "").trim()) errors.push(`text module '${module.id}' source_quote.translation cannot be blank when present`);
+          // Generic on page language, not on the quote's own language: a zh
+          // page must label every non-original rendering as 译述 (B1 language
+          // mechanism), so a zh page's source_quote must supply one.
+          if (spec.language === "zh" && !String(sq.translation ?? "").trim()) errors.push(`text module '${module.id}' source_quote requires translation (labeled 译述) on a zh page`);
+        }
+      } else {
+        if (!String(module.body ?? "").trim()) errors.push(`text module '${module.id}' requires body`);
+        if (!Array.isArray(module.claim_ids) || module.claim_ids.length === 0) errors.push(`text module '${module.id}' requires claim_ids`);
+      }
     }
     if (module?.type === "pull_quote" && !String(module.text ?? "").trim()) errors.push(`pull_quote '${module.id}' requires text`);
     if (module?.type === "section_header" && !String(module.heading ?? "").trim()) errors.push(`section_header '${module.id}' requires heading`);
@@ -303,6 +507,10 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
   const warnings = [];
   const notes = [];
   const verified = new Set((context.verified_claim_ids ?? []).map(String));
+  // The phone-facing mobile page is off by default (NEWSROOM_MOBILE_PAGES);
+  // callers that don't pass mobile_pages keep today's both-variants behavior.
+  const mobilePages = context.mobile_pages !== false;
+  const sceneSlots = mobilePages ? new Map() : desktopSceneSlots(spec);
   let visualCount = 0;
   let claimCount = 0;
   const sourceNotes = [];
@@ -342,13 +550,26 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       visualCount += 1;
       const asset = assets[module.manifest_ref];
       if (!asset) { blockers.push(`visual '${module.id}' references missing asset '${module.manifest_ref}'`); continue; }
-      if (!asset.desktopSvg || !asset.mobileSvg) blockers.push(`visual '${module.id}' requires desktop and mobile SVG variants`);
+      if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`visual '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
+      if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`visual '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
+      const visualSlot = sceneSlots.get(String(module.id));
+      if (visualSlot && visualSlot.cols < 12) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`visual '${module.id}' is missing visualization manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
       if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
       if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
+      {
+        // B1: a chart declares its own language (runtime/pi/newsroom.ts
+        // newsroom_viz_plan `language`, carried onto its render manifest); a
+        // page mixing an en chart into a zh page (or vice versa) is exactly
+        // the mixed_language_chart_internals failure mode, so lint blocks it
+        // deterministically instead of relying on the vision critic.
+        const pageLanguage = spec.language === "zh" ? "zh" : "en";
+        const chartLanguage = asset.manifest?.language === "zh" ? "zh" : "en";
+        if (chartLanguage !== pageLanguage) blockers.push(`visual '${module.id}' chart language '${chartLanguage}' differs from page language '${pageLanguage}'`);
+      }
       if (["1.4.0", "1.5.0"].includes(spec.schema_version) && module.visual_grammar) {
         const allowed = VISUAL_GRAMMAR_FORMS[module.visual_grammar];
         const chartType = String(asset.manifest?.chart_type ?? "");
@@ -359,7 +580,10 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       visualCount += 1;
       const asset = assets[module.asset_ref];
       if (!asset) { blockers.push(`illustration '${module.id}' references missing asset '${module.asset_ref}'`); continue; }
-      if (!asset.desktopSvg || !asset.mobileSvg) blockers.push(`illustration '${module.id}' requires desktop and mobile SVG variants`);
+      if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`illustration '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
+      if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`illustration '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
+      const illustrationSlot = sceneSlots.get(String(module.id));
+      if (illustrationSlot && illustrationSlot.cols < 12) blockers.push(`illustration '${module.id}' gets only ${illustrationSlot.cols} of 12 columns in scene '${illustrationSlot.scene_id}' with mobile pages off: there is no compact illustration variant, so a scene may hold an illustration only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`illustration '${module.id}' is missing illustration manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`illustration '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`illustration '${module.id}' has no upstream critic metadata`);
@@ -390,6 +614,16 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
         if (verified.size && !verified.has(String(claimId))) blockers.push(`text module '${module.id}' references unverified claim '${claimId}'`);
       }
       if (String(module.body ?? "").length > 900) warnings.push(`text module '${module.id}' exceeds the preferred 900-character magazine budget`);
+      if (module.source_quote) {
+        const sq = module.source_quote;
+        const sourceTexts = context.source_texts instanceof Map ? context.source_texts : new Map(Object.entries(context.source_texts ?? {}));
+        if (!sourceTexts.has(String(sq.source_ref))) {
+          blockers.push(`text module '${module.id}' source_quote references source '${sq.source_ref}' that was not supplied for lint verification`);
+        } else if (!sourceQuoteMatches(sourceTexts.get(String(sq.source_ref)), sq.page, sq.quote)) {
+          blockers.push(`text module '${module.id}' source_quote text does not appear verbatim on page ${sq.page} of '${sq.source_ref}'`);
+        }
+        sourceNotes.push(sq.source_ref);
+      }
     }
     if (module.type === "pull_quote") {
       if (String(module.text ?? "").length > 280) warnings.push(`pull_quote '${module.id}' is too long for a pull quote`);
@@ -473,19 +707,23 @@ function moduleHeight(module, width, assets, mobile = false) {
     return (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23);
   }
   if (type === "pull_quote") {
-    const chars = mobile ? 34 : Math.max(34, Math.round(width / 15));
-    return (mobile ? 92 : 78) + lines(module.text, chars, 7).length * (mobile ? 34 : 30);
+    if (!mobile) return 78 + lines(`“${module.text}”`, pullQuoteChars(width), 7).length * 38;
+    return 92 + lines(module.text, 34, 7).length * 34;
   }
   if (type === "text") {
     const chars = mobile ? 54 : Math.max(44, Math.round(width / 10));
-    const heading = module.heading ? lines(module.heading, chars, 3).length * (mobile ? 28 : 26) : 0;
-    return 72 + heading + lines(module.body, chars, 12).length * (mobile ? 24 : 22);
+    // Desktop headings wrap and step exactly as drawTextModule draws them.
+    const heading = !module.heading ? 0 : mobile ? lines(module.heading, chars, 3).length * 28 : lines(module.heading, Math.max(30, Math.round(width / 17)), 3).length * 32;
+    const bodyLines = String(module.body ?? "").trim() ? lines(module.body, chars, 12).length : 0;
+    let height = 72 + (mobile ? 0 : 6) + heading + bodyLines * (mobile ? 24 : 22);
+    if (module.source_quote) height += sourceQuoteBlockHeight(module.source_quote, width, mobile);
+    return height;
   }
   if (type === "visual" || type === "illustration") {
     const asset = assets[type === "visual" ? module.manifest_ref : module.asset_ref];
     if (!asset) return mobile ? 500 : 520;
     const aspect = visualAspect(asset, mobile || spanColumns(module.span) <= 6);
-    const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 44 : 38) : 0;
+    const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 52 : 44) : 0;
     return clamp(width * aspect + (module.label ? 36 : 12) + provenanceCaption, mobile ? 390 : 330, mobile ? 980 : 900);
   }
   return 180;
@@ -508,6 +746,21 @@ function effectiveColumns(module, strategy) {
   if (strategy === "rhythm" && module.emphasis === "hero") cols = Math.max(cols, 8);
   if (strategy === "rhythm" && module.type === "pull_quote" && module.story_role === "turn") cols = Math.max(cols, 6);
   return cols;
+}
+
+// The desktop columns each scene member gets, as laid out by
+// buildDesktopScene: hero_with_rail gives its anchor the full width and
+// splits the rail among its sidecars; hero_sidecar_stack gives the anchor 8
+// columns and each sidecar 4.
+function desktopSceneSlots(spec) {
+  const slots = new Map();
+  for (const scene of normalizedScenes(spec)) {
+    const rail = scene.pattern === "hero_with_rail";
+    const count = scene.sidecar_module_ids.length;
+    slots.set(scene.anchor_module_id, { scene_id: String(scene.id), cols: rail ? 12 : 8 });
+    for (const id of scene.sidecar_module_ids) slots.set(id, { scene_id: String(scene.id), cols: rail ? (count === 1 ? 12 : count === 2 ? 6 : 4) : 4 });
+  }
+  return slots;
 }
 
 function normalizedScenes(spec) {
@@ -691,29 +944,37 @@ function layoutMobile(spec, assets) {
 function headerMetrics(spec, mobile) {
   const titleChars = mobile ? 19 : 31;
   const dekChars = mobile ? 42 : 78;
-  const titleLines = lines(spec.title, titleChars, mobile ? 6 : 4).length;
+  const titleLines = lines(spec.title, titleChars, mobile ? 6 : 4, true).length;
   const dekLines = lines(spec.dek, dekChars, mobile ? 8 : 5).length;
   const top = mobile ? 48 : 58;
   const titleSize = mobile ? 45 : 68;
-  const titleLH = mobile ? 50 : 72;
+  // A Latin display title can be set at 1.06em, but CJK glyphs fill the em
+  // box, so two rows of them would sit about 4px apart; 1.2em leaves 14px.
+  const wideTitle = Array.from(String(spec.title ?? "")).some(isWideChar);
+  const titleLH = mobile ? (wideTitle ? 54 : 50) : (wideTitle ? 82 : 72);
   const dekSize = mobile ? 19 : 22;
   const dekLH = mobile ? 27 : 31;
-  const kicker = mobile ? 44 : 52;
+  // Kicker baseline to first title baseline. On desktop the 68px title needs
+  // 58px to clear the 14px kicker line under render QA's text boxes (0.8em
+  // above, 0.25em below the baseline) and about 66px under Chrome's font
+  // boxes; 68 also leaves CJK glyphs, which fill the em box, clear of it.
+  const kicker = mobile ? 44 : 68;
   const meta = spec.byline || spec.date_label ? (mobile ? 42 : 38) : 10;
   return { top, kicker, titleSize, titleLH, titleLines, dekSize, dekLH, dekLines, meta, height: top + kicker + titleLines * titleLH + dekLines * dekLH + meta + (mobile ? 44 : 52) };
 }
 
 function drawHeader(parts, spec, width, margin, mobile) {
   const h = headerMetrics(spec, mobile);
+  const t = INFOGRAPHIC_STRINGS[pageLang(spec)];
   parts.push(`<line x1="${margin}" y1="${h.top - 18}" x2="${width - margin}" y2="${h.top - 18}" stroke="${INK}" stroke-width="${mobile ? 5 : 6}"/>`);
-  parts.push(`<text x="${margin}" y="${h.top}" font-family="${SANS}" font-size="${mobile ? 13 : 14}" font-weight="700" letter-spacing="2" fill="${ACCENT}">${esc(String(spec.kicker ?? "DATA FEATURE").toUpperCase())}</text>`);
+  parts.push(`<text x="${margin}" y="${h.top}" font-family="${SANS}" font-size="${mobile ? 13 : 14}" font-weight="700" letter-spacing="2" fill="${ACCENT}">${esc(String(spec.kicker ?? t.kicker).toUpperCase())}</text>`);
   if (!mobile) parts.push(`<text x="${width - margin}" y="${h.top}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.5" fill="${MUTED}">AGENTIC DATA NEWSROOM · 01</text>`);
-  let y = h.top + (mobile ? 44 : 52);
-  textBlock(parts, spec.title, margin, y, { family: SERIF, size: h.titleSize, lineHeight: h.titleLH, weight: 700, maxChars: mobile ? 19 : 31, maxLines: mobile ? 6 : 4 });
+  let y = h.top + h.kicker;
+  textBlock(parts, spec.title, margin, y, { family: SERIF, size: h.titleSize, lineHeight: h.titleLH, weight: 700, maxChars: mobile ? 19 : 31, maxLines: mobile ? 6 : 4, headline: true });
   y += h.titleLines * h.titleLH + (mobile ? 18 : 22);
   textBlock(parts, spec.dek, margin, y, { size: h.dekSize, lineHeight: h.dekLH, fill: MUTED, maxChars: mobile ? 42 : 78, maxLines: mobile ? 8 : 5 });
   y += h.dekLines * h.dekLH + (mobile ? 18 : 20);
-  const meta = [spec.byline ? `By ${spec.byline}` : null, spec.date_label].filter(Boolean).join("  ·  ");
+  const meta = [spec.byline ? `${t.byPrefix}${spec.byline}` : null, spec.date_label].filter(Boolean).join("  ·  ");
   if (meta) parts.push(`<text x="${margin}" y="${y}" font-family="${SANS}" font-size="${mobile ? 13 : 14}" font-weight="600" fill="${INK}">${esc(meta)}</text>`);
   parts.push(`<line x1="${margin}" y1="${h.height - 18}" x2="${width - margin}" y2="${h.height - 18}" stroke="${GRID}" stroke-width="1"/>`);
   return h.height;
@@ -732,22 +993,67 @@ function editorialOrdinalMap(spec) {
 function drawSceneChrome(parts, scene, startY, mobile) {
   if (mobile) return;
   const y = scene.y + startY;
-  if (scene.eyebrow) parts.push(`<text x="${scene.x}" y="${y + 16}" font-family="${SANS}" font-size="11" font-weight="700" letter-spacing="1.8" fill="${ACCENT}">${esc(String(scene.eyebrow).toUpperCase())}</text>`);
+  if (scene.eyebrow) parts.push(`<text x="${scene.x}" y="${y + 16}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.8" fill="${ACCENT}">${esc(String(scene.eyebrow).toUpperCase())}</text>`);
   if (scene.title) textBlock(parts, scene.title, scene.x, y + (scene.eyebrow ? 52 : 30), { family: SERIF, size: 34, lineHeight: 39, weight: 700, maxChars: 48, maxLines: 2 });
   const titleLines = scene.title ? lines(scene.title, 48, 2).length : 0;
   if (scene.dek) textBlock(parts, scene.dek, scene.x, y + (scene.eyebrow ? 52 : 30) + titleLines * 39 + 7, { size: 15.5, lineHeight: 22, fill: MUTED, maxChars: 82, maxLines: 2 });
   parts.push(`<rect data-role="scene-boundary" data-scene-id="${esc(scene.id)}" x="${scene.x}" y="${y}" width="${scene.w}" height="${scene.h}" fill="none" stroke="none"/>`);
 }
 
-function drawModuleChrome(parts, box, ordinal, mobile) {
-  if (box.module.type === "section_header") return;
+// The module label line is one unwrapped line of letter-spaced capitals, so
+// a long label in a narrow module runs into its neighbour. Fit it to the
+// module: the full label, else label_short, else the label cut with an
+// ellipsis. Bold capitals average about 0.72em plus the letter-spacing.
+// A wide (CJK/fullwidth) code point costs a full em plus the letter-spacing
+// instead of that 0.72em Latin average, so it spends more than 1 unit of room.
+function fitChromeText(prefix, module, width, size, spacing) {
+  const advance = size * 0.72 + spacing;
+  const room = Math.floor(width / advance);
+  const wideCost = (size + spacing) / advance;
+  const costOf = (char) => (isWideChar(char) ? wideCost : 1);
+  const cost = (text) => Array.from(text).reduce((sum, char) => sum + costOf(char), 0);
+  for (const label of [module.label, module.label_short]) {
+    const text = `${prefix}${String(label ?? "").toUpperCase()}`;
+    if (label && cost(text) <= room) return text;
+  }
+  const units = Array.from(`${prefix}${String(module.label).toUpperCase()}`);
+  const maxCost = Math.max(1, room - 1);
+  let kept = 0;
+  let running = 0;
+  for (const char of units) {
+    const next = running + costOf(char);
+    if (kept > 0 && next > maxCost) break;
+    running = next;
+    kept++;
+  }
+  return `${units.slice(0, Math.max(1, kept)).join("").trimEnd()}…`;
+}
+
+function drawModuleChrome(parts, box, ordinal, mobile, spec) {
+  // Fix 10: hero_stat draws its own big label directly under the numeral
+  // (see drawHeroStat) - the ordinal/label kicker below would print that
+  // exact same module.label a second time, in miniature, above it. Skip
+  // hero_stat's chrome entirely (hairline included), the same way
+  // section_header already opts out of it, rather than keeping the hairline
+  // and only dropping the label: hero_stat's own accent top rule (fix 9)
+  // already marks its top edge, so a second, chrome-drawn hairline there
+  // would be redundant too.
+  if (box.module.type === "section_header" || box.module.type === "hero_stat") return;
   const y = box.y;
+  const size = mobile ? 12 : 13;
   if (box.module.emphasis === "hero") {
-    parts.push(`<text x="${box.x}" y="${y + 18}" font-family="${SANS}" font-size="${mobile ? 10.5 : 11.5}" font-weight="700" letter-spacing="1.8" fill="${ACCENT}">${box.module.label ? esc(String(box.module.label).toUpperCase()) : "PRIMARY VISUAL"}</text>`);
+    parts.push(`<text x="${box.x}" y="${y + 18}" font-family="${SANS}" font-size="${size}" font-weight="700" letter-spacing="1.8" fill="${ACCENT}">${box.module.label ? esc(fitChromeText("", box.module, box.w, size, 1.8)) : INFOGRAPHIC_STRINGS[pageLang(spec)].primaryVisual}</text>`);
     return;
   }
+  const number = String(ordinal ?? 0).padStart(2, "0");
   parts.push(`<line x1="${box.x}" y1="${y}" x2="${box.x + box.w}" y2="${y}" stroke="${box.module.tone === "dark" ? "#8a959d" : GRID}" stroke-width="1"/>`);
-  parts.push(`<text x="${box.x}" y="${y + 20}" font-family="${SANS}" font-size="${mobile ? 10 : 11}" font-weight="700" letter-spacing="1.5" fill="${ACCENT}">${String(ordinal ?? 0).padStart(2, "0")}${box.module.label ? ` · ${esc(String(box.module.label).toUpperCase())}` : ""}</text>`);
+  // Fix 11: a visual module's own embedded chart SVG already carries its own
+  // title (see renderVizSvg/embedVisual) - this kicker's "${number} · LABEL"
+  // form was repeating that exact same string in miniature just above it.
+  // Every other module type (text, illustration, ...) keeps its label in the
+  // kicker; a visual module is restricted to a bare ordinal instead.
+  const showLabel = box.module.type !== "visual" && Boolean(box.module.label);
+  parts.push(`<text x="${box.x}" y="${y + 20}" font-family="${SANS}" font-size="${size}" font-weight="700" letter-spacing="1.5" fill="${ACCENT}">${showLabel ? esc(fitChromeText(`${number} · `, box.module, box.w, size, 1.5)) : number}</text>`);
 }
 
 function embedVisual(parts, asset, box, module, mobile) {
@@ -774,7 +1080,7 @@ function embedIllustration(parts, asset, box, module, mobile) {
   const info = svgInfo(sourceSvg);
   const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
   const caption = illustrationCaption(asset, module);
-  const captionH = caption ? (mobile ? 42 : 34) : 0;
+  const captionH = caption ? (mobile ? 48 : 40) : 0;
   const availableH = box.h - topPad - captionH - 6;
   const targetW = box.w;
   const naturalH = targetW * (info.height / info.width);
@@ -782,45 +1088,118 @@ function embedIllustration(parts, asset, box, module, mobile) {
   const y = box.y + topPad;
   const inner = namespaceSvgInner(info.inner, `illustration-${hash(module.id).slice(0, 8)}-${mobile ? "m" : "d"}`);
   parts.push(`<svg data-role="infographic-illustration" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="xMidYMin meet">${inner}</svg>`);
-  if (caption) textBlock(parts, caption, box.x, y + targetH + (mobile ? 15 : 14), { size: mobile ? 9.5 : 10.5, lineHeight: mobile ? 13 : 14, fill: MUTED, maxChars: mobile ? 78 : Math.max(62, Math.round(box.w / 7)), maxLines: 2, role: "illustration-credit" });
+  if (caption) textBlock(parts, caption, box.x, y + targetH + (mobile ? 15 : 14), { size: mobile ? 12 : 12.5, lineHeight: 16, fill: MUTED, maxChars: mobile ? 78 : Math.max(62, Math.round(box.w / 7)), maxLines: 2, role: "illustration-credit" });
   if (caption) parts.push(`<rect data-role="illustration-credit" data-module-id="${esc(module.id)}" x="${box.x}" y="${y + targetH}" width="1" height="1" fill="none"/>`);
 }
 
 function drawHeroStat(parts, box, module, mobile) {
-  const tone = module.tone ?? "accent";
-  const fill = tone === "dark" ? DARK : tone === "light" ? FAINT : ACCENT;
-  const fg = tone === "light" ? INK : "#ffffff";
-  const muted = tone === "light" ? MUTED : "#f5d9d5";
   const pad = mobile ? 28 : 30;
-  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${box.y + 28}" width="${box.w}" height="${box.h - 28}" rx="5" fill="${fill}"/>`);
-  parts.push(`<text x="${box.x + pad}" y="${box.y + 28 + (mobile ? 69 : 66)}" font-family="${SERIF}" font-size="${mobile ? 54 : 58}" font-weight="700" fill="${fg}">${esc(module.value)}${module.unit ? `<tspan font-size="${mobile ? 22 : 24}" dx="7">${esc(module.unit)}</tspan>` : ""}</text>`);
-  textBlock(parts, module.label, box.x + pad, box.y + 28 + (mobile ? 106 : 102), { size: mobile ? 15 : 15.5, lineHeight: mobile ? 20 : 20, weight: 700, fill: fg, maxChars: mobile ? 48 : Math.max(28, Math.round(box.w / 10)), maxLines: 2 });
-  if (module.detail) textBlock(parts, module.detail, box.x + pad, box.y + box.h - 20, { size: mobile ? 11.5 : 12, lineHeight: 16, fill: muted, maxChars: mobile ? 70 : Math.max(38, Math.round(box.w / 8)), maxLines: 2 });
+  const top = box.y + 28;
+  if (!INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
+    // Legacy: unchanged, byte-for-byte - the solid tone-coloured card fix 9
+    // replaces under house style. tone still selects the card colour and
+    // its matching foreground/detail contrast pair exactly as before.
+    const tone = module.tone ?? "accent";
+    const fill = tone === "dark" ? DARK : tone === "light" ? FAINT : LEGACY_ACCENT;
+    const fg = tone === "light" ? LEGACY_INK : "#ffffff";
+    // "#f5d9d5" (a muted pink) reads at 10:1 against DARK but only 3.54:1 against
+    // ACCENT's brighter red - below the 4.5:1 floor for 12px normal text. Give the
+    // accent tone its own near-white tint (4.61:1 against ACCENT) instead of
+    // reusing the dark-tone colour; "dark" and "light" keep their prior values.
+    const muted = tone === "light" ? LEGACY_MUTED : tone === "accent" ? "#fefcfc" : "#f5d9d5";
+    parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="${box.h - 28}" rx="5" fill="${fill}"/>`);
+    parts.push(`<text x="${box.x + pad}" y="${top + (mobile ? 69 : 66)}" font-family="${SERIF}" font-size="${mobile ? 54 : 58}" font-weight="700" fill="${fg}">${esc(module.value)}${module.unit ? `<tspan font-size="${mobile ? 22 : 24}" dx="7">${esc(module.unit)}</tspan>` : ""}</text>`);
+    textBlock(parts, module.label, box.x + pad, top + (mobile ? 106 : 102), { size: mobile ? 15 : 15.5, lineHeight: mobile ? 20 : 20, weight: 700, fill: fg, maxChars: mobile ? 48 : Math.max(28, Math.round(box.w / 10)), maxLines: 2 });
+    if (module.detail) textBlock(parts, module.detail, box.x + pad, box.y + box.h - 20, { size: 12, lineHeight: 16, fill: muted, maxChars: mobile ? 70 : Math.max(38, Math.round(box.w / 8)), maxLines: 2 });
+    // Invisible end marker (paired with the start rect's same data-role, both
+    // carrying data-module-id): lets tooling bound "everything this one call
+    // drew" without depending on how many text lines label/detail wrapped to.
+    parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${box.y + box.h - 1}" width="1" height="1" fill="none"/>`);
+    return;
+  }
+  // House style (fix 9): no filled card. The numeral carries the page's one
+  // accent colour on plain white; the unit, label and detail read in ink/
+  // muted like any other module's text; a thin accent rule across the top
+  // (in place of the old solid slab) is the only colour cue marking this as
+  // a highlighted number. tone no longer selects a card colour under house
+  // style - one accent, used the same way everywhere else on the page,
+  // replaces the three-tone card palette (contrast is unaffected: ACCENT
+  // and INK/MUTED on white are already the combinations used throughout the
+  // rest of this file).
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${ACCENT}"/>`);
+  parts.push(`<text x="${box.x + pad}" y="${top + (mobile ? 69 : 66)}" font-family="${SERIF}" font-size="${mobile ? 54 : 58}" font-weight="700" fill="${ACCENT}">${esc(module.value)}${module.unit ? `<tspan font-size="${mobile ? 22 : 24}" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
+  textBlock(parts, module.label, box.x + pad, top + (mobile ? 106 : 102), { size: mobile ? 15 : 15.5, lineHeight: mobile ? 20 : 20, weight: 700, fill: INK, maxChars: mobile ? 48 : Math.max(28, Math.round(box.w / 10)), maxLines: 2 });
+  if (module.detail) textBlock(parts, module.detail, box.x + pad, box.y + box.h - 20, { size: 12, lineHeight: 16, fill: MUTED, maxChars: mobile ? 70 : Math.max(38, Math.round(box.w / 8)), maxLines: 2 });
+  // Invisible end marker - see the matching comment in the legacy branch above.
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${box.y + box.h - 1}" width="1" height="1" fill="none"/>`);
 }
 
-function drawTextModule(parts, box, module, mobile) {
-  const top = box.y + 42;
+// Source-quote note block: a visibly distinct footnote-style panel beneath a
+// text module's own (claim-bound) body copy. It is never styled like the
+// module's asserted body text - a tinted background, an eyebrow label, an
+// italic verbatim quote and an explicit page number, plus a labeled
+// translation line when the plan supplies one - so a reader (and the
+// browser-QA/vision critic) can tell it apart from a verified finding at a
+// glance. Language-generic: which labels it prints follows the page's own
+// language (B1), not the quote's source language.
+function sourceQuoteChars(width, mobile) { return mobile ? 50 : Math.max(40, Math.round(width / 11)); }
+function sourceQuoteBlockHeight(sourceQuote, width, mobile) {
+  const chars = sourceQuoteChars(width, mobile);
+  const quoteLines = lines(`“${sourceQuote.quote}”`, chars, 6).length;
+  const translationLines = sourceQuote.translation ? lines(sourceQuote.translation, chars, 5).length : 0;
+  return 30 + quoteLines * (mobile ? 21 : 20) + (translationLines ? translationLines * (mobile ? 20 : 19) + 8 : 0) + 22;
+}
+function drawSourceQuoteBlock(parts, x, y, width, sourceQuote, mobile, spec) {
+  const strings = INFOGRAPHIC_STRINGS[pageLang(spec)];
+  const chars = sourceQuoteChars(width, mobile);
+  let cursor = y;
+  parts.push(`<rect data-role="source-quote-note" x="${x}" y="${cursor}" width="${width}" height="6" fill="${GRID}"/>`);
+  cursor += 22;
+  parts.push(`<text x="${x}" y="${cursor}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.4" fill="${MUTED}">${esc(strings.sourceQuoteLabel.toUpperCase())} · ${esc(strings.sourceQuotePage)} ${esc(sourceQuote.page)}</text>`);
+  cursor += 20;
+  const quoteHeight = textBlock(parts, `“${sourceQuote.quote}”`, x, cursor, { size: mobile ? 14.5 : 15, lineHeight: mobile ? 21 : 20, fill: MUTED, italic: true, maxChars: chars, maxLines: 6 });
+  cursor += quoteHeight;
+  if (sourceQuote.translation) {
+    cursor += 6;
+    textBlock(parts, `${strings.sourceQuoteTranslation}: ${sourceQuote.translation}`, x, cursor, { size: mobile ? 13.5 : 14, lineHeight: mobile ? 20 : 19, fill: MUTED, maxChars: chars, maxLines: 5 });
+  }
+}
+
+function drawTextModule(parts, box, module, mobile, spec) {
+  // Below drawModuleChrome's ordinal line (13px at +20 on desktop), a 27px
+  // heading at +42 overlaps it; +48 clears it. moduleHeight adds the 6px.
+  const top = box.y + (mobile ? 42 : 48);
   if (module.heading) {
     textBlock(parts, module.heading, box.x, top, { family: SERIF, size: mobile ? 25 : 27, lineHeight: mobile ? 30 : 32, weight: 700, maxChars: mobile ? 35 : Math.max(30, Math.round(box.w / 17)), maxLines: 3 });
   }
   const headLines = module.heading ? lines(module.heading, mobile ? 35 : Math.max(30, Math.round(box.w / 17)), 3).length : 0;
-  textBlock(parts, module.body, box.x, top + headLines * (mobile ? 30 : 32) + (module.heading ? 16 : 0), { size: mobile ? 16 : 16.5, lineHeight: mobile ? 24 : 23, fill: INK, maxChars: mobile ? 54 : Math.max(44, Math.round(box.w / 10)), maxLines: 12 });
+  const bodyTop = top + headLines * (mobile ? 30 : 32) + (module.heading ? 16 : 0);
+  const bodyHeight = String(module.body ?? "").trim()
+    ? textBlock(parts, module.body, box.x, bodyTop, { size: mobile ? 16 : 16.5, lineHeight: mobile ? 24 : 23, fill: INK, maxChars: mobile ? 54 : Math.max(44, Math.round(box.w / 10)), maxLines: 12 })
+    : 0;
+  if (module.source_quote) drawSourceQuoteBlock(parts, box.x, bodyTop + bodyHeight + 14, box.w, module.source_quote, mobile, spec);
 }
 
-function drawSectionHeader(parts, box, module, mobile) {
+function drawSectionHeader(parts, box, module, mobile, spec) {
   const y = box.y + (mobile ? 44 : 42);
   const headingChars = mobile ? 31 : 48;
   const headingLH = mobile ? 37 : 42;
-  const headingLines = lines(module.heading ?? "", headingChars, 3).length;
-  parts.push(`<text x="${box.x}" y="${y}" font-family="${SANS}" font-size="${mobile ? 11 : 12}" font-weight="700" letter-spacing="2" fill="${ACCENT}">${esc(String(module.eyebrow ?? "THE STORY").toUpperCase())}</text>`);
-  textBlock(parts, module.heading, box.x, y + (mobile ? 38 : 40), { family: SERIF, size: mobile ? 31 : 36, lineHeight: headingLH, weight: 700, maxChars: headingChars, maxLines: 3 });
+  const headingLines = lines(module.heading ?? "", headingChars, 3, true).length;
+  parts.push(`<text x="${box.x}" y="${y}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="2" fill="${ACCENT}">${esc(String(module.eyebrow ?? INFOGRAPHIC_STRINGS[pageLang(spec)].theStory).toUpperCase())}</text>`);
+  textBlock(parts, module.heading, box.x, y + (mobile ? 38 : 40), { family: SERIF, size: mobile ? 31 : 36, lineHeight: headingLH, weight: 700, maxChars: headingChars, maxLines: 3, headline: true });
   if (module.deck) textBlock(parts, module.deck, box.x, y + (mobile ? 38 : 40) + headingLines * headingLH + 13, { size: mobile ? 15 : 16, lineHeight: mobile ? 22 : 23, fill: MUTED, maxChars: mobile ? 55 : 86, maxLines: 3 });
+}
+
+// Desktop pull quotes are 30px bold serif, about 0.55em a character, set 34px
+// in from the module edge; moduleHeight and drawPullQuote wrap them alike.
+function pullQuoteChars(width) {
+  return Math.max(12, Math.floor((width - 34) / 16.5));
 }
 
 function drawPullQuote(parts, box, module, mobile) {
   const y = box.y + 38;
   parts.push(`<rect x="${box.x}" y="${box.y + 28}" width="${mobile ? 6 : 7}" height="${Math.max(80, box.h - 48)}" fill="${ACCENT}"/>`);
-  textBlock(parts, `“${module.text}”`, box.x + (mobile ? 28 : 34), y + 22, { family: SERIF, size: mobile ? 27 : 30, lineHeight: mobile ? 34 : 38, weight: 700, maxChars: mobile ? 33 : Math.max(30, Math.round(box.w / 17)), maxLines: 7 });
+  textBlock(parts, `“${module.text}”`, box.x + (mobile ? 28 : 34), y + 22, { family: SERIF, size: mobile ? 27 : 30, lineHeight: mobile ? 34 : 38, weight: 700, maxChars: mobile ? 33 : pullQuoteChars(box.w), maxLines: 7 });
   if (module.attribution) textBlock(parts, module.attribution, box.x + (mobile ? 28 : 34), box.y + box.h - 20, { size: mobile ? 12 : 13, lineHeight: 17, weight: 700, fill: MUTED, maxChars: 55, maxLines: 2 });
 }
 
@@ -833,6 +1212,7 @@ function sourceList(spec, assets) {
 }
 
 function composeOne(spec, assets, mobile) {
+  applyInfographicStyle(spec);
   const header = headerMetrics(spec, mobile);
   const layout = mobile ? layoutMobile(spec, assets) : layoutDesktop(spec, assets);
   const footerH = mobile ? 150 : 128;
@@ -848,20 +1228,20 @@ function composeOne(spec, assets, mobile) {
   const ordinals = editorialOrdinalMap(spec);
   shiftedBoxes.forEach((box) => {
     const module = box.module;
-    if (module.type !== "section_header") drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile);
+    if (module.type !== "section_header") drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile, spec);
     if (module.type === "hero_stat") drawHeroStat(parts, box, module, mobile);
     else if (module.type === "visual") embedVisual(parts, assets[module.manifest_ref], box, module, mobile);
     else if (module.type === "illustration") embedIllustration(parts, assets[module.asset_ref], box, module, mobile);
-    else if (module.type === "text") drawTextModule(parts, box, module, mobile);
-    else if (module.type === "section_header") drawSectionHeader(parts, box, module, mobile);
+    else if (module.type === "text") drawTextModule(parts, box, module, mobile, spec);
+    else if (module.type === "section_header") drawSectionHeader(parts, box, module, mobile, spec);
     else if (module.type === "pull_quote") drawPullQuote(parts, box, module, mobile);
   });
   const footerY = startY + layout.contentHeight + (mobile ? 50 : 54);
   parts.push(`<line x1="${layout.margin}" y1="${footerY}" x2="${layout.width - layout.margin}" y2="${footerY}" stroke="${INK}" stroke-width="2"/>`);
-  parts.push(`<text x="${layout.margin}" y="${footerY + 30}" font-family="${SANS}" font-size="${mobile ? 11 : 12}" font-weight="700" letter-spacing="1.3" fill="${INK}">SOURCES &amp; METHODS</text>`);
+  parts.push(`<text x="${layout.margin}" y="${footerY + 30}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
   const sources = sourceList(spec, assets);
-  textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 10.5 : 11.5, lineHeight: mobile ? 15 : 16, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
-  parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="10" font-weight="700" letter-spacing="1.2" fill="${MUTED}">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>`);
+  textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
+  parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>`);
   for (const box of shiftedBoxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
   parts.push("</svg>");
   const visualKinds = uniq((spec.modules ?? []).flatMap((m) => {
@@ -886,10 +1266,15 @@ function composeOne(spec, assets, mobile) {
   };
 }
 
-export function composeInfographicBundle(spec, assets = {}) {
+export function composeInfographicBundle(spec, assets = {}, { mobilePages = true } = {}) {
   const errors = validateInfographicSpec(spec);
   if (errors.length) throw new Error(errors.join("; "));
-  return { desktop: composeOne(spec, assets, false), mobile: composeOne(spec, assets, true) };
+  const desktop = composeOne(spec, assets, false);
+  // Off, composeOne(..., true) is never called at all: it would otherwise
+  // unconditionally read asset.mobileSvg while building the phone-facing
+  // page (embedVisual/embedIllustration), which loadInfographicAssets no
+  // longer populates once the switch is off.
+  return mobilePages ? { desktop, mobile: composeOne(spec, assets, true) } : { desktop };
 }
 
 function boxesOverlap(a, b, padding = 0) {
@@ -916,7 +1301,7 @@ function critiqueLegacyOne(spec, composed, mobile) {
   if (heroCount > 4) { issues.push({ severity: "warning", code: "too_many_hero_stats" }); score -= 6; }
   if (String(spec.title).length > (mobile ? 120 : 100)) { issues.push({ severity: "warning", code: "headline_density" }); score -= 7; }
   if (String(spec.dek).length > (mobile ? 360 : 300)) { issues.push({ severity: "warning", code: "deck_density" }); score -= 5; }
-  if (!composed.svg.includes("SOURCES &amp; METHODS") && !composed.svg.includes("SOURCES & METHODS")) { issues.push({ severity: "blocker", code: "source_strip_missing" }); score -= 25; }
+  if (!hasSourcesMethodsLabel(composed.svg, spec)) { issues.push({ severity: "blocker", code: "source_strip_missing" }); score -= 25; }
   if (!composed.svg.includes('data-role="infographic-visual"')) { issues.push({ severity: "blocker", code: "visual_embedding_missing" }); score -= 25; }
   if (composed.svg.includes('data-rich-illustration-version="0.2.0"') && !composed.svg.includes('data-role="illustration-credit"')) { issues.push({ severity: "blocker", code: "rich_illustration_disclosure_missing" }); score -= 25; }
   if (mobile && composed.width !== 720) { issues.push({ severity: "warning", code: "mobile_width_unexpected" }); score -= 3; }
@@ -960,7 +1345,7 @@ function critiqueAwardOne(spec, composed, mobile) {
       }
     }
   }
-  if (!composed.svg.includes("SOURCES &amp; METHODS") && !composed.svg.includes("SOURCES & METHODS")) {
+  if (!hasSourcesMethodsLabel(composed.svg, spec)) {
     issues.push({ severity: "blocker", code: "source_strip_missing" }); geometryPenalty += 30;
   }
   if (!composed.svg.includes('data-role="infographic-visual"')) {
@@ -991,7 +1376,7 @@ function critiqueAwardOne(spec, composed, mobile) {
   const hasIntent = String(spec.intent ?? "").trim().length >= 16;
   const hasMessage = String(spec.primary_message ?? "").trim().length >= 16;
   const hasAudience = INFOGRAPHIC_AUDIENCES.includes(spec.audience);
-  const sourcePresent = composed.svg.includes("SOURCES &amp; METHODS") || composed.svg.includes("SOURCES & METHODS");
+  const sourcePresent = hasSourcesMethodsLabel(composed.svg, spec);
   const titleLen = String(spec.title ?? "").length;
   const dekLen = String(spec.dek ?? "").length;
   const altLen = String(spec.alt ?? "").length;
@@ -1122,9 +1507,26 @@ function critiqueAwardOne(spec, composed, mobile) {
   return { passed: !blockers && score >= threshold && dimensionFloorPassed && awardCriticalPassed, score, threshold, rubric, issues };
 }
 
+// bundle.mobile is optional: a caller with phone-facing pages off (see
+// runtime/pi/newsroom.ts mobilePagesEnabled()) passes only { desktop }, and
+// this returns a desktop-only critique - viewports, score and passed all
+// derive from desktop alone rather than folding in a mobile page that was
+// never written. When bundle.mobile is present, this is byte-identical to
+// the pre-switch behavior.
 export function critiqueInfographic(spec, bundle) {
+  const mobileOn = bundle.mobile !== undefined;
   if (!["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     const desktop = critiqueLegacyOne(spec, bundle.desktop, false);
+    if (!mobileOn) {
+      return {
+        schema_version: spec.schema_version,
+        quality_target: "legacy",
+        passed: desktop.passed,
+        score: desktop.score,
+        viewports: { desktop },
+        issues: desktop.issues.map((issue) => ({ ...issue, viewport: "desktop" })),
+      };
+    }
     const mobile = critiqueLegacyOne(spec, bundle.mobile, true);
     return {
       schema_version: spec.schema_version,
@@ -1139,6 +1541,18 @@ export function critiqueInfographic(spec, bundle) {
     };
   }
   const desktop = critiqueAwardOne(spec, bundle.desktop, false);
+  if (!mobileOn) {
+    return {
+      schema_version: spec.schema_version,
+      quality_target: spec.quality_target,
+      competition_profile: spec.competition_profile ?? "editorial",
+      passed: desktop.passed,
+      score: desktop.score,
+      rubric: desktop.rubric,
+      viewports: { desktop },
+      issues: desktop.issues.map((issue) => ({ ...issue, viewport: "desktop" })),
+    };
+  }
   const mobile = critiqueAwardOne(spec, bundle.mobile, true);
   const rubricKeys = Object.keys(desktop.rubric);
   const rubric = Object.fromEntries(rubricKeys.map((key) => [key, Math.min(desktop.rubric[key], mobile.rubric[key])]));

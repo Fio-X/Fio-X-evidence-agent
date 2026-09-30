@@ -20,6 +20,14 @@ fn complex_visual_routing_ab_enabled() -> bool {
     )
 }
 
+/// Mirrors runtime/pi/newsroom.ts: phone-facing pages (the infographic
+/// mobile page and mobile publication widths) exist only when
+/// NEWSROOM_MOBILE_PAGES is exactly "1". Otherwise a PNG request is met by
+/// the desktop render alone rather than the desktop/mobile pair.
+fn mobile_pages_enabled() -> bool {
+    std::env::var("NEWSROOM_MOBILE_PAGES").ok().as_deref() == Some("1")
+}
+
 fn is_complex_visual_request(topic: &str, split_classifier: bool) -> bool {
     if split_classifier {
         prompt::is_complex_visual_request_split(topic)
@@ -53,8 +61,12 @@ fn visual_completion_gaps(
             .iter()
             .any(|call| call.tool == name && call.is_error != Some(true))
     };
-    let mut gaps =
-        bundle.visual_delivery_gaps(prompt::requires_html(topic), prompt::requires_png(topic))?;
+    let required_pngs = match (prompt::requires_png(topic), mobile_pages_enabled()) {
+        (false, _) => 0,
+        (true, false) => 1,
+        (true, true) => 2,
+    };
+    let mut gaps = bundle.visual_delivery_gaps(prompt::requires_html(topic), required_pngs)?;
     if is_complex_visual_request(topic, split_classifier) {
         for tool in [
             "newsroom_infographic_plan",

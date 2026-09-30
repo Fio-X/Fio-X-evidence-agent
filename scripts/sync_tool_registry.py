@@ -66,7 +66,7 @@ def main()->int:
     profile_consts=[]
     profile_arms=[]
     for profile in data.get('profiles') or []:
-        enabled=','.join(row['name'] for row in tools if effective[profile].intersection(row.get('profiles') or []))
+        enabled=','.join(row['name'] for row in tools if row.get('agent_visible') is True and effective[profile].intersection(row.get('profiles') or []))
         const_name='NEWSROOM_TOOLS_'+profile.upper().replace('-','_')
         profile_consts.append(f'pub const {const_name}: &str = "{enabled}";')
         profile_arms.append(f'        "{profile}" => Some({const_name}),')

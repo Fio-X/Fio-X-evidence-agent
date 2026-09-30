@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { critiqueViz, lintVizSpec, renderVizBundle, renderVizMobileSvg, renderVizSvg, hashRows } from "../runtime/pi/viz.mjs";
+import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 
 function parseCsv(text) {
   const rows = [];
@@ -154,9 +155,41 @@ const directLabelSpec = {
   annotations: [],
 };
 const directLabelMobile = renderVizMobileSvg(directLabelSpec, directLabelRows);
-const directLabelYs = [...directLabelMobile.matchAll(/data-role="direct-label"[^>]* y="([0-9.]+)"/g)].map((m) => Number(m[1])).sort((a, b) => a - b);
-assert.equal(directLabelYs.length, 3);
+// Fix 5 (end label crosses its own line): an end label that doesn't fit on
+// one line now splits into a name line and a value+unit line (see
+// layoutLineEndLabel in viz.mjs), so a series can contribute either one or
+// two data-role="direct-label" text nodes - this fixture's three values
+// (50.0/50.1/50.2) are close enough that all three combined "Name NN.N
+// index" labels overflow mobile's margin and split. Group nodes back into
+// one entry per series - a lone name-only line (an exact match on the series
+// name) is always immediately followed by its value+unit line, in the same
+// order the renderer pushes them - and use the pair's value line as the
+// series' canonical y, the same labelY separateLabelBaselines() spaces apart
+// (a label that stays on one line already carries that same labelY).
+const directLabelSeries = ["Alpha", "Beta", "Gamma"];
+const directLabelNodes = [...directLabelMobile.matchAll(/<text data-role="direct-label"[^>]* y="([0-9.]+)"[^>]*>([^<]*)<\/text>/g)].map((m) => ({ y: Number(m[1]), text: m[2] }));
+const directLabelYs = [];
+for (let i = 0; i < directLabelNodes.length; i++) {
+  const node = directLabelNodes[i];
+  if (directLabelSeries.includes(node.text)) {
+    const valueLine = directLabelNodes[i + 1];
+    assert.ok(valueLine, `series name line "${node.text}" had no following value line: ${JSON.stringify(directLabelNodes)}`);
+    directLabelYs.push(valueLine.y);
+    i++;
+  } else {
+    directLabelYs.push(node.y);
+  }
+}
+assert.equal(directLabelYs.length, 3, `expected exactly one logical label per series: ${JSON.stringify(directLabelNodes)}`);
+directLabelYs.sort((a, b) => a - b);
 for (let i = 1; i < directLabelYs.length; i++) assert.ok(directLabelYs[i] - directLabelYs[i - 1] >= 14, `direct labels collided: ${directLabelYs}`);
+// This fixture's three close-together values already exercised the exact
+// defect fix 5 resolves - two of its three end labels crossed the polyline
+// they name (text_crosses_data_mark) even though their Y positions were
+// already correctly de-collided; that X-axis crossing is now fixed too, so
+// lock it in going forward rather than only checking Y-spacing.
+const directLabelCrossings = checkSvgGeometry(directLabelMobile).failures.filter((f) => f.rule === "text_crosses_data_mark");
+assert.deepEqual(directLabelCrossings, [], `direct labels must not cross their own series' line: ${JSON.stringify(directLabelCrossings)}`);
 
 const unverifiedAnnotation = { ...good, annotations: [{ ...good.annotations[0], claim_id: "claim-not-verified" }] };
 const badAnnotationLint = lintVizSpec(unverifiedAnnotation, rows, { verified_claim_ids: [claimId] });
@@ -197,6 +230,94 @@ assert.ok(draftLint.warnings.some((item) => item.includes("DRAFT visualization")
 const missingVerifiedClaim = lintVizSpec({ ...good, verification_mode: "verified", claim_id: undefined }, rows, { verified_claim_ids: [] });
 assert.equal(missingVerifiedClaim.passed, false);
 assert.ok(missingVerifiedClaim.blockers.some((item) => item.includes("requires claim_id")));
+
+// --- B1: chart language field ----------------------------------------------
+// language defaults to "en"; setting it to "zh" requires the model's own
+// title/subtitle copy to actually be Chinese, and every string the renderer
+// adds on its own (note/source prefixes) must switch with it.
+const zhGood = {
+  ...good,
+  language: "zh",
+  title: "各国分为两个观测年份",
+  subtitle: "占最终能源消费总量的可再生能源份额",
+};
+const zhGoodLint = lintVizSpec(zhGood, rows, { verified_claim_ids: [claimId] });
+assert.equal(zhGoodLint.passed, true, zhGoodLint.blockers.join(" | "));
+const zhSvg = renderVizSvg(zhGood, rows);
+assert.match(zhSvg, /注：/);
+assert.match(zhSvg, /数据来源：/);
+assert.doesNotMatch(zhSvg, /\bNote:\s/);
+assert.doesNotMatch(zhSvg, /\bSource:\s/);
+console.log("zh chart: renderer-added Note/Source strings localized: PASS");
+
+const zhTitleOnlyEnglish = { ...zhGood, title: good.title };
+const zhTitleLint = lintVizSpec(zhTitleOnlyEnglish, rows, { verified_claim_ids: [claimId] });
+assert.equal(zhTitleLint.passed, false);
+assert.ok(zhTitleLint.blockers.includes("zh chart title contains no CJK characters"), zhTitleLint.blockers.join(" | "));
+
+const zhSubtitleOnlyEnglish = { ...zhGood, subtitle: good.subtitle };
+const zhSubtitleLint = lintVizSpec(zhSubtitleOnlyEnglish, rows, { verified_claim_ids: [claimId] });
+assert.equal(zhSubtitleLint.passed, false);
+assert.ok(zhSubtitleLint.blockers.includes("zh chart subtitle contains no CJK characters"), zhSubtitleLint.blockers.join(" | "));
+
+const badLanguageLint = lintVizSpec({ ...good, language: "fr" }, rows, { verified_claim_ids: [claimId] });
+assert.equal(badLanguageLint.passed, false);
+assert.ok(badLanguageLint.blockers.includes("language must be 'en' or 'zh'"), badLanguageLint.blockers.join(" | "));
+console.log("zh chart CJK-title/subtitle lint and language validity: PASS");
+
+// --- B2: reference_line annotations -----------------------------------------
+// The viz annotation schema previously allowed only point/node, so a plan
+// could never ask for a threshold/target rule on the value axis.
+const refLineRows = [
+  { category: "A", value: 42 }, { category: "B", value: 31 }, { category: "C", value: 18 }, { category: "D", value: 9 },
+];
+const refLineSpec = {
+  schema_version: "0.7.0",
+  reader_task: "ranking",
+  takeaway: "Most categories sit above the fixed 30-unit threshold",
+  chart_type: "horizontal_bar",
+  title: "Four categories against a fixed threshold",
+  alt: "Horizontal bars for four categories, each compared against a labeled 30-unit reference line.",
+  source_note: "Synthetic regression fixture",
+  claim_id: claimId,
+  sql: "SELECT * FROM synthetic_ref_line",
+  unit: "units",
+  category_field: "category",
+  value_field: "value",
+  sort: "desc",
+  direct_labels: true,
+  annotations: [{ type: "reference_line", text: "Target: 30", value: 30, claim_id: claimId }],
+};
+const refLineLint = lintVizSpec(refLineSpec, refLineRows, { verified_claim_ids: [claimId] });
+assert.equal(refLineLint.passed, true, refLineLint.blockers.join(" | "));
+const refLineSvg = renderVizSvg(refLineSpec, refLineRows);
+assert.match(refLineSvg, /data-role="reference-line"/);
+assert.match(refLineSvg, /data-role="reference-line-label"[^>]*>Target: 30</);
+const refLineBundle = renderVizBundle(refLineSpec, refLineRows);
+assert.match(refLineBundle.mobile, /data-role="reference-line"/);
+assert.match(refLineBundle.mobile, /data-role="reference-line-label"/);
+console.log("reference_line renders on horizontal_bar (desktop+mobile): PASS");
+
+const outOfDomain = { ...refLineSpec, annotations: [{ type: "reference_line", text: "Off scale", value: 50, claim_id: claimId }] };
+const outOfDomainLint = lintVizSpec(outOfDomain, refLineRows, { verified_claim_ids: [claimId] });
+assert.equal(outOfDomainLint.passed, false);
+assert.ok(outOfDomainLint.blockers.includes("annotations[0] reference_line value 50 is outside the value axis domain [0, 42]"), outOfDomainLint.blockers.join(" | "));
+
+const scatterRefLine = lintVizSpec({ ...collisionSpec, annotations: [{ type: "reference_line", text: "Target", value: 50, claim_id: claimId }] }, collisionRows, { verified_claim_ids: [claimId] });
+assert.equal(scatterRefLine.passed, false);
+assert.ok(scatterRefLine.blockers.some((item) => item.includes("reference_line is not supported on chart_type 'scatter'")));
+
+const multiLineRefLine = lintVizSpec({ ...directLabelSpec, annotations: [{ type: "reference_line", text: "Target", value: 50, claim_id: claimId }] }, directLabelRows, { verified_claim_ids: [claimId] });
+assert.equal(multiLineRefLine.passed, false);
+assert.ok(multiLineRefLine.blockers.some((item) => item.includes("reference_line is not supported on chart_type 'multi_line'")));
+console.log("reference_line lint: blocked on unsupported chart_type and out-of-domain value: PASS");
+
+const refLineDraftMissingClaim = lintVizSpec({ ...refLineSpec, verification_mode: "draft", claim_id: undefined, annotations: [{ type: "reference_line", text: "Target: 30", value: 30 }] }, refLineRows, { verified_claim_ids: [] });
+assert.equal(refLineDraftMissingClaim.passed, true, refLineDraftMissingClaim.blockers.join(" | "));
+const refLineVerifiedMissingClaim = lintVizSpec({ ...refLineSpec, annotations: [{ type: "reference_line", text: "Target: 30", value: 30 }] }, refLineRows, { verified_claim_ids: [claimId] });
+assert.equal(refLineVerifiedMissingClaim.passed, false);
+assert.ok(refLineVerifiedMissingClaim.blockers.some((item) => item.includes("annotations[0].claim_id is required")));
+console.log("reference_line claim_id required unless draft mode (same rule as other annotations): PASS");
 
 if (process.argv.includes("--write-fixture")) {
   await writeFile(new URL("../fixtures/newsroom-viz-v0.5.svg", import.meta.url), responsive.desktop, "utf8");

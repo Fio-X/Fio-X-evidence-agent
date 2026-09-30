@@ -105,7 +105,13 @@ for (const [name, spec, rows] of visualCases) {
     assert.doesNotMatch(bundle.mobile, /data-role="process-edge-label"[^>]*>[^<]*…/, 'process edge labels must not use ellipsis for this fixture');
   }
   if (name === 'warming-line') {
-    assert.match(bundle.mobile, /data-role="annotation"[^>]*text-anchor="end"[^>]*><tspan[^>]*>2024:/, 'right-edge annotation should flip left on mobile');
+    // 2024 and 2025 are the last two (adjacent) points - too close together
+    // for the round-3 event-annotation lane, so this chart is expected to
+    // take the numbered-marker + caption-list fallback instead of the old
+    // free-repel side flip. Either way, neither annotation's text may be
+    // dropped.
+    assert.match(bundle.mobile, /2024: \+1\.29°C, highest annual value in the series/, 'mobile must still show the 2024 annotation (lane label or fallback caption)');
+    assert.match(bundle.mobile, /2025: \+1\.19°C/, 'mobile must still show the 2025 annotation (lane label or fallback caption)');
   }
   const desktopCritic = critiqueViz(spec, rows, lint, bundle.desktop);
   const mobileCritic = critiqueViz(spec, rows, lint, bundle.mobile);

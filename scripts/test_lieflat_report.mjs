@@ -115,6 +115,11 @@ async function fixture(language) {
     base,
     input: {
       mode: "report",
+      // This fixture's report+chart calls are this suite's only coverage of
+      // renderLieflatPublication/renderLieflatChart with phone-facing mobile
+      // pages on (NEWSROOM_MOBILE_PAGES=1 at the newsroom_lieflat_render tool
+      // layer); off-by-default coverage lives in test_render_qa_tool_path.mjs.
+      mobile_pages: true,
       language,
       template_id: "R01",
       template_file: `templates/reports/report-01.${language}.html`,

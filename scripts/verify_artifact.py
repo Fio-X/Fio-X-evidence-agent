@@ -15,6 +15,9 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 
+RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0"
+
+
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -173,6 +176,10 @@ def replay_preference_status(item: dict) -> tuple[str, float]:
     status = "PENDING" if len(reviews) < minimum else ("PASS" if share >= threshold else "FAIL")
     return status, round(share, 4)
 
+# runtime/pi/infographic.mjs's own INFOGRAPHIC_SCHEMA_VERSIONS constant
+# (infographic.mjs:18). Kept in sync by hand - the runtime module cannot be
+# imported from this verifier's own process.
+INFOGRAPHIC_SCHEMA_VERSIONS = {"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"}
 INFOGRAPHIC_COMPETITION_PROFILES = {
     "editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"
 }
@@ -346,6 +353,152 @@ def safe_ref(root: Path, ref: str) -> Path:
     return full
 
 
+def _pdf_page_markers(text: str) -> list[tuple[int, int, int]]:
+    """Finds every `[page N]\\n` marker runtime/pi/pdf_extract.mjs's
+    formatPagesWithMarkers writes into a saved PDF source's text. Returns
+    (page_number, marker_start, content_start) triples in order; a plain
+    substring scan, not a regex, since the marker is a fixed ASCII literal."""
+    marks: list[tuple[int, int, int]] = []
+    search_from = 0
+    while True:
+        start = text.find("[page ", search_from)
+        if start == -1:
+            break
+        digits_start = start + len("[page ")
+        end = digits_start
+        while end < len(text) and text[end].isdigit():
+            end += 1
+        if end > digits_start and text[end:end + 2] == "]\n":
+            marks.append((int(text[digits_start:end]), start, end + 2))
+        search_from = start + len("[page ")
+    return marks
+
+
+def source_page_text(text: str, page: int) -> str | None:
+    """A source with no `[page N]` markers (HTML/plain-text extraction, which
+    has no page concept) collapses to a single implicit page 1, so a
+    source_quote module is shaped identically whether or not its source
+    happens to be a paginated PDF."""
+    marks = _pdf_page_markers(text)
+    if not marks:
+        return text if page == 1 else None
+    for index, (mark_page, _start, content_start) in enumerate(marks):
+        if mark_page != page:
+            continue
+        content_end = marks[index + 1][1] if index + 1 < len(marks) else len(text)
+        return text[content_start:content_end]
+    return None
+
+
+def normalize_source_quote_text(value: str) -> str:
+    """Whitespace-collapse and line-break-hyphenation joins only - nothing
+    semantic - mirroring runtime/pi/infographic.mjs's
+    normalizeSourceQuoteText and the Rust verifier's
+    normalize_source_quote_text exactly, so all three verbatim-quote checks
+    accept and reject the same inputs."""
+    return " ".join(str(value or "").replace("-\n", "").split())
+
+
+SOURCE_QUOTE_PROSE_MAX_CHARS = 60
+
+
+def _is_source_quote_prose_digit_or_percent(ch: str) -> bool:
+    # ASCII digit, full-width digit (U+FF10-U+FF19), or '%' - mirrors
+    # runtime/pi/infographic.mjs's SOURCE_QUOTE_PROSE_FORBIDDEN and
+    # src/verify.rs's is_source_quote_prose_digit_or_percent exactly.
+    return ch.isascii() and ch.isdigit() or "０" <= ch <= "９" or ch == "%"
+
+
+def check_source_quote_prose_field(report: "Report", manifest_ref: str, module_id, field: str, value: str) -> None:
+    # A text module's body/heading are bound to neither its source_quote
+    # nor any claim, so free prose sitting next to a source-only quote must
+    # stay short and free of anything that could pass for a verified figure.
+    report.check(
+        len(value) <= SOURCE_QUOTE_PROSE_MAX_CHARS,
+        f"infographic {manifest_ref} text module '{module_id}' source_quote {field} must be at most {SOURCE_QUOTE_PROSE_MAX_CHARS} characters",
+    )
+    report.check(
+        not any(_is_source_quote_prose_digit_or_percent(ch) for ch in value),
+        f"infographic {manifest_ref} text module '{module_id}' source_quote {field} must not contain digits or a percent sign: a source-only note must never look like a verified figure",
+    )
+
+
+def verify_infographic_source_quotes(root: Path, manifest_ref: str, plan: dict, plan_language: str, desktop_svg_ref, report: "Report") -> None:
+    """Rechecks every text module's source_quote (runtime/pi/infographic.mjs's
+    InfographicSpec extension) against the saved source's own bytes, read
+    fresh from artifacts here - never trusted from the plan or the lint
+    record - so an edited quote, a wrong page, or a source swapped after
+    planning fails verification even if lint once passed. Also confirms the
+    rendered desktop SVG visibly carries the page number and, on a zh page,
+    the 译述 translation label, so a source-only note can never look
+    indistinguishable from a verified finding. Mirrors
+    verify_infographic_source_quotes in src/verify.rs."""
+    desktop_svg_text = None
+    if isinstance(desktop_svg_ref, str):
+        try:
+            svg_path = safe_ref(root, desktop_svg_ref)
+            if svg_path.is_file():
+                desktop_svg_text = svg_path.read_text(encoding="utf-8")
+        except Exception:
+            desktop_svg_text = None
+    for module in plan.get("modules") or []:
+        if not isinstance(module, dict) or module.get("type") != "text":
+            continue
+        sq = module.get("source_quote")
+        if not sq:
+            continue
+        module_id = module.get("id", "?")
+        body = module.get("body")
+        if isinstance(body, str) and body.strip():
+            check_source_quote_prose_field(report, manifest_ref, module_id, "body", body)
+        heading = module.get("heading")
+        if isinstance(heading, str) and heading.strip():
+            check_source_quote_prose_field(report, manifest_ref, module_id, "heading", heading)
+        source_ref = sq.get("source_ref")
+        page = sq.get("page")
+        quote = sq.get("quote")
+        translation = sq.get("translation")
+        if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+            report.check(False, f"infographic {manifest_ref} text module '{module_id}' source_quote has no integer page")
+            continue
+        try:
+            source_path = safe_ref(root, str(source_ref))
+        except Exception as exc:
+            report.check(False, f"infographic {manifest_ref} text module '{module_id}' source_quote has an unsafe source_ref: {exc}")
+            continue
+        if not source_path.is_file():
+            report.check(False, f"infographic {manifest_ref} text module '{module_id}' source_quote references missing source: {source_ref}")
+            continue
+        try:
+            source = load_json(source_path)
+        except Exception as exc:
+            report.check(False, f"infographic {manifest_ref} text module '{module_id}' source_quote source is not valid JSON: {exc}")
+            continue
+        payload = {
+            "content_type": source.get("content_type"),
+            "final_url": source.get("final_url"),
+            "status": source.get("status"),
+            "text": source.get("text"),
+            "truncated": source.get("truncated"),
+        }
+        expected_hash = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
+        recorded_hash = source.get("content_hash")
+        report.check(recorded_hash == expected_hash, f"infographic {manifest_ref} text module '{module_id}' source_quote source content_hash mismatch: {source_ref}")
+        source_text = str(source.get("text") or "")
+        page_text = source_page_text(source_text, page)
+        needle = normalize_source_quote_text(quote or "")
+        matched = bool(needle) and page_text is not None and needle in normalize_source_quote_text(page_text)
+        report.check(matched, f"infographic {manifest_ref} text module '{module_id}' source_quote text does not appear verbatim on page {page} of {source_ref}")
+        if desktop_svg_text is None:
+            report.check(False, f"infographic {manifest_ref} text module '{module_id}' has a source_quote but the desktop SVG could not be read to confirm its labels")
+            continue
+        report.check(str(page) in desktop_svg_text, f"infographic {manifest_ref} text module '{module_id}' rendered page does not show the source_quote page number")
+        if plan_language == "zh":
+            report.check(bool(translation), f"infographic {manifest_ref} text module '{module_id}' zh page source_quote is missing its required translation")
+        if translation:
+            report.check("译述" in desktop_svg_text, f"infographic {manifest_ref} text module '{module_id}' has a translation but the rendered page has no 译述 label")
+
+
 def replay_award_mode_status(item: dict) -> tuple[str, list[str]]:
     refs = item.get("refs") or {}
     metrics = item.get("metrics") or {}
@@ -451,6 +604,232 @@ def system_verified_claim(claim):
         and verification.get("rule_id") == "verification.source+extraction+computation+claim.v1"
         and all(verification.get(key) is True for key in ("source_resolved", "extraction_passed", "computation_replayed", "claim_supported", "publishable"))
     )
+
+
+def verify_qa_screenshot_entry(qa_dir: Path, entry: dict, label: str, manifest_ref: str, report: "Report") -> bool:
+    path_field = entry.get("path") if isinstance(entry, dict) else None
+    expected_sha = entry.get("sha256") if isinstance(entry, dict) else None
+    safe_name = (
+        isinstance(path_field, str)
+        and bool(path_field)
+        and "/" not in path_field
+        and "\\" not in path_field
+        and path_field not in (".", "..")
+    )
+    if not safe_name:
+        report.check(False, f"publication {manifest_ref} browser QA {label} has an invalid path: {path_field}")
+        return False
+    shot_path = qa_dir / path_field
+    if not shot_path.is_file():
+        report.check(False, f"publication {manifest_ref} browser QA {label} file is missing: {path_field}")
+        return False
+    try:
+        actual = sha256_file(shot_path)
+    except Exception as exc:
+        report.check(False, f"publication {manifest_ref} failed hashing browser QA {label} {path_field}: {exc}")
+        return False
+    if isinstance(expected_sha, str) and expected_sha and actual == expected_sha:
+        return True
+    report.check(False, f"publication {manifest_ref} browser QA {label} sha256 mismatch: {path_field}")
+    return False
+
+
+def verify_qa_screenshots(qa_dir: Path, qa_report: dict, manifest_ref: str, report: "Report") -> bool:
+    # Verifies every entry in a browser-qa.json report's `screenshots` list
+    # and its `archive_fallback`, if present. Returns False (and records
+    # specific errors) if any listed file is missing, unsafe, or does not
+    # hash to its own claimed sha256. Mirrors the Rust verifier's
+    # verify_qa_screenshots/verify_qa_screenshot_entry exactly - see
+    # runtime/pi/browser_qa.py's shots.append({"width", "path", "sha256"})
+    # and archive dict for the shape being checked.
+    ok = True
+    screenshots = qa_report.get("screenshots")
+    if isinstance(screenshots, list):
+        for shot in screenshots:
+            if not verify_qa_screenshot_entry(qa_dir, shot, "screenshot", manifest_ref, report):
+                ok = False
+    archive = qa_report.get("archive_fallback")
+    if archive is not None:
+        if not verify_qa_screenshot_entry(qa_dir, archive, "archive_fallback", manifest_ref, report):
+            ok = False
+    return ok
+
+
+_CHOROPLETH_TAG_ATTR_RE = re.compile(r'([a-zA-Z_:][-a-zA-Z0-9_:.]*)="([^"]*)"')
+
+
+def _choropleth_tag_attrs(tag: str) -> dict:
+    return dict(_CHOROPLETH_TAG_ATTR_RE.findall(tag))
+
+
+def _choropleth_path_tags_with_role(svg_text: str, role: str) -> list[str]:
+    out = []
+    for m in re.finditer(r"<path\b[^>]*?/?>", svg_text, re.S):
+        tag = m.group(0)
+        if _choropleth_tag_attrs(tag).get("data-role") == role:
+            out.append(tag)
+    return out
+
+
+def _choropleth_text_nodes_with_role(svg_text: str, roles: tuple[str, ...]) -> list[tuple[str, str]]:
+    # Returns (opening_tag, body) pairs for every <text ...>body</text> whose
+    # data-role is one of roles.
+    out = []
+    for m in re.finditer(r"<text\b[^>]*?>(.*?)</text>", svg_text, re.S):
+        tag_end = m.start(1) - 1  # rewind past the '>' the (.*?) group starts after
+        open_tag = svg_text[m.start(0):tag_end + 1]
+        if _choropleth_tag_attrs(open_tag).get("data-role") in roles:
+            out.append((open_tag, m.group(1)))
+    return out
+
+
+def _choropleth_label_body_text(body: str) -> str:
+    # Prefers the first <tspan>...</tspan>'s inner text (on-map/inset
+    # layout, where a second tspan may carry a reference period); otherwise
+    # strips any tags from the bare body (margin/overflow layout, where
+    # truncation shows up as a literal "…"). Mirrors
+    # runtime/pi/render_qa_labels.mjs's labelText, written fresh here rather
+    # than shared, and Rust's label_body_text.
+    tspan_m = re.search(r"<tspan\b[^>]*>(.*?)</tspan>", body, re.S)
+    text = tspan_m.group(1) if tspan_m else body
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
+_LEADING_NUMBER_RE = re.compile(r"^(-?\d+(?:\.\d+)?)")
+
+
+def _choropleth_leading_number_with_scale(text: str) -> float | None:
+    # Applies a trailing k/m/bn scale suffix exactly like
+    # runtime/pi/viz.mjs's choroplethValueText ("1.2m" means 1_200_000, not
+    # 1.2); any other trailing suffix (percent sign, currency symbol, bare
+    # unit word) leaves the number's own scale alone. Returns None when
+    # there is no leading number at all (missing, truncated, or a bare "…").
+    m = _LEADING_NUMBER_RE.match(text)
+    if not m:
+        return None
+    number = float(m.group(1))
+    rest = text[m.end():].lower()
+    if rest.startswith("bn"):
+        scale = 1_000_000_000.0
+    elif rest.startswith("m"):
+        scale = 1_000_000.0
+    elif rest.startswith("k"):
+        scale = 1_000.0
+    else:
+        scale = 1.0
+    return number * scale
+
+
+def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
+    # Independently re-derives the choropleth value-labels proof straight
+    # from one rendered viewport's SVG markup - every choropleth-data
+    # region's own data-iso3/data-value, and every name/value label's own
+    # data-iso3 and rendered text, on the main map or inside a zoom inset -
+    # rather than trusting the render_qa report's own value_labels.passed
+    # boolean, even though that boolean is itself sha256-bound to these
+    # same bytes. Hash-binding only proves the report was computed against
+    # these bytes at some point; it does not prove the report's internal
+    # check logic ran, or ran correctly, against them. This is a fresh,
+    # from-scratch re-implementation - not a call into
+    # runtime/pi/render_qa_labels.mjs's own JS checker, and not shared code
+    # with the Rust verifier's verify_choropleth_labels_from_svg - so a bug
+    # or omission in one does not silently pass through the others.
+    failures: list[str] = []
+
+    data_values: dict[str, list[float]] = {}
+    for tag in _choropleth_path_tags_with_role(svg_text, "choropleth-data"):
+        attrs = _choropleth_tag_attrs(tag)
+        iso3 = attrs.get("data-iso3")
+        value_str = attrs.get("data-value")
+        if not iso3 or value_str is None:
+            continue
+        try:
+            value = float(value_str)
+        except ValueError:
+            continue
+        data_values.setdefault(iso3, []).append(value)
+
+    names: dict[str, list[str]] = {}
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("choropleth-label", "choropleth-inset-label")):
+        iso3 = _choropleth_tag_attrs(tag).get("data-iso3")
+        if iso3:
+            names.setdefault(iso3, []).append(_choropleth_label_body_text(body))
+
+    values: dict[str, list[str]] = {}
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("choropleth-label-value", "choropleth-inset-label-value")):
+        iso3 = _choropleth_tag_attrs(tag).get("data-iso3")
+        if iso3:
+            values.setdefault(iso3, []).append(_choropleth_label_body_text(body))
+
+    for iso3, vals in data_values.items():
+        if len(vals) != 1:
+            failures.append(f"{iso3} has {len(vals)} choropleth-data regions with conflicting data-value attributes")
+            continue
+        expected = vals[0]
+        name_count = len(names.get(iso3, []))
+        if name_count != 1:
+            failures.append(f"{iso3} has {name_count} rendered name labels in the SVG (expected exactly 1)")
+        value_texts = values.get(iso3, [])
+        if len(value_texts) != 1:
+            failures.append(f"{iso3} has {len(value_texts)} rendered value labels in the SVG (expected exactly 1)")
+            continue
+        text = value_texts[0]
+        shown = _choropleth_leading_number_with_scale(text)
+        if shown is None:
+            failures.append(f"{iso3}'s rendered value label '{text}' has no readable number (missing, truncated, or malformed)")
+        else:
+            tolerance = max(abs(expected) * 0.01, 0.05)
+            if abs(shown - expected) > tolerance:
+                failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
+
+    for iso3 in set(list(names.keys()) + list(values.keys())):
+        if iso3 not in data_values:
+            failures.append(f"{iso3} has a rendered label but no matching choropleth-data region in the SVG")
+
+    return sorted(set(failures))
+
+
+def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infographic_plan_ref: str, infographic_critics: list, infographic_vision_critics: list, report: "Report") -> None:
+    # The gate this worktree adds: a top-level publication's
+    # infographic_plan_ref (already confirmed by the caller to resolve to an
+    # existing infographics/plans/*.json file) must be the plan_ref of a
+    # top-level, non-rejected infographics/<key>.json manifest - scanned
+    # exactly like verify()'s own infographics/*.json loop, so
+    # infographics/plans, critics, vision-critics, previews, revisions, qa
+    # and rejected are never candidates - and that manifest's critic and,
+    # whenever it declares visual_review_required (currently unconditional
+    # on every rendered page - see newsroom_infographic_render), image-aware
+    # vision critic must both be linked by manifest_ref and passed is True,
+    # using the exact same linking rule verify()'s own
+    # infographic_critics/infographic_vision_critics filters use just below
+    # (c.get("manifest_ref") == manifest_ref), never a new one. A plan whose
+    # only rendered page was moved to infographics/rejected/<key>/ after
+    # either critic failed has no match here at all - the same "no approved
+    # lineage exists" signal as a plan that was never rendered. Entries are
+    # walked in sorted order and the first match wins, so the result is
+    # deterministic even if more than one top-level manifest was ever
+    # rendered from the same plan_ref. Mirrors the Rust verifier's
+    # verify_publication_infographic_lineage exactly.
+    found = None
+    info_dir = root / "infographics"
+    if info_dir.is_dir():
+        for candidate_path in sorted(info_dir.glob("*.json")):
+            try:
+                candidate = load_json(candidate_path)
+            except Exception:
+                continue
+            if candidate.get("plan_ref") == infographic_plan_ref:
+                found = (candidate_path.relative_to(root).as_posix(), candidate)
+                break
+    if found is None:
+        report.check(False, f"publication {manifest_ref} upstream infographic plan {infographic_plan_ref} has no top-level, non-rejected infographic manifest bound to it")
+        return
+    infographic_ref, infographic_manifest = found
+    linked_critics = [c for c in infographic_critics if c.get("manifest_ref") == infographic_ref]
+    report.check(any(c.get("passed") is True for c in linked_critics), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing critic")
+    if infographic_manifest.get("visual_review_required") is True:
+        linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == infographic_ref]
+        report.check(any(c.get("passed") is True for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic")
 
 
 def verify(root: Path) -> Report:
@@ -646,7 +1025,24 @@ def verify(root: Path) -> Report:
             except Exception as exc:
                 report.check(False, f"visualization manifest unreadable {manifest_path}: {exc}")
                 continue
+            if manifest.get("kind") == "lieflat_chart":
+                # runtime/pi/lieflat.mjs's chart mode writes artifact_status:
+                # "VERIFIED" and desktop_qa: "PASS" as renderer constants,
+                # with no render_qa_ref, lint_ref or critic at all - never
+                # trust this self-issued pair, and give it its own message
+                # rather than the generic legacy-newsroom_chart wording
+                # below (this manifest does have variants, just no
+                # plan_ref, so it would otherwise fall into that generic
+                # branch too).
+                report.check(False, f"visualization {manifest_path.relative_to(root).as_posix()} is a Lieflat chart whose desktop_qa/artifact_status are renderer constants (kind=lieflat_chart), not measured render QA or critic results")
+                continue
             if not isinstance(manifest.get("variants"), dict) or not manifest.get("plan_ref"):
+                # Anything under visualizations/ shaped like this bypassed
+                # newsroom_viz_plan -> lint -> render entirely - most
+                # commonly the legacy newsroom_chart tool, which writes a
+                # flat SVG+claim manifest with no plan_ref/variants at all.
+                # Fail closed instead of silently skipping it.
+                report.check(False, f"visualization {manifest_path.relative_to(root).as_posix()} is not a gated visualization manifest (no plan_ref/variants), e.g. output of the legacy newsroom_chart tool")
                 continue
             manifest_ref = manifest_path.relative_to(root).as_posix()
             claim_id = str(manifest.get("claim_id") or "")
@@ -664,7 +1060,14 @@ def verify(root: Path) -> Report:
                         report.check(safe_ref(root, ref).is_file(), f"visualization {manifest_ref} missing {label}: {ref}")
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe {label} ref: {exc}")
+            # The desktop SVG is required; the compact mobile SVG is optional
+            # (rendered only with NEWSROOM_MOBILE_PAGES=1). A listed one is
+            # checked the same way, and nothing else may be listed.
+            viz_variants = manifest["variants"]
+            report.check(set(viz_variants) <= {"desktop", "mobile"}, f"visualization {manifest_ref} lists an unknown variant: {sorted(set(viz_variants) - {'desktop', 'mobile'})}")
             for viewport in ("desktop", "mobile"):
+                if viewport == "mobile" and "mobile" not in viz_variants:
+                    continue
                 ref = manifest["variants"].get(viewport)
                 report.check(isinstance(ref, str) and bool(ref), f"visualization {manifest_ref} missing {viewport} variant")
                 if isinstance(ref, str):
@@ -677,6 +1080,64 @@ def verify(root: Path) -> Report:
                             report.check(all(token in text for token in ("<svg", "<title", "<desc")), f"visualization {manifest_ref} {viewport} SVG lacks accessibility markup")
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe {viewport} SVG ref: {exc}")
+            # Choropleth-only: a choropleth's color channel can only be
+            # exempted from the color_only_quantity lint blocker
+            # (editorial_validators.mjs's visualChannelOwnerValidator) when
+            # its render_qa report independently proves every plotted
+            # region's value is shown as complete, exact, legible text.
+            # Re-derive that proof from the artifact here too - never trust
+            # the manifest's own render_qa summary or the JS lint's
+            # "passed" boolean - so a published choropleth cannot carry a
+            # missing/failing/stale value_labels check, or one bound to an
+            # SVG that no longer matches the file on disk. Rust's
+            # check_render_qa_ref enforces this same rule; this is Python's
+            # independent re-implementation, scoped to chart_type ==
+            # "choropleth" (Python does not yet re-verify render_qa_ref for
+            # every chart type the way Rust does - a pre-existing gap, out
+            # of scope here).
+            if manifest.get("chart_type") == "choropleth":
+                render_qa_ref = manifest.get("render_qa_ref")
+                if draft and not isinstance(render_qa_ref, str):
+                    pass
+                elif not isinstance(render_qa_ref, str) or not render_qa_ref.startswith("visualizations/qa/"):
+                    report.check(False, f"choropleth visualization {manifest_ref} missing or invalid render_qa_ref")
+                else:
+                    try:
+                        qa_path = safe_ref(root, render_qa_ref)
+                        report.check(qa_path.is_file(), f"choropleth visualization {manifest_ref} render_qa_ref is missing: {render_qa_ref}")
+                        if qa_path.is_file():
+                            qa = load_json(qa_path)
+                            report.check(qa.get("schema_version") == RENDER_QA_REPORT_SCHEMA_VERSION, f"choropleth visualization {manifest_ref} render_qa report has an unknown schema_version")
+                            for viewport in ("desktop", "mobile"):
+                                if viewport == "mobile" and "mobile" not in viz_variants:
+                                    continue
+                                svg_ref = viz_variants.get(viewport)
+                                if not isinstance(svg_ref, str):
+                                    continue
+                                svg_path = safe_ref(root, svg_ref)
+                                if not svg_path.is_file():
+                                    continue
+                                viewport_report = (qa.get("viewports") or {}).get(viewport) or {}
+                                expected_hash = viewport_report.get("svg_sha256")
+                                report.check(isinstance(expected_hash, str), f"choropleth visualization {manifest_ref} render_qa report is missing viewports.{viewport}.svg_sha256")
+                                if isinstance(expected_hash, str):
+                                    report.check(sha256_file(svg_path) == expected_hash, f"choropleth visualization {manifest_ref} {viewport} SVG hash does not match render_qa report")
+                                if not draft:
+                                    value_labels_passed = ((viewport_report.get("value_labels") or {}).get("passed"))
+                                    report.check(value_labels_passed is True, f"choropleth visualization {manifest_ref} render_qa is missing a passing value_labels check for {viewport}")
+                                    # Review fix 7: never trust the report's
+                                    # own value_labels.passed boolean alone,
+                                    # even sha256-bound - independently
+                                    # re-derive the same proof from these SVG
+                                    # bytes on disk.
+                                    try:
+                                        svg_text = svg_path.read_text(encoding="utf-8")
+                                        for failure in verify_choropleth_labels_from_svg(svg_text):
+                                            report.check(False, f"choropleth visualization {manifest_ref} {viewport} independent value-labels re-derivation failed: {failure}")
+                                    except Exception as exc:
+                                        report.check(False, f"choropleth visualization {manifest_ref} failed reading {viewport} SVG for independent value-labels re-derivation: {exc}")
+                    except Exception as exc:
+                        report.check(False, f"choropleth visualization {manifest_ref} render_qa_ref verification failed: {exc}")
             if isinstance(lint_ref, str):
                 try:
                     lint_path = safe_ref(root, lint_ref)
@@ -842,9 +1303,22 @@ def verify(root: Path) -> Report:
                 report.check(False, f"infographic manifest unreadable {manifest_path}: {exc}")
                 continue
             infographic_version = manifest.get("schema_version")
-            if infographic_version not in {"1.0.0", "1.1.0", "1.2.0", "1.3.0"} or not isinstance(manifest.get("variants"), dict):
-                continue
             manifest_ref = manifest_path.relative_to(root).as_posix()
+            if infographic_version not in INFOGRAPHIC_SCHEMA_VERSIONS:
+                # Every top-level infographics/*.json is verified - never
+                # silently skipped, the same failure mode V4 closed for
+                # visualizations/*.json. newsroom_infographic_render copies
+                # spec.schema_version verbatim into the manifest, so an
+                # out-of-range value here means the manifest was never
+                # validated by validateInfographicSpec at all.
+                report.check(False, f"infographic {manifest_ref} has an unsupported schema_version: {infographic_version}")
+                continue
+            if not isinstance(manifest.get("variants"), dict) or not manifest.get("plan_ref") or not manifest.get("lint_ref"):
+                # Anything shaped like this bypassed newsroom_infographic_plan
+                # -> lint -> render entirely, the same silent-skip gap V4
+                # closed for visualizations/*.json.
+                report.check(False, f"infographic {manifest_ref} is not a gated infographic manifest (no plan_ref/lint_ref/variants)")
+                continue
             plan_ref, lint_ref = manifest.get("plan_ref"), manifest.get("lint_ref")
             for label, ref, prefix in [("plan", plan_ref, "infographics/plans/"), ("lint", lint_ref, "infographics/lints/")]:
                 report.check(isinstance(ref, str) and ref.startswith(prefix), f"infographic {manifest_ref} invalid {label}_ref")
@@ -853,11 +1327,19 @@ def verify(root: Path) -> Report:
                         report.check(safe_ref(root, ref).is_file(), f"infographic {manifest_ref} missing {label}: {ref}")
                     except Exception as exc:
                         report.check(False, f"infographic {manifest_ref} unsafe {label} ref: {exc}")
+            # The source strip's language is read from the hash-bound plan
+            # (never from the rendered SVG text itself), so a page can't pass
+            # by having any strip at all - it must be the one its own plan
+            # asked for. Defaults to "en", matching the runtime's own
+            # language: params.language ?? "en" default.
+            plan_language = "en"
             if isinstance(plan_ref, str):
                 try:
                     plan_path = safe_ref(root, plan_ref)
                     if plan_path.is_file():
                         plan = load_json(plan_path)
+                        if plan.get("language") == "zh":
+                            plan_language = "zh"
                         report.check(plan.get("schema_version") == infographic_version, f"infographic {manifest_ref} plan schema_version mismatch")
                         if infographic_version in {"1.1.0", "1.2.0", "1.3.0"}:
                             for field in ("intent", "primary_message", "story_arc", "audience", "quality_target"):
@@ -885,6 +1367,8 @@ def verify(root: Path) -> Report:
                                 report.check(all(i in module_ids_set for i in ids), f"infographic {manifest_ref} scene references unknown module")
                                 report.check(not any(i in members for i in ids), f"infographic {manifest_ref} module belongs to multiple scenes")
                                 members.update(ids)
+                        variants_for_quotes = manifest.get("variants") if isinstance(manifest.get("variants"), dict) else {}
+                        verify_infographic_source_quotes(root, manifest_ref, plan, plan_language, variants_for_quotes.get("desktop"), report)
                 except Exception as exc:
                     report.check(False, f"infographic {manifest_ref} plan verification failed: {exc}")
             visual_refs = manifest.get("visual_manifest_refs") or []
@@ -932,7 +1416,11 @@ def verify(root: Path) -> Report:
                             report.check(str(claim_id) in verified_ids, f"illustration {ref} claim_id is not verified: {claim_id}")
                         variants = illustration.get("variants") or {}
                         hashes = illustration.get("hashes") or {}
+                        report.check(set(variants) <= {"desktop", "mobile"}, f"illustration {ref} lists an unknown variant: {sorted(set(variants) - {'desktop', 'mobile'})}")
+                        report.check("mobile_sha256" not in hashes or "mobile" in variants, f"illustration {ref} has hashes.mobile_sha256 without a mobile variant")
                         for viewport, hash_key in [("desktop", "desktop_sha256"), ("mobile", "mobile_sha256")]:
+                            if viewport == "mobile" and "mobile" not in variants:
+                                continue
                             svg_ref = variants.get(viewport)
                             report.check(isinstance(svg_ref, str) and svg_ref.startswith("visualizations/illustrations/"), f"illustration {ref} invalid {viewport} variant")
                             if isinstance(svg_ref, str):
@@ -971,7 +1459,16 @@ def verify(root: Path) -> Report:
             for claim_id in manifest.get("claim_ids") or []:
                 report.check(str(claim_id) in verified_ids, f"infographic {manifest_ref} claim_id is not verified: {claim_id}")
             hashes = manifest.get("hashes") or {}
+            # The desktop page is required; the mobile page is optional (the
+            # runtime renders it only with NEWSROOM_MOBILE_PAGES=1). A listed
+            # mobile page is checked exactly like the desktop one, and nothing
+            # else may be listed.
+            page_variants = manifest["variants"]
+            report.check(set(page_variants) <= {"desktop", "mobile"}, f"infographic {manifest_ref} lists an unknown variant: {sorted(set(page_variants) - {'desktop', 'mobile'})}")
+            report.check("mobile_sha256" not in hashes or "mobile" in page_variants, f"infographic {manifest_ref} has hashes.mobile_sha256 without a mobile variant")
             for viewport, hash_key in [("desktop", "desktop_sha256"), ("mobile", "mobile_sha256")]:
+                if viewport == "mobile" and "mobile" not in page_variants:
+                    continue
                 ref = manifest["variants"].get(viewport)
                 report.check(isinstance(ref, str) and bool(ref), f"infographic {manifest_ref} missing {viewport} variant")
                 if isinstance(ref, str):
@@ -982,7 +1479,8 @@ def verify(root: Path) -> Report:
                             text = svg_path.read_text(encoding="utf-8")
                             report.check(len(text) > 500, f"infographic {manifest_ref} {viewport} SVG suspiciously small")
                             report.check(all(token in text for token in ("<svg", "<title", "<desc", f"data-infographic-version=\"{infographic_version}\"")), f"infographic {manifest_ref} {viewport} SVG lacks magazine/accessibility markup")
-                            report.check("SOURCES &amp; METHODS" in text, f"infographic {manifest_ref} {viewport} source strip missing")
+                            expected_strip = "资料来源与方法" if plan_language == "zh" else "SOURCES &amp; METHODS"
+                            report.check(expected_strip in text, f"infographic {manifest_ref} {viewport} source strip missing or wrong language for plan language={plan_language}")
                             expected = hashes.get(hash_key)
                             report.check(isinstance(expected, str) and len(expected) == 64, f"infographic {manifest_ref} missing {hash_key}")
                             if isinstance(expected, str):
@@ -1002,10 +1500,16 @@ def verify(root: Path) -> Report:
             report.check(bool(linked), f"infographic {manifest_ref} has no critic artifact")
             passing = [c for c in linked if c.get("passed") is True]
             report.check(bool(passing), f"infographic {manifest_ref} has no passing critic")
-            if infographic_version in {"1.1.0", "1.2.0"} and passing:
+            # infographic.mjs's critiqueInfographic dispatches on this exact
+            # set (["1.1.0","1.2.0","1.3.0","1.4.0","1.5.0"].includes(spec.schema_version),
+            # infographic.mjs:1214): every one of these versions - not just
+            # 1.1.0/1.2.0 - gets critiqueAwardOne's full rubric object; only
+            # 1.0.0 falls back to critiqueLegacyOne, whose returned critique
+            # has no rubric field at all.
+            if infographic_version in {"1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"} and passing:
                 rubric = passing[0].get("rubric") or {}
                 expected_rubric = {"impact_story_focus", "engagement", "clarity_information_flow", "effectiveness", "hierarchy", "editorial_rhythm", "inclusion_accessibility", "responsive_execution", "craft_geometry", "originality_variety"}
-                report.check(expected_rubric.issubset(rubric.keys()), f"infographic {manifest_ref} 1.1 critic missing award-informed rubric dimensions")
+                report.check(expected_rubric.issubset(rubric.keys()), f"infographic {manifest_ref} critic missing award-informed rubric dimensions")
             if manifest.get("visual_review_required") is True:
                 linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == manifest_ref]
                 report.check(bool(linked_vision), f"infographic {manifest_ref} requires image-aware vision critic")
@@ -1035,7 +1539,10 @@ def verify(root: Path) -> Report:
                             preview = load_json(preview_path)
                             report.check(preview.get("manifest_ref") == manifest_ref, f"infographic {manifest_ref} preview manifest link mismatch")
                             report.check(preview.get("source_hashes") == manifest.get("hashes"), f"infographic {manifest_ref} preview source hashes mismatch")
+                            report.check(set(preview.get("variants") or {}) == set(manifest["variants"]), f"infographic {manifest_ref} preview variants do not match the page variants")
                             for viewport, hash_key in [("desktop", "desktop_sha256"), ("mobile", "mobile_sha256")]:
+                                if viewport == "mobile" and "mobile" not in manifest["variants"]:
+                                    continue
                                 png_ref = (preview.get("variants") or {}).get(viewport)
                                 report.check(isinstance(png_ref, str) and png_ref.startswith("infographics/previews/"), f"infographic {manifest_ref} preview missing {viewport} PNG ref")
                                 if isinstance(png_ref, str):
@@ -1082,8 +1589,38 @@ def verify(root: Path) -> Report:
                 report.check(vision.get("patches") == patches, f"revision {rel} applied_patches differ from vision critic")
                 vision_manifest_ref = vision.get("manifest_ref")
                 if isinstance(vision_manifest_ref, str):
-                    source_manifest = load_json(safe_ref(root, vision_manifest_ref))
-                    report.check(source_manifest.get("plan_ref") == source_ref, f"revision {rel} vision critic does not belong to source plan")
+                    top_level_path = safe_ref(root, vision_manifest_ref)
+                    source_manifest = None
+                    if top_level_path.is_file():
+                        source_manifest = load_json(top_level_path)
+                    else:
+                        # rejectCriticizedManifest (commit 3ddcbbb) moves a
+                        # manifest whose vision critic returned passed:false
+                        # from its top-level path to
+                        # infographics/rejected/<key>/manifest.json, so the
+                        # vision critic's manifest_ref no longer resolves
+                        # there once the page it judged is rejected. The
+                        # revision must stay bound to the exact manifest the
+                        # vision critic saw, so this resolves only to the
+                        # rejected copy, and only once that directory's own
+                        # rejection.json confirms it is the same manifest
+                        # rejected by this exact vision critic - never to
+                        # whatever else happens to sit at that conventional
+                        # path.
+                        key = Path(vision_manifest_ref).stem
+                        rejected_manifest_ref = f"infographics/rejected/{key}/manifest.json"
+                        rejected_manifest_path = safe_ref(root, rejected_manifest_ref)
+                        rejection_path = safe_ref(root, f"infographics/rejected/{key}/rejection.json")
+                        found = rejected_manifest_path.is_file() and rejection_path.is_file()
+                        report.check(found, f"revision {rel} vision critic manifest_ref is missing at both the top level and {rejected_manifest_ref}")
+                        if found:
+                            rejection = load_json(rejection_path)
+                            bound = rejection.get("manifest_ref") == vision_manifest_ref and rejection.get("critic_ref") == vision_ref
+                            report.check(bound, f"revision {rel} rejected manifest at {rejected_manifest_ref} is not bound to this exact vision critic")
+                            if bound:
+                                source_manifest = load_json(rejected_manifest_path)
+                    if source_manifest is not None:
+                        report.check(source_manifest.get("plan_ref") == source_ref, f"revision {rel} vision critic does not belong to source plan")
                 replayed = replay_infographic_patches(source, patches)
                 revised_without_hash = dict(revised)
                 revised_without_hash.pop("content_hash", None)
@@ -1142,6 +1679,208 @@ def verify(root: Path) -> Report:
                 report.check(isinstance(preflight.get("source_urls"), list), f"competition preflight {rel} source_urls must be a list")
             except Exception as exc:
                 report.check(False, f"competition preflight verification failed {rel}: {exc}")
+
+    # Browser publications: PublicationSpec plans -> rendered HTML -> browser
+    # QA. Mirrors the Rust verifier's verify_publications with identical
+    # semantics. plans/ and qa/ are the plan and browser-qa.json
+    # subdirectories newsroom_publication_plan/newsroom_portable_publication
+    # and newsroom_publication_qa write into - never publication instances
+    # themselves.
+    publications_dir = root / "publications"
+    if publications_dir.is_dir():
+        for entry_path in sorted(publications_dir.iterdir()):
+            if not entry_path.is_dir() or entry_path.name in {"plans", "qa", "rejected"}:
+                # publications/rejected/<k>/ is where a publication whose
+                # browser QA FAILed is moved whole (index.html,
+                # manifest.json, assets/, a copy of the QA report,
+                # rejection.json) - never a top-level publication instance
+                # itself, exactly like plans/ and qa/ above.
+                continue
+            dir_name = entry_path.name
+            manifest_path = entry_path / "manifest.json"
+            report.check(manifest_path.is_file(), f"publication {dir_name} is missing manifest.json")
+            if not manifest_path.is_file():
+                continue
+            manifest = load_json(manifest_path)
+            manifest_ref = f"publications/{dir_name}/manifest.json"
+
+            if manifest.get("kind") == "lieflat_publication":
+                # runtime/pi/lieflat.mjs's report mode writes
+                # publications/<key>/qa.json and
+                # infographics/<key>/{plan,lint,critic}.json with passed:true
+                # and a fixed score:100 - none of it measured. The generic
+                # checks below already fail this manifest (its
+                # infographic_plan_ref is not a real plan_ref under
+                # publications/plans/, and it has no linked
+                # publications/qa/*/browser-qa.json), but call it out by name
+                # so the report is unambiguous about why.
+                report.check(False, f"publication {manifest_ref} is a Lieflat publication (kind=lieflat_publication) whose lint/critic/publication QA are self-issued passed:true/score:100 constants, not measured results")
+
+            html_ref = manifest.get("html_ref")
+            actual_html_sha256 = None
+            if not isinstance(html_ref, str) or not html_ref:
+                report.check(False, f"publication {manifest_ref} missing html_ref")
+            else:
+                try:
+                    html_path = safe_ref(root, html_ref)
+                    report.check(html_path.is_file(), f"publication {manifest_ref} missing html: {html_ref}")
+                    if html_path.is_file():
+                        actual_html_sha256 = sha256_file(html_path)
+                        report.check(manifest.get("html_sha256") == actual_html_sha256, f"publication {manifest_ref} html_sha256 mismatch")
+                        report.check(dir_name == actual_html_sha256, f"publication {manifest_ref} directory is not content-addressed by its own index.html")
+                except Exception as exc:
+                    report.check(False, f"publication {manifest_ref} has an unsafe html_ref: {exc}")
+
+            plan_ref = manifest.get("plan_ref")
+            plan = None
+            if not isinstance(plan_ref, str) or not plan_ref.startswith("publications/plans/"):
+                report.check(False, f"publication {manifest_ref} plan_ref must be under publications/plans/")
+            else:
+                try:
+                    plan_path = safe_ref(root, plan_ref)
+                    report.check(plan_path.is_file(), f"publication {manifest_ref} missing plan: {plan_ref}")
+                    if plan_path.is_file():
+                        try:
+                            plan = load_json(plan_path)
+                        except Exception as exc:
+                            report.check(False, f"publication {manifest_ref} plan is not valid JSON: {exc}")
+                except Exception as exc:
+                    report.check(False, f"publication {manifest_ref} has an unsafe plan_ref: {exc}")
+
+            if plan is not None:
+                breakpoints = (plan.get("delivery") or {}).get("breakpoints")
+                if isinstance(breakpoints, list) and len(breakpoints) == 1:
+                    breakpoints_ok = breakpoints[0] == 1440
+                elif isinstance(breakpoints, list):
+                    breakpoints_ok = len(breakpoints) >= 2
+                else:
+                    breakpoints_ok = False
+                report.check(breakpoints_ok, f"publication {manifest_ref} plan delivery.breakpoints must be exactly [1440] or at least two widths")
+
+                # newsroom_portable_publication writes the literal sentinel
+                # "portable/direct" here instead of a real infographic plan
+                # ref, since the portable path never goes through
+                # newsroom_infographic_plan - only require this to resolve
+                # to an actual file outside that documented exemption.
+                infographic_plan_ref = plan.get("infographic_plan_ref")
+                if infographic_plan_ref != "portable/direct":
+                    ok = isinstance(infographic_plan_ref, str) and infographic_plan_ref.startswith("infographics/plans/")
+                    try:
+                        ok = ok and safe_ref(root, infographic_plan_ref).is_file()
+                    except Exception:
+                        ok = False
+                    report.check(ok, f"publication {manifest_ref} missing upstream infographic plan: {infographic_plan_ref}")
+                    if ok:
+                        verify_publication_infographic_lineage(root, manifest_ref, infographic_plan_ref, infographic_critics, infographic_vision_critics, report)
+
+                modules = plan.get("modules")
+                for module in (modules if isinstance(modules, list) else []):
+                    binding = (module or {}).get("evidence_binding") if isinstance(module, dict) else None
+                    if not binding:
+                        continue
+                    kind = binding.get("kind")
+                    module_ref = binding.get("ref")
+                    prefix = {
+                        "computation": "computations/",
+                        "analysis": "visualizations/graph-analysis/",
+                        "map": "maps/",
+                        "model": "models/",
+                        "asset": "visualizations/",
+                    }.get(kind)
+                    ok = bool(prefix) and isinstance(module_ref, str) and module_ref.startswith(prefix)
+                    try:
+                        ok = ok and safe_ref(root, module_ref).is_file()
+                    except Exception:
+                        ok = False
+                    report.check(ok, f"publication {manifest_ref} module evidence_binding is missing or invalid: {module_ref}")
+
+            # A portable_fallback publication is still evidence-bound, but its
+            # own tool result says plainly "this does not replace browser QA"
+            # - it needs a linked passing browser-qa.json exactly like any
+            # other publication, not an exemption.
+            if actual_html_sha256 is None:
+                continue
+            # Every linked report must independently verify - not just the
+            # first one iteration happens to reach. iterdir()'s order is
+            # filesystem-dependent, so a stale FAIL and a later PASS for the
+            # same html would otherwise give an order-dependent verdict;
+            # walking in sorted order and requiring all of them to pass
+            # makes the result deterministic. The runtime now moves a
+            # FAILed publication's whole directory out of the top level
+            # (publications/rejected/<k>/, skipped above), so a genuine
+            # top-level publication should never have a linked FAIL report
+            # in the first place - if one is still linked here, that is
+            # itself a fail-closed signal, not something to average away.
+            qa_dir = publications_dir / "qa"
+            linked = False
+            passing = True
+            if qa_dir.is_dir():
+                for qa_key_dir in sorted(qa_dir.iterdir()):
+                    report_path = qa_key_dir / "browser-qa.json"
+                    if not report_path.is_file():
+                        continue
+                    try:
+                        qa_report = load_json(report_path)
+                    except Exception:
+                        continue
+                    if qa_report.get("html_sha256") == actual_html_sha256:
+                        linked = True
+                        status_ok = qa_report.get("status") == "PASS"
+                        screenshots_ok = verify_qa_screenshots(qa_key_dir, qa_report, manifest_ref, report)
+                        if not (status_ok and screenshots_ok):
+                            passing = False
+            report.check(linked, f"publication {manifest_ref} has no linked browser QA report")
+            report.check(linked and passing, f"publication {manifest_ref} has no passing browser QA report")
+
+    # story.json delivery.primary_artifact, when set, must be the output of
+    # a top-level manifest rather than an orphan file or one moved out of
+    # the top level (publications/rejected/<k>/, publications/qa/*/, or a
+    # bare SVG/PNG nobody's manifest references). Mirrors the Rust
+    # verifier's verify_delivered_artifact exactly. A missing or null
+    # primary_artifact is not checked at all. Two backing forms are
+    # accepted: publications/<k>/index.html (k not one of the reserved
+    # directory names) with a sibling publications/<k>/manifest.json whose
+    # own html_ref field equals it exactly - the publications loop above
+    # independently re-verifies that whole manifest's hash chain and QA,
+    # this only confirms the declared path is not dangling; or an SVG
+    # referenced by the variants or svg field of a top-level
+    # infographics/*.json or visualizations/*.json manifest (the loops
+    # earlier in this function independently re-verify that manifest
+    # itself).
+    delivery = story.get("delivery")
+    delivery = delivery if isinstance(delivery, dict) else {}
+    if "primary_artifact" in delivery and delivery.get("primary_artifact") is not None:
+        primary = delivery.get("primary_artifact")
+        primary_str = primary if isinstance(primary, str) else ""
+        parts = primary_str.split("/")
+        bound = False
+        if len(parts) == 3 and parts[0] == "publications" and parts[2] == "index.html" and parts[1] not in {"plans", "qa", "rejected"}:
+            manifest_path = root / "publications" / parts[1] / "manifest.json"
+            if manifest_path.is_file():
+                try:
+                    manifest = load_json(manifest_path)
+                    bound = manifest.get("html_ref") == primary_str
+                except Exception:
+                    bound = False
+        else:
+            for sub in ("infographics", "visualizations"):
+                d = root / sub
+                if not d.is_dir():
+                    continue
+                for manifest_path in sorted(d.glob("*.json")):
+                    try:
+                        manifest = load_json(manifest_path)
+                    except Exception:
+                        continue
+                    svg_match = manifest.get("svg") == primary_str
+                    variants = manifest.get("variants")
+                    variant_match = isinstance(variants, dict) and primary_str in variants.values()
+                    if svg_match or variant_match:
+                        bound = True
+                        break
+                if bound:
+                    break
+        report.check(bound, f"delivered artifact {primary_str} is not backed by a verified manifest")
 
     return report
 

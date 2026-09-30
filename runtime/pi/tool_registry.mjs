@@ -606,7 +606,7 @@ export const TOOL_REGISTRY = Object.freeze({
       "name": "newsroom_chart",
       "phase": "design",
       "capability_class": "visual",
-      "agent_visible": true,
+      "agent_visible": false,
       "profiles": [
         "full",
         "competition",

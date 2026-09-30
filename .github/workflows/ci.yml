@@ -36,6 +36,8 @@ jobs:
         run: |
           python3 scripts/create_recompute_fixture.py /tmp/newsroom-recompute-real
           target/debug/news verify /tmp/newsroom-recompute-real --recompute
+          # The same artifact given as a relative path must recompute too.
+          (cd /tmp/newsroom-recompute-real/.. && "$OLDPWD/target/debug/news" verify newsroom-recompute-real --recompute)
       - name: Test
         run: cargo test --all-targets
       - name: Clippy
@@ -68,6 +70,10 @@ jobs:
           node --check runtime/pi/publication_binding.mjs
           node --check runtime/pi/svg_security.mjs
           node --check runtime/pi/tool_phase_policy.mjs
+          node --check runtime/pi/render_qa.mjs
+          node --check runtime/pi/render_qa_geometry.mjs
+          node --check runtime/pi/render_qa_contrast.mjs
+          node --check runtime/pi/render_qa_svg.mjs
           node --experimental-strip-types --check runtime/pi/newsroom.ts
       - name: Check release baseline
         run: python3 scripts/check_release_baseline.py
@@ -88,11 +94,13 @@ jobs:
           node scripts/test_bundled_skills.mjs
           node scripts/test_lieflat_catalog.mjs
           node scripts/test_lieflat_report.mjs
+          node scripts/test_lieflat_reader_text.mjs
           node scripts/test_visual_story_completion.mjs
           node scripts/test_visual_story_routing.mjs
           node scripts/test_evidence_bound_composite.mjs
           node scripts/test_composite_geo_network_sankey.mjs
           node scripts/test_offline_geo_fallback.mjs
+          node scripts/test_publication_breakpoints_mobile_pages.mjs
           python3 scripts/test_openai_wire_mock.py
           python3 scripts/test_anthropic_wire_mock.py
           python3 scripts/test_pi_prompt_retry.py
@@ -179,9 +187,15 @@ jobs:
         run: |
           node scripts/test_content_addressing.mjs
           node scripts/test_stream_limits.mjs
+          node scripts/test_pdf_extract.mjs
           node scripts/test_cjk_viz.mjs
+          node scripts/test_viz_ticks.mjs
+          node scripts/test_economy_names.mjs
+          node scripts/test_range_bracket.mjs
           python3 scripts/selftest_evaluator.py
           python3 scripts/test_integrity_adversarial.py
+          python3 scripts/test_pdf_source_verifier.py
+          python3 scripts/test_infographic_revision_rejected_manifest.py
           python3 scripts/benchmark_verify.py
           python3 scripts/benchmark_verify_scale.py
           python3 scripts/test_recompute_protocol.py
@@ -189,10 +203,17 @@ jobs:
           node scripts/test_rich_illustration.mjs
           node scripts/test_vision_contract.mjs
           python3 scripts/test_infographic_preview.py
+          python3 scripts/test_cjk_preview_raster.py
       - name: Visualization semantic smoke tests
         run: node scripts/test_viz.mjs
       - name: Visualization SVG snapshot tests
         run: node scripts/test_viz_snapshots.mjs
+      - name: Waffle chart tests
+        run: node scripts/test_waffle_chart.mjs
+      - name: Choropleth chart tests
+        run: node scripts/test_choropleth.mjs
+      - name: Treemap chart tests
+        run: node scripts/test_treemap.mjs
       - name: Complex visualization semantic smoke tests
         run: |
           node scripts/test_complex_viz.mjs
@@ -200,6 +221,13 @@ jobs:
           node scripts/test_realdata_viz.mjs
       - name: Complex visualization SVG snapshots
         run: node scripts/test_complex_snapshots.mjs
+      - name: Reader-facing render QA gates
+        run: |
+          node scripts/test_font_floor.mjs
+          node scripts/test_render_qa_geometry.mjs
+          node scripts/test_render_qa_contrast.mjs
+          node scripts/test_render_qa.mjs
+          node scripts/test_render_qa_tool_path.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
       - name: Visualization performance budget

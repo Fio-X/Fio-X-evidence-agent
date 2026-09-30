@@ -1,0 +1,2924 @@
+{
+  "schema_version": "0.1.0",
+  "generated_by": "scripts/build_ne_attributes.mjs",
+  "source": {
+    "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+    "retrieved_at": "2026-09-27T02:34:28Z",
+    "sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb"
+  },
+  "vendored_geometry": {
+    "file": "runtime/pi/assets/naturalearth-admin0-50m.geojson",
+    "content_hash": "fb05dfb0bc0312dc7d11edea2097011513a3065e228df9951e9ef7751f40996e"
+  },
+  "rules": [
+    "iso3 = feature.properties.ISO_A3_EH.",
+    "When ISO_A3_EH is '-99', iso3 = null, except one documented alias: ADM0_A3 'KOS' (Kosovo) becomes 'XKX', the World Bank's Kosovo code.",
+    "Geometry is never read from this source at runtime: the registered basemap (runtime/pi/assets/naturalearth-admin0-50m.geojson) is the sole geometry of record. This asset carries attributes only, indexed positionally - feature i here describes feature i of the vendored geometry."
+  ],
+  "features": [
+    {
+      "index": 0,
+      "iso3": "ZWE",
+      "adm0_a3": "ZWE",
+      "name": "Zimbabwe",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        29.925444,
+        -18.91164
+      ]
+    },
+    {
+      "index": 1,
+      "iso3": "ZMB",
+      "adm0_a3": "ZMB",
+      "name": "Zambia",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        26.395298,
+        -14.660804
+      ]
+    },
+    {
+      "index": 2,
+      "iso3": "YEM",
+      "adm0_a3": "YEM",
+      "name": "Yemen",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        45.874383,
+        15.328226
+      ]
+    },
+    {
+      "index": 3,
+      "iso3": "VNM",
+      "adm0_a3": "VNM",
+      "name": "Vietnam",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        105.387292,
+        21.715416
+      ]
+    },
+    {
+      "index": 4,
+      "iso3": "VEN",
+      "adm0_a3": "VEN",
+      "name": "Venezuela",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -64.599381,
+        7.182476
+      ]
+    },
+    {
+      "index": 5,
+      "iso3": "VAT",
+      "adm0_a3": "VAT",
+      "name": "Vatican",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        12.453418,
+        41.903323
+      ]
+    },
+    {
+      "index": 6,
+      "iso3": "VUT",
+      "adm0_a3": "VUT",
+      "name": "Vanuatu",
+      "continent": "Oceania",
+      "subregion": "Melanesia",
+      "label": [
+        166.908762,
+        -15.37153
+      ]
+    },
+    {
+      "index": 7,
+      "iso3": "UZB",
+      "adm0_a3": "UZB",
+      "name": "Uzbekistan",
+      "continent": "Asia",
+      "subregion": "Central Asia",
+      "label": [
+        64.005429,
+        41.693603
+      ]
+    },
+    {
+      "index": 8,
+      "iso3": "URY",
+      "adm0_a3": "URY",
+      "name": "Uruguay",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -55.966942,
+        -32.961127
+      ]
+    },
+    {
+      "index": 9,
+      "iso3": "FSM",
+      "adm0_a3": "FSM",
+      "name": "Micronesia",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        158.234019,
+        6.887553
+      ]
+    },
+    {
+      "index": 10,
+      "iso3": "MHL",
+      "adm0_a3": "MHL",
+      "name": "Marshall Is.",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        171.193609,
+        7.082568
+      ]
+    },
+    {
+      "index": 11,
+      "iso3": "MNP",
+      "adm0_a3": "MNP",
+      "name": "N. Mariana Is.",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        145.734397,
+        15.188188
+      ]
+    },
+    {
+      "index": 12,
+      "iso3": "VIR",
+      "adm0_a3": "VIR",
+      "name": "U.S. Virgin Is.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -64.779172,
+        17.746706
+      ]
+    },
+    {
+      "index": 13,
+      "iso3": "GUM",
+      "adm0_a3": "GUM",
+      "name": "Guam",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        144.703614,
+        13.354173
+      ]
+    },
+    {
+      "index": 14,
+      "iso3": "ASM",
+      "adm0_a3": "ASM",
+      "name": "American Samoa",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -170.747153,
+        -14.32671
+      ]
+    },
+    {
+      "index": 15,
+      "iso3": "PRI",
+      "adm0_a3": "PRI",
+      "name": "Puerto Rico",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -66.481065,
+        18.234668
+      ]
+    },
+    {
+      "index": 16,
+      "iso3": "USA",
+      "adm0_a3": "USA",
+      "name": "United States of America",
+      "continent": "North America",
+      "subregion": "Northern America",
+      "label": [
+        -97.482602,
+        39.538479
+      ]
+    },
+    {
+      "index": 17,
+      "iso3": "SGS",
+      "adm0_a3": "SGS",
+      "name": "S. Geo. and the Is.",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Seven seas (open ocean)",
+      "label": [
+        -31.063179,
+        -55.683402
+      ]
+    },
+    {
+      "index": 18,
+      "iso3": "IOT",
+      "adm0_a3": "IOT",
+      "name": "Br. Indian Ocean Ter.",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Seven seas (open ocean)",
+      "label": [
+        71.348349,
+        -6.190826
+      ]
+    },
+    {
+      "index": 19,
+      "iso3": "SHN",
+      "adm0_a3": "SHN",
+      "name": "Saint Helena",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Western Africa",
+      "label": [
+        -5.71262,
+        -15.950487
+      ]
+    },
+    {
+      "index": 20,
+      "iso3": "PCN",
+      "adm0_a3": "PCN",
+      "name": "Pitcairn Is.",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -128.317536,
+        -24.364576
+      ]
+    },
+    {
+      "index": 21,
+      "iso3": "AIA",
+      "adm0_a3": "AIA",
+      "name": "Anguilla",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -63.026361,
+        18.242979
+      ]
+    },
+    {
+      "index": 22,
+      "iso3": "FLK",
+      "adm0_a3": "FLK",
+      "name": "Falkland Is.",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -58.738602,
+        -51.608913
+      ]
+    },
+    {
+      "index": 23,
+      "iso3": "CYM",
+      "adm0_a3": "CYM",
+      "name": "Cayman Is.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -81.24055,
+        19.319862
+      ]
+    },
+    {
+      "index": 24,
+      "iso3": "BMU",
+      "adm0_a3": "BMU",
+      "name": "Bermuda",
+      "continent": "North America",
+      "subregion": "Northern America",
+      "label": [
+        -64.763573,
+        32.296592
+      ]
+    },
+    {
+      "index": 25,
+      "iso3": "VGB",
+      "adm0_a3": "VGB",
+      "name": "British Virgin Is.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -64.63661,
+        18.426606
+      ]
+    },
+    {
+      "index": 26,
+      "iso3": "TCA",
+      "adm0_a3": "TCA",
+      "name": "Turks and Caicos Is.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -71.752704,
+        21.81663
+      ]
+    },
+    {
+      "index": 27,
+      "iso3": "MSR",
+      "adm0_a3": "MSR",
+      "name": "Montserrat",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -62.188252,
+        16.73717
+      ]
+    },
+    {
+      "index": 28,
+      "iso3": "JEY",
+      "adm0_a3": "JEY",
+      "name": "Jersey",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -2.090146,
+        49.220808
+      ]
+    },
+    {
+      "index": 29,
+      "iso3": "GGY",
+      "adm0_a3": "GGY",
+      "name": "Guernsey",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -2.561736,
+        49.463533
+      ]
+    },
+    {
+      "index": 30,
+      "iso3": "IMN",
+      "adm0_a3": "IMN",
+      "name": "Isle of Man",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -4.530069,
+        54.220833
+      ]
+    },
+    {
+      "index": 31,
+      "iso3": "GBR",
+      "adm0_a3": "GBR",
+      "name": "United Kingdom",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -2.116346,
+        54.402739
+      ]
+    },
+    {
+      "index": 32,
+      "iso3": "ARE",
+      "adm0_a3": "ARE",
+      "name": "United Arab Emirates",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        54.547256,
+        23.466285
+      ]
+    },
+    {
+      "index": 33,
+      "iso3": "UKR",
+      "adm0_a3": "UKR",
+      "name": "Ukraine",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        32.140865,
+        49.724739
+      ]
+    },
+    {
+      "index": 34,
+      "iso3": "UGA",
+      "adm0_a3": "UGA",
+      "name": "Uganda",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        32.948555,
+        1.972589
+      ]
+    },
+    {
+      "index": 35,
+      "iso3": "TKM",
+      "adm0_a3": "TKM",
+      "name": "Turkmenistan",
+      "continent": "Asia",
+      "subregion": "Central Asia",
+      "label": [
+        58.676647,
+        39.855246
+      ]
+    },
+    {
+      "index": 36,
+      "iso3": "TUR",
+      "adm0_a3": "TUR",
+      "name": "Turkey",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        34.508268,
+        39.345388
+      ]
+    },
+    {
+      "index": 37,
+      "iso3": "TUN",
+      "adm0_a3": "TUN",
+      "name": "Tunisia",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        9.007881,
+        33.687263
+      ]
+    },
+    {
+      "index": 38,
+      "iso3": "TTO",
+      "adm0_a3": "TTO",
+      "name": "Trinidad and Tobago",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -60.9184,
+        10.9989
+      ]
+    },
+    {
+      "index": 39,
+      "iso3": "TON",
+      "adm0_a3": "TON",
+      "name": "Tonga",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -175.163014,
+        -21.210026
+      ]
+    },
+    {
+      "index": 40,
+      "iso3": "TGO",
+      "adm0_a3": "TGO",
+      "name": "Togo",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        1.058113,
+        8.80722
+      ]
+    },
+    {
+      "index": 41,
+      "iso3": "TLS",
+      "adm0_a3": "TLS",
+      "name": "Timor-Leste",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        125.854679,
+        -8.803705
+      ]
+    },
+    {
+      "index": 42,
+      "iso3": "THA",
+      "adm0_a3": "THA",
+      "name": "Thailand",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        101.073198,
+        15.45974
+      ]
+    },
+    {
+      "index": 43,
+      "iso3": "TZA",
+      "adm0_a3": "TZA",
+      "name": "Tanzania",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        34.959183,
+        -6.051866
+      ]
+    },
+    {
+      "index": 44,
+      "iso3": "TJK",
+      "adm0_a3": "TJK",
+      "name": "Tajikistan",
+      "continent": "Asia",
+      "subregion": "Central Asia",
+      "label": [
+        72.587276,
+        38.199835
+      ]
+    },
+    {
+      "index": 45,
+      "iso3": "TWN",
+      "adm0_a3": "TWN",
+      "name": "Taiwan",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        120.868204,
+        23.652408
+      ]
+    },
+    {
+      "index": 46,
+      "iso3": "SYR",
+      "adm0_a3": "SYR",
+      "name": "Syria",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        38.277783,
+        35.006636
+      ]
+    },
+    {
+      "index": 47,
+      "iso3": "CHE",
+      "adm0_a3": "CHE",
+      "name": "Switzerland",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        7.463965,
+        46.719114
+      ]
+    },
+    {
+      "index": 48,
+      "iso3": "SWE",
+      "adm0_a3": "SWE",
+      "name": "Sweden",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        19.01705,
+        65.85918
+      ]
+    },
+    {
+      "index": 49,
+      "iso3": "SWZ",
+      "adm0_a3": "SWZ",
+      "name": "eSwatini",
+      "continent": "Africa",
+      "subregion": "Southern Africa",
+      "label": [
+        31.467264,
+        -26.533676
+      ]
+    },
+    {
+      "index": 50,
+      "iso3": "SUR",
+      "adm0_a3": "SUR",
+      "name": "Suriname",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -55.91094,
+        4.143987
+      ]
+    },
+    {
+      "index": 51,
+      "iso3": "SSD",
+      "adm0_a3": "SDS",
+      "name": "S. Sudan",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        30.390151,
+        7.230477
+      ]
+    },
+    {
+      "index": 52,
+      "iso3": "SDN",
+      "adm0_a3": "SDN",
+      "name": "Sudan",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        29.260657,
+        16.330746
+      ]
+    },
+    {
+      "index": 53,
+      "iso3": "LKA",
+      "adm0_a3": "LKA",
+      "name": "Sri Lanka",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        80.704823,
+        7.581097
+      ]
+    },
+    {
+      "index": 54,
+      "iso3": "ESP",
+      "adm0_a3": "ESP",
+      "name": "Spain",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        -3.464718,
+        40.090953
+      ]
+    },
+    {
+      "index": 55,
+      "iso3": "KOR",
+      "adm0_a3": "KOR",
+      "name": "South Korea",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        128.129504,
+        36.384924
+      ]
+    },
+    {
+      "index": 56,
+      "iso3": "ZAF",
+      "adm0_a3": "ZAF",
+      "name": "South Africa",
+      "continent": "Africa",
+      "subregion": "Southern Africa",
+      "label": [
+        23.665734,
+        -29.708776
+      ]
+    },
+    {
+      "index": 57,
+      "iso3": "SOM",
+      "adm0_a3": "SOM",
+      "name": "Somalia",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        45.19238,
+        3.568925
+      ]
+    },
+    {
+      "index": 58,
+      "iso3": null,
+      "adm0_a3": "SOL",
+      "name": "Somaliland",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        46.731595,
+        9.443889
+      ]
+    },
+    {
+      "index": 59,
+      "iso3": "SLB",
+      "adm0_a3": "SLB",
+      "name": "Solomon Is.",
+      "continent": "Oceania",
+      "subregion": "Melanesia",
+      "label": [
+        159.170468,
+        -8.029548
+      ]
+    },
+    {
+      "index": 60,
+      "iso3": "SVK",
+      "adm0_a3": "SVK",
+      "name": "Slovakia",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        19.049868,
+        48.734044
+      ]
+    },
+    {
+      "index": 61,
+      "iso3": "SVN",
+      "adm0_a3": "SVN",
+      "name": "Slovenia",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        14.915312,
+        46.06076
+      ]
+    },
+    {
+      "index": 62,
+      "iso3": "SGP",
+      "adm0_a3": "SGP",
+      "name": "Singapore",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        103.816925,
+        1.366587
+      ]
+    },
+    {
+      "index": 63,
+      "iso3": "SLE",
+      "adm0_a3": "SLE",
+      "name": "Sierra Leone",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -11.763677,
+        8.617449
+      ]
+    },
+    {
+      "index": 64,
+      "iso3": "SYC",
+      "adm0_a3": "SYC",
+      "name": "Seychelles",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Eastern Africa",
+      "label": [
+        55.480175,
+        -4.676659
+      ]
+    },
+    {
+      "index": 65,
+      "iso3": "SRB",
+      "adm0_a3": "SRB",
+      "name": "Serbia",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        20.787989,
+        44.189919
+      ]
+    },
+    {
+      "index": 66,
+      "iso3": "SEN",
+      "adm0_a3": "SEN",
+      "name": "Senegal",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -14.778586,
+        15.138125
+      ]
+    },
+    {
+      "index": 67,
+      "iso3": "SAU",
+      "adm0_a3": "SAU",
+      "name": "Saudi Arabia",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        44.6996,
+        23.806908
+      ]
+    },
+    {
+      "index": 68,
+      "iso3": "STP",
+      "adm0_a3": "STP",
+      "name": "São Tomé and Principe",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        7.021,
+        0.9709
+      ]
+    },
+    {
+      "index": 69,
+      "iso3": "SMR",
+      "adm0_a3": "SMR",
+      "name": "San Marino",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        12.441206,
+        43.933916
+      ]
+    },
+    {
+      "index": 70,
+      "iso3": "WSM",
+      "adm0_a3": "WSM",
+      "name": "Samoa",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -172.438241,
+        -13.639139
+      ]
+    },
+    {
+      "index": 71,
+      "iso3": "VCT",
+      "adm0_a3": "VCT",
+      "name": "St. Vin. and Gren.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -61.3359,
+        13.0879
+      ]
+    },
+    {
+      "index": 72,
+      "iso3": "LCA",
+      "adm0_a3": "LCA",
+      "name": "Saint Lucia",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -60.980094,
+        13.892371
+      ]
+    },
+    {
+      "index": 73,
+      "iso3": "KNA",
+      "adm0_a3": "KNA",
+      "name": "St. Kitts and Nevis",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -62.757975,
+        17.336558
+      ]
+    },
+    {
+      "index": 74,
+      "iso3": "RWA",
+      "adm0_a3": "RWA",
+      "name": "Rwanda",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        30.103894,
+        -1.897196
+      ]
+    },
+    {
+      "index": 75,
+      "iso3": "RUS",
+      "adm0_a3": "RUS",
+      "name": "Russia",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        44.686469,
+        58.249357
+      ]
+    },
+    {
+      "index": 76,
+      "iso3": "ROU",
+      "adm0_a3": "ROU",
+      "name": "Romania",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        24.972624,
+        45.733237
+      ]
+    },
+    {
+      "index": 77,
+      "iso3": "QAT",
+      "adm0_a3": "QAT",
+      "name": "Qatar",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        51.143509,
+        25.237383
+      ]
+    },
+    {
+      "index": 78,
+      "iso3": "PRT",
+      "adm0_a3": "PRT",
+      "name": "Portugal",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        -8.271754,
+        39.606675
+      ]
+    },
+    {
+      "index": 79,
+      "iso3": "POL",
+      "adm0_a3": "POL",
+      "name": "Poland",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        19.490468,
+        51.990316
+      ]
+    },
+    {
+      "index": 80,
+      "iso3": "PHL",
+      "adm0_a3": "PHL",
+      "name": "Philippines",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        122.465,
+        11.198
+      ]
+    },
+    {
+      "index": 81,
+      "iso3": "PER",
+      "adm0_a3": "PER",
+      "name": "Peru",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -72.90016,
+        -12.976679
+      ]
+    },
+    {
+      "index": 82,
+      "iso3": "PRY",
+      "adm0_a3": "PRY",
+      "name": "Paraguay",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -60.146394,
+        -21.674509
+      ]
+    },
+    {
+      "index": 83,
+      "iso3": "PNG",
+      "adm0_a3": "PNG",
+      "name": "Papua New Guinea",
+      "continent": "Oceania",
+      "subregion": "Melanesia",
+      "label": [
+        143.910216,
+        -5.695285
+      ]
+    },
+    {
+      "index": 84,
+      "iso3": "PAN",
+      "adm0_a3": "PAN",
+      "name": "Panama",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -80.352106,
+        8.72198
+      ]
+    },
+    {
+      "index": 85,
+      "iso3": "PLW",
+      "adm0_a3": "PLW",
+      "name": "Palau",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        134.580157,
+        7.518252
+      ]
+    },
+    {
+      "index": 86,
+      "iso3": "PAK",
+      "adm0_a3": "PAK",
+      "name": "Pakistan",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        68.545632,
+        29.328389
+      ]
+    },
+    {
+      "index": 87,
+      "iso3": "OMN",
+      "adm0_a3": "OMN",
+      "name": "Oman",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        57.336553,
+        22.120427
+      ]
+    },
+    {
+      "index": 88,
+      "iso3": "NOR",
+      "adm0_a3": "NOR",
+      "name": "Norway",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        9.679975,
+        61.357092
+      ]
+    },
+    {
+      "index": 89,
+      "iso3": "PRK",
+      "adm0_a3": "PRK",
+      "name": "North Korea",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        126.444516,
+        39.885252
+      ]
+    },
+    {
+      "index": 90,
+      "iso3": "NGA",
+      "adm0_a3": "NGA",
+      "name": "Nigeria",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        7.50322,
+        9.439799
+      ]
+    },
+    {
+      "index": 91,
+      "iso3": "NER",
+      "adm0_a3": "NER",
+      "name": "Niger",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        9.504356,
+        17.446195
+      ]
+    },
+    {
+      "index": 92,
+      "iso3": "NIC",
+      "adm0_a3": "NIC",
+      "name": "Nicaragua",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -85.069347,
+        12.670697
+      ]
+    },
+    {
+      "index": 93,
+      "iso3": "NZL",
+      "adm0_a3": "NZL",
+      "name": "New Zealand",
+      "continent": "Oceania",
+      "subregion": "Australia and New Zealand",
+      "label": [
+        172.787,
+        -39.759
+      ]
+    },
+    {
+      "index": 94,
+      "iso3": "NIU",
+      "adm0_a3": "NIU",
+      "name": "Niue",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -169.862565,
+        -19.045956
+      ]
+    },
+    {
+      "index": 95,
+      "iso3": "COK",
+      "adm0_a3": "COK",
+      "name": "Cook Is.",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -159.785675,
+        -21.215993
+      ]
+    },
+    {
+      "index": 96,
+      "iso3": "NLD",
+      "adm0_a3": "NLD",
+      "name": "Netherlands",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        5.61144,
+        52.422211
+      ]
+    },
+    {
+      "index": 97,
+      "iso3": "ABW",
+      "adm0_a3": "ABW",
+      "name": "Aruba",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -69.972795,
+        12.5174
+      ]
+    },
+    {
+      "index": 98,
+      "iso3": "CUW",
+      "adm0_a3": "CUW",
+      "name": "Curaçao",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -68.920578,
+        12.145039
+      ]
+    },
+    {
+      "index": 99,
+      "iso3": "NPL",
+      "adm0_a3": "NPL",
+      "name": "Nepal",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        83.639914,
+        28.297925
+      ]
+    },
+    {
+      "index": 100,
+      "iso3": "NRU",
+      "adm0_a3": "NRU",
+      "name": "Nauru",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        166.932644,
+        -0.520261
+      ]
+    },
+    {
+      "index": 101,
+      "iso3": "NAM",
+      "adm0_a3": "NAM",
+      "name": "Namibia",
+      "continent": "Africa",
+      "subregion": "Southern Africa",
+      "label": [
+        17.108166,
+        -20.575298
+      ]
+    },
+    {
+      "index": 102,
+      "iso3": "MOZ",
+      "adm0_a3": "MOZ",
+      "name": "Mozambique",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        37.83789,
+        -13.94323
+      ]
+    },
+    {
+      "index": 103,
+      "iso3": "MAR",
+      "adm0_a3": "MAR",
+      "name": "Morocco",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        -7.187296,
+        31.650723
+      ]
+    },
+    {
+      "index": 104,
+      "iso3": "ESH",
+      "adm0_a3": "SAH",
+      "name": "W. Sahara",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        -12.630304,
+        23.967592
+      ]
+    },
+    {
+      "index": 105,
+      "iso3": "MNE",
+      "adm0_a3": "MNE",
+      "name": "Montenegro",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        19.143727,
+        42.803101
+      ]
+    },
+    {
+      "index": 106,
+      "iso3": "MNG",
+      "adm0_a3": "MNG",
+      "name": "Mongolia",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        104.150405,
+        45.997488
+      ]
+    },
+    {
+      "index": 107,
+      "iso3": "MDA",
+      "adm0_a3": "MDA",
+      "name": "Moldova",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        28.487904,
+        47.434999
+      ]
+    },
+    {
+      "index": 108,
+      "iso3": "MCO",
+      "adm0_a3": "MCO",
+      "name": "Monaco",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        7.398291,
+        43.739652
+      ]
+    },
+    {
+      "index": 109,
+      "iso3": "MEX",
+      "adm0_a3": "MEX",
+      "name": "Mexico",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -102.289448,
+        23.919988
+      ]
+    },
+    {
+      "index": 110,
+      "iso3": "MUS",
+      "adm0_a3": "MUS",
+      "name": "Mauritius",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Eastern Africa",
+      "label": [
+        57.565848,
+        -20.299506
+      ]
+    },
+    {
+      "index": 111,
+      "iso3": "MRT",
+      "adm0_a3": "MRT",
+      "name": "Mauritania",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -9.740299,
+        19.587062
+      ]
+    },
+    {
+      "index": 112,
+      "iso3": "MLT",
+      "adm0_a3": "MLT",
+      "name": "Malta",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        14.433005,
+        35.892886
+      ]
+    },
+    {
+      "index": 113,
+      "iso3": "MLI",
+      "adm0_a3": "MLI",
+      "name": "Mali",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -2.038455,
+        18.692713
+      ]
+    },
+    {
+      "index": 114,
+      "iso3": "MDV",
+      "adm0_a3": "MDV",
+      "name": "Maldives",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Southern Asia",
+      "label": [
+        73.507554,
+        4.174441
+      ]
+    },
+    {
+      "index": 115,
+      "iso3": "MYS",
+      "adm0_a3": "MYS",
+      "name": "Malaysia",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        113.83708,
+        2.528667
+      ]
+    },
+    {
+      "index": 116,
+      "iso3": "MWI",
+      "adm0_a3": "MWI",
+      "name": "Malawi",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        33.608082,
+        -13.386737
+      ]
+    },
+    {
+      "index": 117,
+      "iso3": "MDG",
+      "adm0_a3": "MDG",
+      "name": "Madagascar",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        46.704241,
+        -18.628288
+      ]
+    },
+    {
+      "index": 118,
+      "iso3": "MKD",
+      "adm0_a3": "MKD",
+      "name": "North Macedonia",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        21.555839,
+        41.558223
+      ]
+    },
+    {
+      "index": 119,
+      "iso3": "LUX",
+      "adm0_a3": "LUX",
+      "name": "Luxembourg",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        6.07762,
+        49.733732
+      ]
+    },
+    {
+      "index": 120,
+      "iso3": "LTU",
+      "adm0_a3": "LTU",
+      "name": "Lithuania",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        24.089932,
+        55.103703
+      ]
+    },
+    {
+      "index": 121,
+      "iso3": "LIE",
+      "adm0_a3": "LIE",
+      "name": "Liechtenstein",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        9.559439,
+        47.111405
+      ]
+    },
+    {
+      "index": 122,
+      "iso3": "LBY",
+      "adm0_a3": "LBY",
+      "name": "Libya",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        18.011015,
+        26.638944
+      ]
+    },
+    {
+      "index": 123,
+      "iso3": "LBR",
+      "adm0_a3": "LBR",
+      "name": "Liberia",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -9.460379,
+        6.447177
+      ]
+    },
+    {
+      "index": 124,
+      "iso3": "LSO",
+      "adm0_a3": "LSO",
+      "name": "Lesotho",
+      "continent": "Africa",
+      "subregion": "Southern Africa",
+      "label": [
+        28.246639,
+        -29.480158
+      ]
+    },
+    {
+      "index": 125,
+      "iso3": "LBN",
+      "adm0_a3": "LBN",
+      "name": "Lebanon",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        35.992892,
+        34.133368
+      ]
+    },
+    {
+      "index": 126,
+      "iso3": "LVA",
+      "adm0_a3": "LVA",
+      "name": "Latvia",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        25.458723,
+        57.066872
+      ]
+    },
+    {
+      "index": 127,
+      "iso3": "LAO",
+      "adm0_a3": "LAO",
+      "name": "Laos",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        102.533912,
+        19.431821
+      ]
+    },
+    {
+      "index": 128,
+      "iso3": "KGZ",
+      "adm0_a3": "KGZ",
+      "name": "Kyrgyzstan",
+      "continent": "Asia",
+      "subregion": "Central Asia",
+      "label": [
+        74.532637,
+        41.66854
+      ]
+    },
+    {
+      "index": 129,
+      "iso3": "KWT",
+      "adm0_a3": "KWT",
+      "name": "Kuwait",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        47.313999,
+        29.413628
+      ]
+    },
+    {
+      "index": 130,
+      "iso3": "XKX",
+      "adm0_a3": "KOS",
+      "name": "Kosovo",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        20.860719,
+        42.593587
+      ]
+    },
+    {
+      "index": 131,
+      "iso3": "KIR",
+      "adm0_a3": "KIR",
+      "name": "Kiribati",
+      "continent": "Oceania",
+      "subregion": "Micronesia",
+      "label": [
+        -157.384577,
+        1.820437
+      ]
+    },
+    {
+      "index": 132,
+      "iso3": "KEN",
+      "adm0_a3": "KEN",
+      "name": "Kenya",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        37.907632,
+        0.549043
+      ]
+    },
+    {
+      "index": 133,
+      "iso3": "KAZ",
+      "adm0_a3": "KAZ",
+      "name": "Kazakhstan",
+      "continent": "Asia",
+      "subregion": "Central Asia",
+      "label": [
+        68.685548,
+        49.054149
+      ]
+    },
+    {
+      "index": 134,
+      "iso3": "JOR",
+      "adm0_a3": "JOR",
+      "name": "Jordan",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        36.375991,
+        30.805025
+      ]
+    },
+    {
+      "index": 135,
+      "iso3": "JPN",
+      "adm0_a3": "JPN",
+      "name": "Japan",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        138.44217,
+        36.142538
+      ]
+    },
+    {
+      "index": 136,
+      "iso3": "JAM",
+      "adm0_a3": "JAM",
+      "name": "Jamaica",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -77.318767,
+        18.137124
+      ]
+    },
+    {
+      "index": 137,
+      "iso3": "ITA",
+      "adm0_a3": "ITA",
+      "name": "Italy",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        11.076907,
+        44.732482
+      ]
+    },
+    {
+      "index": 138,
+      "iso3": "ISR",
+      "adm0_a3": "ISR",
+      "name": "Israel",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        34.847915,
+        30.911148
+      ]
+    },
+    {
+      "index": 139,
+      "iso3": "PSE",
+      "adm0_a3": "PSX",
+      "name": "Palestine",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        35.291341,
+        32.047431
+      ]
+    },
+    {
+      "index": 140,
+      "iso3": "IRL",
+      "adm0_a3": "IRL",
+      "name": "Ireland",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -7.798588,
+        53.078726
+      ]
+    },
+    {
+      "index": 141,
+      "iso3": "IRQ",
+      "adm0_a3": "IRQ",
+      "name": "Iraq",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        43.26181,
+        33.09403
+      ]
+    },
+    {
+      "index": 142,
+      "iso3": "IRN",
+      "adm0_a3": "IRN",
+      "name": "Iran",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        54.931495,
+        32.166225
+      ]
+    },
+    {
+      "index": 143,
+      "iso3": "IDN",
+      "adm0_a3": "IDN",
+      "name": "Indonesia",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        101.892949,
+        -0.954404
+      ]
+    },
+    {
+      "index": 144,
+      "iso3": "IND",
+      "adm0_a3": "IND",
+      "name": "India",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        79.358105,
+        22.686852
+      ]
+    },
+    {
+      "index": 145,
+      "iso3": "ISL",
+      "adm0_a3": "ISL",
+      "name": "Iceland",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -18.673711,
+        64.779286
+      ]
+    },
+    {
+      "index": 146,
+      "iso3": "HUN",
+      "adm0_a3": "HUN",
+      "name": "Hungary",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        19.447867,
+        47.086841
+      ]
+    },
+    {
+      "index": 147,
+      "iso3": "HND",
+      "adm0_a3": "HND",
+      "name": "Honduras",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -86.887604,
+        14.794801
+      ]
+    },
+    {
+      "index": 148,
+      "iso3": "HTI",
+      "adm0_a3": "HTI",
+      "name": "Haiti",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -72.224051,
+        19.263784
+      ]
+    },
+    {
+      "index": 149,
+      "iso3": "GUY",
+      "adm0_a3": "GUY",
+      "name": "Guyana",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -58.942643,
+        5.124317
+      ]
+    },
+    {
+      "index": 150,
+      "iso3": "GNB",
+      "adm0_a3": "GNB",
+      "name": "Guinea-Bissau",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -14.52413,
+        12.163712
+      ]
+    },
+    {
+      "index": 151,
+      "iso3": "GIN",
+      "adm0_a3": "GIN",
+      "name": "Guinea",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -10.016402,
+        10.618516
+      ]
+    },
+    {
+      "index": 152,
+      "iso3": "GTM",
+      "adm0_a3": "GTM",
+      "name": "Guatemala",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -90.497134,
+        14.982133
+      ]
+    },
+    {
+      "index": 153,
+      "iso3": "GRD",
+      "adm0_a3": "GRD",
+      "name": "Grenada",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -61.680461,
+        12.113156
+      ]
+    },
+    {
+      "index": 154,
+      "iso3": "GRC",
+      "adm0_a3": "GRC",
+      "name": "Greece",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        21.72568,
+        39.492763
+      ]
+    },
+    {
+      "index": 155,
+      "iso3": "GHA",
+      "adm0_a3": "GHA",
+      "name": "Ghana",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -1.036941,
+        7.717639
+      ]
+    },
+    {
+      "index": 156,
+      "iso3": "DEU",
+      "adm0_a3": "DEU",
+      "name": "Germany",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        9.678348,
+        50.961733
+      ]
+    },
+    {
+      "index": 157,
+      "iso3": "GEO",
+      "adm0_a3": "GEO",
+      "name": "Georgia",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        43.735724,
+        41.870087
+      ]
+    },
+    {
+      "index": 158,
+      "iso3": "GMB",
+      "adm0_a3": "GMB",
+      "name": "Gambia",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -14.998318,
+        13.641721
+      ]
+    },
+    {
+      "index": 159,
+      "iso3": "GAB",
+      "adm0_a3": "GAB",
+      "name": "Gabon",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        11.835939,
+        -0.437739
+      ]
+    },
+    {
+      "index": 160,
+      "iso3": "FRA",
+      "adm0_a3": "FRA",
+      "name": "France",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        2.552275,
+        46.696113
+      ]
+    },
+    {
+      "index": 161,
+      "iso3": "SPM",
+      "adm0_a3": "SPM",
+      "name": "St. Pierre and Miquelon",
+      "continent": "North America",
+      "subregion": "Northern America",
+      "label": [
+        -56.332352,
+        47.040344
+      ]
+    },
+    {
+      "index": 162,
+      "iso3": "WLF",
+      "adm0_a3": "WLF",
+      "name": "Wallis and Futuna Is.",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -178.137436,
+        -14.286415
+      ]
+    },
+    {
+      "index": 163,
+      "iso3": "MAF",
+      "adm0_a3": "MAF",
+      "name": "St-Martin",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -63.049399,
+        18.081302
+      ]
+    },
+    {
+      "index": 164,
+      "iso3": "BLM",
+      "adm0_a3": "BLM",
+      "name": "St-Barthélemy",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -62.833193,
+        17.901987
+      ]
+    },
+    {
+      "index": 165,
+      "iso3": "PYF",
+      "adm0_a3": "PYF",
+      "name": "Fr. Polynesia",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        -149.46157,
+        -17.628081
+      ]
+    },
+    {
+      "index": 166,
+      "iso3": "NCL",
+      "adm0_a3": "NCL",
+      "name": "New Caledonia",
+      "continent": "Oceania",
+      "subregion": "Melanesia",
+      "label": [
+        165.084004,
+        -21.064697
+      ]
+    },
+    {
+      "index": 167,
+      "iso3": "ATF",
+      "adm0_a3": "ATF",
+      "name": "Fr. S. Antarctic Lands",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Seven seas (open ocean)",
+      "label": [
+        69.122136,
+        -49.303721
+      ]
+    },
+    {
+      "index": 168,
+      "iso3": "ALA",
+      "adm0_a3": "ALD",
+      "name": "Åland",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        19.869671,
+        60.156467
+      ]
+    },
+    {
+      "index": 169,
+      "iso3": "FIN",
+      "adm0_a3": "FIN",
+      "name": "Finland",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        27.276449,
+        63.252361
+      ]
+    },
+    {
+      "index": 170,
+      "iso3": "FJI",
+      "adm0_a3": "FJI",
+      "name": "Fiji",
+      "continent": "Oceania",
+      "subregion": "Melanesia",
+      "label": [
+        177.975427,
+        -17.826099
+      ]
+    },
+    {
+      "index": 171,
+      "iso3": "ETH",
+      "adm0_a3": "ETH",
+      "name": "Ethiopia",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        39.0886,
+        8.032795
+      ]
+    },
+    {
+      "index": 172,
+      "iso3": "EST",
+      "adm0_a3": "EST",
+      "name": "Estonia",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        25.867126,
+        58.724865
+      ]
+    },
+    {
+      "index": 173,
+      "iso3": "ERI",
+      "adm0_a3": "ERI",
+      "name": "Eritrea",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        38.285566,
+        15.787401
+      ]
+    },
+    {
+      "index": 174,
+      "iso3": "GNQ",
+      "adm0_a3": "GNQ",
+      "name": "Eq. Guinea",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        8.9902,
+        2.333
+      ]
+    },
+    {
+      "index": 175,
+      "iso3": "SLV",
+      "adm0_a3": "SLV",
+      "name": "El Salvador",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -88.890124,
+        13.685371
+      ]
+    },
+    {
+      "index": 176,
+      "iso3": "EGY",
+      "adm0_a3": "EGY",
+      "name": "Egypt",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        29.445837,
+        26.186173
+      ]
+    },
+    {
+      "index": 177,
+      "iso3": "ECU",
+      "adm0_a3": "ECU",
+      "name": "Ecuador",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -78.188375,
+        -1.259076
+      ]
+    },
+    {
+      "index": 178,
+      "iso3": "DOM",
+      "adm0_a3": "DOM",
+      "name": "Dominican Rep.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -70.653998,
+        19.104137
+      ]
+    },
+    {
+      "index": 179,
+      "iso3": "DMA",
+      "adm0_a3": "DMA",
+      "name": "Dominica",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -61.344958,
+        15.458829
+      ]
+    },
+    {
+      "index": 180,
+      "iso3": "DJI",
+      "adm0_a3": "DJI",
+      "name": "Djibouti",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        42.498825,
+        11.976343
+      ]
+    },
+    {
+      "index": 181,
+      "iso3": "GRL",
+      "adm0_a3": "GRL",
+      "name": "Greenland",
+      "continent": "North America",
+      "subregion": "Northern America",
+      "label": [
+        -39.335251,
+        74.319387
+      ]
+    },
+    {
+      "index": 182,
+      "iso3": "FRO",
+      "adm0_a3": "FRO",
+      "name": "Faeroe Is.",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        -7.058429,
+        62.185604
+      ]
+    },
+    {
+      "index": 183,
+      "iso3": "DNK",
+      "adm0_a3": "DNK",
+      "name": "Denmark",
+      "continent": "Europe",
+      "subregion": "Northern Europe",
+      "label": [
+        9.018163,
+        55.966965
+      ]
+    },
+    {
+      "index": 184,
+      "iso3": "CZE",
+      "adm0_a3": "CZE",
+      "name": "Czechia",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        15.377555,
+        49.882364
+      ]
+    },
+    {
+      "index": 185,
+      "iso3": null,
+      "adm0_a3": "CYN",
+      "name": "N. Cyprus",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        33.692434,
+        35.216071
+      ]
+    },
+    {
+      "index": 186,
+      "iso3": "CYP",
+      "adm0_a3": "CYP",
+      "name": "Cyprus",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        33.084182,
+        34.913329
+      ]
+    },
+    {
+      "index": 187,
+      "iso3": "CUB",
+      "adm0_a3": "CUB",
+      "name": "Cuba",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -77.975855,
+        21.334024
+      ]
+    },
+    {
+      "index": 188,
+      "iso3": "HRV",
+      "adm0_a3": "HRV",
+      "name": "Croatia",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        16.37241,
+        45.805799
+      ]
+    },
+    {
+      "index": 189,
+      "iso3": "CIV",
+      "adm0_a3": "CIV",
+      "name": "Côte d'Ivoire",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -5.568618,
+        7.49139
+      ]
+    },
+    {
+      "index": 190,
+      "iso3": "CRI",
+      "adm0_a3": "CRI",
+      "name": "Costa Rica",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -84.077922,
+        10.0651
+      ]
+    },
+    {
+      "index": 191,
+      "iso3": "COD",
+      "adm0_a3": "COD",
+      "name": "Dem. Rep. Congo",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        23.458829,
+        -1.858167
+      ]
+    },
+    {
+      "index": 192,
+      "iso3": "COG",
+      "adm0_a3": "COG",
+      "name": "Congo",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        15.9005,
+        0.142331
+      ]
+    },
+    {
+      "index": 193,
+      "iso3": "COM",
+      "adm0_a3": "COM",
+      "name": "Comoros",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        43.318094,
+        -11.727683
+      ]
+    },
+    {
+      "index": 194,
+      "iso3": "COL",
+      "adm0_a3": "COL",
+      "name": "Colombia",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -73.174347,
+        3.373111
+      ]
+    },
+    {
+      "index": 195,
+      "iso3": "CHN",
+      "adm0_a3": "CHN",
+      "name": "China",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        106.337289,
+        32.498178
+      ]
+    },
+    {
+      "index": 196,
+      "iso3": "MAC",
+      "adm0_a3": "MAC",
+      "name": "Macao",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        113.556038,
+        22.129735
+      ]
+    },
+    {
+      "index": 197,
+      "iso3": "HKG",
+      "adm0_a3": "HKG",
+      "name": "Hong Kong",
+      "continent": "Asia",
+      "subregion": "Eastern Asia",
+      "label": [
+        114.097769,
+        22.448829
+      ]
+    },
+    {
+      "index": 198,
+      "iso3": "CHL",
+      "adm0_a3": "CHL",
+      "name": "Chile",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -72.318871,
+        -38.151771
+      ]
+    },
+    {
+      "index": 199,
+      "iso3": "TCD",
+      "adm0_a3": "TCD",
+      "name": "Chad",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        18.645041,
+        15.142959
+      ]
+    },
+    {
+      "index": 200,
+      "iso3": "CAF",
+      "adm0_a3": "CAF",
+      "name": "Central African Rep.",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        20.906897,
+        6.989681
+      ]
+    },
+    {
+      "index": 201,
+      "iso3": "CPV",
+      "adm0_a3": "CPV",
+      "name": "Cabo Verde",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -23.639434,
+        15.074761
+      ]
+    },
+    {
+      "index": 202,
+      "iso3": "CAN",
+      "adm0_a3": "CAN",
+      "name": "Canada",
+      "continent": "North America",
+      "subregion": "Northern America",
+      "label": [
+        -101.9107,
+        60.324287
+      ]
+    },
+    {
+      "index": 203,
+      "iso3": "CMR",
+      "adm0_a3": "CMR",
+      "name": "Cameroon",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        12.473488,
+        4.585041
+      ]
+    },
+    {
+      "index": 204,
+      "iso3": "KHM",
+      "adm0_a3": "KHM",
+      "name": "Cambodia",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        104.50487,
+        12.647584
+      ]
+    },
+    {
+      "index": 205,
+      "iso3": "MMR",
+      "adm0_a3": "MMR",
+      "name": "Myanmar",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        95.804497,
+        21.573855
+      ]
+    },
+    {
+      "index": 206,
+      "iso3": "BDI",
+      "adm0_a3": "BDI",
+      "name": "Burundi",
+      "continent": "Africa",
+      "subregion": "Eastern Africa",
+      "label": [
+        29.917086,
+        -3.332836
+      ]
+    },
+    {
+      "index": 207,
+      "iso3": "BFA",
+      "adm0_a3": "BFA",
+      "name": "Burkina Faso",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        -1.36388,
+        12.673048
+      ]
+    },
+    {
+      "index": 208,
+      "iso3": "BGR",
+      "adm0_a3": "BGR",
+      "name": "Bulgaria",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        25.15709,
+        42.508785
+      ]
+    },
+    {
+      "index": 209,
+      "iso3": "BRN",
+      "adm0_a3": "BRN",
+      "name": "Brunei",
+      "continent": "Asia",
+      "subregion": "South-Eastern Asia",
+      "label": [
+        114.551943,
+        4.448298
+      ]
+    },
+    {
+      "index": 210,
+      "iso3": "BRA",
+      "adm0_a3": "BRA",
+      "name": "Brazil",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -49.55945,
+        -12.098687
+      ]
+    },
+    {
+      "index": 211,
+      "iso3": "BWA",
+      "adm0_a3": "BWA",
+      "name": "Botswana",
+      "continent": "Africa",
+      "subregion": "Southern Africa",
+      "label": [
+        24.179216,
+        -22.102634
+      ]
+    },
+    {
+      "index": 212,
+      "iso3": "BIH",
+      "adm0_a3": "BIH",
+      "name": "Bosnia and Herz.",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        18.06841,
+        44.091051
+      ]
+    },
+    {
+      "index": 213,
+      "iso3": "BOL",
+      "adm0_a3": "BOL",
+      "name": "Bolivia",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -64.593433,
+        -16.666015
+      ]
+    },
+    {
+      "index": 214,
+      "iso3": "BTN",
+      "adm0_a3": "BTN",
+      "name": "Bhutan",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        90.040294,
+        27.536685
+      ]
+    },
+    {
+      "index": 215,
+      "iso3": "BEN",
+      "adm0_a3": "BEN",
+      "name": "Benin",
+      "continent": "Africa",
+      "subregion": "Western Africa",
+      "label": [
+        2.352018,
+        10.324775
+      ]
+    },
+    {
+      "index": 216,
+      "iso3": "BLZ",
+      "adm0_a3": "BLZ",
+      "name": "Belize",
+      "continent": "North America",
+      "subregion": "Central America",
+      "label": [
+        -88.712962,
+        17.202068
+      ]
+    },
+    {
+      "index": 217,
+      "iso3": "BEL",
+      "adm0_a3": "BEL",
+      "name": "Belgium",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        4.800448,
+        50.785392
+      ]
+    },
+    {
+      "index": 218,
+      "iso3": "BLR",
+      "adm0_a3": "BLR",
+      "name": "Belarus",
+      "continent": "Europe",
+      "subregion": "Eastern Europe",
+      "label": [
+        28.417701,
+        53.821888
+      ]
+    },
+    {
+      "index": 219,
+      "iso3": "BRB",
+      "adm0_a3": "BRB",
+      "name": "Barbados",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -59.568966,
+        13.163709
+      ]
+    },
+    {
+      "index": 220,
+      "iso3": "BGD",
+      "adm0_a3": "BGD",
+      "name": "Bangladesh",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        89.684963,
+        24.214956
+      ]
+    },
+    {
+      "index": 221,
+      "iso3": "BHR",
+      "adm0_a3": "BHR",
+      "name": "Bahrain",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        50.554816,
+        26.055972
+      ]
+    },
+    {
+      "index": 222,
+      "iso3": "BHS",
+      "adm0_a3": "BHS",
+      "name": "Bahamas",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -77.146688,
+        26.401789
+      ]
+    },
+    {
+      "index": 223,
+      "iso3": "AZE",
+      "adm0_a3": "AZE",
+      "name": "Azerbaijan",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        47.210994,
+        40.402387
+      ]
+    },
+    {
+      "index": 224,
+      "iso3": "AUT",
+      "adm0_a3": "AUT",
+      "name": "Austria",
+      "continent": "Europe",
+      "subregion": "Western Europe",
+      "label": [
+        14.130515,
+        47.518859
+      ]
+    },
+    {
+      "index": 225,
+      "iso3": "AUS",
+      "adm0_a3": "AUS",
+      "name": "Australia",
+      "continent": "Oceania",
+      "subregion": "Australia and New Zealand",
+      "label": [
+        134.04972,
+        -24.129522
+      ]
+    },
+    {
+      "index": 226,
+      "iso3": "AUS",
+      "adm0_a3": "IOA",
+      "name": "Indian Ocean Ter.",
+      "continent": "Asia",
+      "subregion": "Seven seas (open ocean)",
+      "label": [
+        105.67259,
+        -10.490789
+      ]
+    },
+    {
+      "index": 227,
+      "iso3": "HMD",
+      "adm0_a3": "HMD",
+      "name": "Heard I. and McDonald Is.",
+      "continent": "Seven seas (open ocean)",
+      "subregion": "Seven seas (open ocean)",
+      "label": [
+        73.50521,
+        -53.103462
+      ]
+    },
+    {
+      "index": 228,
+      "iso3": "NFK",
+      "adm0_a3": "NFK",
+      "name": "Norfolk Island",
+      "continent": "Oceania",
+      "subregion": "Australia and New Zealand",
+      "label": [
+        167.954531,
+        -29.033042
+      ]
+    },
+    {
+      "index": 229,
+      "iso3": "AUS",
+      "adm0_a3": "ATC",
+      "name": "Ashmore and Cartier Is.",
+      "continent": "Oceania",
+      "subregion": "Australia and New Zealand",
+      "label": [
+        123.586368,
+        -12.432571
+      ]
+    },
+    {
+      "index": 230,
+      "iso3": "ARM",
+      "adm0_a3": "ARM",
+      "name": "Armenia",
+      "continent": "Asia",
+      "subregion": "Western Asia",
+      "label": [
+        44.800564,
+        40.459077
+      ]
+    },
+    {
+      "index": 231,
+      "iso3": "ARG",
+      "adm0_a3": "ARG",
+      "name": "Argentina",
+      "continent": "South America",
+      "subregion": "South America",
+      "label": [
+        -64.173331,
+        -33.501159
+      ]
+    },
+    {
+      "index": 232,
+      "iso3": "ATG",
+      "adm0_a3": "ATG",
+      "name": "Antigua and Barb.",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -61.790612,
+        17.352249
+      ]
+    },
+    {
+      "index": 233,
+      "iso3": "AGO",
+      "adm0_a3": "AGO",
+      "name": "Angola",
+      "continent": "Africa",
+      "subregion": "Middle Africa",
+      "label": [
+        17.984249,
+        -12.182762
+      ]
+    },
+    {
+      "index": 234,
+      "iso3": "AND",
+      "adm0_a3": "AND",
+      "name": "Andorra",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        1.539409,
+        42.547643
+      ]
+    },
+    {
+      "index": 235,
+      "iso3": "DZA",
+      "adm0_a3": "DZA",
+      "name": "Algeria",
+      "continent": "Africa",
+      "subregion": "Northern Africa",
+      "label": [
+        2.808241,
+        27.397406
+      ]
+    },
+    {
+      "index": 236,
+      "iso3": "ALB",
+      "adm0_a3": "ALB",
+      "name": "Albania",
+      "continent": "Europe",
+      "subregion": "Southern Europe",
+      "label": [
+        20.11384,
+        40.654855
+      ]
+    },
+    {
+      "index": 237,
+      "iso3": "AFG",
+      "adm0_a3": "AFG",
+      "name": "Afghanistan",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        66.496586,
+        34.164262
+      ]
+    },
+    {
+      "index": 238,
+      "iso3": null,
+      "adm0_a3": "KAS",
+      "name": "Siachen Glacier",
+      "continent": "Asia",
+      "subregion": "Southern Asia",
+      "label": [
+        77.129553,
+        35.340606
+      ]
+    },
+    {
+      "index": 239,
+      "iso3": "ATA",
+      "adm0_a3": "ATA",
+      "name": "Antarctica",
+      "continent": "Antarctica",
+      "subregion": "Antarctica",
+      "label": [
+        35.885455,
+        -79.843222
+      ]
+    },
+    {
+      "index": 240,
+      "iso3": "SXM",
+      "adm0_a3": "SXM",
+      "name": "Sint Maarten",
+      "continent": "North America",
+      "subregion": "Caribbean",
+      "label": [
+        -63.070133,
+        18.04088
+      ]
+    },
+    {
+      "index": 241,
+      "iso3": "TUV",
+      "adm0_a3": "TUV",
+      "name": "Tuvalu",
+      "continent": "Oceania",
+      "subregion": "Polynesia",
+      "label": [
+        179.209587,
+        -8.513717
+      ]
+    }
+  ]
+}

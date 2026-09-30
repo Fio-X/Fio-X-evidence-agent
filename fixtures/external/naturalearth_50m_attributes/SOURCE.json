@@ -1,0 +1,28 @@
+{
+  "schema_version": "0.1.0",
+  "dataset": "Natural Earth Admin 0 country polygons, 1:50m, full attribute table",
+  "upstream_lineage": "Natural Earth Admin 0 countries at 1:50m scale, mirrored as GeoJSON by the nvkelso/natural-earth-vector community repository. Geometrically identical (same 242 features, same order, same rings) to the already-vendored, geometry-only runtime/pi/assets/naturalearth-admin0-50m.geojson (registered as basemap_id 'naturalearth_admin0_50m' in runtime/pi/basemap_registry.mjs) - scripts/build_ne_attributes.mjs asserts this feature-by-feature before deriving anything from this file.",
+  "official_source_url": "https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries/",
+  "mirror_url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+  "terms_url": "https://www.naturalearthdata.com/about/terms-of-use/",
+  "license": "Public domain (Natural Earth terms of use)",
+  "credit": "Made with Natural Earth",
+  "use_limit": "Feature attributes only (ISO_A3_EH, ADM0_A3, NAME, CONTINENT, SUBREGION, LABEL_X/LABEL_Y), joined positionally onto the already-vendored geometry to derive runtime/pi/assets/naturalearth-admin0-50m-attributes.json. Never used to replace or alter the registered basemap's geometry, bytes, or content_hash.",
+  "vendoring_policy": "This ~3MB source file is intentionally NOT vendored into the repository. It is fetched on demand (from mirror_url, or the official Natural Earth download) only when scripts/build_ne_attributes.mjs needs to be re-run - for example if a future Natural Earth release changes label points or attribute values and the sidecar needs regenerating. The build script refuses to run against any file whose sha256 does not match the one recorded below.",
+  "files": [
+    {
+      "file": "ne_50m_admin_0_countries.geojson",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+      "retrieved_at": "2026-09-27T02:34:28Z",
+      "bytes": 3083490,
+      "sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+      "committed_on_local_branch": "feat/infographic-old-base",
+      "committed_at_sha": "3649244"
+    }
+  ],
+  "derived_asset": {
+    "file": "runtime/pi/assets/naturalearth-admin0-50m-attributes.json",
+    "generated_by": "scripts/build_ne_attributes.mjs",
+    "description": "One entry per vendored basemap feature index: {index, iso3, adm0_a3, name, continent, subregion, label:[LABEL_X,LABEL_Y]}. iso3 is ISO_A3_EH, except the documented '-99' -> null rule and its one alias (ADM0_A3 'KOS' -> 'XKX', the World Bank's Kosovo code)."
+  }
+}

@@ -83,17 +83,20 @@ function normalizeConcept(concept) {
   };
 }
 
-export function validateVisualConcepts(concepts) {
+export function validateVisualConcepts(concepts, { mobilePages = true } = {}) {
   const errors = [];
   if (!Array.isArray(concepts)) return ['concepts must be an array'];
   if (concepts.length < 8 || concepts.length > 20) errors.push('award-mode concepts must contain 8..20 candidates');
   const ids = new Set();
+  const requiredFields = mobilePages
+    ? ['reader_question', 'editorial_premise', 'visual_metaphor', 'hero_scene', 'mobile_treatment', 'why_memorable']
+    : ['reader_question', 'editorial_premise', 'visual_metaphor', 'hero_scene', 'why_memorable'];
   for (const raw of concepts) {
     const concept = normalizeConcept(raw ?? {});
     if (!concept.concept_id) errors.push('every concept requires concept_id');
     else if (ids.has(concept.concept_id)) errors.push(`duplicate concept_id '${concept.concept_id}'`);
     else ids.add(concept.concept_id);
-    for (const field of ['reader_question', 'editorial_premise', 'visual_metaphor', 'hero_scene', 'mobile_treatment', 'why_memorable']) if (!text(concept[field])) errors.push(`concept '${concept.concept_id || '?'}' requires ${field}`);
+    for (const field of requiredFields) if (!text(concept[field])) errors.push(`concept '${concept.concept_id || '?'}' requires ${field}`);
     if (!CONCEPT_FRAMINGS.includes(concept.framing)) errors.push(`concept '${concept.concept_id || '?'}' has unsupported framing '${concept.framing}'`);
     if (!concept.hero_evidence_refs.length) errors.push(`concept '${concept.concept_id || '?'}' requires hero_evidence_refs`);
     if (!concept.media_mix.length) errors.push(`concept '${concept.concept_id || '?'}' requires media_mix`);
@@ -133,9 +136,9 @@ export function scoreVisualConcept(raw) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-export function tournamentVisualConcepts(input) {
+export function tournamentVisualConcepts(input, { mobilePages = true } = {}) {
   const concepts = (input.concepts ?? []).map(normalizeConcept);
-  const errors = validateVisualConcepts(concepts);
+  const errors = validateVisualConcepts(concepts, { mobilePages });
   if (errors.length) throw new Error(errors.join('; '));
   const scores = Object.fromEntries(concepts.map((concept) => [concept.concept_id, scoreVisualConcept(concept)]));
   const pairwise = [];

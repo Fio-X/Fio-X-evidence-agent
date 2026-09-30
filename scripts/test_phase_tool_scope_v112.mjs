@@ -17,8 +17,11 @@ if(toolEnabled('newsroom_publication_render',{profile:'investigate'})) throw new
 if(!toolEnabled('duckdb_query',{profile:'investigate'})) throw new Error('investigate profile must include deterministic computation');
 if(!toolEnabled('newsroom_parallel_tasks',{profile:'investigate',phase:'verify'})) throw new Error('investigate profile must include parallel tasks when verify is enabled');
 if(toolEnabled('newsroom_parallel_tasks',{profile:'publication',phase:'verify'})) throw new Error('publication profile must hide parallel tasks');
-if(!toolEnabled('newsroom_chart',{profile:'investigate'})) throw new Error('investigate profile must include fallback chart');
-if(toolEnabled('newsroom_chart',{profile:'visual'})) throw new Error('visual profile must use the critic-backed viz pipeline');
+// newsroom_chart wrote a manifest with no plan_ref/variants, bypassing lint,
+// render QA and critique entirely. It is retired from every profile; the
+// deterministic newsroom_viz_plan -> lint -> render -> critic path is the
+// only chart path now.
+for(const profile of TOOL_REGISTRY.profiles) if(toolEnabled('newsroom_chart',{profile})) throw new Error(`newsroom_chart is retired and must not be enabled for profile '${profile}'`);
 const investigateCount=TOOL_REGISTRY.tools.filter(t=>toolEnabled(t.name,{profile:'investigate'})).length;
 if(investigateCount>15) throw new Error(`investigate profile is too broad: ${investigateCount}`);
 const visualStoryCounts=Object.fromEntries([['all','all'],['discover','discover'],['verify','verify'],['design','design']].map(([label,phase])=>[

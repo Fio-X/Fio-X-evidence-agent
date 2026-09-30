@@ -48,6 +48,28 @@ def sha_bytes(data: bytes):
     return hashlib.sha256(data).hexdigest()
 
 
+_RENDER_QA_MODULE = (Path(__file__).resolve().parents[1] / "runtime" / "pi" / "render_qa.mjs").as_posix()
+
+
+def run_render_qa(desktop_svg: str, mobile_svg: str) -> dict:
+    """Produces a render QA report by invoking the real runtime/pi/render_qa.mjs
+    module through Node, never by hand-typing the report JSON. render_qa.mjs and
+    the geometry/contrast checkers it imports are dependency-free ESM modules,
+    so this needs no npm install and makes no network call."""
+    import subprocess
+    script = (
+        "import { runRenderQa } from " + json.dumps(_RENDER_QA_MODULE) + ";\n"
+        "const desktop = " + json.dumps(desktop_svg) + ";\n"
+        "const mobile = " + json.dumps(mobile_svg) + ";\n"
+        "process.stdout.write(JSON.stringify(runRenderQa({ desktop, mobile })));\n"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-"],
+        input=script, capture_output=True, text=True, check=True,
+    )
+    return json.loads(result.stdout)
+
+
 def normalize_infographic_source(plan: dict) -> dict:
     normalized = json.loads(json.dumps(plan))
     normalized.pop("content_hash", None)
@@ -84,8 +106,10 @@ def ensure_artifacts(resume: bool):
         "visualizations/plans",
         "visualizations/lints",
         "visualizations/critics",
+        "visualizations/qa",
         "infographics/plans",
         "infographics/lints",
+        "infographics/qa",
         "infographics/critics",
         "infographics/previews",
         "infographics/vision-critics",
@@ -126,7 +150,10 @@ def ensure_artifacts(resume: bool):
     mobile = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 500" role="img"><title>Mock</title><desc>Mock mobile visualization for acceptance testing.</desc><rect width="640" height="500" fill="white"/><text x="20" y="30">Source: mock</text></svg>\n'
     (root / "visualizations" / "mock.svg").write_text(desktop, encoding="utf-8")
     (root / "visualizations" / "mock.mobile.svg").write_text(mobile, encoding="utf-8")
-    write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": "mock-claim", "data_hash": result_hash, "svg": "visualizations/mock.svg", "variants": {"desktop": "visualizations/mock.svg", "mobile": "visualizations/mock.mobile.svg"}})
+    render_qa_ref = "visualizations/qa/mock.json"
+    render_qa_report = run_render_qa(desktop, mobile)
+    write_json(root / render_qa_ref, render_qa_report)
+    write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": "mock-claim", "data_hash": result_hash, "svg": "visualizations/mock.svg", "variants": {"desktop": "visualizations/mock.svg", "mobile": "visualizations/mock.mobile.svg"}, "render_qa_ref": render_qa_ref, "render_qa": {"passed": render_qa_report["passed"], "failure_count": render_qa_report["failure_count"]}})
     write_json(root / "visualizations/critics/mock.json", {"passed": True, "score": 100, "manifest_ref": manifest_ref})
 
     expl_plan_ref = "visualizations/illustrations/plans/mock.json"
@@ -194,11 +221,18 @@ def ensure_artifacts(resume: bool):
     write_json(root / revised_info_plan_ref, revised_info_plan)
 
     info_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1200" role="img" data-infographic-version="1.1.0"><title>Mock magazine feature</title><desc>Responsive mock magazine infographic with verified visual modules.</desc><rect width="1440" height="1200" fill="white"/><text x="40" y="70">Mock magazine feature</text><rect x="40" y="110" width="360" height="190" fill="#f2f3f4"/><text x="60" y="160">Hero statistic: 20</text><rect x="430" y="110" width="930" height="420" fill="white" stroke="#ddd"/><text x="460" y="160">Verified visualization module one</text><rect x="40" y="560" width="1320" height="420" fill="white" stroke="#ddd"/><text x="70" y="610">Verified visualization module two retained with provenance.</text><text x="70" y="660">This page exists to exercise the infographic control-plane and integrity contract.</text><g data-rich-illustration-version="0.2.0"><rect x="70" y="720" width="280" height="160" fill="#eee"/></g><rect data-role="illustration-credit" x="70" y="890" width="1" height="1" fill="none"/><text x="70" y="910">Mock fixture · AI-generated illustration disclosed.</text><text x="40" y="1140">SOURCES &amp; METHODS</text></svg>\n'
-    info_mobile_svg = info_svg.replace('1440 1200', '720 1400').replace('width="1440" height="1200"', 'width="720" height="1400"')
+    # The mobile variant is authored as its own single-column reflow rather
+    # than a naive viewBox substitution: reusing the desktop's two-column
+    # absolute coordinates in a narrower viewBox pushed text outside the
+    # frame, which the render QA geometry check (correctly) rejects.
+    info_mobile_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1500" role="img" data-infographic-version="1.1.0"><title>Mock magazine feature</title><desc>Responsive mock magazine infographic with verified visual modules.</desc><rect width="720" height="1500" fill="white"/><text x="40" y="60">Mock magazine feature</text><rect x="40" y="90" width="640" height="150" fill="#f2f3f4"/><text x="60" y="140">Hero statistic: 20</text><rect x="40" y="260" width="640" height="300" fill="white" stroke="#ddd"/><text x="60" y="310">Verified visualization module one</text><rect x="40" y="580" width="640" height="300" fill="white" stroke="#ddd"/><text x="60" y="630">Verified module two, provenance retained.</text><text x="60" y="670">Exercise the infographic control plane.</text><g data-rich-illustration-version="0.2.0"><rect x="60" y="900" width="280" height="160" fill="#eee"/></g><rect data-role="illustration-credit" x="60" y="1080" width="1" height="1" fill="none"/><text x="60" y="1100">Mock fixture: AI-generated illustration.</text><text x="40" y="1460">SOURCES &amp; METHODS</text></svg>\n'
     (root / info_desktop_ref).write_text(info_svg, encoding="utf-8")
     (root / info_mobile_ref).write_text(info_mobile_svg, encoding="utf-8")
     info_hashes = {"desktop_sha256": sha_bytes(info_svg.encode()), "mobile_sha256": sha_bytes(info_mobile_svg.encode())}
-    write_json(root / info_manifest_ref, {"schema_version": "1.1.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": ["mock-claim"], "variants": {"desktop": info_desktop_ref, "mobile": info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True})
+    info_render_qa_ref = "infographics/qa/mock.json"
+    info_render_qa_report = run_render_qa(info_svg, info_mobile_svg)
+    write_json(root / info_render_qa_ref, info_render_qa_report)
+    write_json(root / info_manifest_ref, {"schema_version": "1.1.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": ["mock-claim"], "variants": {"desktop": info_desktop_ref, "mobile": info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True, "render_qa_ref": info_render_qa_ref, "render_qa": {"passed": info_render_qa_report["passed"], "failure_count": info_render_qa_report["failure_count"]}})
     deterministic_critic_ref = "infographics/critics/mock.json"
     deterministic_rubric = {"impact_story_focus": 96, "engagement": 94, "clarity_information_flow": 98, "effectiveness": 96, "hierarchy": 95, "editorial_rhythm": 94, "inclusion_accessibility": 98, "responsive_execution": 98, "craft_geometry": 94, "originality_variety": 90}
     write_json(root / deterministic_critic_ref, {"schema_version": "1.1.0", "passed": True, "score": 96, "rubric": deterministic_rubric, "manifest_ref": info_manifest_ref})

@@ -79,7 +79,7 @@
         },
         "breakpoints": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 1,
           "maxItems": 6,
           "uniqueItems": true,
           "items": {
@@ -156,6 +156,12 @@
         "uncertainty_forecast",
         "spatial_monitor",
         "nature_scientific_map"
+      ]
+    },
+    "language": {
+      "enum": [
+        "zh",
+        "en"
       ]
     }
   },
@@ -341,6 +347,11 @@
         },
         "accessibility": {
           "$ref": "#/$defs/accessibility"
+        },
+        "variant": {
+          "enum": [
+            "pull_quote"
+          ]
         }
       },
       "additionalProperties": false

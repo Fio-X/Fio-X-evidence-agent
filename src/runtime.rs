@@ -10,8 +10,14 @@ const CARTOGRAPHY_BASEMAP: &str =
 const CARTOGRAPHY_BASEMAP_50M: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-50m.geojson");
 const GSHHS_BASEMAP: &str = include_str!("../runtime/pi/assets/gshhs-i-syros-local.geojson");
+const ECONOMY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/economy-names.json");
+const ECONOMY_NAMES_RUNTIME: &str = include_str!("../runtime/pi/economy_names.mjs");
+const CHOROPLETH_RUNTIME: &str = include_str!("../runtime/pi/choropleth.mjs");
+const CHOROPLETH_ATTRIBUTES_ASSET: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
 const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
 const PROVENANCE_RUNTIME: &str = include_str!("../runtime/pi/provenance.mjs");
+const PDF_EXTRACT_RUNTIME: &str = include_str!("../runtime/pi/pdf_extract.mjs");
 const EVIDENCE_GATE_RUNTIME: &str = include_str!("../runtime/pi/evidence_gate.mjs");
 const INFOGRAPHIC_RUNTIME: &str = include_str!("../runtime/pi/infographic.mjs");
 const EXPLANATORY_RUNTIME: &str = include_str!("../runtime/pi/explanatory.mjs");
@@ -55,6 +61,11 @@ const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mj
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
 const LOCAL_BACKEND_RUNTIME: &str = include_str!("../runtime/pi/local_backend.mjs");
 const LIEFLAT_RUNTIME: &str = include_str!("../runtime/pi/lieflat.mjs");
+const RENDER_QA_RUNTIME: &str = include_str!("../runtime/pi/render_qa.mjs");
+const RENDER_QA_GEOMETRY_RUNTIME: &str = include_str!("../runtime/pi/render_qa_geometry.mjs");
+const RENDER_QA_CONTRAST_RUNTIME: &str = include_str!("../runtime/pi/render_qa_contrast.mjs");
+const RENDER_QA_SVG_RUNTIME: &str = include_str!("../runtime/pi/render_qa_svg.mjs");
+const RENDER_QA_LABELS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_labels.mjs");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
 const EDITORIAL_GRAMMAR_REGISTRY_CONFIG: &str =
@@ -98,8 +109,14 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let cartography_basemap_path = assets_dir.join("naturalearth-admin0-110m.geojson");
     let cartography_basemap_50m_path = assets_dir.join("naturalearth-admin0-50m.geojson");
     let gshhs_basemap_path = assets_dir.join("gshhs-i-syros-local.geojson");
+    let economy_names_asset_path = assets_dir.join("economy-names.json");
+    let economy_names_path = runtime_dir.join("economy_names.mjs");
+    let choropleth_path = runtime_dir.join("choropleth.mjs");
+    let choropleth_attributes_asset_path =
+        assets_dir.join("naturalearth-admin0-50m-attributes.json");
     let net_path = runtime_dir.join("net.mjs");
     let provenance_path = runtime_dir.join("provenance.mjs");
+    let pdf_extract_path = runtime_dir.join("pdf_extract.mjs");
     let evidence_gate_path = runtime_dir.join("evidence_gate.mjs");
     let infographic_path = runtime_dir.join("infographic.mjs");
     let explanatory_path = runtime_dir.join("explanatory.mjs");
@@ -149,6 +166,11 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
     let local_backend_path = runtime_dir.join("local_backend.mjs");
     let lieflat_path = runtime_dir.join("lieflat.mjs");
+    let render_qa_path = runtime_dir.join("render_qa.mjs");
+    let render_qa_geometry_path = runtime_dir.join("render_qa_geometry.mjs");
+    let render_qa_contrast_path = runtime_dir.join("render_qa_contrast.mjs");
+    let render_qa_svg_path = runtime_dir.join("render_qa_svg.mjs");
+    let render_qa_labels_path = runtime_dir.join("render_qa_labels.mjs");
     let config_dir = artifact_dir.join("config");
     fs::create_dir_all(&config_dir).with_context(|| {
         format!(
@@ -164,8 +186,16 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;
     write_if_changed(&cartography_basemap_50m_path, CARTOGRAPHY_BASEMAP_50M)?;
     write_if_changed(&gshhs_basemap_path, GSHHS_BASEMAP)?;
+    write_if_changed(&economy_names_asset_path, ECONOMY_NAMES_ASSET)?;
+    write_if_changed(&economy_names_path, ECONOMY_NAMES_RUNTIME)?;
+    write_if_changed(
+        &choropleth_attributes_asset_path,
+        CHOROPLETH_ATTRIBUTES_ASSET,
+    )?;
+    write_if_changed(&choropleth_path, CHOROPLETH_RUNTIME)?;
     write_if_changed(&net_path, NET_RUNTIME)?;
     write_if_changed(&provenance_path, PROVENANCE_RUNTIME)?;
+    write_if_changed(&pdf_extract_path, PDF_EXTRACT_RUNTIME)?;
     write_if_changed(&evidence_gate_path, EVIDENCE_GATE_RUNTIME)?;
     write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)?;
     write_if_changed(&explanatory_path, EXPLANATORY_RUNTIME)?;
@@ -213,6 +243,11 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME)?;
     write_if_changed(&local_backend_path, LOCAL_BACKEND_RUNTIME)?;
     write_if_changed(&lieflat_path, LIEFLAT_RUNTIME)?;
+    write_if_changed(&render_qa_path, RENDER_QA_RUNTIME)?;
+    write_if_changed(&render_qa_geometry_path, RENDER_QA_GEOMETRY_RUNTIME)?;
+    write_if_changed(&render_qa_contrast_path, RENDER_QA_CONTRAST_RUNTIME)?;
+    write_if_changed(&render_qa_svg_path, RENDER_QA_SVG_RUNTIME)?;
+    write_if_changed(&render_qa_labels_path, RENDER_QA_LABELS_RUNTIME)?;
     write_if_changed(&style_mapping_config_path, EDITORIAL_STYLE_MAPPING_CONFIG)?;
     write_if_changed(
         &editorial_grammar_registry_path,
@@ -252,6 +287,27 @@ mod tests {
             .join("runtime")
             .join("editorial_validators.mjs")
             .is_file());
+        assert!(root.path().join("runtime").join("render_qa.mjs").is_file());
+        assert!(root
+            .path()
+            .join("runtime")
+            .join("render_qa_geometry.mjs")
+            .is_file());
+        assert!(root
+            .path()
+            .join("runtime")
+            .join("render_qa_contrast.mjs")
+            .is_file());
+        assert!(root
+            .path()
+            .join("runtime")
+            .join("render_qa_svg.mjs")
+            .is_file());
+        assert!(root
+            .path()
+            .join("runtime")
+            .join("render_qa_labels.mjs")
+            .is_file());
         let grammar_registry = fs::read_to_string(
             root.path()
                 .join("config")
@@ -259,5 +315,7 @@ mod tests {
         )
         .expect("materialized editorial grammar registry");
         assert!(grammar_registry.contains("ROUTE_SPINE"));
+        assert!(grammar_registry.contains("THEMATIC_MAP"));
+        assert!(grammar_registry.contains("FLOW_LEDGER"));
     }
 }

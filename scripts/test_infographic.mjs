@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle, critiqueInfographic } from '../runtime/pi/infographic.mjs';
+import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim='claim-infographic';
 const context={verified_claim_ids:[claim]};
@@ -114,10 +115,20 @@ assert.equal(sceneBundle.desktop.scenes.length,1);
 assert.match(sceneBundle.desktop.svg,/data-role="scene-boundary" data-scene-id="hero-system"/);
 assert.equal(sceneBundle.desktop.boxes.find((box)=>box.id==='flow').scene_role,'anchor');
 assert.equal(sceneBundle.desktop.boxes.find((box)=>box.id==='stat-total').scene_role,'sidecar');
-assert.match(sceneBundle.desktop.svg,/>01 · TOTAL ENERGY ENTERING THE SYNTHETIC SYSTEM</);
-assert.match(sceneBundle.mobile.svg,/>01 · TOTAL ENERGY ENTERING THE SYNTHETIC SYSTEM</);
-assert.match(sceneBundle.desktop.svg,/>03 · ENERGY REPRESENTED AS LOSSES</);
-assert.match(sceneBundle.mobile.svg,/>03 · ENERGY REPRESENTED AS LOSSES</);
+// Page-polish fix 10 removed drawModuleChrome's rail kicker for hero_stat
+// modules entirely (it duplicated drawHeroStat's own label, e.g. printing
+// "01 · Total energy entering the synthetic system" a second time above the
+// numeral that already carries it) - see test_hero_stat_kicker_dedupe.mjs.
+// A hero_stat's label now appears exactly once, in its own caption below the
+// numeral, in natural case (no more "NN · ", no more uppercasing). In the
+// 4-column sidecar it is too narrow for the full label on one line, so
+// drawHeroStat's own wrapping (not an ellipsis) carries it onto a second
+// line; the mobile column is wide enough for one line.
+assert.ok(!/>0[13] · /.test(sceneBundle.desktop.svg),'hero_stat must not draw a rail kicker in a scene sidecar (fix 10)');
+assert.match(sceneBundle.desktop.svg,/>Total energy entering the synthetic</);
+assert.match(sceneBundle.mobile.svg,/>Total energy entering the synthetic system</);
+assert.match(sceneBundle.desktop.svg,/>Energy represented as losses</);
+assert.match(sceneBundle.mobile.svg,/>Energy represented as losses</);
 const sceneCritic=critiqueInfographic(sceneSpec,sceneBundle);assert.equal(sceneCritic.passed,true,JSON.stringify(sceneCritic));
 const staleScene=structuredClone(sceneSpec);
 staleScene.scene_graph.scenes[0].sidecar_module_ids=['stat-total','missing-module'];
@@ -159,3 +170,51 @@ console.log(`desktop=${bundle.desktop.width}x${bundle.desktop.height} mobile=${b
 console.log(`legacy critic=${critic.score}/100 cluttered=${clutterCritic.score}/100`);
 console.log(`award critic=${awardCritic.score}/100 flat=${flatCritic.score}/100 strategy=${awardBundle.desktop.layout_strategy}`);
 console.log('upstream critic gate: PASS');
+
+// With mobile pages off the desktop page must pass render QA on its own: the
+// kicker and a text module's heading clear the lines above them, and a scene
+// may not narrow a chart below the full width it was drawn for.
+const offContext={...context,mobile_pages:false};
+const stackOff=lintInfographicSpec(sceneSpec,assets,offContext);
+assert.ok(stackOff.blockers.some((b)=>/visual 'flow' gets only 8 of 12 columns in scene 'hero-system'/.test(b)),stackOff.blockers.join(' | '));
+const railSpec={...structuredClone(sceneSpec),modules:sceneSpec.modules.map((m)=>m.id==='bar'?{...m,span:'full'}:m),scene_graph:{...sceneSpec.scene_graph,scenes:sceneSpec.scene_graph.scenes.map((scene)=>({...scene,pattern:'hero_with_rail'}))}};
+const railLint=lintInfographicSpec(railSpec,assets,offContext);assert.equal(railLint.passed,true,railLint.blockers.join(' | '));
+const railBundle=composeInfographicBundle(railSpec,assets,{mobilePages:false});assert.equal(railBundle.mobile,undefined);
+const railQa=runRenderQa({desktop:railBundle.desktop.svg});
+assert.equal(railQa.passed,true,JSON.stringify(railQa.viewports.desktop.geometry.failures.slice(0,5)));
+console.log('desktop-only render QA and scene slot lint: PASS');
+
+// B1: infographic lint blocks a visual module whose chart language differs
+// from the page language. A chart manifest without the field is "en".
+const zhBarSpec={...barSpec,language:'zh',title:'甲领先于本次筛选的比较',subtitle:'合成回归测试夹具',alt:'横向条形图按数值从42到9对四个合成类别排序。'};
+const zhBarLint=lintVizSpec(zhBarSpec,barRows,context);assert.equal(zhBarLint.passed,true,zhBarLint.blockers.join(' | '));
+const zhBarBundle=renderVizBundle(zhBarSpec,barRows);
+const zhBarCritic=critiqueViz(zhBarSpec,barRows,zhBarLint,zhBarBundle.desktop);assert.equal(zhBarCritic.passed,true,JSON.stringify(zhBarCritic));
+
+const zhFlowSpec={...flowSpec,language:'zh',title:'三条来源在到达用户与损耗之前先汇入系统',subtitle:'合成流程测试夹具',alt:'桑基图显示太阳能、风能与天然气汇入系统后再供给住宅与工业，并有部分能量损耗。'};
+const zhFlowLint=lintVizSpec(zhFlowSpec,flowRows,context);assert.equal(zhFlowLint.passed,true,zhFlowLint.blockers.join(' | '));
+const zhFlowBundle=renderVizBundle(zhFlowSpec,flowRows);
+const zhFlowCritic=critiqueViz(zhFlowSpec,flowRows,zhFlowLint,zhFlowBundle.desktop);assert.equal(zhFlowCritic.passed,true,JSON.stringify(zhFlowCritic));
+
+const zhAssets={
+  'visualizations/bar-zh.json':{desktopSvg:zhBarBundle.desktop,mobileSvg:zhBarBundle.mobile,manifest:{claim_id:claim,source_note:zhBarSpec.source_note,chart_type:zhBarSpec.chart_type,alt:zhBarSpec.alt,language:'zh'},critic:{passed:true,score:zhBarCritic.score}},
+  'visualizations/flow-zh.json':{desktopSvg:zhFlowBundle.desktop,mobileSvg:zhFlowBundle.mobile,manifest:{claim_id:claim,source_note:zhFlowSpec.source_note,chart_type:zhFlowSpec.chart_type,alt:zhFlowSpec.alt,language:'zh'},critic:{passed:true,score:zhFlowCritic.score}},
+};
+const zhPageSpec={...spec,language:'zh',modules:spec.modules.map((m)=>{
+  if(m.id==='bar')return {...m,manifest_ref:'visualizations/bar-zh.json'};
+  if(m.id==='flow')return {...m,manifest_ref:'visualizations/flow-zh.json'};
+  return m;
+})};
+assert.deepEqual(validateInfographicSpec(zhPageSpec),[]);
+const zhMatchLint=lintInfographicSpec(zhPageSpec,zhAssets,context);
+assert.equal(zhMatchLint.passed,true,zhMatchLint.blockers.join(' | '));
+console.log('zh page + zh charts language match: PASS');
+
+// Same zh page, but the flow module's asset is the English-language bundle:
+// the chart/page language mismatch must be lint-blocked, not silently
+// rendered with mixed-language chart internals.
+const mismatchAssets={...zhAssets,'visualizations/flow-zh.json':assets['visualizations/flow.json']};
+const zhMismatchLint=lintInfographicSpec(zhPageSpec,mismatchAssets,context);
+assert.equal(zhMismatchLint.passed,false);
+assert.ok(zhMismatchLint.blockers.includes("visual 'flow' chart language 'en' differs from page language 'zh'"),zhMismatchLint.blockers.join(' | '));
+console.log('infographic chart/page language mismatch lint: PASS');

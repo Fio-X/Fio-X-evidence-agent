@@ -49,7 +49,7 @@ node --check runtime/pi/art_direction.mjs
 node --experimental-strip-types --check runtime/pi/newsroom.ts
 python3 -m py_compile runtime/gis/python_publication_map.py runtime/gis/python_publication_request.py runtime/graph/python_adjacency_matrix.py runtime/graph/graphrag_to_evidence.py runtime/graph/graphrag_request.py scripts/test_python_gis_backend_v115.py scripts/test_adjacency_backend_v120.py scripts/test_runtime_build_plan_v116.py scripts/test_visual_recipe_schema_v117.py
 python3 -m py_compile runtime/gis/qgis_publication_map.py runtime/gis/pygmt_publication_map.py runtime/gis/datashader_density.py scripts/runtime_health.py scripts/build_backend_priors.py scripts/build_visual_skill_bundle.py scripts/test_runtime_foundation_v116.py scripts/test_backend_priors_v122.py scripts/test_visual_skill_bundle_v116.py runtime/gis/python_flow_map.py runtime/worker/python_worker.py scripts/promote_visual_runtime_locks.py scripts/test_runtime_promotion_v126.py scripts/test_python_warm_worker_v131.py scripts/test_python_editorial_extensions_v128.py scripts/test_blind_review_v129.py scripts/test_backend_priors_v129.py scripts/build_benchmark_derivatives_v128.py
-python3 -m py_compile scripts/test_story_graph_schema_v18.py scripts/test_infographic_schema.py scripts/test_infographic_raster.py scripts/test_explanatory_raster.py scripts/verify_artifact.py scripts/evaluate_artifact.py scripts/selftest_evaluator.py scripts/test_integrity_adversarial.py scripts/benchmark_verify.py scripts/benchmark_verify_scale.py scripts/test_artifact_schema.py scripts/check_release_baseline.py scripts/mock_pi.py scripts/live_readiness.py scripts/test_live_readiness.py scripts/test_recompute_protocol.py scripts/write_qualification.py scripts/test_qualification_summary.py scripts/create_recompute_fixture.py scripts/compare_qualifications.py scripts/test_infographic_preview.py runtime/pi/rasterize_svg.py scripts/mock_illustration_adapter.py scripts/natural_earth_map_adapter.py scripts/test_nasa_award_raster_v14.py scripts/test_cartographic_raster_v15.py scripts/test_trajectory_raster_v16.py scripts/test_editorial_verifier_v14.py scripts/benchmark_editorial_verify_v14.py
+python3 -m py_compile scripts/test_story_graph_schema_v18.py scripts/test_infographic_schema.py scripts/test_infographic_raster.py scripts/test_explanatory_raster.py scripts/verify_artifact.py scripts/evaluate_artifact.py scripts/selftest_evaluator.py scripts/test_integrity_adversarial.py scripts/test_infographic_revision_rejected_manifest.py scripts/benchmark_verify.py scripts/benchmark_verify_scale.py scripts/test_artifact_schema.py scripts/check_release_baseline.py scripts/mock_pi.py scripts/live_readiness.py scripts/test_live_readiness.py scripts/test_recompute_protocol.py scripts/write_qualification.py scripts/test_qualification_summary.py scripts/create_recompute_fixture.py scripts/compare_qualifications.py scripts/test_infographic_preview.py scripts/test_cjk_preview_raster.py runtime/pi/rasterize_svg.py scripts/mock_illustration_adapter.py scripts/natural_earth_map_adapter.py scripts/test_nasa_award_raster_v14.py scripts/test_cartographic_raster_v15.py scripts/test_trajectory_raster_v16.py scripts/test_editorial_verifier_v14.py scripts/benchmark_editorial_verify_v14.py
 python3 scripts/check_release_baseline.py
 python3 scripts/test_live_readiness.py
 python3 scripts/check_runtime_contract.py
@@ -66,8 +66,12 @@ python3 scripts/verify_fixture.py
 node scripts/test_content_addressing.mjs
 node scripts/test_stream_limits.mjs
 node scripts/test_cjk_viz.mjs
+node scripts/test_economy_names.mjs
+node scripts/test_range_bracket.mjs
 node scripts/test_viz.mjs
 node scripts/test_viz_snapshots.mjs
+node scripts/test_waffle_chart.mjs
+node scripts/test_choropleth.mjs
 node scripts/test_complex_viz.mjs
 node scripts/test_complex_snapshots.mjs
 node scripts/test_complex_realdata_viz.mjs
@@ -142,6 +146,7 @@ node scripts/test_editorial_archetypes_v14.mjs
 node scripts/test_art_direction_v14.mjs
 python3 scripts/test_explanatory_raster.py
 python3 scripts/test_infographic_preview.py runtime/pi/rasterize_svg.py scripts/mock_illustration_adapter.py
+python3 scripts/test_cjk_preview_raster.py
 node scripts/test_infographic.mjs
 node scripts/test_magazine_realdata.mjs
 node scripts/test_nasa_magazine_realdata.mjs
@@ -150,6 +155,7 @@ python3 scripts/test_nasa_award_raster_v14.py
 python3 scripts/test_infographic_raster.py
 python3 scripts/selftest_evaluator.py
 python3 scripts/test_integrity_adversarial.py
+python3 scripts/test_infographic_revision_rejected_manifest.py
 python3 scripts/test_editorial_verifier_v14.py
 python3 scripts/test_recompute_protocol.py
 python3 scripts/test_qualification_summary.py scripts/create_recompute_fixture.py

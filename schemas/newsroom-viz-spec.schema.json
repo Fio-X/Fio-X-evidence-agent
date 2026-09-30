@@ -72,7 +72,10 @@
         "geo_flow_map",
         "cartographic_flow_map",
         "trajectory_profile",
-        "process_schematic"
+        "process_schematic",
+        "waffle",
+        "choropleth",
+        "treemap"
       ]
     },
     "title": {
@@ -116,6 +119,12 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64
+    },
+    "decimals": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Explicit shared decimal count for this chart's value labels (end labels, dot/bar direct labels). Overrides the renderer's auto-picked default. Axis ticks are unaffected - they always use their own separate nice-number formatting."
     },
     "category_field": {
       "type": "string",
@@ -196,6 +205,19 @@
     "direct_labels": {
       "type": "boolean"
     },
+    "language": {
+      "enum": [
+        "en",
+        "zh"
+      ],
+      "description": "Chart language; defaults to 'en'. Renderer-added strings follow it."
+    },
+    "category_names": {
+      "enum": [
+        "worldbank",
+        "iso3"
+      ]
+    },
     "x_unit": {
       "type": "string",
       "maxLength": 64
@@ -256,6 +278,15 @@
     "parent_field": {
       "type": "string",
       "minLength": 1
+    },
+    "group_field": {
+      "type": "string",
+      "minLength": 1
+    },
+    "other_threshold_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 50
     },
     "x_scale": {
       "enum": [
@@ -452,6 +483,11 @@
     "speed_unit": {
       "type": "string",
       "maxLength": 64
+    },
+    "waffle_layout": {
+      "enum": [
+        "single_grid"
+      ]
     }
   },
   "$defs": {
@@ -465,7 +501,9 @@
         "type": {
           "enum": [
             "point",
-            "node"
+            "node",
+            "reference_line",
+            "range_bracket"
           ]
         },
         "text": {
@@ -486,6 +524,21 @@
             "string",
             "number",
             "integer"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "end_match_value": {
+          "type": [
+            "string",
+            "number",
+            "integer"
+          ]
+        },
+        "tone": {
+          "enum": [
+            "accent"
           ]
         }
       },
@@ -508,6 +561,42 @@
             "required": [
               "match_field",
               "match_value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "reference_line"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "range_bracket"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "match_field",
+              "match_value",
+              "end_match_value"
             ]
           }
         }
@@ -550,7 +639,9 @@
             "enum": [
               "horizontal_bar",
               "dot",
-              "diverging_bar"
+              "diverging_bar",
+              "waffle",
+              "treemap"
             ]
           }
         },
@@ -886,6 +977,29 @@
           "geometry_semantics",
           "geometry_crs",
           "projection",
+          "basemap_id",
+          "basemap_source_url",
+          "basemap_license",
+          "basemap_content_hash"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "choropleth"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "value_field",
+          "category_names",
           "basemap_id",
           "basemap_source_url",
           "basemap_license",

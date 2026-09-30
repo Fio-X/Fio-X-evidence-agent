@@ -78,6 +78,71 @@ fn format_number(value: f64) -> String {
     }
 }
 
+/// Round-number ticks inside `[start, stop]`, with the same 1/2/5 × 10^k step
+/// rule as d3-array's `ticks()` and `tickValues` in runtime/pi/viz.mjs, so
+/// gridlines land on values a reader expects instead of quarters of the data
+/// range. Values are built as `i * inc` or `i / inv` with integer `inv`, so a
+/// 0.2 step never yields 0.6000000000000001.
+fn tick_values(start: f64, stop: f64, count: usize) -> Vec<f64> {
+    let (start, stop) = (start.min(stop), start.max(stop));
+    if !start.is_finite() || !stop.is_finite() {
+        return vec![0.0];
+    }
+    if start == stop {
+        return vec![start];
+    }
+    let mut n = count.max(1) as f64;
+    for _ in 0..8 {
+        let step = (stop - start) / n;
+        let power = step.log10().floor() as i32;
+        let error = step / 10f64.powi(power);
+        let factor = if error >= 50f64.sqrt() {
+            10.0
+        } else if error >= 10f64.sqrt() {
+            5.0
+        } else if error >= 2f64.sqrt() {
+            2.0
+        } else {
+            1.0
+        };
+        let mut values = Vec::new();
+        if power >= 0 {
+            let inc = 10f64.powi(power) * factor;
+            let (mut i1, mut i2) = ((start / inc).round(), (stop / inc).round());
+            if i1 * inc < start {
+                i1 += 1.0;
+            }
+            if i2 * inc > stop {
+                i2 -= 1.0;
+            }
+            let mut i = i1;
+            while i <= i2 {
+                values.push(i * inc);
+                i += 1.0;
+            }
+        } else {
+            let inv = 10f64.powi(-power) / factor;
+            let (mut i1, mut i2) = ((start * inv).round(), (stop * inv).round());
+            if i1 / inv < start {
+                i1 += 1.0;
+            }
+            if i2 / inv > stop {
+                i2 -= 1.0;
+            }
+            let mut i = i1;
+            while i <= i2 {
+                values.push(i / inv);
+                i += 1.0;
+            }
+        }
+        if values.len() >= 2 {
+            return values;
+        }
+        n *= 2.0;
+    }
+    vec![start, stop]
+}
+
 /// Render an inline SVG fallback so the chart remains legible when the
 /// optional ECharts CDN cannot be reached. This is also the deterministic
 /// offline representation used by screenshot QA.
@@ -113,9 +178,7 @@ fn fallback_svg(chart_type: &str, labels: &[String], values: &[f64], title: &str
         muted = MUTED,
     );
 
-    for tick_index in 0..=4 {
-        let fraction = tick_index as f64 / 4.0;
-        let value = min_value + (max_value - min_value) * fraction;
+    for value in tick_values(min_value, max_value, 4) {
         let y = value_y(value);
         svg.push_str(&format!(
             r#"        <line x1="{LEFT:.2}" x2="{right:.2}" y1="{y:.2}" y2="{y:.2}" stroke="{grid}" stroke-width="1"/>
@@ -669,6 +732,40 @@ mod tests {
             .await
             .expect_err("missing values must be rejected");
         assert!(error.to_string().contains("data[0].value"));
+    }
+
+    #[test]
+    fn ticks_land_on_round_steps() {
+        let close = |actual: Vec<f64>, expected: &[f64]| {
+            assert_eq!(actual.len(), expected.len(), "{actual:?} vs {expected:?}");
+            for (a, e) in actual.iter().zip(expected) {
+                assert!((a - e).abs() < 1e-9, "{actual:?} vs {expected:?}");
+            }
+        };
+        close(tick_values(0.0, 96.3, 4), &[0.0, 20.0, 40.0, 60.0, 80.0]);
+        close(
+            tick_values(0.0, 100.0, 4),
+            &[0.0, 20.0, 40.0, 60.0, 80.0, 100.0],
+        );
+        close(tick_values(38.4, 61.6, 4), &[40.0, 45.0, 50.0, 55.0, 60.0]);
+        close(tick_values(0.0, 0.73, 4), &[0.0, 0.2, 0.4, 0.6]);
+        assert!(tick_values(-12.0, 30.0, 4).contains(&0.0));
+        assert_eq!(tick_values(5.0, 5.0, 4), vec![5.0]);
+        for tick in tick_values(0.0, 0.73, 4) {
+            assert_eq!(tick, (tick * 10.0).round() / 10.0, "float noise in {tick}");
+        }
+    }
+
+    #[test]
+    fn fallback_axis_labels_are_round() {
+        let labels: Vec<String> = ["A", "B", "C"].iter().map(|s| s.to_string()).collect();
+        let svg = fallback_svg("bar", &labels, &[96.3, 71.6, 19.6], "Shares");
+        let ticks: Vec<&str> = svg
+            .split("text-anchor=\"end\">")
+            .skip(1)
+            .map(|rest| rest.split('<').next().unwrap_or(""))
+            .collect();
+        assert_eq!(ticks, ["0", "20", "40", "60", "80"]);
     }
 
     #[test]

@@ -84,6 +84,29 @@ for row in registry['tools']:
         raise SystemExit(f"invalid capability class for {row['name']}: {row.get('capability_class')}")
     if not row.get('profiles'):
         raise SystemExit(f"tool has no visible profile: {row['name']}")
+
+# newsroom_chart wrote a manifest with no plan_ref/variants, bypassing lint,
+# render QA and critique entirely. It must stay registered in newsroom.ts
+# (removing the registerScopedTool call would violate the exact-order tool
+# surface drift check above) and keeps a non-empty canonical profiles list
+# (removing that would need its own carve-out of the "tool has no visible
+# profile" rule just above), but it is retired from every live profile via
+# agent_visible=false: the deterministic newsroom_viz_plan -> lint -> render
+# -> critic path is the only chart path now. Checked directly against the
+# canonical config/tool-registry.json and the generated Rust per-profile
+# lists, not by parsing the generated runtime/pi/tool_registry.mjs, so this
+# also catches the generator itself regressing to expose an
+# agent_visible=false tool.
+chart_row = next((row for row in registry['tools'] if row['name'] == 'newsroom_chart'), None)
+if chart_row is None:
+    raise SystemExit('newsroom_chart entry not found in config/tool-registry.json')
+if chart_row.get('agent_visible') is not False:
+    raise SystemExit('newsroom_chart must have agent_visible=false in config/tool-registry.json (legacy unlinted chart path is retired)')
+for profile in registry.get('profiles', []):
+    const_name = 'NEWSROOM_TOOLS_' + profile.upper().replace('-', '_')
+    profile_match = re.search(rf'pub const {const_name}: &str = "([^"]*)"', generated_rust)
+    if profile_match and 'newsroom_chart' in profile_match.group(1).split(','):
+        raise SystemExit(f'newsroom_chart must not appear in generated Rust {const_name} (legacy unlinted chart path is retired)')
 if 'adaptive_replanning_observed' not in audit or 'autonomous_execution_observed' not in audit:
     raise SystemExit('Rust audit is missing causal autonomy evidence fields')
 for core_tool in ['artifact_inventory','news_search','fetch_url','download_data','duckdb_query','record_claim']:
@@ -124,6 +147,17 @@ if not has_materializer_call('cartography_path', 'CARTOGRAPHY_RUNTIME') or not h
     raise SystemExit('cartography runtime/assets are embedded but not materialized')
 if './cartography.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import required runtime module cartography.mjs')
+
+# The vendored, provenance-recorded economy name table (zh display names for
+# World Bank country/aggregate rows) ships with the runtime exactly like the
+# Natural Earth/GSHHS geojson basemaps just above: embedded via include_str!
+# and materialized beside newsroom.ts, so a downstream consumer of the
+# materialized artifact_dir (not just this checked-out source tree) can still
+# resolve runtime/pi/economy_names.mjs's assets/economy-names.json read.
+if 'include_str!("../runtime/pi/assets/economy-names.json")' not in runtime:
+    raise SystemExit('economy-names.json asset is not embedded in the Rust runtime materializer')
+if not has_materializer_call('economy_names_asset_path', 'ECONOMY_NAMES_ASSET'):
+    raise SystemExit('economy-names.json is embedded but not materialized beside newsroom.ts')
 for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('provenance.mjs', 'PROVENANCE_RUNTIME', 'provenance_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
@@ -348,6 +382,54 @@ for marker in ['catalogLieflat', 'renderLieflatPublication', 'materializeLieflat
 for marker in ['newsroom_lieflat_catalog', 'newsroom_lieflat_render', 'visual-story']:
     if marker not in extension and marker not in generated_rust:
         raise SystemExit(f'missing Lieflat/story tool marker: {marker}')
+
+# T7: render-QA gate runtime modules must be embedded, materialized, and
+# imported by the code that actually calls them. render_qa.mjs is imported
+# directly by newsroom.ts; render_qa_geometry.mjs/render_qa_contrast.mjs are
+# pure check modules imported by render_qa.mjs itself, not by newsroom.ts.
+render_qa_runtime = (ROOT / 'runtime' / 'pi' / 'render_qa.mjs').read_text(encoding='utf-8')
+for module, const, path_var in [
+    ('render_qa.mjs', 'RENDER_QA_RUNTIME', 'render_qa_path'),
+    ('render_qa_geometry.mjs', 'RENDER_QA_GEOMETRY_RUNTIME', 'render_qa_geometry_path'),
+    ('render_qa_contrast.mjs', 'RENDER_QA_CONTRAST_RUNTIME', 'render_qa_contrast_path'),
+    ('render_qa_svg.mjs', 'RENDER_QA_SVG_RUNTIME', 'render_qa_svg_path'),
+]:
+    if f'include_str!("../runtime/pi/{module}")' not in runtime:
+        raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
+    if not has_materializer_call(path_var, const):
+        raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
+if './render_qa.mjs' not in extension:
+    raise SystemExit('newsroom.ts does not import required runtime module render_qa.mjs')
+for module in ['render_qa_geometry.mjs', 'render_qa_contrast.mjs']:
+    if f'./{module}' not in render_qa_runtime:
+        raise SystemExit(f'render_qa.mjs does not import required check module {module}')
+for module in ['render_qa_geometry.mjs', 'render_qa_contrast.mjs']:
+    if './render_qa_svg.mjs' not in (ROOT / 'runtime' / 'pi' / module).read_text(encoding='utf-8'):
+        raise SystemExit(f'{module} does not import the shared render_qa_svg.mjs primitives')
+for marker in ['runRenderQa', 'RENDER_QA_REPORT_SCHEMA_VERSION', 'svg_sha256']:
+    if marker not in render_qa_runtime:
+        raise SystemExit(f'missing render_qa.mjs contract marker: {marker}')
+for marker in ['render_qa_ref', 'REVISE: render QA', 'writeRejectedRender("visualizations"', 'writeRejectedRender("infographics"', 'newsroom_viz_critic', 'newsroom_infographic_critic']:
+    if marker not in extension:
+        raise SystemExit(f'missing render QA gate marker in newsroom.ts: {marker}')
+for marker in ['RENDER_QA_REPORT_SCHEMA_VERSION', 'fn verify_infographics', 'fn check_render_qa_ref']:
+    if marker not in verify_rs:
+        raise SystemExit(f'missing render QA verification marker in verify.rs: {marker}')
+
+# Every runtime module newsroom.ts reaches through static relative imports
+# must be embedded and materialized, or the materialized runtime cannot load.
+import_closure, pending = set(), ['newsroom.ts']
+while pending:
+    name = pending.pop()
+    if name in import_closure:
+        continue
+    import_closure.add(name)
+    source = (ROOT / 'runtime' / 'pi' / name).read_text(encoding='utf-8')
+    pending.extend(re.findall(r"""(?:from|import)\s*\(?\s*["']\./([^"']+)["']""", source))
+materialized_modules = set(re.findall(r'runtime_dir\.join\("([^"]+)"\)', runtime))
+unmaterialized = sorted(import_closure - {'newsroom.ts'} - materialized_modules)
+if unmaterialized:
+    raise SystemExit(f'runtime modules imported by newsroom.ts are not materialized: {unmaterialized}')
 
 print('runtime contract: PASS')
 print('allowlist/audit/tools/runtime materialization are aligned')
