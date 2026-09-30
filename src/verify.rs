@@ -1008,7 +1008,9 @@ fn label_body_text(body: &str) -> String {
         if let Some(gt_rel) = body[start_rel..].find('>') {
             let inner_start = start_rel + gt_rel + 1;
             if let Some(close_rel) = body[inner_start..].find("</tspan>") {
-                return body[inner_start..inner_start + close_rel].trim().to_string();
+                return body[inner_start..inner_start + close_rel]
+                    .trim()
+                    .to_string();
             }
         }
     }
@@ -1090,7 +1092,8 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     }
 
     let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for node in find_text_nodes_with_role(svg_text, &["choropleth-label", "choropleth-inset-label"]) {
+    for node in find_text_nodes_with_role(svg_text, &["choropleth-label", "choropleth-inset-label"])
+    {
         let Some(iso3) = attr_value(node.tag, "data-iso3") else {
             continue;
         };
@@ -1100,9 +1103,10 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             .push(label_body_text(node.body));
     }
     let mut values: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for node in
-        find_text_nodes_with_role(svg_text, &["choropleth-label-value", "choropleth-inset-label-value"])
-    {
+    for node in find_text_nodes_with_role(
+        svg_text,
+        &["choropleth-label-value", "choropleth-inset-label-value"],
+    ) {
         let Some(iso3) = attr_value(node.tag, "data-iso3") else {
             continue;
         };
@@ -3963,7 +3967,10 @@ mod tests {
     /// actually written - it always claims value_labels.passed: true,
     /// exactly as a report writer that never ran (or mis-ran) the JS
     /// checker would.
-    fn build_choropleth_svg_fixture(include_name_label: bool, include_value_label: bool) -> tempfile::TempDir {
+    fn build_choropleth_svg_fixture(
+        include_name_label: bool,
+        include_value_label: bool,
+    ) -> tempfile::TempDir {
         let temp = build_viz_fixture(true, true);
         let root = temp.path();
         let desktop_svg = choropleth_region_svg(include_name_label, include_value_label);
@@ -3988,28 +3995,46 @@ mod tests {
     #[test]
     fn choropleth_labels_from_svg_passes_when_every_region_is_labelled_once() {
         let svg = choropleth_region_svg(true, true);
-        assert_eq!(verify_choropleth_labels_from_svg(&svg), Vec::<String>::new());
+        assert_eq!(
+            verify_choropleth_labels_from_svg(&svg),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
     fn choropleth_labels_from_svg_fails_when_a_name_label_is_missing() {
         let svg = choropleth_region_svg(false, true);
         let failures = verify_choropleth_labels_from_svg(&svg);
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("name labels")), "{failures:?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("name labels")),
+            "{failures:?}"
+        );
     }
 
     #[test]
     fn choropleth_labels_from_svg_fails_when_a_value_label_is_missing() {
         let svg = choropleth_region_svg(true, false);
         let failures = verify_choropleth_labels_from_svg(&svg);
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("value labels")), "{failures:?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("value labels")),
+            "{failures:?}"
+        );
     }
 
     #[test]
     fn choropleth_labels_from_svg_fails_when_the_shown_number_disagrees_with_data_value() {
         let svg = choropleth_region_svg(true, true).replace("66.6%", "12.3%");
         let failures = verify_choropleth_labels_from_svg(&svg);
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("does not match")), "{failures:?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("does not match")),
+            "{failures:?}"
+        );
     }
 
     /// Review fix 7: a render_qa report that is genuinely, honestly
@@ -4024,10 +4049,9 @@ mod tests {
         let mut report = VerificationReport::default();
         verify_visualizations(temp.path(), &mut report).unwrap();
         assert!(
-            report
-                .errors
-                .iter()
-                .any(|e| e.contains("independent value-labels re-derivation failed") && e.contains("value labels")),
+            report.errors.iter().any(|e| e
+                .contains("independent value-labels re-derivation failed")
+                && e.contains("value labels")),
             "{:?}",
             report.errors
         );
