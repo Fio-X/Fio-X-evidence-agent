@@ -1,6 +1,7 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::ContinueArgs;
+use crate::commands::verify;
 use crate::pi::{run_prompt, PiConfig};
 use crate::{prompt, runtime};
 use anyhow::Result;
@@ -110,6 +111,8 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 persistence_started.elapsed().as_millis(),
                 run_started.elapsed().as_millis()
             );
+            let verified = verify::announce_post_run_verdict(&bundle.dir).await;
+            verify::exit_if_not_verified(verified);
             Ok(())
         }
         Err(error) => {
