@@ -560,6 +560,129 @@ impl InvestigationBundle {
         }
         Ok(gaps)
     }
+
+    /// `Some(reason)` unless a measured publication exists: a top-level
+    /// publication that is not a Lieflat page (Lieflat pages carry no
+    /// measured lint, critic or browser QA) and whose HTML is bound, by
+    /// `html_sha256`, to a PASSing `publications/qa/*/browser-qa.json`.
+    /// `newsroom_publication_qa` returns a non-error result both when QA
+    /// could not run and for a FAIL verdict, so a successful tool call is
+    /// not evidence; only this artifact-level binding is.
+    pub fn measured_publication_gap(&self) -> Result<Option<String>> {
+        let root = &self.dir;
+        let passing = passing_browser_qa_html_hashes(root)?;
+        let publications_dir = root.join("publications");
+        let mut lieflat_only = false;
+        if publications_dir.is_dir() {
+            for entry in fs::read_dir(&publications_dir)? {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir()
+                    || matches!(
+                        entry.file_name().to_str(),
+                        Some("plans" | "qa" | "rejected")
+                    )
+                {
+                    continue;
+                }
+                let Some(manifest) = read_manifest_json(&entry.path().join("manifest.json")) else {
+                    continue;
+                };
+                let Some(html_ref) = manifest.get("html_ref").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(html) = accept_ref(root, html_ref) else {
+                    continue;
+                };
+                let is_lieflat = manifest
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| kind.starts_with("lieflat"));
+                if is_lieflat {
+                    lieflat_only = true;
+                    continue;
+                }
+                if sha256_file(&root.join(&html)).is_ok_and(|hash| passing.contains(&hash)) {
+                    return Ok(None);
+                }
+            }
+        }
+        Ok(Some(if lieflat_only {
+            "only a Lieflat page exists: it carries no measured lint, critic or browser QA, so the measured publication with a PASSing browser-qa.json report is still missing".to_string()
+        } else {
+            "no publication with a PASSing browser-qa.json report bound to its HTML exists"
+                .to_string()
+        }))
+    }
+
+    /// The tool profile the most recent Pi invocation of this investigation
+    /// actually ran with: the last `newsroom_rpc_metrics` event in
+    /// `events.jsonl` whose `tool_profile` is a known profile, falling back
+    /// to the last `run-metrics.jsonl` row that lists exactly one. `None`
+    /// when nothing usable was recorded.
+    pub fn recorded_tool_profile(&self) -> Option<String> {
+        let known = |profile: &str| crate::tool_registry::tools_for_profile(profile).is_some();
+        let mut latest: Option<String> = None;
+        if let Ok(file) = fs::File::open(&self.events_path) {
+            for line in BufReader::new(file).lines().map_while(|line| line.ok()) {
+                let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
+                if event.get("type").and_then(Value::as_str) != Some("newsroom_rpc_metrics") {
+                    continue;
+                }
+                if let Some(profile) = event
+                    .get("tool_profile")
+                    .and_then(Value::as_str)
+                    .filter(|profile| known(profile))
+                {
+                    latest = Some(profile.to_string());
+                }
+            }
+        }
+        if latest.is_some() {
+            return latest;
+        }
+        let file = fs::File::open(&self.run_metrics_path).ok()?;
+        for line in BufReader::new(file).lines().map_while(|line| line.ok()) {
+            let Ok(row) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            let Some(profiles) = row
+                .pointer("/pi_rpc/tool_profiles")
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            if let [only] = profiles.as_slice() {
+                if let Some(profile) = only.as_str().filter(|profile| known(profile)) {
+                    latest = Some(profile.to_string());
+                }
+            }
+        }
+        latest
+    }
+}
+
+/// `html_sha256` of every PASSing `publications/qa/*/browser-qa.json`.
+fn passing_browser_qa_html_hashes(root: &Path) -> Result<std::collections::BTreeSet<String>> {
+    let mut hashes = std::collections::BTreeSet::new();
+    let qa_dir = root.join("publications/qa");
+    if !qa_dir.is_dir() {
+        return Ok(hashes);
+    }
+    for entry in fs::read_dir(&qa_dir)? {
+        let report_dir = entry?.path();
+        let Some(report) = read_manifest_json(&report_dir.join("browser-qa.json")) else {
+            continue;
+        };
+        if report.get("status").and_then(Value::as_str) != Some("PASS") {
+            continue;
+        }
+        if let Some(hash) = report.get("html_sha256").and_then(Value::as_str) {
+            hashes.insert(hash.to_string());
+        }
+    }
+    Ok(hashes)
 }
 
 fn read_rpc_metrics(path: &Path) -> Value {
@@ -1093,6 +1216,79 @@ mod tests {
             metrics["tool_profiles"],
             serde_json::json!(["investigate", "visual-story"])
         );
+    }
+
+    #[test]
+    fn recorded_tool_profile_is_the_latest_valid_profile() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "profile memory").unwrap();
+        assert_eq!(bundle.recorded_tool_profile(), None);
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual-story\"}\n",
+                "not json\n",
+                "{\"type\":\"turn_end\",\"tool_profile\":\"publication\"}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"no-such-profile\"}\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            bundle.recorded_tool_profile().as_deref(),
+            Some("visual-story")
+        );
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual-story\"}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual\"}\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(bundle.recorded_tool_profile().as_deref(), Some("visual"));
+    }
+
+    #[test]
+    fn measured_publication_needs_a_passing_browser_qa_binding() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "measured page").unwrap();
+        assert!(bundle.measured_publication_gap().unwrap().is_some());
+
+        // A Lieflat page never qualifies, even with a PASS report for its HTML.
+        let lieflat = bundle.dir.join("publications/lieflat");
+        fs::create_dir_all(&lieflat).unwrap();
+        fs::write(lieflat.join("index.html"), "<html>lieflat</html>").unwrap();
+        fs::write(
+            lieflat.join("manifest.json"),
+            r#"{"kind":"lieflat_publication","html_ref":"publications/lieflat/index.html"}"#,
+        )
+        .unwrap();
+        let write_qa = |key: &str, status: &str, html: &std::path::Path| {
+            let dir = bundle.dir.join("publications/qa").join(key);
+            fs::create_dir_all(&dir).unwrap();
+            let hash = crate::hash::sha256_file(html).unwrap();
+            fs::write(
+                dir.join("browser-qa.json"),
+                format!(r#"{{"status":"{status}","html_sha256":"{hash}"}}"#),
+            )
+            .unwrap();
+        };
+        write_qa("lieflat", "PASS", &lieflat.join("index.html"));
+        let gap = bundle.measured_publication_gap().unwrap().unwrap();
+        assert!(gap.contains("Lieflat"), "{gap}");
+
+        let measured = bundle.dir.join("publications/measured");
+        fs::create_dir_all(&measured).unwrap();
+        fs::write(measured.join("index.html"), "<html>measured</html>").unwrap();
+        fs::write(
+            measured.join("manifest.json"),
+            r#"{"kind":"publication","html_ref":"publications/measured/index.html"}"#,
+        )
+        .unwrap();
+        write_qa("measured", "FAIL", &measured.join("index.html"));
+        assert!(bundle.measured_publication_gap().unwrap().is_some());
+        write_qa("measured", "PASS", &measured.join("index.html"));
+        assert_eq!(bundle.measured_publication_gap().unwrap(), None);
     }
 
     #[test]
