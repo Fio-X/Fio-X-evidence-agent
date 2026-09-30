@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EVALUATOR = ROOT / "scripts" / "evaluate_artifact.py"
-from verify_artifact import infographic_immutable_hash
+from verify_artifact import infographic_immutable_hash, verify as verify_integrity
 
 
 def canonical(value):
@@ -39,6 +39,27 @@ def sha_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_RENDER_QA_MODULE = (ROOT / "runtime" / "pi" / "render_qa.mjs").as_posix()
+
+
+def run_render_qa(desktop_svg: str, mobile_svg: str) -> dict:
+    """Produces a render QA report by invoking the real runtime/pi/render_qa.mjs
+    module through Node, never by hand-typing the report JSON. render_qa.mjs and
+    the geometry/contrast checkers it imports are dependency-free ESM modules,
+    so this needs no npm install and makes no network call."""
+    script = (
+        "import { runRenderQa } from " + json.dumps(_RENDER_QA_MODULE) + ";\n"
+        "const desktop = " + json.dumps(desktop_svg) + ";\n"
+        "const mobile = " + json.dumps(mobile_svg) + ";\n"
+        "process.stdout.write(JSON.stringify(runRenderQa({ desktop, mobile })));\n"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-"],
+        input=script, capture_output=True, text=True, check=True,
+    )
+    return json.loads(result.stdout)
+
+
 def write_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
@@ -49,8 +70,8 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def build_valid(root: Path):
-    for child in ("data", "sources", "computations", "visualizations/plans", "visualizations/lints", "visualizations/critics", "infographics/plans", "infographics/lints", "infographics/critics", "session"):
+def build_valid(root: Path, mobile_page: bool = True):
+    for child in ("data", "sources", "computations", "visualizations/plans", "visualizations/lints", "visualizations/critics", "visualizations/qa", "infographics/plans", "infographics/lints", "infographics/critics", "infographics/qa", "session"):
         (root / child).mkdir(parents=True, exist_ok=True)
     for name, text in {
         "prompt.md": "Investigate fixture\n",
@@ -100,9 +121,31 @@ def build_valid(root: Path):
     write_json(root / plan_ref, {"claim_id": claim_id, "chart_type": "horizontal_bar", "title": "Fixture", "sql": "select country,value"})
     write_json(root / lint_ref, {"passed": True, "plan_ref": plan_ref, "computation_ref": comp_ref, "data_hash": result_hash, "blockers": []})
     svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img"><title>Fixture chart</title><desc>Accessible fixture chart for integrity tests.</desc><rect width="640" height="400" fill="white"/><text x="20" y="40">Source: fixture</text></svg>\n'
+    mobile_svg = svg.replace("640 400", "480 400")
     write_text(root / desktop_ref, svg)
-    write_text(root / mobile_ref, svg.replace("640 400", "480 400"))
-    write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": claim_id, "data_hash": result_hash, "variants": {"desktop": desktop_ref, "mobile": mobile_ref}})
+    if mobile_page:
+        write_text(root / mobile_ref, mobile_svg)
+    chart_variants = {"desktop": desktop_ref, "mobile": mobile_ref} if mobile_page else {"desktop": desktop_ref}
+    chart_render_qa_ref = "visualizations/qa/chart.json"
+    chart_render_qa = run_render_qa(svg, mobile_svg)
+    if mobile_page:
+        final_chart_render_qa = chart_render_qa
+    else:
+        # Same reasoning as the infographic page above: runRenderQa still
+        # requires a `mobile` SVG string at this commit, so this keeps only
+        # the real, checker-computed desktop viewport rather than a
+        # hand-typed pass/fail for a call it cannot yet make.
+        chart_desktop_viewport = chart_render_qa["viewports"]["desktop"]
+        final_chart_render_qa = {
+            "schema_version": chart_render_qa["schema_version"],
+            "geometry_check_version": chart_render_qa["geometry_check_version"],
+            "contrast_check_version": chart_render_qa["contrast_check_version"],
+            "passed": chart_desktop_viewport["passed"],
+            "failure_count": len(chart_desktop_viewport["geometry"]["failures"]) + len(chart_desktop_viewport["contrast"]["failures"]),
+            "viewports": {"desktop": chart_desktop_viewport},
+        }
+    write_json(root / chart_render_qa_ref, final_chart_render_qa)
+    write_json(root / manifest_ref, {"schema_version": "0.7.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": claim_id, "data_hash": result_hash, "variants": chart_variants, "render_qa_ref": chart_render_qa_ref, "render_qa": {"passed": final_chart_render_qa["passed"], "failure_count": final_chart_render_qa["failure_count"]}})
     write_json(root / "visualizations/critics/chart.json", {"passed": True, "score": 98, "manifest_ref": manifest_ref})
 
     expl_plan_ref = "visualizations/illustrations/plans/page.json"
@@ -115,8 +158,12 @@ def build_valid(root: Path):
     write_json(root / expl_lint_ref, {"schema_version": "0.1.0", "passed": True, "plan_ref": expl_plan_ref, "blockers": []})
     expl_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 600" role="img" data-explainer-version="0.1.0"><title>Fixture explainer</title><desc>A schematic explanatory graphic fixture with accessible labels.</desc><rect width="1040" height="600" fill="white"/><text x="40" y="80">Input</text><text x="40" y="130">Output</text><text x="40" y="560">SCHEMATIC / NOT TO SCALE</text></svg>\n'
     expl_mobile_svg = expl_svg.replace('1040 600', '640 700').replace('width="1040" height="600"', 'width="640" height="700"')
-    write_text(root / expl_desktop_ref, expl_svg); write_text(root / expl_mobile_ref, expl_mobile_svg)
-    write_json(root / expl_manifest_ref, {"schema_version": "0.1.0", "plan_ref": expl_plan_ref, "lint_ref": expl_lint_ref, "title": "Fixture explainer", "alt": "A schematic cutaway fixture used to test explanatory graphic integrity.", "view": "cutaway", "source_note": "Fixture source", "claim_ids": [claim_id], "not_to_scale": True, "variants": {"desktop": expl_desktop_ref, "mobile": expl_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(expl_svg.encode()), "mobile_sha256": sha_bytes(expl_mobile_svg.encode())}})
+    write_text(root / expl_desktop_ref, expl_svg)
+    if mobile_page:
+        write_text(root / expl_mobile_ref, expl_mobile_svg)
+    expl_variants = {"desktop": expl_desktop_ref, "mobile": expl_mobile_ref} if mobile_page else {"desktop": expl_desktop_ref}
+    expl_hashes = {"desktop_sha256": sha_bytes(expl_svg.encode()), "mobile_sha256": sha_bytes(expl_mobile_svg.encode())} if mobile_page else {"desktop_sha256": sha_bytes(expl_svg.encode())}
+    write_json(root / expl_manifest_ref, {"schema_version": "0.1.0", "plan_ref": expl_plan_ref, "lint_ref": expl_lint_ref, "title": "Fixture explainer", "alt": "A schematic cutaway fixture used to test explanatory graphic integrity.", "view": "cutaway", "source_note": "Fixture source", "claim_ids": [claim_id], "not_to_scale": True, "variants": expl_variants, "hashes": expl_hashes})
     write_json(root / expl_critic_ref, {"schema_version": "0.1.0", "passed": True, "score": 96, "manifest_ref": expl_manifest_ref})
 
     rich_plan_ref = "visualizations/illustrations/plans/rich.json"
@@ -129,8 +176,12 @@ def build_valid(root: Path):
     write_json(root / rich_lint_ref, {"schema_version": "0.2.0", "passed": True, "plan_ref": rich_plan_ref, "blockers": []})
     rich_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" data-rich-illustration-version="0.2.0" data-origin="generative_ai" data-digital-source-type="trainedAlgorithmicMedia"><title>Fixture rich illustration</title><desc>A provenance-aware responsive editorial illustration fixture.</desc><rect width="1200" height="700" fill="white"/><circle cx="420" cy="350" r="160" fill="#d9dde1"/><path d="M 580 260 L 940 350 L 580 440 Z" fill="#c9473d"/></svg>\n'
     rich_mobile_svg = rich_svg.replace('1200 700', '640 760').replace('width="1200" height="700"', 'width="640" height="760"')
-    write_text(root / rich_desktop_ref, rich_svg); write_text(root / rich_mobile_ref, rich_mobile_svg)
-    write_json(root / rich_manifest_ref, {"schema_version": "0.2.0", "kind": "rich_illustration", "plan_ref": rich_plan_ref, "lint_ref": rich_lint_ref, "title": "Fixture rich illustration", "alt": "A provenance-aware editorial illustration used to test responsive rich illustration integrity.", "source_note": "Fixture source", "credit": "Synthetic fixture", "claim_ids": [claim_id], "evidence_refs": [source_ref, comp_ref], "origin_policy": "ai_disclosed", "not_to_scale": False, "variants": {"desktop": rich_desktop_ref, "mobile": rich_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(rich_svg.encode()), "mobile_sha256": sha_bytes(rich_mobile_svg.encode())}, "provenance": {"origin": "generative_ai", "digital_source_type": "trainedAlgorithmicMedia", "provider": "fixture-provider", "model": "fixture-image-model", "version": "1", "disclosure": "AI-generated illustration for a synthetic integrity fixture.", "request_hash": "a" * 64, "evidence_snapshot_hash": "b" * 64}})
+    write_text(root / rich_desktop_ref, rich_svg)
+    if mobile_page:
+        write_text(root / rich_mobile_ref, rich_mobile_svg)
+    rich_variants = {"desktop": rich_desktop_ref, "mobile": rich_mobile_ref} if mobile_page else {"desktop": rich_desktop_ref}
+    rich_hashes = {"desktop_sha256": sha_bytes(rich_svg.encode()), "mobile_sha256": sha_bytes(rich_mobile_svg.encode())} if mobile_page else {"desktop_sha256": sha_bytes(rich_svg.encode())}
+    write_json(root / rich_manifest_ref, {"schema_version": "0.2.0", "kind": "rich_illustration", "plan_ref": rich_plan_ref, "lint_ref": rich_lint_ref, "title": "Fixture rich illustration", "alt": "A provenance-aware editorial illustration used to test responsive rich illustration integrity.", "source_note": "Fixture source", "credit": "Synthetic fixture", "claim_ids": [claim_id], "evidence_refs": [source_ref, comp_ref], "origin_policy": "ai_disclosed", "not_to_scale": False, "variants": rich_variants, "hashes": rich_hashes, "provenance": {"origin": "generative_ai", "digital_source_type": "trainedAlgorithmicMedia", "provider": "fixture-provider", "model": "fixture-image-model", "version": "1", "disclosure": "AI-generated illustration for a synthetic integrity fixture.", "request_hash": "a" * 64, "evidence_snapshot_hash": "b" * 64}})
     write_json(root / rich_critic_ref, {"schema_version": "0.2.0", "passed": True, "score": 98, "manifest_ref": rich_manifest_ref, "origin": "generative_ai", "digital_source_type": "trainedAlgorithmicMedia"})
 
     source_info_plan_ref = "infographics/plans/page-before.json"
@@ -159,12 +210,49 @@ def build_valid(root: Path):
     write_json(root / source_info_lint_ref, {"schema_version": "1.2.0", "passed": True, "plan_ref": source_info_plan_ref, "blockers": []})
     write_json(root / info_lint_ref, {"schema_version": "1.2.0", "passed": True, "plan_ref": info_plan_ref, "blockers": []})
     info_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1200" role="img" data-infographic-version="1.2.0"><title>Fixture magazine feature</title><desc>Accessible magazine infographic fixture with multiple verified visuals.</desc><rect width="1440" height="1200" fill="white"/><text x="40" y="80">Magazine fixture</text><rect x="40" y="120" width="360" height="180" fill="#f2f3f4"/><text x="60" y="170">Verified hero statistic</text><rect x="430" y="120" width="930" height="420" fill="#ffffff" stroke="#d9dde1"/><text x="460" y="170">Embedded verified visualization one</text><rect x="40" y="570" width="1320" height="420" fill="#ffffff" stroke="#d9dde1"/><text x="70" y="620">Embedded verified visualization two with responsive composition and source provenance.</text><text x="70" y="670">This synthetic page is intentionally verbose enough to exercise the magazine artifact verifier.</text><g data-rich-illustration-version="0.2.0"><rect x="70" y="720" width="280" height="160" fill="#f4f2ee"/></g><rect data-role="illustration-credit" x="70" y="890" width="1" height="1" fill="none"/><text x="70" y="910">Synthetic fixture · AI-generated illustration disclosed.</text><text x="40" y="1140">SOURCES &amp; METHODS</text></svg>\n'
-    info_mobile_svg = info_svg.replace('1440 1200', '720 1400').replace('width="1440" height="1200"', 'width="720" height="1400"')
-    for ref, text in [(source_info_desktop_ref, info_svg), (source_info_mobile_ref, info_mobile_svg), (info_desktop_ref, info_svg), (info_mobile_ref, info_mobile_svg)]:
-        write_text(root / ref, text)
+    # The mobile variant is authored as its own single-column reflow rather
+    # than a naive viewBox substitution: reusing the desktop's two-column
+    # absolute coordinates in a narrower viewBox pushed text outside the
+    # frame, which the render QA geometry check (correctly) rejects.
+    info_mobile_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1560" role="img" data-infographic-version="1.2.0"><title>Fixture magazine feature</title><desc>Accessible magazine infographic fixture with multiple verified visuals.</desc><rect width="720" height="1560" fill="white"/><text x="40" y="60">Magazine fixture</text><rect x="40" y="90" width="640" height="150" fill="#f2f3f4"/><text x="60" y="140">Verified hero statistic</text><rect x="40" y="260" width="640" height="300" fill="#ffffff" stroke="#d9dde1"/><text x="60" y="310">Embedded verified visualization one</text><rect x="40" y="580" width="640" height="340" fill="#ffffff" stroke="#d9dde1"/><text x="60" y="630">Verified visualization two, responsive.</text><text x="60" y="670">Exercises the magazine artifact verifier.</text><g data-rich-illustration-version="0.2.0"><rect x="60" y="940" width="280" height="160" fill="#f4f2ee"/></g><rect data-role="illustration-credit" x="60" y="1120" width="1" height="1" fill="none"/><text x="60" y="1140">Synthetic fixture: AI-generated illustration.</text><text x="40" y="1520">SOURCES &amp; METHODS</text></svg>\n'
+    write_text(root / source_info_desktop_ref, info_svg)
+    write_text(root / source_info_mobile_ref, info_mobile_svg)
+    write_text(root / info_desktop_ref, info_svg)
+    if mobile_page:
+        write_text(root / info_mobile_ref, info_mobile_svg)
     info_hashes = {"desktop_sha256": sha_bytes(info_svg.encode()), "mobile_sha256": sha_bytes(info_mobile_svg.encode())}
-    source_manifest = {"schema_version": "1.2.0", "plan_ref": source_info_plan_ref, "lint_ref": source_info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": [claim_id], "variants": {"desktop": source_info_desktop_ref, "mobile": source_info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True}
-    final_manifest = {"schema_version": "1.2.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": [claim_id], "variants": {"desktop": info_desktop_ref, "mobile": info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True}
+    # The "before" page (used by the revision/preflight pipeline below) always
+    # keeps both variants; only the final page varies with mobile_page, which
+    # is all these new desktop-only tests need to exercise.
+    final_variants = {"desktop": info_desktop_ref, "mobile": info_mobile_ref} if mobile_page else {"desktop": info_desktop_ref}
+    final_hashes = info_hashes if mobile_page else {"desktop_sha256": info_hashes["desktop_sha256"]}
+    info_render_qa_ref = "infographics/qa/page.json"
+    source_info_render_qa_ref = "infographics/qa/page-before.json"
+    info_render_qa = run_render_qa(info_svg, info_mobile_svg)
+    write_json(root / source_info_render_qa_ref, info_render_qa)
+    if mobile_page:
+        final_info_render_qa = info_render_qa
+    else:
+        # Mirrors what the runtime writes with NEWSROOM_MOBILE_PAGES off: a
+        # render QA report covering the desktop viewport alone. runRenderQa
+        # itself still requires a `mobile` SVG string at this commit (see
+        # runtime/pi/render_qa.mjs), so rather than hand-typing a pass/fail
+        # for a call it cannot yet make, this keeps only the desktop
+        # viewport already produced above by the real checker.
+        desktop_viewport = info_render_qa["viewports"]["desktop"]
+        final_info_render_qa = {
+            "schema_version": info_render_qa["schema_version"],
+            "geometry_check_version": info_render_qa["geometry_check_version"],
+            "contrast_check_version": info_render_qa["contrast_check_version"],
+            "passed": desktop_viewport["passed"],
+            "failure_count": len(desktop_viewport["geometry"]["failures"]) + len(desktop_viewport["contrast"]["failures"]),
+            "viewports": {"desktop": desktop_viewport},
+        }
+    write_json(root / info_render_qa_ref, final_info_render_qa)
+    info_render_qa_summary = {"passed": info_render_qa["passed"], "failure_count": info_render_qa["failure_count"]}
+    final_render_qa_summary = {"passed": final_info_render_qa["passed"], "failure_count": final_info_render_qa["failure_count"]}
+    source_manifest = {"schema_version": "1.2.0", "plan_ref": source_info_plan_ref, "lint_ref": source_info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": [claim_id], "variants": {"desktop": source_info_desktop_ref, "mobile": source_info_mobile_ref}, "hashes": info_hashes, "visual_review_required": True, "render_qa_ref": source_info_render_qa_ref, "render_qa": info_render_qa_summary}
+    final_manifest = {"schema_version": "1.2.0", "plan_ref": info_plan_ref, "lint_ref": info_lint_ref, "visual_manifest_refs": [manifest_ref, manifest_ref], "illustration_manifest_refs": [expl_manifest_ref, rich_manifest_ref], "claim_ids": [claim_id], "variants": final_variants, "hashes": final_hashes, "visual_review_required": True, "render_qa_ref": info_render_qa_ref, "render_qa": final_render_qa_summary}
     write_json(root / source_info_manifest_ref, source_manifest)
     write_json(root / info_manifest_ref, final_manifest)
     rubric = {"impact_story_focus": 96, "engagement": 94, "clarity_information_flow": 98, "effectiveness": 96, "hierarchy": 95, "editorial_rhythm": 94, "inclusion_accessibility": 98, "responsive_execution": 98, "craft_geometry": 94, "originality_variety": 90}
@@ -177,13 +265,18 @@ def build_valid(root: Path):
     source_preview_mobile_ref = "infographics/previews/mobile-before.png"
     preview_desktop_ref = "infographics/previews/desktop.png"
     preview_mobile_ref = "infographics/previews/mobile.png"
-    for ref in (source_preview_desktop_ref, source_preview_mobile_ref, preview_desktop_ref, preview_mobile_ref):
+    preview_refs = [source_preview_desktop_ref, source_preview_mobile_ref, preview_desktop_ref]
+    if mobile_page:
+        preview_refs.append(preview_mobile_ref)
+    for ref in preview_refs:
         (root / ref).parent.mkdir(parents=True, exist_ok=True)
         (root / ref).write_bytes(png)
     source_preview_ref = "infographics/previews/page-before.json"
     preview_ref = "infographics/previews/page.json"
+    final_preview_variants = {"desktop": preview_desktop_ref, "mobile": preview_mobile_ref} if mobile_page else {"desktop": preview_desktop_ref}
+    final_preview_hashes = {"desktop_sha256": sha_bytes(png), "mobile_sha256": sha_bytes(png)} if mobile_page else {"desktop_sha256": sha_bytes(png)}
     write_json(root / source_preview_ref, {"schema_version": "0.1.0", "kind": "infographic_visual_preview", "manifest_ref": source_info_manifest_ref, "deterministic_critic_ref": source_deterministic_critic_ref, "source_hashes": info_hashes, "variants": {"desktop": source_preview_desktop_ref, "mobile": source_preview_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(png), "mobile_sha256": sha_bytes(png)}, "rasterizer": {"engine": "fixture"}})
-    write_json(root / preview_ref, {"schema_version": "0.1.0", "kind": "infographic_visual_preview", "manifest_ref": info_manifest_ref, "deterministic_critic_ref": deterministic_critic_ref, "source_hashes": info_hashes, "variants": {"desktop": preview_desktop_ref, "mobile": preview_mobile_ref}, "hashes": {"desktop_sha256": sha_bytes(png), "mobile_sha256": sha_bytes(png)}, "rasterizer": {"engine": "fixture"}})
+    write_json(root / preview_ref, {"schema_version": "0.1.0", "kind": "infographic_visual_preview", "manifest_ref": info_manifest_ref, "deterministic_critic_ref": deterministic_critic_ref, "source_hashes": final_hashes, "variants": final_preview_variants, "hashes": final_preview_hashes, "rasterizer": {"engine": "fixture"}})
     vision_rubric = {"hierarchy": 92, "legibility": 94, "composition": 91, "visual_coherence": 93, "typography": 90, "source_legibility": 94, "responsive_quality": 92, "illustration_integration": 90, "color_contrast": 95, "editorial_distinctiveness": 88}
     source_vision_critic_ref = "infographics/vision-critics/page-before.json"
     vision_critic_ref = "infographics/vision-critics/page.json"
@@ -202,8 +295,18 @@ def build_valid(root: Path):
         "datasets": [data_ref, f"{data_ref}.meta.json"],
         "computations": [comp_ref],
         "claims": [{"claim_id": claim_id, "status": "verified"}],
-        "visualizations": [plan_ref, lint_ref, manifest_ref, desktop_ref, mobile_ref, "visualizations/critics/chart.json", expl_plan_ref, expl_lint_ref, expl_manifest_ref, expl_desktop_ref, expl_mobile_ref, expl_critic_ref, rich_plan_ref, rich_lint_ref, rich_manifest_ref, rich_desktop_ref, rich_mobile_ref, rich_critic_ref],
-        "infographics": [source_info_plan_ref, source_info_lint_ref, source_info_manifest_ref, source_info_desktop_ref, source_info_mobile_ref, source_deterministic_critic_ref, source_preview_ref, source_preview_desktop_ref, source_preview_mobile_ref, source_vision_critic_ref, info_plan_ref, info_lint_ref, info_manifest_ref, info_desktop_ref, info_mobile_ref, deterministic_critic_ref, preview_ref, preview_desktop_ref, preview_mobile_ref, vision_critic_ref, revision_ref, preflight_ref],
+        "visualizations": [plan_ref, lint_ref, manifest_ref, desktop_ref]
+        + ([mobile_ref] if mobile_page else [])
+        + [chart_render_qa_ref, "visualizations/critics/chart.json", expl_plan_ref, expl_lint_ref, expl_manifest_ref, expl_desktop_ref]
+        + ([expl_mobile_ref] if mobile_page else [])
+        + [expl_critic_ref, rich_plan_ref, rich_lint_ref, rich_manifest_ref, rich_desktop_ref]
+        + ([rich_mobile_ref] if mobile_page else [])
+        + [rich_critic_ref],
+        "infographics": [source_info_plan_ref, source_info_lint_ref, source_info_manifest_ref, source_info_desktop_ref, source_info_mobile_ref, source_info_render_qa_ref, source_deterministic_critic_ref, source_preview_ref, source_preview_desktop_ref, source_preview_mobile_ref, source_vision_critic_ref, info_plan_ref, info_lint_ref, info_manifest_ref, info_desktop_ref]
+        + ([info_mobile_ref] if mobile_page else [])
+        + [info_render_qa_ref, deterministic_critic_ref, preview_ref, preview_desktop_ref]
+        + ([preview_mobile_ref] if mobile_page else [])
+        + [vision_critic_ref, revision_ref, preflight_ref],
     }
     write_json(root / "story.json", {
         "schema_version": "0.7.0", "id": "synthetic", "kind": "investigation", "created_at": "2026-09-12T00:00:00Z", "updated_at": "2026-09-12T00:00:00Z", "topic": "fixture", "status": "draft",
@@ -212,6 +315,105 @@ def build_valid(root: Path):
         "autonomy": {"persistent_session": True, "session_resumed": True, "multi_turn_context": True, "observable_planning": True, "agent_loop_observed": True, "autonomous_execution_observed": True, "adaptive_replanning_observed": True, "tool_failure_recovery_observed": True, "follow_up_replanning_observed": True, "user_messages": 2, "turns": 3, "tool_calls": 12, "capability_tool_calls": 11, "successful_capability_tool_calls": 10, "distinct_tools": 11, "distinct_capability_classes": 4, "plan_revisions": 2, "successful_plan_calls": 2, "follow_up_goals": 1, "failed_tool_calls": 1, "automatic_retries": 0},
         "evidence": evidence,
     })
+
+
+def assert_integrity_accepted(report) -> None:
+    assert report.passed, f"expected a clean integrity report, got {report.errors}"
+
+
+def assert_integrity_rejected(report, needle: str) -> None:
+    assert not report.passed, f"expected the artifact to be rejected (looking for {needle!r})"
+    assert any(needle in error for error in report.errors), f"expected an error containing {needle!r}, got {report.errors}"
+
+
+def check_desktop_only_infographic_page_verifies() -> None:
+    """What the runtime writes with NEWSROOM_MOBILE_PAGES off: the page
+    manifest, its render QA report and its preview all cover the desktop
+    viewport alone, consistently. verify_artifact.py must still accept it."""
+    with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-desktop-only-") as tmp:
+        root = Path(tmp)
+        build_valid(root, mobile_page=False)
+        assert_integrity_accepted(verify_integrity(root))
+
+
+def check_desktop_only_preview_with_a_mobile_png_is_rejected() -> None:
+    """A page's preview must list exactly the page's own variants; one that
+    still lists a mobile PNG for an otherwise desktop-only page is rejected,
+    even though that PNG is itself well-formed and correctly hashed."""
+    with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-preview-mismatch-") as tmp:
+        root = Path(tmp)
+        build_valid(root, mobile_page=False)
+        preview_path = root / "infographics/previews/page.json"
+        preview = json.loads(preview_path.read_text())
+        mobile_png_ref = "infographics/previews/mobile.png"
+        (root / mobile_png_ref).write_bytes((root / preview["variants"]["desktop"]).read_bytes())
+        preview["variants"]["mobile"] = mobile_png_ref
+        preview["hashes"]["mobile_sha256"] = preview["hashes"]["desktop_sha256"]
+        write_json(preview_path, preview)
+        assert_integrity_rejected(verify_integrity(root), "preview variants do not match the page variants")
+
+
+def check_infographic_hash_without_a_variant_is_rejected() -> None:
+    """hashes.mobile_sha256 without a matching mobile variant is rejected,
+    even on a page that is otherwise a valid desktop-only page."""
+    with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-orphan-hash-") as tmp:
+        root = Path(tmp)
+        build_valid(root, mobile_page=False)
+        manifest_path = root / "infographics/page.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["hashes"]["mobile_sha256"] = manifest["hashes"]["desktop_sha256"]
+        write_json(manifest_path, manifest)
+        assert_integrity_rejected(verify_integrity(root), "has hashes.mobile_sha256 without a mobile variant")
+
+
+def check_infographic_unknown_variant_is_rejected() -> None:
+    """A page manifest may list only desktop and mobile; any other variant
+    name is rejected."""
+    with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-unknown-variant-") as tmp:
+        root = Path(tmp)
+        build_valid(root, mobile_page=False)
+        manifest_path = root / "infographics/page.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["variants"]["tablet"] = manifest["variants"]["desktop"]
+        write_json(manifest_path, manifest)
+        assert_integrity_rejected(verify_integrity(root), "lists an unknown variant: ['tablet']")
+
+
+def check_desktop_only_chart_unknown_variant_is_rejected() -> None:
+    """A chart manifest may list only desktop and mobile; any other variant
+    name is rejected, even on an otherwise valid desktop-only chart."""
+    with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-chart-unknown-variant-") as tmp:
+        root = Path(tmp)
+        build_valid(root, mobile_page=False)
+        manifest_path = root / "visualizations/chart.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["variants"]["tablet"] = manifest["variants"]["desktop"]
+        write_json(manifest_path, manifest)
+        assert_integrity_rejected(verify_integrity(root), "lists an unknown variant: ['tablet']")
+
+
+def check_illustration_hash_without_a_variant_is_rejected() -> None:
+    """hashes.mobile_sha256 without a matching mobile variant is rejected for
+    an illustration, even on one that is otherwise a valid desktop-only
+    illustration."""
+    with tempfile.TemporaryDirectory(prefix="newsroom-evaluator-illustration-orphan-hash-") as tmp:
+        root = Path(tmp)
+        build_valid(root, mobile_page=False)
+        manifest_path = root / "visualizations/illustrations/page.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["hashes"]["mobile_sha256"] = manifest["hashes"]["desktop_sha256"]
+        write_json(manifest_path, manifest)
+        assert_integrity_rejected(verify_integrity(root), "has hashes.mobile_sha256 without a mobile variant")
+
+
+DESKTOP_ONLY_CASES = [
+    ("desktop-only infographic page verifies", check_desktop_only_infographic_page_verifies),
+    ("desktop-only preview listing a mobile PNG is rejected", check_desktop_only_preview_with_a_mobile_png_is_rejected),
+    ("infographic hash without a matching variant is rejected", check_infographic_hash_without_a_variant_is_rejected),
+    ("infographic unknown variant is rejected", check_infographic_unknown_variant_is_rejected),
+    ("desktop-only chart unknown variant is rejected", check_desktop_only_chart_unknown_variant_is_rejected),
+    ("illustration hash without a matching variant is rejected", check_illustration_hash_without_a_variant_is_rejected),
+]
 
 
 def main() -> int:
@@ -233,6 +435,14 @@ def main() -> int:
             print(fake.stdout)
             print("FAIL: adversarial missing provenance still passed evaluator", file=sys.stderr)
             return 3
+
+    for label, check in DESKTOP_ONLY_CASES:
+        try:
+            check()
+        except AssertionError as exc:
+            print(f"FAIL: {label}: {exc}", file=sys.stderr)
+            return 4
+        print(f"PASS: {label}")
 
     print("PASS: evaluator accepts valid artifact and rejects missing-provenance adversary")
     return 0

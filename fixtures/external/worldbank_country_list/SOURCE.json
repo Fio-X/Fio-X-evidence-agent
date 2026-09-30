@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.1.0",
+  "dataset": "World Bank country and region (English and Simplified Chinese) classification list",
+  "upstream_lineage": "World Bank Countries and Lending Groups API (v2), the same classification used by World Bank Open Data indicators; fetched directly (public API, no credentials) and vendored verbatim so the newsroom's zh economy-name lookup is offline and reproducible.",
+  "official_source_url": "https://api.worldbank.org/v2/country?format=json&per_page=400",
+  "terms_url": "https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets",
+  "license": "CC BY 4.0",
+  "credit": "The World Bank",
+  "use_limit": "Country/region display names and classification groupings only. Not used for any indicator value.",
+  "files": [
+    {
+      "file": "wb-country-en.json",
+      "url": "https://api.worldbank.org/v2/country?format=json&per_page=400",
+      "retrieved_at": "2026-09-28T17:18:41Z",
+      "bytes": 113590,
+      "sha256": "d29d57f8adf954c5e2a1520a02fb2c7b45575d8db3bd327a9dff47d66914231c"
+    },
+    {
+      "file": "wb-country-zh.json",
+      "url": "https://api.worldbank.org/v2/zh/country?format=json&per_page=400",
+      "retrieved_at": "2026-09-28T17:18:44Z",
+      "bytes": 112475,
+      "sha256": "a27d8b5480bf7c0bbfbfdf15a0d63e118ba322f6f6b5a6765fa67226c9ea7edf"
+    }
+  ],
+  "additional_component": {
+    "name": "Unicode CLDR region display names (zh-Hans)",
+    "description": "scripts/build_economy_names.mjs derives most economies' zh display name from Node's bundled ICU/CLDR data via Intl.DisplayNames(['zh-Hans'],{type:'region'}), falling back to the World Bank zh name above only where CLDR has no entry. Node's bundled CLDR version is recorded in runtime/pi/assets/economy-names.json's header at build time.",
+    "license": "Unicode License v3",
+    "terms_url": "https://www.unicode.org/license.txt"
+  }
+}

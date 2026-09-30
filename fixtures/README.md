@@ -33,3 +33,7 @@ This fixture is for offline regression and reasoning tests. The competition demo
 `v15-cartographic-flow/route-semantics-contract.json` is an illustrative geometry-only contract fixture used to test `verified_route`, `observed_trajectory` and `network_constrained` policies. It is intentionally not presented as a real aircraft, vessel, pipeline or road route.
 
 The existing `v09-realdata/eia-us-crude-imports-2024.csv` is reused by the v1.5 `abstract_od` regression so the same quantities can be compared between the old schematic geo-flow renderer and the new provenance-aware cartographic renderer.
+
+## fetch_url PDF extraction fixture
+
+`pdf/two-page-fixture.pdf` is an 854-byte, hand-written, uncompressed two-page PDF (plain xref table, Helvetica base font, no embedded fonts or binary streams) used to test `runtime/pi/pdf_extract.mjs`'s pdftotext-based extraction path. Page 1 renders the line `ALPHA LINE ONE`; page 2 renders `BRAVO LINE TWO`. It exists purely to give `pdftotext -layout` deterministic, known text on two distinct pages; it is not sourced from any real document.

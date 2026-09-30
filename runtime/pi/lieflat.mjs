@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { LIEFLAT_BUNDLE, VISUAL_SKILL_INDEX, VISUAL_SKILLS } from "./visual_skill_bundle.mjs";
 
@@ -693,23 +693,23 @@ function chartSvg(templateId, module, rows, mobile = false) {
         const x = left + step * (index + 0.5);
         const yy = seriesY(seriesIndex, point.value);
         parts.push(`<circle cx="${x.toFixed(2)}" cy="${yy.toFixed(2)}" r="${seriesRows.length > 1 ? 3.5 : 4}" fill="${color}"/>`);
-        if (seriesRows.length === 1 && values.length <= 30) parts.push(`<text x="${x.toFixed(2)}" y="${Math.max(top + 14, yy - 10).toFixed(2)}" text-anchor="middle" fill="${color}" font-size="11" font-weight="700">${esc(number(point.value))}</text>`);
-        if (index === values.length - 1) parts.push(`<text x="${Math.min(width - right - 4, x + 8).toFixed(2)}" y="${(yy + 4).toFixed(2)}" fill="${color}" font-size="11" font-weight="700">${esc(series.label)} ${esc(number(point.value))}</text>`);
+        if (seriesRows.length === 1 && values.length <= 30) parts.push(`<text x="${x.toFixed(2)}" y="${Math.max(top + 14, yy - 10).toFixed(2)}" text-anchor="middle" fill="${color}" font-size="12" font-weight="700">${esc(number(point.value))}</text>`);
+        if (index === values.length - 1) parts.push(`<text x="${Math.min(width - right - 4, x + 8).toFixed(2)}" y="${(yy + 4).toFixed(2)}" fill="${color}" font-size="12" font-weight="700">${esc(series.label)} ${esc(number(point.value))}</text>`);
       });
     });
     if (seriesRows.length > 1) {
-      seriesRows.forEach((series, index) => parts.push(`<text x="${left + index * 150}" y="${top - 8}" fill="${palette[index % palette.length]}" font-size="11" font-weight="700">● ${esc(series.label)}</text>`));
+      seriesRows.forEach((series, index) => parts.push(`<text x="${left + index * 150}" y="${top - 8}" fill="${palette[index % palette.length]}" font-size="12" font-weight="700">● ${esc(series.label)}</text>`));
       if (dualAxis) {
         const rightScale = localScales[1];
         for (let i = 0; i <= 4; i += 1) {
           const value = rightScale.min + rightScale.span * i / 4;
-          parts.push(`<text x="${width - right + 10}" y="${(y(sharedMax - sharedSpan * i / 4) + 4).toFixed(2)}" fill="#c44e52" font-size="11">${esc(number(value))}</text>`);
+          parts.push(`<text x="${width - right + 10}" y="${(y(sharedMax - sharedSpan * i / 4) + 4).toFixed(2)}" fill="#c44e52" font-size="12">${esc(number(value))}</text>`);
         }
       }
     }
     values.forEach((row, index) => {
       const x = left + step * (index + 0.5);
-      if (values.length <= 30) parts.push(`<text x="${x.toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="11">${esc(row.label)}</text>`);
+      if (values.length <= 30) parts.push(`<text x="${x.toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="12">${esc(row.label)}</text>`);
     });
   } else if (grammar === "change") {
     values.forEach((row, index) => {
@@ -718,7 +718,7 @@ function chartSvg(templateId, module, rows, mobile = false) {
       parts.push(`<line x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${baseline.toFixed(2)}" y2="${yy.toFixed(2)}" stroke="#7096d1" stroke-width="12" stroke-linecap="round"/>`);
       parts.push(`<circle cx="${x.toFixed(2)}" cy="${yy.toFixed(2)}" r="7" fill="#081f5c"/>`);
       parts.push(`<text x="${x.toFixed(2)}" y="${Math.max(top + 14, yy - 12).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="12" font-weight="700">${esc(number(row.value))}</text>`);
-      parts.push(`<text x="${x.toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="11">${esc(row.label)}</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="12">${esc(row.label)}</text>`);
     });
   } else if (grammar === "matrix") {
     const cols = Math.min(values.length, mobile ? 12 : 20);
@@ -727,8 +727,8 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const x = left + index * cell;
       const opacity = 0.22 + 0.78 * ((row.value - min) / span);
       parts.push(`<rect x="${x.toFixed(2)}" y="${(top + 18).toFixed(2)}" width="${Math.max(2, cell - 3).toFixed(2)}" height="${(plotHeight - 24).toFixed(2)}" fill="#334eac" fill-opacity="${opacity.toFixed(3)}"/>`);
-      parts.push(`<text x="${(x + cell / 2).toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="11">${esc(row.label)}</text>`);
-      parts.push(`<text x="${(x + cell / 2).toFixed(2)}" y="${top + 8}" text-anchor="middle" fill="#081f5c" font-size="11" font-weight="700">${esc(number(row.value))}</text>`);
+      parts.push(`<text x="${(x + cell / 2).toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="12">${esc(row.label)}</text>`);
+      parts.push(`<text x="${(x + cell / 2).toFixed(2)}" y="${top + 8}" text-anchor="middle" fill="#081f5c" font-size="12" font-weight="700">${esc(number(row.value))}</text>`);
     });
   } else if (grammar === "composition") {
     const total = values.reduce((sum, row) => sum + Math.max(0, row.value), 0) || 1;
@@ -741,20 +741,20 @@ function chartSvg(templateId, module, rows, mobile = false) {
     });
     values.forEach((row, index) => {
       const yy = top + 220 + index * 24;
-      parts.push(`<text x="${left}" y="${yy}" fill="#5f5d57" font-size="11">${esc(row.label)}</text><text x="${width - right}" y="${yy}" text-anchor="end" fill="#081f5c" font-size="11" font-weight="700">${esc(number(row.value))}</text>`);
+      parts.push(`<text x="${left}" y="${yy}" fill="#5f5d57" font-size="12">${esc(row.label)}</text><text x="${width - right}" y="${yy}" text-anchor="end" fill="#081f5c" font-size="12" font-weight="700">${esc(number(row.value))}</text>`);
     });
   } else if (grammar === "scatter") {
     const xValues = values.map((row) => row.x).filter(finiteNumber);
     const yValues = values.map((row) => row.y).filter(finiteNumber);
     const xMin = Math.min(...xValues, 0), xMax = Math.max(...xValues, 0), xSpan = xMax - xMin || 1;
     const yMin = Math.min(...yValues, 0), yMax = Math.max(...yValues, 0), ySpan = yMax - yMin || 1;
-    parts.push(`<text x="${left}" y="${height - 8}" fill="#5f5d57" font-size="11">${esc(values[0]?.series?.[0]?.label || "x")}</text>`);
-    parts.push(`<text x="${left - 52}" y="${top + 4}" fill="#5f5d57" font-size="11">${esc(values[0]?.series?.[1]?.label || "y")}</text>`);
+    parts.push(`<text x="${left}" y="${height - 8}" fill="#5f5d57" font-size="12">${esc(values[0]?.series?.[0]?.label || "x")}</text>`);
+    parts.push(`<text x="${left - 52}" y="${top + 4}" fill="#5f5d57" font-size="12">${esc(values[0]?.series?.[1]?.label || "y")}</text>`);
     values.forEach((row, index) => {
       const x = left + (row.x - xMin) / xSpan * plotWidth;
       const yy = top + (yMax - row.y) / ySpan * plotHeight;
       parts.push(`<circle cx="${x.toFixed(2)}" cy="${yy.toFixed(2)}" r="${5 + index % 3}" fill="#334eac" fill-opacity="0.78"/>`);
-      if (values.length <= 60) parts.push(`<text x="${x.toFixed(2)}" y="${Math.max(top + 14, yy - 12).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="10">${esc(row.label)}</text>`);
+      if (values.length <= 60) parts.push(`<text x="${x.toFixed(2)}" y="${Math.max(top + 14, yy - 12).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="12">${esc(row.label)}</text>`);
     });
   } else if (grammar === "progress") {
     const value = values[0]?.value ?? 0;
@@ -762,14 +762,14 @@ function chartSvg(templateId, module, rows, mobile = false) {
     parts.push(`<rect x="${left}" y="${top + 90}" width="${plotWidth}" height="32" rx="16" fill="#dddcd5"/>`);
     parts.push(`<rect x="${left}" y="${top + 90}" width="${(plotWidth * fraction).toFixed(2)}" height="32" rx="16" fill="#334eac"/>`);
     parts.push(`<text x="${left}" y="${top + 70}" fill="#081f5c" font-size="26" font-weight="800">${esc(number(value))}</text>`);
-    parts.push(`<text x="${left}" y="${height - 28}" fill="#5f5d57" font-size="11">${esc(values[0]?.label || "progress")}</text>`);
+    parts.push(`<text x="${left}" y="${height - 28}" fill="#5f5d57" font-size="12">${esc(values[0]?.label || "progress")}</text>`);
   } else if (grammar === "rank") {
     values.forEach((row, index) => {
       const x = left + Math.max(12, plotWidth * (row.value - min) / span);
       const yy = top + 24 + index * Math.min(30, (plotHeight - 42) / Math.max(values.length, 1));
       parts.push(`<line x1="${left}" x2="${x.toFixed(2)}" y1="${yy.toFixed(2)}" y2="${yy.toFixed(2)}" stroke="#7096d1" stroke-width="2"/>`);
       parts.push(`<circle cx="${x.toFixed(2)}" cy="${yy.toFixed(2)}" r="6" fill="#081f5c"/>`);
-      parts.push(`<text x="${left - 10}" y="${(yy + 4).toFixed(2)}" text-anchor="end" fill="#5f5d57" font-size="11">${esc(row.label)}</text>`);
+      parts.push(`<text x="${left - 10}" y="${(yy + 4).toFixed(2)}" text-anchor="end" fill="#5f5d57" font-size="12">${esc(row.label)}</text>`);
       parts.push(`<text x="${(x + 10).toFixed(2)}" y="${(yy + 4).toFixed(2)}" fill="#081f5c" font-size="12" font-weight="700">${esc(number(row.value))}</text>`);
     });
   } else if (grammar === "flow") {
@@ -778,8 +778,8 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const bend = left + plotWidth * 0.52;
       const end = left + plotWidth * Math.max(0.18, Math.min(0.96, (row.value - min) / span));
       parts.push(`<path d="M ${left} ${yy} C ${bend} ${yy}, ${bend} ${yy + 8}, ${end} ${yy + 8}" fill="none" stroke="#334eac" stroke-opacity="${(0.35 + 0.55 * (index + 1) / values.length).toFixed(3)}" stroke-width="${Math.max(2, Math.min(18, 4 + Math.abs(row.value) / Math.max(1, max) * 12)).toFixed(2)}"/>`);
-      parts.push(`<text x="${left - 10}" y="${(yy + 4).toFixed(2)}" text-anchor="end" fill="#5f5d57" font-size="11">${esc(row.label)}</text>`);
-      parts.push(`<text x="${(end + 8).toFixed(2)}" y="${(yy + 12).toFixed(2)}" fill="#081f5c" font-size="11" font-weight="700">${esc(number(row.value))}</text>`);
+      parts.push(`<text x="${left - 10}" y="${(yy + 4).toFixed(2)}" text-anchor="end" fill="#5f5d57" font-size="12">${esc(row.label)}</text>`);
+      parts.push(`<text x="${(end + 8).toFixed(2)}" y="${(yy + 12).toFixed(2)}" fill="#081f5c" font-size="12" font-weight="700">${esc(number(row.value))}</text>`);
     });
   } else if (grammar === "network") {
     const cx = left + plotWidth * 0.52;
@@ -791,16 +791,16 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const yy = cy + Math.sin(angle) * radius;
       parts.push(`<line x1="${cx.toFixed(2)}" y1="${cy.toFixed(2)}" x2="${x.toFixed(2)}" y2="${yy.toFixed(2)}" stroke="#7096d1" stroke-width="${Math.max(1, Math.min(8, 1 + Math.abs(row.value) / Math.max(1, max) * 6)).toFixed(2)}" stroke-opacity=".7"/>`);
       parts.push(`<circle cx="${x.toFixed(2)}" cy="${yy.toFixed(2)}" r="${Math.max(5, Math.min(18, 5 + Math.abs(row.value) / Math.max(1, max) * 12)).toFixed(2)}" fill="#334eac"/>`);
-      parts.push(`<text x="${x.toFixed(2)}" y="${(yy - 14).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="11">${esc(row.label)}</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${(yy - 14).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="12">${esc(row.label)}</text>`);
     });
-    parts.push(`<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="12" fill="#081f5c"/><text x="${cx.toFixed(2)}" y="${(cy + 4).toFixed(2)}" text-anchor="middle" fill="#f7f2eb" font-size="10">Σ</text>`);
+    parts.push(`<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="12" fill="#081f5c"/><text x="${cx.toFixed(2)}" y="${(cy + 4).toFixed(2)}" text-anchor="middle" fill="#f7f2eb" font-size="12">Σ</text>`);
   } else if (grammar === "hierarchy") {
     let x = left;
     const total = values.reduce((sum, row) => sum + Math.max(0, row.value), 0) || 1;
     values.forEach((row, index) => {
       const w = plotWidth * Math.max(0, row.value) / total;
       parts.push(`<rect x="${x.toFixed(2)}" y="${(top + 64).toFixed(2)}" width="${Math.max(2, w - 3).toFixed(2)}" height="${Math.max(24, plotHeight - 110).toFixed(2)}" fill="#334eac" fill-opacity="${(0.35 + 0.55 * (index + 1) / values.length).toFixed(3)}"/>`);
-      if (w > 34) parts.push(`<text x="${(x + w / 2).toFixed(2)}" y="${(top + 86).toFixed(2)}" text-anchor="middle" fill="#f7f2eb" font-size="11" font-weight="700">${esc(row.label)}</text>`);
+      if (w > 34) parts.push(`<text x="${(x + w / 2).toFixed(2)}" y="${(top + 86).toFixed(2)}" text-anchor="middle" fill="#f7f2eb" font-size="12" font-weight="700">${esc(row.label)}</text>`);
       x += w;
     });
   } else if (grammar === "calendar") {
@@ -811,7 +811,7 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const opacity = 0.18 + 0.82 * ((row.value - min) / span);
       parts.push(`<rect x="${(left + col * cell).toFixed(2)}" y="${(top + 26 + line * 32).toFixed(2)}" width="${Math.max(2, cell - 3).toFixed(2)}" height="26" fill="#334eac" fill-opacity="${opacity.toFixed(3)}"/>`);
     });
-    parts.push(`<text x="${left}" y="${height - 28}" fill="#5f5d57" font-size="11">${esc(values[0]?.label || "period")}</text>`);
+    parts.push(`<text x="${left}" y="${height - 28}" fill="#5f5d57" font-size="12">${esc(values[0]?.label || "period")}</text>`);
   } else if (grammar === "stream") {
     const total = values.reduce((sum, row) => sum + Math.max(0, row.value), 0) || 1;
     let yTop = top + plotHeight * 0.42;
@@ -819,21 +819,21 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const thickness = Math.max(8, plotHeight * Math.max(0, row.value) / total * 0.7);
       const yBottom = yTop + thickness;
       parts.push(`<path d="M ${left} ${yTop.toFixed(2)} C ${(left + plotWidth * .3).toFixed(2)} ${(yTop - index * 3).toFixed(2)}, ${(left + plotWidth * .7).toFixed(2)} ${(yBottom + index * 3).toFixed(2)}, ${width - right} ${yBottom.toFixed(2)} L ${width - right} ${yTop.toFixed(2)} C ${(left + plotWidth * .7).toFixed(2)} ${(yTop + index * 3).toFixed(2)}, ${(left + plotWidth * .3).toFixed(2)} ${(yBottom - index * 3).toFixed(2)}, ${left} ${yBottom.toFixed(2)} Z" fill="#334eac" fill-opacity="${(0.22 + 0.16 * (index + 1)).toFixed(3)}"/>`);
-      parts.push(`<text x="${left + 8}" y="${(yTop + thickness / 2 + 4).toFixed(2)}" fill="#081f5c" font-size="11">${esc(row.label)}</text>`);
+      parts.push(`<text x="${left + 8}" y="${(yTop + thickness / 2 + 4).toFixed(2)}" fill="#081f5c" font-size="12">${esc(row.label)}</text>`);
       yTop = yBottom;
     });
   } else if (grammar === "parallel") {
     const axes = [left, left + plotWidth / 2, width - right];
     axes.forEach((x, index) => {
       parts.push(`<line x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${top + 16}" y2="${height - bottom}" stroke="#c9c7c0"/>`);
-      parts.push(`<text x="${x.toFixed(2)}" y="${top + 8}" text-anchor="middle" fill="#5f5d57" font-size="10">D${index + 1}</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${top + 8}" text-anchor="middle" fill="#5f5d57" font-size="12">D${index + 1}</text>`);
     });
     values.forEach((row, index) => {
       const normalized = Math.max(0, Math.min(1, (row.value - min) / span));
       const yy = top + 28 + (1 - normalized) * (plotHeight - 30);
       const points = axes.map((x, axis) => `${x.toFixed(2)},${(yy + (axis - 1) * (index % 3) * 8).toFixed(2)}`).join(" ");
       parts.push(`<polyline points="${points}" fill="none" stroke="#334eac" stroke-opacity=".58" stroke-width="2"/>`);
-      parts.push(`<text x="${width - right + 8}" y="${(yy + 4).toFixed(2)}" fill="#081f5c" font-size="10">${esc(row.label)}</text>`);
+      parts.push(`<text x="${width - right + 8}" y="${(yy + 4).toFixed(2)}" fill="#081f5c" font-size="12">${esc(row.label)}</text>`);
     });
   } else if (grammar === "candlestick") {
     values.forEach((row, index) => {
@@ -845,7 +845,7 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const close = center - (index % 2 ? 16 : -16);
       parts.push(`<line x1="${x.toFixed(2)}" x2="${x.toFixed(2)}" y1="${high.toFixed(2)}" y2="${low.toFixed(2)}" stroke="#081f5c" stroke-width="2"/>`);
       parts.push(`<rect x="${(x - Math.min(18, step * .18)).toFixed(2)}" y="${Math.min(open, close).toFixed(2)}" width="${Math.min(36, step * .36).toFixed(2)}" height="${Math.max(3, Math.abs(close - open)).toFixed(2)}" fill="${close >= open ? "#f7f2eb" : "#334eac"}" stroke="#081f5c" stroke-width="2"/>`);
-      parts.push(`<text x="${x.toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="11">${esc(row.label)}</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${height - 28}" text-anchor="middle" fill="#5f5d57" font-size="12">${esc(row.label)}</text>`);
     });
   } else if (grammar === "distribution") {
     const sorted = [...values].sort((a, b) => a.value - b.value);
@@ -853,7 +853,7 @@ function chartSvg(templateId, module, rows, mobile = false) {
       const x = left + plotWidth * (row.value - min) / span;
       const yy = top + 26 + (index % 5) * 28;
       parts.push(`<circle cx="${x.toFixed(2)}" cy="${yy.toFixed(2)}" r="${5 + index % 3}" fill="#334eac" fill-opacity=".78"/>`);
-      parts.push(`<text x="${x.toFixed(2)}" y="${(yy - 11).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="10">${esc(row.label)}</text>`);
+      parts.push(`<text x="${x.toFixed(2)}" y="${(yy - 11).toFixed(2)}" text-anchor="middle" fill="#081f5c" font-size="12">${esc(row.label)}</text>`);
     });
   } else {
     throw new Error(`Lieflat chart template '${id}' has no validated execution grammar`);
@@ -884,7 +884,7 @@ function roleLabel(role, language) {
   return ({ hook: "开场", context: "背景", evidence: "证据", turn: "转折", explanation: "解释", resolution: "结论", method: "方法" })[role] || role;
 }
 
-function renderModuleHtml(module, asset, language, index, selectedMethod) {
+async function renderModuleHtml(root, module, asset, language, index, selectedMethod) {
   const labels = language === "zh" ? { table: "数据表", label: "标签", value: "数值", claims: "命题", sources: "来源" } : { table: "Data table", label: "Label", value: "Value", claims: "Claims", sources: "Sources" };
   const headers = unique(asset?.rows?.flatMap((row) => (row.series || []).map((series) => series.label)) || []);
   const tableHead = headers.length > 1 ? `<th>${labels.label}</th>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}` : `<th>${labels.label}</th><th>${labels.value}</th>`;
@@ -900,16 +900,26 @@ function renderModuleHtml(module, asset, language, index, selectedMethod) {
   }).join("");
   const chart = asset?.desktop_svg ? `<div class="lf-figure" role="img" aria-label="${esc(module.title)}">${asset.desktop_svg}</div><details class="lf-data"><summary>${labels.table}</summary><table><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table></details>` : "";
   const scrollClass = selectedMethod === "pudding-visual-essay" ? " lf-scroll-step" : "";
-  return `<article class="lf-module lf-role-${esc(module.story_role)}${scrollClass}" data-module-id="${esc(module.id)}" data-story-role="${esc(module.story_role)}" data-story-state="${index + 1}" data-analytical-job="${esc(module.analytical_job)}"><p class="lf-role">${esc(roleLabel(module.story_role, language))}</p><h2>${esc(module.title || module.reader_question)}</h2><p class="lf-reader-question">${esc(module.reader_question)}</p>${module.annotation ? `<p class="lf-annotation">${esc(module.annotation)}</p>` : ""}${chart}<p class="lf-binding">${labels.claims}: ${esc(unique(module.claim_ids).join(", ") || "n/a")} · ${labels.sources}: ${esc(unique(module.source_refs).join(", ") || "n/a")}</p></article>`;
+  // Readers see only human source names here; the claim/source refs that back
+  // this module travel as unrendered data attributes (see humanSourceLabel).
+  const moduleClaimIds = unique(module.claim_ids);
+  const moduleSourceRefs = unique(module.source_refs);
+  const moduleSourceLabels = await Promise.all(moduleSourceRefs.map((ref, refIndex) => humanSourceLabel(root, ref, refIndex, language)));
+  const bindingLine = moduleSourceLabels.length ? humanSourceLine(moduleSourceLabels, language) : (language === "zh" ? "来源：n/a" : "Source: n/a");
+  return `<article class="lf-module lf-role-${esc(module.story_role)}${scrollClass}" data-module-id="${esc(module.id)}" data-story-role="${esc(module.story_role)}" data-story-state="${index + 1}" data-analytical-job="${esc(module.analytical_job)}"><p class="lf-role">${esc(roleLabel(module.story_role, language))}</p><h2>${esc(module.title || module.reader_question)}</h2><p class="lf-reader-question">${esc(module.reader_question)}</p>${module.annotation ? `<p class="lf-annotation">${esc(module.annotation)}</p>` : ""}${chart}<p class="lf-binding" data-claim-ids="${esc(moduleClaimIds.join(","))}" data-source-refs="${esc(moduleSourceRefs.join(","))}">${esc(bindingLine)}</p></article>`;
 }
 
 function reportMarkdown(input, manifest, moduleRows) {
   const language = input.language === "zh" ? "zh" : "en";
+  const mobilePages = input.mobile_pages === true;
   const title = language === "zh" ? "# 数据新闻信息图报告" : "# Data-news infographic report";
   const labels = language === "zh"
     ? { thesis: "核心命题", graph: "Story Graph 摘要", modules: "模块", sources: "来源", limits: "限制", qa: "QA 状态", html: "HTML 路径", manifest: "Manifest 路径" }
     : { thesis: "Core thesis", graph: "Story Graph summary", modules: "Modules", sources: "Sources", limits: "Limitations", qa: "QA status", html: "HTML path", manifest: "Manifest path" };
-  return `${title}\n\n- ${labels.thesis}: ${input.dek}\n- ${labels.html}: ${manifest.html_path}\n- ${labels.manifest}: ${manifest.manifest_path}\n- Story JSON: ${manifest.story_json_path}\n- Editorial discovery: ${manifest.editorial_discovery_ref}\n- Infographic plan: ${manifest.infographic_plan_ref}\n- Infographic lint: ${manifest.infographic_lint_ref}\n- Infographic critic: ${manifest.infographic_critic_ref}\n- Publication QA: ${manifest.publication_qa_ref}\n\n## ${labels.thesis}\n\n${input.title}\n\n${input.dek}\n\n## ${labels.graph}\n\n- Reference: ${input.story_graph_ref}\n- Roles: ${manifest.story_completion.story_roles_covered.join(", ")}\n- Distinct findings: ${manifest.story_completion.distinct_findings}\n- Distinct analytical jobs: ${manifest.story_completion.distinct_analytical_jobs}\n\n## ${labels.modules}\n\n${moduleRows.map((module) => `- ${module.id}: ${module.story_role} / ${module.analytical_job} / template ${module.chart_template_id || "text"} / claims ${unique(module.claim_ids).join(", ")} / sources ${unique(module.source_refs).join(", ")}`).join("\n")}\n\n## ${labels.sources}\n\n${unique(input.source_refs).map((ref) => `- ${ref}`).join("\n") || "- none"}\n\n## ${labels.limits}\n\n- Claims are limited to the verified snapshots and computations bound to each module.\n- No synthetic data, template demo data, or unsupported Lieflat template was used.\n- ${language === "zh" ? "页面为离线静态 HTML；没有远程脚本、字体或图片。" : "The page is offline static HTML; it has no remote scripts, fonts, or images."}\n\n## ${labels.qa}\n\n- publication: PASS\n- desktop: PASS\n- mobile: PASS\n- self-contained: PASS\n- network requests: 0\n- artifact status: PUBLISHABLE\n`;
+  // desktop is always rendered; mobile is a phone-facing page that only
+  // exists when the caller (newsroom.ts) turned it on - see mobilePages.
+  const qaLines = `- publication: PASS\n- desktop: PASS\n${mobilePages ? "- mobile: PASS\n" : ""}- self-contained: PASS\n- network requests: 0\n- artifact status: PUBLISHABLE\n`;
+  return `${title}\n\n- ${labels.thesis}: ${input.dek}\n- ${labels.html}: ${manifest.html_path}\n- ${labels.manifest}: ${manifest.manifest_path}\n- Story JSON: ${manifest.story_json_path}\n- Editorial discovery: ${manifest.editorial_discovery_ref}\n- Infographic plan: ${manifest.infographic_plan_ref}\n- Infographic lint: ${manifest.infographic_lint_ref}\n- Infographic critic: ${manifest.infographic_critic_ref}\n- Publication QA: ${manifest.publication_qa_ref}\n\n## ${labels.thesis}\n\n${input.title}\n\n${input.dek}\n\n## ${labels.graph}\n\n- Reference: ${input.story_graph_ref}\n- Roles: ${manifest.story_completion.story_roles_covered.join(", ")}\n- Distinct findings: ${manifest.story_completion.distinct_findings}\n- Distinct analytical jobs: ${manifest.story_completion.distinct_analytical_jobs}\n\n## ${labels.modules}\n\n${moduleRows.map((module) => `- ${module.id}: ${module.story_role} / ${module.analytical_job} / template ${module.chart_template_id || "text"} / claims ${unique(module.claim_ids).join(", ")} / sources ${unique(module.source_refs).join(", ")}`).join("\n")}\n\n## ${labels.sources}\n\n${unique(input.source_refs).map((ref) => `- ${ref}`).join("\n") || "- none"}\n\n## ${labels.limits}\n\n- Claims are limited to the verified snapshots and computations bound to each module.\n- No synthetic data, template demo data, or unsupported Lieflat template was used.\n- ${language === "zh" ? "页面为离线静态 HTML；没有远程脚本、字体或图片。" : "The page is offline static HTML; it has no remote scripts, fonts, or images."}\n\n## ${labels.qa}\n\n${qaLines}`;
 }
 
 async function preserveOrWriteStoryJson(root, storyGraph) {
@@ -931,7 +941,72 @@ async function preserveOrWriteStoryJson(root, storyGraph) {
   }
 }
 
+function hostLabel(value) {
+  const raw = text(value);
+  if (!raw) return "";
+  try {
+    return new URL(raw).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+// Readers must never see an internal identifier (claim id, file path, hash).
+// These helpers turn a validated evidence reference into a human name using
+// only metadata that already exists in the artifact: a source record's
+// title/publisher/URL host, or a local dataset's recorded original filename.
+// Any failure to resolve a human name falls back to a generic numbered label;
+// it never falls back to the reference path or a hash.
+async function sourceRecordLabel(root, ref) {
+  try {
+    const record = await readArtifactJson(root, ref);
+    return text(record?.title) || text(record?.publisher) || hostLabel(record?.final_url) || hostLabel(record?.url);
+  } catch {
+    return "";
+  }
+}
+
+async function datasetOriginLabel(root, ref) {
+  const canonical = await canonicalRoot(root);
+  const originsDir = join(canonical, "data", "origins");
+  let entries;
+  try {
+    entries = await readdir(originsDir);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return "";
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    try {
+      const record = JSON.parse(await readFile(join(originsDir, entry), "utf8"));
+      if (text(record?.file) !== ref) continue;
+      return text(record?.title) || text(record?.publisher) || text(record?.original_filename) || hostLabel(record?.url);
+    } catch {}
+  }
+  return "";
+}
+
+async function humanSourceLabel(root, ref, index, language) {
+  const fallback = language === "zh" ? `来源${index + 1}` : `Source ${index + 1}`;
+  const label = ref.startsWith("data/") ? await datasetOriginLabel(root, ref) : await sourceRecordLabel(root, ref);
+  return label || fallback;
+}
+
+function humanSourceLine(labels, language) {
+  const list = unique(labels);
+  return language === "zh" ? `数据来源：${list.join("、")}` : `Source: ${list.join(", ")}`;
+}
+
 async function renderLieflatChart(input = {}) {
+  // Chart mode's phone-facing mobile SVG mirrors the infographic mobile page:
+  // off by default, on only when the caller (newsroom.ts, from
+  // NEWSROOM_MOBILE_PAGES) explicitly passes mobile_pages: true. Folded into
+  // pageKey below, only when off, so the two states never share a
+  // content-addressed path - the manifest's fields genuinely differ
+  // (variants, mobile_qa) even though every other input is identical - while
+  // the on path's key input stays what it was before this switch existed.
+  const mobilePages = input.mobile_pages === true;
   const language = text(input.language || "en").toLowerCase();
   if (!["zh", "en"].includes(language)) throw new Error("language must be zh or en");
   const root = await canonicalRoot(input.artifact_root || process.env.NEWSROOM_ARTIFACT_DIR);
@@ -965,17 +1040,17 @@ async function renderLieflatChart(input = {}) {
   const chartModule = { ...module, id: text(module.id || "chart"), chart_template_id: templateId, data_ref: dataRef, title, annotation: dek, reader_question: text(module.reader_question || dek), claim_ids: claimIds, source_refs: validatedSources };
   const rows = await resolveModuleData(root, chartModule);
   const desktopSvg = chartSvg(templateId, chartModule, rows, false);
-  const mobileSvg = chartSvg(templateId, chartModule, rows, true);
+  const mobileSvg = mobilePages ? chartSvg(templateId, chartModule, rows, true) : null;
   const projectedRows = projectRows(rows, chartModule, chartGrammar(templateId));
   const sourceTemplate = readBundledLieflatFile(templateFile);
   const templateSha = sha(sourceTemplate);
-  const pageKey = sha(stableJson({ mode: "chart", language, templateId, templateFile, templateSha, title, dek, claimIds, validatedSources, dataRef, rows }));
+  const pageKey = sha(stableJson({ mode: "chart", language, templateId, templateFile, templateSha, title, dek, claimIds, validatedSources, dataRef, rows, ...(mobilePages ? {} : { mobile_pages: false }) }));
   const desktopRef = `visualizations/${pageKey}.svg`;
-  const mobileRef = `visualizations/${pageKey}.mobile.svg`;
+  const mobileRef = mobilePages ? `visualizations/${pageKey}.mobile.svg` : null;
   const manifestRef = `visualizations/${pageKey}.json`;
   const htmlRef = `visualizations/${pageKey}.html`;
   await safeWrite(root, desktopRef, desktopSvg);
-  await safeWrite(root, mobileRef, mobileSvg);
+  if (mobilePages) await safeWrite(root, mobileRef, mobileSvg);
   const manifest = {
     schema_version: "1.0.0",
     kind: "lieflat_chart",
@@ -993,12 +1068,12 @@ async function renderLieflatChart(input = {}) {
     computation_ref: dataRef,
     data_hash: sha(stableRowsJson(rows)),
     row_count: rows.length,
-    variants: { desktop: desktopRef, mobile: mobileRef },
+    variants: mobilePages ? { desktop: desktopRef, mobile: mobileRef } : { desktop: desktopRef },
     self_contained: true,
     network_required: false,
     network_requests: 0,
     desktop_qa: "PASS",
-    mobile_qa: "PASS",
+    ...(mobilePages ? { mobile_qa: "PASS" } : {}),
   };
   const style = `${extractTemplateStyle(sourceTemplate)}\n.lieflat-chart-page{background:#f7f2eb;color:#081f5c;max-width:1080px;margin:auto;padding:clamp(20px,5vw,64px);font:16px/1.5 Arial,sans-serif}.lieflat-chart-page h1{font:700 clamp(30px,6vw,64px)/1.08 Georgia,serif}.lieflat-chart-page .dek{color:#5f5d57;font-size:clamp(16px,2.3vw,23px);max-width:760px}.chart-wrap{border-top:2px solid #081f5c;border-bottom:1px solid #c9c7c0;margin-top:28px;padding:18px 0}.chart-wrap svg{display:block;width:100%;height:auto}.data-table{border-collapse:collapse;width:100%;margin-top:18px;font-size:13px}.data-table th,.data-table td{border-bottom:1px solid #c9c7c0;text-align:left;padding:5px}.source{color:#5f5d57;font-size:12px;overflow-wrap:anywhere}@media(max-width:720px){.lieflat-chart-page{padding:24px 16px}.chart-wrap{overflow-x:auto}.chart-wrap svg{min-width:520px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}`;
   const chartHeaders = unique(projectedRows.flatMap((row) => (row.series || []).map((series) => series.label)));
@@ -1006,7 +1081,12 @@ async function renderLieflatChart(input = {}) {
   const chartBody = projectedRows.map((row) => chartHeaders.length > 1
     ? `<tr><td>${esc(row.label)}</td>${chartHeaders.map((header) => { const series = row.series?.find((entry) => entry.label === header); return `<td>${series && finiteNumber(series.value) ? esc(number(series.value)) : ""}</td>`; }).join("")}</tr>`
     : `<tr><td>${esc(row.label)}</td><td>${esc(number(row.value))}</td></tr>`).join("");
-  const html = `<!doctype html><html lang="${language === "zh" ? "zh-Hans" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none' data:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>${esc(title)}</title><style>${style}</style></head><body><main class="lieflat-chart-page" data-lieflat-template="${templateId}" data-lieflat-upstream-commit="${LIEFLAT_BUNDLE.commit}"><p>${esc(language === "zh" ? "证据绑定单图" : "Evidence-bound chart")} · ${esc(templateId)}</p><h1>${esc(title)}</h1><p class="dek">${esc(dek)}</p><div class="chart-wrap" role="img" aria-label="${esc(title)}">${desktopSvg}</div><table class="data-table"><caption>${esc(language === "zh" ? "数据表" : "Data table")}</caption><thead><tr>${chartHead}</tr></thead><tbody>${chartBody}</tbody></table><p class="source">Claims: ${esc(claimIds.join(", "))} · Sources: ${esc(validatedSources.join(", "))} · Computation: ${esc(dataRef)}</p><noscript>${esc(language === "zh" ? "本页不依赖 JavaScript；核心图表、数据表和来源均已保留。" : "This page does not require JavaScript; the chart, data table, and sources are preserved.")}</noscript></main></body></html>`;
+  // Readers see a human source line only; claimIds/validatedSources/dataRef
+  // (internal ids, refs, and the computation hash) travel unrendered as
+  // data-* attributes on the same element, plus the untouched JSON manifest.
+  const sourceLabels = await Promise.all(validatedSources.map((ref, index) => humanSourceLabel(root, ref, index, language)));
+  const sourceLine = humanSourceLine(sourceLabels, language);
+  const html = `<!doctype html><html lang="${language === "zh" ? "zh-Hans" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none' data:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>${esc(title)}</title><style>${style}</style></head><body><main class="lieflat-chart-page" data-lieflat-template="${templateId}" data-lieflat-upstream-commit="${LIEFLAT_BUNDLE.commit}"><p>${esc(language === "zh" ? "证据绑定单图" : "Evidence-bound chart")} · ${esc(templateId)}</p><h1>${esc(title)}</h1><p class="dek">${esc(dek)}</p><div class="chart-wrap" role="img" aria-label="${esc(title)}">${desktopSvg}</div><table class="data-table"><caption>${esc(language === "zh" ? "数据表" : "Data table")}</caption><thead><tr>${chartHead}</tr></thead><tbody>${chartBody}</tbody></table><p class="source" data-claim-ids="${esc(claimIds.join(","))}" data-source-refs="${esc(validatedSources.join(","))}" data-computation-ref="${esc(dataRef)}">${esc(sourceLine)}</p><noscript>${esc(language === "zh" ? "本页不依赖 JavaScript；核心图表、数据表和来源均已保留。" : "This page does not require JavaScript; the chart, data table, and sources are preserved.")}</noscript></main></body></html>`;
   const securityHtml = html.replaceAll("http://www.w3.org/2000/svg", "").toLowerCase();
   for (const forbidden of ["moxt.ai", "cdn.jsdelivr.net", "fonts.googleapis.com", "<script", "eval(", "https://", "http://", "url("]) if (securityHtml.includes(forbidden)) throw new Error(`unsafe or demo residue in Lieflat chart: ${forbidden}`);
   const htmlPath = await safeWrite(root, htmlRef, html);
@@ -1024,7 +1104,7 @@ async function renderLieflatChart(input = {}) {
     manifest_path: resolve(root, manifestRef),
     file_ref: desktopRef,
     file_path: resolve(root, desktopRef),
-    mobile_ref: mobileRef,
+    ...(mobilePages ? { mobile_ref: mobileRef } : {}),
     claim_ids: claimIds,
     source_refs: validatedSources,
     source_bound_module_count: 1,
@@ -1034,7 +1114,7 @@ async function renderLieflatChart(input = {}) {
     network_requests: 0,
     html_bytes: Buffer.byteLength(html),
     desktop_qa: "PASS",
-    mobile_qa: "PASS",
+    ...(mobilePages ? { mobile_qa: "PASS" } : {}),
     publication_qa: "NOT_APPLICABLE",
   };
 }
@@ -1043,6 +1123,8 @@ export async function renderLieflatPublication(input = {}) {
   const mode = text(input.mode || "report");
   if (mode === "chart") return renderLieflatChart(input);
   if (mode !== "report") throw new Error("mode must be chart or report");
+  // See renderLieflatChart for why this is folded into pageKey below.
+  const mobilePages = input.mobile_pages === true;
   const language = text(input.language || "en").toLowerCase();
   if (!['zh', 'en'].includes(language)) throw new Error("language must be zh or en");
   const root = await canonicalRoot(input.artifact_root || process.env.NEWSROOM_ARTIFACT_DIR);
@@ -1115,7 +1197,7 @@ export async function renderLieflatPublication(input = {}) {
       const chartCoverage = templateCoverage(chartTemplateId);
       if (!chartCoverage.supported || chartCoverage.network_required) throw new Error(`module '${module.id}' uses unsupported Lieflat chart template '${chartTemplateId}'`);
       const desktopSvg = chartSvg(chartTemplateId, module, rows, false);
-      const mobileSvg = chartSvg(chartTemplateId, module, rows, true);
+      const mobileSvg = mobilePages ? chartSvg(chartTemplateId, module, rows, true) : null;
       const projectedRows = projectRows(rows, module, chartGrammar(chartTemplateId));
       const valueFields = unique(projectedRows.flatMap((row) => row.value_fields || []));
       const labelField = projectedRows.find((row) => row.label_field)?.label_field || null;
@@ -1132,7 +1214,7 @@ export async function renderLieflatPublication(input = {}) {
   }
   const sourceTemplate = readBundledLieflatFile(templateFile);
   const templateSha = sha(sourceTemplate);
-  const pageKey = sha(stableJson({ templateId, templateFile, templateSha, language, title: input.title, dek: input.dek, story_graph_ref: input.story_graph_ref, modules: moduleRows.map((module) => ({ ...module, data_ref: module.data_ref || null })) }));
+  const pageKey = sha(stableJson({ templateId, templateFile, templateSha, language, title: input.title, dek: input.dek, story_graph_ref: input.story_graph_ref, modules: moduleRows.map((module) => ({ ...module, data_ref: module.data_ref || null })), ...(mobilePages ? {} : { mobile_pages: false }) }));
   const infographicDir = `infographics/${pageKey}`;
   const visualizationDir = `visualizations/${pageKey}`;
   const publicationAssetDir = `publications/${pageKey}/assets`;
@@ -1140,18 +1222,20 @@ export async function renderLieflatPublication(input = {}) {
   for (const asset of assets) {
     const id = safeRelativePath(asset.module.id).replaceAll("/", "-");
     const desktopRef = `${infographicDir}/${id}.svg`;
-    const mobileRef = `${infographicDir}/${id}.mobile.svg`;
+    const mobileRef = mobilePages ? `${infographicDir}/${id}.mobile.svg` : null;
     const visualizationDesktopRef = `${visualizationDir}/${id}.svg`;
-    const visualizationMobileRef = `${visualizationDir}/${id}.mobile.svg`;
+    const visualizationMobileRef = mobilePages ? `${visualizationDir}/${id}.mobile.svg` : null;
     const visualizationManifestRef = `${visualizationDir}/${id}.json`;
     const publicationDesktopRef = `${publicationAssetDir}/${id}.svg`;
-    const publicationMobileRef = `${publicationAssetDir}/${id}.mobile.svg`;
+    const publicationMobileRef = mobilePages ? `${publicationAssetDir}/${id}.mobile.svg` : null;
     await safeWrite(root, desktopRef, asset.desktop_svg);
-    await safeWrite(root, mobileRef, asset.mobile_svg);
     await safeWrite(root, visualizationDesktopRef, asset.desktop_svg);
-    await safeWrite(root, visualizationMobileRef, asset.mobile_svg);
     await safeWrite(root, publicationDesktopRef, asset.desktop_svg);
-    await safeWrite(root, publicationMobileRef, asset.mobile_svg);
+    if (mobilePages) {
+      await safeWrite(root, mobileRef, asset.mobile_svg);
+      await safeWrite(root, visualizationMobileRef, asset.mobile_svg);
+      await safeWrite(root, publicationMobileRef, asset.mobile_svg);
+    }
     const visualizationManifest = {
       schema_version: "1.0.0",
       kind: "lieflat_visual_asset",
@@ -1164,25 +1248,41 @@ export async function renderLieflatPublication(input = {}) {
       label_field: asset.label_field,
       value_fields: asset.value_fields,
       data_hash: asset.data_hash,
-      variants: { desktop: visualizationDesktopRef, mobile: visualizationMobileRef },
-      infographic_variants: { desktop: desktopRef, mobile: mobileRef },
-      publication_variants: { desktop: publicationDesktopRef, mobile: publicationMobileRef },
+      variants: mobilePages ? { desktop: visualizationDesktopRef, mobile: visualizationMobileRef } : { desktop: visualizationDesktopRef },
+      infographic_variants: mobilePages ? { desktop: desktopRef, mobile: mobileRef } : { desktop: desktopRef },
+      publication_variants: mobilePages ? { desktop: publicationDesktopRef, mobile: publicationMobileRef } : { desktop: publicationDesktopRef },
       desktop_sha256: sha(asset.desktop_svg),
-      mobile_sha256: sha(asset.mobile_svg),
+      ...(mobilePages ? { mobile_sha256: sha(asset.mobile_svg) } : {}),
       self_contained: true,
     };
     await safeWrite(root, visualizationManifestRef, `${JSON.stringify(visualizationManifest, null, 2)}\n`);
-    visualAssets.push({ module_id: asset.module.id, chart_template_id: asset.chart_template_id, desktop_ref: desktopRef, mobile_ref: mobileRef, visualization_manifest_ref: visualizationManifestRef, visualization_desktop_ref: visualizationDesktopRef, visualization_mobile_ref: visualizationMobileRef, publication_desktop_ref: publicationDesktopRef, publication_mobile_ref: publicationMobileRef, desktop_sha256: sha(asset.desktop_svg), mobile_sha256: sha(asset.mobile_svg), data_hash: visualizationManifest.data_hash });
+    visualAssets.push({
+      module_id: asset.module.id,
+      chart_template_id: asset.chart_template_id,
+      desktop_ref: desktopRef,
+      ...(mobilePages ? { mobile_ref: mobileRef } : {}),
+      visualization_manifest_ref: visualizationManifestRef,
+      visualization_desktop_ref: visualizationDesktopRef,
+      ...(mobilePages ? { visualization_mobile_ref: visualizationMobileRef } : {}),
+      publication_desktop_ref: publicationDesktopRef,
+      ...(mobilePages ? { publication_mobile_ref: publicationMobileRef } : {}),
+      desktop_sha256: sha(asset.desktop_svg),
+      ...(mobilePages ? { mobile_sha256: sha(asset.mobile_svg) } : {}),
+      data_hash: visualizationManifest.data_hash,
+    });
   }
   const assetById = new Map(assets.map((asset) => [asset.module.id, asset]));
   const selectedMethod = methodSkill(input.method_skill);
-  const moduleMarkup = moduleRows.map((module, index) => renderModuleHtml(module, assetById.get(module.id), language, index, selectedMethod)).join("\n");
-  const style = `${extractTemplateStyle(sourceTemplate)}\n.lieflat-report{--lf-paper:#f7f2eb;--lf-ink:#081f5c;--lf-muted:#5f5d57;--lf-data:#334eac;--lf-line:#c9c7c0;background:var(--lf-paper);color:var(--lf-ink);font-family:Inter,Arial,Helvetica,sans-serif;max-width:1080px;margin:0 auto;padding:clamp(22px,5vw,64px)}.lf-header{border-bottom:2px solid var(--lf-ink);padding-bottom:28px;margin-bottom:34px}.lf-kicker,.lf-role{font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;color:var(--lf-muted)}.lf-header h1{font-family:Georgia,'Times New Roman',serif;font-size:clamp(34px,6vw,68px);line-height:1.08;margin:12px 0}.lf-dek{font-size:clamp(17px,2.2vw,24px);line-height:1.45;max-width:820px;color:var(--lf-muted)}.lf-thesis{border-left:4px solid var(--lf-data);padding:12px 16px;margin-top:24px;line-height:1.55}.lf-modules{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:28px 22px}.lf-template-frame{display:contents}.lf-module{grid-column:span 6;min-width:0;border-top:1px solid var(--lf-line);padding-top:14px}.lf-module:first-child,.lf-role-hook{grid-column:span 12}.lf-module h2{font-size:clamp(19px,2.3vw,28px);line-height:1.2;margin:6px 0}.lf-reader-question,.lf-annotation{color:var(--lf-muted);line-height:1.55}.lf-annotation{font-weight:600}.lf-figure{margin-top:14px;border-top:1px solid var(--lf-line);border-bottom:1px solid var(--lf-line);padding:12px 0}.lf-figure svg{width:100%;height:auto;display:block}.lf-binding{font-size:10px;line-height:1.5;letter-spacing:.02em;color:var(--lf-muted);margin-top:10px;overflow-wrap:anywhere}.lf-data{font-size:12px;margin-top:8px}.lf-data summary{cursor:pointer;color:var(--lf-ink);font-weight:700}.lf-data table{border-collapse:collapse;width:100%;margin-top:6px}.lf-data th,.lf-data td{text-align:left;border-bottom:1px solid var(--lf-line);padding:4px 6px}.lf-footer{border-top:2px solid var(--lf-ink);margin-top:44px;padding-top:14px;color:var(--lf-muted);font-size:11px;line-height:1.6}.lf-footer ul{padding-left:18px}@media(max-width:720px){.lieflat-report{padding:24px 16px 42px}.lf-modules{display:block}.lf-module{margin-top:28px}.lf-module:first-child{margin-top:0}.lf-module h2{font-size:23px}.lf-figure{overflow-x:auto}.lf-figure svg{min-width:520px}.lf-role-hook .lf-figure svg{min-width:0}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}`;
+  const moduleMarkup = (await Promise.all(moduleRows.map((module, index) => renderModuleHtml(root, module, assetById.get(module.id), language, index, selectedMethod)))).join("\n");
+  const style = `${extractTemplateStyle(sourceTemplate)}\n.lieflat-report{--lf-paper:#f7f2eb;--lf-ink:#081f5c;--lf-muted:#5f5d57;--lf-data:#334eac;--lf-line:#c9c7c0;background:var(--lf-paper);color:var(--lf-ink);font-family:Inter,Arial,Helvetica,sans-serif;max-width:1080px;margin:0 auto;padding:clamp(22px,5vw,64px)}.lf-header{border-bottom:2px solid var(--lf-ink);padding-bottom:28px;margin-bottom:34px}.lf-kicker,.lf-role{font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;color:var(--lf-muted)}.lf-header h1{font-family:Georgia,'Times New Roman',serif;font-size:clamp(34px,6vw,68px);line-height:1.08;margin:12px 0}.lf-dek{font-size:clamp(17px,2.2vw,24px);line-height:1.45;max-width:820px;color:var(--lf-muted)}.lf-thesis{border-left:4px solid var(--lf-data);padding:12px 16px;margin-top:24px;line-height:1.55}.lf-modules{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:28px 22px}.lf-template-frame{display:contents}.lf-module{grid-column:span 6;min-width:0;border-top:1px solid var(--lf-line);padding-top:14px}.lf-module:first-child,.lf-role-hook{grid-column:span 12}.lf-module h2{font-size:clamp(19px,2.3vw,28px);line-height:1.2;margin:6px 0}.lf-reader-question,.lf-annotation{color:var(--lf-muted);line-height:1.55}.lf-annotation{font-weight:600}.lf-figure{margin-top:14px;border-top:1px solid var(--lf-line);border-bottom:1px solid var(--lf-line);padding:12px 0}.lf-figure svg{width:100%;height:auto;display:block}.lf-binding{font-size:12px;line-height:1.5;letter-spacing:.02em;color:var(--lf-muted);margin-top:10px;overflow-wrap:anywhere}.lf-data{font-size:12px;margin-top:8px}.lf-data summary{cursor:pointer;color:var(--lf-ink);font-weight:700}.lf-data table{border-collapse:collapse;width:100%;margin-top:6px}.lf-data th,.lf-data td{text-align:left;border-bottom:1px solid var(--lf-line);padding:4px 6px}.lf-footer{border-top:2px solid var(--lf-ink);margin-top:44px;padding-top:14px;color:var(--lf-muted);font-size:12px;line-height:1.6}.lf-footer ul{padding-left:18px}@media(max-width:720px){.lieflat-report{padding:24px 16px 42px}.lf-modules{display:block}.lf-module{margin-top:28px}.lf-module:first-child{margin-top:0}.lf-module h2{font-size:23px}.lf-figure{overflow-x:auto}.lf-figure svg{min-width:520px}.lf-role-hook .lf-figure svg{min-width:0}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}`;
   const sourceList = unique((validatedReportSources.length > 0)
     ? validatedReportSources
     : moduleRows.flatMap((module) => module.source_refs));
+  // sourceList stays as machine-checkable refs (returned in the manifest and
+  // bound to <main> below); sourceLabels is the human text shown to readers.
+  const sourceLabels = await Promise.all(sourceList.map((ref, index) => humanSourceLabel(root, ref, index, language)));
   const langLabel = language === "zh" ? "数据新闻信息图报告" : "Data-news infographic report";
-  const html = `<!doctype html><html lang="${language === "zh" ? "zh-Hans" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none' data:; font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"><title>${esc(input.title)}</title><style>${style}</style></head><body><main class="sheet lieflat-report ${layoutName(templateId)}" data-lieflat-template="${templateId}" data-lieflat-template-file="${esc(templateFile)}" data-lieflat-template-sha256="${templateSha}" data-lieflat-core-structure="${esc(REPORT_CORE_STRUCTURES[templateId])}" data-method-skill="${esc(selectedMethod)}" data-lieflat-upstream-commit="${LIEFLAT_BUNDLE.commit}"><header class="lf-header"><p class="lf-kicker">${esc(langLabel)} · ${esc(templateId)}</p><h1>${esc(input.title)}</h1><p class="lf-dek">${esc(input.dek)}</p><p class="lf-thesis"><strong>${language === "zh" ? "读者问题" : "Reader question"}:</strong> ${esc(input.reader_question || storyGraph.reader_question)}<br><strong>${language === "zh" ? "核心命题" : "Core thesis"}:</strong> ${esc(input.dek)}</p></header><section class="lf-modules" aria-label="${language === "zh" ? "按故事顺序排列的报告模块" : "Ordered report modules"}">${templateFrame(templateId, moduleMarkup)}</section><footer class="lf-footer"><p>${language === "zh" ? "来源与方法" : "Sources and method"}</p><ul>${sourceList.map((ref) => `<li>${esc(ref)}</li>`).join("")}</ul><p>${language === "zh" ? "本页由固定版本的 Lieflat Charts 模板和证据绑定模块离线生成。" : "This page was generated offline from a pinned Lieflat Charts template and evidence-bound modules."}</p></footer></main><noscript><p>${language === "zh" ? "本页面不依赖 JavaScript；核心结论、图表、数据表和来源均已保留。" : "This page does not require JavaScript; the core findings, charts, data tables, and sources are preserved."}</p></noscript></body></html>`;
+  const html = `<!doctype html><html lang="${language === "zh" ? "zh-Hans" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none' data:; font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"><title>${esc(input.title)}</title><style>${style}</style></head><body><main class="sheet lieflat-report ${layoutName(templateId)}" data-lieflat-template="${templateId}" data-lieflat-template-file="${esc(templateFile)}" data-lieflat-template-sha256="${templateSha}" data-lieflat-core-structure="${esc(REPORT_CORE_STRUCTURES[templateId])}" data-method-skill="${esc(selectedMethod)}" data-lieflat-upstream-commit="${LIEFLAT_BUNDLE.commit}" data-claim-ids="${esc(requestedClaimIds.join(","))}" data-source-refs="${esc(sourceList.join(","))}"><header class="lf-header"><p class="lf-kicker">${esc(langLabel)} · ${esc(templateId)}</p><h1>${esc(input.title)}</h1><p class="lf-dek">${esc(input.dek)}</p><p class="lf-thesis"><strong>${language === "zh" ? "读者问题" : "Reader question"}:</strong> ${esc(input.reader_question || storyGraph.reader_question)}<br><strong>${language === "zh" ? "核心命题" : "Core thesis"}:</strong> ${esc(input.dek)}</p></header><section class="lf-modules" aria-label="${language === "zh" ? "按故事顺序排列的报告模块" : "Ordered report modules"}">${templateFrame(templateId, moduleMarkup)}</section><footer class="lf-footer"><p>${language === "zh" ? "来源与方法" : "Sources and method"}</p><ul>${sourceLabels.map((label) => `<li>${esc(label)}</li>`).join("")}</ul><p>${language === "zh" ? "本页由固定版本的 Lieflat Charts 模板和证据绑定模块离线生成。" : "This page was generated offline from a pinned Lieflat Charts template and evidence-bound modules."}</p></footer></main><noscript><p>${language === "zh" ? "本页面不依赖 JavaScript；核心结论、图表、数据表和来源均已保留。" : "This page does not require JavaScript; the core findings, charts, data tables, and sources are preserved."}</p></noscript></body></html>`;
   const securityHtml = html.replaceAll("http://www.w3.org/2000/svg", "").toLowerCase();
   for (const forbidden of ["moxt.ai", "cdn.jsdelivr.net", "fonts.googleapis.com", "<script", "eval(", "https://", "http://", "url("]) if (securityHtml.includes(forbidden)) throw new Error(`unsafe or demo residue in Lieflat publication: ${forbidden}`);
   const htmlRef = `publications/${pageKey}/index.html`;
@@ -1274,7 +1374,7 @@ export async function renderLieflatPublication(input = {}) {
     html_bytes: Buffer.byteLength(html),
     html_sha256: sha(html),
     desktop_qa: "PASS",
-    mobile_qa: "PASS",
+    ...(mobilePages ? { mobile_qa: "PASS" } : {}),
     publication_qa: "PASS",
     story_json_ref: "story.json",
     story_json_path: storyJsonPath,
@@ -1286,7 +1386,7 @@ export async function renderLieflatPublication(input = {}) {
   await safeWrite(root, planRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_plan", story_graph_ref: input.story_graph_ref, modules: manifest.modules, passed: true }, null, 2)}\n`);
   await safeWrite(root, lintRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_lint", plan_ref: planRef, passed: true, blockers: [], checks: { ordered_modules: true, required_story_roles: true, distinct_findings: true, distinct_analytical_jobs: true, source_bound_modules: true, quantitative_computation_bindings: true, complementary_chart_grammars: distinctChartTemplates.length >= 2 || assets.length < 4, duplicate_conclusions: false, single_chart_fallback: false } }, null, 2)}\n`);
   await safeWrite(root, criticRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "lieflat_infographic_critic", plan_ref: planRef, manifest_ref: manifestRef, passed: true, score: 100, dimensions: { hierarchy: "PASS", legibility: "PASS", evidence_binding: "PASS", responsive_structure: "PASS", accessibility: "PASS" } }, null, 2)}\n`);
-  await safeWrite(root, publicationQaRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "publication_qa", manifest_ref: manifestRef, passed: true, publication_qa: "PASS", desktop_qa: "PASS", mobile_qa: "PASS", self_contained: true, network_requests: 0, remote_scripts: false, remote_fonts: false, remote_images: false, reduced_motion: true, no_js_core_information: true }, null, 2)}\n`);
+  await safeWrite(root, publicationQaRef, `${JSON.stringify({ schema_version: "1.0.0", kind: "publication_qa", manifest_ref: manifestRef, passed: true, publication_qa: "PASS", desktop_qa: "PASS", ...(mobilePages ? { mobile_qa: "PASS" } : {}), self_contained: true, network_requests: 0, remote_scripts: false, remote_fonts: false, remote_images: false, reduced_motion: true, no_js_core_information: true }, null, 2)}\n`);
   await safeWrite(root, manifestRef, `${JSON.stringify(manifest, null, 2)}\n`);
   const reportRef = "report.md";
   const reportPath = await safeWrite(root, reportRef, reportMarkdown({ ...input, language }, { ...manifest, manifest_path: resolve(root, manifestRef) }, moduleRows));
@@ -1313,7 +1413,7 @@ export async function renderLieflatPublication(input = {}) {
     network_required: false,
     html_bytes: Buffer.byteLength(html),
     desktop_qa: "PASS",
-    mobile_qa: "PASS",
+    ...(mobilePages ? { mobile_qa: "PASS" } : {}),
     publication_qa: "PASS",
     story_completion: manifest.story_completion,
     story_json_path: storyJsonPath,

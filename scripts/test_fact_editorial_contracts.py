@@ -83,5 +83,5 @@ bad_selection["supporting"].append("SPECIMEN_GRID")
 assert list(selection_validator.iter_errors(bad_selection)), "more than two supporting grammars were accepted"
 
 registry = json.loads((ROOT / "config" / "editorial-grammar-registry.json").read_text(encoding="utf-8"))
-assert [row["id"] for row in registry["grammars"]] == ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE"]
+assert [row["id"] for row in registry["grammars"]] == ["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"]
 print("fact and editorial contract schemas: PASS")

@@ -1,4 +1,5 @@
 import { lintEditorialGrammarSelection } from './editorial_grammar.mjs';
+import { sha256Hex } from './provenance.mjs';
 
 export const VALIDATOR_SEVERITIES = ['FATAL', 'ERROR', 'WARNING', 'INFO'];
 export const COGNITIVE_GOALS = ['ORIENT', 'ZOOM', 'EXPLAIN', 'MEASURE', 'COMPARE', 'CONSEQUENCE'];
@@ -34,7 +35,34 @@ export function annotationTargetValidator(spec) {
   return issues;
 }
 
-export function visualChannelOwnerValidator(spec) {
+// A choropleth's color channel is exempt from the color_only_quantity
+// blocker only when the module's own visualization manifest carries a
+// render-QA report that (a) is bound to the SVG actually on disk right now
+// (its stored svg_sha256 must match a fresh hash of the asset text this lint
+// call was given - never trust a report by name alone) and (b) proves,
+// per rendered viewport, that value_labels passed - i.e. every region with
+// a data value shows that exact value as legible text (render_qa_labels.mjs,
+// composed into the report at render time by render_qa.mjs). Anything else
+// - no renderQa, wrong chart_type, missing/failing/stale value_labels, a
+// hash mismatch - falls through to the same block every other color-only
+// quantity encoding gets today.
+function choroplethValueLabelsProven(asset) {
+  if (!asset || asset.manifest?.chart_type !== 'choropleth') return false;
+  const qa = asset.renderQa;
+  if (!qa || typeof qa !== 'object') return false;
+  const viewportSvg = { desktop: asset.desktopSvg, ...(asset.mobileSvg !== undefined ? { mobile: asset.mobileSvg } : {}) };
+  const viewportNames = Object.keys(viewportSvg);
+  if (!viewportNames.length) return false;
+  return viewportNames.every((viewport) => {
+    const svgText = viewportSvg[viewport];
+    const report = qa.viewports?.[viewport];
+    if (typeof svgText !== 'string' || !report) return false;
+    if (report.svg_sha256 !== sha256Hex(svgText)) return false;
+    return report.value_labels?.passed === true;
+  });
+}
+
+export function visualChannelOwnerValidator(spec, assets = {}) {
   const validator = 'visual_channel_owner_validator';
   const issues = [];
   for (const [moduleIndex, module] of (spec?.modules ?? []).entries()) {
@@ -49,7 +77,9 @@ export function visualChannelOwnerValidator(spec) {
     }
     const quantitative = channels.filter((owner) => owner.role === 'quantitative');
     const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle'].includes(owner.channel));
-    if (quantitative.length && !accurate) issues.push(issue(validator, 'ERROR', 'visual_channel.color_only_quantity', `visual module '${module.id}' encodes quantity only through low-precision channels`, `/modules/${moduleIndex}/visual_channels`));
+    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref])) {
+      issues.push(issue(validator, 'ERROR', 'visual_channel.color_only_quantity', `visual module '${module.id}' encodes quantity only through low-precision channels`, `/modules/${moduleIndex}/visual_channels`));
+    }
   }
   return issues;
 }
@@ -70,6 +100,7 @@ export function misleadingQuantitativeValidator(spec, assets = {}) {
     if (['horizontal_bar', 'diverging_bar'].includes(chartType) && !['zero', 'symmetric_zero'].includes(encoding.baseline_policy)) issues.push(issue(validator, 'ERROR', 'quantitative.zero_baseline_required', `bar visual '${module.id}' requires a zero or symmetric-zero baseline`, `${path}/baseline_policy`));
     if (encoding.scale_type === 'log' && (!(Number(encoding.domain_min) > 0) || !(Number(encoding.domain_max) > Number(encoding.domain_min)))) issues.push(issue(validator, 'ERROR', 'quantitative.log_domain_positive', `log scale in module '${module.id}' requires 0 < domain_min < domain_max`, path));
     if (['area', 'size'].includes(encoding.mark_semantics) && encoding.area_proportional !== true) issues.push(issue(validator, 'ERROR', 'quantitative.area_must_be_proportional', `area/size encoding in module '${module.id}' must declare proportional area`, `${path}/area_proportional`));
+    if (encoding.mark_semantics === 'color' && chartType !== 'choropleth') issues.push(issue(validator, 'ERROR', 'quantitative.color_mark_choropleth_only', `color mark semantics in module '${module.id}' is only valid for a choropleth chart`, `${path}/mark_semantics`));
     const flowLike = module.visual_grammar === 'flow' || ['sankey', 'alluvial', 'parallel_sets', 'geo_flow_map', 'cartographic_flow_map'].includes(chartType);
     if (flowLike && encoding.quantity_kind === 'stock_change') issues.push(issue(validator, 'FATAL', 'quantitative.stock_change_is_not_flow', `module '${module.id}' cannot label stock change as migration flow`, `${path}/quantity_kind`));
     if (flowLike && encoding.quantity_kind === 'stock') issues.push(issue(validator, 'ERROR', 'quantitative.stock_is_not_flow', `module '${module.id}' uses flow geometry for a stock quantity without flow semantics`, `${path}/quantity_kind`));
@@ -166,7 +197,7 @@ function editorialGrammarRecommendation(unsupportedVisualGrammars, registry) {
 export function runEditorialValidators(spec, assets = {}, context = {}) {
   const groups = {
     annotation_target_validator: annotationTargetValidator(spec),
-    visual_channel_owner_validator: visualChannelOwnerValidator(spec),
+    visual_channel_owner_validator: visualChannelOwnerValidator(spec, assets),
     misleading_quantitative_validator: misleadingQuantitativeValidator(spec, assets),
     scene_cognitive_budget_validator: sceneCognitiveBudgetValidator(spec),
     grammar_compatibility_validator: grammarCompatibilityValidator(spec, context.editorial_grammar_registry),

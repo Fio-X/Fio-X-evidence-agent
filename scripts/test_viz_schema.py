@@ -69,6 +69,22 @@ errors = list(validator.iter_errors(draft))
 if errors:
     raise SystemExit("draft spec without claim_id failed schema validation: " + " | ".join(error.message for error in errors))
 
+# Fix 2 (value-label precision): an explicit shared decimal count for this
+# chart's value labels, capped at 3 - see fmt()/resolveChartDecimals() in
+# runtime/pi/viz.mjs. Axis ticks are unaffected by this field.
+valid_decimals = {**valid, "decimals": 3}
+errors = sorted(validator.iter_errors(valid_decimals), key=lambda e: list(e.path))
+if errors:
+    raise SystemExit("valid spec with decimals=3 failed schema validation: " + " | ".join(error.message for error in errors))
+
+invalid_decimals = {**valid, "decimals": 4}
+if not list(validator.iter_errors(invalid_decimals)):
+    raise SystemExit("decimals above the schema maximum (3) was not rejected")
+
+invalid_decimals_negative = {**valid, "decimals": -1}
+if not list(validator.iter_errors(invalid_decimals_negative)):
+    raise SystemExit("negative decimals was not rejected")
+
 
 valid_sankey = {
     "schema_version": "0.8.0",
@@ -233,6 +249,55 @@ errors = list(validator.iter_errors(invalid_layered))
 if not any("flow_unit_field" in error.message for error in errors):
     raise SystemExit("layered cartographic spec without flow_unit_field was not rejected")
 
+# The runtime accepts reference_line and range_bracket annotations
+# (viz.mjs validateVizSpec), so the published schema must accept them too.
+annotated = {
+    **valid,
+    "chart_type": "horizontal_bar",
+    "category_field": "country",
+    "category_names": "worldbank",
+    "language": "zh",
+    "annotations": [
+        {"type": "reference_line", "text": "七成", "claim_id": "claim-fixture-verified", "value": 70},
+        {"type": "range_bracket", "text": "8 国至少七成", "claim_id": "claim-fixture-verified", "match_field": "country", "match_value": "Congo, Dem. Rep.", "end_match_value": "Chad", "tone": "accent"},
+    ],
+}
+for key in ("x_field", "facet_field", "panel_mark", "mixed_period_strategy"):
+    annotated.pop(key, None)
+errors = sorted(validator.iter_errors(annotated), key=lambda e: list(e.path))
+if errors:
+    raise SystemExit("reference_line/range_bracket spec failed schema validation: " + " | ".join(error.message for error in errors))
+for bad, needle in (
+    ({"type": "reference_line", "text": "七成", "claim_id": "c"}, "value"),
+    ({"type": "range_bracket", "text": "8 国", "claim_id": "c", "match_field": "country", "match_value": "Chad"}, "end_match_value"),
+    ({"type": "range_bracket", "text": "8 国", "claim_id": "c", "match_field": "country", "match_value": "Chad", "end_match_value": "Niger", "tone": "loud"}, "accent"),
+):
+    errors = list(validator.iter_errors({**annotated, "annotations": [bad]}))
+    if not any(needle in error.message for error in errors):
+        raise SystemExit(f"invalid {bad['type']} annotation was not rejected (expected an error mentioning {needle!r})")
+
+valid_treemap = {
+    **valid_sankey,
+    "schema_version": "0.9.0",
+    "reader_task": "part_to_whole",
+    "chart_type": "treemap",
+    "category_field": "function",
+    "value_field": "spending",
+    "group_field": "department",
+}
+for key in ("source_field", "target_field", "flow_conservation", "flow_tolerance"):
+    valid_treemap.pop(key, None)
+errors = list(validator.iter_errors(valid_treemap))
+if errors:
+    raise SystemExit("valid treemap spec failed schema validation: " + " | ".join(error.message for error in errors))
+invalid_treemap = dict(valid_treemap)
+invalid_treemap.pop("value_field")
+if not any("value_field" in error.message for error in validator.iter_errors(invalid_treemap)):
+    raise SystemExit("treemap without value_field was not rejected")
+invalid_treemap_pct = {**valid_treemap, "other_threshold_pct": 90}
+if not list(validator.iter_errors(invalid_treemap_pct)):
+    raise SystemExit("treemap other_threshold_pct above the schema maximum was not rejected")
+
 print("viz schema: PASS")
 print("draft: 2020-12")
 print("valid spec: PASS")
@@ -242,3 +307,5 @@ print("v0.9 spatial/explanatory schema: PASS")
 print("v1.0 cartographic flow schema: PASS")
 print("v1.1 trajectory cartography schema: PASS")
 print("v1.1 layered cartographic flow schema: PASS")
+print("reference_line and range_bracket annotation schema: PASS")
+print("decimals field schema: PASS")

@@ -20,7 +20,7 @@ function d3Vendor(){for(const p of [path.join(HERE,'vendor','d3-7.9.0.min.js'),p
 function geoContextAsset(){for(const p of [path.join(HERE,'assets','naturalearth-admin0-110m.geojson'),path.join(HERE,'..','pi','assets','naturalearth-admin0-110m.geojson')]){try{return JSON.parse(fs.readFileSync(p,'utf8'));}catch{}}return null;}
 const GEO_CENTROIDS={CHN:[104,35],USA:[-100,38],IND:[78,22],RUS:[100,60],JPN:[138,36],BRA:[-51,-10],CAN:[-106,57],KOR:[127,36],FRA:[2,46],DEU:[10,51],SAU:[45,24],IRN:[53,32],MEX:[-102,23],IDN:[117,-2],TUR:[35,39],GBR:[-3,55],TWN:[121,23],ESP:[-4,40],VNM:[108,16],AUS:[134,-25],ITA:[12,42],ZAF:[25,-29],EGY:[30,27],THA:[101,15],MYS:[102,4],PAK:[69,30],ARE:[54,24],SWE:[18,62],POL:[19,52],NOR:[9,62],ARG:[-64,-34],IRQ:[44,33],NLD:[5,52],PHL:[122,13],KAZ:[67,48],BGD:[90,24],DZA:[2,28],KWT:[47.5,29.3],CHL:[-71,-33],COL:[-74,4],BEL:[4.5,50.8],FIN:[26,64],ISR:[35,31.5],UZB:[64,41],CZE:[15.5,49.8],VEN:[-66,8],AUT:[14,47.5],CHE:[8,46.8],PER:[-75,-9],SGP:[104,1.3]};
 export function runtimeAssetStatus(){return {plotly:{available:Boolean(plotlyVendor()),version:'3.3.1'},d3:{available:Boolean(d3Vendor()),version:'7.9.0'},sigma:{available:fs.existsSync(path.join(HERE,'node_modules','sigma','package.json')),version:'3.0.3'}};}
-export function validatePublicationSpec(spec){
+export function validatePublicationSpec(spec, options = {}){
   const errors=[];
   if(!spec||typeof spec!=='object'||Array.isArray(spec)) return ['spec must be an object'];
   if(!SUPPORTED_PUBLICATION_VERSIONS.has(spec.schema_version)) errors.push(`schema_version must be one of ${[...SUPPORTED_PUBLICATION_VERSIONS].join(', ')}`);
@@ -33,7 +33,9 @@ export function validatePublicationSpec(spec){
     if(packaging==='archive'&&d.self_contained!==true) errors.push('archive packaging requires delivery.self_contained=true');
     if(packaging==='production'&&d.self_contained!==false) errors.push('production packaging requires delivery.self_contained=false');
   } else if(d.self_contained!==true) errors.push('delivery.self_contained must be true');
-  if(!Array.isArray(d.breakpoints)||d.breakpoints.length<2) errors.push('delivery.breakpoints requires at least two widths');
+  if(options.mobilePages===false){
+    if(!Array.isArray(d.breakpoints)||d.breakpoints.length!==1||d.breakpoints[0]!==1440) errors.push('delivery.breakpoints must be exactly [1440] when mobile pages are off');
+  } else if(!Array.isArray(d.breakpoints)||d.breakpoints.length<2) errors.push('delivery.breakpoints requires at least two widths');
   if(!Array.isArray(spec.modules)||spec.modules.length<2) errors.push('modules requires at least two modules');
   const ids=new Set();
   for(const [i,m] of (spec.modules??[]).entries()){
@@ -80,8 +82,8 @@ function bootstrapJs(spec,assetStatus,style){
   const geoContext=spec.modules.some(m=>m.visual_type==='geo_linked')?geoContextAsset():null;
   return `const GEO_CONTEXT=${stableJson(geoContext)};const GEO_CENTROIDS=${stableJson(GEO_CENTROIDS)};const SPEC=${stableJson({...spec,modules})};const ASSETS=${stableJson(assetStatus)};const STYLE=${stableJson(style.tokens)};${nativeNetworkRuntime()}${nativeGeoRuntime()}function addControls(m,scene){const host=document.getElementById('controls-'+m.id);for(const c of (scene.controls||[])){const b=document.createElement('button');b.type='button';b.textContent=c.label||c.id;b.dataset.interactionId=c.id;b.addEventListener('click',()=>{const apply=(targetId,method,args)=>{const el=document.getElementById('chart-'+targetId);if(!el||!window.Plotly)return;if(method==='restyle')Plotly.restyle(el,args?.[0]||{},args?.[1]);if(method==='relayout')Plotly.relayout(el,args?.[0]||{})};apply(m.id,c.method,c.args);for(const op of (c.linked||[]))apply(op.target_module_id,op.method,op.args);document.body.dataset.publicationState=c.state||c.id});host.appendChild(b)}}async function start(){for(const m of SPEC.modules){const fallback=document.getElementById('fallback-'+m.id);if(fallback)fallback.hidden=true;try{if(m.type==='plotly'){if(!window.Plotly)throw new Error('Plotly runtime unavailable');const s=m._compiled;await Plotly.newPlot(document.getElementById('chart-'+m.id),s.figure.data,s.figure.layout,s.figure.config);addControls(m,s)}else if(m.type==='model'&&m.visual_type==='network'){renderNetwork(m)}else if(m.type==='d3'){const d=document.getElementById('detail-'+m.id);if(!window.d3){throw new Error('D3 runtime unavailable')}else{d.textContent='D3 runtime ready: '+m.visual_type}}}catch(error){if(fallback)fallback.hidden=false;if(m.visual_type==='geo_linked')renderGeoFallback(m,error);else{const d=document.getElementById('detail-'+m.id);if(d)d.textContent='Module fallback: '+String(error?.message||error);const chart=document.getElementById('chart-'+m.id);if(chart)chart.dataset.blocked='runtime'}}}window.__ADN_READY=true;document.body.dataset.publicationState='ready'}start();`;
 }
-export function renderPublication(spec,{includePlotly=true,includeD3=true}={}){
-  const errors=validatePublicationSpec(spec); if(errors.length) throw new Error(`Invalid PublicationSpec: ${errors.join('; ')}`);
+export function renderPublication(spec,{includePlotly=true,includeD3=true,mobilePages}={}){
+  const errors=validatePublicationSpec(spec,{mobilePages}); if(errors.length) throw new Error(`Invalid PublicationSpec: ${errors.join('; ')}`);
   const style=resolvePublicationStyle(spec); if(style.status!=='PASS') throw new Error(`Style mapping blocked: ${style.reasons.join('; ')}`);
   const assets=runtimeAssetStatus(); const wantsPlotly=spec.modules.some(m=>m.type==='plotly'); const wantsD3=spec.modules.some(m=>m.type==='d3'); const plotly=includePlotly&&wantsPlotly?plotlyVendor():null; const d3=includeD3&&wantsD3?d3Vendor():null;
   const packaging=spec.delivery?.packaging??'archive'; const externalAssets={};
