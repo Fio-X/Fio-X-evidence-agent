@@ -107,11 +107,21 @@ with tempfile.TemporaryDirectory(prefix="news-exit-codes-") as tmp:
         assert failure["failed_turn_context_tokens"] == 51000, failure
         assert "[agent] rpc_failure class=provider_timeout" in failed.stderr
 
+    # verify: VERIFIED 0, NOT VERIFIED 1, missing directory 2.
+    good = run(["verify", str(artifact_of(tmp / "happy"))])
+    assert good.returncode == 0 and last_line(good) == "VERIFIED", good.stderr
+    bad_verify = run(["verify", str(artifact_of(tmp / "corrupt"))])
+    assert bad_verify.returncode == 1, bad_verify.returncode
+    assert last_line(bad_verify).startswith("NOT VERIFIED: "), last_line(bad_verify)
+    missing = run(["verify", str(tmp / "no-such-dir")])
+    assert missing.returncode == 2, (missing.returncode, missing.stderr)
+    assert last_line(missing).startswith("NOT VERIFIED: "), last_line(missing)
+
     # (b) same for continue (existing artifact from the happy run).
     artifact = artifact_of(tmp / "happy")
     cont_fail = run(["continue", "--pi-bin", str(MOCK), str(artifact), "follow up again"],
                     {"MOCK_PI_SCENARIO": "provider_error_after_text"})
-    assert cont_fail.returncode != 0, cont_fail.stderr[-2000:]
+    assert cont_fail.returncode == 2, cont_fail.stderr[-2000:]
     assert "provider_timeout" in cont_fail.stderr
     assert RAW not in cont_fail.stdout + cont_fail.stderr
 

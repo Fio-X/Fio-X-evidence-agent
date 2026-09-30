@@ -136,7 +136,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 "failed",
                 audit.as_ref(),
             )?;
-            Err(error)
+            Err(verify::exit_on_error(&error))
         }
     }
 }
