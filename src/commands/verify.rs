@@ -1,6 +1,6 @@
 use crate::cli::VerifyArgs;
 use crate::verify::{recompute_artifact, verify_artifact, RecomputeReport, VerificationReport};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::json;
 use std::fs;
@@ -174,7 +174,8 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
         args.recompute_timeout,
         args.recompute,
     )
-    .await?;
+    .await
+    .map_err(|error| exit_on_error(&error))?;
 
     println!(
         "artifact integrity: {}",
@@ -200,7 +201,9 @@ pub async fn run(args: VerifyArgs) -> Result<()> {
         println!("FAIL  {error}");
     }
     if !passed {
-        bail!("artifact verification failed");
+        eprintln!("NOT VERIFIED: artifact verification failed; see the FAIL lines above");
+        std::process::exit(EXIT_NOT_VERIFIED);
     }
+    eprintln!("VERIFIED");
     Ok(())
 }
