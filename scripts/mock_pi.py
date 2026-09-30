@@ -139,7 +139,7 @@ def ensure_artifacts(resume: bool):
     input_hash = sha_bytes("\n".join(fingerprints).encode())
     comp_key = sha_bytes(f"{sql}\n{input_hash}\n{result_hash}".encode())
     comp_ref = f"computations/{comp_key}.json"
-    write_json(root / comp_ref, {"schema_version": "0.7.0", "sql": sql, "input_snapshot_hash": input_hash, "input_fingerprints": fingerprints, "result_hash": result_hash, "rows": rows})
+    write_json(root / comp_ref, {"schema_version": "0.7.0", "sql": sql, "input_snapshot_hash": input_hash, "input_fingerprints": fingerprints, "read_inputs": [{"path": data_ref, "sha256": data_hash}], "input_binding": "source_bound", "result_hash": result_hash, "rows": rows})
 
     plan_ref = "visualizations/plans/mock.json"
     lint_ref = "visualizations/lints/mock.json"
