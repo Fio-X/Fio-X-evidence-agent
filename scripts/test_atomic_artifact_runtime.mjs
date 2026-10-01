@@ -284,4 +284,39 @@ for (const order of [["query", "lint"], ["lint", "query"]]) {
   void first;
   console.log("regression guard: adding data_hash back to the record collides -- PASS");
 }
+
+// --- trailing " ;" through the claim and chart tools ------------------------
+// Baseline bug (switch off): duckdb_query stores "x " for "x ;", record_claim's
+// replay normalizes the stored SQL to "x" and rejects the path. Documented here,
+// not fixed on the off path. Switch on: record_claim replays the same record.
+{
+  const SPACED = `${SQL} ;`;
+  const claimParams = (ref) => ({
+    claim: "Chad had the lowest listed share in the fixture.",
+    claim_kind: "descriptive", status: "supported",
+    source_refs: ["data/africa.csv"], computation_refs: [ref],
+  });
+  setSwitch(false);
+  {
+    const art = fixtureRun("claim-off");
+    const q = await tools.get("duckdb_query").execute("q", { sql: SPACED });
+    const ref = q.details?.artifact ? q.details.artifact.slice(art.length + 1) : compFiles(art).map((n) => `computations/${n}`)[0];
+    const stored = JSON.parse(readFileSync(join(art, ref), "utf8"));
+    assert.equal(stored.sql, `${SQL} `, "switch off stores the SQL with the trailing space (baseline behaviour)");
+    await assert.rejects(() => tools.get("record_claim").execute("c", claimParams(ref)), /content-addressed path does not match/, "baseline bug: replay rejects the record");
+  }
+  setSwitch(true);
+  {
+    const art = fixtureRun("claim-on");
+    const q = await tools.get("duckdb_query").execute("q", { sql: SPACED });
+    const ref = compFiles(art).map((n) => `computations/${n}`)[0];
+    assert.equal(JSON.parse(readFileSync(join(art, ref), "utf8")).sql, SQL);
+    const claim = await tools.get("record_claim").execute("c", claimParams(ref));
+    assert.match(claim.content[0].text, /VERIFIED by system replay/);
+    // newsroom_chart (which also takes computationSql now) is retired and never registered, so it cannot be driven here.
+    void q;
+  }
+  setSwitch(false);
+  console.log("trailing ' ;': baseline replay bug recorded; switch on, record_claim replays the same record -- PASS");
+}
 console.log("PASS");
