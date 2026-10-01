@@ -68,6 +68,25 @@ const CARTOGRAPHIC_DEFAULT_SOURCE_URL = CARTOGRAPHIC_DEFAULT_BASEMAP?.source_url
 const CARTOGRAPHIC_DEFAULT_LICENSE = CARTOGRAPHIC_DEFAULT_BASEMAP?.license ?? BASEMAP_LICENSE;
 const CARTOGRAPHIC_DEFAULT_CONTENT_HASH = CARTOGRAPHIC_DEFAULT_BASEMAP?.content_hash ?? BASEMAP_CONTENT_HASH;
 
+// Provenance defaults for the basemap the caller selected. Only omitted fields
+// are filled; anything the caller wrote is kept verbatim and still validated by
+// validateVizSpec against the registry. An unknown basemap_id gets no defaults,
+// so it is rejected rather than quietly paired with another basemap's provenance.
+function basemapProvenanceDefaults(basemapId: unknown) {
+  if (basemapId === undefined || basemapId === null || basemapId === CARTOGRAPHIC_DEFAULT_BASEMAP_ID) {
+    return {
+      basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
+      basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
+      basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
+      basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+    };
+  }
+  const entry = getBasemap(String(basemapId));
+  return entry
+    ? { basemap_id: String(basemapId), basemap_source_url: entry.source_url, basemap_license: entry.license, basemap_content_hash: entry.content_hash }
+    : {};
+}
+
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 
 function normalizedNewsroomPhase() {
@@ -2140,10 +2159,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
         projection: "natural_earth_1",
-        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
-        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
-        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
-        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+        ...basemapProvenanceDefaults(params.basemap_id),
         aggregation_policy: "none",
         ...params,
         ...(params.geometry_semantics === "abstract_od" && !String(params.note ?? "").trim()
@@ -2155,10 +2171,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         // CHOROPLETH_BASEMAP_ID), the same naturalearth_admin0_50m
         // cartographic_flow_map already defaults to, so it reuses these same
         // four provenance constants rather than defining its own.
-        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
-        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
-        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
-        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+        ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
