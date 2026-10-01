@@ -11,9 +11,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { chartValuesInRows, claimBindsComputation, normalizeSql, strictResultHashMatches } from "../runtime/pi/claim_binding.mjs";
+import { chartValuesInRows, claimBindsComputation, normalizeSql, numericFieldsOfSpec, strictResultHashMatches } from "../runtime/pi/claim_binding.mjs";
 import { lintInfographicSpec } from "../runtime/pi/infographic.mjs";
-import { lintVizSpec } from "../runtime/pi/viz.mjs";
+import { CHART_TYPES, lintVizSpec } from "../runtime/pi/viz.mjs";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
 
 // ---- Part 1: pure decision ------------------------------------------------
@@ -123,6 +123,24 @@ refused(direct(`SELECT region, abs(amount) AS n FROM read_json('${CA}')`, [{ reg
 refused(direct(`SELECT region, count(*) AS n FROM read_json('${CB}') GROUP BY region`, AGG, ["n"], [CB]), /no_shared|other than|reads/, "another claim's computation is not this claim's root");
 assert.equal(claimBindsComputation({ input_binding: "source_bound", effective_inputs: ["data/a.csv"], sql: "x", rows: AGG, numeric_fields: ["n"], read_inputs: [{ path: CA, sha256: H("1") }] }, [rootClaim]).ok, false, "no AST: fail closed");
 assert.equal(claimBindsComputation({ input_binding: "source_bound", effective_inputs: ["data/a.csv"], sql: `SELECT region, count(*) AS n FROM read_json('${CA}') GROUP BY region`, rows: AGG, ast: astOf(`SELECT region, count(*) AS n FROM read_json('${CA}') GROUP BY region`), read_inputs: [{ path: CA, sha256: H("1") }] }, [rootClaim]).ok, false, "numeric fields unknown: fail closed");
+// Numeric encoding fields are recognized for every chart type in the registry.
+const FIELDS_OF = {
+  horizontal_bar: ["value_field"], dot: ["value_field"], diverging_bar: ["value_field"], waffle: ["value_field"], treemap: ["value_field"], choropleth: ["value_field"],
+  cartographic_flow_map: ["value_field"], parallel_sets: ["value_field"], chord: ["value_field"], sankey: ["value_field"], alluvial: ["value_field"],
+  line: ["value_field"], multi_line: ["value_field"], small_multiples: ["value_field"], streamgraph: ["value_field"], heatmap: ["value_field", "y_field"],
+  dumbbell: ["start_field", "end_field"], slope: ["start_field", "end_field"], scatter: ["x_field", "y_field"],
+  geo_flow_map: ["value_field", "source_lat_field", "source_lon_field", "target_lat_field", "target_lon_field"],
+  trajectory_profile: ["x_field", "altitude_field", "speed_field"],
+};
+const NO_NUMERIC = ["node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "process_schematic"];
+assert.deepEqual([...CHART_TYPES].sort(), [...Object.keys(FIELDS_OF), ...NO_NUMERIC].sort(), "every chart type is classified here; a new chart type must be added to this table and to numericFieldsOfSpec");
+for (const [type, fields] of Object.entries(FIELDS_OF)) {
+  const spec = { chart_type: type, category_field: "cat", series_field: "ser", source_field: "src", target_field: "tgt", label_field: "lab", x_field: type === "scatter" || type === "trajectory_profile" ? "col_x_field" : "time", ...Object.fromEntries(fields.filter((key) => key !== "x_field").map((key) => [key, `col_${key}`])) };
+  assert.deepEqual([...numericFieldsOfSpec(spec)].sort(), fields.map((key) => `col_${key}`).sort(), `${type}: numeric encoding fields`);
+}
+for (const type of NO_NUMERIC) assert.deepEqual(numericFieldsOfSpec({ chart_type: type, x_field: "d", label_field: "l", source_field: "a", target_field: "b" }), [], `${type} encodes no numeric column`);
+refused(direct(`SELECT region, 99 AS n FROM read_json('${CA}')`, [{ region: "n", n: 99 }], []), /no numeric encoding field is known/, "numeric fields not recognized for the chart type: refused");
+refused(direct(`SELECT region, 99 AS n FROM read_json('${CA}')`, [{ region: "n", n: 99 }], ["other"]), /none of the chart's numeric encoding fields/, "numeric field not among the output columns: refused");
 // A refused direct read can still pass on its rows, and only on its rows.
 assert.equal(direct(`SELECT g.region, g.amount FROM read_json('${CA}') g CROSS JOIN read_json('${CB}') b`, ROOT_ROWS, ["amount"], [CA, CB]).relation, "values_in_rows");
 // The refusal names the canonical path only.
@@ -309,6 +327,13 @@ try {
     assert.equal(result.binding.length, 1, `${label} must be refused`);
     assert.equal(result.artifact.publishable, false, `${label}: not publishable`);
   }
+  // Chart type with no recognized numeric field (timeline): the direct-read relation does not apply.
+  const timelineConst = await lint({ claim_id: claimG, sql: `SELECT region, 99 AS amount FROM read_json('${qg}')` });
+  assert.equal(timelineConst.binding.length, 1, "no numeric field recognized for the chart type: a constant number is refused");
+  const barConst = await lint({ claim_id: claimG, chart_type: "horizontal_bar", category_field: "region", value_field: "amount", sql: `SELECT region, 99 AS amount FROM read_json('${qg}')` });
+  assert.equal(barConst.binding.length, 1, "horizontal_bar with a constant in its value column is refused");
+  const barAgg = await lint({ claim_id: claimG, chart_type: "horizontal_bar", category_field: "region", value_field: "amount", sql: `SELECT region, sum(amount) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region` });
+  assert.equal(barAgg.binding.length, 0, "horizontal_bar with SUM over the claim's computation passes");
   // A claim computation read by the claim's own chart, but the chart hung on a second claim's id.
   assert.equal((await lint({ claim_id: claimY, value_field: "amount", sql: `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region` })).binding.length, 1, "chart on one claim's computation hung on another claim");
   // Quoted literals are not normalized: two different filters are two statements.
