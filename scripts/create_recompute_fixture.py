@@ -44,7 +44,7 @@ def build(root: Path):
     sql=f"SELECT country, value FROM read_csv_auto('data/{data_hash}.csv') ORDER BY country"
     key=sha_bytes(f'{sql}\n{input_hash}\n{result_hash}'.encode())
     comp_ref=f'computations/{key}.json'
-    write_json(root/comp_ref,{'schema_version':'0.7.0','sql':sql,'input_snapshot_hash':input_hash,'input_fingerprints':fingerprints,'result_hash':result_hash,'rows':rows})
+    write_json(root/comp_ref,{'schema_version':'0.7.0','sql':sql,'input_snapshot_hash':input_hash,'input_fingerprints':fingerprints,'read_inputs':[{'path':data_ref,'sha256':data_hash}],'input_binding':'source_bound','result_hash':result_hash,'rows':rows})
     write_json(root/'story.json',{
         'schema_version':'0.7.0','id':'recompute-real','kind':'investigation','created_at':'2026-09-12T00:00:00Z','updated_at':'2026-09-12T00:00:00Z','topic':'fixture','status':'draft',
         'runtime':{'backend':'pi-rpc','provider':None,'model':None,'session_dir':'session/'},
