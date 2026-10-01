@@ -48,10 +48,15 @@ for (const viewport of ["desktop", "mobile"]) {
     assert.ok(Math.abs(Math.hypot(+t[2] - c.x, +t[3] - c.y) - 9) <= 1.5, `${viewport}: tether ${c.number} starts on the circle`);
   }
 }
-// A cluster dense enough to displace markers also leaves more than a quarter
-// of them list-only, so it is a KNOWN RESIDUAL, not a clean sample: its only
+// The adaptive inset ladder gives the desktop render a frame large enough to
+// draw every marker; the narrower mobile render is a KNOWN RESIDUAL whose only
 // QA failure is the disclosed list-only rule (no tether crossing text, markers
 // or leaders, no stray overlap), and nothing is filtered out.
+assert.deepEqual(
+  ["geometry", "value_labels", "contrast"].flatMap((k) => qa.viewports.desktop[k]?.failures ?? []).map((f) => f.rule),
+  [],
+  "desktop cluster must render with no QA failure",
+);
 {
   const fails = Object.values(qa.viewports).flatMap((v) => ["geometry", "value_labels", "contrast"].flatMap((k) => v[k]?.failures ?? []));
   assert.deepEqual([...new Set(fails.map((f) => f.rule))], ["markers_list_only_exceed_quarter"], `unexpected QA failures: ${JSON.stringify(fails.map((f) => f.message))}`);
@@ -77,7 +82,9 @@ assert.ok(ruleHits(bad, "marker_displaced_without_tether").length > 0, "QA must 
   for (const vp of ["desktop", "mobile"]) {
     const l = lo(qa, vp);
     assert.ok(l && Number.isFinite(l.count) && Number.isFinite(l.total), `${vp}: QA reports list_only_markers`);
-    assert.equal(l.total - l.count, total(bundle[vp]), `${vp}: drawn markers + list-only = numbered regions`);
+    // QA only reports a list-only total when something was dropped.
+    if (l.count) assert.equal(l.total - l.count, total(bundle[vp]), `${vp}: drawn markers + list-only = numbered regions`);
+    else assert.ok(total(bundle[vp]) > 0, `${vp}: nothing dropped, so every marker is drawn`);
     if (l.count) assert.match(bundle[vp], /另有 \d+ 个地区|more region\(s\) are too crowded/, `${vp}: note names the list-only count`);
     report[vp] = `${l.count}/${l.total}`;
   }
