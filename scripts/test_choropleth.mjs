@@ -1067,4 +1067,48 @@ console.log("choropleth highlight outline: accent outline drawn only for spec-hi
 }
 console.log("choropleth inset: panel reserved outside the map frame on desktop and mobile -- PASS");
 
+// --- projection choice by real spherical extent (diagnosis P1). The old
+//     framing centred on the lon/lat bbox midpoint, which for data straddling
+//     the antimeridian (New Zealand + Europe) is a useless centre; a 90-degree
+//     horizon then dropped every Southeast Asian / Pacific ring whole. Each
+//     shape of data below must draw every region that has a data row
+//     (choropleth-data path, desktop and mobile) and the existing render-QA
+//     rule value_label_missing_region must report nothing. Rows are synthetic;
+//     nothing here is specific to any one story.
+{
+  const SHAPES = {
+    // [World Bank name list, expected projection kind]
+    global_cross_hemisphere: [["New Zealand", "Papua New Guinea", "Indonesia", "Cambodia", "Ethiopia", "Greece", "Brazil", "France", "Panama"], "world"],
+    antimeridian_pacific: [["New Zealand", "Fiji", "Tonga", "Samoa", "Vanuatu"], "azimuthal"],
+    single_continent_africa: [["Nigeria", "Ghana", "Kenya", "Ethiopia", "Egypt, Arab Rep.", "South Africa", "Chad", "Mali"], "azimuthal"],
+    small_cluster_balkans: [["Serbia", "Croatia", "Bosnia and Herzegovina", "North Macedonia", "Albania", "Montenegro", "Slovenia", "Bulgaria"], "azimuthal"],
+    high_latitude_nordics: [["Norway", "Sweden", "Finland", "Iceland", "Denmark"], "azimuthal"],
+  };
+  const { chooseMapProjection } = await import("../runtime/pi/choropleth.mjs");
+  for (const [shape, [countries, kind]] of Object.entries(SHAPES)) {
+    const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 10 + i * 7, year: 2021 }));
+    const spec = { ...base, highlight_values: [] };
+    const bundle = renderVizBundle(spec, rows);
+    const joined = joinChoroplethRows(rows, spec);
+    const expected = joined.map((item) => item.iso3);
+    assert.equal(expected.length, countries.length, `${shape}: every fixture name must join to an iso3`);
+    const points = joined.flatMap((item) => item.featureIndices.flatMap((idx) => geometryRings(neFeatureGeometry(idx)).flat()));
+    assert.equal(chooseMapProjection(points).kind, kind, `${shape}: projection kind`);
+    for (const [variant, svg] of [["desktop", bundle.desktop], ["mobile", bundle.mobile]]) {
+      const drawn = new Set([...svg.matchAll(/<path data-role="choropleth-data" data-iso3="([A-Z]{3})"/g)].map((m) => m[1]));
+      for (const iso3 of expected) assert.ok(drawn.has(iso3), `${shape}/${variant}: ${iso3} has a data row but no choropleth-data path (drawn: ${[...drawn].join(",")})`);
+      if (kind === "world") assert.doesNotMatch(svg, /data-role="choropleth-locator"/, `${shape}/${variant}: a world projection needs no locator inset`);
+    }
+    const qa = runRenderQa(
+      { desktop: bundle.desktop, mobile: bundle.mobile },
+      { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } },
+    );
+    for (const variant of ["desktop", "mobile"]) {
+      const missing = (qa.viewports[variant].value_labels?.failures ?? []).filter((f) => f.rule === "value_label_missing_region");
+      assert.equal(missing.length, 0, `${shape}/${variant}: ${JSON.stringify(missing)}`);
+    }
+  }
+}
+console.log("choropleth projection choice: global, antimeridian, single-continent, small-cluster and high-latitude data draw every region -- PASS");
+
 console.log("choropleth chart: PASS");
