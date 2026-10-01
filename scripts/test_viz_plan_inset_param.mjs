@@ -23,6 +23,7 @@
 //      the same call - i.e. existing plans/plan hashes are unaffected.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
@@ -171,7 +172,23 @@ await assert.rejects(
 console.log("an invalid inset shape is rejected by viz.mjs's existing validator -- PASS");
 
 // --- 1. inset reaches the spec, and the render contains the inset panel ---
-const withInset = await plan.execute("with-inset", planParams({ inset: { auto: true } }));
+// The claim-binding gate (viz lint) requires the chart to read a recorded
+// data/ file and its claim to be recorded from that same data, so a chart built
+// from literal VALUES can no longer carry a verified claim. This section
+// tests the inset, not that gate, so it feeds the same fixture rows through a
+// real data/ file, a real computation and a real record_claim.
+mkdirSync(join(art, "data"), { recursive: true });
+const csv = [columns.join(","), ...AFRICA_ROWS.map((r) => columns.map((c) => (typeof r[c] === "string" ? `"${r[c]}"` : r[c])).join(","))].join("\n") + "\n";
+const dataRef = `data/${createHash("sha256").update(csv).digest("hex")}.csv`;
+writeFileSync(join(art, dataRef), csv);
+writeFileSync(join(art, `${dataRef}.meta.json`), JSON.stringify({ file: dataRef, sha256: createHash("sha256").update(csv).digest("hex"), bytes: csv.length, label: "inset fixture" }));
+const boundSql = `SELECT ${columns.map((c) => `"${c}"`).join(", ")} FROM read_csv_auto('${dataRef}')`;
+const queried = await tools.get("duckdb_query").execute("q", { sql: boundSql });
+const computationRef = queried.details.path.slice(queried.details.path.indexOf("computations/"));
+await tools.get("record_claim").execute("c", { claim: "Eleven African countries report a renewable energy consumption share.", claim_kind: "quantitative", status: "supported", source_refs: [dataRef], computation_refs: [computationRef] });
+const boundClaimId = readFileSync(join(art, "claims.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line)).at(-1).claim_id;
+
+const withInset = await plan.execute("with-inset", planParams({ inset: { auto: true }, sql: `${boundSql} ORDER BY "country"`, claim_id: boundClaimId }));
 const planRef = withInset.details.planRef;
 const spec = JSON.parse(readFileSync(join(art, planRef), "utf8"));
 assert.deepEqual(spec.inset, { auto: true }, "the plan spec must carry inset unchanged");
