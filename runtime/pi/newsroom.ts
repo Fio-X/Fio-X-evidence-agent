@@ -3334,7 +3334,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // Reference layers read their coordinates from recorded data only; the
       // resolution (with the sha256 of every input file) is stored with the map.
       let resolution: any = null;
-      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line"].includes(l?.type))) {
+      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line", "observations"].includes(l?.type))) {
         const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
         const inside = (ref: string) => { const abs = resolve(root, ref); if (!/^(data|computations)\//.test(ref) || !abs.startsWith(resolve(root) + "/")) throw new Error(`MAP_SOURCE_PATH_REJECTED: ${ref}`); return abs; };
         resolution = await resolveReferenceLayers(spec, { readBytes: async (ref: string) => readFile(inside(ref)), readJson: async (ref: string) => JSON.parse(await readFile(inside(ref), "utf8")) });
@@ -3694,7 +3694,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           const mapArtifact = await readArtifactJson(String(binding.ref), "maps/");
           const currentHash = String(mapArtifact.content_hash ?? sha256Hex(JSON.stringify(mapArtifact)));
           if (currentHash !== String(binding.result_hash)) throw new Error(`Publication map changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { map_spec: mapArtifact.spec, map_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          resolvedModules.push({ ...module, spec: { map_spec: mapArtifact.spec, map_resolution: mapArtifact.resolution ?? null, map_ref: binding.ref, ...(module.view_spec ?? {}) } });
         } else if (binding.kind === "model") {
           const modelArtifact = await readArtifactJson(String(binding.ref), "models/");
           const currentHash = String(modelArtifact.content_hash ?? sha256Hex(JSON.stringify(modelArtifact)));
