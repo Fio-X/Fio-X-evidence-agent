@@ -1563,6 +1563,69 @@ function cartographicDataExtent(spec,rows){
   }return coordinateExtent(lines);
 }
 
+// Emphasis hint: a title/takeaway that names one of the chart's own
+// categories or series while highlight_values is empty leaves the whole chart
+// neutral grey. Only chart types whose renderer really paints highlight_values
+// are checked, each against the field that highlight_values is matched on.
+const HIGHLIGHT_NAME_FIELD = {
+  horizontal_bar: "category_field",
+  dot: "category_field",
+  diverging_bar: "category_field",
+  slope: "category_field",
+  multi_line: "series_field",
+  scatter: "label_field",
+};
+const HIGHLIGHT_HINT_MAX_NAMES = 4;
+const HIGHLIGHT_HINT_MIN_NAME_LENGTH = 2;
+const HIGHLIGHT_HINT_CRITIC_PENALTY = 12;
+
+// Raw values of the highlight field that the title or takeaway names. Names
+// are compared by their displayed form (category_names applied) and by raw
+// value; the longest name matches first and consumes its text so a shorter
+// name inside it never counts; alphanumeric names (years included) must not
+// touch other letters or digits; names under HIGHLIGHT_HINT_MIN_NAME_LENGTH are skipped; more
+// than HIGHLIGHT_HINT_MAX_NAMES distinct hits is a list, not a focus.
+export function titleNamedHighlightValues(spec, rows, categoryNames = spec?.category_names) {
+  const field = spec?.[HIGHLIGHT_NAME_FIELD[spec?.chart_type]];
+  if (!field || (spec.highlight_values ?? []).length > 0 || !Array.isArray(rows)) return [];
+  const text = [spec.title, spec.takeaway].map((part) => String(part ?? "")).filter(Boolean).join("\n").toLowerCase();
+  if (!text) return [];
+  const lang = vizLang(spec);
+  const candidates = [];
+  for (const raw of unique(rows.map((row) => row?.[field]).filter((v) => v !== undefined && v !== null)).map(String)) {
+    for (const name of new Set([raw, String(resolveEconomyDisplayName(raw, categoryNames, lang))])) {
+      const key = name.trim().toLowerCase();
+      if ([...key].length >= HIGHLIGHT_HINT_MIN_NAME_LENGTH) candidates.push({ raw, name: name.trim(), key });
+    }
+  }
+  candidates.sort((a, b) => b.key.length - a.key.length);
+  const taken = new Array(text.length).fill(false);
+  const hits = new Map();
+  for (const { raw, name, key } of candidates) {
+    const alnum = /^[a-z0-9]+$/.test(key);
+    for (let at = text.indexOf(key); at !== -1; at = text.indexOf(key, at + 1)) {
+      const end = at + key.length;
+      if (taken.slice(at, end).some(Boolean)) continue;
+      if (alnum && (/[a-z0-9]/.test(text[at - 1] ?? "") || /[a-z0-9]/.test(text[end] ?? ""))) continue;
+      for (let i = at; i < end; i += 1) taken[i] = true;
+      if (!hits.has(raw)) hits.set(raw, name);
+    }
+  }
+  if (hits.size === 0 || hits.size > HIGHLIGHT_HINT_MAX_NAMES) return [];
+  return [...hits.entries()].map(([raw, name]) => ({ raw, name }));
+}
+
+// {message, suggestion} for the lint warning and the critic issue, in the chart's language.
+function emphasisHint(spec, named) {
+  const values = JSON.stringify(named.map((n) => n.raw));
+  if (vizLang(spec) === "zh") {
+    const names = named.map((n) => `\u300e${n.name}\u300f`).join("");
+    return `\u6807\u9898\u70b9\u540d\u4e86${names}\uff0c\u4f46 highlight_values \u4e3a\u7a7a\uff1b\u5efa\u8bae\u586b ${values}`;
+  }
+  const names = named.map((n) => `"${n.name}"`).join(", ");
+  return `The title names ${names} but highlight_values is empty; suggest ${values}`;
+}
+
 export function lintVizSpec(spec, rows, context = {}) {
   const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
   const unsignaledWarning = autoCategoryNames ? null : unsignaledEconomyWarning(spec, rows);
@@ -1682,6 +1745,8 @@ export function lintVizSpec(spec, rows, context = {}) {
     const missing = spec.highlight_values.map(String).filter((v) => !categories.has(v));
     if (missing.length) warnings.push(`highlight_values ${JSON.stringify(missing)} match no '${spec.category_field}' value, so those bars stay neutral`);
   }
+  const namedForEmphasis = titleNamedHighlightValues(spec, rows);
+  if (namedForEmphasis.length) warnings.push(emphasisHint(spec, namedForEmphasis));
   if ((spec.highlight_values ?? []).length > 4) warnings.push(`Visualization highlights ${(spec.highlight_values ?? []).length} values; consider one primary focus and contextual series`);
 
   const rangeBrackets = annotations(spec).filter((a) => a?.type === "range_bracket");
@@ -2023,7 +2088,11 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (lint.passed === false || (lint.blockers ?? []).length) add("blocker", "lint_not_passed", "Deterministic visualization lint has blocking failures.", 100, "Resolve every deterministic lint blocker before editorial review.");
   if (String(spec.title ?? "").length > 95) add("warning", "title_too_long", "Title is longer than 95 characters and may wrap heavily on mobile.", 8, "Shorten the title to one evidence-backed takeaway.");
   if (String(spec.subtitle ?? "").length > 180) add("warning", "subtitle_too_long", "Subtitle is too dense for a chart dek.", 5, "Move methodology details to the note and keep the subtitle focused on denominator and period.");
-  if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
+  const namedForEmphasis = titleNamedHighlightValues(spec, rows, spec.category_names ?? lint?.category_names_resolution?.mode);
+  if (namedForEmphasis.length) {
+    const hint = emphasisHint(spec, namedForEmphasis);
+    add("warning", "title_names_unhighlighted", hint, HIGHLIGHT_HINT_CRITIC_PENALTY, hint);
+  } else if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
   if ((spec.highlight_values ?? []).length > 4) add("warning", "too_many_highlights", "Too many marks compete for attention.", 10, "Reduce highlights to one primary focus and a small number of comparisons.");
   if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
   if (annotations(spec).length > 4) add("warning", "annotation_density", "More than four annotations are likely to compete with the data.", 9, "Keep only annotations that identify, compare, summarize, or explain the governing claim.");
