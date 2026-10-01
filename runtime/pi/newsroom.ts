@@ -1483,7 +1483,7 @@ async function vizClaimBindings(spec: any, signal?: AbortSignal) {
     vizClaimRecords,
     claimBindingDeps(),
   );
-  return { rows, verified, lintInputs, inputSnapshot, claimBindings };
+  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords };
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -2623,7 +2623,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
-      const { rows, verified, lintInputs, inputSnapshot, claimBindings } = await vizClaimBindings(spec, signal);
+      const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshotHash = inputSnapshot.hash;
