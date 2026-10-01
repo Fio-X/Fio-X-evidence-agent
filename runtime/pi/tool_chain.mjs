@@ -1,0 +1,228 @@
+// Deterministic tool chaining (NEWSROOM_SPEED_CHAIN_VIZ). Pure orchestration:
+// the caller supplies the registered, wrapped tool executes, the phase/profile
+// check and the event sink. Nothing here grants status, writes artifacts or
+// skips a gate; every gate lives in the inner tool's own execute. A step that is
+// not enabled, whose auto-filled parameters fail the inner schema, whose result
+// does not carry the typed success field, or that reports a failure stops the
+// chain. The chain never retries, repairs or overrides a model-supplied value.
+
+const typeOk = {
+  string: (v) => typeof v === "string",
+  number: (v) => typeof v === "number" && Number.isFinite(v),
+  integer: (v) => Number.isInteger(v),
+  boolean: (v) => typeof v === "boolean",
+  array: (v) => Array.isArray(v),
+  object: (v) => v !== null && typeof v === "object" && !Array.isArray(v),
+  null: (v) => v === null,
+};
+
+// Minimal JSON-schema check (type, enum, const, required, properties, items,
+// anyOf/oneOf, min/max) over what the registered tools declare with TypeBox.
+// Returns a list of error strings; empty means the value is accepted.
+export function checkSchema(schema, value, path = "params") {
+  if (!schema || typeof schema !== "object") return [];
+  if (Array.isArray(schema.anyOf) || Array.isArray(schema.oneOf)) {
+    const options = schema.anyOf ?? schema.oneOf;
+    return options.some((option) => checkSchema(option, value, path).length === 0) ? [] : [`${path} matches none of the allowed shapes`];
+  }
+  const errors = [];
+  if (schema.const !== undefined && value !== schema.const) errors.push(`${path} must be ${JSON.stringify(schema.const)}`);
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) errors.push(`${path} must be one of ${schema.enum.map((v) => JSON.stringify(v)).join(", ")}`);
+  if (schema.type) {
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    if (!types.some((type) => typeOk[type]?.(value) ?? true)) return [...errors, `${path} must be of type ${types.join("|")}`];
+  }
+  if (typeof value === "string") {
+    if (typeof schema.minLength === "number" && value.length < schema.minLength) errors.push(`${path} is shorter than ${schema.minLength}`);
+    if (typeof schema.maxLength === "number" && value.length > schema.maxLength) errors.push(`${path} is longer than ${schema.maxLength}`);
+  }
+  if (typeof value === "number") {
+    if (typeof schema.minimum === "number" && value < schema.minimum) errors.push(`${path} is below ${schema.minimum}`);
+    if (typeof schema.maximum === "number" && value > schema.maximum) errors.push(`${path} is above ${schema.maximum}`);
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === "number" && value.length < schema.minItems) errors.push(`${path} has fewer than ${schema.minItems} items`);
+    if (typeof schema.maxItems === "number" && value.length > schema.maxItems) errors.push(`${path} has more than ${schema.maxItems} items`);
+    if (schema.items) value.forEach((item, index) => errors.push(...checkSchema(schema.items, item, `${path}[${index}]`)));
+  }
+  if (typeOk.object(value)) {
+    const properties = schema.properties ?? {};
+    for (const key of schema.required ?? []) if (value[key] === undefined) errors.push(`${path}.${key} is required`);
+    for (const [key, item] of Object.entries(value)) {
+      if (properties[key]) errors.push(...checkSchema(properties[key], item, `${path}.${key}`));
+      else if (schema.additionalProperties === false) errors.push(`${path}.${key} is not allowed`);
+    }
+  }
+  return errors;
+}
+
+const textOf = (result) => (result?.content ?? []).filter((block) => block?.type === "text").map((block) => String(block.text ?? "")).join("\n");
+const imagesOf = (result) => (result?.content ?? []).filter((block) => block?.type === "image");
+
+export class ChainStop extends Error {
+  constructor(code, message, extra = {}) {
+    super(message);
+    this.code = code;
+    this.extra = extra;
+  }
+}
+
+// steps: [{ name, params(state) -> object, absorb(details, state) -> void,
+//           judge(details, state) -> { ok, code?, message? } }]
+// call(name, params) -> the registered tool's result; enabled(name) -> boolean;
+// schemaOf(name) -> JSON schema of that tool's parameters; record(event) -> void.
+// The first step's own errors are thrown unchanged (a chain call fails exactly
+// like the direct call would); later steps' errors are reported with everything
+// the earlier steps already produced.
+export async function runToolChain({ steps, call, enabled, schemaOf, record = () => {}, state = {} }) {
+  const done = [];
+  const stop = (index, code, message, extra = {}) => ({
+    status: "STOPPED",
+    failedAt: steps[index].name,
+    code,
+    message,
+    nextTool: steps[index].name,
+    done,
+    state,
+    ...extra,
+  });
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (!enabled(step.name)) {
+      return stop(index, "TOOL_NOT_ENABLED", `${step.name} is not enabled in this phase/profile; the chain stops before it and does not bypass the restriction`);
+    }
+    let params;
+    try {
+      params = step.params(state);
+    } catch (error) {
+      if (error instanceof ChainStop) return stop(index, error.code, error.message, error.extra);
+      throw error;
+    }
+    const schemaErrors = checkSchema(schemaOf(step.name), params);
+    if (schemaErrors.length) {
+      return stop(index, "SCHEMA_REJECTED", `${step.name} parameters rejected before the call: ${schemaErrors.join("; ")}`);
+    }
+    await record({ phase: "start", step: index, tool: step.name, params });
+    let result;
+    try {
+      result = await call(step.name, params);
+    } catch (error) {
+      await record({ phase: "end", step: index, tool: step.name, isError: true, error: String(error?.message ?? error) });
+      if (index === 0) throw error;
+      return stop(index, "STEP_ERROR", String(error?.message ?? error), { error });
+    }
+    const details = result?.details && typeof result.details === "object" ? result.details : {};
+    await record({ phase: "end", step: index, tool: step.name, isError: false, details });
+    done.push({ tool: step.name, params, result, details });
+    step.absorb?.(details, state);
+    const verdict = step.judge(details, state);
+    if (!verdict.ok) {
+      return { ...stop(index, verdict.code, verdict.message ?? verdict.code), nextTool: verdict.nextTool ?? step.name, stoppedAfter: step.name };
+    }
+    if (verdict.after) {
+      const extra = await verdict.after(done, state);
+      if (extra) return { ...stop(index, extra.code, extra.message), nextTool: extra.nextTool ?? steps[index + 1]?.name ?? step.name, stoppedAfter: step.name };
+    }
+  }
+  return { status: "COMPLETE", done, state };
+}
+
+const isTrue = (value) => value === true;
+
+// Plan -> lint -> render -> critic. Success is read only from typed details
+// fields; a missing field is a stop, never a pass.
+export function vizChainSteps({ modelComputationRef, claimComputationRefs }) {
+  // claimComputationRefs() (async) reads the verified claim record named by the plan.
+  const needRef = (state, key, from) => {
+    if (typeof state[key] !== "string" || !state[key]) throw new ChainStop("MISSING_FIELD", `${from} did not return ${key}; the chain cannot continue`);
+    return state[key];
+  };
+  return [
+    {
+      name: "newsroom_viz_plan",
+      params: (state) => state.planParams,
+      absorb: (details, state) => { state.planRef = details.planRef; },
+      judge: (details) => {
+        if (typeof details.planRef !== "string" || !details.planRef) return { ok: false, code: "MISSING_FIELD", message: "newsroom_viz_plan returned no planRef" };
+        if (!isTrue(details.publishable)) return { ok: false, code: "DRAFT", message: "the plan is a DRAFT (no verified claim_id): it is exploratory only and is not rendered by the chain", nextTool: "newsroom_viz_lint" };
+        return {
+          ok: true,
+          // Before anything is filled in: a computation_ref the model supplied
+          // must already be one the verified claim is bound to.
+          after: async () => (modelComputationRef !== undefined && !(await claimComputationRefs()).includes(modelComputationRef)
+            ? { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} is not among the verified claim's computation_refs; it is not overridden`, nextTool: "newsroom_viz_plan" }
+            : null),
+        };
+      },
+    },
+    {
+      name: "newsroom_viz_lint",
+      params: (state) => ({ plan_ref: needRef(state, "planRef", "newsroom_viz_plan") }),
+      absorb: (details, state) => { state.lintRef = details.lintRef; state.computationRef = details.computationRef; },
+      judge: (details, state) => {
+        if (details.passed !== true) return { ok: false, code: details.passed === false ? "BLOCKED" : "MISSING_FIELD", message: details.passed === false ? "lint reported blockers" : "newsroom_viz_lint returned no passed field" };
+        if (typeof details.lintRef !== "string" || !details.lintRef || typeof details.computationRef !== "string" || !details.computationRef) return { ok: false, code: "MISSING_FIELD", message: "newsroom_viz_lint returned no lintRef/computationRef" };
+        return {
+          ok: true,
+          // Asserted after the lint step has produced the computation ref and
+          // before anything is rendered: the model's own value and the claim's
+          // recorded computation_refs must both agree with the verified result.
+          after: async () => {
+            if (modelComputationRef !== undefined && modelComputationRef !== state.computationRef) {
+              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} differs from the verified lint computation ${state.computationRef}; it is not overridden`, nextTool: "newsroom_viz_plan" };
+            }
+            if (!(await claimComputationRefs()).includes(state.computationRef)) {
+              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `the claim's computation_refs do not include the lint computation ${state.computationRef}; record a claim bound to this exact computation first`, nextTool: "record_claim" };
+            }
+            return null;
+          },
+        };
+      },
+    },
+    {
+      name: "newsroom_viz_render",
+      params: (state) => ({ plan_ref: needRef(state, "planRef", "newsroom_viz_plan"), lint_ref: needRef(state, "lintRef", "newsroom_viz_lint") }),
+      absorb: (details, state) => { state.manifestRef = details.manifestRef; },
+      judge: (details) => {
+        if (details.renderQaPassed !== true) return { ok: false, code: details.renderQaPassed === false ? "RENDER_QA_FAILED" : "MISSING_FIELD", message: details.renderQaPassed === false ? "render QA failed; the rejected render is kept" : "newsroom_viz_render returned no renderQaPassed field" };
+        if (typeof details.manifestRef !== "string" || !details.manifestRef) return { ok: false, code: "MISSING_FIELD", message: "newsroom_viz_render returned no manifestRef" };
+        return { ok: true };
+      },
+    },
+    {
+      name: "newsroom_viz_critic",
+      params: (state) => ({
+        plan_ref: needRef(state, "planRef", "newsroom_viz_plan"),
+        lint_ref: needRef(state, "lintRef", "newsroom_viz_lint"),
+        manifest_ref: needRef(state, "manifestRef", "newsroom_viz_render"),
+      }),
+      absorb: (details, state) => { state.criticRef = details.criticRef; },
+      judge: (details) => (details.passed === true
+        ? { ok: true }
+        : { ok: false, code: details.passed === false ? "REVISE" : "MISSING_FIELD", message: details.passed === false ? "the critic asks for a revision" : "newsroom_viz_critic returned no passed field" }),
+    },
+  ];
+}
+
+// Builds the single result the model sees: each executed step's text verbatim,
+// the typed refs, and any image blocks passed through unchanged.
+export function chainResultFor(outcome, { chain, textResult }) {
+  const sections = outcome.done.map((entry) => `## ${entry.tool}\n${textOf(entry.result)}`);
+  const refs = {};
+  for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef"]) if (outcome.state[key]) refs[key] = outcome.state[key];
+  const last = outcome.done.at(-1)?.details ?? {};
+  const complete = outcome.status === "COMPLETE";
+  const footer = complete
+    ? `Chain ${chain}: COMPLETE after ${outcome.done.length} steps (${outcome.done.map((entry) => entry.tool).join(" -> ")}).`
+    : `Chain ${chain}: STOPPED at ${outcome.failedAt} (${outcome.code}): ${outcome.message}\nCompleted steps: ${outcome.done.length ? outcome.done.map((entry) => entry.tool).join(" -> ") : "none"}. Nothing was retried, skipped or cleaned up. Call ${outcome.nextTool} separately next${outcome.code === "DRAFT" ? " after the plan has a verified claim_id" : ""}.`;
+  const result = textResult([...sections, footer].join("\n\n"), {
+    chain,
+    chainStatus: outcome.status,
+    ...(complete ? {} : { failedAt: outcome.failedAt, stopCode: outcome.code, stopMessage: outcome.message, nextTool: outcome.nextTool }),
+    steps: outcome.done.map((entry) => ({ tool: entry.tool, params: entry.params, details: entry.details })),
+    ...refs,
+    ...(complete ? { passed: last.passed, score: last.score, publishable: outcome.done[0]?.details?.publishable } : {}),
+  });
+  const images = outcome.done.flatMap((entry) => imagesOf(entry.result));
+  return images.length ? { ...result, content: [...result.content, ...images] } : result;
+}

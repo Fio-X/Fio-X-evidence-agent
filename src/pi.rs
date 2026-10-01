@@ -47,6 +47,9 @@ pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
 /// the Pi child. `PiConfig::command` always resets them from the config.
 pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
 pub const COMPUTE_BATCH_ENV: &str = "NEWSROOM_SPEED_COMPUTE_BATCH";
+pub const CHAIN_VIZ_ENV: &str = "NEWSROOM_SPEED_CHAIN_VIZ";
+/// Runtime-only tool that exists when `CHAIN_VIZ_ENV` is on; not in the registry.
+pub const VIZ_CHAIN_TOOL: &str = "newsroom_viz_chain";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
 
 #[cfg(test)]
@@ -61,6 +64,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     crate::prompt::PromptSpeed {
         parallel_hints: env_switch(PARALLEL_HINTS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
+        chain_viz: env_switch(CHAIN_VIZ_ENV),
     }
 }
 
@@ -556,14 +560,15 @@ impl PiConfig {
     pub fn tools_arg(&self) -> String {
         let tools = tools_for_profile(self.effective_tool_profile())
             .expect("effective tool profile must exist");
-        if !self.lieflat_hidden() {
-            return tools.to_string();
+        let mut names: Vec<&str> = tools.split(',').collect();
+        if self.lieflat_hidden() {
+            names.retain(|name| !LIEFLAT_TOOLS.contains(name));
         }
-        tools
-            .split(',')
-            .filter(|name| !LIEFLAT_TOOLS.contains(name))
-            .collect::<Vec<_>>()
-            .join(",")
+        // The chain wraps newsroom_viz_plan, so it is offered only where that tool is.
+        if self.speed.chain_viz && names.contains(&"newsroom_viz_plan") {
+            names.push(VIZ_CHAIN_TOOL);
+        }
+        names.join(",")
     }
 
     fn dragoncode_endpoint(value: &str) -> bool {
@@ -709,6 +714,11 @@ impl PiConfig {
             cmd.env(COMPUTE_BATCH_ENV, "1");
         } else {
             cmd.env_remove(COMPUTE_BATCH_ENV);
+        }
+        if self.speed.chain_viz {
+            cmd.env(CHAIN_VIZ_ENV, "1");
+        } else {
+            cmd.env_remove(CHAIN_VIZ_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1556,6 +1566,58 @@ mod tests {
         assert_eq!(batch_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(COMPUTE_BATCH_ENV);
         assert!(!speed_switches_from_env().compute_batch);
+
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        let chain_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == CHAIN_VIZ_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(chain_marker(&config), Some(None));
+        assert!(speed_switches_from_env().chain_viz);
+        config.speed.chain_viz = true;
+        assert_eq!(chain_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        assert!(!speed_switches_from_env().chain_viz);
+    }
+
+    #[test]
+    fn viz_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let mut on = visual_story_config(false, profile);
+            on.speed.chain_viz = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == VIZ_CHAIN_TOOL),
+                "{profile}"
+            );
+            let has_plan = base.split(',').any(|name| name == "newsroom_viz_plan");
+            let offered = on.tools_arg().split(',').any(|name| name == VIZ_CHAIN_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{VIZ_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
     }
 
     #[test]
