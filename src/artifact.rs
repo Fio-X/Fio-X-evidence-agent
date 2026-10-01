@@ -426,6 +426,8 @@ impl InvestigationBundle {
             generated_at: now.clone(),
             turns: 0,
             tool_calls: 0,
+            outer_tool_calls: 0,
+            inner_tool_calls: 0,
             capability_tool_calls: 0,
             successful_capability_tool_calls: 0,
             failed_tool_calls: 0,

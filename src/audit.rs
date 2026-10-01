@@ -14,6 +14,10 @@ pub struct AuditSummary {
     pub generated_at: String,
     pub turns: usize,
     pub tool_calls: usize,
+    /// Calls the model itself made (`tool_calls` minus the expanded chain steps).
+    pub outer_tool_calls: usize,
+    /// Steps executed inside a chain call and expanded from its result.
+    pub inner_tool_calls: usize,
     pub capability_tool_calls: usize,
     pub successful_capability_tool_calls: usize,
     pub failed_tool_calls: usize,
@@ -74,6 +78,22 @@ const CHAIN_STEPS: [(&str, &[&str]); 2] = [
     ),
 ];
 
+/// Stop codes the chain runtime can report (`runtime/pi/tool_chain.mjs`); any other
+/// code makes the record unbelievable.
+const CHAIN_STOP_CODES: &[&str] = &[
+    "BLOCKED",
+    "CANCELLED",
+    "CLAIM_COMPUTATION_MISMATCH",
+    "CLAIM_MANIFEST_MISMATCH",
+    "DRAFT",
+    "MISSING_FIELD",
+    "RENDER_QA_FAILED",
+    "REVISE",
+    "SCHEMA_REJECTED",
+    "STEP_ERROR",
+    "TOOL_NOT_ENABLED",
+];
+
 /// Inner calls of a finished chain call, read only from the outer call's own
 /// result in the main event stream. Anything missing or malformed yields no
 /// inner calls at all: an incomplete record is never partly believed.
@@ -124,10 +144,18 @@ fn chain_inner_calls(
             let after_last = expected.get(steps.len()).copied();
             let at_last = steps.len().checked_sub(1).map(|i| expected[i]);
             match (stop_code, failed_at) {
+                // A step error is the one step that ran and failed, right after the
+                // last finished step; it never fits any other position.
                 (Some("STEP_ERROR"), Some(at)) if Some(at) == after_last && !steps.is_empty() => {
                     Some(at)
                 }
-                (Some(_), Some(at)) if Some(at) == after_last || Some(at) == at_last => None,
+                (Some(code), Some(at))
+                    if code != "STEP_ERROR"
+                        && CHAIN_STOP_CODES.contains(&code)
+                        && (Some(at) == after_last || Some(at) == at_last) =>
+                {
+                    None
+                }
                 _ => return Vec::new(),
             }
         }
@@ -410,6 +438,14 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
         generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         turns,
         tool_calls: calls.len(),
+        outer_tool_calls: calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_none())
+            .count(),
+        inner_tool_calls: calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .count(),
         capability_tool_calls,
         successful_capability_tool_calls,
         failed_tool_calls: failed,
@@ -705,6 +741,52 @@ mod tests {
         assert_eq!(
             summary.failed_tool_calls, 0,
             "a lint blocker is a normal result, as in a direct call"
+        );
+    }
+
+    #[test]
+    fn outer_and_inner_calls_are_counted_separately() {
+        let summary = build_fixture(chain_call(
+            "k1",
+            "newsroom_viz_chain",
+            false,
+            viz_done(&VIZ),
+        ));
+        assert_eq!(summary.tool_calls, 5);
+        assert_eq!(summary.outer_tool_calls, 1);
+        assert_eq!(summary.inner_tool_calls, 4);
+    }
+
+    #[test]
+    fn a_stopped_record_with_a_wrong_shape_yields_no_inner_calls() {
+        let stopped = |code: &str, failed_at: &str, n: usize| json!({"chain":"newsroom_viz_chain","chainStatus":"STOPPED","failedAt":failed_at,"stopCode":code,"steps":chain_steps(&VIZ[..n])});
+        let cases = [
+            (
+                "unknown stop code",
+                stopped("MADE_UP", "newsroom_viz_render", 2),
+            ),
+            (
+                "step error on the last finished step",
+                stopped("STEP_ERROR", "newsroom_viz_lint", 2),
+            ),
+            (
+                "step error with no finished step",
+                stopped("STEP_ERROR", "newsroom_viz_plan", 0),
+            ),
+        ];
+        for (label, details) in cases {
+            let summary = build_fixture(chain_call("w1", "newsroom_viz_chain", false, details));
+            assert_eq!(inner_count(&summary), 0, "{label}");
+        }
+        let cancelled = stopped("CANCELLED", "newsroom_viz_render", 2);
+        assert_eq!(
+            inner_count(&build_fixture(chain_call(
+                "w2",
+                "newsroom_viz_chain",
+                false,
+                cancelled
+            ))),
+            2
         );
     }
 

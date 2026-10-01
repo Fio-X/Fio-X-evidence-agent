@@ -90,6 +90,25 @@ const names = (calls) => calls.map(([name]) => name);
   assert.equal(afterHook.outcome.status, "COMPLETE", "an unaborted signal changes nothing");
   check("AbortSignal: checked before and after each step, no later step starts, finished steps kept", true);
 }
+{ // cancelled while the start event is being written: the inner tool must not run
+  for (const [abortAt, expected] of [["newsroom_viz_plan", []], ["newsroom_viz_lint", ["newsroom_viz_plan"]], ["newsroom_viz_render", ["newsroom_viz_plan", "newsroom_viz_lint"]]]) {
+    const controller = new AbortController();
+    const calls = [];
+    const outcome = await runToolChain({
+      steps: vizChainSteps({ modelComputationRef: undefined, claimComputationRefs: async () => ["computations/c.json"] }),
+      state: { planParams: { claim_id: "claim-x" } },
+      enabled: () => true,
+      schemaOf: (name) => SCHEMAS[name],
+      call: async (name, params) => { calls.push(name); return GOOD[name](params); },
+      record: async (event) => { await new Promise((resolve) => setTimeout(resolve, 5)); if (event.phase === "start" && event.tool === abortAt) controller.abort(); },
+      signal: controller.signal,
+    });
+    assert.equal(outcome.code, "CANCELLED", abortAt);
+    assert.deepEqual(calls, expected, `abort while recording the start of ${abortAt}: that tool never runs`);
+    assert.deepEqual(outcome.done.map((entry) => entry.tool), expected, "finished steps are kept");
+  }
+  check("AbortSignal: cancel during the async start-event write stops before the inner tool", true);
+}
 { // an inner error result stops the chain even if it still carries old success details
   const { outcome, calls } = await fake({ over: { newsroom_viz_render: () => ({ ...textResult("boom", { renderQaPassed: true, manifestRef: "visualizations/m.json" }), isError: true }) } });
   assert.equal(outcome.code, "STEP_ERROR");
