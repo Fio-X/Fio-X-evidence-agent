@@ -380,6 +380,27 @@ export function geometryRings(geometry) {
   return [];
 }
 
+/**
+ * The rings of one region that should drive map framing. A region that owns a
+ * small, distant outlier (an island group across the ocean from the mainland,
+ * or on the far side of the antimeridian) would otherwise stretch the framed
+ * extent across the whole ocean and leave most of the map blank. A ring is
+ * dropped only when it is both tiny next to the region's largest ring and far
+ * from it; it is still drawn (and clipped) like any other ring.
+ */
+export function framingRings(rings, { tinyShare = 0.05, farDeg = 15 } = {}) {
+  const boxes = (rings ?? []).map((ring) => {
+    let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+    for (const [lon, lat] of ring) { w = Math.min(w, lon); e = Math.max(e, lon); s = Math.min(s, lat); n = Math.max(n, lat); }
+    return { ring, area: Math.max(0, e - w) * Math.max(0, n - s), lon: (w + e) / 2, lat: (s + n) / 2 };
+  }).filter((b) => b.ring.length && Number.isFinite(b.area));
+  if (boxes.length < 2) return boxes.map((b) => b.ring);
+  const main = boxes.reduce((best, b) => (b.area > best.area ? b : best));
+  return boxes
+    .filter((b) => b === main || b.area >= main.area * tinyShare || angularDistanceDeg(b.lon, b.lat, main.lon, main.lat) <= farDeg)
+    .map((b) => b.ring);
+}
+
 /** True when every point of `ring` is within `limitDeg` of the projection centre. */
 export function ringWithinHorizon(ring, lon0, lat0, limitDeg = 90) {
   if (lat0 === null) return true; // world projection: nothing lies beyond a horizon
