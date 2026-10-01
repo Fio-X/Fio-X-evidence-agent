@@ -94,9 +94,25 @@ export function assertDatasetPayload(ref, size) {
   }
 }
 
-export function assertInlineRowsHaveEvidence(sql, hasUsableEvidence) {
-  if (INLINE_ROW_SQL.test(String(sql ?? "")) && !hasUsableEvidence) {
-    throw new Error("SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed");
+// `readsEvidence` must be true only when the statement itself reads at least
+// one data/ or sources/ file (derived from the SQL, never from what happens to
+// exist in the artifact directory).
+export function assertInlineRowsHaveEvidence(sql, readsEvidence) {
+  if (INLINE_ROW_SQL.test(String(sql ?? "")) && !readsEvidence) {
+    throw new Error("SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed; the query must read a data/ or sources/ input");
+  }
+}
+
+// A computation may support a claim only when it reads at least one of the
+// cited data/ or sources/ artifacts. `effectiveInputs` are the files the SQL
+// really reads (transitively), never the directory-wide snapshot.
+export function assertComputationBoundToSources(ref, binding, effectiveInputs, sourceRefs) {
+  if (binding !== "source_bound") {
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} reads no resolvable data/ or sources/ input (binding: ${binding || "legacy"}); literal-only or unresolved computations cannot support a claim`);
+  }
+  const inputs = new Set(effectiveInputs ?? []);
+  if (!(sourceRefs ?? []).some((sourceRef) => inputs.has(sourceRef))) {
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} does not read any cited source artifact`);
   }
 }
 

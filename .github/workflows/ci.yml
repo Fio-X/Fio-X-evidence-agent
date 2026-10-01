@@ -85,6 +85,7 @@ jobs:
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           node scripts/test_computation_row_tables.mjs
+          node scripts/test_computation_binding.mjs
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs
