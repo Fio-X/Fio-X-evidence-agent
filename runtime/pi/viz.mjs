@@ -6694,6 +6694,11 @@ function renderChoropleth(spec, rows, mobile = false) {
   // single place a reader looks up every numbered region's name/value.
   const numberedFallbackItems = [...footnoteItems, ...listFallbackItems];
   const fallbackNumberByIso3 = new Map(numberedFallbackItems.map((li, i) => [li.item.iso3, i + 1]));
+  // Numbered regions that got no map marker (no clean spot plus tether): they
+  // stay in the numbered list, and are counted so the chart note and render QA
+  // can say so instead of letting a data point vanish silently.
+  const listOnlyIso3 = [];
+  let markerTotal = footnoteItems.length;
   const footnoteMarkerPositions = placeNumberedMarkers(footnoteItems.map((li) => ({ x: li.x, y: li.y })), {
     bounds: { x: mapLeft, y: top, w: mapRight - mapLeft, h: bottom - top },
     boxes: [...allLabelBoxes, ...(insetCorner ? [{ x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h }] : [])],
@@ -6703,7 +6708,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   footnoteItems.forEach((li, i) => {
     const num = fallbackNumberByIso3.get(li.item.iso3);
     const mk = footnoteMarkerPositions[i];
-    if (!mk) return;
+    if (!mk) { listOnlyIso3.push(li.item.iso3); return; }
     footnoteParts.push(
       markerTetherSvg("choropleth-footnote-marker", mk, { x: li.x, y: li.y }, li.item.iso3, num),
       `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${li.x.toFixed(1)}" data-anchor-y="${li.y.toFixed(1)}" cx="${mk.x.toFixed(1)}" cy="${mk.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
@@ -7175,6 +7180,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       listFallbackItems.forEach((li, i) => {
         const marker = markerCentroids[i];
         const num = fallbackNumberByIso3.get(li.item.iso3);
+        if (rawCentroids[i]) markerTotal++;
+        if (rawCentroids[i] && !marker) listOnlyIso3.push(li.item.iso3);
         if (marker) {
           insetPanelParts.push(
             markerTetherSvg("choropleth-inset-footnote-marker", marker, rawCentroids[i], li.item.iso3, num),
@@ -7326,6 +7333,9 @@ function renderChoropleth(spec, rows, mobile = false) {
   f.parts.push(...onMapParts);
   f.parts.push(...overflowParts);
   f.parts.push(...footnoteParts);
+  if (listOnlyIso3.length) {
+    f.parts.push(`<g data-role="choropleth-marker-list-only" data-count="${listOnlyIso3.length}" data-total="${markerTotal}" data-iso3="${esc(listOnlyIso3.join(","))}"/>`);
+  }
   f.parts.push(...insetPanelParts);
   f.parts.push(...locatorParts);
 
@@ -7362,9 +7372,12 @@ function renderChoropleth(spec, rows, mobile = false) {
       ? `${shownNames.join("、")}${more ? "等" : ""}的远离本土的岛屿等领土在此范围外，未画出。`
       : `Distant territories of ${shownNames.join(", ")}${more ? " and others" : ""} lie outside this frame and are not drawn.`;
   }
+  const listOnlyNote = listOnlyIso3.length
+    ? (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`)
+    : "";
   const effectiveSpec = {
     ...spec,
-    note: [spec.note, yearsNote, framingNote].filter(Boolean).join(" "),
+    note: [spec.note, yearsNote, framingNote, listOnlyNote].filter(Boolean).join(" "),
     source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · "),
   };
   (mobile ? addMobileFooter : addFooter)(f.parts, effectiveSpec, f.footerTop);

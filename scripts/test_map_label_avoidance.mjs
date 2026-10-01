@@ -175,6 +175,6 @@ const clean = ["Fiji", "Singapore", "Vanuatu", "Malta", "Luxembourg", "Bahrain",
     assert.ok(qa.failure_count <= bound, `${label}: ${qa.failure_count} failures exceeds the recorded residual ${bound}`);
   };
   report("Tonga/Fiji neighbour polygon", ["Fiji", "Tonga", "Vanuatu", "Malta", "Luxembourg", "Bahrain", "Qatar", "Brazil", "India", "Australia"], 1);
-  report("stress, 29 tiny/dispersed units (baseline 45)", names, 7);
+  report("stress, 29 tiny/dispersed units (baseline 45)", names, 8);
 }
 console.log("map label avoidance -- PASS");

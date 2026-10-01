@@ -43,7 +43,7 @@
 //     region must show its name+value label exactly once - in the main map
 //     or in the inset, never both, never neither, never twice in the same
 //     place.
-export const RENDER_QA_LABELS_VERSION = "1.4.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7); + marker_displaced_without_tether (1.4.0)
+export const RENDER_QA_LABELS_VERSION = "1.5.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7); + marker_displaced_without_tether (1.4.0); + markers_list_only_exceed_quarter and list_only_markers (1.5.0)
 
 function walk(node, out) {
   out.push(node);
@@ -445,5 +445,14 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     }
   }
 
-  return { passed: failures.length === 0, checked: joined.length, failures };
+  // Regions left without a map marker (list-only) are reported, and a chart
+  // that drops more than a quarter of its numbered markers fails.
+  const listOnlyNode = nodes.find((n) => n.attrs?.["data-role"] === "choropleth-marker-list-only");
+  const listOnly = listOnlyNode
+    ? { count: Number(listOnlyNode.attrs["data-count"]), total: Number(listOnlyNode.attrs["data-total"]), iso3: String(listOnlyNode.attrs["data-iso3"] ?? "").split(",").filter(Boolean) }
+    : { count: 0, total: 0, iso3: [] };
+  if (listOnly.count > 0 && !(listOnly.count * 4 <= listOnly.total)) {
+    failures.push({ rule: "markers_list_only_exceed_quarter", message: `${listOnly.count} of ${listOnly.total} numbered regions have no map marker (more than a quarter): ${listOnly.iso3.join(", ")}` });
+  }
+  return { passed: failures.length === 0, checked: joined.length, failures, list_only_markers: listOnly };
 }
