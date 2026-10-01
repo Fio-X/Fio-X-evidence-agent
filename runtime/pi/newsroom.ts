@@ -97,6 +97,13 @@ const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = 
       download_data: "When several candidate data files do not depend on each other, call download_data for all of them in the same assistant message instead of one per turn.",
     },
   },
+  {
+    env: "NEWSROOM_SPEED_COMPUTE_BATCH",
+    tools: {
+      duckdb_query: "Independent duckdb_query calls can be sent together in one assistant message; never send two identical SQL statements in one turn, and do not mix them with fetch_url or download_data in the same turn.",
+      record_claim: "record_claim needs the computation_ref from its duckdb_query result, so wait for the results, then send all of the independent record_claim calls together in one assistant message.",
+    },
+  },
 ];
 
 function withSpeedGuidelines(tool: any) {

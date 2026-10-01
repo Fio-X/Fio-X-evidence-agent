@@ -16,6 +16,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = "bc1ccfd";
 const SWITCHES = {
   NEWSROOM_SPEED_PARALLEL_HINTS: ["newsroom_update_plan", "fetch_url", "download_data"],
+  NEWSROOM_SPEED_COMPUTE_BATCH: ["duckdb_query", "record_claim"],
 };
 const ALL_SWITCHES = Object.keys(SWITCHES);
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
@@ -94,6 +95,14 @@ try {
   assert.match(inv.get("fetch_url").promptGuidelines.at(-1), /same assistant message/);
   assert.match(inv.get("newsroom_update_plan").promptGuidelines.at(-1), /same assistant message/);
   assert.match(inv.get("download_data").promptGuidelines.at(-1), /same assistant message/);
+  const batch = definitions(current, "investigate", ["NEWSROOM_SPEED_COMPUTE_BATCH"]);
+  assert.match(batch.get("duckdb_query").promptGuidelines.at(-1), /never send two identical SQL/);
+  assert.match(batch.get("record_claim").promptGuidelines.at(-1), /computation_ref/);
+  assert.equal(visible(batch.get("fetch_url")), visible(definitions(baseline, "investigate", []).get("fetch_url")), "compute batch leaves research tools alone");
+  const both = definitions(current, "investigate", ALL_SWITCHES);
+  for (const name of Object.values(SWITCHES).flat()) {
+    assert.equal(both.get(name).promptGuidelines.length, (definitions(baseline, "investigate", []).get(name).promptGuidelines ?? []).length + 1, `${name}: both switches add one sentence each`);
+  }
   console.log(JSON.stringify({ status: "PASS", definitions_compared: compared }));
 } finally {
   rmSync(tmp, { recursive: true, force: true });

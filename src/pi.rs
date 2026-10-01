@@ -46,6 +46,7 @@ pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
 /// Parent-environment switches and the matching markers the runtime reads in
 /// the Pi child. `PiConfig::command` always resets them from the config.
 pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
+pub const COMPUTE_BATCH_ENV: &str = "NEWSROOM_SPEED_COMPUTE_BATCH";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
 
 #[cfg(test)]
@@ -59,6 +60,7 @@ fn env_switch(name: &str) -> bool {
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     crate::prompt::PromptSpeed {
         parallel_hints: env_switch(PARALLEL_HINTS_ENV),
+        compute_batch: env_switch(COMPUTE_BATCH_ENV),
     }
 }
 
@@ -702,6 +704,11 @@ impl PiConfig {
             cmd.env(PARALLEL_HINTS_ENV, "1");
         } else {
             cmd.env_remove(PARALLEL_HINTS_ENV);
+        }
+        if self.speed.compute_batch {
+            cmd.env(COMPUTE_BATCH_ENV, "1");
+        } else {
+            cmd.env_remove(COMPUTE_BATCH_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1531,6 +1538,24 @@ mod tests {
         assert!(!speed_switches_from_env().parallel_hints);
         std::env::remove_var(PARALLEL_HINTS_ENV);
         assert!(!speed_switches_from_env().parallel_hints);
+
+        std::env::set_var(COMPUTE_BATCH_ENV, "1");
+        let batch_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == COMPUTE_BATCH_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(batch_marker(&config), Some(None));
+        assert!(speed_switches_from_env().compute_batch);
+        config.speed.compute_batch = true;
+        assert_eq!(batch_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(COMPUTE_BATCH_ENV);
+        assert!(!speed_switches_from_env().compute_batch);
     }
 
     #[test]

@@ -25,9 +25,14 @@ pub struct PromptSpeed {
     /// `NEWSROOM_SPEED_PARALLEL_HINTS=1`: tell the model to send independent
     /// tool calls in one assistant message.
     pub parallel_hints: bool,
+    /// `NEWSROOM_SPEED_COMPUTE_BATCH=1`: tell the model to batch independent
+    /// duckdb_query calls, then their record_claim calls, one batch per turn.
+    pub compute_batch: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
+
+const COMPUTE_BATCH_PARAGRAPH: &str = "\n\nCompute batching: send independent duckdb_query calls together in one turn. A record_claim needs the computation_ref returned by its duckdb_query, so once every result is back, send all of the record_claim calls together in the next turn. Never put two identical SQL statements in one turn, and do not run fetch_url or download_data in the same turn as duckdb_query, because new files change what a computation reads. Repair a failing SQL statement on its own; do not merge the repair with other steps.\n";
 
 /// Prompt sentences that name the Lieflat tools. They are dropped when those
 /// tools are hidden from the run, so the prompt never points at a tool the
@@ -48,6 +53,9 @@ pub fn investigation_with_options(
     prompt.push_str(language_instruction(topic));
     if speed.parallel_hints {
         prompt.push_str(PARALLEL_HINTS_PARAGRAPH);
+    }
+    if speed.compute_batch {
+        prompt.push_str(COMPUTE_BATCH_PARAGRAPH);
     }
     if is_visual_request(topic) {
         prompt.push_str(
@@ -379,6 +387,7 @@ mod tests {
     fn parallel_hints_only_insert_one_paragraph_when_on() {
         let on = PromptSpeed {
             parallel_hints: true,
+            ..PromptSpeed::default()
         };
         for topic in [
             "summarize the source",
@@ -403,6 +412,35 @@ mod tests {
                 assert!(hinted.contains("same assistant message"));
                 assert!(!off.contains("same assistant message"));
             }
+        }
+    }
+
+    #[test]
+    fn compute_batch_is_a_separate_paragraph_and_composes_with_parallel_hints() {
+        let batch = PromptSpeed {
+            compute_batch: true,
+            ..PromptSpeed::default()
+        };
+        let both = PromptSpeed {
+            parallel_hints: true,
+            compute_batch: true,
+        };
+        for topic in ["summarize the source", SCMP_LONG_IMAGE_GOAL] {
+            let off = investigation_with_classifier(topic, &[], false);
+            let only = investigation_with_options(topic, &[], false, false, batch);
+            assert_eq!(
+                only.replacen(COMPUTE_BATCH_PARAGRAPH, "", 1),
+                off,
+                "{topic}"
+            );
+            assert!(only.contains("Compute batching") && !only.contains("Parallel tool calls"));
+            let all = investigation_with_options(topic, &[], false, false, both);
+            let stripped = all.replacen(PARALLEL_HINTS_PARAGRAPH, "", 1).replacen(
+                COMPUTE_BATCH_PARAGRAPH,
+                "",
+                1,
+            );
+            assert_eq!(stripped, off, "{topic}");
         }
     }
 
