@@ -5220,10 +5220,36 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
   }
 
+  // A region whose largest piece projects below TINY_REGION_PX on both sides
+  // is invisible as a polygon; it is also drawn as a value-coloured dot at the
+  // centre of that piece, and its label/leader anchors on the dot (an
+  // archipelago's label point can sit in open sea between its islands).
+  const TINY_REGION_PX = mobile ? 5 : 6;
+  const tinyRegionDot = (featureIndices, projectFn, lonC, latC, limit = TINY_REGION_PX) => {
+    let best = null;
+    for (const idx of featureIndices) {
+      for (const ring of geometryRings(neFeatureGeometry(idx))) {
+        if (!ringWithinHorizon(ring, lonC, latC)) continue;
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const [lo, la] of ring) {
+          const q = projectFn(lo, la);
+          if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+        }
+        const size = Math.max(x1 - x0, y1 - y0);
+        if (!best || size > best.size) best = { size, x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+      }
+    }
+    return best && best.size < limit ? best : null;
+  };
+  const tinyDots = new Map();
+  for (const item of joined) {
+    const dot = tinyRegionDot(item.featureIndices, project, lon0, horizonLat0);
+    if (dot) tinyDots.set(item.iso3, dot);
+  }
   const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3)).map((item) => {
     const idx = item.featureIndices[0];
     const point = neFeatureAttributes(idx)?.label ?? [lon0, lat0];
-    const p = project(point[0], point[1]);
+    const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
     const valueText = choroplethValueText(value, spec.unit);
@@ -6553,7 +6579,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   })();
   // A world projection already shows every region, so a locator would only repeat it
   // (and its bbox-centred azimuthal view breaks for data straddling the antimeridian).
-  const showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
+  let showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
 
   const locatorSize = mobile ? 104 : 150;
   // Review fix (mobile inset/locator collision): the zoom inset panel (if
@@ -6566,7 +6592,28 @@ function renderChoropleth(spec, rows, mobile = false) {
   // already-placed inset panel whenever every corner collided with
   // *something*).
   const insetCornerRect = insetCorner ? { x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h } : null;
-  const corner = showLocator ? bestCorner(locatorSize, locatorSize, insetObstacles, insetCornerRect ? [insetCornerRect] : []) : null;
+  // The locator sits inside the map frame, so it must never cover a region that
+  // carries data: every corner/edge slot is checked against the projected boxes
+  // of the data regions' pieces, and when none is free the locator is dropped
+  // (it is orientation only; the map itself still shows every region).
+  const dataPieceBoxes = [];
+  for (const idx of allDataFeatureIndices) {
+    for (const ring of geometryRings(neFeatureGeometry(idx))) {
+      if (!ringWithinHorizon(ring, lon0, horizonLat0)) continue;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [lo, la] of ring) {
+        const q = project(lo, la);
+        if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+      }
+      if (x1 - x0 >= 1 || y1 - y0 >= 1) dataPieceBoxes.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    }
+  }
+  const locatorMustAvoid = [...(insetCornerRect ? [insetCornerRect] : []), ...dataPieceBoxes];
+  let corner = showLocator ? bestCorner(locatorSize, locatorSize, insetObstacles, locatorMustAvoid) : null;
+  if (corner && dataPieceBoxes.some((b) => boxesOverlap({ x: corner.x, y: corner.y, w: locatorSize, h: locatorSize }, b))) {
+    showLocator = false;
+    corner = null;
+  }
 
   const locatorPoints = [];
   if (showLocator) for (const index of locatorIndices) for (const ring of geometryRings(neFeatureGeometry(index))) for (const pt of ring) locatorPoints.push(pt);
@@ -6629,6 +6676,14 @@ function renderChoropleth(spec, rows, mobile = false) {
       locatorParts.push(
         `<rect data-role="choropleth-locator-area" x="${zx0.toFixed(1)}" y="${zy0.toFixed(1)}" width="${Math.max(1, zx1 - zx0).toFixed(1)}" height="${Math.max(1, zy1 - zy0).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.5"/>`
       );
+    }
+    // A data region too small to show at locator scale gets an accent dot, so the
+    // marker never frames a stretch of empty sea.
+    for (const item of joined) {
+      const dot = tinyRegionDot(item.featureIndices, locatorProj.project, locatorLon0, locatorLat0, 3);
+      if (!dot) continue;
+      if (dot.x < corner.x || dot.x > corner.x + locatorSize || dot.y < corner.y || dot.y > corner.y + locatorSize) continue;
+      locatorParts.push(`<circle data-role="choropleth-locator-dot" data-iso3="${esc(item.iso3)}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="2.2" fill="${PALETTE.accent}"/>`);
     }
     locatorParts.push("</g>");
     locatorParts.push("</g>");
@@ -6811,6 +6866,12 @@ function renderChoropleth(spec, rows, mobile = false) {
     // claim that a value is shown.
     const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"` : "";
     f.parts.push(`<path data-role="${item ? "choropleth-data" : "choropleth-context"}"${dataAttrs} d="${d}" fill="${fill}" stroke="${PAPER}" stroke-width="${mobile ? 0.5 : 0.7}" stroke-linejoin="round"/>`);
+  }
+  for (const item of joined) {
+    const dot = tinyDots.get(item.iso3);
+    if (!dot) continue;
+    const value = n(item.row[spec.value_field]) ?? 0;
+    f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
   }
   // Review fix (colour ramp/highlight): spec.highlight_values is reserved
   // for an outline only, never a fill change - drawing it as a stroke over
