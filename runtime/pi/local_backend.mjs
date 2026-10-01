@@ -239,9 +239,15 @@ export async function localSpotlight(query, { limit = 50 } = {}) {
   return { backend: 'portable:filename-walk', query, root, results: await walkNames(root, query, capped) };
 }
 
-function safeReadOnlySql(sql) {
+// sqlite3's -readonly protects only the database file, not the shell's file
+// functions, so these names are rejected here and `-safe` is passed as a second layer.
+const SQLITE_FILE_FUNCTIONS = /\b(writefile|readfile|edit|load_extension|fsdir|zipfile|fts3_tokenizer)\b/i;
+
+export function safeReadOnlySql(sql) {
   const normalized = String(sql || '').trim().replace(/^--.*$/gm, '').trim();
-  return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized) && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized);
+  return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized)
+    && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized)
+    && !SQLITE_FILE_FUNCTIONS.test(normalized);
 }
 
 export async function localSqliteQuery(input, sql) {
@@ -250,7 +256,7 @@ export async function localSqliteQuery(input, sql) {
   if (process.platform !== 'darwin' || !(await available(NATIVE.sqlite3))) {
     throw new Error('sqlite3 is only available on the macOS local backend');
   }
-  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { timeoutMs: 30_000 });
+  const { stdout } = await runCommand(NATIVE.sqlite3, ['-safe', '-readonly', '-json', target, String(sql)], { timeoutMs: 30_000 });
   let rows;
   try { rows = stdout.trim() ? JSON.parse(stdout) : []; }
   catch { rows = stdout.trim(); }
