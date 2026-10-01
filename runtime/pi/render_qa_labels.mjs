@@ -316,6 +316,22 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     if (!insetPolygonsByIso3.has(iso3)) insetPolygonsByIso3.set(iso3, []);
     insetPolygonsByIso3.get(iso3).push(...parsePathRings(path.attrs.d));
   }
+  // P3 (add-only gate): a region that the inset itself draws smaller than the
+  // dot threshold is invisible as a polygon, so it must carry a value-coloured
+  // dot in the inset (same threshold as viz.mjs TINY_REGION_PX: 6px desktop,
+  // 5px mobile).
+  const insetDotIso3 = new Set(nodes.filter((n) => n.tag === "circle" && n.attrs["data-role"] === "choropleth-inset-dot").map((n) => n.attrs["data-iso3"]));
+  const insetTinyPx = nodes.find((n) => n.tag === "svg")?.attrs?.["data-viewport"] === "mobile" ? 5 : 6;
+  for (const [iso3, rings] of insetPolygonsByIso3) {
+    let largest = 0;
+    for (const ring of rings) {
+      const xs = ring.map((pt) => pt[0]), ys = ring.map((pt) => pt[1]);
+      largest = Math.max(largest, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    }
+    if (largest < insetTinyPx && !insetDotIso3.has(iso3)) {
+      failures.push({ rule: "inset_region_too_small", message: `${iso3} is drawn ${largest.toFixed(1)}px across in the inset (under ${insetTinyPx}px) and has no value-coloured dot` });
+    }
+  }
   const onMapNameLabels = nodes.filter((n) => n.tag === "text" && n.attrs["data-role"] === "choropleth-label" && n.attrs["text-anchor"] === "middle");
   const onMapValueLabels = nodes.filter((n) => n.tag === "text" && n.attrs["data-role"] === "choropleth-label-value" && n.attrs["text-anchor"] === "middle");
   for (const label of [...onMapNameLabels, ...onMapValueLabels]) {

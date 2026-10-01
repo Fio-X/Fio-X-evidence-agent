@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, classifyValue, featurePath, fitAzimuthalProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1494,6 +1494,8 @@ function cartographicDataExtent(spec,rows){
 }
 
 export function lintVizSpec(spec, rows, context = {}) {
+  const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
+  if (autoCategoryNames) spec = autoCategoryNames.spec;
   const blockers = [];
   const warnings = [];
   const notes = [];
@@ -1916,6 +1918,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     notes,
     data_hash: hashRows(rows),
     row_count: rows.length,
+    ...(autoCategoryNames ? { category_names_resolution: autoCategoryNames.resolution } : {}),
   };
 }
 
@@ -2369,6 +2372,31 @@ function categoryNamesField(spec) {
   if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "choropleth", "treemap"].includes(spec.chart_type)) return spec.category_field;
   if (spec.chart_type === "small_multiples") return spec.facet_field;
   if (spec.chart_type === "multi_line") return spec.series_field;
+  return null;
+}
+
+// Diagnosis P6: category_names is optional in the spec, so a chart whose name
+// column already holds exact World Bank English names (or ISO3 codes) used to
+// print the raw English text on a zh page unless the author remembered to set
+// it. When the field is unset, the chart type supports it and EVERY distinct
+// value resolves verbatim in one vendored table, resolve it that way: returns a
+// shallow-cloned spec carrying the mode plus a record of which mode was used
+// (kept in the lint report for audit). Any value that does not match keeps the
+// spec untouched (non-economy categories such as companies or provinces must
+// never be re-labelled), and an explicitly declared category_names is never
+// overridden. Choropleth is excluded: it requires an explicit declaration and
+// that blocker must stay visible.
+export function resolveAutoCategoryNames(spec, rows) {
+  if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth") return null;
+  const field = categoryNamesField(spec);
+  if (!field || !fieldExists(rows, field)) return null;
+  const values = unique(rows.map((row) => row[field]));
+  if (!values.length) return null;
+  for (const mode of ECONOMY_NAME_MODES) {
+    if (unmappedEconomyNameValues(values, mode).length === 0) {
+      return { spec: { ...spec, category_names: mode }, resolution: { field, mode, source: "auto", values: values.length } };
+    }
+  }
   return null;
 }
 
@@ -5005,8 +5033,15 @@ function renderChoropleth(spec, rows, mobile = false) {
   // free to show a third of the map as geography no plotted region actually
   // occupies (Arabia, the Indian Ocean) once fitAzimuthalProjection's own
   // uniform scale binds to the tighter of width/height.
-  const [lon0, lat0] = bboxCenter(dataPoints.length ? dataPoints : [[0, 0]]);
-  let proj = fitAzimuthalProjection(lon0, lat0, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+  // Diagnosis P1: the projection follows the data's real spherical extent (see
+  // chooseMapProjection), not the bbox midpoint alone - data spread over more
+  // than one azimuthal hemisphere gets a world projection instead of silently
+  // losing every ring beyond the horizon. horizonLat0 is lat0 for the
+  // azimuthal projection and null for the world one (no horizon to filter on).
+  const mapChoice = chooseMapProjection(dataPoints);
+  const { lon0, lat0 } = mapChoice;
+  const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
+  let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
 
   const dataByIndex = new Map();
@@ -5024,10 +5059,38 @@ function renderChoropleth(spec, rows, mobile = false) {
   // main map, same as any other plotted region.
   const insetSpec = spec.inset && typeof spec.inset === "object" ? spec.inset : null;
   const insetIso3Set = new Set();
+  const INSET_CLUSTER_DEG = 25;
+  // Centre for a secondary view (locator, zoom inset, clustering): the same
+  // rule as the main map (bbox centre when everything is within reach, else the
+  // minimal enclosing cap), never the bbox midpoint alone, which lands on the
+  // far side of the globe for data straddling the antimeridian.
+  const viewCentre = (pts) => {
+    const choice = chooseMapProjection(pts);
+    if (choice.kind === "azimuthal") return [choice.lon0, choice.lat0];
+    const cap = enclosingCap(pts);
+    return [cap.lon, cap.lat];
+  };
+  const insetCentreOf = (item) => viewCentre(item.featureIndices.flatMap((idx) => geometryRings(neFeatureGeometry(idx)).flat()));
+  const angDeg = (p1, p2) => {
+    const r = Math.PI / 180;
+    const cosd = Math.sin(p1[1] * r) * Math.sin(p2[1] * r) + Math.cos(p1[1] * r) * Math.cos(p2[1] * r) * Math.cos((p1[0] - p2[0]) * r);
+    return Math.acos(Math.max(-1, Math.min(1, cosd))) / r;
+  };
+  // A region demoted later (its leader would be too long) may only join the
+  // zoom inset when it lies near the regions already in it; otherwise the
+  // panel's extent would balloon and shrink everything back to a dot.
+  const farFromInset = (iso3) => {
+    if (!insetIso3Set.size) return false;
+    const item = joined.find((j) => j.iso3 === iso3);
+    if (!item) return false;
+    const c = insetCentreOf(item);
+    return !joined.some((j) => insetIso3Set.has(j.iso3) && angDeg(c, insetCentreOf(j)) <= INSET_CLUSTER_DEG);
+  };
   if (insetSpec) {
     if (Array.isArray(insetSpec.iso3) && insetSpec.iso3.length) {
       for (const code of insetSpec.iso3) insetIso3Set.add(String(code ?? "").trim().toUpperCase());
     } else if (insetSpec.auto) {
+      const autoCandidates = [];
       for (const item of joined) {
         const bbox = projectedFeatureBBox(item.featureIndices, project);
         const value = n(item.row[spec.value_field]) ?? 0;
@@ -5036,8 +5099,24 @@ function renderChoropleth(spec, rows, mobile = false) {
         const neededW = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
         const neededH = lineH * 2 + 6;
         const tooSmall = !bbox || bbox.maxX - bbox.minX < neededW || bbox.maxY - bbox.minY < neededH;
-        if (tooSmall) insetIso3Set.add(item.iso3);
+        if (tooSmall) autoCandidates.push(item);
       }
+      // A zoom panel only magnifies one neighbourhood: merging regions that sit
+      // far apart fits a near-global extent and shrinks each back to a dot. Keep
+      // the largest group of candidates that lie within INSET_CLUSTER_DEG of one
+      // another (ties: tighter, then iso3); the rest keep their main-map labels.
+      const centres = autoCandidates.map((item) => ({ item, c: insetCentreOf(item) }));
+      let bestGroup = [];
+      let bestSpread = Infinity;
+      for (const seed of centres) {
+        const group = centres.filter((o) => angDeg(seed.c, o.c) <= INSET_CLUSTER_DEG);
+        const spread = Math.max(...group.map((o) => angDeg(seed.c, o.c)));
+        const better = group.length > bestGroup.length
+          || (group.length === bestGroup.length && (spread < bestSpread
+            || (spread === bestSpread && group.map((o) => o.item.iso3).sort().join() < bestGroup.map((o) => o.item.iso3).sort().join())));
+        if (better) { bestGroup = group; bestSpread = spread; }
+      }
+      for (const o of bestGroup) insetIso3Set.add(o.item.iso3);
     }
   }
   // Zoom inset natural size (magnification >=2.5x, see the layout further
@@ -5052,12 +5131,34 @@ function renderChoropleth(spec, rows, mobile = false) {
   const MIN_INSET_MAGNIFICATION = 2.5;
   function insetNaturalMapSize(points, mainScale) {
     const pts = points.length ? points : [[lon0, lat0]];
-    const [zl0, zl1] = bboxCenter(pts);
+    const [zl0, zl1] = viewCentre(pts);
     const probe = fitAzimuthalProjection(zl0, zl1, pts, 0, 1, 0, 1, 0.12);
     const raw = probe.scale > 0 ? (mainScale * (MIN_INSET_MAGNIFICATION + 0.1)) / probe.scale : mobile ? 90 : 120;
     return Math.max(mobile ? 70 : 90, Math.min(mobile ? 170 : 230, raw));
   }
   const insetPanelWidthFor = (mapSize) => Math.max(mapSize + 12, mobile ? 140 : 170);
+  // P3 (items 3 and 5): on desktop the panel is about a third as wide as the
+  // main map, and its height follows the aspect of the selected extent (never
+  // below the natural square size, capped so it cannot swallow the frame).
+  // The map inside is then fitted to that W x H rectangle, so the extent is
+  // widened to the panel's aspect and the surrounding land fills the rest.
+  function insetNaturalDims(points, mainScale) {
+    const nat = insetNaturalMapSize(points, mainScale);
+    if (mobile) return { w: nat, h: nat };
+    const pts = points.length ? points : [[lon0, lat0]];
+    const [zl0, zl1] = viewCentre(pts);
+    const probe = fitAzimuthalProjection(zl0, zl1, pts, 0, 1000, 0, 1000, 0);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const pt of pts) {
+      const q = probe.project(pt[0], pt[1]);
+      if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+      x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+    }
+    const aspect = x1 > x0 && y1 > y0 ? Math.min(3, Math.max(0.5, (x1 - x0) / (y1 - y0))) : 1;
+    const w = Math.max(nat, Math.round((INSET_WIDTH_SHARE * (plotRight - plotLeft - INSET_COLUMN_GAP)) / (1 + INSET_WIDTH_SHARE)));
+    const h = Math.max(nat, Math.min(w / aspect, 0.62 * mapH));
+    return { w, h };
+  }
 
   // Task (inset outside the map): when a zoom inset is requested, the panel
   // gets its own column to the LEFT of the map instead of floating over it -
@@ -5075,6 +5176,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   // of their own labels and into the inset), the panel gets a strip BELOW the
   // map instead (insetStripH), between the map and the legend.
   const INSET_COLUMN_GAP = 14;
+  const INSET_WIDTH_SHARE = 0.33;
   const MIN_MAP_W_WITH_COLUMN = 560;
   const INSET_STRIP_LEGEND_GAP = 8;
   let insetColumnW = 0;
@@ -5085,15 +5187,15 @@ function renderChoropleth(spec, rows, mobile = false) {
       if (!insetIso3Set.has(item.iso3)) continue;
       for (const idx of item.featureIndices) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) pts.push(pt);
     }
-    const reserve = insetPanelWidthFor(insetNaturalMapSize(pts, proj.scale)) + INSET_COLUMN_GAP;
+    const reserve = insetPanelWidthFor(insetNaturalDims(pts, proj.scale).w) + INSET_COLUMN_GAP;
     if (plotRight - plotLeft - reserve >= MIN_MAP_W_WITH_COLUMN) {
       insetColumnW = reserve;
       mapLeft = plotLeft + insetColumnW;
-      proj = fitAzimuthalProjection(lon0, lat0, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+      proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
     } else {
       // Same upper-bound reasoning for the height: the title row, the
       // natural-size map and the panel's own padding (see insetPanelH).
-      const mapSize = insetNaturalMapSize(pts, proj.scale);
+      const mapSize = insetNaturalDims(pts, proj.scale).h;
       insetStripH = Math.min(mapH - 2 * 8, 18 + mapSize + 8) + INSET_COLUMN_GAP + INSET_STRIP_LEGEND_GAP;
       f = mobile ? mobileFrame(spec, bodyH + insetStripH) : frame(spec, bodyH + insetStripH);
     }
@@ -5141,10 +5243,36 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
   }
 
+  // A region whose largest piece projects below TINY_REGION_PX on both sides
+  // is invisible as a polygon; it is also drawn as a value-coloured dot at the
+  // centre of that piece, and its label/leader anchors on the dot (an
+  // archipelago's label point can sit in open sea between its islands).
+  const TINY_REGION_PX = mobile ? 5 : 6;
+  const tinyRegionDot = (featureIndices, projectFn, lonC, latC, limit = TINY_REGION_PX) => {
+    let best = null;
+    for (const idx of featureIndices) {
+      for (const ring of geometryRings(neFeatureGeometry(idx))) {
+        if (!ringWithinHorizon(ring, lonC, latC)) continue;
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const [lo, la] of ring) {
+          const q = projectFn(lo, la);
+          if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+        }
+        const size = Math.max(x1 - x0, y1 - y0);
+        if (!best || size > best.size) best = { size, x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+      }
+    }
+    return best && best.size < limit ? best : null;
+  };
+  const tinyDots = new Map();
+  for (const item of joined) {
+    const dot = tinyRegionDot(item.featureIndices, project, lon0, horizonLat0);
+    if (dot) tinyDots.set(item.iso3, dot);
+  }
   const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3)).map((item) => {
     const idx = item.featureIndices[0];
     const point = neFeatureAttributes(idx)?.label ?? [lon0, lat0];
-    const p = project(point[0], point[1]);
+    const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
     const valueText = choroplethValueText(value, spec.unit);
@@ -5615,7 +5743,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const overflowCandidates = [];
     for (const li of activeItems) {
       const idx0 = li.item.featureIndices[0];
-      const anchor = findLabelAnchor(idx0, li.item.featureIndices, li.w, project, lon0, lat0, li.x, li.y, onMap.map((p) => p.box));
+      const anchor = findLabelAnchor(idx0, li.item.featureIndices, li.w, project, lon0, horizonLat0, li.x, li.y, onMap.map((p) => p.box));
       if (anchor) {
         const box = { x: anchor.x - li.w / 2, y: anchor.y - lineH - 2, w: li.w, h: li.h };
         const insideMap = box.x >= mapLeft && box.x + box.w <= mapRight && box.y >= top && box.y + box.h <= bottom;
@@ -5660,6 +5788,43 @@ function renderChoropleth(spec, rows, mobile = false) {
     const acceptedBoxes = onMap.map((p) => p.box);
     let allPlaced = true;
     placedOverflow = [];
+    // Numbering is the last resort: before it, look for any open spot on the
+    // map near the region where its label fits, and run a short leader to it.
+    // Candidate boxes sit on rings around the anchor (16 directions, growing
+    // distance), shortest leader first; each must lie inside the map frame,
+    // clear every data region and every accepted label, and its leader must
+    // cross nothing (same checks as the boundary column).
+    const tryFreeSpot = (li) => {
+      const idx0 = li.item.featureIndices[0];
+      const anchor = { x: li.x, y: li.y };
+      const cands = [];
+      for (let dist = 14; dist <= MAX_OVERFLOW_LEADER_PX; dist += 10) {
+        for (let k = 0; k < 16; k++) {
+          const ang = (k / 16) * Math.PI * 2;
+          const px = li.x + Math.cos(ang) * dist, py = li.y + Math.sin(ang) * dist;
+          const side = Math.cos(ang) >= 0 ? "right" : "left";
+          const box = side === "right" ? { x: px, y: py - lineH - 2, w: li.w, h: li.h } : { x: px - li.w, y: py - lineH - 2, w: li.w, h: li.h };
+          const tip = { x: side === "right" ? px - LEADER_GAP_PX : px + LEADER_GAP_PX, y: py };
+          if (box.x < mapLeft + 2 || box.x + box.w > mapRight - 2 || box.y < top + 2 || box.y + box.h > bottom - 2) continue;
+          const len = elbowLength(anchor, tip);
+          if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) continue;
+          cands.push({ li, box, anchor, tip, side, len });
+        }
+      }
+      cands.sort((u, v) => u.len - v.len);
+      for (const cand of cands) {
+        if (acceptedBoxes.some((b) => boxesOverlap(b, cand.box))) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
+        const segs = elbowSegments(cand.anchor, cand.tip);
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) return cand;
+      }
+      return null;
+    };
+    const acceptFree = (cand) => {
+      placedOverflow.push(cand);
+      for (const [p1, p2] of elbowSegments(cand.anchor, cand.tip)) acceptedLeaders.push({ a: p1, b: p2 });
+      acceptedBoxes.push(cand.box);
+    };
     for (const entry of [...leftLayout.placed, ...rightLayout.placed]) {
       const idx0 = entry.li.item.featureIndices[0];
       // v7 fix: try the column's own slot first (step 0, unchanged for every
@@ -5673,22 +5838,24 @@ function renderChoropleth(spec, rows, mobile = false) {
         if (len > MAX_OVERFLOW_LEADER_PX) break;
         if (len < MIN_LEADER_DRAWN_LENGTH) continue;
         if (cand.box.x < 0 || cand.box.x + cand.box.w > width) break;
-        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, lat0)) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(cand.anchor, cand.tip);
-        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, lat0, acceptedBoxes, cand.box))) accepted = cand;
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) accepted = cand;
       }
       if (accepted) {
         placedOverflow.push(accepted);
         for (const [p1, p2] of elbowSegments(accepted.anchor, accepted.tip)) acceptedLeaders.push({ a: p1, b: p2 });
         acceptedBoxes.push(accepted.box);
       } else {
+        const free = tryFreeSpot(entry.li);
+        if (free) { acceptFree(free); continue; }
         allPlaced = false;
         // Only demote into the zoom inset when one is actually configured
         // (spec.inset) - with no inset panel to receive it, forcing this
         // iso3 into forcedInsetIso3 would materialize a one-country inset
         // panel out of nowhere. Without an inset, fall back the same way an
         // over-length column entry already does: the numbered footnote list.
-        if (insetSpec) forcedInsetIso3.add(entry.li.item.iso3);
+        if (insetSpec && !farFromInset(entry.li.item.iso3)) forcedInsetIso3.add(entry.li.item.iso3);
         else footnoteIso3.add(entry.li.item.iso3);
       }
     }
@@ -5723,9 +5890,9 @@ function renderChoropleth(spec, rows, mobile = false) {
         const idx0 = candidate.li.item.featureIndices[0];
         // v7 fix: same two hard requirements as the shared column above.
         if (elbowLength(candidate.anchor, candidate.tip) < MIN_LEADER_DRAWN_LENGTH) continue;
-        if (boxOverlapsFeature(allDataFeatureIdxFlat, candidate.box, project, lon0, lat0)) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, candidate.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(candidate.anchor, candidate.tip);
-        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, lat0, acceptedBoxes, candidate.box))) {
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, candidate.box))) {
           personal = candidate;
           break;
         }
@@ -5739,6 +5906,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       // Neither side worked - task: "fall back to numbered markers + a
       // footnote list, same as the line-chart" rather than stretch a leader
       // past a legible length or through another region's own polygon.
+      const free = tryFreeSpot(li);
+      if (free) { acceptFree(free); continue; }
       allPlaced = false;
       footnoteIso3.add(li.item.iso3);
     }
@@ -5978,7 +6147,7 @@ function renderChoropleth(spec, rows, mobile = false) {
 
   const insetPoints2 = [];
   for (const idx of insetFeatureIndices) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) insetPoints2.push(pt);
-  const [zLon0, zLat0] = bboxCenter(insetPoints2.length ? insetPoints2 : [[lon0, lat0]]);
+  const [zLon0, zLat0] = viewCentre(insetPoints2.length ? insetPoints2 : [[lon0, lat0]]);
 
   // Review fix (magnification >=2.5x): see insetNaturalMapSize above. When a
   // column was reserved the size is also capped to it, so a later-forced
@@ -5991,10 +6160,18 @@ function renderChoropleth(spec, rows, mobile = false) {
   // so the common case (room for the panel at its natural size) never
   // shrinks anything.
   const insetMapSizeNatural = insetNaturalMapSize(insetPoints2, proj.scale);
+  const insetDimsNatural = insetNaturalDims(insetPoints2, proj.scale);
+  // Wide panel only where it has its own reserved space (column / strip); a
+  // floating in-plot panel stays square so it covers as little as possible.
   const insetMapSizeFull = insetColumnW
-    ? Math.min(insetMapSizeNatural, insetColumnW - INSET_COLUMN_GAP - 12)
+    ? Math.min(insetDimsNatural.w, insetColumnW - INSET_COLUMN_GAP - 12)
     : insetStripH
-      ? Math.min(insetMapSizeNatural, insetStripH - INSET_COLUMN_GAP - INSET_STRIP_LEGEND_GAP - insetTitleH - 8)
+      ? Math.min(insetDimsNatural.w, plotRight - plotLeft - 12)
+      : insetMapSizeNatural;
+  const insetMapHFull = insetColumnW
+    ? Math.min(insetDimsNatural.h, mapH - 2 * cornerPad - insetTitleH - 12)
+    : insetStripH
+      ? Math.min(insetDimsNatural.h, insetStripH - INSET_COLUMN_GAP - INSET_STRIP_LEGEND_GAP - insetTitleH - 8)
       : insetMapSizeNatural;
 
   // Probe which regions can hold both label lines on their own magnified
@@ -6020,8 +6197,20 @@ function renderChoropleth(spec, rows, mobile = false) {
   // current size clears every on-map label/marker too. Font sizes are
   // untouched (font, lineH etc. stay outer-scope constants); only
   // insetMapSize itself, and everything measured from it, shrinks.
-  function layoutInsetAtSize(insetMapSize) {
-  const sizingProbe = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], 0, insetMapSize, 0, insetMapSize, 0.12);
+  // P3: when a region cannot be labelled in the panel at the default margin,
+  // widen the margin (less magnification, more open space around the extent)
+  // before any region is given a number.
+  function layoutInsetAtSize(insetMapSize, insetMapH = insetMapSize) {
+    let best = null;
+    for (const pad of [0.12, 0.22, 0.34]) {
+      const layout = layoutInsetAtSizePad(insetMapSize, insetMapH, pad);
+      if (!best || layout.listFallbackItems.length < best.listFallbackItems.length) best = layout;
+      if (!layout.listFallbackItems.length) break;
+    }
+    return best;
+  }
+  function layoutInsetAtSizePad(insetMapSize, insetMapH, insetPad) {
+  const sizingProbe = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], 0, insetMapSize, 0, insetMapH, insetPad);
   // Review fix (inset containment - "Guinea/Liberia/Sierra Leone likely
   // fit"): a single bbox-centre containment probe fails the same way the old
   // main-map labelOnFeature did - it can reject a feature with plenty of
@@ -6053,8 +6242,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     const bbox = projectedFeatureBBox(ownIndices, sizingProbe.project);
     const w = Math.max(choroplethLabelWidth(li.name, font), choroplethLabelWidth(li.valueText, font));
     const placedBoxes = onPolygonItems.map((p) => insetBoxAt(p.ax, p.ay, p.w));
-    const preferred = bbox ? { x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2 } : null;
-    const anchor = bbox
+    const tinyDot = tinyRegionDot(ownIndices, sizingProbe.project, zLon0, zLat0);
+    const preferred = tinyDot ? { x: tinyDot.x, y: tinyDot.y } : bbox ? { x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2 } : null;
+    const anchor = bbox && !tinyDot
       ? findLabelAnchor(idx0, ownIndices, w, sizingProbe.project, zLon0, zLat0, preferred.x, preferred.y, placedBoxes)
       : null;
     if (anchor) {
@@ -6085,8 +6275,8 @@ function renderChoropleth(spec, rows, mobile = false) {
   const insetRightMaxW = insetRightCandidates.length ? Math.max(...insetRightCandidates.map((c) => c.w)) : 0;
   const insetLeftColumnX = Math.min(insetMapSize - 4, Math.max(4, insetLeftMaxW + 4));
   const insetRightColumnX = Math.max(4, Math.min(insetMapSize - 4, insetMapSize - insetRightMaxW - 4));
-  const insetLeftLayout = layoutBoundaryColumn(insetLeftCandidates, "left", insetLeftColumnX, 4, insetMapSize - 4, MAX_OVERFLOW_LEADER_PX);
-  const insetRightLayout = layoutBoundaryColumn(insetRightCandidates, "right", insetRightColumnX, 4, insetMapSize - 4, MAX_OVERFLOW_LEADER_PX);
+  const insetLeftLayout = layoutBoundaryColumn(insetLeftCandidates, "left", insetLeftColumnX, 4, insetMapH - 4, MAX_OVERFLOW_LEADER_PX);
+  const insetRightLayout = layoutBoundaryColumn(insetRightCandidates, "right", insetRightColumnX, 4, insetMapH - 4, MAX_OVERFLOW_LEADER_PX);
   const insetAcceptedLeaders = [];
   const insetOverflowItems = [];
   const listFallbackItems = [];
@@ -6103,7 +6293,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   // against ALL of them (own box excluded), not just the ones some
   // particular concatenation order happened to accept first.
   const insetAllEntries = [...insetLeftLayout.placed, ...insetRightLayout.placed];
-  for (const entry of insetAllEntries) {
+  // A candidate the boundary column had no room for (or whose leader would be
+  // too long) is not placed above; without this it vanished with no label at
+  // all. It takes the numbered-marker fallback like any other unplaceable region.
+  // Candidates the boundary column could not take still get an open-spot
+  // search (below) before they fall to the numbered list.
+  const insetOverflowOnly = [...insetLeftLayout.overflow, ...insetRightLayout.overflow].map((c) => ({ li: c, overflowOnly: true }));
+  for (const entry of [...insetAllEntries, ...insetOverflowOnly]) {
     const candidate = entry.li;
     const ownIndices = candidate.src.item.featureIndices;
     const otherIndices = insetFeatureIndices.filter((idx) => !ownIndices.includes(idx));
@@ -6123,7 +6319,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const tryClear = (cand) => {
       const len = elbowLength(cand.anchor, cand.tip);
       if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) return false;
-      if (cand.box.x < 4 || cand.box.x + cand.box.w > insetMapSize - 4) return false;
+      if (cand.box.x < 4 || cand.box.x + cand.box.w > insetMapSize - 4 || cand.box.y < 2 || cand.box.y + cand.box.h > insetMapH - 2) return false;
       if (boxOverlapsFeature(insetFeatureIndices, cand.box, sizingProbe.project, zLon0, zLat0)) return false;
       const segs = elbowSegments(cand.anchor, cand.tip);
       return (
@@ -6132,17 +6328,41 @@ function renderChoropleth(spec, rows, mobile = false) {
       );
     };
     let accepted = null;
-    for (let step = 0; step <= 24 && !accepted; step++) {
+    for (let step = 0; step <= 24 && !accepted && !entry.overflowOnly; step++) {
       const cand = step === 0 ? entry : extendEntryOutward(entry, entry.side, step * 8);
       if (tryClear(cand)) accepted = cand;
     }
-    if (!accepted) {
+    if (!accepted && !entry.overflowOnly) {
       const altSide = entry.side === "right" ? "left" : "right";
       const altColumnX = altSide === "right" ? insetRightColumnX : insetLeftColumnX;
       const flipped = flipEntrySide(entry, altSide, altColumnX);
       for (let step = 0; step <= 24 && !accepted; step++) {
         const cand = step === 0 ? flipped : extendEntryOutward(flipped, altSide, step * 8);
         if (tryClear(cand)) accepted = cand;
+      }
+    }
+    // P3: a short leader to an open spot beside the region, before numbering.
+    if (!accepted) {
+      const anchorPt = { x: candidate.x, y: candidate.y };
+      const angles = [0, 180, -35, 35, 145, -145, -70, 70, 110, -110, -90, 90];
+      for (const dist of [12, 20, 30, 44, 60, 80]) {
+        for (const deg of angles) {
+          const rad = (deg * Math.PI) / 180;
+          const tip = { x: anchorPt.x + Math.cos(rad) * dist, y: anchorPt.y + Math.sin(rad) * dist };
+          const side = Math.abs(Math.cos(rad)) < 0.3 ? (anchorPt.x < insetCenterX ? "right" : "left") : Math.cos(rad) >= 0 ? "right" : "left";
+          const box = { x: side === "right" ? tip.x + LEADER_GAP_PX : tip.x - LEADER_GAP_PX - candidate.w, y: tip.y - candidate.h / 2, w: candidate.w, h: candidate.h };
+          const cand = { anchor: anchorPt, tip, box, side };
+          if (tryClear(cand)) { accepted = cand; break; }
+        }
+        if (accepted) break;
+        // Label centred above or below the point, on a straight vertical leader.
+        for (const dir of [1, -1]) {
+          const tip = { x: anchorPt.x, y: anchorPt.y + dir * dist };
+          const box = { x: Math.min(insetMapSize - 4 - candidate.w, Math.max(4, anchorPt.x - candidate.w / 2)), y: dir > 0 ? tip.y + LEADER_GAP_PX : tip.y - LEADER_GAP_PX - candidate.h, w: candidate.w, h: candidate.h };
+          const cand = { anchor: anchorPt, tip, box, side: "center" };
+          if (tryClear(cand)) { accepted = cand; break; }
+        }
+        if (accepted) break;
       }
     }
     if (accepted) {
@@ -6168,8 +6388,8 @@ function renderChoropleth(spec, rows, mobile = false) {
   // its own centroid, numbered from the one shared sequence below) - so the
   // panel no longer needs to reserve its own list rows.
   const insetPanelW = insetLabelItems.length ? insetPanelWidthFor(insetMapSize) : 0;
-  const insetPanelH = insetLabelItems.length ? Math.min(mapH - 2 * cornerPad, insetTitleH + insetMapSize + 8) : 0;
-  return { insetMapSize, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH };
+  const insetPanelH = insetLabelItems.length ? Math.min(mapH - 2 * cornerPad, insetTitleH + insetMapH + 8) : 0;
+  return { insetMapSize, insetMapH, insetPad, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH };
   }
 
   // Source extent: the union bbox of every inset region's own projected
@@ -6242,7 +6462,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   if (insetLabelItems.length && insetStripH) {
     // Reserved strip below the map (narrow canvas): the panel is centred
     // horizontally under the source extent, clamped into the plot width.
-    chosenLayout = layoutInsetAtSize(insetMapSizeFull);
+    chosenLayout = layoutInsetAtSize(insetMapSizeFull, insetMapHFull);
     const w = chosenLayout.insetPanelW, h = chosenLayout.insetPanelH;
     const srcMidX = sourceOutline ? sourceOutline.x + sourceOutline.w / 2 : (mapLeft + mapRight) / 2;
     insetCorner = { key: "strip-bottom", x: Math.min(plotRight - w, Math.max(plotLeft, srcMidX - w / 2)), y: bottom + INSET_COLUMN_GAP, w, h };
@@ -6252,14 +6472,14 @@ function renderChoropleth(spec, rows, mobile = false) {
     // into the map's own top..bottom band. Nothing in the column competes
     // with land or labels, so there is no size ladder to walk - the panel
     // keeps its natural (column-capped) size.
-    chosenLayout = layoutInsetAtSize(insetMapSizeFull);
+    chosenLayout = layoutInsetAtSize(insetMapSizeFull, insetMapHFull);
     const w = chosenLayout.insetPanelW, h = chosenLayout.insetPanelH;
     const srcMidY = sourceOutline ? sourceOutline.y + sourceOutline.h / 2 : (top + bottom) / 2;
     insetCorner = { key: "column-left", x: mapLeft - INSET_COLUMN_GAP - w, y: Math.min(bottom - h, Math.max(top, srcMidY - h / 2)), w, h };
   } else if (insetLabelItems.length) {
     let fullSizeLayout = null;
     for (const scale of INSET_SCALE_STEPS) {
-      const candidateLayout = layoutInsetAtSize(insetMapSizeFull * scale);
+      const candidateLayout = layoutInsetAtSize(insetMapSizeFull * scale, insetMapHFull * scale);
       if (scale === 1) fullSizeLayout = candidateLayout;
       const best = insetHardCandidates(candidateLayout.insetPanelW, candidateLayout.insetPanelH, sourceOutline)[0];
       if (best) {
@@ -6273,9 +6493,9 @@ function renderChoropleth(spec, rows, mobile = false) {
       insetCorner = bestInsetPosition(chosenLayout.insetPanelW, chosenLayout.insetPanelH, insetObstacles, sourceOutline);
     }
   } else {
-    chosenLayout = layoutInsetAtSize(insetMapSizeFull);
+    chosenLayout = layoutInsetAtSize(insetMapSizeFull, insetMapHFull);
   }
-  const { insetMapSize, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH } = chosenLayout;
+  const { insetMapSize, insetMapH, insetPad, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH } = chosenLayout;
 
   // One global numbering sequence covers both fallback tiers (main-map
   // boundary-column overflow, then inset boundary-column overflow) so a
@@ -6320,6 +6540,10 @@ function renderChoropleth(spec, rows, mobile = false) {
     // each footnoted region's exact value from markup alone, the same
     // guarantee every other plotted region gets, not a weaker one.
     footnoteParts.push(`<g data-role="choropleth-footnote-list">`);
+    // P3 (item 6): values sit in one right-aligned column, so the numbers can
+    // be compared down the list.
+    const footnoteNameW = Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, font)));
+    const footnoteValueW = Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, font)));
     numberedFallbackItems.forEach((li, i) => {
       const rowY = footnoteListTop + i * footnoteRowH;
       const prefix = `${i + 1}. `;
@@ -6341,11 +6565,11 @@ function renderChoropleth(spec, rows, mobile = false) {
       // between name and value, instead of a third, dash-carrying field.
       const footnoteFieldGap = 4;
       const nameX = plotLeft + choroplethLabelWidth(prefix, font) + footnoteFieldGap;
-      const valueX = nameX + choroplethLabelWidth(li.name, font) + footnoteFieldGap;
+      const valueX = nameX + footnoteNameW + footnoteFieldGap + footnoteValueW;
       footnoteParts.push(
         `<text x="${plotLeft.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
         `<text data-role="choropleth-footnote-name" data-iso3="${esc(li.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(li.name)}</text>`,
-        `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
+        `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
       );
     });
     footnoteParts.push(`</g>`);
@@ -6396,6 +6620,34 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
   }
 
+  // P3 (item 2): a connector longer than a quarter of the main map, or one
+  // that would run across a data region, is not drawn. The source box and the
+  // panel title carry the same letter instead.
+  let insetLetter = "";
+  if (insetLinkPath) {
+    const nums = (insetLinkPath.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const pts = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push({ x: nums[i], y: nums[i + 1] });
+    let len = 0, crosses = false;
+    const insetOwn = new Set(insetFeatureIndices);
+    const dataOthers = [];
+    for (const it of joined) for (const idx of it.featureIndices) if (!insetOwn.has(idx)) dataOthers.push(idx);
+    for (let i = 0; i + 1 < pts.length && !crosses; i++) {
+      const seg = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      len += seg;
+      for (let t = 0; t <= seg && !crosses; t += 5) {
+        const px = pts[i].x + ((pts[i + 1].x - pts[i].x) * t) / (seg || 1), py = pts[i].y + ((pts[i + 1].y - pts[i].y) * t) / (seg || 1);
+        if (dataOthers.some((idx) => pointOnFeature(idx, px, py, project, lon0, horizonLat0))) crosses = true;
+      }
+    }
+    if (len > 0.25 * (mapRight - mapLeft) || crosses) {
+      insetLinkPath = "";
+      insetLetter = "A";
+    }
+  }
+  const letterTagSvg = (role, x, y, letter) =>
+    `<g data-role="${role}"><rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="16" height="16" rx="2" fill="${PALETTE.ink}"/><text x="${(x + 8).toFixed(1)}" y="${(y + 12.4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="#fff">${esc(letter)}</text></g>`;
+
   // Locator inset (task 5): only earns its place when the main map is a
   // genuine zoom-in on a small slice of its continent - review fix: at
   // continent scale (e.g. an 11-country spread across most of Africa) a
@@ -6427,7 +6679,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     const b = projectedFeatureBBox(locatorIndices, project);
     return b ? Math.max(0, b.maxX - b.minX) * Math.max(0, b.maxY - b.minY) : 0;
   })();
-  const showLocator = continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
+  // A world projection already shows every region, so a locator would only repeat it
+  // (and its bbox-centred azimuthal view breaks for data straddling the antimeridian).
+  let showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
 
   const locatorSize = mobile ? 104 : 150;
   // Review fix (mobile inset/locator collision): the zoom inset panel (if
@@ -6440,11 +6694,32 @@ function renderChoropleth(spec, rows, mobile = false) {
   // already-placed inset panel whenever every corner collided with
   // *something*).
   const insetCornerRect = insetCorner ? { x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h } : null;
-  const corner = showLocator ? bestCorner(locatorSize, locatorSize, insetObstacles, insetCornerRect ? [insetCornerRect] : []) : null;
+  // The locator sits inside the map frame, so it must never cover a region that
+  // carries data: every corner/edge slot is checked against the projected boxes
+  // of the data regions' pieces, and when none is free the locator is dropped
+  // (it is orientation only; the map itself still shows every region).
+  const dataPieceBoxes = [];
+  for (const idx of allDataFeatureIndices) {
+    for (const ring of geometryRings(neFeatureGeometry(idx))) {
+      if (!ringWithinHorizon(ring, lon0, horizonLat0)) continue;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [lo, la] of ring) {
+        const q = project(lo, la);
+        if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+      }
+      if (x1 - x0 >= 1 || y1 - y0 >= 1) dataPieceBoxes.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    }
+  }
+  const locatorMustAvoid = [...(insetCornerRect ? [insetCornerRect] : []), ...dataPieceBoxes];
+  let corner = showLocator ? bestCorner(locatorSize, locatorSize, insetObstacles, locatorMustAvoid) : null;
+  if (corner && dataPieceBoxes.some((b) => boxesOverlap({ x: corner.x, y: corner.y, w: locatorSize, h: locatorSize }, b))) {
+    showLocator = false;
+    corner = null;
+  }
 
   const locatorPoints = [];
   if (showLocator) for (const index of locatorIndices) for (const ring of geometryRings(neFeatureGeometry(index))) for (const pt of ring) locatorPoints.push(pt);
-  const [locatorLon0, locatorLat0] = bboxCenter(locatorPoints.length ? locatorPoints : [[lon0, lat0]]);
+  const [locatorLon0, locatorLat0] = viewCentre(locatorPoints.length ? locatorPoints : [[lon0, lat0]]);
   const locatorProj = showLocator
     ? fitAzimuthalProjection(
         locatorLon0, locatorLat0, locatorPoints.length ? locatorPoints : [[lon0, lat0]],
@@ -6490,9 +6765,12 @@ function renderChoropleth(spec, rows, mobile = false) {
     if (dataLons.length) {
       const dMinLon = Math.min(...dataLons), dMaxLon = Math.max(...dataLons);
       const dMinLat = Math.min(...dataLats), dMaxLat = Math.max(...dataLats);
-      const zoomCorners = [
-        [dMinLon, dMinLat], [dMinLon, dMaxLat], [dMaxLon, dMinLat], [dMaxLon, dMaxLat],
-      ].map(([flon, flat]) => locatorProj.project(flon, flat));
+      // Data crossing the antimeridian has a naive lon span near 360 deg, so its
+      // bbox corners project to the far side of the globe; project the data's
+      // own points instead.
+      const zoomCorners = dMaxLon - dMinLon > 180
+        ? dataPoints.map(([flon, flat]) => locatorProj.project(flon, flat))
+        : [[dMinLon, dMinLat], [dMinLon, dMaxLat], [dMaxLon, dMinLat], [dMaxLon, dMaxLat]].map(([flon, flat]) => locatorProj.project(flon, flat));
       const zx0 = Math.min(...zoomCorners.map((p) => p.x));
       const zx1 = Math.max(...zoomCorners.map((p) => p.x));
       const zy0 = Math.min(...zoomCorners.map((p) => p.y));
@@ -6500,6 +6778,14 @@ function renderChoropleth(spec, rows, mobile = false) {
       locatorParts.push(
         `<rect data-role="choropleth-locator-area" x="${zx0.toFixed(1)}" y="${zy0.toFixed(1)}" width="${Math.max(1, zx1 - zx0).toFixed(1)}" height="${Math.max(1, zy1 - zy0).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.5"/>`
       );
+    }
+    // A data region too small to show at locator scale gets an accent dot, so the
+    // marker never frames a stretch of empty sea.
+    for (const item of joined) {
+      const dot = tinyRegionDot(item.featureIndices, locatorProj.project, locatorLon0, locatorLat0, 3);
+      if (!dot) continue;
+      if (dot.x < corner.x || dot.x > corner.x + locatorSize || dot.y < corner.y || dot.y > corner.y + locatorSize) continue;
+      locatorParts.push(`<circle data-role="choropleth-locator-dot" data-iso3="${esc(item.iso3)}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="2.2" fill="${PALETTE.accent}"/>`);
     }
     locatorParts.push("</g>");
     locatorParts.push("</g>");
@@ -6515,23 +6801,63 @@ function renderChoropleth(spec, rows, mobile = false) {
   if (insetCorner) {
     const px = insetCorner.x, py = insetCorner.y;
     const insetTitle = String(insetSpec?.title ?? (lang === "zh" ? "局部放大" : "Inset")).trim();
-    const mapX0 = px + 6, mapX1 = px + insetMapSize + 6, mapY0 = py + insetTitleH + 4, mapY1 = mapY0 + insetMapSize;
-    const zoomProj = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], mapX0, mapX1, mapY0, mapY1, 0.12);
+    const mapX0 = px + 6, mapX1 = px + insetMapSize + 6, mapY0 = py + insetTitleH + 4, mapY1 = mapY0 + insetMapH;
+    const zoomProj = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], mapX0, mapX1, mapY0, mapY1, insetPad);
     const zoomClipId = `choropleth-inset-clip-${mobile ? "m" : "d"}`;
 
     // Task (leader research, point 4): the panel's own frame and the
     // main-map source-extent outline share one style (1px dark grey,
     // PALETTE.muted) so the reader reads them as "the same box, drawn twice".
     insetPanelParts.push(`<g data-role="choropleth-inset"><rect x="${px.toFixed(1)}" y="${py.toFixed(1)}" width="${insetPanelW.toFixed(1)}" height="${insetPanelH.toFixed(1)}" rx="3" fill="${PAPER}" fill-opacity=".97" stroke="${PALETTE.muted}" stroke-width="1"/>`);
-    insetPanelParts.push(`<text x="${(px + 8).toFixed(1)}" y="${(py + 13).toFixed(1)}" font-family="${FONT_SANS}" font-size="12.5" font-weight="700" fill="${PALETTE.ink}">${esc(insetTitle)}</text>`);
+    insetPanelParts.push(`<text x="${(px + (insetLetter ? 28 : 8)).toFixed(1)}" y="${(py + 13).toFixed(1)}" font-family="${FONT_SANS}" font-size="12.5" font-weight="700" fill="${PALETTE.ink}">${esc(insetTitle)}</text>`);
+    if (insetLetter) insetPanelParts.push(letterTagSvg("choropleth-inset-letter", px + 8, py + 1, insetLetter));
     insetPanelParts.push(`<defs><clipPath id="${zoomClipId}"><rect x="${mapX0.toFixed(1)}" y="${mapY0.toFixed(1)}" width="${(mapX1 - mapX0).toFixed(1)}" height="${(mapY1 - mapY0).toFixed(1)}"/></clipPath></defs>`);
     insetPanelParts.push(`<g clip-path="url(#${zoomClipId})">`);
+    // Neighbouring land for orientation: every other feature whose lon/lat box
+    // meets the selected regions' box widened by 35% (at least 3 deg). Drawn
+    // beneath the data paths and clipped to the panel like them.
+    if (insetPoints2.length) {
+      const ils = insetPoints2.map((pt) => pt[0]), ibs = insetPoints2.map((pt) => pt[1]);
+      const padLon = Math.max(3, (Math.max(...ils) - Math.min(...ils)) * 0.35), padLat = Math.max(3, (Math.max(...ibs) - Math.min(...ibs)) * 0.35);
+      let wMinLon = Math.min(...ils) - padLon, wMaxLon = Math.max(...ils) + padLon, wMinLat = Math.min(...ibs) - padLat, wMaxLat = Math.max(...ibs) + padLat;
+      // P3 (item 3): the panel is wider/taller than the extent, so the land
+      // that fills it is whatever lies under the rectangle itself - widen the
+      // window by the lon/lat the rectangle's own edge samples invert to.
+      {
+        const sl = [], sb = [];
+        for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) {
+          const q = zoomProj.invert(mapX0 + fx * (mapX1 - mapX0), mapY0 + fy * (mapY1 - mapY0));
+          if (q && Number.isFinite(q[0]) && Number.isFinite(q[1])) { sl.push(q[0]); sb.push(q[1]); }
+        }
+        if (sl.length && Math.max(...sl) - Math.min(...sl) < 270) {
+          wMinLon = Math.min(wMinLon, ...sl); wMaxLon = Math.max(wMaxLon, ...sl);
+          wMinLat = Math.min(wMinLat, ...sb); wMaxLat = Math.max(wMaxLat, ...sb);
+        }
+      }
+      const inInset = new Set(insetFeatureIndices);
+      for (let idx = 0; idx < featureCount; idx++) {
+        if (inInset.has(idx)) continue;
+        let fMinLon = Infinity, fMaxLon = -Infinity, fMinLat = Infinity, fMaxLat = -Infinity;
+        for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) {
+          if (pt[0] < fMinLon) fMinLon = pt[0]; if (pt[0] > fMaxLon) fMaxLon = pt[0];
+          if (pt[1] < fMinLat) fMinLat = pt[1]; if (pt[1] > fMaxLat) fMaxLat = pt[1];
+        }
+        if (fMaxLon < wMinLon || fMinLon > wMaxLon || fMaxLat < wMinLat || fMinLat > wMaxLat) continue;
+        const d = featurePath(neFeatureGeometry(idx), zoomProj.project, { lon0: zLon0, lat0: zLat0, limitDeg: 90, precision: 1, minDist: 0.4, clipRect: { left: mapX0, right: mapX1, top: mapY0, bottom: mapY1 } });
+        if (d) insetPanelParts.push(`<path data-role="choropleth-inset-context" d="${d}" fill="${PALETTE.grid}" stroke="${PAPER}" stroke-width="0.5"/>`);
+      }
+    }
     for (const item of insetLabelItems) {
       for (const idx of item.item.featureIndices) {
         const d = featurePath(neFeatureGeometry(idx), zoomProj.project, { lon0: zLon0, lat0: zLat0, limitDeg: 90, precision: 1, minDist: 0.4, clipRect: { left: mapX0, right: mapX1, top: mapY0, bottom: mapY1 } });
         if (!d) continue;
         insetPanelParts.push(`<path data-role="choropleth-inset-data" data-iso3="${esc(item.item.iso3)}" data-value="${n(item.item.row[spec.value_field]) ?? 0}" d="${d}" fill="${item.fill}" stroke="${PAPER}" stroke-width="0.5"/>`);
       }
+    }
+    for (const item of insetLabelItems) {
+      const dot = tinyRegionDot(item.item.featureIndices, zoomProj.project, zLon0, zLat0);
+      if (!dot) continue;
+      insetPanelParts.push(`<circle data-role="choropleth-inset-dot" data-iso3="${esc(item.item.iso3)}" data-value="${n(item.item.row[spec.value_field]) ?? 0}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="3.2" fill="${item.fill}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
     }
     // Review fix (containment search): the anchor placement decided above
     // (onPolygonItems' own ax/ay) was found in the sizingProbe's own
@@ -6575,8 +6901,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       // between the end of the text and the leader (choroplethLabelWidth's
       // own padding plus LEADER_GAP_PX) with nothing drawn in it. Right-side
       // labels are unaffected (their near edge already is boxX).
-      const textX = item.side === "right" ? boxX : boxX + item.box.w;
-      const textAnchor = item.side === "right" ? "start" : "end";
+      const textX = item.side === "center" ? boxX + item.box.w / 2 : item.side === "right" ? boxX : boxX + item.box.w;
+      const textAnchor = item.side === "center" ? "middle" : item.side === "right" ? "start" : "end";
       insetPanelParts.push(
         anchorDotSvg("choropleth-inset-leader-dot", from),
         leaderSvg("choropleth-inset-leader", from, to, ` data-iso3="${esc(item.item.iso3)}"`),
@@ -6650,7 +6976,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
   for (let index = 0; index < featureCount; index++) {
-    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
     if (!d) continue;
     const item = dataByIndex.get(index);
     const value = item ? n(item.row[spec.value_field]) ?? 0 : undefined;
@@ -6663,6 +6989,12 @@ function renderChoropleth(spec, rows, mobile = false) {
     const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"` : "";
     f.parts.push(`<path data-role="${item ? "choropleth-data" : "choropleth-context"}"${dataAttrs} d="${d}" fill="${fill}" stroke="${PAPER}" stroke-width="${mobile ? 0.5 : 0.7}" stroke-linejoin="round"/>`);
   }
+  for (const item of joined) {
+    const dot = tinyDots.get(item.iso3);
+    if (!dot) continue;
+    const value = n(item.row[spec.value_field]) ?? 0;
+    f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
+  }
   // Review fix (colour ramp/highlight): spec.highlight_values is reserved
   // for an outline only, never a fill change - drawing it as a stroke over
   // the already-filled polygon (same convention every other highlight_values
@@ -6674,7 +7006,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   for (const item of joined) {
     if (!highlightSet.has(String(item.row[spec.category_field]))) continue;
     for (const idx of item.featureIndices) {
-      const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+      const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
       if (!d) continue;
       f.parts.push(`<path data-role="choropleth-highlight-outline" data-iso3="${esc(item.iso3)}" d="${d}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.5"/>`);
     }
@@ -6692,6 +7024,10 @@ function renderChoropleth(spec, rows, mobile = false) {
   // magnified" marker regardless of what colour class sits underneath it.
   if (sourceOutline) {
     f.parts.push(`<rect data-role="choropleth-inset-source" x="${sourceOutline.x.toFixed(1)}" y="${sourceOutline.y.toFixed(1)}" width="${sourceOutline.w.toFixed(1)}" height="${sourceOutline.h.toFixed(1)}" fill="none" stroke="${PALETTE.muted}" stroke-width="1"/>`);
+  }
+  if (sourceOutline && insetLetter) {
+    const ly = sourceOutline.y - 17 >= top ? sourceOutline.y - 17 : sourceOutline.y + sourceOutline.h + 1;
+    f.parts.push(letterTagSvg("choropleth-inset-source-letter", Math.min(mapRight - 16, Math.max(mapLeft, sourceOutline.x)), ly, insetLetter));
   }
   if (insetLinkPath) {
     f.parts.push(`<path data-role="choropleth-inset-link" d="${insetLinkPath}" fill="none" stroke="${LEADER_STYLE.color}" stroke-width="${LEADER_STYLE.width}"/>`);
@@ -6765,6 +7101,7 @@ function renderChoropleth(spec, rows, mobile = false) {
 }
 
 export function renderVizMobileSvg(spec, rows) {
+  spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors=validateVizSpec(spec); if(errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);
   switch(spec.chart_type){
@@ -6804,6 +7141,7 @@ export function renderVizBundle(spec, rows, { mobilePages = true } = {}) {
 }
 
 export function renderVizSvg(spec, rows) {
+  spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors = validateVizSpec(spec);
   if (errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);
