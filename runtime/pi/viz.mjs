@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, classifyValue, featurePath, fitAzimuthalProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1494,6 +1494,8 @@ function cartographicDataExtent(spec,rows){
 }
 
 export function lintVizSpec(spec, rows, context = {}) {
+  const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
+  if (autoCategoryNames) spec = autoCategoryNames.spec;
   const blockers = [];
   const warnings = [];
   const notes = [];
@@ -1916,6 +1918,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     notes,
     data_hash: hashRows(rows),
     row_count: rows.length,
+    ...(autoCategoryNames ? { category_names_resolution: autoCategoryNames.resolution } : {}),
   };
 }
 
@@ -2369,6 +2372,31 @@ function categoryNamesField(spec) {
   if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "choropleth", "treemap"].includes(spec.chart_type)) return spec.category_field;
   if (spec.chart_type === "small_multiples") return spec.facet_field;
   if (spec.chart_type === "multi_line") return spec.series_field;
+  return null;
+}
+
+// Diagnosis P6: category_names is optional in the spec, so a chart whose name
+// column already holds exact World Bank English names (or ISO3 codes) used to
+// print the raw English text on a zh page unless the author remembered to set
+// it. When the field is unset, the chart type supports it and EVERY distinct
+// value resolves verbatim in one vendored table, resolve it that way: returns a
+// shallow-cloned spec carrying the mode plus a record of which mode was used
+// (kept in the lint report for audit). Any value that does not match keeps the
+// spec untouched (non-economy categories such as companies or provinces must
+// never be re-labelled), and an explicitly declared category_names is never
+// overridden. Choropleth is excluded: it requires an explicit declaration and
+// that blocker must stay visible.
+export function resolveAutoCategoryNames(spec, rows) {
+  if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth") return null;
+  const field = categoryNamesField(spec);
+  if (!field || !fieldExists(rows, field)) return null;
+  const values = unique(rows.map((row) => row[field]));
+  if (!values.length) return null;
+  for (const mode of ECONOMY_NAME_MODES) {
+    if (unmappedEconomyNameValues(values, mode).length === 0) {
+      return { spec: { ...spec, category_names: mode }, resolution: { field, mode, source: "auto", values: values.length } };
+    }
+  }
   return null;
 }
 
@@ -5005,8 +5033,15 @@ function renderChoropleth(spec, rows, mobile = false) {
   // free to show a third of the map as geography no plotted region actually
   // occupies (Arabia, the Indian Ocean) once fitAzimuthalProjection's own
   // uniform scale binds to the tighter of width/height.
-  const [lon0, lat0] = bboxCenter(dataPoints.length ? dataPoints : [[0, 0]]);
-  let proj = fitAzimuthalProjection(lon0, lat0, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+  // Diagnosis P1: the projection follows the data's real spherical extent (see
+  // chooseMapProjection), not the bbox midpoint alone - data spread over more
+  // than one azimuthal hemisphere gets a world projection instead of silently
+  // losing every ring beyond the horizon. horizonLat0 is lat0 for the
+  // azimuthal projection and null for the world one (no horizon to filter on).
+  const mapChoice = chooseMapProjection(dataPoints);
+  const { lon0, lat0 } = mapChoice;
+  const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
+  let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
 
   const dataByIndex = new Map();
@@ -5089,7 +5124,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     if (plotRight - plotLeft - reserve >= MIN_MAP_W_WITH_COLUMN) {
       insetColumnW = reserve;
       mapLeft = plotLeft + insetColumnW;
-      proj = fitAzimuthalProjection(lon0, lat0, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+      proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
     } else {
       // Same upper-bound reasoning for the height: the title row, the
       // natural-size map and the panel's own padding (see insetPanelH).
@@ -5615,7 +5650,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const overflowCandidates = [];
     for (const li of activeItems) {
       const idx0 = li.item.featureIndices[0];
-      const anchor = findLabelAnchor(idx0, li.item.featureIndices, li.w, project, lon0, lat0, li.x, li.y, onMap.map((p) => p.box));
+      const anchor = findLabelAnchor(idx0, li.item.featureIndices, li.w, project, lon0, horizonLat0, li.x, li.y, onMap.map((p) => p.box));
       if (anchor) {
         const box = { x: anchor.x - li.w / 2, y: anchor.y - lineH - 2, w: li.w, h: li.h };
         const insideMap = box.x >= mapLeft && box.x + box.w <= mapRight && box.y >= top && box.y + box.h <= bottom;
@@ -5673,9 +5708,9 @@ function renderChoropleth(spec, rows, mobile = false) {
         if (len > MAX_OVERFLOW_LEADER_PX) break;
         if (len < MIN_LEADER_DRAWN_LENGTH) continue;
         if (cand.box.x < 0 || cand.box.x + cand.box.w > width) break;
-        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, lat0)) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(cand.anchor, cand.tip);
-        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, lat0, acceptedBoxes, cand.box))) accepted = cand;
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) accepted = cand;
       }
       if (accepted) {
         placedOverflow.push(accepted);
@@ -5723,9 +5758,9 @@ function renderChoropleth(spec, rows, mobile = false) {
         const idx0 = candidate.li.item.featureIndices[0];
         // v7 fix: same two hard requirements as the shared column above.
         if (elbowLength(candidate.anchor, candidate.tip) < MIN_LEADER_DRAWN_LENGTH) continue;
-        if (boxOverlapsFeature(allDataFeatureIdxFlat, candidate.box, project, lon0, lat0)) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, candidate.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(candidate.anchor, candidate.tip);
-        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, lat0, acceptedBoxes, candidate.box))) {
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, candidate.box))) {
           personal = candidate;
           break;
         }
@@ -6427,7 +6462,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     const b = projectedFeatureBBox(locatorIndices, project);
     return b ? Math.max(0, b.maxX - b.minX) * Math.max(0, b.maxY - b.minY) : 0;
   })();
-  const showLocator = continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
+  // A world projection already shows every region, so a locator would only repeat it
+  // (and its bbox-centred azimuthal view breaks for data straddling the antimeridian).
+  const showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
 
   const locatorSize = mobile ? 104 : 150;
   // Review fix (mobile inset/locator collision): the zoom inset panel (if
@@ -6650,7 +6687,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
   for (let index = 0; index < featureCount; index++) {
-    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
     if (!d) continue;
     const item = dataByIndex.get(index);
     const value = item ? n(item.row[spec.value_field]) ?? 0 : undefined;
@@ -6674,7 +6711,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   for (const item of joined) {
     if (!highlightSet.has(String(item.row[spec.category_field]))) continue;
     for (const idx of item.featureIndices) {
-      const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+      const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
       if (!d) continue;
       f.parts.push(`<path data-role="choropleth-highlight-outline" data-iso3="${esc(item.iso3)}" d="${d}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.5"/>`);
     }
@@ -6765,6 +6802,7 @@ function renderChoropleth(spec, rows, mobile = false) {
 }
 
 export function renderVizMobileSvg(spec, rows) {
+  spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors=validateVizSpec(spec); if(errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);
   switch(spec.chart_type){
@@ -6804,6 +6842,7 @@ export function renderVizBundle(spec, rows, { mobilePages = true } = {}) {
 }
 
 export function renderVizSvg(spec, rows) {
+  spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors = validateVizSpec(spec);
   if (errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);

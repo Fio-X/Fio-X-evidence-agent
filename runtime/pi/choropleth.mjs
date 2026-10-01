@@ -254,6 +254,113 @@ export function fitAzimuthalProjection(lon0, lat0, points, left, right, top, bot
   };
 }
 
+// ---------------------------------------------------------------------------
+// Projection choice (diagnosis P1). The azimuthal projection above can only
+// show points within a 90-degree horizon of its centre, and the bbox midpoint
+// of data that straddles the antimeridian (e.g. New Zealand plus Europe) is a
+// useless centre, so rings used to be dropped whole. The choice is made from
+// the data's real spherical extent, never from a lon/lat bbox midpoint alone:
+//   1. the bbox centre, when every data point is within AZIMUTHAL_FIT_DEG of
+//      it (unchanged framing for every map that already fitted);
+//   2. else the centre of the (approximate) minimal enclosing spherical cap,
+//      when its radius is within AZIMUTHAL_FIT_DEG;
+//   3. else a world projection (Equal Earth, central meridian 0 - the vendored
+//      basemap is already cut at +/-180, so no ring needs splitting).
+export const AZIMUTHAL_FIT_DEG = 80;
+
+function toUnit(lon, lat) {
+  const l = lon * DEG2RAD, p = lat * DEG2RAD;
+  return [Math.cos(p) * Math.cos(l), Math.cos(p) * Math.sin(l), Math.sin(p)];
+}
+function fromUnit([x, y, z]) {
+  return [Math.atan2(y, x) * RAD2DEG, Math.atan2(z, Math.hypot(x, y)) * RAD2DEG];
+}
+function normalizeVec(v) {
+  const m = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / m, v[1] / m, v[2] / m];
+}
+
+/** Approximate minimal enclosing spherical cap of [lon, lat] points: { lon, lat, radiusDeg }. */
+export function enclosingCap(points) {
+  const pts = (points ?? []).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (!pts.length) return { lon: 0, lat: 0, radiusDeg: 0 };
+  const vecs = pts.map(([lon, lat]) => toUnit(lon, lat));
+  // Badoiu-Clarkson style iteration on the sphere, seeded from the mean
+  // direction; deterministic and plenty accurate for a framing decision.
+  let c = normalizeVec(vecs.reduce((a, v) => [a[0] + v[0], a[1] + v[1], a[2] + v[2]], [0, 0, 0]));
+  if (!Number.isFinite(c[0])) c = vecs[0];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  for (let i = 1; i <= 400; i++) {
+    let far = vecs[0], best = Infinity;
+    for (const v of vecs) { const d = dot(c, v); if (d < best) { best = d; far = v; } }
+    const t = 1 / (i + 1);
+    c = normalizeVec([c[0] + (far[0] - c[0]) * t, c[1] + (far[1] - c[1]) * t, c[2] + (far[2] - c[2]) * t]);
+  }
+  let minDot = 1;
+  for (const v of vecs) minDot = Math.min(minDot, dot(c, v));
+  const [lon, lat] = fromUnit(c);
+  return { lon, lat, radiusDeg: Math.acos(Math.max(-1, Math.min(1, minDot))) * RAD2DEG };
+}
+
+function maxAngularDistance(points, lon0, lat0) {
+  let max = 0;
+  for (const [lon, lat] of points) max = Math.max(max, angularDistanceDeg(lon, lat, lon0, lat0));
+  return max;
+}
+
+/** Decide the main-map projection for a set of data points: { kind: "azimuthal"|"world", lon0, lat0 }. */
+export function chooseMapProjection(points) {
+  const pts = points && points.length ? points : [[0, 0]];
+  const [bLon, bLat] = bboxCenter(pts);
+  if (maxAngularDistance(pts, bLon, bLat) <= AZIMUTHAL_FIT_DEG) return { kind: "azimuthal", lon0: bLon, lat0: bLat };
+  const cap = enclosingCap(pts);
+  if (cap.radiusDeg <= AZIMUTHAL_FIT_DEG) return { kind: "azimuthal", lon0: cap.lon, lat0: cap.lat };
+  return { kind: "world", lon0: 0, lat0: bLat };
+}
+
+// Equal Earth (Savric, Patterson, Jenny 2018): equal-area like the azimuthal
+// projection above, so colour density stays honest on a world-scale map.
+const EQE_A1 = 1.340264, EQE_A2 = -0.081106, EQE_A3 = 0.000893, EQE_A4 = 0.003796;
+const EQE_M = Math.sqrt(3) / 2;
+function equalEarthForward(lon, lat) {
+  const l = lon * DEG2RAD;
+  const t = Math.asin(EQE_M * Math.sin(lat * DEG2RAD));
+  const t2 = t * t, t6 = t2 * t2 * t2;
+  const x = (2 * Math.sqrt(3) * l * Math.cos(t)) / (3 * (9 * EQE_A4 * t6 * t2 + 7 * EQE_A3 * t6 + 3 * EQE_A2 * t2 + EQE_A1));
+  const y = t * (EQE_A1 + EQE_A2 * t2 + t6 * (EQE_A3 + EQE_A4 * t2));
+  return [x, y];
+}
+
+/** Equal Earth fitted to a pixel rect (same contract as fitAzimuthalProjection: scale/centre/flip-y, padded). */
+export function fitWorldProjection(points, left, right, top, bottom, paddingRatio = 0.08) {
+  const projected = (points ?? []).map(([lon, lat]) => equalEarthForward(lon, lat)).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+  const xs = projected.length ? projected.map((p) => p[0]) : [-1, 1];
+  const ys = projected.length ? projected.map((p) => p[1]) : [-1, 1];
+  const xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const w = Math.max(1e-9, xmax - xmin), h = Math.max(1e-9, ymax - ymin);
+  const pad = Math.max(0, Number(paddingRatio) || 0);
+  const scale = Math.min(Math.max(1, right - left) / (w * (1 + 2 * pad)), Math.max(1, bottom - top) / (h * (1 + 2 * pad)));
+  const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  const midX = (left + right) / 2, midY = (top + bottom) / 2;
+  return {
+    lon0: 0,
+    lat0: 0,
+    scale,
+    world: true,
+    project(lon, lat) {
+      const [x, y] = equalEarthForward(lon, lat);
+      return { x: midX + (x - cx) * scale, y: midY - (y - cy) * scale };
+    },
+  };
+}
+
+/** Fit whichever projection chooseMapProjection picked to a pixel rect. */
+export function fitMapProjection(choice, points, left, right, top, bottom, paddingRatio = 0.08) {
+  return choice.kind === "world"
+    ? fitWorldProjection(points, left, right, top, bottom, paddingRatio)
+    : fitAzimuthalProjection(choice.lon0, choice.lat0, points, left, right, top, bottom, paddingRatio);
+}
+
 /** Centre (bbox midpoint, in degrees) of a set of [lon, lat] pairs. */
 export function bboxCenter(points) {
   if (!points || !points.length) return [0, 0];
@@ -275,6 +382,7 @@ export function geometryRings(geometry) {
 
 /** True when every point of `ring` is within `limitDeg` of the projection centre. */
 export function ringWithinHorizon(ring, lon0, lat0, limitDeg = 90) {
+  if (lat0 === null) return true; // world projection: nothing lies beyond a horizon
   return (ring ?? []).every(([lon, lat]) => angularDistanceDeg(lon, lat, lon0, lat0) <= limitDeg);
 }
 

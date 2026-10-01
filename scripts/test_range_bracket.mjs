@@ -184,14 +184,43 @@ assert.deepEqual(
   );
 }
 
-// -- category_names lint: a zh chart whose name field has no CJK and no
-// category_names set gets a warning suggesting it, not a hard blocker --
+// -- category_names auto-resolution (diagnosis P6): when category_names is
+// unset and every name value matches the World Bank English name table (or,
+// failing that, the ISO3 table) verbatim, lint resolves it that way, records
+// the mode used in the lint report, and the renderers show the localized
+// name; values that do not all match keep the advisory warning and stay
+// untouched; a declared category_names is never overridden --
 {
-  const lint = lintVizSpec(spec({ language: "zh", title: "可再生能源占比最高的经济体" }), ROWS, {});
+  const zhTitle = "可再生能源占比最高的经济体";
+  const auto = lintVizSpec(spec({ language: "zh", title: zhTitle }), ROWS, {});
+  assert.deepEqual(auto.category_names_resolution, { field: "country", mode: "worldbank", source: "auto", values: ROWS.length });
+  assert.ok(!auto.warnings.some((w) => w.includes("contain no CJK characters")), JSON.stringify(auto.warnings));
+  const autoSvg = renderVizSvg(spec({ language: "zh", title: zhTitle }), ROWS);
+  assert.match(autoSvg, /刚果（金）/);
+  assert.equal(autoSvg, renderVizSvg(spec({ language: "zh", title: zhTitle, category_names: "worldbank" }), ROWS), "auto resolution must render exactly like the declared mode");
+
+  const iso3Rows = ROWS.map((r, i) => ({ ...r, country: ["COD", "CHN", "BRA", "IND", "USA", "NGA", "KEN", "EGY", "FRA", "DEU", "JPN", "MEX"][i % 12] }));
+  const iso3Auto = lintVizSpec(spec({ language: "zh", title: zhTitle }), iso3Rows.slice(0, 5), {});
+  assert.equal(iso3Auto.category_names_resolution?.mode, "iso3", JSON.stringify(iso3Auto.category_names_resolution));
+
+  const mixed = ROWS.map((r, i) => (i === 0 ? { ...r, country: "Neverland" } : r));
+  const unresolved = lintVizSpec(spec({ language: "zh", title: zhTitle }), mixed, {});
+  assert.equal(unresolved.category_names_resolution, undefined);
   assert.ok(
-    lint.warnings.includes("zh chart's 'country' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text"),
-    JSON.stringify(lint.warnings),
+    unresolved.warnings.includes("zh chart's 'country' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text"),
+    JSON.stringify(unresolved.warnings),
   );
+  assert.ok(!/刚果（金）/.test(renderVizSvg(spec({ language: "zh", title: zhTitle }), mixed)), "partially unresolvable names must not be re-labelled");
+
+  // Non-economy categories (companies, provinces ...) are left alone.
+  const companies = ROWS.map((r, i) => ({ ...r, country: `Acme Group ${i}` }));
+  const nonEconomy = lintVizSpec(spec({ language: "zh", title: zhTitle }), companies, {});
+  assert.equal(nonEconomy.category_names_resolution, undefined);
+  assert.equal(nonEconomy.blockers.length, lintVizSpec(spec({ language: "zh", title: zhTitle }), companies, {}).blockers.length);
+
+  // A declared mode is never overridden or recorded as auto.
+  const declared = lintVizSpec(spec({ language: "zh", title: zhTitle, category_names: "worldbank" }), ROWS, {});
+  assert.equal(declared.category_names_resolution, undefined);
 }
 
 // -- highlight_values still match the raw World Bank name even when
