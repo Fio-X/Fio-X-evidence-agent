@@ -1172,3 +1172,75 @@ console.log("choropleth projection choice: global, antimeridian, single-continen
 console.log("choropleth inset cluster: one neighbourhood per inset, neighbouring land drawn, no region loses its label -- PASS");
 
 console.log("choropleth chart: PASS");
+
+// P3 shapes: dots for sub-threshold regions, wide inset with open-spot labels,
+// letter tags instead of long connectors, and the add-only QA gate
+// inset_region_too_small. Synthetic rows only; no shape here is a story.
+{
+  const FILLER = ["Brazil", "India", "Russian Federation", "Australia"];
+  const SHAPES = {
+    gulf: { names: ["Bahrain", "Qatar", "Kuwait", "United Arab Emirates", "Oman"], inset: { auto: true } },
+    pacific_island_nations: { names: ["Fiji", "Tonga", "Samoa", "Vanuatu", "Kiribati"], inset: { auto: true } },
+    most_countries_too_small: { names: ["Malta", "Luxembourg", "Singapore", "Maldives", "Barbados", "Djibouti"], inset: { auto: true } },
+    single_country_zoom: { names: ["Singapore"], inset: { iso3: ["SGP"], title: "Zoom" } },
+    malta_alone: { names: ["Malta"], inset: { auto: true } },
+    multi_territory_countries: { names: ["France", "United States", "Netherlands", "Denmark", "Norway"], inset: { auto: true } },
+  };
+  const qaOf = (bundle, rows, spec) =>
+    runRenderQa({ desktop: bundle.desktop, mobile: bundle.mobile }, { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } });
+  for (const [shape, { names, inset }] of Object.entries(SHAPES)) {
+    const countries = [...names, ...FILLER];
+    const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 5 + i * 7, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset };
+    assert.equal(joinChoroplethRows(rows, spec).length, countries.length, `${shape}: every fixture name joins`);
+    const bundle = renderVizBundle(spec, rows);
+    const qa = qaOf(bundle, rows, spec);
+    for (const variant of ["desktop", "mobile"]) {
+      const failures = qa.viewports[variant].value_labels?.failures ?? [];
+      assert.equal(failures.length, 0, `${shape}/${variant}: every region labelled exactly once, no QA failure: ${JSON.stringify(failures)}`);
+      const svg = bundle[variant];
+      // A drawn connector never exceeds a quarter of the main map width.
+      const link = svg.match(/data-role="choropleth-inset-link" d="([^"]+)"/);
+      if (link) {
+        const pts = (link[1].match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+        let len = 0;
+        for (let i = 2; i + 1 < pts.length; i += 2) len += Math.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]);
+        const ocean = svg.match(/data-role="choropleth-ocean" x="[-\d.]+" y="[-\d.]+" width="([\d.]+)"/);
+        assert.ok(len <= 0.25 * Number(ocean[1]) + 1, `${shape}/${variant}: connector is ${len.toFixed(0)}px, over a quarter of the map`);
+      }
+      // Source box and panel title share one letter whenever no connector is drawn.
+      if (/data-role="choropleth-inset-source"/.test(svg) && !link) {
+        const a = svg.match(/data-role="choropleth-inset-source-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+        const b = svg.match(/data-role="choropleth-inset-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+        assert.ok(a && a === b, `${shape}/${variant}: source box and panel title carry the same letter`);
+      }
+    }
+  }
+
+  // Malta alone is far below the dot threshold: value-coloured dot, one label.
+  {
+    const rows = ["Malta", ...FILLER].map((country, i) => ({ country, renewable_energy_consumption_pct: 20 + i * 11, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset: { auto: true } };
+    const svg = renderVizBundle(spec, rows).desktop;
+    const dot = svg.match(/<circle data-role="choropleth-data-dot" data-iso3="MLT"[^>]*fill="(#[0-9A-Fa-f]{6})"/);
+    assert.ok(dot, "Malta alone is drawn as a data dot");
+    const labels = svg.match(/data-role="choropleth-(?:inset-)?label" data-iso3="MLT"|data-role="choropleth-footnote-name" data-iso3="MLT"/g) ?? [];
+    assert.equal(labels.length, 1, "Malta is labelled exactly once");
+  }
+
+  // Add-only gate (item 7): an inset region drawn under the threshold must
+  // carry a dot. Must-pass: the real render. Must-fail: same render with the
+  // inset dots stripped.
+  {
+    const names = ["Tonga", "Fiji", "Samoa", "Vanuatu", "New Zealand"];
+    const rows = [...names, ...FILLER].map((country, i) => ({ country, renewable_energy_consumption_pct: 5 + i * 8, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset: { auto: true } };
+    const bundle = renderVizBundle(spec, rows);
+    assert.match(bundle.desktop, /data-role="choropleth-inset-dot"/, "fixture must contain inset dots");
+    const run = (desktop) => qaOf({ desktop, mobile: bundle.mobile }, rows, spec).viewports.desktop.value_labels.failures.filter((f) => f.rule === "inset_region_too_small");
+    assert.equal(run(bundle.desktop).length, 0, "must-pass: tiny inset regions with dots are accepted");
+    const stripped = bundle.desktop.replace(/<circle data-role="choropleth-inset-dot"[^>]*\/>/g, "");
+    assert.ok(run(stripped).length > 0, "must-fail: tiny inset regions without dots are blocked");
+  }
+}
+console.log("choropleth P3 shapes: gulf, island nations, mostly-tiny, single-country zoom, Malta alone, multi-territory; inset_region_too_small must-fail/must-pass -- PASS");
