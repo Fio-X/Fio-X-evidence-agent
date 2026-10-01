@@ -1495,9 +1495,11 @@ function cartographicDataExtent(spec,rows){
 
 export function lintVizSpec(spec, rows, context = {}) {
   const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
+  const unsignaledWarning = autoCategoryNames ? null : unsignaledEconomyWarning(spec, rows);
   if (autoCategoryNames) spec = autoCategoryNames.spec;
   const blockers = [];
   const warnings = [];
+  if (unsignaledWarning) warnings.push(unsignaledWarning);
   const notes = [];
   const verificationMode = spec?.verification_mode ?? "verified";
   if (!["verified", "draft"].includes(verificationMode)) blockers.push("verification_mode must be 'verified' or 'draft'");
@@ -2386,18 +2388,45 @@ function categoryNamesField(spec) {
 // never be re-labelled), and an explicitly declared category_names is never
 // overridden. Choropleth is excluded: it requires an explicit declaration and
 // that blocker must stay visible.
-export function resolveAutoCategoryNames(spec, rows) {
+// Values alone never prove a column holds economies (Georgia, Jordan or Chad
+// are also states, people and institutions), so auto-resolution additionally
+// requires the FIELD NAME to carry a generic economy token (whole-token match
+// after splitting on non-alphanumerics and camelCase boundaries).
+const ECONOMY_FIELD_TOKENS = new Set(["country", "countries", "economy", "economies", "nation", "nations", "iso3", "iso3c", "国家", "经济体", "国别"]);
+
+function fieldNameSignalsEconomy(field) {
+  const tokens = String(field ?? "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((t) => t.toLowerCase())
+    .filter(Boolean);
+  return tokens.some((t) => ECONOMY_FIELD_TOKENS.has(t));
+}
+
+function economyValueMatch(spec, rows) {
   if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth") return null;
   const field = categoryNamesField(spec);
   if (!field || !fieldExists(rows, field)) return null;
   const values = unique(rows.map((row) => row[field]));
   if (!values.length) return null;
   for (const mode of ECONOMY_NAME_MODES) {
-    if (unmappedEconomyNameValues(values, mode).length === 0) {
-      return { spec: { ...spec, category_names: mode }, resolution: { field, mode, source: "auto", values: values.length } };
-    }
+    if (unmappedEconomyNameValues(values, mode).length === 0) return { field, mode, values: values.length };
   }
   return null;
+}
+
+// Warning text for a column whose values all match but whose name gives no
+// economy signal (so nothing was auto-resolved); null otherwise.
+function unsignaledEconomyWarning(spec, rows) {
+  const match = economyValueMatch(spec, rows);
+  if (!match || fieldNameSignalsEconomy(match.field)) return null;
+  return `category field '${match.field}' values all match World Bank names, but the field name does not say they are economies, so names are not auto-resolved; if they are economies, declare category_names explicitly`;
+}
+
+export function resolveAutoCategoryNames(spec, rows) {
+  const match = economyValueMatch(spec, rows);
+  if (!match || !fieldNameSignalsEconomy(match.field)) return null;
+  return { spec: { ...spec, category_names: match.mode }, resolution: { field: match.field, mode: match.mode, source: "auto", values: match.values } };
 }
 
 // The value-axis domain a reference_line must fall inside, mirroring each
