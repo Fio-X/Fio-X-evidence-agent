@@ -991,7 +991,17 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
   for (const scene of configuredScenes) for (const id of [scene.anchor_module_id, ...scene.sidecar_module_ids]) sceneByMember.set(String(id), scene);
   const placedScenes = new Set();
   let previousDensities = [];
-  for (const module of statsAfterLinkedVisual(spec.modules, configuredScenes)) {
+  const ordered = statsAfterLinkedVisual(spec.modules, configuredScenes);
+  // Desktop only, and only for a big number outside any scene that would sit
+  // alone on its row: it pairs with a short text module right after it (4/8
+  // columns) or becomes a full-width bar. Anything else is left as it was.
+  const statColsOverride = new Map();
+  const statBars = new Set();
+  const forceBreakFor = (m, nextRowCols, prevDensities) => nextRowCols && (
+    m.type === "section_header" || m.emphasis === "hero" || m.story_role === "turn" ||
+    (strategy === "rhythm" && prevDensities.slice(-2).every((d) => d >= 0.72) && prevDensities.length >= 2 && moduleDensity(m) >= 0.72)
+  );
+  for (const [index, module] of ordered.entries()) {
     const scene = sceneByMember.get(String(module.id));
     if (scene) {
       if (!placedScenes.has(scene.id)) {
@@ -1005,7 +1015,21 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
       }
       continue;
     }
-    const cols = effectiveColumns(module, strategy);
+    if (module.type === "hero_stat" && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
+      const own = effectiveColumns(module, strategy);
+      const startsRow = !rowCols || forceBreakFor(module, rowCols, previousDensities) || own === 12 || rowCols + own > 12;
+      if (startsRow) {
+        const next = ordered[index + 1];
+        const nextScened = next ? sceneByMember.has(String(next.id)) : false;
+        const nextCols = next ? (statColsOverride.get(String(next.id)) ?? effectiveColumns(next, strategy)) : 0;
+        if (statIsAlone(own, next, nextCols, nextScened, previousDensities, module)) {
+          if (statPairsWithText(next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
+          else statBars.add(String(module.id));
+        }
+      }
+    }
+    const bar = statBars.has(String(module.id));
+    const cols = bar ? 12 : (statColsOverride.get(String(module.id)) ?? effectiveColumns(module, strategy));
     const density = moduleDensity(module);
     const denseRun = previousDensities.slice(-2).every((d) => d >= 0.72) && previousDensities.length >= 2 && density >= 0.72;
     const forceBreak = rowCols && (
@@ -1017,8 +1041,8 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
     if (forceBreak || (rowCols && rowCols + cols > 12) || (cols === 12 && rowCols)) flush();
     const x = margin + rowCols * (col + gap);
     const w = cols * col + Math.max(0, cols - 1) * gap;
-    const h = moduleHeight(module, w, assets, false);
-    row.push({ id: module.id, module, x, w, h, cols, density });
+    const h = bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false);
+    row.push({ id: module.id, module, x, w, h, cols, density, ...(bar ? { stat_bar: true } : {}) });
     rowCols += cols;
     previousDensities.push(density);
     if (cols === 12 || rowCols === 12) flush();
@@ -1283,7 +1307,65 @@ function embedIllustration(parts, asset, box, module, mobile) {
   if (caption) parts.push(`<rect data-role="illustration-credit" data-module-id="${esc(module.id)}" x="${box.x}" y="${y + targetH}" width="1" height="1" fill="none"/>`);
 }
 
+// E2 tuning knobs. A big number that would sit alone on a desktop row pairs
+// with the next module when that is a short text (<= STAT_PAIR_MAX_TEXT_LINES
+// body lines at the width it gets beside the number, no source quote); the
+// number takes STAT_PAIR_STAT_COLS of 12 columns and the text the rest.
+// Otherwise it is drawn as a full-width bar (STAT_BAR_* below).
+const STAT_PAIR_MAX_TEXT_LINES = 4;
+const STAT_PAIR_STAT_COLS = 4;
+const STAT_BAR_PAD = 30;
+const STAT_BAR_MIN_NUMERAL_ZONE = 150;
+const STAT_BAR_GUTTER = 36;
+
+// Pairing rule: is the stat alone in its row? (next is the module after it.)
+function statIsAlone(own, next, nextCols, nextScened, previousDensities, module) {
+  if (own === 12 || !next || nextScened || next.type === "section_header" || nextCols === 12 || own + nextCols > 12) return true;
+  return Boolean(next.emphasis === "hero" || next.story_role === "turn");
+}
+
+// Pairing rule: may the next module share the stat's row at (12 - stat cols)?
+function statPairsWithText(next, nextScened, col, gap) {
+  if (!next || nextScened || next.type !== "text" || next.source_quote || next.emphasis === "hero" || next.story_role === "turn") return false;
+  const width = (12 - STAT_PAIR_STAT_COLS) * col + (11 - STAT_PAIR_STAT_COLS) * gap;
+  const body = String(next.body ?? "").trim();
+  return !body || lines(body, Math.max(44, Math.round(width / 10))).length <= STAT_PAIR_MAX_TEXT_LINES;
+}
+
+// Width of the big numeral (58px serif) plus its unit (24px) at the left of a
+// full-width stat bar: digits ~0.56em, wide (CJK) characters 1em, '.' ~0.3em.
+function statNumeralWidth(module) {
+  const glyphs = (text, size) => Array.from(String(text ?? "")).reduce((sum, ch) => sum + size * (/[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 1 : ch === "." || ch === "," ? 0.3 : 0.56), 0);
+  return Math.ceil(glyphs(module.value, 58) + (module.unit ? 7 + glyphs(module.unit, 24) : 0));
+}
+
+// Full-width stat bar (desktop): numeral on the left, label and detail to its
+// right; the row height follows the wrapped text.
+function heroStatBarMetrics(module, width) {
+  const pad = STAT_BAR_PAD;
+  const textX = pad + Math.max(STAT_BAR_MIN_NUMERAL_ZONE, statNumeralWidth(module) + STAT_BAR_GUTTER);
+  const avail = Math.max(240, width - textX - pad);
+  const labelLines = lines(module.label ?? "", Math.max(20, Math.floor(avail / 10.5)));
+  const detailLines = module.detail ? lines(module.detail, Math.max(24, Math.floor(avail / 8.2))) : [];
+  const textH = 22 + (labelLines.length - 1) * 20 + (detailLines.length ? 10 + detailLines.length * 16 : 0);
+  return { pad, textX, labelLines, detailLines, h: Math.max(14 + 3 + 62, 14 + 3 + 6 + textH + 12) };
+}
+
+function drawHeroStatBar(parts, box, module) {
+  const m = heroStatBarMetrics(module, box.w);
+  const top = box.y + 14;
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${ACCENT}"/>`);
+  parts.push(`<text x="${box.x + m.pad}" y="${top + 58}" font-family="${SERIF}" font-size="58" font-weight="700" fill="${ACCENT}">${esc(module.value)}${module.unit ? `<tspan font-size="24" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
+  const x = box.x + m.textX;
+  const labelY = top + 3 + 6 + 18;
+  m.labelLines.forEach((line, i) => parts.push(`<text x="${x}" y="${labelY + i * 20}" font-family="${SANS}" font-size="15.5" font-weight="700" fill="${INK}">${esc(line)}</text>`));
+  const detailY = labelY + (m.labelLines.length - 1) * 20 + 10 + 12;
+  m.detailLines.forEach((line, i) => parts.push(`<text x="${x}" y="${detailY + i * 16}" font-family="${SANS}" font-size="12" fill="${MUTED}">${esc(line)}</text>`));
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${box.y + box.h - 1}" width="1" height="1" fill="none"/>`);
+}
+
 function drawHeroStat(parts, box, module, mobile) {
+  if (box.stat_bar && !mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) return drawHeroStatBar(parts, box, module);
   const pad = mobile ? 28 : 30;
   const top = box.y + (INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 14 : 28);
   if (!INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
