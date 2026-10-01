@@ -106,6 +106,9 @@ export async function runToolChain({ steps, call, enabled, schemaOf, record = ()
       return stop(index, "SCHEMA_REJECTED", `${step.name} parameters rejected before the call: ${schemaErrors.join("; ")}`);
     }
     await record({ phase: "start", step: index, tool: step.name, params });
+    // Writing the start event is asynchronous: a cancel that arrived meanwhile
+    // must stop the chain before the inner tool runs.
+    if (signal?.aborted) return cancelled(index, "before " + step.name);
     let result;
     try {
       result = await call(step.name, params);
