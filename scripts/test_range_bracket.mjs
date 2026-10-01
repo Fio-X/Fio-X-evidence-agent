@@ -218,6 +218,29 @@ assert.deepEqual(
   assert.equal(nonEconomy.category_names_resolution, undefined);
   assert.equal(nonEconomy.blockers.length, lintVizSpec(spec({ language: "zh", title: zhTitle }), companies, {}).blockers.length);
 
+  // Values alone are not a signal: same-named states / people must not be
+  // translated, and the lint warns that the values match World Bank names.
+  const warnRe = /values all match World Bank names.*declare category_names explicitly/;
+  for (const [field, names] of [["state", ["Georgia", "Chad"]], ["name", ["Georgia", "Jordan"]]]) {
+    const r = names.map((v, i) => ({ ...ROWS[i], [field]: v }));
+    const sp = spec({ language: "zh", title: "US states count comparison", category_field: field });
+    const l = lintVizSpec(sp, r, {});
+    assert.equal(l.category_names_resolution, undefined, field);
+    assert.ok(l.warnings.some((w) => warnRe.test(w) && w.includes(`'${field}'`)), JSON.stringify(l.warnings));
+    const svg = renderVizSvg(sp, r);
+    assert.ok(!/格鲁吉亚|乍得|约旦/.test(svg), `${field}: must not be translated`);
+  }
+  {
+    const l = lintVizSpec(spec({ language: "zh", title: zhTitle }), ROWS, {});
+    assert.ok(!l.warnings.some((w) => warnRe.test(w)), "signal field must not warn");
+    const r = iso3Rows.slice(0, 5).map((x) => ({ ...x, iso3: x.country }));
+    const l2 = lintVizSpec(spec({ language: "zh", title: zhTitle, category_field: "iso3" }), r, {});
+    assert.equal(l2.category_names_resolution?.mode, "iso3", JSON.stringify(l2));
+    assert.ok(!l2.warnings.some((w) => warnRe.test(w)));
+    const l3 = lintVizSpec(spec({ language: "zh", title: zhTitle }), companies, {});
+    assert.ok(!l3.warnings.some((w) => warnRe.test(w)), "non-matching values must not warn");
+  }
+
   // A declared mode is never overridden or recorded as auto.
   const declared = lintVizSpec(spec({ language: "zh", title: zhTitle, category_names: "worldbank" }), ROWS, {});
   assert.equal(declared.category_names_resolution, undefined);
