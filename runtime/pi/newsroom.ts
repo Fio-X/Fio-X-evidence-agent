@@ -2,10 +2,10 @@ import { runProcess } from "./process.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename } from "node:fs/promises";
-import { dirname, join, resolve, sep, relative } from "node:path";
+import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link } from "node:fs/promises";
+import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
@@ -675,19 +675,92 @@ function stableId(input: string) {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
+// NEWSROOM_SPEED_ATOMIC_ARTIFACT=1 (default off) makes the immutable writers
+// publish a complete file with link(2) instead of creating the target first
+// and filling it afterwards. Read per call, never cached. With the switch off
+// the original exclusive-create path below runs unchanged.
+function atomicArtifactWritesEnabled(): boolean {
+  return process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT === "1";
+}
+
+// The fs calls the immutable writers use, behind one object so a test can
+// pause or break a specific step deterministically. Production never swaps it.
+const defaultArtifactFs = { writeFile, link, unlink, mkdir, readFile, stat, readdir };
+let artifactFs: typeof defaultArtifactFs = defaultArtifactFs;
+export function __setArtifactFsForTest(overrides: Partial<typeof defaultArtifactFs> | null) {
+  artifactFs = overrides ? { ...defaultArtifactFs, ...overrides } : defaultArtifactFs;
+}
+
+// Temp files live in a dot-directory next to the artifact root (same volume so
+// link works), never inside it: the verifiers and listArtifactFiles only walk
+// the root, and nothing in the repo enumerates the root's parent.
+const ARTIFACT_TMP_SUFFIX = ".tmp";
+const ARTIFACT_TMP_DIR_SUFFIX = ".write-tmp";
+function artifactTmpDir(root: string) {
+  return join(dirname(root), `.${basename(root)}${ARTIFACT_TMP_DIR_SUFFIX}`);
+}
+
+// Remove temp files left by a writer that died before its cleanup ran. A file
+// is named <pid>-<random>.tmp and is only removed when that pid is gone.
+export async function cleanupStaleArtifactTmp(root: string | null = artifactRoot()) {
+  if (!root) return 0;
+  const dir = artifactTmpDir(root);
+  let names: string[];
+  try { names = await artifactFs.readdir(dir) as string[]; } catch { return 0; }
+  let removed = 0;
+  for (const name of names) {
+    const match = /^(\d+)-[0-9a-f]+\.tmp$/.exec(name);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    let alive = false;
+    try { process.kill(pid, 0); alive = true; } catch (error: any) { alive = error?.code === "EPERM"; }
+    if (alive && pid !== process.pid) continue;
+    try { await artifactFs.unlink(join(dir, name)); removed++; } catch {}
+  }
+  return removed;
+}
+
+const LINK_UNSUPPORTED_CODES = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "EXDEV", "ENOSYS"]);
+
+// Returns "linked" (we created the target, complete), "exists" (target was
+// already there; the caller compares bytes), or "unsupported" (this volume
+// cannot link or the temp dir is unusable; the caller falls back to wx, where
+// a reader can still see a half-written file).
+async function createViaLink(root: string, path: string, bytes: Buffer): Promise<"linked" | "exists" | "unsupported"> {
+  const dir = artifactTmpDir(root);
+  try { await artifactFs.mkdir(dir, { recursive: true }); } catch { return "unsupported"; }
+  const tmp = join(dir, `${process.pid}-${randomBytes(8).toString("hex")}${ARTIFACT_TMP_SUFFIX}`);
+  try {
+    await artifactFs.writeFile(tmp, bytes, { flag: "wx" });
+    try {
+      await artifactFs.link(tmp, path);
+      return "linked";
+    } catch (error: any) {
+      if (error?.code === "EEXIST") return "exists";
+      if (LINK_UNSUPPORTED_CODES.has(error?.code)) return "unsupported";
+      throw error;
+    }
+  } finally {
+    try { await artifactFs.unlink(tmp); } catch {}
+  }
+}
+
 async function writeArtifactIfAbsent(relativePath: string, value: unknown) {
   const root = artifactRoot();
   if (!root) return null;
   const path = join(root, relativePath);
   await ensureParent(path);
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n";
+  const atomic = atomicArtifactWritesEnabled() ? await createViaLink(root, path, Buffer.from(text, "utf8")) : "unsupported";
+  if (atomic === "linked") return path;
   try {
-    await writeFile(path, text, { encoding: "utf8", flag: "wx" });
+    if (atomic === "exists") throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    await artifactFs.writeFile(path, text, { encoding: "utf8", flag: "wx" });
   } catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
-    const info = await stat(path);
+    const info = await artifactFs.stat(path);
     if (!info.isFile()) throw new Error(`Immutable artifact path exists but is not a file: ${relativePath}`);
-    const existing = await readFile(path, "utf8");
+    const existing = await artifactFs.readFile(path, "utf8");
     if (existing !== text) throw new Error(`Immutable artifact collision: existing bytes differ at ${relativePath}`);
   }
   return path;
@@ -699,16 +772,41 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
   const path = join(root, relativePath);
   await ensureParent(path);
   const bytes = Buffer.from(value);
+  const atomic = atomicArtifactWritesEnabled() ? await createViaLink(root, path, bytes) : "unsupported";
+  if (atomic === "linked") return path;
   try {
-    await writeFile(path, bytes, { flag: "wx" });
+    if (atomic === "exists") throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    await artifactFs.writeFile(path, bytes, { flag: "wx" });
   } catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
-    const info = await stat(path);
+    const info = await artifactFs.stat(path);
     if (!info.isFile()) throw new Error(`Immutable artifact path exists but is not a file: ${relativePath}`);
-    const existing = await readFile(path);
+    const existing = await artifactFs.readFile(path);
     if (!existing.equals(bytes)) throw new Error(`Immutable artifact collision: existing bytes differ at ${relativePath}`);
   }
   return path;
+}
+
+// Test-only entry points to the two immutable writers (not used by tools).
+export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
+export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
+
+// One shape for every computation record, so duckdb_query and viz_lint write
+// identical bytes for the same SQL, snapshot and result rows. dataHash is the
+// legacy extra field viz_lint used to add; it duplicates result_hash and is
+// only passed when the atomic switch is off, to keep old bytes unchanged.
+function buildComputationRecord(input: { sql: string; inputSnapshot: { hash: string; fingerprints: unknown }; derivedInputs: { read_inputs: unknown; input_binding: unknown }; resultHash: string; rows: unknown[]; dataHash?: string }) {
+  return {
+    schema_version: "0.7.0",
+    sql: input.sql,
+    input_snapshot_hash: input.inputSnapshot.hash,
+    input_fingerprints: input.inputSnapshot.fingerprints,
+    read_inputs: input.derivedInputs.read_inputs,
+    input_binding: input.derivedInputs.input_binding,
+    result_hash: input.resultHash,
+    ...(input.dataHash === undefined ? {} : { data_hash: input.dataHash }),
+    rows: input.rows,
+  };
 }
 
 async function evidenceSnapshot() {
@@ -940,6 +1038,15 @@ function validateReadOnlySql(sql: string) {
     throw new Error("Mutating or extension-loading SQL is blocked");
   }
   return cleaned;
+}
+
+// The SQL string a computation record is keyed and stored under. Validation
+// trims before it strips a trailing ";", so "x ;" becomes "x " and only a second
+// pass reaches "x". With the atomic switch on both tools take the second pass, so
+// the same query is one record whether or not the text had a space before ";".
+function computationSql(sql: string) {
+  const once = validateReadOnlySql(sql);
+  return atomicArtifactWritesEnabled() ? validateReadOnlySql(once) : once;
 }
 
 async function queryDuckDb(sql: string, signal?: AbortSignal) {
@@ -1234,6 +1341,8 @@ async function listArtifactFiles(root: string, child: string) {
 }
 
 export default function newsroomExtension(pi: ExtensionAPI) {
+  // Orphaned temp files from a writer that was killed mid-write (switch on only).
+  if (atomicArtifactWritesEnabled()) void cleanupStaleArtifactTmp().catch(() => {});
   registerScopedTool(pi, {
     name: "artifact_inventory",
     label: "Inspect investigation files",
@@ -1525,7 +1634,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         }, { description: "Opt-in bounded model-visible preview; the full computation remains replayable in computations/" })),
       }),
     async execute(_id, params, signal) {
-      const safeSql = validateReadOnlySql(params.sql);
+      const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const derivedInputs = await deriveInputsForSql(safeSql, signal);
       assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");
@@ -1533,16 +1642,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
       const computationRef = computationRelativePath(safeSql, inputSnapshotHash, resultHash);
-      const record = {
-        schema_version: "0.7.0",
-        sql: safeSql,
-        input_snapshot_hash: inputSnapshotHash,
-        input_fingerprints: inputSnapshot.fingerprints,
-        read_inputs: derivedInputs.read_inputs,
-        input_binding: derivedInputs.input_binding,
-        result_hash: resultHash,
-        rows,
-      };
+      const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
       const budget = modelResultBudget(params.result_budget);
       let modelResult: any = budget ? {
@@ -2101,19 +2201,19 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified });
       const inputSnapshot = await evidenceSnapshot();
       const inputSnapshotHash = inputSnapshot.hash;
-      const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
-      const lintInputs = await deriveInputsForSql(spec.sql, signal);
-      await writeArtifactIfAbsent(computationRef, {
-        schema_version: "0.7.0",
-        sql: spec.sql,
-        input_snapshot_hash: inputSnapshotHash,
-        input_fingerprints: inputSnapshot.fingerprints,
-        read_inputs: lintInputs.read_inputs,
-        input_binding: lintInputs.input_binding,
-        result_hash: lint.data_hash,
-        data_hash: lint.data_hash,
+      // With the atomic switch on, key and record use the same normalized SQL
+      // duckdb_query writes, so one computation is one file whichever tool ran first.
+      const lintSql = atomicArtifactWritesEnabled() ? computationSql(spec.sql) : spec.sql;
+      const computationRef = computationRelativePath(lintSql, inputSnapshotHash, lint.data_hash);
+      const lintInputs = await deriveInputsForSql(lintSql, signal);
+      await writeArtifactIfAbsent(computationRef, buildComputationRecord({
+        sql: lintSql,
+        inputSnapshot,
+        derivedInputs: lintInputs,
+        resultHash: lint.data_hash,
         rows,
-      });
+        dataHash: atomicArtifactWritesEnabled() ? undefined : lint.data_hash,
+      }));
       const lintKey = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, data_hash: lint.data_hash }));
       const lintRef = `visualizations/lints/${lintKey}.json`;
       await writeArtifactIfAbsent(lintRef, {
