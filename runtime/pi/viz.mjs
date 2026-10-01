@@ -1672,6 +1672,12 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
   if (annotations(spec).length > 4) warnings.push(`Visualization has ${annotations(spec).length} annotations; editorial hierarchy may become crowded`);
+  if (["horizontal_bar", "bar"].includes(spec.chart_type) && (spec.highlight_values ?? []).length) {
+    // A declared emphasis that matches no category would silently draw an all-grey chart.
+    const categories = new Set(rows.map((row) => String(row[spec.category_field])));
+    const missing = spec.highlight_values.map(String).filter((v) => !categories.has(v));
+    if (missing.length) warnings.push(`highlight_values ${JSON.stringify(missing)} match no '${spec.category_field}' value, so those bars stay neutral`);
+  }
   if ((spec.highlight_values ?? []).length > 4) warnings.push(`Visualization highlights ${(spec.highlight_values ?? []).length} values; consider one primary focus and contextual series`);
 
   const rangeBrackets = annotations(spec).filter((a) => a?.type === "range_bracket");
@@ -2013,7 +2019,7 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (lint.passed === false || (lint.blockers ?? []).length) add("blocker", "lint_not_passed", "Deterministic visualization lint has blocking failures.", 100, "Resolve every deterministic lint blocker before editorial review.");
   if (String(spec.title ?? "").length > 95) add("warning", "title_too_long", "Title is longer than 95 characters and may wrap heavily on mobile.", 8, "Shorten the title to one evidence-backed takeaway.");
   if (String(spec.subtitle ?? "").length > 180) add("warning", "subtitle_too_long", "Subtitle is too dense for a chart dek.", 5, "Move methodology details to the note and keep the subtitle focused on denominator and period.");
-  if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
+  if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
   if ((spec.highlight_values ?? []).length > 4) add("warning", "too_many_highlights", "Too many marks compete for attention.", 10, "Reduce highlights to one primary focus and a small number of comparisons.");
   if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
   if (annotations(spec).length > 4) add("warning", "annotation_density", "More than four annotations are likely to compete with the data.", 9, "Keep only annotations that identify, compare, summarize, or explain the governing claim.");
