@@ -5642,12 +5642,29 @@ function renderChoropleth(spec, rows, mobile = false) {
       for (const o of placed) if (Math.hypot(q.x - o.x, q.y - o.y) < 2 * R + 2) v++;
       for (const b of boxes) if (q.x > b.x - keepOut && q.x < b.x + b.w + keepOut && q.y > b.y - keepOut && q.y < b.y + b.h + keepOut) v++;
       for (const sg of segments) if (segDist(q, sg.a, sg.b) < R + 2) v++;
+      for (const t of tethers) if (segDist(q, t.a, t.b) < R + 1) v++;
       return v;
     };
+    const placed = [];
+    const out = [];
+    const tethers = [];
     const RADII = [0, ...Array.from({ length: 25 }, (_, i) => 8 + i * 8)];
     const ANGLES = 24;
     const inBounds = (q) => !bounds || (q.x >= bounds.x + R && q.x <= bounds.x + bounds.w - R && q.y >= bounds.y + R && q.y <= bounds.y + bounds.h - R);
-    const placed = [];
+    // A marker whose circle no longer covers its true point keeps a visible
+    // tether back to it (see MARKER_TETHER below); the tether, like the
+    // marker, must stay clear of labels, other markers, dots and leaders.
+    const tetherViolations = (q, pt, ownIndex) => {
+      if (Math.hypot(q.x - pt.x, q.y - pt.y) <= R) return 0;
+      const a = pt, b = markerTetherStart(q, pt, R);
+      let v = 0;
+      for (const bx of boxes) if (segmentCrossesBox(a, b, bx)) v++;
+      for (const sg of segments) if (segmentsIntersect(a, b, sg.a, sg.b)) v++;
+      placed.forEach((o, i) => { if (i !== ownIndex && segDist(o, a, b) < R + 1) v++; });
+      for (const d of dots) if (Math.hypot(d.x - pt.x, d.y - pt.y) >= 1 && segDist(d, a, b) < (d.r ?? 3.5) + 1) v++;
+      for (const t of tethers) if (segmentsIntersect(a, b, t.a, t.b)) v++;
+      return v;
+    };
     for (const pt of points) {
       const origin = clampToBounds(pt);
       let best = { q: origin, v: Infinity };
@@ -5657,14 +5674,35 @@ function renderChoropleth(spec, rows, mobile = false) {
           const ang = (k / ANGLES) * Math.PI * 2;
           const q = { x: origin.x + Math.cos(ang) * r, y: origin.y + Math.sin(ang) * r };
           if (!inBounds(q)) continue;
-          const v = violations(q, placed, origin);
+          const v = violations(q, placed, origin) * 100 + tetherViolations(q, pt, -1);
           if (v === 0) { best = { q, v }; break search; }
           if (v < best.v) best = { q, v };
         }
       }
+      const displaced = Math.hypot(best.q.x - pt.x, best.q.y - pt.y) > R;
+      // No clean spot that also keeps a clean tether: the region stays in the
+      // numbered list only (null = no map marker, so nothing claims a position).
+      if (best.v > 0) { out.push(null); continue; }
       placed.push(best.q);
+      out.push(best.q);
+      if (displaced) tethers.push({ a: pt, b: markerTetherStart(best.q, pt, R) });
     }
-    return placed;
+    return out;
+  }
+  // Where a tether leaves a displaced marker: on its circle, towards the true point.
+  function markerTetherStart(marker, point, radius = 9) {
+    const d = Math.hypot(point.x - marker.x, point.y - marker.y) || 1;
+    return { x: marker.x + ((point.x - marker.x) / d) * radius, y: marker.y + ((point.y - marker.y) / d) * radius };
+  }
+  // A displaced numbered marker (its circle no longer covers its true point)
+  // is joined back to that point by a hairline in the same leader style, so a
+  // reader can tell which place the number stands for. render-QA rule
+  // marker_displaced_without_tether fails any displaced marker without one.
+  function markerTetherSvg(role, marker, point, iso3, num, radius = 9) {
+    if (Math.hypot(marker.x - point.x, marker.y - point.y) <= radius) return "";
+    const a = markerTetherStart(marker, point, radius);
+    return `<path data-role="${role}-leader" data-iso3="${esc(iso3)}" data-number="${num}" d="M${a.x.toFixed(1)},${a.y.toFixed(1)} L${point.x.toFixed(1)},${point.y.toFixed(1)}" fill="none" stroke="${LEADER_STYLE.color}" stroke-width="${LEADER_STYLE.width}"/>`
+      + `<circle data-role="${role}-leader-dot" data-iso3="${esc(iso3)}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="1" fill="${LEADER_STYLE.color}"/>`;
   }
 
   // Coordinator research (scratchpad/reports/research-leaders.md): every
@@ -6658,8 +6696,10 @@ function renderChoropleth(spec, rows, mobile = false) {
   footnoteItems.forEach((li, i) => {
     const num = fallbackNumberByIso3.get(li.item.iso3);
     const mk = footnoteMarkerPositions[i];
+    if (!mk) return;
     footnoteParts.push(
-      `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" cx="${mk.x.toFixed(1)}" cy="${mk.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
+      markerTetherSvg("choropleth-footnote-marker", mk, { x: li.x, y: li.y }, li.item.iso3, num),
+      `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${li.x.toFixed(1)}" data-anchor-y="${li.y.toFixed(1)}" cx="${mk.x.toFixed(1)}" cy="${mk.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
       `<text data-role="choropleth-footnote-marker-label" x="${mk.x.toFixed(1)}" y="${(mk.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
     );
   });
@@ -7124,13 +7164,14 @@ function renderChoropleth(spec, rows, mobile = false) {
         dots: insetLabelItems.map((item) => tinyRegionDot(item.item.featureIndices, zoomProj.project, zLon0, zLat0)).filter(Boolean).map((d) => ({ x: d.x, y: d.y, r: 3.2 })),
       });
       let centroidCursor = 0;
-      const markerCentroids = rawCentroids.map((c) => (c ? declutteredCentroids[centroidCursor++] : null));
+      const markerCentroids = rawCentroids.map((c) => (c ? declutteredCentroids[centroidCursor++] ?? null : null));
       listFallbackItems.forEach((li, i) => {
         const marker = markerCentroids[i];
         const num = fallbackNumberByIso3.get(li.item.iso3);
         if (marker) {
           insetPanelParts.push(
-            `<circle data-role="choropleth-inset-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" cx="${marker.x.toFixed(1)}" cy="${marker.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
+            markerTetherSvg("choropleth-inset-footnote-marker", marker, rawCentroids[i], li.item.iso3, num),
+            `<circle data-role="choropleth-inset-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${rawCentroids[i].x.toFixed(1)}" data-anchor-y="${rawCentroids[i].y.toFixed(1)}" cx="${marker.x.toFixed(1)}" cy="${marker.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
             `<text data-role="choropleth-inset-footnote-marker-label" x="${marker.x.toFixed(1)}" y="${(marker.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
           );
         }
