@@ -658,6 +658,28 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
       if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
       if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
+      {
+        // Every verified claim hung on this visual (manifest claim, module
+        // claim_id/claim_ids/claim_set, module annotations) must belong to the
+        // visual's own computation (verdicts from claim_binding.mjs, computed
+        // per visual in the async layer). Absent context means the caller did
+        // not compute them: skip.
+        const verdicts = context.visual_claim_bindings?.[String(module.id)];
+        if (verdicts && typeof verdicts === "object") {
+          const labelled = [[String(asset.manifest?.claim_id ?? ""), `claim '${asset.manifest?.claim_id}'`]];
+          for (const claimId of [module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? [])]) labelled.push([String(claimId ?? ""), `claim '${claimId}'`]);
+          for (const annotation of Array.isArray(module.annotations) ? module.annotations : []) labelled.push([String(annotation?.claim_id ?? ""), `annotation '${annotation?.id}' claim '${annotation?.claim_id}'`]);
+          const seen = new Set();
+          for (const [claimId, label] of labelled) {
+            const verdict = claimId ? verdicts[claimId] : null;
+            if (!verdict || verdict.ok === true) continue;
+            const key = `${claimId}|${label}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            blockers.push(`visual '${module.id}' ${label} is not bound to the visual's own computation: ${verdict.message}`);
+          }
+        }
+      }
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
       {
         // B1: a chart declares its own language (runtime/pi/newsroom.ts
