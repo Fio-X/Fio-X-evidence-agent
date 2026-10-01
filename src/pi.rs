@@ -57,6 +57,10 @@ pub const CHAIN_INFOGRAPHIC_ENV: &str = "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC";
 pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
 /// Page-stage preflight and derived-reference fill; the runtime reads the same name.
 pub const PREFLIGHT_ENV: &str = "NEWSROOM_SPEED_PREFLIGHT";
+/// Layout-only plan edits without re-sending the plan; the runtime reads the same name.
+pub const PLAN_EDIT_ENV: &str = "NEWSROOM_SPEED_PLAN_EDIT";
+/// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
+pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
 
 #[cfg(test)]
@@ -79,6 +83,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         chain_viz: env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on(),
         chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
         preflight: env_switch(PREFLIGHT_ENV),
+        plan_edit: env_switch(PLAN_EDIT_ENV),
     }
 }
 
@@ -585,6 +590,10 @@ impl PiConfig {
         if self.speed.chain_infographic && names.contains(&"newsroom_infographic_plan") {
             names.push(INFOGRAPHIC_CHAIN_TOOL);
         }
+        // The edit rewrites a page plan through the plan tool, so it is offered only where that is.
+        if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
+            names.push(PLAN_EDIT_TOOL);
+        }
         names.join(",")
     }
 
@@ -746,6 +755,11 @@ impl PiConfig {
             cmd.env(PREFLIGHT_ENV, "1");
         } else {
             cmd.env_remove(PREFLIGHT_ENV);
+        }
+        if self.speed.plan_edit {
+            cmd.env(PLAN_EDIT_ENV, "1");
+        } else {
+            cmd.env_remove(PLAN_EDIT_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1661,6 +1675,26 @@ mod tests {
         assert_eq!(preflight_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(PREFLIGHT_ENV);
         assert!(!speed_switches_from_env().preflight);
+
+        // Plan edit: marker follows the config; the tool is offered only with the plan tool.
+        let edit_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PLAN_EDIT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(PLAN_EDIT_ENV, "1");
+        let mut config = visual_story_config(false, "investigate");
+        assert!(speed_switches_from_env().plan_edit);
+        assert_eq!(edit_marker(&config), Some(None));
+        assert!(!config.tools_arg().split(',').any(|name| name == PLAN_EDIT_TOOL));
+        config.speed.plan_edit = true;
+        assert_eq!(edit_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(PLAN_EDIT_ENV);
+        assert!(!speed_switches_from_env().plan_edit);
     }
 
     #[test]

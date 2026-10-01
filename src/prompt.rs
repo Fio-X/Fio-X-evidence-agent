@@ -41,6 +41,11 @@ pub struct PromptSpeed {
     /// existing artifact is bound to what the call already names. Tool
     /// guidance is added by the runtime; the base prompt does not change.
     pub preflight: bool,
+    /// `NEWSROOM_SPEED_PLAN_EDIT=1`: a runtime-only tool changes a page plan's
+    /// layout fields (module span/emphasis/priority/order, scene
+    /// pattern/anchor/sidecars) without re-sending the plan. The edited plan
+    /// passes every plan validation again. The tool carries its own guidance.
+    pub plan_edit: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
