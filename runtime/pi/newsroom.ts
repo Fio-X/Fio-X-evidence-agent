@@ -4278,7 +4278,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       note: Type.Optional(Type.String({ description: "Concise methodological caveat shown on the SVG" })),
     }),
     async execute(_id, params, signal) {
-      const safeSql = validateReadOnlySql(params.sql);
+      const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
       if (rows.length === 0) throw new Error("Chart query returned no rows");
