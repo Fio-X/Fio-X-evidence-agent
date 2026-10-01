@@ -929,6 +929,11 @@ function sceneHeaderHeight(scene) {
   return (scene.eyebrow || scene.title || scene.dek) ? 28 + titleLines * 38 + dekLines * 22 + 20 : 0;
 }
 
+// Scene rule: a hero_with_rail rail with exactly one sidecar, a hero_stat.
+function railStatBand(sidecars) {
+  return INFOGRAPHIC_HOUSE_STYLE_ACTIVE && sidecars.length === 1 && sidecars[0].type === "hero_stat";
+}
+
 function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, gap, col) {
   const byId = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
   const anchor = byId.get(scene.anchor_module_id);
@@ -947,8 +952,11 @@ function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, g
     let railH = 0;
     sidecars.forEach((module) => {
       const w = sideCols * col + Math.max(0, sideCols - 1) * gap;
-      const h = moduleHeight(module, w, assets, false);
-      boxes.push({ id: module.id, module, x: margin + xCols * (col + gap), y: railY, w, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar" });
+      // A rail holding exactly one big number draws it as the full-width band
+      // (house style, desktop) instead of a stacked 12-column stat.
+      const bar = railStatBand(sidecars);
+      const h = bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false);
+      boxes.push({ id: module.id, module, x: margin + xCols * (col + gap), y: railY, w, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar", ...(bar ? { stat_bar: true } : {}) });
       xCols += sideCols;
       railH = Math.max(railH, h);
     });
