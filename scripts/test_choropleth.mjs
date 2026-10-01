@@ -1062,7 +1062,13 @@ console.log("choropleth highlight outline: accent outline drawn only for spec-hi
     const vb = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
     assert.ok(panel.x >= 0 && panel.x + panel.w <= +vb[1] && panel.y + panel.h <= +vb[2], `${name}: inset panel must stay inside the canvas`);
     assert.match(svg, /data-role="choropleth-inset-source"/, `${name}: source-extent outline stays on the main map`);
-    assert.match(svg, /data-role="choropleth-inset-link"/, `${name}: connector links the source outline to the panel`);
+    // P3: the connector is drawn only when short and clear of data; otherwise
+    // the source box and the panel title carry the same letter.
+    const linked = /data-role="choropleth-inset-link"/.test(svg);
+    const srcLetter = svg.match(/data-role="choropleth-inset-source-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+    const panelLetter = svg.match(/data-role="choropleth-inset-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+    assert.ok(linked || (srcLetter && srcLetter === panelLetter), `${name}: source outline is tied to the panel by a connector or a shared letter`);
+    assert.ok(!(linked && (srcLetter || panelLetter)), `${name}: a drawn connector and a letter are mutually exclusive`);
   }
 }
 console.log("choropleth inset: panel reserved outside the map frame on desktop and mobile -- PASS");
