@@ -26,7 +26,7 @@ import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData } from "./publi
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
-import { extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
+import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
 import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
@@ -35,6 +35,7 @@ import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
+import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -1150,7 +1151,7 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
     // Bind on what the SQL really reads, re-derived now and required to match
     // what was recorded at query time. Legacy records (no read_inputs) and
     // literal-only or unresolved computations can never support a claim.
-    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"));
+    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"), 0, new Set(), { root: artifactRoot() });
     if (recorded.binding === "legacy") {
       throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} has no recorded read inputs (legacy record); rerun the query`);
     }
@@ -1459,6 +1460,16 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           sha256,
           file: relativeFile,
         });
+        // A downloaded PDF is complete, so extract it in full into a row
+        // table ({page, line, x, text}) bound to the data file's sha256. The
+        // data file stays byte-identical; the table is evidence derived from it.
+        const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
+        let derivedRowsPath: string | null = null;
+        if (derivedPdf?.available) {
+          await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
+          derivedRowsPath = derivedPdf.rowsFile;
+          await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
+        }
         const origin = {
           schema_version: "0.7.0",
           origin: "download",
@@ -1468,10 +1479,13 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           content_type: response.headers.get("content-type"),
           sha256,
           file: relativeFile,
+          ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
         };
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}`, {
+        const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
+        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}${derivedLine}`, {
+          derivedRowsPath,
           filePath: relativeFile,
           metadataPath,
           originPath,
@@ -3317,9 +3331,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       let spec: any; try { spec = JSON.parse(params.spec_json); } catch { throw new Error("MapSpec JSON is invalid"); }
       const gate = validateMapSpec(spec);
-      const key = sha256Hex(JSON.stringify({ spec, gate }));
+      // Reference layers read their coordinates from recorded data only; the
+      // resolution (with the sha256 of every input file) is stored with the map.
+      let resolution: any = null;
+      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line"].includes(l?.type))) {
+        const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
+        const inside = (ref: string) => { const abs = resolve(root, ref); if (!/^(data|computations)\//.test(ref) || !abs.startsWith(resolve(root) + "/")) throw new Error(`MAP_SOURCE_PATH_REJECTED: ${ref}`); return abs; };
+        resolution = await resolveReferenceLayers(spec, { readBytes: async (ref: string) => readFile(inside(ref)), readJson: async (ref: string) => JSON.parse(await readFile(inside(ref), "utf8")) });
+      }
+      const key = sha256Hex(JSON.stringify({ spec, gate, resolution }));
       const rel = `maps/${key}.json`;
-      await writeArtifactIfAbsent(rel, { spec, status: gate.status, gate, content_hash: key });
+      await writeArtifactIfAbsent(rel, { spec, status: gate.status, gate, ...(resolution ? { resolution } : {}), content_hash: key });
       if (gate.status !== "PASS") throw new Error(`MAP_SPEC_BLOCKED: ${(gate.errors ?? []).join(" | ")}`);
       return textResult(`PASS: scientific map validation\nMap: ${rel}\nBasemap: ${gate.basemap?.id}`, { passed: true, mapRef: rel, gate });
     },

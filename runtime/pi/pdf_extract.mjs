@@ -3,7 +3,7 @@
 // it is never decoded binary. See runtime/pi/newsroom.ts's fetchText, which
 // sniffs application/pdf (or a %PDF- body) before deciding whether to run
 // readBodyText's UTF-8 decode or this module's pdftotext path.
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -104,9 +104,69 @@ export async function extractPdfText({ bytes, truncated = false, signal, pdftote
     const pages = splitPdfPages(result.stdout);
     return {
       text: formatPagesWithMarkers(pages),
+      pages,
       extraction: { tool: "pdftotext", version, pages: pages.length },
     };
   } finally {
     try { await unlink(tempPath); } catch {}
   }
+}
+
+// Row table of a PDF's layout text: one row per non-blank line,
+// {page, line, x, text}. `line` is the 1-based line number within the page's
+// layout text, `x` the character column of the first glyph, `text` the line
+// without leading/trailing spaces. Rows are ordered by (page, line), so the
+// same PDF always yields the same rows. Nothing is merged, dropped (other than
+// blank lines), re-ordered, or unit-converted: repeated page headers, unit
+// rows and subtotal rows stay as printed, for SQL to deal with explicitly.
+export function pdfPagesToRows(pages) {
+  const rows = [];
+  pages.forEach((page, pageIndex) => {
+    String(page).split("\n").forEach((raw, lineIndex) => {
+      const line = raw.replace(/\r$/, "");
+      const text = line.trim();
+      if (!text) return;
+      rows.push({ page: pageIndex + 1, line: lineIndex + 1, x: line.length - line.trimStart().length, text });
+    });
+  });
+  return rows;
+}
+
+// Canonical bytes of a row table: one JSON object per line inside an array.
+// DuckDB reads it directly with read_json_auto.
+export function serializePdfRows(rows) {
+  return `[\n${rows.map((row) => JSON.stringify(row)).join(",\n")}\n]\n`;
+}
+
+// download_data stores the complete body (up to its 25 MB cap), so unlike
+// fetch_url's capped read the PDF is never truncated here and can be
+// extracted in full. Returns null for non-PDF bodies. Otherwise returns the
+// row table, its serialized bytes and a metadata record binding the table to
+// the exact PDF bytes by sha256. The data file itself is never replaced.
+export async function extractDownloadedPdf({ bytes, contentType, sourceSha256, sourceFile, signal, pdftotextBin, timeoutMs = 60_000 } = {}) {
+  if (!looksLikePdf(contentType, bytes)) return null;
+  const pdf = await extractPdfText({ bytes, truncated: false, signal, pdftotextBin, timeoutMs });
+  const available = !pdf.extraction.unavailable_reason;
+  if (!available) return { available: false, extraction: pdf.extraction, rows: [], rowsText: "", meta: null };
+  const rows = pdfPagesToRows(pdf.pages);
+  const rowsText = serializePdfRows(rows);
+  const rowsFile = `data/derived/${sourceSha256}.pdf-rows.json`;
+  return {
+    available: true,
+    extraction: pdf.extraction,
+    rows,
+    rowsText,
+    rowsFile,
+    meta: {
+      schema_version: "0.2.0",
+      kind: "pdf_row_table",
+      source_sha256: sourceSha256,
+      source_file: sourceFile,
+      rows_file: rowsFile,
+      rows_sha256: createHash("sha256").update(rowsText, "utf8").digest("hex"),
+      row_count: rows.length,
+      columns: ["page", "line", "x", "text"],
+      extraction: pdf.extraction,
+    },
+  };
 }
