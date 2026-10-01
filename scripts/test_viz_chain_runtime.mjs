@@ -315,6 +315,14 @@ if (renderWorks) { // chain == manual, byte for byte; N=3 charts in one round
       assert.equal(out.details.criticRef, manual[i].critic.details.criticRef);
       assert.equal(out.details.manifestRef, manual[i].render.details.manifestRef);
       assert.deepEqual(out.details.steps.map((s) => s.tool), ["newsroom_viz_plan", "newsroom_viz_lint", "newsroom_viz_render", "newsroom_viz_critic"]);
+      // The shape src/audit.rs expands inner calls from; inner details equal the direct calls'.
+      assert.equal(out.details.chain, "newsroom_viz_chain");
+      for (const [k, key] of ["plan", "lint", "render", "critic"].entries()) {
+        assert.equal(typeof out.details.steps[k].params, "object");
+        assert.deepEqual(out.details.steps[k].details, manual[i][key].details, `${key}: inner details equal the direct call's`);
+      }
+      assert.deepEqual(out.details.steps[1].params, { plan_ref: manual[i].plan.details.planRef });
+      assert.deepEqual(out.details.steps[2].params, { plan_ref: manual[i].plan.details.planRef, lint_ref: manual[i].lint.details.lintRef });
     }
     assert.deepEqual(snapshot(chainArt), snapshot(manualArt), "chain and step-by-step produce byte-identical artifacts (claims.jsonl included)");
     const events = readFileSync(join(chainArt, "runtime", "tool-chain-events.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
