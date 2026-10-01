@@ -2495,7 +2495,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       reference_period_field: Type.Optional(Type.String()),
       mixed_period_strategy: Type.Optional(StringEnum(["reject", "facet", "explicit"] as const)),
       sort: Type.Optional(StringEnum(["asc", "desc", "none"] as const)),
-      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, description: "Category/series values to draw in the single accent colour (e.g. the peak year or top-ranked country the claim is about); everything else stays neutral grey. Omit for an all-neutral chart." })),
+      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
       direct_labels: Type.Optional(Type.Boolean()),
       measure_kind: Type.Optional(StringEnum(["year", "count", "index", "level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "duration", "distance", "price"] as const, { description: "What the value_field measures, so numbers are spelled correctly: 'year' (a calendar year such as 2017) and 'count' (a whole-number tally) print as plain integers - never '2.0k' or '3.0' - and choropleth legends use whole-number steps. A year-like unit on measure_kind 'index' is also read as a calendar year. Omit for ordinary quantities." })),
       measure_semantics: Type.Optional(Type.Array(Type.Object({ field: Type.Optional(Type.String()), unit: Type.Optional(Type.String()), measure_kind: Type.Optional(Type.String()) }), { maxItems: 8, description: "Optional per-field measure declarations (field, unit, measure_kind). A count or calendar-year value_field is spelled as a plain integer." })),

@@ -55,10 +55,10 @@ for (const [name, styleOverride] of [["house", {}], ["legacy", { style_id: "lega
     // hero_stat must not draw a "01 · " (or any bare ordinal) kicker line at
     // all - drawModuleChrome must skip it completely, same as section_header.
     assert.ok(!svg.includes(`01 · ${heroLabel}`), `${name}/${viewport}: hero_stat must not draw its old "01 · label" rail kicker`);
-    // The *other* content module (text, ordinal 02 - section_header is not
+    // The *other* content module (text, ordinal 01 now that hero_stat takes none - section_header is not
     // numbered) must still get its normal kicker: fix 10 must not silently
     // remove chrome from module types it was not asked to touch.
-    assert.ok(svg.includes(`02 · ${textLabel}`), `${name}/${viewport}: the text module's own rail kicker must still render normally: ${svg.match(/\d{2} · [^<]*/g)}`);
+    assert.ok(svg.includes(`01 · ${textLabel}`), `${name}/${viewport}: the text module's own rail kicker must still render normally: ${svg.match(/\d{2} · [^<]*/g)}`);
   }
   const qa = runRenderQa({ desktop: bundle.desktop.svg, mobile: bundle.mobile.svg });
   assert.equal(qa.passed, true, `render-QA (${name}): ${JSON.stringify(qa.viewports)}`);
