@@ -194,7 +194,7 @@ try {
   const dataPath = join(art, target.dataRef);
   const pdfBytes = readFileSync(dataPath);
   writeFileSync(dataPath, Buffer.concat([pdfBytes, Buffer.from("\n%tampered\n")]));
-  { const why = "source PDF bytes do not match source_sha256"; assert.equal((await verifyDerivedInput(art, target.rowsRef)).reason, why, "changed PDF: JS chain reason"); rustFails("changed PDF", why); writeFileSync(dataPath, pdfBytes); }
+  { const why = "source PDF bytes do not match source_sha256"; await jsFails("changed PDF", why); rustFails("changed PDF", why); writeFileSync(dataPath, pdfBytes); }
   // 5. no download record binds the table to the PDF
   writeFileSync(originPath, JSON.stringify({ ...json(keep.origin), derived_text: undefined }));
   { const why = "no download record binds this table to the PDF"; await jsFails("origin without derived_text", why); rustFails("origin without derived_text", why); restore(); }
