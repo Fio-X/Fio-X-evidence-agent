@@ -18,21 +18,27 @@ try {
     writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
     writeFileSync(join(tmp, "node_modules", name, "index.js"), source);
   };
-  stub("typebox", "const builder = () => ({});\nexport const Type = new Proxy({}, { get: () => builder });\n");
-  stub("@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
+  // Structural stubs: parameters keep their shape (and enum values) so the
+  // test can search them for Lieflat references.
+  stub("typebox", "export const Type = new Proxy({}, { get: (_, kind) => (...args) => ({ kind, args }) });\n");
+  stub("@earendil-works/pi-ai", "export const StringEnum = (values) => ({ enum: values });\n");
   const pi = join(tmp, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
   const { default: newsroomExtension } = await import(join(pi, "newsroom.test-copy.mjs"));
 
   const LIEFLAT = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
-  const registered = (profile, hide) => {
+  const definitions = (profile, hide) => {
     process.env.NEWSROOM_TOOL_PROFILE = profile;
     if (hide === undefined) delete process.env.NEWSROOM_HIDE_LIEFLAT;
     else process.env.NEWSROOM_HIDE_LIEFLAT = hide;
-    const tools = new Set();
-    newsroomExtension(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.add(tool.name) : () => {}) }));
+    const tools = new Map();
+    newsroomExtension(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
     return tools;
   };
+  const registered = (profile, hide) => new Set(definitions(profile, hide).keys());
+  // What the model reads of a tool: everything except the handler.
+  const visible = (tool) => JSON.stringify({ name: tool.name, label: tool.label, description: tool.description, parameters: tool.parameters, promptGuidelines: tool.promptGuidelines, promptSnippet: tool.promptSnippet });
+  const surface = (profile, hide) => Object.fromEntries([...definitions(profile, hide)].map(([name, tool]) => [name, visible(tool)]));
 
   const base = registered("visual-story", undefined);
   for (const name of LIEFLAT) assert.ok(base.has(name), `${name} registered by default`);
@@ -45,7 +51,29 @@ try {
 
   for (const profile of ["investigate", "visual", "publication", "competition", "full"]) {
     assert.deepEqual([...registered(profile, "1")].sort(), [...registered(profile, undefined)].sort(), `${profile} unaffected`);
+    assert.deepEqual(surface(profile, "1"), surface(profile, undefined), `${profile} definitions unaffected`);
   }
+  assert.deepEqual(surface("visual-story", "0"), surface("visual-story", undefined), "switch off: definitions identical");
+  // Nothing the model can read in a lean visual-story run points at Lieflat.
+  for (const [name, text] of Object.entries(surface("visual-story", "1"))) {
+    assert.ok(!/lieflat/i.test(text), `${name} still mentions Lieflat`);
+  }
+  // Default run still sees the skill and the reference pattern.
+  assert.ok(/lieflat-charts/.test(surface("visual-story", undefined).newsroom_visual_skill));
+
+  // Reference-pattern retrieval: lean corpus drops the Lieflat entry only.
+  const art = join(tmp, "artifact");
+  mkdirSync(art, { recursive: true });
+  process.env.NEWSROOM_ARTIFACT_DIR = art;
+  const matches = async (hide) => {
+    const tool = definitions("visual-story", hide).get("newsroom_reference_patterns");
+    const out = await tool.execute("t", { tags: ["chart", "report", "editorial", "offline", "catalog"], limit: 6 });
+    return out.details.matches.map((item) => item.id);
+  };
+  const defaultIds = await matches(undefined);
+  const leanIds = await matches("1");
+  assert.ok(defaultIds.includes("lieflat-charts"));
+  assert.deepEqual(leanIds, defaultIds.filter((id) => id !== "lieflat-charts"));
   console.log(JSON.stringify({ status: "PASS", baseline: base.size, lean: lean.size }));
 } finally {
   rmSync(tmp, { recursive: true, force: true });
