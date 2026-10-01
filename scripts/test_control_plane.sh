@@ -15,7 +15,8 @@ mock="$root/scripts/mock_pi.py"
 cargo run --quiet --manifest-path "$root/Cargo.toml" -- investigate \
   --pi-bin "$mock" \
   --out "$out" \
-  "Mock control-plane acceptance" >/tmp/newsroom-control-plane.out 2>/tmp/newsroom-control-plane.err
+  "Mock control-plane acceptance" >"$tmp/control-plane.out" 2>"$tmp/control-plane.err"
+tail -n 1 "$tmp/control-plane.err" | grep -qx "VERIFIED"
 
 artifact="$(find "$out" -mindepth 1 -maxdepth 1 -type d | head -1)"
 test -n "$artifact"
@@ -23,11 +24,12 @@ test -n "$artifact"
 cargo run --quiet --manifest-path "$root/Cargo.toml" -- continue \
   --pi-bin "$mock" \
   "$artifact" \
-  "Refocus the investigation and revise the plan." >>/tmp/newsroom-control-plane.out 2>>/tmp/newsroom-control-plane.err
+  "Refocus the investigation and revise the plan." >>"$tmp/control-plane.out" 2>>"$tmp/control-plane.err"
+tail -n 1 "$tmp/control-plane.err" | grep -qx "VERIFIED"
 
 cargo run --quiet --manifest-path "$root/Cargo.toml" -- verify "$artifact"
 python3 "$root/scripts/evaluate_artifact.py" "$artifact"
-cargo run --quiet --manifest-path "$root/Cargo.toml" -- inspect "$artifact" >/tmp/newsroom-control-plane.inspect
+cargo run --quiet --manifest-path "$root/Cargo.toml" -- inspect "$artifact" >"$tmp/control-plane.inspect"
 
 python3 - "$artifact" <<'PY'
 import json, sys
