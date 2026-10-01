@@ -54,6 +54,8 @@ const MAP_SPEC_RUNTIME: &str = include_str!("../runtime/pi/map_spec.mjs");
 const SCIENTIFIC_MAP_RUNTIME: &str = include_str!("../runtime/pi/scientific_map.mjs");
 const BASEMAP_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/basemap_registry.mjs");
 const FLOW_LAYOUT_RUNTIME: &str = include_str!("../runtime/pi/flow_layout.mjs");
+const MAP_REFERENCE_LAYERS_RUNTIME: &str =
+    include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
@@ -159,6 +161,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let scientific_map_path = runtime_dir.join("scientific_map.mjs");
     let basemap_registry_path = runtime_dir.join("basemap_registry.mjs");
     let flow_layout_path = runtime_dir.join("flow_layout.mjs");
+    let map_reference_layers_path = runtime_dir.join("map_reference_layers.mjs");
     let publication_binding_path = runtime_dir.join("publication_binding.mjs");
     let svg_security_path = runtime_dir.join("svg_security.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
@@ -236,6 +239,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&scientific_map_path, SCIENTIFIC_MAP_RUNTIME)?;
     write_if_changed(&basemap_registry_path, BASEMAP_REGISTRY_RUNTIME)?;
     write_if_changed(&flow_layout_path, FLOW_LAYOUT_RUNTIME)?;
+    write_if_changed(&map_reference_layers_path, MAP_REFERENCE_LAYERS_RUNTIME)?;
     write_if_changed(&publication_binding_path, PUBLICATION_BINDING_RUNTIME)?;
     write_if_changed(&svg_security_path, SVG_SECURITY_RUNTIME)?;
     write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
