@@ -109,6 +109,20 @@ const toNumber = (cell) => {
   return Number.isFinite(value) ? value : null;
 };
 
+// A column whose NAME states its unit ("fdi_2017_bn_usd", "revenue_million",
+// "营收_亿元") also yields the value in base units, so prose that spells the
+// amount out ("632亿") can match it, and prose that gets the scale wrong
+// ("63亿" for 63.2 bn) cannot.
+const COLUMN_UNIT_HINTS = [
+  [/(?:^|[^a-z])(?:tn|trillion)(?:[^a-z]|$)|万亿/i, 1e12],
+  [/(?:^|[^a-z])(?:bn|billion)(?:[^a-z]|$)/i, 1e9],
+  [/(?:^|[^a-z])(?:mn|million)(?:[^a-z]|$)/i, 1e6],
+  [/(?:^|[^a-z])thousand(?:[^a-z]|$)/i, 1e3],
+  [/亿/, 1e8],
+  [/万/, 1e4],
+];
+const columnUnitScale = (column) => COLUMN_UNIT_HINTS.find(([pattern]) => pattern.test(String(column)))?.[1] ?? 1;
+
 // Candidate numbers: every numeric cell ("rows"), plus a bounded set of
 // aggregates, differences, ratios and shares computed from them ("derived"),
 // plus numbers the spec itself declares ("spec": reference_line values and the
@@ -130,6 +144,8 @@ export function buildCandidates(rowSets, specValues = []) {
       const values = table.map((row) => toNumber(row?.[column]));
       const present = values.filter((value) => value !== null);
       for (const value of present) push(rows, value);
+      const unitScale = columnUnitScale(column);
+      if (unitScale !== 1) for (const value of present) push(rows, value * unitScale);
       if (present.length && present.length === table.filter((row) => row?.[column] !== null && row?.[column] !== undefined && row?.[column] !== "").length) numericColumns.push({ column, values });
       else if (table.some((row) => typeof row?.[column] === "string")) groupColumns.push(column);
       push(derived, new Set(table.map((row) => String(row?.[column]))).size);
@@ -204,8 +220,6 @@ export function matchNumber(entry, candidates) {
   return "unmatched";
 }
 
-const context = (text, entry) => String(text).slice(Math.max(0, entry.index - 14), (entry.end ?? entry.index + String(entry.raw).length) + 14).replace(/\s+/g, " ").trim();
-
 /**
  * One prose field against a candidate set. Returns one record per number found
  * (skipped ones carry the reason). `has_candidates` is false when the cited
@@ -216,7 +230,7 @@ export function checkField(field, text, candidates) {
   return extractNumbers(text).map((entry) => ({
     field,
     raw: entry.raw + (entry.suffix ? ` ${entry.suffix}`.replace(/^ (?=[%万亿千])/u, "") : ""),
-    context: context(text, entry),
+    offset: entry.index,
     status: entry.skipped ? "skipped" : hasCandidates ? matchNumber(entry, candidates) : "no_candidates",
     ...(entry.skipped ? { skipped_reason: entry.skipped } : {}),
   }));

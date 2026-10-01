@@ -13,7 +13,7 @@
 // MUST PASS (clean): `WHERE start <= C AND (end IS NULL OR end > C)` returns
 // {X, Y}; no subject_set at all; a rolling-window filter is only a window.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { classifyColumns, columnHasWord, cutoffCoverage, inspectFilters, normalizeCutoff, probeAsOf, readerCalls } from "../runtime/pi/asof_probe.mjs";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
@@ -100,10 +100,11 @@ const walk = (dir, root = dir, out = new Map()) => {
 };
 const SOURCE = "id,start_d,end_d,snapshot_date\nX,2015-03-01,2019-05-01,2020-01-01\nY,2016-01-01,,2020-01-01\nZ,2020-02-01,,2020-01-01\nW,2014-01-01,2030-01-01,2020-01-01\n";
 
-async function scenario({ shadow, setWhere, subjectSet = true }) {
+async function scenario({ shadow, setWhere, subjectSet = true, source = SOURCE, origin = null }) {
   const h = await loadNewsroom({ prefix: "asof-", env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
   try {
-    const fileSrc = h.addData("members", SOURCE);
+    const fileSrc = h.addData("members", source);
+    if (origin) { mkdirSync(join(h.art, "data", "origins"), { recursive: true }); writeFileSync(join(h.art, "data", "origins", "src.json"), JSON.stringify({ file: fileSrc, retrieved_at: origin })); }
     const fileA = h.addData("timeline", ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n");
     const qa = await h.query(`SELECT date, event FROM read_csv_auto('${fileA}')`);
     const claim = await h.recordClaim("The timeline has 4 dated milestones", [fileA], [qa]);
@@ -182,5 +183,15 @@ assert.ok(leak.shadowFiles.some((path) => path.startsWith("shadow/asof_probe-"))
 // Warnings and blockers never carry the probe result.
 assert.equal(JSON.stringify(leak.details.warnings).includes("asof"), false);
 assert.equal(JSON.stringify(leak.details.blockers).includes("asof"), false);
+// The registry's reference date is part of the key: same SQL, members and
+// inputs but a different registered date must not reuse the old record.
+const NO_SNAPSHOT = SOURCE.split("\n").map((line) => line.split(",").slice(0, 3).join(",")).join("\n");
+const regA = await scenario({ shadow: true, setWhere: LEAK, source: NO_SNAPSHOT, origin: "2020-01-01" });
+const regB = await scenario({ shadow: true, setWhere: LEAK, source: NO_SNAPSHOT, origin: "2024-06-30" });
+delete process.env.NEWSROOM_SHADOW_CHECKS;
+assert.equal(regA.record.probe.reference_source, "source_registry");
+assert.equal(regA.record.probe.reference_date, "2020-01-01");
+assert.equal(regB.record.probe.reference_date, "2024-06-30");
+assert.notEqual(regA.details.shadow_asof.path, regB.details.shadow_asof.path, "a different registry reference date is a different side file");
 console.log("asof probe: real infographic lint tool path -- PASS");
 console.log("test_asof_probe.mjs ok");

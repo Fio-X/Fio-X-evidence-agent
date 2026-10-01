@@ -1,10 +1,11 @@
 // Pure rules of shadow check B (runtime/pi/number_shadow.mjs) and the side-file
 // writer (runtime/pi/shadow.mjs).
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildCandidates, checkField, extractNumbers, summarizeChecks } from "../runtime/pi/number_shadow.mjs";
+import { loadNewsroom, REPO } from "./precision_harness.mjs";
 import { runShadow, shadowChecksEnabled, shadowKey, writeShadowRecord } from "../runtime/pi/shadow.mjs";
 
 const skipped = (text) => Object.fromEntries(extractNumbers(text).filter((entry) => entry.skipped).map((entry) => [entry.raw, entry.skipped]));
@@ -69,5 +70,54 @@ try {
   assert.match(first, /^shadow\/prose_numbers-[0-9a-f]{64}\.json$/);
 } finally {
   rmSync(root, { recursive: true, force: true });
+}
+
+// Column names that state their unit: "63亿" for 63.2 bn is a unit slip and
+// must stay unmatched, "632亿" and "63.2 billion" must match.
+const unitRows = buildCandidates([[{ country: "SG", fdi_2017_bn_usd: 63.2 }, { country: "KZ", fdi_2017_bn_usd: 20.7 }]]);
+const statusOf = (text) => checkField("takeaway", text, unitRows).map((entry) => entry.status);
+assert.deepEqual(statusOf("新加坡约63亿美元"), ["unmatched"], "the unit slip is caught");
+assert.deepEqual(statusOf("新加坡约632亿美元"), ["matched_rows"], "the right amount in the stated unit matches");
+assert.deepEqual(statusOf("Singapore took 63.2 billion dollars"), ["matched_rows"]);
+assert.deepEqual(statusOf("Singapore took 63.2"), ["matched_rows"]);
+// Records carry no surrounding text, only a position.
+for (const record of checkField("f", "see /Users/sentinel-home/x.csv sk-SENTINEL123456 for 7 items and 99%", unitRows)) {
+  assert.deepEqual(Object.keys(record).filter((key) => !["field", "raw", "offset", "status", "skipped_reason"].includes(key)), [], "no context copied into a record");
+}
+
+// Real viz lint with the switch on: takeaway and alt are checked, and the side
+// file carries neither the prose around a number nor a path or token-like
+// string (artificial sentinels; no real secret is read).
+{
+  const { readFileSync: read } = await import("node:fs");
+  const h = await loadNewsroom({ prefix: "number-shadow-", env: { NEWSROOM_SHADOW_CHECKS: "1" } });
+  try {
+    const timeline = JSON.parse(read(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
+    const file = h.addData("A", ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n");
+    const q = await h.query(`SELECT date, event FROM read_csv_auto('${file}')`);
+    const claim = await h.recordClaim("The timeline has dated milestones", [file], [q]);
+    const planRef = "visualizations/plans/p.json";
+    writeFileSync(join(h.art, planRef), JSON.stringify({
+      ...timeline.spec, claim_id: claim.claim_id, sql: `SELECT date, event FROM read_csv_auto('${file}') ORDER BY date`,
+      takeaway: "Singapore took about 63亿美元 of it.",
+      alt: "A timeline of four milestones, the last on a ladder of 9 steps.",
+      source_note: "Data: /Users/sentinel-home/secret-project/raw.csv, key sk-SENTINEL1234567890abcdef, bearer SENTINELTOKEN-XYZ, covering 7 itemsandmore.",
+    }));
+    const result = await h.tools.get("newsroom_viz_lint").execute("l", { plan_ref: planRef });
+    const sidePath = join(h.art, result.details.shadow.path);
+    const raw = read(sidePath, "utf8");
+    const record = JSON.parse(raw);
+    const byField = (name) => record.numbers.filter((entry) => entry.field === name);
+    assert.equal(byField("takeaway").find((entry) => entry.raw.startsWith("63"))?.status, "unmatched", "takeaway is checked");
+    assert.ok(byField("alt").some((entry) => entry.raw === "9"), "alt is checked");
+    assert.ok(byField("source_note").some((entry) => entry.raw === "7"), "source_note numbers are still checked");
+    for (const forbidden of ["sentinel-home", "secret-project", "raw.csv", "SENTINEL", "sk-", "bearer", "itemsandmore", "Singapore", "ladder", "milestones", "/Users/"]) {
+      assert.equal(raw.includes(forbidden), false, `the side file must not contain '${forbidden}'`);
+    }
+    assert.equal(JSON.stringify(result.details).includes("SENTINEL"), false);
+    assert.equal(result.content[0].text.includes("SENTINEL"), false, "nothing new reaches the model text (the plan text is not echoed either way)");
+  } finally {
+    rmSync(h.tmp, { recursive: true, force: true });
+  }
 }
 console.log("test_number_shadow.mjs ok");
