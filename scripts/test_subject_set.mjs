@@ -32,11 +32,12 @@ const shapes = {
 };
 for (const [shape, def] of Object.entries(shapes)) {
   const declared = { computation_ref: "computations/set.json", key_field: "c", cutoff_date: "2020-06-30" };
+  const dated = (rows, extra = {}) => chartAsset(rows, { cutoff_date: "2020-06-30", ...extra });
   const members = distinctSubjects(def.setRows, "c");
   assert.deepEqual(new Set(members), new Set(def.members));
   // must-fail 1: out-of-set subject, no caption
   {
-    const assets = { m0: chartAsset(rowsOf([...def.inside, def.extra])), m1: chartAsset(rowsOf(def.inside)) };
+    const assets = { m0: dated(rowsOf([...def.inside, def.extra])), m1: dated(rowsOf(def.inside)) };
     const out = subjectBlockers(lint(page([{}, {}], declared), assets, members));
     assert.equal(out.length, 1, `${shape}: ${out}`);
     assert.match(out[0], /subject_set_out_of_set_without_caption: visual 'v0'.*Zubrowka|Acme Holdings/);
@@ -47,6 +48,16 @@ for (const [shape, def] of Object.entries(shapes)) {
     const out = subjectBlockers(lint(page([{}], declared), assets, members));
     assert.equal(out.length, 1, `${shape}: ${out}`);
     assert.match(out[0], /subject_set_cutoff_mismatch/);
+  }
+  // must-fail 3: a chart that writes no cutoff date under a page that declares one
+  {
+    const assets = { m0: chartAsset(rowsOf(def.inside)), m1: dated(rowsOf(def.inside)) };
+    const out = subjectBlockers(lint(page([{}, {}], declared), assets, members));
+    assert.equal(out.length, 1, `${shape}: ${out}`);
+    assert.match(out[0], /^subject_set_cutoff_missing: visual 'v0' does not declare a cutoff_date but the page declares '2020-06-30'/);
+    // a blank date counts as missing too
+    const blank = { m0: chartAsset(rowsOf(def.inside), { cutoff_date: "  " }) };
+    assert.match(subjectBlockers(lint(page([{}], declared), blank, members))[0], /subject_set_cutoff_missing/);
   }
   // must-pass 1: caption present (and the same cutoff date written)
   {
@@ -63,7 +74,7 @@ for (const [shape, def] of Object.entries(shapes)) {
   }
   // must-pass 2: subjects are a subset of the set
   {
-    const assets = { m0: chartAsset(rowsOf(def.inside)) };
+    const assets = { m0: dated(rowsOf(def.inside)) };
     const spec = page([{}], declared);
     assert.deepEqual(subjectBlockers(lint(spec, assets, members)), [], shape);
     annotateSubjectSets(spec, assets, new Set(members));
@@ -71,12 +82,12 @@ for (const [shape, def] of Object.entries(shapes)) {
     assert.ok(!composeInfographicBundle(spec, assets, { mobilePages: false }).desktop.svg.includes("out-of-set-frame"));
   }
   // fail-closed: a declared set the runtime could not resolve, or an incomplete declaration
-  assert.match(subjectBlockers(lint(page([{}], declared), { m0: chartAsset(rowsOf(def.inside)) }, []))[0], /subject_set_unresolved/);
+  assert.match(subjectBlockers(lint(page([{}], declared), { m0: dated(rowsOf(def.inside)) }, []))[0], /subject_set_unresolved/);
   assert.match(subjectBlockers(lint(page([{}], { computation_ref: "x" }), { m0: chartAsset(rowsOf(def.inside)) }, members))[0], /subject_set_incomplete/);
   // model-written member lists are ignored: only runtime-supplied members count
   {
     const spec = page([{}], { ...declared, members: [def.extra] });
-    const assets = { m0: chartAsset(rowsOf([...def.inside, def.extra])) };
+    const assets = { m0: dated(rowsOf([...def.inside, def.extra])) };
     assert.equal(subjectBlockers(lint(spec, assets, members)).length, 1);
   }
 }
@@ -86,6 +97,10 @@ for (const [shape, def] of Object.entries(shapes)) {
   const a = { m0: chartAsset(rowsOf(["P", "Q", "R"])), m1: chartAsset(rowsOf(["Q", "R", "S"])) };
   const report = lint(page([{}, {}]), a);
   assert.deepEqual(subjectBlockers(report), []);
+  // must-pass: with no subject_set, charts with or without a cutoff_date behave as before (never a cutoff blocker)
+  assert.deepEqual(report.blockers.filter((b) => /cutoff/.test(b)), []);
+  const mixed = lint(page([{}, {}]), { m0: chartAsset(rowsOf(["P", "Q"]), { cutoff_date: "2019-01-01" }), m1: chartAsset(rowsOf(["P", "Q"])) });
+  assert.deepEqual(mixed.blockers.filter((b) => /cutoff/.test(b)), [], "no declared set: cutoff dates are not compared");
   assert.equal(report.warnings.filter((w) => w.startsWith("subject_sets_partially_overlap")).length, 1);
   const same = lint(page([{}, {}]), { m0: chartAsset(rowsOf(["P", "Q"])), m1: chartAsset(rowsOf(["Q", "P"])) });
   assert.equal(same.warnings.filter((w) => w.startsWith("subject_sets_partially_overlap")).length, 0, "equal sets: no warning");

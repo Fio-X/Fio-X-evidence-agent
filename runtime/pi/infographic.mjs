@@ -582,7 +582,10 @@ export function evaluateSubjectSets(spec, assets = {}, context = {}) {
     const asset = assets[module.manifest_ref];
     if (!asset) continue;
     const chartCutoff = String(asset.manifest?.cutoff_date ?? "").trim();
-    if (chartCutoff && chartCutoff !== cutoff) blockers.push(`subject_set_cutoff_mismatch: visual '${module.id}' writes cutoff date '${chartCutoff}' but the page declares '${cutoff}'`);
+    // A page that declares a cutoff date needs every chart to state the same one:
+    // a chart that says nothing cannot be shown to match.
+    if (!chartCutoff) blockers.push(`subject_set_cutoff_missing: visual '${module.id}' does not declare a cutoff_date but the page declares '${cutoff}'; set cutoff_date '${cutoff}' on the chart plan`);
+    else if (chartCutoff !== cutoff) blockers.push(`subject_set_cutoff_mismatch: visual '${module.id}' writes cutoff date '${chartCutoff}' but the page declares '${cutoff}'`);
     if (!Array.isArray(asset.subjects)) {
       if (asset.manifest?.category_field) blockers.push(`subject_set_unresolved: visual '${module.id}' subjects could not be read from its own rows`);
       continue;

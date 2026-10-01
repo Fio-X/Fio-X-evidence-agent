@@ -6753,4 +6753,146 @@ mod tests {
             assert!(!report.errors.is_empty(), "{extra}");
         }
     }
+    // verify_derived_input: one chain per fixture, one link broken per test.
+    struct DerivedFixture {
+        temp: tempfile::TempDir,
+        sha: String,
+        rows_path: String,
+        meta_path: PathBuf,
+        origin_path: PathBuf,
+    }
+
+    fn derived_fixture() -> DerivedFixture {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for dir in ["data/derived", "data/origins"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let pdf = b"%PDF-1.4 synthetic pdf bytes";
+        let sha = sha256_bytes(pdf);
+        let source_file = format!("data/{sha}.data");
+        fs::write(root.join(&source_file), pdf).unwrap();
+        let rows = br#"[{"page":1,"line":1,"x":0,"text":"Alpha  10"}]"#;
+        let rows_path = format!("data/derived/{sha}.pdf-rows.json");
+        fs::write(root.join(&rows_path), rows).unwrap();
+        let rows_sha = sha256_bytes(rows);
+        let meta_path = root.join(format!("data/derived/{sha}.pdf-rows.meta.json"));
+        let meta = serde_json::json!({
+            "kind": "pdf_row_table", "rows_file": rows_path, "rows_sha256": rows_sha,
+            "source_sha256": sha, "source_file": source_file,
+        });
+        fs::write(&meta_path, meta.to_string()).unwrap();
+        let origin_path = root.join("data/origins/origin.json");
+        let origin = serde_json::json!({
+            "file": source_file, "sha256": sha,
+            "derived_text": { "file": rows_path, "rows_sha256": rows_sha },
+        });
+        fs::write(&origin_path, origin.to_string()).unwrap();
+        DerivedFixture { temp, sha, rows_path, meta_path, origin_path }
+    }
+
+    fn rewrite_json(path: &Path, edit: impl FnOnce(&mut Value)) {
+        let mut value = read_json(path).unwrap();
+        edit(&mut value);
+        fs::write(path, value.to_string()).unwrap();
+    }
+
+    fn derived_error(fixture: &DerivedFixture) -> String {
+        verify_derived_input(fixture.temp.path(), &fixture.rows_path).expect_err("tampered chain must fail")
+    }
+
+    #[test]
+    fn derived_input_accepts_an_untouched_chain() {
+        let fixture = derived_fixture();
+        let source = verify_derived_input(fixture.temp.path(), &fixture.rows_path).unwrap();
+        assert_eq!(source, format!("data/{}.data", fixture.sha));
+    }
+
+    #[test]
+    fn derived_input_rejects_a_path_that_is_not_a_derived_table() {
+        let fixture = derived_fixture();
+        let err = verify_derived_input(fixture.temp.path(), "data/derived/stray.csv").unwrap_err();
+        assert_eq!(err, "not a recognised derived table path");
+    }
+
+    #[test]
+    fn derived_input_rejects_missing_meta() {
+        let fixture = derived_fixture();
+        fs::remove_file(&fixture.meta_path).unwrap();
+        assert!(derived_error(&fixture).starts_with("derived metadata unreadable:"));
+    }
+
+    #[test]
+    fn derived_input_rejects_missing_origin() {
+        let fixture = derived_fixture();
+        fs::remove_file(&fixture.origin_path).unwrap();
+        assert_eq!(derived_error(&fixture), "no download record binds this table to the PDF");
+    }
+
+    #[test]
+    fn derived_input_rejects_an_origin_that_does_not_bind_the_table() {
+        let fixture = derived_fixture();
+        rewrite_json(&fixture.origin_path, |origin| {
+            origin.as_object_mut().unwrap().remove("derived_text");
+        });
+        assert_eq!(derived_error(&fixture), "no download record binds this table to the PDF");
+    }
+
+    #[test]
+    fn derived_input_rejects_edited_rows_bytes() {
+        let fixture = derived_fixture();
+        fs::write(fixture.temp.path().join(&fixture.rows_path), br#"[{"page":1,"line":1,"x":0,"text":"Alphx  10"}]"#).unwrap();
+        assert_eq!(derived_error(&fixture), "derived table bytes do not match rows_sha256");
+    }
+
+    #[test]
+    fn derived_input_rejects_a_changed_source_pdf() {
+        let fixture = derived_fixture();
+        fs::write(fixture.temp.path().join(format!("data/{}.data", fixture.sha)), b"%PDF-1.4 tampered").unwrap();
+        assert_eq!(derived_error(&fixture), "source PDF bytes do not match source_sha256");
+    }
+
+    #[test]
+    fn derived_input_rejects_a_wrong_source_sha() {
+        let fixture = derived_fixture();
+        rewrite_json(&fixture.meta_path, |meta| meta["source_sha256"] = Value::from("0".repeat(64)));
+        assert_eq!(derived_error(&fixture), "derived table is not named for its source sha256");
+    }
+
+    #[test]
+    fn derived_input_rejects_a_rows_file_that_names_another_table() {
+        let fixture = derived_fixture();
+        let other = format!("data/derived/{}.pdf-rows.json", "1".repeat(64));
+        rewrite_json(&fixture.meta_path, |meta| meta["rows_file"] = Value::from(other));
+        assert_eq!(derived_error(&fixture), "derived metadata does not describe this table");
+    }
+
+    #[test]
+    fn derived_input_rejects_a_source_that_is_not_the_content_addressed_pdf() {
+        for source in [
+            // outside data/
+            format!("sources/{}.pdf", "a".repeat(64)),
+            // nested below data/
+            format!("data/nested/{}.data", "a".repeat(64)),
+            // under data/ but not named for the hash
+            "data/other.data".to_owned(),
+        ] {
+            let fixture = derived_fixture();
+            let source = source.replace(&"a".repeat(64), &fixture.sha);
+            rewrite_json(&fixture.meta_path, |meta| meta["source_file"] = Value::from(source.clone()));
+            assert_eq!(derived_error(&fixture), "source_file is not the content-addressed PDF", "{source}");
+        }
+    }
+
+    #[test]
+    fn derived_tables_walk_reports_a_broken_chain_and_ignores_meta_files() {
+        let fixture = derived_fixture();
+        let mut report = VerificationReport::default();
+        verify_derived_tables(fixture.temp.path(), &mut report);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        fs::remove_file(&fixture.origin_path).unwrap();
+        verify_derived_tables(fixture.temp.path(), &mut report);
+        assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+        assert!(report.errors[0].contains("failed its provenance chain: no download record binds this table to the PDF"));
+    }
 }
