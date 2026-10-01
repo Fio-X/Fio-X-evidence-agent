@@ -54,6 +54,9 @@ const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls 
 /// Adjustable: one sentence appended to the chart guidance in the visual delivery contract.
 const EMPHASIS_GUIDANCE: &str = "\nWhen a chart's title names a category or series, put that exact value in highlight_values.";
 
+/// Adjustable: appended after the complex visual delivery contract only.
+const HERO_STAT_REFERENCE_GUIDANCE: &str = "\nGive each hero_stat a short reference point in its label or detail, such as the same measure in another period, the total, or the next-ranked item, using only numbers from the rows of the claim it cites; if those rows hold none, leave the reference out instead of adding a number.";
+
 const CHAIN_VIZ_PARAGRAPH: &str = "\n\nChart chain: when `newsroom_viz_chain` is in your tool list it is the same chart path (plan, lint, render, critic) run in one call with the same parameters as `newsroom_viz_plan`; use it for each chart and send the chain calls for independent charts together. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
 
 const CHAIN_INFOGRAPHIC_PARAGRAPH: &str = "\n\nPage chain: when `newsroom_infographic_chain` is in your tool list it runs the page plan, lint, render, critic and preview in one call with the same parameters as `newsroom_infographic_plan`; use it for the page. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
@@ -103,6 +106,7 @@ pub fn investigation_with_options(
             prompt.push_str(
             "\nComplex visual delivery contract: this is a multi-module infographic/publication request. After the story graph and individual visual critics pass, complete the required editorial preflight in order: newsroom_editorial_discovery → newsroom_visual_concepts → newsroom_semantic_novelty → newsroom_asset_requirements. Pass those four returned editorial/* artifact refs to newsroom_infographic_plan; never substitute a computation, visualization, or story-graph ref for them. Then use the complete newsroom_infographic_plan/lint/render/critic chain followed by newsroom_infographic_preview → newsroom_infographic_vision_critic → newsroom_publication_plan → newsroom_publication_render → newsroom_publication_qa. The portable publication fallback is insufficient for this request and must not be used. A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request. The primary delivery must be an HTML page or one composed SVG; individual chart assets and JSON manifests are supporting files only. Preserve every explicitly requested evidence mode; do not replace a requested map, Sankey, trend, comparison, or network with prose because one attempted renderer rejects a form—route it to another qualified renderer. Compose complementary chart grammars into one visual argument and preserve hook/context/evidence/turn/resolution order. For editorial_grammar, provide the factual evidence features, cognitive goals, renderer capabilities, primary and supporting choices only; the tool computes candidate scores and decision records. newsroom_publication_qa saves full-page PNG screenshots at every declared viewport, so use it to satisfy PNG or screenshot requests. If the user requests PNG or screenshots, the run is incomplete until a PNG exists for every declared viewport. Never report story.json or a manifest as the visual itself.\n",
             );
+            prompt.push_str(HERO_STAT_REFERENCE_GUIDANCE);
             prompt.push_str(&visual_mode_contract(topic));
         }
     }
@@ -428,6 +432,25 @@ mod tests {
         assert!(with_viz.contains("newsroom_viz_chain") && !with_viz.contains("newsroom_infographic_chain"));
         assert!(with_page.contains("newsroom_infographic_chain") && !with_page.contains("newsroom_viz_chain"));
         assert!(off.contains("newsroom_viz_plan") && !off.contains("_chain"));
+    }
+
+    #[test]
+    fn hero_stat_reference_guidance_only_for_complex_visual_requests() {
+        for split in [false, true] {
+            let prompt = |topic: &str| investigation_with_classifier(topic, &[], split);
+            let complex = prompt(SCMP_LONG_IMAGE_GOAL);
+            assert!(complex.contains(HERO_STAT_REFERENCE_GUIDANCE));
+            assert!(complex.contains(EMPHASIS_GUIDANCE));
+            for topic in ["制作一个信息图", "make a chart", "summarize the source"] {
+                if is_complex_visual_request(topic) {
+                    continue;
+                }
+                assert!(
+                    !prompt(topic).contains(HERO_STAT_REFERENCE_GUIDANCE),
+                    "{topic}"
+                );
+            }
+        }
     }
 
     #[test]
