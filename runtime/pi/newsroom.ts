@@ -36,6 +36,9 @@ import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
+import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
+import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
+import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -230,7 +233,46 @@ async function readArtifactText(relativePath: string, requiredPrefix?: string) {
 // field of that chart's own computation rows), then restyles any chart that
 // goes beyond the set. Unreadable rows leave the subjects unset, which lint
 // reports as unresolved.
-async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
+async function resolveSubjectSets(spec: any, assets: Record<string, any>, shadowAsOfCheck: boolean = false) {
+  await resolveSubjectSetsCore(spec, assets);
+  // Shadow check A (off unless NEWSROOM_SHADOW_CHECKS=1): never changes the
+  // subjects or members resolved above; stashes {path, counts} on the assets,
+  // out of sight of lint, for the lint tool's details.
+  if (!shadowAsOfCheck || !shadowChecksEnabled()) return;
+  const shadow = await runShadow(() => shadowAsOf({
+    root: artifactRoot(), spec, assets, planRef: "", members: (assets as any).__subject_set_members,
+    deps: {
+      ...claimBindingDeps(),
+      serializeSql: (sql: string) => serializeSqlAst(sql),
+      describe: async (source: string) => (await queryDuckDb(`DESCRIBE SELECT * FROM ${source}`) as any[]).map((row) => ({ name: String(row.column_name), type: String(row.column_type) })),
+      query: (sql: string) => queryDuckDb(sql) as Promise<Record<string, unknown>[]>,
+      registryDate: (path: string) => registryDateFor(path),
+    },
+  }));
+  if (shadow) Object.defineProperty(assets, "__asof_shadow", { value: shadow, enumerable: false, configurable: true });
+}
+
+// The reference date of a data file from the source registry (data/origins/*.json
+// records that name the file), never from the clock. Null when none is recorded.
+async function registryDateFor(dataPath: string) {
+  const root = artifactRoot();
+  if (!root) return null;
+  let names: string[] = [];
+  try { names = (await readdir(join(root, "data", "origins"))).filter((name) => name.endsWith(".json")).sort(); } catch { return null; }
+  for (const name of names) {
+    try {
+      const record = JSON.parse(await readFile(join(root, "data", "origins", name), "utf8"));
+      if (record?.file !== dataPath) continue;
+      for (const field of REGISTRY_DATE_FIELDS) {
+        const value = String(record?.[field] ?? "").trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function resolveSubjectSetsCore(spec: any, assets: Record<string, any>) {
   const declared = spec?.subject_set;
   if (!declared || typeof declared !== "object") return;
   const readRows = async (ref: unknown) => {
@@ -258,7 +300,7 @@ async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
 // read from the manifest and never requested, matching newsroom_viz_render
 // and newsroom_explainer_render/newsroom_illustration_generate, which stop
 // producing one. Callers that don't pass mobilePages follow the live switch.
-async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled()) {
+async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled(), shadowAsOfCheck: boolean = false) {
   const assets: Record<string, any> = {};
   for (const module of spec?.modules ?? []) {
     if (module?.type === "visual") {
@@ -288,7 +330,7 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       assets[assetRef] = { manifest, critic, desktopSvg: await readArtifactText(desktopRef, "visualizations/illustrations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/illustrations/") } : {}) };
     }
   }
-  await resolveSubjectSets(spec, assets);
+  await resolveSubjectSets(spec, assets, shadowAsOfCheck);
   return assets;
 }
 
@@ -1194,6 +1236,12 @@ async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
   });
 }
 
+// Claim-to-chart binding (claim_binding.mjs): what each cited claim's
+// computations read versus what the chart's own computation reads.
+function claimBindingDeps() {
+  return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot(), serializeSql: (sql: string) => serializeSqlAst(sql) };
+}
+
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
   const sourceRefs = refs.filter((ref) => String(ref).startsWith("sources/") || String(ref).startsWith("data/"));
   const computationRefs = refs.filter((ref) => String(ref).startsWith("computations/"));
@@ -2089,12 +2137,20 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
       const verified = await verifiedClaimIds();
-      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)));
-      const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified });
+      const lintInputs = await deriveInputsForSql(spec.sql, signal);
+      const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
+      const vizClaimRecords = await verifiedClaimRecords();
       const inputSnapshot = await evidenceSnapshot();
+      const claimBindings = await bindClaimsToChart(
+        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
+        vizClaimIds,
+        vizClaimRecords,
+        claimBindingDeps(),
+      );
+      const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
+      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshotHash = inputSnapshot.hash;
       const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
-      const lintInputs = await deriveInputsForSql(spec.sql, signal);
       await writeArtifactIfAbsent(computationRef, {
         schema_version: "0.7.0",
         sql: spec.sql,
@@ -2117,6 +2173,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
         publishable: systemVerified,
       });
+      // Shadow check (off unless NEWSROOM_SHADOW_CHECKS=1): runs after every
+      // artifact above is written and only adds a side file plus details.shadow.
+      const vizShadow = shadowChecksEnabled()
+        ? await runShadow(() => shadowVizNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, chart: { rows, data_hash: lint.data_hash }, claimRecords: vizClaimRecords, deps: claimBindingDeps() }))
+        : null;
       const status = lint.passed ? "PASS" : "BLOCKED";
       const verificationText = systemVerified ? "VERIFIED / publishable after QA" : "DRAFT / exploratory only; not publishable";
       return textResult(`${status}: visualization lint\nPlan: ${params.plan_ref}\nLint: ${lintRef}\nVerification: ${verificationText}\nData hash: ${lint.data_hash}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_viz_render with plan_ref and lint_ref." : "Revise the visualization plan and lint again before rendering."}`, {
@@ -2128,6 +2189,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         warnings: lint.warnings,
         verificationMode: systemVerified ? "verified" : "draft",
         publishable: systemVerified,
+        ...(vizShadow ? { shadow: vizShadow } : {}),
       });
     },
   });
@@ -3100,7 +3162,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages);
+      const assets = await loadInfographicAssets(spec, mobilePages, true);
       const verified = await verifiedClaimIds();
       const verifiedRecords = await verifiedClaimRecords();
       const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
@@ -3120,7 +3182,31 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
         }
       }
-      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts });
+      // Per visual: every verified claim the page hangs on it (the manifest's
+      // own claim, module claim_id/claim_ids/claim_set, and each module
+      // annotation's claim) must bind to the visual's own computation.
+      const visualClaimBindings: Record<string, Record<string, any>> = {};
+      for (const module of spec.modules ?? []) {
+        if (module?.type !== "visual") continue;
+        const manifest = assets[String(module.manifest_ref ?? "")]?.manifest;
+        const claimIds = [...new Set([
+          manifest?.claim_id, module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? []),
+          ...((Array.isArray(module.annotations) ? module.annotations : []).map((annotation: any) => annotation?.claim_id)),
+        ].filter(Boolean).map(String))].filter((id) => verifiedRecords.has(id));
+        if (!claimIds.length) continue;
+        let chartState: any = manifest?.computation_ref
+          ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
+          : { input_binding: "legacy", effective_inputs: [] };
+        if (manifest?.computation_ref) {
+          // The numeric encoding fields come from the visual's own plan; an
+          // unreadable plan leaves them unknown and the direct-read relation fails closed.
+          let planSpec: any = null;
+          try { planSpec = await readArtifactJson(String(manifest.plan_ref ?? ""), "visualizations/plans/"); } catch { planSpec = null; }
+          chartState = { ...chartState, numeric_fields: planSpec ? numericFieldsOfSpec(planSpec) : undefined };
+        }
+        visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
+      }
+      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
       if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
@@ -3131,7 +3217,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes }));
       const lintRef = `infographics/lints/${key}.json`;
       await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes });
-      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings });
+      const igShadow = shadowChecksEnabled()
+        ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
+        : null;
+      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings, ...(igShadow ? { shadow: igShadow } : {}), ...((assets as any).__asof_shadow ? { shadow_asof: (assets as any).__asof_shadow } : {}) });
     },
   });
 
