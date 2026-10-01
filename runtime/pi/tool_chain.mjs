@@ -74,7 +74,8 @@ export class ChainStop extends Error {
 // The first step's own errors are thrown unchanged (a chain call fails exactly
 // like the direct call would); later steps' errors are reported with everything
 // the earlier steps already produced.
-export async function runToolChain({ steps, call, enabled, schemaOf, record = () => {}, state = {} }) {
+// signal: once aborted no further step starts; steps already produced stay.
+export async function runToolChain({ steps, call, enabled, schemaOf, record = () => {}, state = {}, signal }) {
   const done = [];
   const stop = (index, code, message, extra = {}) => ({
     status: "STOPPED",
@@ -86,8 +87,10 @@ export async function runToolChain({ steps, call, enabled, schemaOf, record = ()
     state,
     ...extra,
   });
+  const cancelled = (index, where) => stop(index, "CANCELLED", `the call was cancelled ${where}; no further step was started and the artifacts already produced were kept`);
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
+    if (signal?.aborted) return cancelled(index, "before " + step.name);
     if (!enabled(step.name)) {
       return stop(index, "TOOL_NOT_ENABLED", `${step.name} is not enabled in this phase/profile; the chain stops before it and does not bypass the restriction`);
     }
@@ -106,6 +109,7 @@ export async function runToolChain({ steps, call, enabled, schemaOf, record = ()
     let result;
     try {
       result = await call(step.name, params);
+      if (result?.isError === true) throw new Error(textOf(result) || `${step.name} returned an error result`);
     } catch (error) {
       await record({ phase: "end", step: index, tool: step.name, isError: true, error: String(error?.message ?? error) });
       if (index === 0) throw error;
@@ -114,13 +118,16 @@ export async function runToolChain({ steps, call, enabled, schemaOf, record = ()
     const details = result?.details && typeof result.details === "object" ? result.details : {};
     await record({ phase: "end", step: index, tool: step.name, isError: false, details });
     done.push({ tool: step.name, params, result, details });
+    // Refs are recorded even when cancelled, so the caller sees what was produced.
     step.absorb?.(details, state, result);
+    if (signal?.aborted) return { ...cancelled(index, `after ${step.name}`), nextTool: steps[index + 1]?.name ?? step.name, stoppedAfter: step.name };
     const verdict = step.judge(details, state, result);
     if (!verdict.ok) {
       return { ...stop(index, verdict.code, verdict.message ?? verdict.code), nextTool: verdict.nextTool ?? step.name, stoppedAfter: step.name };
     }
     if (verdict.after) {
       const extra = await verdict.after(done, state);
+      if (signal?.aborted) return { ...cancelled(index, `after ${step.name}`), nextTool: steps[index + 1]?.name ?? step.name, stoppedAfter: step.name };
       if (extra) return { ...stop(index, extra.code, extra.message), nextTool: extra.nextTool ?? steps[index + 1]?.name ?? step.name, stoppedAfter: step.name };
     }
   }
@@ -185,6 +192,8 @@ export function vizChainSteps({ modelComputationRef, claimComputationRefs }) {
       absorb: (details, state) => { state.manifestRef = details.manifestRef; },
       judge: (details) => {
         if (details.renderQaPassed !== true) return { ok: false, code: details.renderQaPassed === false ? "RENDER_QA_FAILED" : "MISSING_FIELD", message: details.renderQaPassed === false ? "render QA failed; the rejected render is kept" : "newsroom_viz_render returned no renderQaPassed field" };
+        // The render re-checks the claim: a draft render is never reported as a finished chain.
+        if (details.publishable === false) return { ok: false, code: "DRAFT", message: "the render is a DRAFT / not publishable at render time (the claim is no longer system-verified); the chain stops", nextTool: "newsroom_viz_plan" };
         if (typeof details.manifestRef !== "string" || !details.manifestRef) return { ok: false, code: "MISSING_FIELD", message: "newsroom_viz_render returned no manifestRef" };
         return { ok: true };
       },
@@ -286,6 +295,14 @@ export function infographicChainSteps({ visualClaimMismatch }) {
   ];
 }
 
+// Publishable comes from the steps after the plan (the render and critic read
+// the claim again), never from the plan's older answer. Undefined when none of
+// them reports it; true only when every reporting step says true.
+function currentPublishable(done) {
+  const reported = done.slice(1).map((entry) => entry.details?.publishable).filter((value) => typeof value === "boolean");
+  return reported.length ? reported.every((value) => value === true) : undefined;
+}
+
 // Builds the single result the model sees: each executed step's text verbatim,
 // the typed refs, and any image blocks passed through unchanged.
 export function chainResultFor(outcome, { chain, textResult, handoff }) {
@@ -303,7 +320,7 @@ export function chainResultFor(outcome, { chain, textResult, handoff }) {
     ...(complete ? {} : { failedAt: outcome.failedAt, stopCode: outcome.code, stopMessage: outcome.message, nextTool: outcome.nextTool }),
     steps: outcome.done.map((entry) => ({ tool: entry.tool, params: entry.params, details: entry.details })),
     ...refs,
-    ...(complete ? { passed: last.passed, score: last.score, publishable: outcome.done[0]?.details?.publishable } : {}),
+    ...(complete ? { passed: last.passed, score: last.score, publishable: currentPublishable(outcome.done) } : {}),
   });
   const images = outcome.done.flatMap((entry) => imagesOf(entry.result));
   return images.length ? { ...result, content: [...result.content, ...images] } : result;
