@@ -1676,6 +1676,12 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
   if (annotations(spec).length > 4) warnings.push(`Visualization has ${annotations(spec).length} annotations; editorial hierarchy may become crowded`);
+  if (["horizontal_bar", "bar"].includes(spec.chart_type) && (spec.highlight_values ?? []).length) {
+    // A declared emphasis that matches no category would silently draw an all-grey chart.
+    const categories = new Set(rows.map((row) => String(row[spec.category_field])));
+    const missing = spec.highlight_values.map(String).filter((v) => !categories.has(v));
+    if (missing.length) warnings.push(`highlight_values ${JSON.stringify(missing)} match no '${spec.category_field}' value, so those bars stay neutral`);
+  }
   if ((spec.highlight_values ?? []).length > 4) warnings.push(`Visualization highlights ${(spec.highlight_values ?? []).length} values; consider one primary focus and contextual series`);
 
   const rangeBrackets = annotations(spec).filter((a) => a?.type === "range_bracket");
@@ -2017,7 +2023,7 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (lint.passed === false || (lint.blockers ?? []).length) add("blocker", "lint_not_passed", "Deterministic visualization lint has blocking failures.", 100, "Resolve every deterministic lint blocker before editorial review.");
   if (String(spec.title ?? "").length > 95) add("warning", "title_too_long", "Title is longer than 95 characters and may wrap heavily on mobile.", 8, "Shorten the title to one evidence-backed takeaway.");
   if (String(spec.subtitle ?? "").length > 180) add("warning", "subtitle_too_long", "Subtitle is too dense for a chart dek.", 5, "Move methodology details to the note and keep the subtitle focused on denominator and period.");
-  if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
+  if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
   if ((spec.highlight_values ?? []).length > 4) add("warning", "too_many_highlights", "Too many marks compete for attention.", 10, "Reduce highlights to one primary focus and a small number of comparisons.");
   if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
   if (annotations(spec).length > 4) add("warning", "annotation_density", "More than four annotations are likely to compete with the data.", 9, "Keep only annotations that identify, compare, summarize, or explain the governing claim.");
@@ -2375,20 +2381,30 @@ function svgTextLines(parts, text, x, y, opts = {}) {
   return lines.length * lineHeight;
 }
 
-function frame(spec, bodyHeight) {
-  const width = 1040;
-  const titleLines = headlineWrap(spec.title, 62, true).length;
-  const dekLines = spec.subtitle ? wrapText(spec.subtitle, 105).length : 0;
+// The width the desktop-family renderers lay out in. 1040 is the desktop
+// chart; renderVizCompactSvg temporarily sets it to COMPACT_VIEW_W so the
+// same renderers re-lay the chart out for an 8-of-12-column slot (text keeps
+// its house-style pixel size; nothing is scaled). Every width-derived value
+// below equals its old literal at 1040, so desktop output is unchanged.
+const DESKTOP_VIEW_W = 1040;
+let LAYOUT_W = DESKTOP_VIEW_W;
+// Characters per wrapped line, scaled to the plot's text width (932 at desktop).
+const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16, Math.floor((chars * (LAYOUT_W - 108)) / 932)));
+
+function frame(spec, bodyHeight, minHeight = 420) {
+  const width = LAYOUT_W;
+  const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
+  const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const footer = 70 + (spec.note ? wrapText(spec.note, 120).length * 16 : 0);
-  const height = Math.max(420, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">`];
+  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
+  const height = Math.max(minHeight, header + bodyHeight + footer);
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
   let y = 38;
-  y += svgTextLines(parts, spec.title, 54, y, { size: 28, lineHeight: 34, weight: 700, maxChars: 62, font: FONT_TITLE, headline: true });
-  if (spec.subtitle) y += svgTextLines(parts, spec.subtitle, 54, y + 2, { size: 15, lineHeight: 21, fill: PALETTE.muted, maxChars: 105 });
+  y += svgTextLines(parts, spec.title, 54, y, { size: 28, lineHeight: 34, weight: 700, maxChars: wrapChars(62), font: FONT_TITLE, headline: true });
+  if (spec.subtitle) y += svgTextLines(parts, spec.subtitle, 54, y + 2, { size: 15, lineHeight: 21, fill: PALETTE.muted, maxChars: wrapChars(105) });
   y += 14;
   const bodyTop = y;
   const bodyBottom = height - footer;
@@ -2399,16 +2415,16 @@ function frame(spec, bodyHeight) {
     bodyTop,
     bodyBottom,
     footerTop: height - footer + 15,
-    annotationLayout: createAnnotationLayout({ left: 54, right: 986, top: bodyTop + 4, bottom: bodyBottom - 8 }),
+    annotationLayout: createAnnotationLayout({ left: 54, right: width - 54, top: bodyTop + 4, bottom: bodyBottom - 8 }),
   };
 }
 
 function addFooter(parts, spec, footerTop) {
   const t = VIZ_STRINGS[vizLang(spec)];
-  parts.push(`<line x1="54" y1="${footerTop - 16}" x2="986" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
-  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 120 });
-  svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 120 });
+  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
+  svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
 }
 
 // Strips any leading source-label prefix the input data already carries
@@ -2661,7 +2677,9 @@ export function lineAxisDomain(values, includeZero = false, count = 4) {
   if (includeZero) min = Math.min(0, min);
   if (min === max) { min -= 1; max += 1; }
   const step = niceAxisStep((max - min) / count);
-  const niceMin = includeZero ? 0 : Math.floor(min / step) * step;
+  // includeZero pins the floor at 0 only when no value is below it; a series
+  // with negatives needs its nice floor below zero or points leave the axis.
+  const niceMin = includeZero && min >= 0 ? 0 : Math.floor(min / step) * step;
   const niceMax = Math.ceil(max / step) * step;
   return [niceMin, niceMax];
 }
@@ -2901,15 +2919,44 @@ function renderHorizontal(spec, rows, mode) {
   const refMargin = referenceLineMargin(refLines);
   const rangeBrackets = spec.chart_type === "diverging_bar" ? [] : rangeBracketAnnotations(spec);
   const bracketMargin = rangeBracketMargin(rangeBrackets);
-  const bodyHeight = Math.max(230, sorted.length * 38 + 45) + refMargin;
-  const f = frame(spec, bodyHeight);
+  // Tight layout (house style, horizontal_bar only): the label column, the
+  // right edge and the blank band under the bars come from the labels'
+  // actual sizes instead of the fixed 250 / 955 / 230-minimum constants.
+  const tight = HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar";
+  const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin;
+  const f = frame(spec, bodyHeight, tight ? 300 : 420);
   const base = f.bodyTop + 4;
-  const left = 250, right = 955 - bracketMargin, top = base + refMargin, bottom = f.bodyBottom - 34;
+  let left = 250, right = 955 - bracketMargin, catX = 235;
+  const top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.map((r) => n(r[valueField])).filter((v) => v !== null);
   // Fix 2: every row's direct value label in this chart shares one decimal
   // count (see resolveChartDecimals) - resolved once, up front, from every
   // value the chart will actually display, not per-label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  let categoryLabels = null;
+  if (tight) {
+    const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
+    const maxCatUnits = Math.max(6, Math.floor((LAYOUT_W * 0.4 - 69) / PX));
+    categoryLabels = sorted.map((row) => {
+      const name = String(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)));
+      // Never cut a name: one that does not fit the label column is folded
+      // onto a second line (a row is 38px, two 12px lines fit). If the second
+      // line is still too wide the text runs past the column and render QA
+      // blocks the chart; it is not shortened.
+      if (textUnits(name) <= maxCatUnits) return [name];
+      const head = sliceUnits(name, maxCatUnits);
+      const space = head.lastIndexOf(" ");
+      const cut = space > head.length * 0.4 ? space : head.length;
+      return [name.slice(0, cut).trimEnd(), name.slice(cut).trimStart()];
+    });
+    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: fmtSpec(spec, v, i > 0 ? "" : spec.unit, labelDecimals) }; });
+    const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
+    const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
+    const negW = widest((v) => v < 0), posW = widest((v) => v >= 0);
+    catX = 54 + catW;
+    left = catX + 15 + (negW ? negW + 9 : 0);
+    right = LAYOUT_W - 54 - bracketMargin - (posW ? posW + 9 : 0);
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
@@ -2932,7 +2979,8 @@ function renderHorizontal(spec, rows, mode) {
     const value = n(row[valueField]);
     if (value === null) return;
     const y = top + step * i + step * 0.5;
-    f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
+    const catLines = categoryLabels ? categoryLabels[i] : [resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec))];
+    catLines.forEach((line, k) => f.parts.push(`<text x="${catX}" y="${catLines.length > 1 ? y - 3 + k * 14 : y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`));
     const x = scale(value);
     const highlighted = (spec.highlight_values ?? []).map(String).includes(String(row[spec.category_field]));
     const fill = highlighted ? PALETTE.accent : PALETTE.context;
@@ -3115,11 +3163,45 @@ function layoutLineEndLabel(name, valueText, pointX, trueEdge, gap, pxPerUnit) {
 }
 
 function renderLine(spec, rows, multi = false) {
-  const left = 100, right = 940;
+  let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
   const seriesNames = seriesField ? unique(rows.map((r) => r[seriesField])) : ["series"];
   const xValues = sortX(unique(rows.map((r) => r[spec.x_field])));
   const xIndex = new Map(xValues.map((v, i) => [String(v), i]));
+  // Tight layout (house style): the y-tick column on the left and the
+  // end-label band on the right are sized from the real label text instead
+  // of the fixed 100 / (width - 100) constants. A label too wide for its
+  // band still wraps onto two lines (layoutLineEndLabel), so the band is
+  // capped at a share of the width.
+  const tight = HOUSE_STYLE_ACTIVE;
+  const lineSeriesGroup = (series) => rows.filter((r) => !seriesField || String(r[seriesField]) === series).sort((a, b) => xIndex.get(String(a[spec.x_field])) - xIndex.get(String(b[spec.x_field])));
+  const lineEndValues = seriesNames.map((series) => { const g = lineSeriesGroup(series); const last = g[g.length - 1]; return last ? n(last[spec.value_field]) : null; }).filter((v) => v !== null);
+  const labelDecimals = resolveChartDecimals(spec, lineEndValues);
+  if (tight) {
+    const PX = 6.8;
+    const earlyValues = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
+    const earlyTicks = lineAxisTicks(lineAxisDomain(earlyValues, spec.unit === "%", 4), 4);
+    const tickPx = Math.max(0, ...earlyTicks.map((tick, i) => textUnits(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, earlyTicks.length))) * PX));
+    left = Math.ceil(54 + tickPx + 12);
+    let band = 46;
+    if (multi && spec.direct_labels !== false) {
+      // A label that fits the 30% share sits on one line; a wider one splits
+      // (layoutLineEndLabel) and then needs the width of its longer line, up
+      // to 45% of the chart. Beyond that the text still crosses the line and
+      // render QA blocks the chart.
+      const oneLineCap = Math.floor(LAYOUT_W * 0.3);
+      const widest = Math.max(0, ...seriesNames.map((series) => {
+        const g = lineSeriesGroup(series); const last = g[g.length - 1];
+        const value = last ? n(last[spec.value_field]) : null;
+        const name = resolveEconomyDisplayName(series, spec.category_names, vizLang(spec));
+        const valueText = value === null ? "" : fmtSpec(spec, value, spec.unit, labelDecimals);
+        const oneLine = textUnits(value === null ? name : `${name} ${valueText}`) * PX + 14;
+        return oneLine <= oneLineCap ? oneLine : Math.max(textUnits(name), textUnits(valueText)) * PX + 14;
+      }));
+      band = Math.min(Math.max(band, Math.ceil(widest)), Math.floor(LAYOUT_W * 0.45));
+    }
+    right = LAYOUT_W - 54 - band;
+  }
   const xScale = (value) => xValues.length <= 1 ? (left + right) / 2 : left + (xIndex.get(String(value)) / (xValues.length - 1)) * (right - left);
   // Decide the event-annotation layout (lane vs. numbered-marker fallback)
   // before choosing a frame height: it only needs x positions and text
@@ -3128,10 +3210,10 @@ function renderLine(spec, rows, multi = false) {
   // 986 is the frame's own established safe-text right margin (see frame()'s
   // annotationLayout/footer rule) - wider than the plot's own right edge
   // (`right`, 940), which otherwise-empty margin a lane label may use.
-  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, 986);
+  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, LAYOUT_W - 54);
   const captionExtra = eventLayout.fallback && eventLayout.events.length ? eventLayout.events.length * 16 + 22 : 0;
   const f = frame(spec, 380 + captionExtra);
-  const bottom = f.bodyBottom - 48 - captionExtra;
+  const bottom = f.bodyBottom - (tight ? 40 : 48) - captionExtra;
   const hasLane = eventLayout.events.length > 0 && !eventLayout.fallback;
   const laneTop = f.bodyTop + 15 + (HOUSE_STYLE_ACTIVE ? TOP_TICK_CLEARANCE : 0);
   const rowsUsed = hasLane ? (eventLayout.events.some((e) => e.laneRow === 1) ? 2 : 1) : 0;
@@ -3187,9 +3269,6 @@ function renderLine(spec, rows, multi = false) {
   // decimal count - resolved once, up front, from every series' final
   // value, not per-label. Axis ticks above already went through tickLabel()'s
   // own separate nice-number formatting and are unaffected by this.
-  const lineSeriesGroup = (series) => rows.filter((r) => !seriesField || String(r[seriesField]) === series).sort((a, b) => xIndex.get(String(a[spec.x_field])) - xIndex.get(String(b[spec.x_field])));
-  const lineEndValues = seriesNames.map((series) => { const g = lineSeriesGroup(series); const last = g[g.length - 1]; return last ? n(last[spec.value_field]) : null; }).filter((v) => v !== null);
-  const labelDecimals = resolveChartDecimals(spec, lineEndValues);
   seriesNames.forEach((series, seriesIndex) => {
     const group = lineSeriesGroup(series);
     const highlighted = !multi || (spec.highlight_values ?? []).map(String).includes(String(series));
@@ -3253,12 +3332,12 @@ function renderLine(spec, rows, multi = false) {
       // its own point. Legacy, and the value === null case common to both
       // styles, keep this single clamped line exactly as before.
       const lines = HOUSE_STYLE_ACTIVE && valueText !== null
-        ? layoutLineEndLabel(name, valueText, pointX, 1040, 7, 6.8)
-        : [{ text, x: Math.min(1032 - textUnits(text) * 6.8, pointX + 7) }];
+        ? layoutLineEndLabel(name, valueText, pointX, LAYOUT_W, 7, 6.8)
+        : [{ text, x: Math.min(LAYOUT_W - 8 - textUnits(text) * 6.8, pointX + 7) }];
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(972, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="direct-label" x="${Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
     }
   });
   if (multi && spec.direct_labels !== false) {
@@ -7536,9 +7615,37 @@ export function renderVizMobileSvg(spec, rows) {
   }
 }
 
-export function renderVizBundle(spec, rows, { mobilePages = true } = {}) {
+// The 8-of-12-column chart. 822 is the pixel width of an 8-column slot on the
+// 1440px infographic page (see infographic.mjs layoutDesktop), so the page
+// embeds this SVG at scale ~1.0 and the chart keeps its 12px house-style text.
+export const COMPACT_VIEW_W = 822;
+// Only these are re-laid out for the slot; any other chart type has no
+// compact variant, so the page lint keeps blocking it in a narrow slot.
+export const COMPACT_CHART_TYPES = new Set(["horizontal_bar", "line", "multi_line"]);
+
+export function hasCompactVariant(spec) {
+  return COMPACT_CHART_TYPES.has(spec?.chart_type);
+}
+
+// The same desktop renderers, re-laid out (not scaled) for COMPACT_VIEW_W.
+export function renderVizCompactSvg(spec, rows) {
+  if (!hasCompactVariant(spec)) throw new Error(`No compact variant for chart_type '${spec?.chart_type}'`);
+  const previousLayoutW = LAYOUT_W;
+  LAYOUT_W = COMPACT_VIEW_W;
+  try {
+    return renderVizSvg(spec, rows);
+  } finally {
+    LAYOUT_W = previousLayoutW;
+  }
+}
+
+// compact: also render the 8-column variant (desktop-only pages; the caller
+// decides). Absent unless asked for, so every existing caller is unchanged.
+export function renderVizBundle(spec, rows, { mobilePages = true, compact = false } = {}) {
   const desktop = renderVizSvg(spec, rows);
-  return mobilePages ? { desktop, mobile: renderVizMobileSvg(spec, rows) } : { desktop };
+  const bundle = mobilePages ? { desktop, mobile: renderVizMobileSvg(spec, rows) } : { desktop };
+  if (compact && hasCompactVariant(spec)) bundle.compact = renderVizCompactSvg(spec, rows);
+  return bundle;
 }
 
 export function renderVizSvg(spec, rows) {

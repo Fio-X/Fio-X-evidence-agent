@@ -175,7 +175,7 @@ const preflightIo = {
       const assets = await loadInfographicAssets(spec, mobilePages);
       for (const [ref, asset] of Object.entries(assets) as any) {
         const expected = lint.asset_hashes?.[ref];
-        if (!expected || sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256)) return false;
+        if (!expected || sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) return false;
       }
       return true;
     } catch { return false; }
@@ -436,7 +436,16 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       // exemption can independently check a choropleth's value_labels proof
       // without a second artifact read of its own.
       const renderQa = manifest.render_qa_ref ? await readArtifactJson(String(manifest.render_qa_ref), "visualizations/qa/") : null;
-      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: await readArtifactText(desktopRef, "visualizations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/") } : {}) };
+      const desktopSvgText = await readArtifactText(desktopRef, "visualizations/");
+      // The 8-column variant (desktop-only pages): read it and re-check its bytes against the hash
+      // the manifest recorded and the one render QA covered, so a swapped file never reaches a page.
+      let compactSvgText: string | undefined;
+      if (!mobilePages && manifest?.variants?.compact) {
+        compactSvgText = await readArtifactText(String(manifest.variants.compact), "visualizations/");
+        const compactSha = sha256Hex(compactSvgText);
+        if (compactSha !== manifest.hashes?.compact_sha256 || compactSha !== renderQa?.viewports?.compact?.svg_sha256) throw new Error(`Visualization manifest '${manifestRef}' compact SVG does not match its recorded hash and render QA report`);
+      }
+      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: desktopSvgText, ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/") } : {}), ...(compactSvgText !== undefined ? { compactSvg: compactSvgText } : {}) };
     } else if (module?.type === "illustration") {
       const assetRef = String(module.asset_ref ?? "");
       if (!assetRef) continue;
@@ -456,7 +465,7 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
 // Turns one viewport of a render-QA report (runtime/pi/render_qa.mjs) into
 // critic-shaped issues. Unmeasured elements never appear here - by design,
 // they never fail a viewport and are not actionable editorial guidance.
-function renderQaIssueList(viewportReport: any, viewport: "desktop" | "mobile") {
+function renderQaIssueList(viewportReport: any, viewport: "desktop" | "mobile" | "compact") {
   const issues: any[] = [];
   for (const failure of viewportReport?.geometry?.failures ?? []) {
     issues.push({ severity: "blocker", code: `render_qa_${failure.rule}`, message: failure.message, viewport });
@@ -476,13 +485,17 @@ function renderQaIssueList(viewportReport: any, viewport: "desktop" | "mobile") 
 // mobile is optional: newsroom_viz_render and newsroom_infographic_render
 // both omit it when phone pages are off, and then only
 // <dir>/rejected/<key>/desktop.svg plus render-qa.json are written.
-async function writeRejectedRender(dir: "visualizations" | "infographics", key: string, desktop: string, mobile: string | undefined, renderQa: any) {
+async function writeRejectedRender(dir: "visualizations" | "infographics", key: string, desktop: string, mobile: string | undefined, renderQa: any, compact?: string) {
   const base = `${dir}/rejected/${key}`;
-  const refs: { desktopSvgRef: string; mobileSvgRef?: string; renderQaRef: string } = { desktopSvgRef: `${base}/desktop.svg`, renderQaRef: `${base}/render-qa.json` };
+  const refs: { desktopSvgRef: string; mobileSvgRef?: string; compactSvgRef?: string; renderQaRef: string } = { desktopSvgRef: `${base}/desktop.svg`, renderQaRef: `${base}/render-qa.json` };
   await writeArtifactIfAbsent(refs.desktopSvgRef, desktop);
   if (mobile !== undefined) {
     refs.mobileSvgRef = `${base}/mobile.svg`;
     await writeArtifactIfAbsent(refs.mobileSvgRef, mobile);
+  }
+  if (compact !== undefined) {
+    refs.compactSvgRef = `${base}/compact.svg`;
+    await writeArtifactIfAbsent(refs.compactSvgRef, compact);
   }
   await writeArtifactIfAbsent(refs.renderQaRef, renderQa);
   return refs;
@@ -495,7 +508,7 @@ async function writeRejectedRender(dir: "visualizations" | "infographics", key: 
 // renderQa.viewports and refs.mobileSvgRef both omit mobile together (a
 // viz or infographic render with phone pages off), so this walks whatever viewport
 // keys are actually present instead of assuming desktop+mobile.
-function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobileSvgRef?: string; renderQaRef: string }) {
+function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobileSvgRef?: string; compactSvgRef?: string; renderQaRef: string }) {
   const messages: string[] = [];
   for (const viewport of Object.keys(renderQa.viewports)) {
     const report = renderQa.viewports[viewport];
@@ -505,7 +518,7 @@ function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobil
   const shown = messages.slice(0, 5);
   const remainder = messages.length - shown.length;
   const more = remainder > 0 ? `\n(+${remainder} more failure(s); see ${refs.renderQaRef})` : "";
-  const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
+  const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef, refs.compactSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
   return `REVISE: render QA failed (${renderQa.failure_count} failure${renderQa.failure_count === 1 ? "" : "s"})
 ${shown.map((message) => `- ${message}`).join("\n")}${more}
 No manifest was written: this render cannot be critiqued or published.
@@ -1468,6 +1481,24 @@ function claimBindingDeps() {
   return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot(), serializeSql: (sql: string) => serializeSqlAst(sql) };
 }
 
+// The one claim-binding judgement for a chart: the viz lint and the viz chain
+// both call this, so the chain can never be looser or stricter than the lint.
+async function vizClaimBindings(spec: any, signal?: AbortSignal) {
+  const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
+  const verified = await verifiedClaimIds();
+  const lintInputs = await deriveInputsForSql(spec.sql, signal);
+  const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
+  const vizClaimRecords = await verifiedClaimRecords();
+  const inputSnapshot = await evidenceSnapshot();
+  const claimBindings = await bindClaimsToChart(
+    { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
+    vizClaimIds,
+    vizClaimRecords,
+    claimBindingDeps(),
+  );
+  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords };
+}
+
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
   const sourceRefs = refs.filter((ref) => String(ref).startsWith("sources/") || String(ref).startsWith("data/"));
   const computationRefs = refs.filter((ref) => String(ref).startsWith("computations/"));
@@ -1523,17 +1554,22 @@ function registerVizChain(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       ...(planTool.parameters?.properties ?? {}),
-      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It is compared with the verified result and rejected on mismatch." })),
+      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It must be the computation the chart produces or one its SQL reads; any other value is rejected, never overridden." })),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
-      const claimId = String(planParams.claim_id ?? "");
       const outcome = await runToolChain({
         steps: vizChainSteps({
           modelComputationRef,
-          claimComputationRefs: async () => {
-            const claim = (await verifiedClaimRecords()).get(claimId);
-            return Array.isArray(claim?.computation_refs) ? claim.computation_refs.map(String) : [];
+          claimBinding: async (planRef: string) => {
+            const spec = await readArtifactJson(planRef, "visualizations/plans/");
+            const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
+            return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
+          },
+          chartReadComputationRefs: async (planRef: string) => {
+            const spec = await readArtifactJson(planRef, "visualizations/plans/");
+            const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
+            return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
           },
         }),
         state: { planParams },
@@ -2600,18 +2636,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
-      const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
-      const verified = await verifiedClaimIds();
-      const lintInputs = await deriveInputsForSql(spec.sql, signal);
-      const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
-      const vizClaimRecords = await verifiedClaimRecords();
-      const inputSnapshot = await evidenceSnapshot();
-      const claimBindings = await bindClaimsToChart(
-        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
-        vizClaimIds,
-        vizClaimRecords,
-        claimBindingDeps(),
-      );
+      const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshotHash = inputSnapshot.hash;
@@ -2681,7 +2706,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const systemVerified = Boolean(spec.claim_id && (await verifiedClaimIds()).includes(String(spec.claim_id)));
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
-      const bundle = renderVizBundle(spec, rows, { mobilePages });
+      // Desktop-only pages also get the 8-column variant for the chart types that have one.
+      const bundle = renderVizBundle(spec, rows, { mobilePages, compact: !mobilePages });
       // The same plan_ref+data_hash must not collide across a mobile-pages
       // toggle if the same artifact directory is reused between runs (the
       // manifest's variants/hashes shape differs); omitted rather than
@@ -2711,9 +2737,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
               },
             }
           : {};
-      const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}) }, renderQaOptions);
+      const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}), ...(bundle.compact !== undefined ? { compact: bundle.compact } : {}) }, renderQaOptions);
       if (!renderQa.passed) {
-        const rejected = await writeRejectedRender("visualizations", key, bundle.desktop, mobilePages ? bundle.mobile : undefined, renderQa);
+        const rejected = await writeRejectedRender("visualizations", key, bundle.desktop, mobilePages ? bundle.mobile : undefined, renderQa, bundle.compact);
         return textResult(renderQaFailureText(renderQa, rejected), {
           ...rejected,
           dataHash: currentHash,
@@ -2730,6 +2756,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       if (mobilePages) {
         mobileSvgRef = `visualizations/${key}.mobile.svg`;
         await writeArtifactIfAbsent(mobileSvgRef, bundle.mobile);
+      }
+      let compactSvgRef: string | undefined;
+      if (bundle.compact !== undefined) {
+        compactSvgRef = `visualizations/${key}.compact.svg`;
+        await writeArtifactIfAbsent(compactSvgRef, bundle.compact);
       }
       const renderQaRef = `visualizations/qa/${key}.json`;
       await writeArtifactIfAbsent(renderQaRef, renderQa);
@@ -2753,7 +2784,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         data_hash: currentHash,
         row_count: rows.length,
         svg: desktopSvgRef,
-        variants: mobilePages ? { desktop: desktopSvgRef, mobile: mobileSvgRef } : { desktop: desktopSvgRef },
+        variants: mobilePages ? { desktop: desktopSvgRef, mobile: mobileSvgRef } : { desktop: desktopSvgRef, ...(compactSvgRef ? { compact: compactSvgRef } : {}) },
+        ...(compactSvgRef ? { hashes: { desktop_sha256: sha256Hex(bundle.desktop), compact_sha256: sha256Hex(bundle.compact as string) } } : {}),
         render_qa_ref: renderQaRef,
         render_qa: { passed: renderQa.passed, failure_count: renderQa.failure_count },
         sql: spec.sql,
@@ -2781,6 +2813,7 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
           svgRef: desktopSvgRef,
           desktopSvgRef,
           ...(mobilePages ? { mobileSvgRef } : {}),
+          ...(compactSvgRef ? { compactSvgRef } : {}),
           manifestRef,
           renderQaRef,
           dataHash: currentHash,
@@ -2824,7 +2857,18 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
       const mobileRef = mobilePages ? (manifest?.variants?.mobile ?? null) : null;
       const desktopSvg = await readArtifactText(desktopRef, "visualizations/");
       const renderQaReport = await readArtifactJson(String(manifest.render_qa_ref), "visualizations/qa/");
+      // The 8-column variant is bound by hash exactly like the desktop one: the file must still be
+      // the bytes the manifest hashed and the render QA report checked, or the critic refuses.
+      const compactRef = manifest?.variants?.compact ? String(manifest.variants.compact) : null;
+      let compactSvg: string | null = null;
+      if (compactRef) {
+        compactSvg = await readArtifactText(compactRef, "visualizations/");
+        const compactSha = sha256Hex(compactSvg);
+        if (compactSha !== manifest.hashes?.compact_sha256 || compactSha !== renderQaReport.viewports?.compact?.svg_sha256) throw new Error("Compact visualization SVG does not match its manifest hash and render QA report; re-render the visualization");
+      }
+      if (manifest.hashes?.desktop_sha256 && sha256Hex(desktopSvg) !== manifest.hashes.desktop_sha256) throw new Error("Desktop visualization SVG does not match its manifest hash; re-render the visualization");
       const desktopCritic = critiqueViz(spec, rows, lint, desktopSvg);
+      const compactCritic = compactSvg !== null ? critiqueViz(spec, rows, lint, compactSvg) : null;
       const mobileCritic = !mobilePages ? null : mobileRef
         ? critiqueViz(spec, rows, lint, await readArtifactText(mobileRef, "visualizations/"))
         : {
@@ -2836,21 +2880,23 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
           };
       const renderQaIssues = renderQaReport.passed
         ? []
-        : [...renderQaIssueList(renderQaReport.viewports.desktop, "desktop"), ...(mobilePages ? renderQaIssueList(renderQaReport.viewports.mobile, "mobile") : [])];
+        : [...renderQaIssueList(renderQaReport.viewports.desktop, "desktop"), ...(mobilePages ? renderQaIssueList(renderQaReport.viewports.mobile, "mobile") : []), ...(compactCritic ? renderQaIssueList(renderQaReport.viewports.compact, "compact") : [])];
       const criticResult = {
         schema_version: "0.9.0",
-        passed: mobilePages ? (desktopCritic.passed && mobileCritic.passed && renderQaReport.passed) : (desktopCritic.passed && renderQaReport.passed),
-        score: mobilePages ? Math.min(desktopCritic.score, mobileCritic.score) : desktopCritic.score,
-        viewports: mobilePages ? { desktop: desktopCritic, mobile: mobileCritic } : { desktop: desktopCritic },
+        passed: mobilePages ? (desktopCritic.passed && mobileCritic.passed && renderQaReport.passed) : (desktopCritic.passed && (compactCritic ? compactCritic.passed : true) && renderQaReport.passed),
+        score: mobilePages ? Math.min(desktopCritic.score, mobileCritic.score) : compactCritic ? Math.min(desktopCritic.score, compactCritic.score) : desktopCritic.score,
+        viewports: mobilePages ? { desktop: desktopCritic, mobile: mobileCritic } : { desktop: desktopCritic, ...(compactCritic ? { compact: compactCritic } : {}) },
         issues: [
           ...desktopCritic.issues.map((issue: any) => ({ ...issue, viewport: "desktop" })),
           ...(mobilePages ? mobileCritic.issues.map((issue: any) => ({ ...issue, viewport: "mobile" })) : []),
+          ...(compactCritic ? compactCritic.issues.map((issue: any) => ({ ...issue, viewport: "compact" })) : []),
           ...renderQaIssues,
         ],
         suggestions: [
           ...new Set([
             ...desktopCritic.suggestions,
             ...(mobilePages ? mobileCritic.suggestions : []),
+            ...(compactCritic ? compactCritic.suggestions : []),
             ...(renderQaReport.passed ? [] : ["Render QA failed: shorten labels, reduce categories, or choose another chart type, then render again."]),
           ]),
         ],
@@ -3656,6 +3702,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
         ...(mobilePages ? { mobile_sha256: sha256Hex(asset.mobileSvg) } : {}),
+        ...(asset.compactSvg !== undefined ? { compact_sha256: sha256Hex(asset.compactSvg) } : {}),
         data_hash: asset.manifest?.data_hash ?? null,
         critic_score: asset.critic?.score ?? null,
       }]));
@@ -3688,7 +3735,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       for (const [ref, asset] of Object.entries(assets) as any) {
         const expected = lint.asset_hashes?.[ref];
         if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
-        if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
+        if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
       }
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);

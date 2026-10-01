@@ -1064,9 +1064,16 @@ def verify(root: Path) -> Report:
             # (rendered only with NEWSROOM_MOBILE_PAGES=1). A listed one is
             # checked the same way, and nothing else may be listed.
             viz_variants = manifest["variants"]
-            report.check(set(viz_variants) <= {"desktop", "mobile"}, f"visualization {manifest_ref} lists an unknown variant: {sorted(set(viz_variants) - {'desktop', 'mobile'})}")
-            for viewport in ("desktop", "mobile"):
-                if viewport == "mobile" and "mobile" not in viz_variants:
+            report.check(set(viz_variants) <= {"desktop", "mobile", "compact"}, f"visualization {manifest_ref} lists an unknown variant: {sorted(set(viz_variants) - {'desktop', 'mobile', 'compact'})}")
+            # Optional manifest.hashes: each key present must equal the sha256
+            # of the corresponding variant file; a listed compact variant must
+            # carry hashes.compact_sha256 (fail closed). Old manifests with no
+            # compact variant and no hashes are unaffected.
+            viz_hashes = manifest.get("hashes") if isinstance(manifest.get("hashes"), dict) else {}
+            report.check("compact_sha256" not in viz_hashes or "compact" in viz_variants, f"visualization {manifest_ref} has hashes.compact_sha256 without a compact variant")
+            report.check("compact" not in viz_variants or "compact_sha256" in viz_hashes, f"visualization {manifest_ref} lists a compact variant without hashes.compact_sha256")
+            for viewport in ("desktop", "mobile", "compact"):
+                if viewport != "desktop" and viewport not in viz_variants:
                     continue
                 ref = manifest["variants"].get(viewport)
                 report.check(isinstance(ref, str) and bool(ref), f"visualization {manifest_ref} missing {viewport} variant")
@@ -1078,6 +1085,9 @@ def verify(root: Path) -> Report:
                             text = svg_path.read_text(encoding="utf-8")
                             report.check(len(text) > 120, f"visualization {manifest_ref} {viewport} SVG suspiciously small")
                             report.check(all(token in text for token in ("<svg", "<title", "<desc")), f"visualization {manifest_ref} {viewport} SVG lacks accessibility markup")
+                            hash_key = f"{viewport}_sha256"
+                            if hash_key in viz_hashes:
+                                report.check(viz_hashes[hash_key] == sha256_file(svg_path), f"visualization {manifest_ref} {viewport} hash mismatch against manifest.hashes.{hash_key}")
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe {viewport} SVG ref: {exc}")
             # Choropleth-only: a choropleth's color channel can only be
@@ -1095,6 +1105,29 @@ def verify(root: Path) -> Report:
             # "choropleth" (Python does not yet re-verify render_qa_ref for
             # every chart type the way Rust does - a pre-existing gap, out
             # of scope here).
+            # A listed compact variant is bound to render QA for every chart
+            # type (viewports.compact.svg_sha256 must equal the file's hash);
+            # choropleths get this through the full loop below.
+            # Fail closed: a listed compact variant needs a valid render_qa_ref, an
+            # existing QA report, and viewports.compact.svg_sha256 - each missing
+            # piece is a failure, never a silent skip.
+            if "compact" in viz_variants:
+                compact_qa_ref = manifest.get("render_qa_ref")
+                compact_qa_ok = isinstance(compact_qa_ref, str) and compact_qa_ref.startswith("visualizations/qa/")
+                report.check(compact_qa_ok, f"visualization {manifest_ref} lists a compact variant without a valid render_qa_ref")
+                if compact_qa_ok:
+                    try:
+                        compact_qa_path = safe_ref(root, compact_qa_ref)
+                        report.check(compact_qa_path.is_file(), f"visualization {manifest_ref} compact variant: render_qa report {compact_qa_ref} does not exist")
+                        compact_ref_value = viz_variants.get("compact")
+                        compact_svg_path = safe_ref(root, compact_ref_value) if isinstance(compact_ref_value, str) else None
+                        if compact_qa_path.is_file() and compact_svg_path is not None and compact_svg_path.is_file():
+                            compact_expected = (((load_json(compact_qa_path).get("viewports") or {}).get("compact")) or {}).get("svg_sha256")
+                            report.check(isinstance(compact_expected, str), f"visualization {manifest_ref} render_qa report is missing viewports.compact.svg_sha256")
+                            if isinstance(compact_expected, str):
+                                report.check(sha256_file(compact_svg_path) == compact_expected, f"visualization {manifest_ref} compact SVG hash does not match render_qa report")
+                    except Exception as exc:
+                        report.check(False, f"visualization {manifest_ref} unsafe compact render_qa binding: {exc}")
             if manifest.get("chart_type") == "choropleth":
                 render_qa_ref = manifest.get("render_qa_ref")
                 if draft and not isinstance(render_qa_ref, str):
@@ -1108,8 +1141,8 @@ def verify(root: Path) -> Report:
                         if qa_path.is_file():
                             qa = load_json(qa_path)
                             report.check(qa.get("schema_version") == RENDER_QA_REPORT_SCHEMA_VERSION, f"choropleth visualization {manifest_ref} render_qa report has an unknown schema_version")
-                            for viewport in ("desktop", "mobile"):
-                                if viewport == "mobile" and "mobile" not in viz_variants:
+                            for viewport in ("desktop", "mobile", "compact"):
+                                if viewport != "desktop" and viewport not in viz_variants:
                                     continue
                                 svg_ref = viz_variants.get(viewport)
                                 if not isinstance(svg_ref, str):

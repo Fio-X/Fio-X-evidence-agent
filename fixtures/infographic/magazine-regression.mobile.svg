@@ -19,13 +19,13 @@
 <text x="46" y="605" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="31" font-weight="700" fill="#1A1A1A" >hierarchy</text>
 <text x="46" y="655" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666" >The composer controls reading order while preserving</text>
 <text x="46" y="677" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666" >upstream data provenance.</text>
-<rect data-role="hero-stat" data-module-id="stat-total" x="46" y="738" width="628" height="3" fill="#D0021B"/>
-<text x="74" y="807" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#D0021B">100<tspan font-size="22" dx="7" fill="#1A1A1A">PJ</tspan></text>
-<text x="74" y="844" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1A1A1A" >Total energy entering the synthetic system</text>
+<rect data-role="hero-stat" data-module-id="stat-total" x="46" y="724" width="628" height="3" fill="#D0021B"/>
+<text x="74" y="793" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#D0021B">100<tspan font-size="22" dx="7" fill="#1A1A1A">PJ</tspan></text>
+<text x="74" y="830" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1A1A1A" >Total energy entering the synthetic system</text>
 <text x="74" y="866" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666" >Verified claim fixture</text>
 <rect data-role="hero-stat" data-module-id="stat-total" x="46" y="885" width="1" height="1" fill="none"/>
 <line x1="46" y1="920" x2="674" y2="920" stroke="#E5E5E5" stroke-width="1"/>
-<text x="46" y="940" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#D0021B">02</text>
+<text x="46" y="940" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#D0021B">01</text>
 <svg data-role="infographic-visual" data-module-id="bar" x="46" y="952" width="628" height="429.75" viewBox="0 0 640 440" preserveAspectRatio="xMidYMin meet">
 <title id="embed-fcde2b2e-m-viz-title-mobile">A leads this selected comparison</title>
 <desc id="embed-fcde2b2e-m-viz-desc-mobile">Horizontal bars rank four synthetic categories from A at 42 to D at 9.</desc>
@@ -54,7 +54,7 @@
 <text x="32" y="381" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">Source: Synthetic fixture</text>
 </svg>
 <line x1="46" y1="1421.75" x2="674" y2="1421.75" stroke="#E5E5E5" stroke-width="1"/>
-<text x="46" y="1441.75" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#D0021B">03</text>
+<text x="46" y="1441.75" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#D0021B">02</text>
 <svg data-role="infographic-visual" data-module-id="flow" x="46" y="1453.75" width="628" height="430.73125" viewBox="0 0 640 441" preserveAspectRatio="xMidYMin meet">
 <title id="embed-3b212781-m-viz-title-mobile">Energy moves through one system</title>
 <desc id="embed-3b212781-m-viz-desc-mobile">A Sankey diagram shows solar, wind and gas feeding a system that supplies homes and industry while some energy is lost.</desc>
@@ -97,13 +97,13 @@
 <line x1="32" y1="363" x2="608" y2="363" stroke="#E5E5E5" stroke-width="1"/>
 <text x="32" y="382" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">Source: Synthetic fixture</text>
 </svg>
-<rect data-role="hero-stat" data-module-id="stat-loss" x="46" y="1952.48125" width="628" height="3" fill="#D0021B"/>
-<text x="74" y="2021.48125" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#D0021B">20<tspan font-size="22" dx="7" fill="#1A1A1A">PJ</tspan></text>
-<text x="74" y="2058.48125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1A1A1A" >Energy represented as losses</text>
+<rect data-role="hero-stat" data-module-id="stat-loss" x="46" y="1938.48125" width="628" height="3" fill="#D0021B"/>
+<text x="74" y="2007.48125" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#D0021B">20<tspan font-size="22" dx="7" fill="#1A1A1A">PJ</tspan></text>
+<text x="74" y="2044.48125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1A1A1A" >Energy represented as losses</text>
 <text x="74" y="2080.48125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666" >One fifth of the synthetic total</text>
 <rect data-role="hero-stat" data-module-id="stat-loss" x="46" y="2099.48125" width="1" height="1" fill="none"/>
 <line x1="46" y1="2134.48125" x2="674" y2="2134.48125" stroke="#E5E5E5" stroke-width="1"/>
-<text x="46" y="2154.48125" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#D0021B">05 · WHY IT MATTERS</text>
+<text x="46" y="2154.48125" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#D0021B">03 · WHY IT MATTERS</text>
 <text x="46" y="2176.48125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#1A1A1A" >One feature, several reading speeds</text>
 <text x="46" y="2222.48125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#1A1A1A" >The headline provides the argument, hero numbers</text>
 <text x="46" y="2246.48125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#1A1A1A" >reward scanning, charts support comparison, and</text>

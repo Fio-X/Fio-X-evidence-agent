@@ -355,4 +355,51 @@ try {
 } finally {
   rmSync(h.tmp, { recursive: true, force: true });
 }
+
+// ---- Part 3: the chain and the step lint give the same verdict -------------
+// The chain's claim check is the lint's own claim-binding judgement, so for
+// every case a lint that passes must let the chain through the lint step and
+// a lint that blocks must stop the chain there - never looser, never stricter.
+const hc = await loadNewsroom({ prefix: "claim-binding-chain-", env: { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" } });
+try {
+  const { art, tools, addData, query, recordClaim } = hc;
+  const fileG = addData("G", "region,amount\nn,4\ns,9\nn,6\n");
+  const qg = await query(`SELECT region, amount FROM read_csv_auto('${fileG}')`);
+  const claimG = (await recordClaim("Amounts by region", [fileG], [qg])).claim_id;
+  const fileY = addData("Y", "region,count\nnorth,4\nsouth,9\n");
+  const qy = await query(`SELECT region, count FROM read_csv_auto('${fileY}') ORDER BY region`);
+  const claimY = (await recordClaim("The regions have counts", [fileY], [qy])).claim_id;
+  const fileOut = addData("OUT", "item,price\nbread,3\nmilk,4\n");
+  const params = (sql, claim_id) => ({
+    reader_task: "sequence", title: "Amounts by region", alt: "A horizontal bar chart of the amount recorded for each region in the fixture data.",
+    takeaway: "Regions differ in amount.", source_note: "fixture", subtitle: "fixture", unit: "units", visual_family: "statistical", data_topology: "tabular",
+    chart_type: "horizontal_bar", category_field: "region", value_field: "amount", sort: "desc", highlight_values: [], annotations: [], sql, claim_id,
+  });
+  const cases = [
+    ["GROUP BY COUNT", `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region`, claimG, true],
+    ["GROUP BY SUM", `SELECT region, sum(amount) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region`, claimG, true],
+    ["alias and rename", `SELECT region, amount AS amount FROM read_json('${qg}') ORDER BY amount`, claimG, true],
+    ["ORDER BY and top N", `SELECT region, amount FROM read_json('${qg}') ORDER BY amount DESC LIMIT 2`, claimG, true],
+    ["EXISTS bridge", `SELECT b.item AS region, b.price AS amount FROM read_csv_auto('${fileOut}') b WHERE EXISTS (SELECT 1 FROM read_json('${qg}'))`, claimG, false],
+    ["JOIN outside number", `SELECT g.region, b.price AS amount FROM read_json('${qg}') g JOIN read_csv_auto('${fileOut}') b ON true`, claimG, false],
+    ["UNION outside number", `SELECT region, amount FROM read_json('${qg}') UNION ALL SELECT item, price FROM read_csv_auto('${fileOut}')`, claimG, false],
+    ["literal in the numeric field", `SELECT region, 99 AS amount FROM read_json('${qg}')`, claimG, false],
+    ["another claim's computation", `SELECT region, count(*) AS amount FROM read_json('${qy}') GROUP BY region`, claimG, false],
+    ["right data, wrong claim", `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region`, claimY, false],
+  ];
+  let n = 0;
+  for (const [label, sql, claim, expectPass] of cases) {
+    n += 1;
+    const plan = await tools.get("newsroom_viz_plan").execute(`p${n}`, params(sql, claim));
+    const stepLint = await tools.get("newsroom_viz_lint").execute(`l${n}`, { plan_ref: plan.details.planRef });
+    const chain = await tools.get("newsroom_viz_chain").execute(`c${n}`, params(sql, claim));
+    assert.equal(stepLint.details.passed, expectPass, `${label}: step lint verdict`);
+    const stoppedAtLint = chain.details.failedAt === "newsroom_viz_lint";
+    assert.equal(stoppedAtLint, !expectPass, `${label}: the chain stops at the lint step exactly when the step lint blocks (${chain.details.stopCode})`);
+    if (!expectPass) assert.ok(["BLOCKED", "CLAIM_COMPUTATION_MISMATCH"].includes(chain.details.stopCode), `${label}: stop code ${chain.details.stopCode}`);
+  }
+  console.log("claim binding: chain and step lint agree on every case -- PASS");
+} finally {
+  rmSync(hc.tmp, { recursive: true, force: true });
+}
 console.log("test_claim_binding.mjs ok");

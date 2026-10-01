@@ -1307,12 +1307,31 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             // QA below, and nothing else may be listed.
             for key in variants.keys() {
                 report.check(
-                    key == "desktop" || key == "mobile",
+                    key == "desktop" || key == "mobile" || key == "compact",
                     format!("visualization {name} lists an unknown variant: {key}"),
                 );
             }
-            for viewport in ["desktop", "mobile"] {
-                if viewport == "mobile" && !variants.contains_key("mobile") {
+            // Optional manifest.hashes: every key present must equal the
+            // sha256 of the corresponding variant file. A compact variant
+            // must carry hashes.compact_sha256 (fail closed); old manifests
+            // with no compact variant and no hashes are unaffected.
+            let viz_hashes = manifest.get("hashes").and_then(Value::as_object);
+            report.check(
+                !viz_hashes
+                    .map(|h| h.contains_key("compact_sha256"))
+                    .unwrap_or(false)
+                    || variants.contains_key("compact"),
+                format!("visualization {name} has hashes.compact_sha256 without a compact variant"),
+            );
+            report.check(
+                !variants.contains_key("compact")
+                    || viz_hashes
+                        .map(|h| h.contains_key("compact_sha256"))
+                        .unwrap_or(false),
+                format!("visualization {name} lists a compact variant without hashes.compact_sha256"),
+            );
+            for viewport in ["desktop", "mobile", "compact"] {
+                if viewport != "desktop" && !variants.contains_key(viewport) {
                     continue;
                 }
                 let reference = variants.get(viewport).and_then(Value::as_str).unwrap_or("");
@@ -1335,6 +1354,22 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                                     "visualization {name} {viewport} SVG is suspiciously small"
                                 ),
                             );
+                            let hash_key = format!("{viewport}_sha256");
+                            if let Some(expected) =
+                                viz_hashes.and_then(|h| h.get(hash_key.as_str()))
+                            {
+                                match sha256_file(&svg) {
+                                    Ok(actual) => report.check(
+                                        expected.as_str() == Some(actual.as_str()),
+                                        format!(
+                                            "visualization {name} {viewport} hash mismatch against manifest.hashes.{hash_key}"
+                                        ),
+                                    ),
+                                    Err(error) => report.error(format!(
+                                        "visualization {name} failed hashing {viewport} SVG: {error}"
+                                    )),
+                                }
+                            }
                         }
                     }
                     Err(error) => report.error(format!(
@@ -1354,6 +1389,10 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                 .and_then(|v| v.get("mobile"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            let compact_ref = variants
+                .and_then(|v| v.get("compact"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let render_qa_ref = manifest
                 .get("render_qa_ref")
                 .and_then(Value::as_str)
@@ -1369,13 +1408,22 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             let is_choropleth =
                 manifest.get("chart_type").and_then(Value::as_str) == Some("choropleth");
             if draft {
+                // A listed compact variant is never exempt from render QA.
+                report.check(
+                    !render_qa_ref.is_empty() || !variants.map(|v| v.contains_key("compact")).unwrap_or(false),
+                    format!("visualization {name} lists a compact variant without a render_qa_ref"),
+                );
                 if !render_qa_ref.is_empty() {
                     check_render_qa_ref(
                         root,
                         &format!("visualization {name}"),
                         render_qa_ref,
                         "visualizations/qa/",
-                        &[("desktop", desktop_ref), ("mobile", mobile_ref)],
+                        &[
+                            ("desktop", desktop_ref),
+                            ("mobile", mobile_ref),
+                            ("compact", compact_ref),
+                        ],
                         false,
                         is_choropleth,
                         report,
@@ -1392,7 +1440,11 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                         &format!("visualization {name}"),
                         render_qa_ref,
                         "visualizations/qa/",
-                        &[("desktop", desktop_ref), ("mobile", mobile_ref)],
+                        &[
+                            ("desktop", desktop_ref),
+                            ("mobile", mobile_ref),
+                            ("compact", compact_ref),
+                        ],
                         true,
                         is_choropleth,
                         report,
@@ -4414,6 +4466,193 @@ mod tests {
             "{:?}",
             report.errors
         );
+    }
+
+    /// Rewrites build_viz_fixture's manifest/QA into a desktop+compact
+    /// visualization (no mobile) with matching hashes and QA coverage.
+    fn build_compact_fixture() -> tempfile::TempDir {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
+        let compact_svg = render_qa_svg("compact");
+        let compact_sha = sha256_bytes(compact_svg.as_bytes());
+        fs::write(root.join("visualizations/x.compact.svg"), &compact_svg).unwrap();
+        fs::remove_file(root.join("visualizations/x.mobile.svg")).unwrap();
+        let mut qa = render_qa_report_json(&desktop_sha, &compact_sha, true);
+        let compact_viewport = qa["viewports"]["mobile"].clone();
+        qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        qa["viewports"]["compact"] = compact_viewport;
+        fs::write(
+            root.join("visualizations/qa/x.json"),
+            serde_json::to_string(&qa).unwrap(),
+        )
+        .unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(root.join("visualizations/x.json")).unwrap())
+                .unwrap();
+        manifest["variants"] = serde_json::json!({
+            "desktop": "visualizations/x.svg",
+            "compact": "visualizations/x.compact.svg",
+        });
+        manifest["hashes"] =
+            serde_json::json!({"desktop_sha256": desktop_sha, "compact_sha256": compact_sha});
+        fs::write(
+            root.join("visualizations/x.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+        temp
+    }
+
+    fn compact_errors(temp: &tempfile::TempDir) -> Vec<String> {
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        report.errors
+    }
+
+    fn rewrite_viz_manifest(temp: &tempfile::TempDir, edit: impl FnOnce(&mut Value)) {
+        let path = temp.path().join("visualizations/x.json");
+        let mut manifest: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        edit(&mut manifest);
+        fs::write(path, serde_json::to_string(&manifest).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn compact_variant_with_matching_qa_and_hashes_verifies() {
+        let temp = build_compact_fixture();
+        let errors = compact_errors(&temp);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn compact_svg_tampered_after_qa_fails_verification() {
+        let temp = build_compact_fixture();
+        fs::write(
+            temp.path().join("visualizations/x.compact.svg"),
+            render_qa_svg("tampered-compact"),
+        )
+        .unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("compact SVG hash does not match render_qa report")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_hash_mismatch_in_manifest_hashes_fails_verification() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m["hashes"]["compact_sha256"] = Value::String("0".repeat(64));
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("compact hash mismatch")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_without_compact_sha256_fails_closed() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m["hashes"].as_object_mut().unwrap().remove("compact_sha256");
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("compact variant without hashes.compact_sha256")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_without_render_qa_ref_fails() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m.as_object_mut().unwrap().remove("render_qa_ref");
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("missing render_qa_ref")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_with_missing_render_qa_file_fails() {
+        let temp = build_compact_fixture();
+        fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_with_qa_lacking_compact_viewport_fails() {
+        let temp = build_compact_fixture();
+        let path = temp.path().join("visualizations/qa/x.json");
+        let mut qa: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        qa["viewports"].as_object_mut().unwrap().remove("compact");
+        fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_sha256_without_compact_variant_fails() {
+        let temp = build_viz_fixture(true, true);
+        rewrite_viz_manifest(&temp, |m| {
+            m["hashes"] = serde_json::json!({"compact_sha256": "0".repeat(64)});
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("hashes.compact_sha256 without a compact variant")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_visualization_variant_key_still_fails() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m["variants"]["tablet"] = Value::String("visualizations/x.svg".into());
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("unknown variant: tablet")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn desktop_only_visualization_without_hashes_still_verifies() {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
+        let mobile_sha = sha256_bytes(render_qa_svg("mobile").as_bytes());
+        let mut qa = render_qa_report_json(&desktop_sha, &mobile_sha, true);
+        qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        fs::write(
+            root.join("visualizations/qa/x.json"),
+            serde_json::to_string(&qa).unwrap(),
+        )
+        .unwrap();
+        rewrite_viz_manifest(&temp, |m| {
+            m["variants"].as_object_mut().unwrap().remove("mobile");
+        });
+        let errors = compact_errors(&temp);
+        assert!(errors.is_empty(), "{errors:?}");
     }
 
     #[test]
