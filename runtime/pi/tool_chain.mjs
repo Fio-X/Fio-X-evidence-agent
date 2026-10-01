@@ -141,7 +141,7 @@ const isTrue = (value) => value === true;
 
 // Plan -> lint -> render -> critic. Success is read only from typed details
 // fields; a missing field is a stop, never a pass.
-export function vizChainSteps({ modelComputationRef, claimComputationRefs }) {
+export function vizChainSteps({ modelComputationRef, claimComputationRefs, claimBinding }) {
   // claimComputationRefs() (async) reads the verified claim record named by the plan.
   const needRef = (state, key, from) => {
     if (typeof state[key] !== "string" || !state[key]) throw new ChainStop("MISSING_FIELD", `${from} did not return ${key}; the chain cannot continue`);
@@ -155,14 +155,7 @@ export function vizChainSteps({ modelComputationRef, claimComputationRefs }) {
       judge: (details) => {
         if (typeof details.planRef !== "string" || !details.planRef) return { ok: false, code: "MISSING_FIELD", message: "newsroom_viz_plan returned no planRef" };
         if (!isTrue(details.publishable)) return { ok: false, code: "DRAFT", message: "the plan is a DRAFT (no verified claim_id): it is exploratory only and is not rendered by the chain", nextTool: "newsroom_viz_lint" };
-        return {
-          ok: true,
-          // Before anything is filled in: a computation_ref the model supplied
-          // must already be one the verified claim is bound to.
-          after: async () => (modelComputationRef !== undefined && !(await claimComputationRefs()).includes(modelComputationRef)
-            ? { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} is not among the verified claim's computation_refs; it is not overridden`, nextTool: "newsroom_viz_plan" }
-            : null),
-        };
+        return { ok: true };
       },
     },
     {
@@ -175,15 +168,19 @@ export function vizChainSteps({ modelComputationRef, claimComputationRefs }) {
         return {
           ok: true,
           // Asserted after the lint step has produced the computation ref and
-          // before anything is rendered: the model's own value and the claim's
-          // recorded computation_refs must both agree with the verified result.
+          // before anything is rendered: the model's own value and the claim
+          // binding are checked against the verified result.
           after: async () => {
-            if (modelComputationRef !== undefined && modelComputationRef !== state.computationRef) {
-              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} differs from the verified lint computation ${state.computationRef}; it is not overridden`, nextTool: "newsroom_viz_plan" };
+            // The model's own value must be one of the claim's computations or the
+            // one the chart actually read; it is never overridden.
+            if (modelComputationRef !== undefined && modelComputationRef !== state.computationRef && !(await claimComputationRefs()).includes(modelComputationRef)) {
+              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} is neither one of the claim's computation_refs nor the computation the chart read (${state.computationRef}); it is not overridden`, nextTool: "newsroom_viz_plan" };
             }
-            if (!(await claimComputationRefs()).includes(state.computationRef)) {
-              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `the claim's computation_refs do not include the lint computation ${state.computationRef}; record a claim bound to this exact computation first`, nextTool: "record_claim" };
-            }
+            // The same judgement the lint just applied (claim_binding gate C): no extra,
+            // no looser rule. Blocked claims already failed the lint step; this repeats
+            // the identical call so the chain's verdict is the lint's by construction.
+            const binding = await claimBinding(state.planRef);
+            if (!binding.ok) return { code: "CLAIM_COMPUTATION_MISMATCH", message: `the claim is not bound to the chart's computation: ${binding.message}`, nextTool: "record_claim" };
             return null;
           },
         };
