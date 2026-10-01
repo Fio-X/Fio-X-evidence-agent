@@ -313,6 +313,19 @@ def run_rpc():
         kind = msg.get("type")
         if kind == "prompt":
             emit({"type": "response", "id": msg.get("id"), "command": "prompt", "success": True})
+            scenario = os.environ.get("MOCK_PI_SCENARIO", "")
+            if scenario.startswith("provider_error"):
+                # Text streams, then the settled final turn is a provider error.
+                raw_error = os.environ.get("MOCK_PI_ERROR_TEXT", "HTTP 504 upstream timeout MOCK-RAW-PROVIDER-TEXT")
+                emit({"type": "turn_start"})
+                if scenario == "provider_error_after_text":
+                    emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": answer}})
+                failed = {"role": "assistant", "stopReason": "error", "errorMessage": raw_error, "usage": {"input": 51000, "output": 10}}
+                emit({"type": "message_end", "message": failed})
+                emit({"type": "turn_end", "message": failed})
+                emit({"type": "agent_end", "willRetry": False})
+                emit({"type": "agent_settled"})
+                continue
             if resume:
                 tool("p2", "newsroom_update_plan", {"revision": 3, "trigger": "user_followup", "revision_note": "User follow-up changed the verification focus."})
                 tool("q2", "duckdb_query", {"sql": "SELECT * FROM data/mock.csv"})
@@ -348,7 +361,7 @@ def run_rpc():
             emit({"type": "turn_end"})
             emit({"type": "agent_settled"})
         elif kind == "get_last_assistant_text":
-            emit({"type": "response", "id": msg.get("id"), "command": "get_last_assistant_text", "success": True, "data": {"text": answer}})
+            emit({"type": "response", "id": msg.get("id"), "command": "get_last_assistant_text", "success": True, "data": {"text": "" if os.environ.get("MOCK_PI_SCENARIO") == "provider_error_no_text" else answer}})
         elif kind == "get_session_stats":
             emit({"type": "response", "id": msg.get("id"), "command": "get_session_stats", "success": True, "data": {"userMessages": 2 if resume else 1, "assistantMessages": 2 if resume else 1}})
         elif kind == "abort":

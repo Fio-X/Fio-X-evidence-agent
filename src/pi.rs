@@ -36,6 +36,174 @@ pub struct PiRunResult {
     pub session_stats: Option<Value>,
 }
 
+/// The settled final assistant turn was a provider error. Nothing here is
+/// provider text except `partial_text`, which is model output that already
+/// passed secret redaction and was streamed to stdout.
+#[derive(Debug)]
+pub struct ProviderFailure {
+    pub class: &'static str,
+    pub http_status: Option<u16>,
+    pub turn_index: u32,
+    pub elapsed_ms: u128,
+    pub partial_text: String,
+}
+
+impl std::fmt::Display for ProviderFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Pi provider failed after internal retries: {}",
+            self.class
+        )?;
+        if let Some(status) = self.http_status {
+            write!(f, " HTTP {status}")?;
+        }
+        write!(
+            f,
+            " (turn {}, {} ms elapsed, raw diagnostic suppressed)",
+            self.turn_index, self.elapsed_ms
+        )
+    }
+}
+
+impl std::error::Error for ProviderFailure {}
+
+#[derive(Debug, Clone)]
+struct TurnFailure {
+    class: &'static str,
+    status: Option<u16>,
+    turn_index: u32,
+    at_ms: u128,
+    gap_ms: u128,
+    turn_ms: Option<u128>,
+    turn_events: u64,
+    turn_bytes: u64,
+    turn_first_event_ms: Option<u128>,
+    context_tokens: Option<u64>,
+}
+
+/// Non-sensitive counters for one `run_prompt` call: counts, durations and
+/// fixed class names only.
+#[derive(Debug)]
+struct RunTelemetry {
+    events: u64,
+    bytes: u64,
+    first_event_ms: Option<u128>,
+    turns: u32,
+    turn_start_ms: Option<u128>,
+    turn_events0: u64,
+    turn_bytes0: u64,
+    turn_first_event_ms: Option<u128>,
+    last_ok_context_tokens: Option<u64>,
+    failed_turns: u32,
+    classes: Vec<&'static str>,
+    auto_retries: u32,
+    pending: Option<TurnFailure>,
+    stage: &'static str,
+}
+
+impl RunTelemetry {
+    fn new() -> Self {
+        Self {
+            events: 0,
+            bytes: 0,
+            first_event_ms: None,
+            turns: 0,
+            turn_start_ms: None,
+            turn_events0: 0,
+            turn_bytes0: 0,
+            turn_first_event_ms: None,
+            last_ok_context_tokens: None,
+            failed_turns: 0,
+            classes: Vec::new(),
+            auto_retries: 0,
+            pending: None,
+            stage: "startup",
+        }
+    }
+
+    fn note_event(&mut self, now_ms: u128, record_bytes: u64) {
+        self.events += 1;
+        self.bytes += record_bytes;
+        self.first_event_ms.get_or_insert(now_ms);
+    }
+
+    fn turn_started(&mut self, now_ms: u128) {
+        self.turns += 1;
+        self.turn_start_ms = Some(now_ms);
+        self.turn_events0 = self.events;
+        self.turn_bytes0 = self.bytes;
+        self.turn_first_event_ms = None;
+    }
+
+    fn stream_event(&mut self, now_ms: u128) {
+        if self.turn_first_event_ms.is_none() {
+            if let Some(start) = self.turn_start_ms {
+                self.turn_first_event_ms = Some(now_ms.saturating_sub(start));
+            }
+        }
+    }
+
+    fn turn_failed(
+        &mut self,
+        (class, status): (&'static str, Option<u16>),
+        now_ms: u128,
+        gap_ms: u128,
+        context_tokens: Option<u64>,
+    ) {
+        self.failed_turns += 1;
+        if self.classes.len() < 16 {
+            self.classes.push(class);
+        }
+        self.pending = Some(TurnFailure {
+            class,
+            status,
+            turn_index: self.turns,
+            at_ms: now_ms,
+            gap_ms,
+            turn_ms: self.turn_start_ms.map(|start| now_ms.saturating_sub(start)),
+            turn_events: self.events.saturating_sub(self.turn_events0),
+            turn_bytes: self.bytes.saturating_sub(self.turn_bytes0),
+            turn_first_event_ms: self.turn_first_event_ms,
+            context_tokens,
+        });
+    }
+
+    fn turn_ok(&mut self, context_tokens: Option<u64>) {
+        self.pending = None;
+        if context_tokens.is_some() {
+            self.last_ok_context_tokens = context_tokens;
+        }
+    }
+}
+
+/// Prompt-side tokens of one assistant message (input plus cache traffic).
+fn message_context_tokens(message: Option<&Value>) -> Option<u64> {
+    let usage = message?.get("usage")?;
+    let part = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let total = part("input") + part("cacheRead") + part("cacheWrite");
+    (total > 0).then_some(total)
+}
+
+/// stopReason of a finished assistant turn (`message_end` or `turn_end`).
+fn finished_turn_stop_reason(event: &Value) -> Option<&str> {
+    if !matches!(
+        event.get("type").and_then(Value::as_str),
+        Some("message_end" | "turn_end")
+    ) {
+        return None;
+    }
+    let message = event.get("message")?;
+    if message
+        .get("role")
+        .and_then(Value::as_str)
+        .is_some_and(|role| role != "assistant")
+    {
+        return None;
+    }
+    message.get("stopReason").and_then(Value::as_str)
+}
+
 #[cfg(target_os = "macos")]
 fn parse_system_https_proxy(raw: &str) -> Option<String> {
     let mut http_enabled = false;
@@ -152,10 +320,49 @@ fn normalized_newsroom_phase() -> Option<String> {
     }
 }
 
+/// First standalone HTTP status number (not glued to letters or digits, so ids
+/// such as `req_01abc503x` or counts such as `2500` never match).
+fn standalone_status(diagnostic: &str) -> Option<u16> {
+    const KNOWN: [u16; 19] = [
+        400, 401, 402, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504, 520, 521, 522, 524, 525,
+        529,
+    ];
+    let bytes = diagnostic.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index].is_ascii_digit() {
+            let begin = index;
+            while index < bytes.len() && bytes[index].is_ascii_digit() {
+                index += 1;
+            }
+            let glued = |position: Option<&u8>| {
+                position.is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+            };
+            if index - begin == 3
+                && !glued(begin.checked_sub(1).and_then(|i| bytes.get(i)))
+                && !glued(bytes.get(index))
+            {
+                if let Ok(value) = diagnostic[begin..index].parse::<u16>() {
+                    if KNOWN.contains(&value) {
+                        return Some(value);
+                    }
+                }
+            }
+        } else {
+            index += 1;
+        }
+    }
+    None
+}
+
+/// Redacted, actionable failure classes. The diagnostic is only inspected here
+/// and never returned.
 fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     let diagnostic = [
         event.get("error"),
         event.get("data"),
+        event.get("errorMessage"),
+        event.get("finalError"),
         event
             .get("message")
             .and_then(|message| message.get("errorMessage")),
@@ -169,41 +376,79 @@ fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     .collect::<Vec<_>>()
     .join(" ")
     .to_ascii_lowercase();
-    let status = [
-        400_u16, 401, 402, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504, 529,
-    ]
-    .into_iter()
-    .find(|status| diagnostic.contains(&status.to_string()));
-    let class = match status {
-        Some(401 | 403) => "provider_authentication_failed",
-        Some(408 | 504) => "provider_timeout",
-        Some(429) => "provider_rate_limited",
-        Some(500 | 502 | 503 | 529) => "provider_unavailable",
-        Some(400 | 402 | 404 | 409 | 413) => "provider_request_rejected",
-        _ if diagnostic.contains("rate_limit_error") => "provider_rate_limited",
-        _ if diagnostic.contains("timeout_error") => "provider_timeout",
-        _ if diagnostic.contains("authentication_error")
-            || diagnostic.contains("permission_error") =>
-        {
-            "provider_authentication_failed"
-        }
-        _ if diagnostic.contains("api_error") || diagnostic.contains("overloaded_error") => {
-            "provider_unavailable"
-        }
-        _ if diagnostic.contains("invalid_request_error")
-            || diagnostic.contains("billing_error")
-            || diagnostic.contains("not_found_error")
-            || diagnostic.contains("conflict_error")
-            || diagnostic.contains("request_too_large") =>
-        {
-            "provider_request_rejected"
-        }
-        _ if diagnostic.contains("no available accounts")
-            || diagnostic.contains("service unavailable") =>
-        {
-            "provider_unavailable"
-        }
-        _ => "provider_error",
+    let status = standalone_status(&diagnostic);
+    let has = |needles: &[&str]| needles.iter().any(|needle| diagnostic.contains(needle));
+    let class = if matches!(status, Some(401 | 403))
+        || has(&["authentication_error", "permission_error"])
+    {
+        "provider_authentication_failed"
+    } else if status == Some(429) || has(&["rate_limit_error", "rate limit", "too many requests"]) {
+        "provider_rate_limited"
+    } else if status == Some(413)
+        || has(&[
+            "prompt is too long",
+            "request_too_large",
+            "request too large",
+            "exceeds the context window",
+            "maximum context length",
+            "context_length_exceeded",
+            "context length exceeded",
+            "too many tokens",
+            "input is too long",
+            "payload too large",
+            "request entity too large",
+        ])
+    {
+        "provider_context_overflow"
+    } else if status == Some(529) || has(&["overloaded"]) {
+        "provider_overloaded"
+    } else if matches!(status, Some(408 | 504 | 522 | 524))
+        || has(&[
+            "timeout_error",
+            "timed out",
+            "timeout",
+            "etimedout",
+            "deadline exceeded",
+        ])
+    {
+        "provider_timeout"
+    } else if matches!(status, Some(502 | 503 | 520 | 521 | 525))
+        || has(&[
+            "bad gateway",
+            "service unavailable",
+            "no available accounts",
+            "<html",
+        ])
+    {
+        "provider_gateway_error"
+    } else if has(&[
+        "terminated",
+        "other side closed",
+        "stream ended",
+        "fetch failed",
+        "socket hang up",
+        "econnreset",
+        "connection reset",
+        "connection closed",
+        "premature close",
+        "unexpected eof",
+        "network error",
+        "connection error",
+    ]) {
+        "provider_stream_interrupted"
+    } else if status == Some(500) || has(&["api_error"]) {
+        "provider_unavailable"
+    } else if matches!(status, Some(400 | 402 | 404 | 409))
+        || has(&[
+            "invalid_request_error",
+            "billing_error",
+            "not_found_error",
+            "conflict_error",
+        ])
+    {
+        "provider_request_rejected"
+    } else {
+        "provider_error"
     };
     (class, status)
 }
@@ -459,7 +704,7 @@ fn redact_event(value: &mut Value, secrets: &[String]) {
         }
         Value::Object(object) => {
             for (key, item) in object {
-                if matches!(key.as_str(), "error" | "errorMessage") {
+                if matches!(key.as_str(), "error" | "errorMessage" | "finalError") {
                     *item = json!("diagnostic suppressed");
                 } else {
                     redact_event(item, secrets);
@@ -522,6 +767,7 @@ pub async fn run_prompt(
         })
         .collect();
     let started = Instant::now();
+    let mut telemetry = RunTelemetry::new();
     eprintln!("[agent] phase=startup elapsed_ms=0");
     let mut command = config.command();
     #[cfg(unix)]
@@ -588,7 +834,6 @@ pub async fn run_prompt(
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
-        let mut provider_turn_failed = false;
 
         let mut line = Vec::new();
         loop {
@@ -632,10 +877,19 @@ pub async fn run_prompt(
 
             let event: Value = serde_json::from_str(record)
                 .context("invalid JSONL record from Pi (payload suppressed)")?;
+            let record_bytes = line.len() as u64;
             line.clear();
+            let gap_ms = last_activity.elapsed().as_millis();
             last_activity = Instant::now();
+            let now_ms = started.elapsed().as_millis();
+            telemetry.note_event(now_ms, record_bytes);
 
             let mut event = event;
+            // Classify turn failures from the raw event; only the class is kept.
+            let turn_stop = finished_turn_stop_reason(&event).map(str::to_owned);
+            let turn_class =
+                (turn_stop.as_deref() == Some("error")).then(|| provider_error_class(&event));
+            let turn_tokens = message_context_tokens(event.get("message"));
             // Classify provider failures before redaction, then retain only the safe class/status.
             sanitize_provider_event(&mut event, &secrets)?;
             if let Some(file) = log.as_mut() {
@@ -650,8 +904,20 @@ pub async fn run_prompt(
                 file.flush()?;
             }
 
-            if assistant_provider_turn_failed(&event) {
-                provider_turn_failed = true;
+            match (turn_stop.as_deref(), turn_class) {
+                (Some("error"), Some(class)) => {
+                    let is_message_end =
+                        event.get("type").and_then(Value::as_str) == Some("message_end");
+                    let already = telemetry
+                        .pending
+                        .as_ref()
+                        .is_some_and(|failure| failure.turn_index == telemetry.turns);
+                    if is_message_end || !already {
+                        telemetry.turn_failed(class, now_ms, gap_ms, turn_tokens);
+                    }
+                }
+                (Some(_), _) => telemetry.turn_ok(turn_tokens),
+                _ => {}
             }
 
             match event.get("type").and_then(Value::as_str) {
@@ -660,6 +926,7 @@ pub async fn run_prompt(
                 {
                     if event.get("success").and_then(Value::as_bool) == Some(true) {
                         prompt_accepted = true;
+                        telemetry.stage = "streaming";
                         let accepted_ms = started.elapsed().as_millis();
                         startup_ms = Some(accepted_ms);
                         eprintln!("[agent] startup_ms={accepted_ms}");
@@ -725,6 +992,7 @@ pub async fn run_prompt(
                 }
                 Some("message_update") => {
                     active_work = true;
+                    telemetry.stream_event(now_ms);
                     if let Some(update) = event.get("assistantMessageEvent") {
                         if update.get("type").and_then(Value::as_str) == Some("text_delta") {
                             if let Some(delta) = update.get("delta").and_then(Value::as_str) {
@@ -755,6 +1023,7 @@ pub async fn run_prompt(
                     // A new model/tool turn is active even when the provider
                     // emits no visible text while it is thinking.
                     active_work = true;
+                    telemetry.turn_started(now_ms);
                 }
                 Some("turn_end") => {
                     // Re-enable the idle boundary between turns. Tool and
@@ -764,6 +1033,19 @@ pub async fn run_prompt(
                 }
                 Some("agent_start" | "message_start" | "auto_retry_start") => {
                     active_work = true;
+                    match event.get("type").and_then(Value::as_str) {
+                        Some("auto_retry_start") => telemetry.auto_retries += 1,
+                        Some("message_start")
+                            if event
+                                .get("message")
+                                .and_then(|m| m.get("stopReason"))
+                                .and_then(Value::as_str)
+                                != Some("error") =>
+                        {
+                            telemetry.stream_event(now_ms)
+                        }
+                        _ => {}
+                    }
                 }
                 Some("extension_error") => {
                     extension_errors.push("suppressed".to_string());
@@ -771,6 +1053,7 @@ pub async fn run_prompt(
                 }
                 Some("agent_settled") => {
                     saw_settled = true;
+                    telemetry.stage = "finishing";
                     finish_started.get_or_insert_with(Instant::now);
                     if !final_queries_sent {
                         send_json(
@@ -823,10 +1106,21 @@ pub async fn run_prompt(
         }
 
         let answer = final_answer.unwrap_or(streamed_answer);
-        if answer.trim().is_empty() {
-            if provider_turn_failed {
-                bail!("Pi provider failed after internal retries (diagnostic suppressed)");
+        if let Some(failure) = telemetry.pending.clone() {
+            // The settled final turn is a provider error: the run did not
+            // complete, even when partial text was streamed. Keep the text.
+            if !answer.is_empty() && !answer.ends_with('\n') {
+                println!();
             }
+            return Err(anyhow::Error::new(ProviderFailure {
+                class: failure.class,
+                http_status: failure.status,
+                turn_index: failure.turn_index,
+                elapsed_ms: failure.at_ms,
+                partial_text: answer,
+            }));
+        }
+        if answer.trim().is_empty() {
             bail!("Pi returned an empty final answer (provider diagnostic suppressed)");
         }
         if !answer.ends_with('\n') {
@@ -874,7 +1168,14 @@ pub async fn run_prompt(
                 .unwrap_or(0);
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
-                "schema_version": "0.1.0",
+                "schema_version": "0.2.0",
+                "outcome": "completed",
+                "events_received": telemetry.events,
+                "bytes_received": telemetry.bytes,
+                "first_event_ms": telemetry.first_event_ms,
+                "turns": telemetry.turns,
+                "recovered_failed_turns": telemetry.failed_turns,
+                "auto_retries": telemetry.auto_retries,
                 "startup_ms": startup_ms,
                 "rpc_ms": rpc_ms,
                 "first_model_text_ms": first_text_ms,
@@ -902,6 +1203,9 @@ pub async fn run_prompt(
         _ = tokio::signal::ctrl_c() => Err(anyhow!("Pi RPC cancelled by user")),
         _ = tokio::time::sleep(total), if !total.is_zero() => Err(anyhow!("Pi RPC total timeout")),
     };
+    if let (Err(error), Some(path)) = (&outcome, event_log) {
+        record_rpc_failure(path, config, prompt, &telemetry, started, error);
+    }
     #[cfg(unix)]
     {
         // Give Pi a bounded chance to clean up its own tracked detached tools.
@@ -914,6 +1218,68 @@ pub async fn run_prompt(
     let _ = child.kill().await;
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
     outcome
+}
+
+/// Appends one `newsroom_rpc_failure` event (best effort) and prints a one-line
+/// stderr summary. Only classes, counts and durations are recorded.
+fn record_rpc_failure(
+    path: &Path,
+    config: &PiConfig,
+    prompt: &str,
+    telemetry: &RunTelemetry,
+    started: Instant,
+    error: &anyhow::Error,
+) {
+    let elapsed_ms = started.elapsed().as_millis();
+    let provider = error.downcast_ref::<ProviderFailure>();
+    let failure = telemetry.pending.as_ref();
+    let message = format!("{error:#}");
+    let event = json!({
+        "type": "newsroom_rpc_failure",
+        "schema_version": "0.1.0",
+        "kind": if provider.is_some() { "provider_failure" } else { "rpc_failure" },
+        "stage": telemetry.stage,
+        "message": message,
+        "class": provider.map(|value| value.class),
+        "http_status": provider.and_then(|value| value.http_status),
+        "turn_index": failure.map(|value| value.turn_index).or((telemetry.turns > 0).then_some(telemetry.turns)),
+        "elapsed_ms": elapsed_ms,
+        "failure_at_ms": failure.map(|value| value.at_ms),
+        "first_event_ms": telemetry.first_event_ms,
+        "events_received": telemetry.events,
+        "bytes_received": telemetry.bytes,
+        "turn_events": failure.map(|value| value.turn_events),
+        "turn_bytes": failure.map(|value| value.turn_bytes),
+        "turn_ms": failure.and_then(|value| value.turn_ms),
+        "turn_first_event_ms": failure.and_then(|value| value.turn_first_event_ms),
+        "gap_before_failure_ms": failure.map(|value| value.gap_ms),
+        "failed_turn_context_tokens": failure.and_then(|value| value.context_tokens),
+        "last_ok_context_tokens": telemetry.last_ok_context_tokens,
+        "failed_turns": telemetry.failed_turns,
+        "auto_retries": telemetry.auto_retries,
+        "turn_classes": telemetry.classes,
+        "partial_text_bytes": provider.map(|value| value.partial_text.len()),
+        "prompt_bytes": prompt.len(),
+        "continue_session": config.continue_session,
+        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{event}");
+    }
+    let number = |value: Option<u128>| value.map_or("N/A".to_string(), |v| v.to_string());
+    eprintln!(
+        "[agent] rpc_failure class={} stage={} turn={} elapsed_ms={elapsed_ms} first_event_ms={} events={} bytes={} turn_events={} turn_bytes={} turn_ms={} gap_ms={}",
+        provider.map_or("none", |value| value.class),
+        telemetry.stage,
+        telemetry.turns,
+        number(telemetry.first_event_ms),
+        telemetry.events,
+        telemetry.bytes,
+        failure.map_or("N/A".to_string(), |value| value.turn_events.to_string()),
+        failure.map_or("N/A".to_string(), |value| value.turn_bytes.to_string()),
+        number(failure.and_then(|value| value.turn_ms)),
+        number(failure.map(|value| value.gap_ms)),
+    );
 }
 
 // fill_buf/consume keeps partial JSON safe across select cancellation and caps memory.
@@ -1027,7 +1393,7 @@ mod tests {
         });
         assert_eq!(
             provider_error_class(&unavailable),
-            ("provider_unavailable", Some(503))
+            ("provider_gateway_error", Some(503))
         );
         let rate_limited = json!({"data": {"status": 429, "message": "secret-token"}});
         assert_eq!(
@@ -1052,12 +1418,12 @@ mod tests {
             ("authentication_error", "provider_authentication_failed"),
             ("permission_error", "provider_authentication_failed"),
             ("api_error", "provider_unavailable"),
-            ("overloaded_error", "provider_unavailable"),
+            ("overloaded_error", "provider_overloaded"),
             ("invalid_request_error", "provider_request_rejected"),
             ("billing_error", "provider_request_rejected"),
             ("not_found_error", "provider_request_rejected"),
             ("conflict_error", "provider_request_rejected"),
-            ("request_too_large", "provider_request_rejected"),
+            ("request_too_large", "provider_context_overflow"),
         ] {
             let streamed = json!({
                 "type": "message_end",
@@ -1077,8 +1443,8 @@ mod tests {
 
         for (status, expected_class) in [
             (402, "provider_request_rejected"),
-            (413, "provider_request_rejected"),
-            (529, "provider_unavailable"),
+            (413, "provider_context_overflow"),
+            (529, "provider_overloaded"),
         ] {
             let response = json!({
                 "data": {
@@ -1108,6 +1474,55 @@ mod tests {
         );
 
         assert_eq!(provider_error_class(&json!({})), ("provider_error", None));
+    }
+
+    #[test]
+    fn new_failure_classes_are_distinguished() {
+        for (text, class) in [
+            (
+                "stream terminated unexpectedly",
+                "provider_stream_interrupted",
+            ),
+            ("HTTP 502 bad gateway", "provider_gateway_error"),
+            ("HTTP 524 origin timeout", "provider_timeout"),
+            (
+                "prompt is too long: 210000 tokens",
+                "provider_context_overflow",
+            ),
+            ("Overloaded", "provider_overloaded"),
+        ] {
+            let event = json!({"message": {"stopReason": "error", "errorMessage": text}});
+            assert_eq!(provider_error_class(&event).0, class, "{text}");
+        }
+    }
+
+    #[test]
+    fn final_error_is_redacted_and_provider_failure_display_is_safe() {
+        let mut event = json!({"type": "auto_retry_end", "finalError": "secret-token boom"});
+        redact_event(&mut event, &["secret-token".to_string()]);
+        assert_eq!(event["finalError"], "diagnostic suppressed");
+        let text = ProviderFailure {
+            class: "provider_timeout",
+            http_status: Some(504),
+            turn_index: 3,
+            elapsed_ms: 1200,
+            partial_text: "partial".to_string(),
+        }
+        .to_string();
+        assert!(text.contains("provider_timeout") && text.contains("turn 3"));
+        assert!(!text.contains("partial"));
+    }
+
+    #[test]
+    fn recovered_turn_clears_pending_failure() {
+        let mut t = RunTelemetry::new();
+        t.turn_started(0);
+        t.turn_failed(("provider_timeout", None), 50, 10, None);
+        assert!(t.pending.is_some());
+        t.turn_started(100);
+        t.turn_ok(Some(10));
+        assert!(t.pending.is_none());
+        assert_eq!(t.failed_turns, 1);
     }
 
     #[test]
