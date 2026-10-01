@@ -61,7 +61,7 @@ function svg(regions) {
 
 // --- version constant is stable and importable ------------------------------
 {
-  assert.equal(RENDER_QA_LABELS_VERSION, "1.3.0");
+  assert.equal(RENDER_QA_LABELS_VERSION, "1.5.0");
 }
 console.log("unit: RENDER_QA_LABELS_VERSION is stable -- PASS");
 

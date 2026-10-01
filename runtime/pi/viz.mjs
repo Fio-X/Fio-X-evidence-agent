@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -5145,7 +5145,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   const dataPoints = [];
   for (const item of joined) {
     for (const idx of item.featureIndices) {
-      for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
+      for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
     }
   }
   // Review fix (framing): ~6% padding around the data bbox, not the wider
@@ -5164,6 +5164,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
   let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
+
+  // Coverage contract for framingRings: a region's far, tiny pieces do not
+  // drive the frame, so when one lies wholly outside the map rect (and is big
+  // enough to see, >= 1 deg^2) the chart note names the region instead of
+  // clipping it silently.
+  const clippedTerritoryItems = joined.filter((item) => item.featureIndices.some((idx) =>
+    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
 
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
@@ -5600,6 +5607,10 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
     for (const leader of acceptedLeaders) {
       if (segmentsIntersect(p1, p2, leader.a, leader.b)) return false;
+      // A label may not sit on a leader accepted earlier either: boxes were
+      // only ever tested against earlier boxes, so a later label could land
+      // on top of another region's leader line.
+      if (ownBox && segmentCrossesBox(leader.a, leader.b, ownBox)) return false;
     }
     for (const box of acceptedBoxes) {
       if (segmentCrossesBox(p1, p2, box)) return false;
@@ -5618,61 +5629,97 @@ function renderChoropleth(spec, rows, mobile = false) {
     return true;
   }
 
-  // Footnote-fallback numbered markers (leader research point 3: this tier
-  // draws no leader at all, so it has no boundary-column layout to keep it
-  // crossing-free). Their default position is each region's own raw
-  // centroid, which is fine when regions are spread out but can put two
-  // small, geographically adjacent countries' markers closer together than
-  // the marker's own rendered footprint (r=9 circle + numeral) allows -
-  // worse at a compressed inset scale. A short pairwise-repulsion pass keeps
-  // each marker close to its true centroid while guaranteeing no two
-  // markers (and therefore no two numerals) overlap.
-  // A marker can also land on top of a fixed obstacle it must never move
-  // (an on-polygon inline label, e.g.) - pushed out to the nearest edge of
-  // that obstacle's box (expanded by the marker's own footprint) rather than
-  // just kept clear of other markers.
-  function pushOutOfBox(p, box, margin) {
-    const bx0 = box.x - margin, bx1 = box.x + box.w + margin;
-    const by0 = box.y - margin, by1 = box.y + box.h + margin;
-    if (p.x < bx0 || p.x > bx1 || p.y < by0 || p.y > by1) return p;
-    const dLeft = p.x - bx0, dRight = bx1 - p.x, dTop = p.y - by0, dBottom = by1 - p.y;
-    const min = Math.min(dLeft, dRight, dTop, dBottom);
-    if (min === dLeft) return { x: bx0, y: p.y };
-    if (min === dRight) return { x: bx1, y: p.y };
-    if (min === dTop) return { x: p.x, y: by0 };
-    return { x: p.x, y: by1 };
-  }
-  function declutterPoints(points, minDist, obstacleBoxes = [], obstacleMargin = 0) {
-    let pts = points.map((p) => ({ x: p.x, y: p.y }));
-    for (let iter = 0; iter < 8; iter++) {
-      let moved = false;
-      for (const box of obstacleBoxes) {
-        pts = pts.map((p) => {
-          const moved2 = pushOutOfBox(p, box, obstacleMargin);
-          if (moved2.x !== p.x || moved2.y !== p.y) moved = true;
-          return moved2;
-        });
+  // Numbered-marker placement (dense small regions). Markers go in order, each
+  // at its own centroid if that is clear, otherwise at the nearest clear spot
+  // on growing rings around it (fixed radii and angles, so the result never
+  // varies): clear of every placed marker, every label box, every leader
+  // segment and every rect (e.g. the inset panel), and inside the bounds. A
+  // marker with no clear spot keeps the position that breaks the fewest rules
+  // and the numbered list under the chart still names it.
+  function placeNumberedMarkers(points, { bounds, boxes = [], segments = [], dots = [], radius = 9 } = {}) {
+    const R = radius;
+    const keepOut = R + 1;
+    const segDist = (q, a, b) => {
+      const vx = b.x - a.x, vy = b.y - a.y;
+      const len2 = vx * vx + vy * vy;
+      const t = len2 ? Math.max(0, Math.min(1, ((q.x - a.x) * vx + (q.y - a.y) * vy) / len2)) : 0;
+      return Math.hypot(q.x - (a.x + t * vx), q.y - (a.y + t * vy));
+    };
+    const clampToBounds = (q) => (bounds
+      ? { x: Math.min(bounds.x + bounds.w - R, Math.max(bounds.x + R, q.x)), y: Math.min(bounds.y + bounds.h - R, Math.max(bounds.y + R, q.y)) }
+      : q);
+    // A region's own data dot may sit under its marker only when the marker
+    // is concentric with it (the default, unmoved placement).
+    const violations = (q, placed, origin) => {
+      let v = 0;
+      for (const d of dots) {
+        if (q.x === origin.x && q.y === origin.y && Math.hypot(d.x - origin.x, d.y - origin.y) < 1) continue;
+        if (Math.hypot(q.x - d.x, q.y - d.y) < R + (d.r ?? 3.5) + 1) v++;
       }
-      for (let i = 0; i < pts.length; i++) {
-        for (let j = i + 1; j < pts.length; j++) {
-          const dx = pts[j].x - pts[i].x;
-          const dy = pts[j].y - pts[i].y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < minDist) {
-            moved = true;
-            const push = (minDist - dist) / 2;
-            const ux = dist > 0.01 ? dx / dist : 1;
-            const uy = dist > 0.01 ? dy / dist : 0;
-            pts[i].x -= ux * push;
-            pts[i].y -= uy * push;
-            pts[j].x += ux * push;
-            pts[j].y += uy * push;
-          }
+      for (const o of placed) if (Math.hypot(q.x - o.x, q.y - o.y) < 2 * R + 2) v++;
+      for (const b of boxes) if (q.x > b.x - keepOut && q.x < b.x + b.w + keepOut && q.y > b.y - keepOut && q.y < b.y + b.h + keepOut) v++;
+      for (const sg of segments) if (segDist(q, sg.a, sg.b) < R + 2) v++;
+      for (const t of tethers) if (segDist(q, t.a, t.b) < R + 1) v++;
+      return v;
+    };
+    const placed = [];
+    const out = [];
+    const tethers = [];
+    const RADII = [0, ...Array.from({ length: 25 }, (_, i) => 8 + i * 8)];
+    const ANGLES = 24;
+    const inBounds = (q) => !bounds || (q.x >= bounds.x + R && q.x <= bounds.x + bounds.w - R && q.y >= bounds.y + R && q.y <= bounds.y + bounds.h - R);
+    // A marker whose circle no longer covers its true point keeps a visible
+    // tether back to it (see MARKER_TETHER below); the tether, like the
+    // marker, must stay clear of labels, other markers, dots and leaders.
+    const tetherViolations = (q, pt, ownIndex) => {
+      if (Math.hypot(q.x - pt.x, q.y - pt.y) <= R) return 0;
+      const a = pt, b = markerTetherStart(q, pt, R);
+      let v = 0;
+      for (const bx of boxes) if (segmentCrossesBox(a, b, bx)) v++;
+      for (const sg of segments) if (segmentsIntersect(a, b, sg.a, sg.b)) v++;
+      placed.forEach((o, i) => { if (i !== ownIndex && segDist(o, a, b) < R + 1) v++; });
+      for (const d of dots) if (Math.hypot(d.x - pt.x, d.y - pt.y) >= 1 && segDist(d, a, b) < (d.r ?? 3.5) + 1) v++;
+      for (const t of tethers) if (segmentsIntersect(a, b, t.a, t.b)) v++;
+      return v;
+    };
+    for (const pt of points) {
+      const origin = clampToBounds(pt);
+      let best = { q: origin, v: Infinity };
+      search:
+      for (const r of RADII) {
+        for (let k = 0; k < (r === 0 ? 1 : ANGLES); k++) {
+          const ang = (k / ANGLES) * Math.PI * 2;
+          const q = { x: origin.x + Math.cos(ang) * r, y: origin.y + Math.sin(ang) * r };
+          if (!inBounds(q)) continue;
+          const v = violations(q, placed, origin) * 100 + tetherViolations(q, pt, -1);
+          if (v === 0) { best = { q, v }; break search; }
+          if (v < best.v) best = { q, v };
         }
       }
-      if (!moved) break;
+      const displaced = Math.hypot(best.q.x - pt.x, best.q.y - pt.y) > R;
+      // No clean spot that also keeps a clean tether: the region stays in the
+      // numbered list only (null = no map marker, so nothing claims a position).
+      if (best.v > 0) { out.push(null); continue; }
+      placed.push(best.q);
+      out.push(best.q);
+      if (displaced) tethers.push({ a: pt, b: markerTetherStart(best.q, pt, R) });
     }
-    return pts;
+    return out;
+  }
+  // Where a tether leaves a displaced marker: on its circle, towards the true point.
+  function markerTetherStart(marker, point, radius = 9) {
+    const d = Math.hypot(point.x - marker.x, point.y - marker.y) || 1;
+    return { x: marker.x + ((point.x - marker.x) / d) * radius, y: marker.y + ((point.y - marker.y) / d) * radius };
+  }
+  // A displaced numbered marker (its circle no longer covers its true point)
+  // is joined back to that point by a hairline in the same leader style, so a
+  // reader can tell which place the number stands for. render-QA rule
+  // marker_displaced_without_tether fails any displaced marker without one.
+  function markerTetherSvg(role, marker, point, iso3, num, radius = 9) {
+    if (Math.hypot(marker.x - point.x, marker.y - point.y) <= radius) return "";
+    const a = markerTetherStart(marker, point, radius);
+    return `<path data-role="${role}-leader" data-iso3="${esc(iso3)}" data-number="${num}" d="M${a.x.toFixed(1)},${a.y.toFixed(1)} L${point.x.toFixed(1)},${point.y.toFixed(1)}" fill="none" stroke="${LEADER_STYLE.color}" stroke-width="${LEADER_STYLE.width}"/>`
+      + `<circle data-role="${role}-leader-dot" data-iso3="${esc(iso3)}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="1" fill="${LEADER_STYLE.color}"/>`;
   }
 
   // Coordinator research (scratchpad/reports/research-leaders.md): every
@@ -5715,6 +5762,21 @@ function renderChoropleth(spec, rows, mobile = false) {
   }
   function anchorDotSvg(dataRole, anchor) {
     return `<circle data-role="${dataRole}" cx="${anchor.x.toFixed(1)}" cy="${anchor.y.toFixed(1)}" r="1" fill="${LEADER_STYLE.color}"/>`;
+  }
+  // The point on the label box's (gap-padded) outline nearest the anchor, so a
+  // leader always ends on the edge facing its own point instead of running to
+  // a fixed side and back across the text it labels.
+  function nearestBoxEdgeTip(anchor, box) {
+    const g = LEADER_GAP_PX;
+    const x0 = box.x - g, x1 = box.x + box.w + g, y0 = box.y - g, y1 = box.y + box.h + g;
+    const inside = anchor.x > x0 && anchor.x < x1 && anchor.y > y0 && anchor.y < y1;
+    if (!inside) return { x: Math.min(x1, Math.max(x0, anchor.x)), y: Math.min(y1, Math.max(y0, anchor.y)) };
+    const d = [anchor.x - x0, x1 - anchor.x, anchor.y - y0, y1 - anchor.y];
+    const m = Math.min(...d);
+    if (m === d[0]) return { x: x0, y: anchor.y };
+    if (m === d[1]) return { x: x1, y: anchor.y };
+    if (m === d[2]) return { x: anchor.x, y: y0 };
+    return { x: anchor.x, y: y1 };
   }
   function elbowSegments(anchor, tip) {
     const bend = elbowBend(anchor, tip);
@@ -5932,7 +5994,7 @@ function renderChoropleth(spec, rows, mobile = false) {
           const px = li.x + Math.cos(ang) * dist, py = li.y + Math.sin(ang) * dist;
           const side = Math.cos(ang) >= 0 ? "right" : "left";
           const box = side === "right" ? { x: px, y: py - lineH - 2, w: li.w, h: li.h } : { x: px - li.w, y: py - lineH - 2, w: li.w, h: li.h };
-          const tip = { x: side === "right" ? px - LEADER_GAP_PX : px + LEADER_GAP_PX, y: py };
+          const tip = nearestBoxEdgeTip(anchor, box);
           if (box.x < mapLeft + 2 || box.x + box.w > mapRight - 2 || box.y < top + 2 || box.y + box.h > bottom - 2) continue;
           const len = elbowLength(anchor, tip);
           if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) continue;
@@ -6444,31 +6506,41 @@ function renderChoropleth(spec, rows, mobile = false) {
     // border, not a polygon, is what runs out of room) - if every nudge on
     // the assigned side fails, the same search is retried once more from the
     // *other* side's column before giving up to the numbered-marker tier.
-    const tryClear = (cand) => {
+    const tryClear = (cand, strictOwn = false) => {
       const len = elbowLength(cand.anchor, cand.tip);
       if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) return false;
       if (cand.box.x < 4 || cand.box.x + cand.box.w > insetMapSize - 4 || cand.box.y < 2 || cand.box.y + cand.box.h > insetMapH - 2) return false;
       if (boxOverlapsFeature(insetFeatureIndices, cand.box, sizingProbe.project, zLon0, zLat0)) return false;
       const segs = elbowSegments(cand.anchor, cand.tip);
+      // A leader never runs through its own label.
+      if (strictOwn && segs.some(([p1, p2]) => segmentCrossesBox(p1, p2, cand.box))) return false;
       return (
         segs.every(([p1, p2]) => leaderIsClear(p1, p2, candidate.idx0, otherIndices, insetAcceptedLeaders, sizingProbe.project, zLon0, zLat0, obstacleBoxes, cand.box)) &&
         !otherIndices.some((idx) => pointOnFeature(idx, cand.tip.x, cand.tip.y, sizingProbe.project, zLon0, zLat0))
       );
     };
     let accepted = null;
-    for (let step = 0; step <= 24 && !accepted && !entry.overflowOnly; step++) {
-      const cand = step === 0 ? entry : extendEntryOutward(entry, entry.side, step * 8);
-      if (tryClear(cand)) accepted = cand;
-    }
-    if (!accepted && !entry.overflowOnly) {
-      const altSide = entry.side === "right" ? "left" : "right";
-      const altColumnX = altSide === "right" ? insetRightColumnX : insetLeftColumnX;
-      const flipped = flipEntrySide(entry, altSide, altColumnX);
-      for (let step = 0; step <= 24 && !accepted; step++) {
-        const cand = step === 0 ? flipped : extendEntryOutward(flipped, altSide, step * 8);
-        if (tryClear(cand)) accepted = cand;
+    // Placement tiers, each tried first without any leader through its own
+    // label: the boundary column (own side, then the other side). Only if that
+    // fails does the column accept a leader that touches its own label, so no
+    // placement is ever lost; the open-spot tier below still follows.
+    const tryColumn = (strictOwn) => {
+      for (let step = 0; step <= 24 && !accepted && !entry.overflowOnly; step++) {
+        const cand = step === 0 ? entry : extendEntryOutward(entry, entry.side, step * 8);
+        if (tryClear(cand, strictOwn)) accepted = cand;
       }
-    }
+      if (!accepted && !entry.overflowOnly) {
+        const altSide = entry.side === "right" ? "left" : "right";
+        const altColumnX = altSide === "right" ? insetRightColumnX : insetLeftColumnX;
+        const flipped = flipEntrySide(entry, altSide, altColumnX);
+        for (let step = 0; step <= 24 && !accepted; step++) {
+          const cand = step === 0 ? flipped : extendEntryOutward(flipped, altSide, step * 8);
+          if (tryClear(cand, strictOwn)) accepted = cand;
+        }
+      }
+    };
+    tryColumn(true);
+    if (!accepted) tryColumn(false);
     // P3: a short leader to an open spot beside the region, before numbering.
     if (!accepted) {
       const anchorPt = { x: candidate.x, y: candidate.y };
@@ -6480,7 +6552,7 @@ function renderChoropleth(spec, rows, mobile = false) {
           const side = Math.abs(Math.cos(rad)) < 0.3 ? (anchorPt.x < insetCenterX ? "right" : "left") : Math.cos(rad) >= 0 ? "right" : "left";
           const box = { x: side === "right" ? tip.x + LEADER_GAP_PX : tip.x - LEADER_GAP_PX - candidate.w, y: tip.y - candidate.h / 2, w: candidate.w, h: candidate.h };
           const cand = { anchor: anchorPt, tip, box, side };
-          if (tryClear(cand)) { accepted = cand; break; }
+          if (tryClear(cand, true)) { accepted = cand; break; }
         }
         if (accepted) break;
         // Label centred above or below the point, on a straight vertical leader.
@@ -6488,7 +6560,7 @@ function renderChoropleth(spec, rows, mobile = false) {
           const tip = { x: anchorPt.x, y: anchorPt.y + dir * dist };
           const box = { x: Math.min(insetMapSize - 4 - candidate.w, Math.max(4, anchorPt.x - candidate.w / 2)), y: dir > 0 ? tip.y + LEADER_GAP_PX : tip.y - LEADER_GAP_PX - candidate.h, w: candidate.w, h: candidate.h };
           const cand = { anchor: anchorPt, tip, box, side: "center" };
-          if (tryClear(cand)) { accepted = cand; break; }
+          if (tryClear(cand, true)) { accepted = cand; break; }
         }
         if (accepted) break;
       }
@@ -6632,11 +6704,25 @@ function renderChoropleth(spec, rows, mobile = false) {
   // single place a reader looks up every numbered region's name/value.
   const numberedFallbackItems = [...footnoteItems, ...listFallbackItems];
   const fallbackNumberByIso3 = new Map(numberedFallbackItems.map((li, i) => [li.item.iso3, i + 1]));
-  footnoteItems.forEach((li) => {
+  // Numbered regions that got no map marker (no clean spot plus tether): they
+  // stay in the numbered list, and are counted so the chart note and render QA
+  // can say so instead of letting a data point vanish silently.
+  const listOnlyIso3 = [];
+  let markerTotal = footnoteItems.length;
+  const footnoteMarkerPositions = placeNumberedMarkers(footnoteItems.map((li) => ({ x: li.x, y: li.y })), {
+    bounds: { x: mapLeft, y: top, w: mapRight - mapLeft, h: bottom - top },
+    boxes: [...allLabelBoxes, ...(insetCorner ? [{ x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h }] : [])],
+    segments: placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
+    dots: [...tinyDots.values()].map((d) => ({ x: d.x, y: d.y, r: mobile ? 3 : 3.5 })),
+  });
+  footnoteItems.forEach((li, i) => {
     const num = fallbackNumberByIso3.get(li.item.iso3);
+    const mk = footnoteMarkerPositions[i];
+    if (!mk) { listOnlyIso3.push(li.item.iso3); return; }
     footnoteParts.push(
-      `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" cx="${li.x.toFixed(1)}" cy="${li.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
-      `<text data-role="choropleth-footnote-marker-label" x="${li.x.toFixed(1)}" y="${(li.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
+      markerTetherSvg("choropleth-footnote-marker", mk, { x: li.x, y: li.y }, li.item.iso3, num),
+      `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${li.x.toFixed(1)}" data-anchor-y="${li.y.toFixed(1)}" cx="${mk.x.toFixed(1)}" cy="${mk.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
+      `<text data-role="choropleth-footnote-marker-label" x="${mk.x.toFixed(1)}" y="${(mk.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
     );
   });
   // The list starts below the legend's own tick-label row (legendY=bottom+22,
@@ -6658,7 +6744,26 @@ function renderChoropleth(spec, rows, mobile = false) {
   // zero whenever the list is short enough to already fit inside it - so
   // the frame grows by exactly what the extra rows need and no more.
   const baseSlotBottom = bottom + insetStripH + (mobile ? 74 : 80);
-  const footnoteBlockBottom = footnoteListTop + numberedFallbackItems.length * footnoteRowH + 10;
+  // Footnote list layout: the number column is right-aligned at one fixed x
+  // (so "9." and "10." share an edge and every name/value starts at the same
+  // x from row 1 down), and a long list is split into side-by-side columns
+  // filled top to bottom so the frame does not grow by one row per region.
+  const FOOTNOTE_ROWS_PER_COLUMN = 12;
+  const footnoteFieldGap = 4;
+  const footnoteColumnGap = 28;
+  const footnoteNumW = numberedFallbackItems.length
+    ? Math.max(...numberedFallbackItems.map((_, i) => choroplethLabelWidth(`${i + 1}.`, font)))
+    : 0;
+  const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, font))) : 0;
+  const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, font))) : 0;
+  const footnoteColumnW = footnoteNumW + footnoteFieldGap + footnoteNameW + footnoteFieldGap + footnoteValueW;
+  const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
+  const footnoteColumns = Math.min(
+    footnoteColumnsFit,
+    Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
+  );
+  const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
+  const footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
   const footnoteH = numberedFallbackItems.length ? Math.max(0, footnoteBlockBottom - baseSlotBottom) : 0;
   if (numberedFallbackItems.length) {
     // Split into three text runs so the name and value each land in their
@@ -6670,11 +6775,11 @@ function renderChoropleth(spec, rows, mobile = false) {
     footnoteParts.push(`<g data-role="choropleth-footnote-list">`);
     // P3 (item 6): values sit in one right-aligned column, so the numbers can
     // be compared down the list.
-    const footnoteNameW = Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, font)));
-    const footnoteValueW = Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, font)));
     numberedFallbackItems.forEach((li, i) => {
-      const rowY = footnoteListTop + i * footnoteRowH;
-      const prefix = `${i + 1}. `;
+      const column = Math.floor(i / footnoteRows);
+      const rowY = footnoteListTop + (i % footnoteRows) * footnoteRowH;
+      const columnX = plotLeft + column * (footnoteColumnW + footnoteColumnGap);
+      const prefix = `${i + 1}.`;
       // Review fix (footnote list "Togo" overlapping its own "—" separator
       // on mobile): each field used to start 8px BEHIND where the previous
       // field's estimated width said it ended, so a name whose true
@@ -6691,11 +6796,11 @@ function renderChoropleth(spec, rows, mobile = false) {
       // leaves exactly the same proven two-field gap pattern already used
       // between the numeral prefix and the name, now reused once more
       // between name and value, instead of a third, dash-carrying field.
-      const footnoteFieldGap = 4;
-      const nameX = plotLeft + choroplethLabelWidth(prefix, font) + footnoteFieldGap;
+      const numX = columnX + footnoteNumW;
+      const nameX = numX + footnoteFieldGap;
       const valueX = nameX + footnoteNameW + footnoteFieldGap + footnoteValueW;
       footnoteParts.push(
-        `<text x="${plotLeft.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
+        `<text data-role="choropleth-footnote-number" x="${numX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" style="font-variant-numeric: tabular-nums" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
         `<text data-role="choropleth-footnote-name" data-iso3="${esc(li.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(li.name)}</text>`,
         `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
       );
@@ -7068,20 +7173,29 @@ function renderChoropleth(spec, rows, mobile = false) {
       }).concat(
         insetOverflowItems.map((item) => ({ x: item.box.x + mapX0, y: item.box.y + mapY0, w: item.box.w, h: item.box.h }))
       );
-      const declutteredCentroids = declutterPoints(
-        rawCentroids.filter(Boolean),
-        20,
-        onPolygonLabelBoxes,
-        11
+      const insetLeaderSegments = insetOverflowItems.flatMap((item) =>
+        elbowSegments(
+          { x: item.from.x + mapX0, y: item.from.y + mapY0 },
+          { x: item.to.x + mapX0, y: item.to.y + mapY0 },
+        ).map(([a, b]) => ({ a, b })),
       );
+      const declutteredCentroids = placeNumberedMarkers(rawCentroids.filter(Boolean), {
+        bounds: { x: mapX0, y: mapY0, w: mapX1 - mapX0, h: mapY1 - mapY0 },
+        boxes: onPolygonLabelBoxes,
+        segments: insetLeaderSegments,
+        dots: insetLabelItems.map((item) => tinyRegionDot(item.item.featureIndices, zoomProj.project, zLon0, zLat0)).filter(Boolean).map((d) => ({ x: d.x, y: d.y, r: 3.2 })),
+      });
       let centroidCursor = 0;
-      const markerCentroids = rawCentroids.map((c) => (c ? declutteredCentroids[centroidCursor++] : null));
+      const markerCentroids = rawCentroids.map((c) => (c ? declutteredCentroids[centroidCursor++] ?? null : null));
       listFallbackItems.forEach((li, i) => {
         const marker = markerCentroids[i];
         const num = fallbackNumberByIso3.get(li.item.iso3);
+        if (rawCentroids[i]) markerTotal++;
+        if (rawCentroids[i] && !marker) listOnlyIso3.push(li.item.iso3);
         if (marker) {
           insetPanelParts.push(
-            `<circle data-role="choropleth-inset-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" cx="${marker.x.toFixed(1)}" cy="${marker.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
+            markerTetherSvg("choropleth-inset-footnote-marker", marker, rawCentroids[i], li.item.iso3, num),
+            `<circle data-role="choropleth-inset-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${rawCentroids[i].x.toFixed(1)}" data-anchor-y="${rawCentroids[i].y.toFixed(1)}" cx="${marker.x.toFixed(1)}" cy="${marker.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
             `<text data-role="choropleth-inset-footnote-marker-label" x="${marker.x.toFixed(1)}" y="${(marker.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
           );
         }
@@ -7170,27 +7284,77 @@ function renderChoropleth(spec, rows, mobile = false) {
   const legendY = bottom + insetStripH + 22;
   const legendW = Math.min(mobile ? 240 : 320, plotRight - plotLeft);
   const legendStep = legendW / CHOROPLETH_RAMP.length;
-  const legendTitleBase = String(spec.legend_title ?? spec.title ?? "").trim();
-  const legendTitle = spec.unit && !legendTitleBase.includes(spec.unit) ? `${legendTitleBase}（${spec.unit}）` : legendTitleBase;
+  // The legend names the measure being coloured, never the chart title (which
+  // sits right above the map and would only repeat itself): an explicit
+  // legend_title, else the measure's own label from measure_semantics, else
+  // just its unit.
+  const measureEntry = Array.isArray(spec.measure_semantics)
+    ? spec.measure_semantics.filter((m) => m && typeof m === "object").find((m) => m.field && m.field === spec.value_field) ?? null
+    : null;
+  const measureName = String(measureEntry?.label ?? measureEntry?.name ?? measureEntry?.title ?? "").trim();
+  const legendTitleBase = String(spec.legend_title ?? measureName ?? "").trim();
+  const legendTitle = legendTitleBase
+    ? spec.unit && !legendTitleBase.includes(spec.unit) ? `${legendTitleBase}（${spec.unit}）` : legendTitleBase
+    : String(spec.unit ?? "").trim();
   f.parts.push('<g data-role="choropleth-legend">');
   if (legendTitle) {
     f.parts.push(`<text data-role="choropleth-legend-title" x="${plotLeft}" y="${legendY - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(legendTitle)}</text>`);
   }
-  CHOROPLETH_RAMP.forEach((c, i) => {
+  // Whole-number measures (years, counts): the class edges are only bin
+  // bounds, so the top edge (e.g. 2018 for data ending in 2017) names a value
+  // no region has. The legend therefore stops at the class holding the data
+  // max: no swatch or tick is drawn for a class above it (a single value gets
+  // one swatch labelled with that value, never a 5..9 scale). Swatches, ticks
+  // and the displayed range all come from the same shownClasses, so they
+  // cannot disagree. One value per class: each swatch is labelled with its own
+  // value (centred); wider classes: the last edge is capped at the data max
+  // when the max falls inside that class (classifyValue puts a value equal to
+  // a lower bound in the class that starts there).
+  const legendIntegerData = Boolean(specValueKind(spec)) && values.length > 0 && values.every(Number.isInteger);
+  const legendDataMax = legendIntegerData ? Math.max(...values) : null;
+  const legendOneValuePerClass = legendIntegerData && breaks.length > 1 && breaks.every((b, i) => i === 0 || b - breaks[i - 1] === 1);
+  const legendClassCount = breaks.length - 1;
+  // Every region has the same value (one region, or all equal): one swatch
+  // labelled with that value, whatever the measure kind.
+  const legendSingleValue = values.length > 0 && values.every((v) => v === values[0]);
+  const shownClasses = legendSingleValue ? 1 : legendIntegerData ? Math.min(legendClassCount, Math.max(1, classifyValue(legendDataMax, breaks) + 1)) : legendClassCount;
+  CHOROPLETH_RAMP.slice(0, shownClasses).forEach((c, i) => {
     f.parts.push(`<rect x="${(plotLeft + i * legendStep).toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${c}"/>`);
   });
-  breaks.forEach((edgeValue, i) => {
-    const isLast = i === breaks.length - 1;
-    const x = plotLeft + i * legendStep;
-    f.parts.push(
-      `<text x="${(isLast ? x - 2 : x).toFixed(1)}" y="${legendY + 26}" text-anchor="${isLast ? "end" : "middle"}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(isLast ? fmtSpec(spec, edgeValue, spec.unit) : fmtSpec(spec, edgeValue, ""))}</text>`
-    );
-  });
+  const legendTick = (edgeValue, x, anchor, unit) =>
+    `<text x="${x.toFixed(1)}" y="${legendY + 26}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, edgeValue, unit))}</text>`;
+  if (legendSingleValue) {
+    f.parts.push(legendTick(values[0], plotLeft + 0.5 * legendStep, "middle", spec.unit));
+  } else if (legendOneValuePerClass) {
+    for (let i = 0; i < shownClasses; i++) {
+      f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === shownClasses - 1 ? spec.unit : ""));
+    }
+  } else {
+    // The end-anchored last label carries the unit and can reach back over the
+    // previous tick; that interior tick is left unlabelled (its swatch edge
+    // stays) rather than printed on top of it.
+    const tickText = (i) => {
+      const isLast = i === shownClasses;
+      const v = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(breaks[i], legendDataMax) : breaks[i];
+      return fmtSpec(spec, v, isLast ? spec.unit : "");
+    };
+    const lastLeft = plotLeft + shownClasses * legendStep - 2 - (choroplethLabelWidth(tickText(shownClasses), 12) - 8);
+    for (let i = 0; i <= shownClasses; i++) {
+      const isLast = i === shownClasses;
+      const x = plotLeft + i * legendStep;
+      if (i === shownClasses - 1 && i > 0 && x + (choroplethLabelWidth(tickText(i), 12) - 8) / 2 + 4 > lastLeft) continue;
+      const shown = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(breaks[i], legendDataMax) : breaks[i];
+      f.parts.push(legendTick(shown, isLast ? x - 2 : x, isLast ? "end" : "middle", isLast ? spec.unit : ""));
+    }
+  }
   f.parts.push("</g>");
 
   f.parts.push(...onMapParts);
   f.parts.push(...overflowParts);
   f.parts.push(...footnoteParts);
+  if (listOnlyIso3.length) {
+    f.parts.push(`<g data-role="choropleth-marker-list-only" data-count="${listOnlyIso3.length}" data-total="${markerTotal}" data-iso3="${esc(listOnlyIso3.join(","))}"/>`);
+  }
   f.parts.push(...insetPanelParts);
   f.parts.push(...locatorParts);
 
@@ -7219,9 +7383,20 @@ function renderChoropleth(spec, rows, mobile = false) {
   // under the legend into the footer's own source line, rather than sitting
   // as a second, disconnected attribution line on the map body.
   const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
+  let framingNote = "";
+  if (clippedTerritoryItems.length) {
+    const shownNames = clippedTerritoryItems.slice(0, 3).map((item) => resolveEconomyDisplayName(item.raw, spec.category_names, lang));
+    const more = clippedTerritoryItems.length > shownNames.length;
+    framingNote = lang === "zh"
+      ? `${shownNames.join("、")}${more ? "等" : ""}的远离本土的岛屿等领土在此范围外，未画出。`
+      : `Distant territories of ${shownNames.join(", ")}${more ? " and others" : ""} lie outside this frame and are not drawn.`;
+  }
+  const listOnlyNote = listOnlyIso3.length
+    ? (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`)
+    : "";
   const effectiveSpec = {
     ...spec,
-    note: [spec.note, yearsNote].filter(Boolean).join(" "),
+    note: [spec.note, yearsNote, framingNote, listOnlyNote].filter(Boolean).join(" "),
     source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · "),
   };
   (mobile ? addMobileFooter : addFooter)(f.parts, effectiveSpec, f.footerTop);
