@@ -26,7 +26,7 @@ import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData } from "./publi
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
-import { extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
+import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
 import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
@@ -1430,6 +1430,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           sha256,
           file: relativeFile,
         });
+        // A downloaded PDF is complete, so extract its full text into a
+        // derived artifact bound to the data file's sha256. The data file
+        // itself stays byte-identical; the text is evidence derived from it.
+        const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
+        const derivedTextPath = derivedPdf ? await writeArtifactIfAbsent(`data/derived/${sha256}.pdf-text.json`, derivedPdf) : null;
         const origin = {
           schema_version: "0.7.0",
           origin: "download",
@@ -1439,10 +1444,13 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           content_type: response.headers.get("content-type"),
           sha256,
           file: relativeFile,
+          ...(derivedPdf ? { derived_text: { file: `data/derived/${sha256}.pdf-text.json`, text_sha256: derivedPdf.text_sha256, extraction: derivedPdf.extraction } } : {}),
         };
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}`, {
+        const derivedLine = derivedPdf ? `\nPDF text (full, ${derivedPdf.available ? `${derivedPdf.extraction.pages} pages` : derivedPdf.extraction.unavailable_reason}): ${derivedTextPath} (JSON; read the text field, e.g. with duckdb read_json_auto)` : "";
+        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}${derivedLine}`, {
+          derivedTextPath,
           filePath: relativeFile,
           metadataPath,
           originPath,

@@ -3,7 +3,7 @@
 // it is never decoded binary. See runtime/pi/newsroom.ts's fetchText, which
 // sniffs application/pdf (or a %PDF- body) before deciding whether to run
 // readBodyText's UTF-8 decode or this module's pdftotext path.
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -109,4 +109,26 @@ export async function extractPdfText({ bytes, truncated = false, signal, pdftote
   } finally {
     try { await unlink(tempPath); } catch {}
   }
+}
+
+// download_data stores the complete body (up to its 25 MB cap), so unlike
+// fetch_url's capped read the PDF is never truncated here and can be
+// extracted in full. Returns null for non-PDF bodies. Otherwise returns a
+// derived-text record bound to the exact source bytes by sha256, so a later
+// reader can verify the text came from that snapshot; the record never
+// replaces the original data file. text_sha256 is over the stored text.
+export async function extractDownloadedPdf({ bytes, contentType, sourceSha256, sourceFile, signal, pdftotextBin, timeoutMs = 60_000 } = {}) {
+  if (!looksLikePdf(contentType, bytes)) return null;
+  const pdf = await extractPdfText({ bytes, truncated: false, signal, pdftotextBin, timeoutMs });
+  const available = !pdf.extraction.unavailable_reason;
+  return {
+    schema_version: "0.1.0",
+    kind: "pdf_derived_text",
+    source_sha256: sourceSha256,
+    source_file: sourceFile,
+    extraction: pdf.extraction,
+    available,
+    text: pdf.text,
+    text_sha256: createHash("sha256").update(pdf.text, "utf8").digest("hex"),
+  };
 }
