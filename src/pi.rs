@@ -28,6 +28,27 @@ pub struct PiConfig {
     pub session_dir: Option<PathBuf>,
     pub continue_session: bool,
     pub tool_profile: String,
+    /// Hide the Lieflat fallback tools from a `visual-story` run. Set only by
+    /// the non-v2 `investigate` command when `NEWSROOM_HIDE_LIEFLAT` is on;
+    /// every other caller (v2 included) leaves it false.
+    pub hide_lieflat: bool,
+}
+
+/// Env var that is both the opt-in switch read by `investigate` and the
+/// marker the runtime reads in the Pi child. `PiConfig::command` always
+/// resets it, so a value in the parent environment never reaches a child
+/// that did not ask for it.
+pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
+pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
+
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub fn hide_lieflat_switch_enabled() -> bool {
+    matches!(
+        std::env::var(HIDE_LIEFLAT_ENV).ok().as_deref(),
+        Some("1" | "true")
+    )
 }
 
 #[derive(Debug)]
@@ -499,6 +520,32 @@ fn sanitize_provider_event(event: &mut Value, secrets: &[String]) -> Result<()> 
 }
 
 impl PiConfig {
+    fn effective_tool_profile(&self) -> &str {
+        if tools_for_profile(&self.tool_profile).is_some() {
+            self.tool_profile.as_str()
+        } else {
+            DEFAULT_TOOL_PROFILE
+        }
+    }
+
+    fn lieflat_hidden(&self) -> bool {
+        self.hide_lieflat && self.effective_tool_profile() == "visual-story"
+    }
+
+    /// Comma-separated tool allowlist handed to Pi via `--tools`.
+    pub fn tools_arg(&self) -> String {
+        let tools = tools_for_profile(self.effective_tool_profile())
+            .expect("effective tool profile must exist");
+        if !self.lieflat_hidden() {
+            return tools.to_string();
+        }
+        tools
+            .split(',')
+            .filter(|name| !LIEFLAT_TOOLS.contains(name))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
     fn dragoncode_endpoint(value: &str) -> bool {
         let authority = value
             .split_once("://")
@@ -610,10 +657,7 @@ impl PiConfig {
                 .arg("--no-prompt-templates")
                 .arg("--no-context-files")
                 .arg("--tools")
-                .arg(tools_for_profile(&self.tool_profile).unwrap_or_else(|| {
-                    tools_for_profile(DEFAULT_TOOL_PROFILE)
-                        .expect("default tool profile must exist")
-                }));
+                .arg(self.tools_arg());
         }
 
         if self.approve_project {
@@ -631,6 +675,11 @@ impl PiConfig {
             DEFAULT_TOOL_PROFILE
         };
         cmd.env("NEWSROOM_TOOL_PROFILE", effective_profile);
+        if self.lieflat_hidden() {
+            cmd.env(HIDE_LIEFLAT_ENV, "1");
+        } else {
+            cmd.env_remove(HIDE_LIEFLAT_ENV);
+        }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
         }
@@ -1163,9 +1212,11 @@ pub async fn run_prompt(
             } else {
                 DEFAULT_TOOL_PROFILE
             };
-            let tool_count = tools_for_profile(effective_profile)
-                .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
-                .unwrap_or(0);
+            let tool_count = config
+                .tools_arg()
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .count();
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
                 "schema_version": "0.2.0",
@@ -1349,11 +1400,109 @@ mod tests {
             session_dir: None,
             continue_session: false,
             tool_profile: "investigate".to_string(),
+            hide_lieflat: false,
         };
         assert_eq!(
             cfg.display_runtime(),
             "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
         );
+    }
+
+    fn visual_story_config(hide_lieflat: bool, profile: &str) -> PiConfig {
+        PiConfig {
+            binary: "pi".into(),
+            provider: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            thinking: None,
+            approve_project: false,
+            extension: Some("ext.ts".into()),
+            artifact_dir: None,
+            session_dir: None,
+            continue_session: false,
+            tool_profile: profile.to_string(),
+            hide_lieflat,
+        }
+    }
+
+    fn names(config: &PiConfig) -> Vec<String> {
+        config.tools_arg().split(',').map(str::to_string).collect()
+    }
+
+    #[test]
+    fn hide_lieflat_removes_exactly_one_design_and_one_publish_tool() {
+        let registry: Value =
+            serde_json::from_str(include_str!("../config/tool-registry.json")).unwrap();
+        let phase_of = |name: &str| {
+            registry["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .map(|tool| tool["phase"].as_str().unwrap().to_string())
+                .unwrap_or_else(|| panic!("{name} missing from tool-registry.json"))
+        };
+        let base = names(&visual_story_config(false, "visual-story"));
+        let lean = names(&visual_story_config(true, "visual-story"));
+        println!(
+            "visual-story baseline tools={} lean tools={}",
+            base.len(),
+            lean.len()
+        );
+        assert_eq!(base.len() - lean.len(), 2);
+        let removed: Vec<&String> = base.iter().filter(|name| !lean.contains(name)).collect();
+        let mut phases: Vec<String> = removed.iter().map(|name| phase_of(name)).collect();
+        phases.sort();
+        assert_eq!(phases, ["design", "publish"]);
+        let mut removed_names: Vec<&str> = removed.iter().map(|name| name.as_str()).collect();
+        removed_names.sort();
+        assert_eq!(removed_names, LIEFLAT_TOOLS);
+        // Order of everything else is unchanged.
+        let kept: Vec<&String> = base.iter().filter(|name| lean.contains(name)).collect();
+        assert_eq!(kept, lean.iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn hide_lieflat_never_touches_other_profiles() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let on = visual_story_config(true, profile);
+            assert_eq!(on.tools_arg(), off.tools_arg(), "{profile}");
+        }
+        assert_eq!(
+            visual_story_config(false, "visual-story").tools_arg(),
+            crate::tool_registry::tools_for_profile("visual-story").unwrap()
+        );
+    }
+
+    #[test]
+    fn child_env_marker_follows_the_config_not_the_parent() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(HIDE_LIEFLAT_ENV, "1");
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == HIDE_LIEFLAT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let hidden = marker(&visual_story_config(true, "visual-story"));
+        let shown = marker(&visual_story_config(false, "visual-story"));
+        let other_profile = marker(&visual_story_config(true, "visual"));
+        std::env::remove_var(HIDE_LIEFLAT_ENV);
+        assert_eq!(hidden, Some(Some("1".to_string())));
+        assert_eq!(shown, Some(None));
+        assert_eq!(other_profile, Some(None));
     }
 
     #[test]

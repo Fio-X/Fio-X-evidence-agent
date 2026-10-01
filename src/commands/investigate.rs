@@ -2,7 +2,7 @@ use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::InvestigateArgs;
 use crate::commands::verify;
-use crate::pi::{run_prompt, PiConfig, PiRunResult};
+use crate::pi::{self, run_prompt, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
 use anyhow::{bail, Result};
 use serde_json::Value;
@@ -48,6 +48,15 @@ fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) 
     } else {
         requested.to_string()
     }
+}
+
+/// Opt-in (`NEWSROOM_HIDE_LIEFLAT=1`): drop the unmeasured Lieflat fallback
+/// tools from this command's `visual-story` runs. Only this non-v2 path asks
+/// for it; v2 builds its own `PiConfig` and keeps both tools. Gates are
+/// untouched: a Lieflat page never counted as the delivered page.
+fn lieflat_hidden_for(requested: &str, topic: &str, split_classifier: bool) -> bool {
+    pi::hide_lieflat_switch_enabled()
+        && effective_tool_profile(requested, topic, split_classifier) == "visual-story"
 }
 
 /// Whether completion must go through the measured infographic, publication
@@ -208,8 +217,13 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
             .filter_map(|path| path.file_name().and_then(|value| value.to_str()))
             .map(|name| format!("data/{name}"))
             .collect();
-        let prompt =
-            prompt::investigation_with_classifier(&topic, &declared_local_data, split_classifier);
+        let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
+        let prompt = prompt::investigation_with_options(
+            &topic,
+            &declared_local_data,
+            split_classifier,
+            hide_lieflat,
+        );
         print!("{prompt}");
         return Ok(());
     }
@@ -262,7 +276,9 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
     for source in &args.data {
         local_data.push(bundle.import_data(source)?);
     }
-    let prompt = prompt::investigation_with_classifier(&topic, &local_data, split_classifier);
+    let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
+    let prompt =
+        prompt::investigation_with_options(&topic, &local_data, split_classifier, hide_lieflat);
     bundle.write_prompt(&prompt)?;
     let reported_provider = PiConfig::normalize_provider(args.pi.provider.as_deref());
     bundle.write_manifest(
@@ -296,6 +312,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: false,
         tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier),
+        hide_lieflat,
     };
     let reported_provider = config.effective_provider();
 
@@ -459,15 +476,48 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 #[cfg(test)]
 mod completion_tests {
     use super::{
-        completion_chain_required, is_transient_completion_provider_error, missing_visual_modes,
-        visual_completion_gaps_for_profile,
+        completion_chain_required, is_transient_completion_provider_error, lieflat_hidden_for,
+        missing_visual_modes, visual_completion_gaps_for_profile,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
+    use crate::pi;
     use serde_json::json;
     use std::fs;
 
     const SCMP_LONG_IMAGE_GOAL: &str = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
+
+    #[test]
+    fn lieflat_is_hidden_only_for_visual_story_with_the_switch_on() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let complex = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
+        for value in [None, Some("0"), Some("")] {
+            match value {
+                Some(v) => std::env::set_var(pi::HIDE_LIEFLAT_ENV, v),
+                None => std::env::remove_var(pi::HIDE_LIEFLAT_ENV),
+            }
+            assert!(
+                !lieflat_hidden_for("investigate", complex, false),
+                "{value:?}"
+            );
+            assert!(
+                !lieflat_hidden_for("visual-story", complex, false),
+                "{value:?}"
+            );
+        }
+        std::env::set_var(pi::HIDE_LIEFLAT_ENV, "1");
+        let complex_on = lieflat_hidden_for("investigate", complex, false);
+        let explicit_on = lieflat_hidden_for("visual-story", "总结这篇新闻", false);
+        let simple_visual = lieflat_hidden_for("investigate", "制作一个信息图", false);
+        let plain = lieflat_hidden_for("investigate", "总结这篇新闻", false);
+        let other_profile = lieflat_hidden_for("visual", complex, false);
+        std::env::remove_var(pi::HIDE_LIEFLAT_ENV);
+        assert!(complex_on);
+        assert!(explicit_on);
+        assert!(!simple_visual && !plain && !other_profile);
+    }
 
     /// A run that only ever called newsroom_lieflat_render and left a Lieflat
     /// publication behind: the shape of the run behind issue #37.

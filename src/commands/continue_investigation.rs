@@ -88,6 +88,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: true,
         tool_profile,
+        hide_lieflat: false,
     };
     let reported_provider = config.effective_provider();
 
