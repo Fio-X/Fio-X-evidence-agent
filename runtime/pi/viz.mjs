@@ -5582,6 +5582,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   // map) its own anchor already sits on, so it always travels the short way
   // out rather than crossing back over the map.
   const mapCenterX = (mapLeft + mapRight) / 2;
+  // P4: main-map name/value labels must stay in the main-map panel. When an
+  // inset column sits to the left of the map (mapLeft > plotLeft) a left-hand
+  // boundary label may not run into it; otherwise the canvas edge is the bound.
+  // Every main-map label carries this box as data-panel-box so render QA can
+  // prove it (text_outside_panel) instead of only comparing to the viewBox.
+  const labelLeftBound = mapLeft > plotLeft ? mapLeft : 0;
+  const mainPanelAttr = ` data-panel-box="${labelLeftBound.toFixed(1)},${top.toFixed(1)},${width.toFixed(1)},${bottom.toFixed(1)}"`;
   const mapCenterY = (top + bottom) / 2;
   const allDataFeatureIdxFlat = joined.flatMap((item) => item.featureIndices);
 
@@ -5748,7 +5755,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     // canvas, whatever anchors happen to be clustered there.
     const leftMaxW = leftItems.length ? Math.max(...leftItems.map((li) => li.w)) : 0;
     const rightMaxW = rightItems.length ? Math.max(...rightItems.map((li) => li.w)) : 0;
-    const leftColumnX = leftItems.length ? Math.max(mapLeft + 4, leftMaxW + 4, Math.min(...leftItems.map((li) => li.x)) - columnGap) : mapLeft + 4;
+    const leftColumnX = leftItems.length ? Math.max(mapLeft + 4, labelLeftBound + leftMaxW + 4, Math.min(...leftItems.map((li) => li.x)) - columnGap) : mapLeft + 4;
     const rightColumnX = rightItems.length ? Math.min(mapRight - 4, width - rightMaxW - 4, Math.max(...rightItems.map((li) => li.x)) + columnGap) : mapRight - 4;
     const leftLayout = layoutBoundaryColumn(leftItems, "left", leftColumnX, top + 4, bottom - 4, MAX_OVERFLOW_LEADER_PX);
     const rightLayout = layoutBoundaryColumn(rightItems, "right", rightColumnX, top + 4, bottom - 4, MAX_OVERFLOW_LEADER_PX);
@@ -5773,7 +5780,7 @@ function renderChoropleth(spec, rows, mobile = false) {
         const len = elbowLength(cand.anchor, cand.tip);
         if (len > MAX_OVERFLOW_LEADER_PX) break;
         if (len < MIN_LEADER_DRAWN_LENGTH) continue;
-        if (cand.box.x < 0 || cand.box.x + cand.box.w > width) break;
+        if (cand.box.x < labelLeftBound || cand.box.x + cand.box.w > width) break;
         if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(cand.anchor, cand.tip);
         if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) accepted = cand;
@@ -5866,8 +5873,8 @@ function renderChoropleth(spec, rows, mobile = false) {
     const valueAnchorY = cy + labelLineDy;
     const style = labelStyleOnFill(hexToRgb(li.fill));
     onMapParts.push(
-      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${nameAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
-      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${valueAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
+      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${cx.toFixed(1)}" y="${nameAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
+      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${cx.toFixed(1)}" y="${valueAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
     );
   }
 
@@ -5894,8 +5901,8 @@ function renderChoropleth(spec, rows, mobile = false) {
     overflowParts.push(anchorDotSvg("choropleth-leader-dot", anchor));
     overflowParts.push(leaderSvg("choropleth-leader", anchor, tip, ` data-iso3="${esc(li.item.iso3)}"`));
     overflowParts.push(
-      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}" x="${textX.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.name)}</text>`,
-      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}" x="${textX.toFixed(1)}" y="${valueY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.valueText)}</text>`
+      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${textX.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.name)}</text>`,
+      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${textX.toFixed(1)}" y="${valueY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.valueText)}</text>`
     );
   }
 
@@ -6617,6 +6624,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   const insetPanelParts = [];
   if (insetCorner) {
     const px = insetCorner.x, py = insetCorner.y;
+    const insetPanelAttr = ` data-panel-box="${px.toFixed(1)},${py.toFixed(1)},${(px + insetPanelW).toFixed(1)},${(py + insetPanelH).toFixed(1)}"`;
     const insetTitle = String(insetSpec?.title ?? (lang === "zh" ? "局部放大" : "Inset")).trim();
     const mapX0 = px + 6, mapX1 = px + insetMapSize + 6, mapY0 = py + insetTitleH + 4, mapY1 = mapY0 + insetMapSize;
     const zoomProj = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], mapX0, mapX1, mapY0, mapY1, 0.12);
@@ -6648,8 +6656,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       const cy = li.ay + mapY0;
       const style = labelStyleOnFill(hexToRgb(li.fill));
       insetPanelParts.push(
-        `<text data-role="choropleth-inset-label" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${(cy - labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
-        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${(cy + labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
+        `<text data-role="choropleth-inset-label" data-iso3="${esc(li.item.iso3)}"${insetPanelAttr} x="${cx.toFixed(1)}" y="${(cy - labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
+        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(li.item.iso3)}"${insetPanelAttr} x="${cx.toFixed(1)}" y="${(cy + labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
       );
     }
     insetPanelParts.push("</g>");
@@ -6683,8 +6691,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       insetPanelParts.push(
         anchorDotSvg("choropleth-inset-leader-dot", from),
         leaderSvg("choropleth-inset-leader", from, to, ` data-iso3="${esc(item.item.iso3)}"`),
-        `<text data-role="choropleth-inset-label" data-iso3="${esc(item.item.iso3)}" x="${textX.toFixed(1)}" y="${(boxMidY - labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.name)}</text>`,
-        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(item.item.iso3)}" x="${textX.toFixed(1)}" y="${(boxMidY + labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.valueText)}</text>`
+        `<text data-role="choropleth-inset-label" data-iso3="${esc(item.item.iso3)}"${insetPanelAttr} x="${textX.toFixed(1)}" y="${(boxMidY - labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.name)}</text>`,
+        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(item.item.iso3)}"${insetPanelAttr} x="${textX.toFixed(1)}" y="${(boxMidY + labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.valueText)}</text>`
       );
     }
 
