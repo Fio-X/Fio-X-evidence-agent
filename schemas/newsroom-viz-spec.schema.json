@@ -145,6 +145,25 @@
       ],
       "description": "What value_field measures: 'year' (calendar year) and 'count' print as plain integers; legends use whole-number steps. A year-like unit on 'index' is also a calendar year."
     },
+    "measure_semantics": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "measure_kind": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Optional per-field measure declarations (field, unit, measure_kind)."
+    },
     "category_field": {
       "type": "string",
       "minLength": 1

@@ -3,6 +3,7 @@
 // whole counts, calendar years, a duration measured in years, plain share).
 import assert from "node:assert/strict";
 import { basename } from "node:path";
+import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { choroplethValueText, fmtSpec, renderVizBundle, specValueKind, tickLabelSpec } from "../runtime/pi/viz.mjs";
 import { CHOROPLETH_BASEMAP_ID, niceBreaks } from "../runtime/pi/choropleth.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
@@ -108,5 +109,37 @@ assert.ok(!niceBreaks(0, 2, 5).every(Number.isInteger), "default breaks keep the
     assert.ok(legend.length >= 2, `legend found: ${legend}`);
     assert.ok(legend.every((x) => !/\.\d/.test(x)), `${sh.unit}: legend ticks must be whole numbers: ${legend}`);
   }
+}
+
+// --- measure_semantics-only declaration must not trip render QA -------------
+{
+  const basemap = getBasemap(CHOROPLETH_BASEMAP_ID);
+  const spec = {
+    schema_version: "0.9.0", reader_task: "spatial", title: "T", alt: "A synthetic choropleth of one measure across a handful of named economies.",
+    source_note: "synthetic", claim_id: "c1", sql: "SELECT 1", chart_type: "choropleth", category_field: "c", value_field: "v",
+    category_names: "worldbank", basemap_id: basemap.id, basemap_source_url: basemap.source_url, basemap_license: basemap.license,
+    basemap_content_hash: basemap.content_hash, highlight_values: [], annotations: [], unit: "items",
+    measure_semantics: [{ field: "v", unit: "items", measure_kind: "count" }],
+  };
+  const rows = ["Chad", "Niger", "Nigeria", "Zambia", "Guinea"].map((c, i) => ({ c, v: [1, 3, 4, 7, 9][i] }));
+  const { desktop } = renderVizBundle(spec, rows, { mobilePages: false });
+  const base = { rows, category_field: "c", value_field: "v", category_names: "worldbank", unit: "items" };
+  // what newsroom.ts used to pass (no kind at all): QA expects "3.0 items" -> false mismatch. Must fail.
+  const old = runRenderQa({ desktop }, { choropleth: base });
+  assert.ok(old.viewports.desktop.value_labels.failures.some((f) => f.rule === "value_label_mismatch"), "old options must trip the mismatch");
+  // what it passes now: the kind resolved by the renderer's own rule. Must pass.
+  const fixed = runRenderQa({ desktop }, { choropleth: { ...base, measure_kind: specValueKind(spec), measure_semantics: spec.measure_semantics } });
+  assert.deepEqual(fixed.viewports.desktop.value_labels.failures, []);
+  const onlyKind = runRenderQa({ desktop }, { choropleth: { ...base, measure_kind: specValueKind(spec) } });
+  assert.deepEqual(onlyKind.viewports.desktop.value_labels.failures, []);
+}
+
+// --- other chart types: treemap and cartographic flow use the same spelling ---
+{
+  const tm = { ...barBase, chart_type: "treemap", unit: "items", measure_kind: "count", group_field: "g", category_field: "name" };
+  const rows = [{ name: "A", g: "x", v: 2017 }, { name: "B", g: "x", v: 1998 }, { name: "C", g: "y", v: 12 }];
+  const svg = renderVizBundle({ ...tm, value_field: "v", annotations: [], alt: "A synthetic treemap of one measure across a few named items." }, rows).desktop;
+  assert.ok(text(svg).includes("2017 items"), `treemap label: ${text(svg)}`);
+  assert.ok(!text(svg).some((t) => /\d\.\dk/.test(t)));
 }
 console.log(`${basename(import.meta.url)} ok`);
