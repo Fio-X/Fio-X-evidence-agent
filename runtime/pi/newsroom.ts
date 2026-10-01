@@ -1468,6 +1468,24 @@ function claimBindingDeps() {
   return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot(), serializeSql: (sql: string) => serializeSqlAst(sql) };
 }
 
+// The one claim-binding judgement for a chart: the viz lint and the viz chain
+// both call this, so the chain can never be looser or stricter than the lint.
+async function vizClaimBindings(spec: any, signal?: AbortSignal) {
+  const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
+  const verified = await verifiedClaimIds();
+  const lintInputs = await deriveInputsForSql(spec.sql, signal);
+  const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
+  const vizClaimRecords = await verifiedClaimRecords();
+  const inputSnapshot = await evidenceSnapshot();
+  const claimBindings = await bindClaimsToChart(
+    { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
+    vizClaimIds,
+    vizClaimRecords,
+    claimBindingDeps(),
+  );
+  return { rows, verified, lintInputs, inputSnapshot, claimBindings };
+}
+
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
   const sourceRefs = refs.filter((ref) => String(ref).startsWith("sources/") || String(ref).startsWith("data/"));
   const computationRefs = refs.filter((ref) => String(ref).startsWith("computations/"));
@@ -1531,6 +1549,11 @@ function registerVizChain(pi: ExtensionAPI) {
       const outcome = await runToolChain({
         steps: vizChainSteps({
           modelComputationRef,
+          claimBinding: async (planRef: string) => {
+            const spec = await readArtifactJson(planRef, "visualizations/plans/");
+            const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
+            return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
+          },
           claimComputationRefs: async () => {
             const claim = (await verifiedClaimRecords()).get(claimId);
             return Array.isArray(claim?.computation_refs) ? claim.computation_refs.map(String) : [];
@@ -2600,18 +2623,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
-      const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
-      const verified = await verifiedClaimIds();
-      const lintInputs = await deriveInputsForSql(spec.sql, signal);
-      const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
-      const vizClaimRecords = await verifiedClaimRecords();
-      const inputSnapshot = await evidenceSnapshot();
-      const claimBindings = await bindClaimsToChart(
-        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
-        vizClaimIds,
-        vizClaimRecords,
-        claimBindingDeps(),
-      );
+      const { rows, verified, lintInputs, inputSnapshot, claimBindings } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshotHash = inputSnapshot.hash;
