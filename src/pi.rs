@@ -47,6 +47,8 @@ pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
 /// the Pi child. `PiConfig::command` always resets them from the config.
 pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
 pub const COMPUTE_BATCH_ENV: &str = "NEWSROOM_SPEED_COMPUTE_BATCH";
+/// Parent switch the chains depend on; the runtime does not register a chain without it.
+pub const ATOMIC_ARTIFACT_ENV: &str = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
 pub const CHAIN_VIZ_ENV: &str = "NEWSROOM_SPEED_CHAIN_VIZ";
 /// Runtime-only tool that exists when `CHAIN_VIZ_ENV` is on; not in the registry.
 pub const VIZ_CHAIN_TOOL: &str = "newsroom_viz_chain";
@@ -62,13 +64,18 @@ fn env_switch(name: &str) -> bool {
     matches!(std::env::var(name).ok().as_deref(), Some("1" | "true"))
 }
 
+// The runtime only accepts exactly "1" for this switch.
+fn atomic_artifact_on() -> bool {
+    std::env::var(ATOMIC_ARTIFACT_ENV).ok().as_deref() == Some("1")
+}
+
 /// The turn-saving switches the parent environment asks for.
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     crate::prompt::PromptSpeed {
         parallel_hints: env_switch(PARALLEL_HINTS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
-        chain_viz: env_switch(CHAIN_VIZ_ENV),
-        chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV),
+        chain_viz: env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on(),
+        chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
     }
 }
 
@@ -1580,6 +1587,12 @@ mod tests {
         assert!(!speed_switches_from_env().compute_batch);
 
         std::env::set_var(CHAIN_VIZ_ENV, "1");
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().chain_viz,
+            "chains need atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
         let chain_marker = |config: &PiConfig| {
             let command = config.command();
             let found = command
@@ -1598,6 +1611,12 @@ mod tests {
         assert!(!speed_switches_from_env().chain_viz);
 
         std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().chain_infographic,
+            "chains need atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
         let page_marker = |config: &PiConfig| {
             let command = config.command();
             let found = command
@@ -1614,6 +1633,7 @@ mod tests {
         assert_eq!(page_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
         assert!(!speed_switches_from_env().chain_infographic);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
     }
 
     #[test]

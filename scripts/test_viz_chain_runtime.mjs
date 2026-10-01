@@ -226,7 +226,12 @@ void treeDir;
   assert.ok(!noPlan.has("newsroom_viz_chain") && !noPlan.has("newsroom_viz_plan"), "no plan tool in this profile -> no chain");
   const schema = on.get("newsroom_viz_chain").parameters;
   assert.ok(schema.properties.computation_ref && schema.properties.sql && schema.required.includes("sql") && !schema.required.includes("computation_ref"));
-  check("switch off registers nothing new; on adds only newsroom_viz_chain where viz_plan exists", true);
+  for (const atomic of [undefined, "0", "true"]) {
+    const t = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
+    assert.ok(!t.has("newsroom_viz_chain"), `chain needs atomic writes exactly "1" (got ${atomic})`);
+    assert.deepEqual([...t.keys()], [...off.keys()], "other tools unchanged when the chain is refused");
+  }
+  check("switch off registers nothing new; on adds only newsroom_viz_chain where viz_plan exists; chain x atomic on/off", true);
 }
 
 async function runManual(tools, art, sql, claimId) {

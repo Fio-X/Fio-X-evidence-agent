@@ -1398,6 +1398,9 @@ async function listArtifactFiles(root: string, child: string) {
 // environment and the chain's first tool is enabled for this phase/profile.
 function registerVizChain(pi: ExtensionAPI) {
   if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1") return;
+  // Without atomic writes the lint step's computation record differs from the
+  // one duckdb_query wrote for the same SQL, so the chain would collide on it.
+  if (!atomicArtifactWritesEnabled()) return;
   const name = "newsroom_viz_chain";
   const phase = normalizedNewsroomPhase();
   const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
@@ -1450,6 +1453,8 @@ function registerVizChain(pi: ExtensionAPI) {
 // critic, which only the model can write after looking at the preview image.
 function registerInfographicChain(pi: ExtensionAPI) {
   if (process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;
+  // Its inner viz tools share the immutable computation writers; see registerVizChain.
+  if (!atomicArtifactWritesEnabled()) return;
   const name = "newsroom_infographic_chain";
   const phase = normalizedNewsroomPhase();
   const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
