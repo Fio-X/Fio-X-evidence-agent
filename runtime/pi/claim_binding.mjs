@@ -157,6 +157,7 @@ export function claimBindsComputation(chart, claimComputations) {
   const chartSql = normalizeSql(chart?.sql);
   const allShared = [];
   const reasons = [];
+  let hintRef = "";
   for (const computation of usable) {
     const claimHashes = hashMap(computation);
     const shared = evidencePaths(computation.effective_inputs).filter((path) => {
@@ -167,6 +168,7 @@ export function claimBindsComputation(chart, claimComputations) {
     });
     if (shared.length === 0) continue;
     allShared.push(...shared);
+    if (!hintRef && computation.ref) hintRef = String(computation.ref);
     if (computation.ref && chartReads.has(String(computation.ref))) return verdict(true, CLAIM_BINDING_OK, "", shared, "reads_claim_computation");
     if (chartSql && chartSql === normalizeSql(computation.sql)) return verdict(true, CLAIM_BINDING_OK, "", shared, "same_sql");
     const contained = chartValuesInRows(chart?.rows, computation.rows);
@@ -176,7 +178,7 @@ export function claimBindsComputation(chart, claimComputations) {
   if (allShared.length === 0) {
     return verdict(false, CLAIM_BINDING_NO_SHARED_INPUT, `none of the claim's computations reads a data/ or sources/ file that this chart's SQL reads (chart reads ${listPaths(chartInputs)}; claim reads ${listPaths(evidencePaths(usable.flatMap((computation) => computation.effective_inputs ?? [])))}); hang the chart on a claim recorded from the same data, or record a claim from this chart's data`);
   }
-  return verdict(false, CLAIM_BINDING_NO_RELATION, `the chart reads the same data as the claim's computation (${listPaths([...new Set(allShared)])}) but its numbers are not shown to come from that computation: the SQL differs and ${reasons[0] ?? "its rows are not drawn from the claim's rows"}; run duckdb_query for exactly the rows this chart shows and record the claim from that result, or chart the claim's own rows`, [...new Set(allShared)]);
+  return verdict(false, CLAIM_BINDING_NO_RELATION, `the chart reads the same data as the claim's computation (${listPaths([...new Set(allShared)])}) but its numbers are not shown to come from that computation: the SQL differs and ${reasons[0] ?? "its rows are not drawn from the claim's rows"}; make the chart read the claim's stored computation directly (FROM read_json('${hintRef || "computations/<claim computation>.json"}'), then aggregate or alias there); otherwise run duckdb_query for exactly the rows this chart shows and record the claim from that result`, [...new Set(allShared)]);
 }
 
 /**

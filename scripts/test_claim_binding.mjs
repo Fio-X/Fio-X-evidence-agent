@@ -48,6 +48,8 @@ for (const [name, chart] of [
 // Must fail: a shared FILE is not enough.
 const sameFileOtherMetric = claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, w FROM x", rows: [{ k: "a", w: 10 }, { k: "b", w: 20 }] }), [claimC("data/a.csv")]);
 assert.equal(sameFileOtherMetric.code, "no_computation_relation", "same file, different metric");
+assert.match(sameFileOtherMetric.message, /make the chart read the claim's stored computation directly/, "the first remedy offered is to read the claim computation");
+assert.ok(sameFileOtherMetric.message.indexOf("read the claim") < sameFileOtherMetric.message.indexOf("record the claim from that result"), "reading the claim computation is the preferred remedy");
 assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, v FROM x", rows: [{ k: "a", v: 99 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "same columns, a value the claim never computed");
 assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, v FROM x", rows: [{ k: "a", v: 3 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "labels paired with another row's value");
 assert.equal(claimBindsComputation(state(["data/b.csv", "data/a.csv"], { ref: undefined, sql: "SELECT w FROM read_csv_auto('data/b.csv') CROSS JOIN (SELECT 1 FROM read_csv_auto('data/a.csv') LIMIT 1)", rows: [{ w: 7 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "unrelated file bridged to the claim's file by a one-row join");
