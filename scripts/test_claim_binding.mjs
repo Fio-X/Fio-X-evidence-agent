@@ -10,7 +10,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { claimBindsComputation, strictResultHashMatches } from "../runtime/pi/claim_binding.mjs";
+import { execFileSync } from "node:child_process";
+import { chartValuesInRows, claimBindsComputation, normalizeSql, strictResultHashMatches } from "../runtime/pi/claim_binding.mjs";
 import { lintInfographicSpec } from "../runtime/pi/infographic.mjs";
 import { lintVizSpec } from "../runtime/pi/viz.mjs";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
@@ -33,7 +34,7 @@ assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: 
 assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT v, k FROM x WHERE v>1", rows: [{ v: 3, k: "c" }, { v: 2, k: "b" }] }), [claimC("data/a.csv")]).relation, "values_in_rows", "subset and reorder of the claim's rows");
 assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k FROM x", rows: [{ k: "a" }, { k: "c" }] }), [claimC("data/a.csv")]).relation, "values_in_rows", "projection");
 assert.equal(claimBindsComputation(bound("data/a.csv"), [claimC("data/z.csv"), claimC("data/a.csv")]).ok, true, "any of the claim's computations");
-assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT x FROM read_json('computations/c.json')", rows: [{ x: 9 }], read_inputs: [{ path: "computations/c.json", sha256: H("2") }] }), [claimC("data/a.csv")]).relation, "reads_claim_computation", "a chart that reads the claim's stored computation");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT x FROM read_json('computations/c.json')", rows: [{ x: 9 }], read_inputs: [{ path: "computations/c.json", sha256: H("2") }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "merely reading the claim's computation (without an AST proving the chart is a plain select over it) is not a relation");
 for (const [name, chart] of [
   ["literal_only", { input_binding: "literal_only", effective_inputs: [] }],
   ["unresolved", { input_binding: "unresolved", effective_inputs: [] }],
@@ -90,6 +91,54 @@ const newsroom = readFileSync(join(REPO, "runtime/pi/newsroom.ts"), "utf8");
 assert.match(newsroom, /lintVizSpec\(spec, rows, \{[^}]*claim_bindings/, "newsroom_viz_lint must pass claim_bindings");
 assert.match(newsroom, /lintInfographicSpec\(spec, assets, \{[^}]*visual_claim_bindings/, "newsroom_infographic_lint must pass visual_claim_bindings");
 console.log("claim binding: pure decision and lint contexts -- PASS");
+
+// ---- Part 1b: the direct-read relation is proven, not observed -------------
+const astOf = (sql) => JSON.parse(execFileSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["-noheader", "-list", ":memory:", "-c", `SELECT json_serialize_sql('${sql.replace(/'/g, "''")}', skip_null := true, skip_empty := true)`]).toString().trim());
+const CA = `computations/${"a".repeat(64)}.json`;
+const CB = `computations/${"b".repeat(64)}.json`;
+const ROOT_ROWS = [{ region: "n", amount: 4 }, { region: "s", amount: 9 }, { region: "n", amount: 6 }];
+const rootClaim = { ...claimC("data/a.csv"), ref: CA, sql: "SELECT region, amount FROM read_csv_auto('data/a.csv')", rows: ROOT_ROWS };
+const direct = (sql, rows, fields, reads = [CA]) => claimBindsComputation({
+  input_binding: "source_bound", effective_inputs: ["data/a.csv", "data/b.csv"].slice(0, reads.length > 1 ? 2 : 1), sql, rows, ast: astOf(sql), numeric_fields: fields,
+  read_inputs: reads.map((path) => ({ path, sha256: H("1") })),
+}, [rootClaim]);
+const okRel = (verdict, message) => { assert.equal(verdict.relation, "reads_claim_computation", `${message}: ${verdict.message}`); };
+okRel(direct(`SELECT region, count(*) AS n FROM read_json('${CA}') GROUP BY region ORDER BY region`, [{ region: "n", n: 2 }, { region: "s", n: 1 }], ["n"]), "GROUP BY COUNT");
+okRel(direct(`SELECT region, sum(amount) AS total FROM read_json('${CA}') GROUP BY region`, [{ region: "n", total: 10 }, { region: "s", total: 9 }], ["total"]), "GROUP BY SUM");
+okRel(direct(`SELECT region AS category, amount AS total FROM read_json('${CA}') t WHERE t.amount > 4 ORDER BY total DESC LIMIT 2`, [{ category: "s", total: 9 }, { category: "n", total: 6 }], ["total"]), "alias, filter, order and top N");
+okRel(direct(`SELECT upper(region) || '-x' AS label, 2017 AS year, max(amount) AS m FROM read_json('${CA}') GROUP BY region`, [{ label: "N-x", year: 2017, m: 6 }, { label: "S-x", year: 2017, m: 9 }], ["m"]), "a label and a constant year are free; only the numeric field is constrained");
+const refused = (verdict, why, message) => { assert.equal(verdict.ok, false, message); assert.match(verdict.message, why, message); };
+const AGG = [{ region: "n", n: 2 }, { region: "s", n: 1 }];
+refused(direct(`SELECT region, 99 AS n FROM read_json('${CA}')`, [{ region: "n", n: 99 }], ["n"]), /numeric field 'n'/, "a literal in a numeric field");
+refused(direct(`SELECT region, amount * 10 AS n FROM read_json('${CA}')`, [{ region: "n", n: 40 }], ["n"]), /numeric field 'n'/, "arithmetic in a numeric field");
+refused(direct(`SELECT region, (SELECT max(amount) FROM read_json('${CA}')) AS n FROM read_json('${CA}')`, [{ region: "n", n: 9 }], ["n"]), /subquery/, "a scalar subquery");
+refused(direct(`SELECT region, amount AS n FROM read_json('${CA}') WHERE EXISTS (SELECT 1 FROM read_json('${CA}'))`, [{ region: "n", n: 4 }], ["n"]), /subquery/, "EXISTS in WHERE");
+refused(direct(`SELECT g.region, b.price AS n FROM read_json('${CA}') g JOIN read_json('${CB}') b ON true`, [{ region: "n", n: 1 }], ["n"], [CA, CB]), /other than the claim's computation/, "a join with another file");
+refused(direct(`SELECT region, amount AS n FROM read_json('${CA}') UNION ALL SELECT region, amount FROM read_json('${CA}')`, [{ region: "n", n: 4 }], ["n"]), /plain SELECT/, "UNION");
+refused(direct(`SELECT region, count(*) AS n FROM read_json('${CA}') GROUP BY region HAVING count(*) > 0`, AGG, ["n"]), /HAVING/, "HAVING");
+refused(direct(`WITH t AS (SELECT * FROM read_json('${CA}')) SELECT region, amount AS n FROM t`, [{ region: "n", n: 4 }], ["n"]), /CTE|directly/, "a CTE");
+refused(direct(`SELECT DISTINCT region, amount AS n FROM read_json('${CA}')`, [{ region: "n", n: 4 }], ["n"]), /modifier/, "DISTINCT");
+refused(direct(`SELECT * FROM read_json('${CA}')`, [{ region: "n", amount: 4 }, { region: "n", amount: 4 }], ["amount"]), /selects \*/, "SELECT *");
+refused(direct(`SELECT region, abs(amount) AS n FROM read_json('${CA}')`, [{ region: "n", n: 4 }], ["n"]), /numeric field 'n'/, "a function in a numeric field");
+refused(direct(`SELECT region, count(*) AS n FROM read_json('${CB}') GROUP BY region`, AGG, ["n"], [CB]), /no_shared|other than|reads/, "another claim's computation is not this claim's root");
+assert.equal(claimBindsComputation({ input_binding: "source_bound", effective_inputs: ["data/a.csv"], sql: "x", rows: AGG, numeric_fields: ["n"], read_inputs: [{ path: CA, sha256: H("1") }] }, [rootClaim]).ok, false, "no AST: fail closed");
+assert.equal(claimBindsComputation({ input_binding: "source_bound", effective_inputs: ["data/a.csv"], sql: `SELECT region, count(*) AS n FROM read_json('${CA}') GROUP BY region`, rows: AGG, ast: astOf(`SELECT region, count(*) AS n FROM read_json('${CA}') GROUP BY region`), read_inputs: [{ path: CA, sha256: H("1") }] }, [rootClaim]).ok, false, "numeric fields unknown: fail closed");
+// A refused direct read can still pass on its rows, and only on its rows.
+assert.equal(direct(`SELECT g.region, g.amount FROM read_json('${CA}') g CROSS JOIN read_json('${CB}') b`, ROOT_ROWS, ["amount"], [CA, CB]).relation, "values_in_rows");
+// The refusal names the canonical path only.
+assert.match(direct(`SELECT region, 99 AS n FROM read_json('${CA}')`, [{ region: "n", n: 99 }], ["n"]).message, new RegExp(`read_json\\('${CA.replace(/[.]/g, "\\.")}'\\)`), "the hint carries the claim computation path");
+const hostile = { ...rootClaim, ref: "/Users/someone/secret dir/computations/x.json" };
+const hostileMessage = claimBindsComputation({ input_binding: "source_bound", effective_inputs: ["data/a.csv"], sql: "SELECT region FROM x", rows: [{ region: "zz" }], read_inputs: [{ path: "data/a.csv", sha256: H("1") }] }, [hostile]).message;
+assert.equal(hostileMessage.includes("someone") || hostileMessage.includes("secret dir"), false, "a non-canonical ref is never echoed");
+assert.match(hostileMessage, /<claim computation>/);
+// Literals inside quotes are never normalized.
+assert.notEqual(normalizeSql("SELECT v FROM t WHERE k = 'a - b'"), normalizeSql("SELECT v FROM t WHERE k = 'a-b'"));
+assert.notEqual(normalizeSql('SELECT "a - b" FROM t'), normalizeSql('SELECT "a-b" FROM t'));
+assert.equal(normalizeSql("SELECT  v FROM t WHERE k = 'a - b' ;"), normalizeSql("select v\nfrom t where k='a - b'"), "outside quotes: case, whitespace, operator spacing still normalized");
+// Row containment counts duplicates.
+assert.equal(chartValuesInRows([{ k: "a" }, { k: "a" }], [{ k: "a" }]).ok, false, "a row duplicated by a join is not a subset");
+assert.equal(chartValuesInRows([{ k: "a" }, { k: "a" }], [{ k: "a" }, { k: "a" }, { k: "b" }]).ok, true);
+console.log("claim binding: direct-read relation (AST) -- PASS");
 
 // ---- Part 2: the real tool path ------------------------------------------
 const h = await loadNewsroom({ prefix: "claim-binding-" });
@@ -226,9 +275,55 @@ try {
   assert.equal(sameMetric.binding.length, 0, "same file, same metric, a subset of the claim's rows");
   const fileConst = await lint({ claim_id: claimPop, sql: `SELECT 'x' AS k, 99 AS pop FROM read_csv_auto('${fileM}') LIMIT 1` });
   assert.equal(fileConst.binding.length, 1, "a constant output that reads the file");
-  const joined = await lint({ claim_id: claimA, sql: `SELECT a.date, a.event FROM read_csv_auto('${fileA}') a JOIN read_csv_auto('${fileY}') y ON length(a.event) > y.count ORDER BY a.date` });
-  assert.equal(joined.binding.length, 0, "a join that keeps the claim's own rows passes");
+  const joined = await lint({ claim_id: claimA, sql: `SELECT a.date, a.event FROM read_csv_auto('${fileA}') a JOIN read_csv_auto('${fileY}') y ON length(a.event) > y.count AND y.region = 'north' ORDER BY a.date` });
+  assert.equal(joined.binding.length, 0, "a join that keeps the claim's own rows once each passes");
+  const amplified = await lint({ claim_id: claimA, sql: `SELECT a.date, a.event FROM read_csv_auto('${fileA}') a JOIN read_csv_auto('${fileY}') y ON length(a.event) > y.count ORDER BY a.date` });
+  assert.equal(amplified.binding.length, 1, "a join that duplicates the claim's rows is not a subset of them");
+  assert.match(amplified.binding[0], /more often/);
 
+  // Direct read of the claim's stored computation (the relation is proven on
+  // the SQL's AST, not merely observed in the read set).
+  const fileG = addData("G", "region,amount\nn,4\ns,9\nn,6\n");
+  const qg = await query(`SELECT region, amount FROM read_csv_auto('${fileG}')`);
+  const claimG = (await recordClaim("Amounts by region", [fileG], [qg])).claim_id;
+  const readsRoot = (sql, extra = {}) => lint({ claim_id: claimG, value_field: "amount", sql, ...extra });
+  for (const [label, sql, field] of [
+    ["GROUP BY COUNT", `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region`, "amount"],
+    ["GROUP BY SUM", `SELECT region, sum(amount) AS amount FROM read_json('${qg}') GROUP BY region ORDER BY region`, "amount"],
+    ["alias and rename", `SELECT region AS area, amount AS total FROM read_json('${qg}') ORDER BY area`, "total"],
+    ["ORDER BY and top N", `SELECT region, amount FROM read_json('${qg}') ORDER BY amount DESC LIMIT 2`, "amount"],
+  ]) {
+    const result = await readsRoot(sql, { value_field: field });
+    assert.equal(result.binding.length, 0, `${label} over the claim's computation passes: ${result.binding.join(" | ")}`);
+  }
+  const fileOut = addData("OUT", "item,price\nbread,3\nmilk,4\n");
+  for (const [label, sql] of [
+    ["EXISTS bridge to an unrelated file", `SELECT b.item AS region, b.price AS amount FROM read_csv_auto('${fileOut}') b WHERE EXISTS (SELECT 1 FROM read_json('${qg}'))`],
+    ["JOIN that brings in an outside number", `SELECT g.region, b.price AS amount FROM read_json('${qg}') g JOIN read_csv_auto('${fileOut}') b ON true`],
+    ["UNION with an outside number", `SELECT region, amount FROM read_json('${qg}') UNION ALL SELECT item, price FROM read_csv_auto('${fileOut}')`],
+    ["a literal in the numeric field", `SELECT region, 99 AS amount FROM read_json('${qg}')`],
+    ["arithmetic in the numeric field", `SELECT region, amount * 10 AS amount FROM read_json('${qg}')`],
+    ["another claim's computation", `SELECT region, count(*) AS amount FROM read_json('${qy}') GROUP BY region`],
+  ]) {
+    const result = await readsRoot(sql);
+    assert.equal(result.binding.length, 1, `${label} must be refused`);
+    assert.equal(result.artifact.publishable, false, `${label}: not publishable`);
+  }
+  // A claim computation read by the claim's own chart, but the chart hung on a second claim's id.
+  assert.equal((await lint({ claim_id: claimY, value_field: "amount", sql: `SELECT region, count(*) AS amount FROM read_json('${qg}') GROUP BY region` })).binding.length, 1, "chart on one claim's computation hung on another claim");
+  // Quoted literals are not normalized: two different filters are two statements.
+  const fileL = addData("L", "k,v\na - b,1\na-b,2\n");
+  const ql = await query(`SELECT k, v FROM read_csv_auto('${fileL}') WHERE k = 'a - b'`);
+  const claimL = (await recordClaim("Value of a - b", [fileL], [ql])).claim_id;
+  const sameLiteral = await lint({ claim_id: claimL, sql: `SELECT k, v FROM read_csv_auto('${fileL}') WHERE k = 'a - b' ORDER BY k` });
+  assert.equal(sameLiteral.binding.length, 0, "the claim's own filter passes");
+  const otherLiteral = await lint({ claim_id: claimL, sql: `SELECT k, v FROM read_csv_auto('${fileL}') WHERE k = 'a-b'` });
+  assert.equal(otherLiteral.binding.length, 1, "a different quoted literal selects different numbers and is refused");
+
+  // The page lint sees the same relation: a rendered chart that reads the
+  // claim's stored computation directly passes it.
+  const rootedManifest = await renderViz({ sql: `SELECT date, event FROM read_json('${qa}') ORDER BY date` });
+  assert.equal((await igLint(rootedManifest)).length, 0, "page lint: a chart that selects from the claim's computation passes");
   assert.equal((await igLint(goodManifest)).length, 0, "visual on its own claim passes");
   assert.equal((await igLint(forgedRef)).length, 1, "visual whose claim shares no input with its computation");
   console.log("claim binding: real viz lint / infographic lint tool path -- PASS");
