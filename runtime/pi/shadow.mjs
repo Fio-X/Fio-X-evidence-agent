@@ -71,7 +71,7 @@ export async function runShadow(compute) {
 
 // ---- B: numbers in prose ---------------------------------------------------
 
-const VIZ_TEXT_FIELDS = ["title", "subtitle", "note", "source_note"];
+const VIZ_TEXT_FIELDS = ["title", "subtitle", "note", "source_note", "takeaway", "alt"];
 
 async function claimRows(claimIds, claimRecords, deps) {
   const rowSets = [];
@@ -146,7 +146,7 @@ export async function shadowInfographicNumbers({ root, spec, planRef, assets, cl
   const records = [];
   const strict = [];
   const allClaims = [...new Set(modules.flatMap(idsOf))];
-  const pageFields = [["title", spec.title], ["dek", spec.dek]].filter(([, text]) => typeof text === "string" && text);
+  const pageFields = [["title", spec.title], ["dek", spec.dek], ["alt", spec.alt]].filter(([, text]) => typeof text === "string" && text);
   const { candidates: pageCandidates } = await candidatesFor(allClaims);
   for (const [field, text] of pageFields) records.push(...checkField(field, text, pageCandidates));
   const fieldKeys = [];
@@ -207,11 +207,17 @@ export async function shadowAsOf({ root, spec, assets, planRef, members, deps })
       let ast = null;
       try { ast = await deps.serializeSql(record.sql); } catch { ast = null; }
       const memberSet = new Set([...(members ?? [])].map(String));
+      // The registry's reference dates are probe inputs too: when a source
+      // is re-registered with a different date the key changes, so the side
+      // file on disk always belongs to the counts returned with it.
+      const registry = [];
+      for (const path of inputs) { let date = null; try { date = (await deps.registryDate?.(path)) ?? null; } catch { date = null; } registry.push([path, date]); }
       probe = await probeAsOf({ subjectSet: declared, members: memberSet, sql: record.sql, inputs, ast, describe: deps.describe, query: deps.query, registryDate: deps.registryDate });
       keyInputs = {
         surface: "subject_set", plan_ref: planRef,
         subject_set: { key_field: declared.key_field ?? null, cutoff_date: declared.cutoff_date ?? null, computation_ref: declared.computation_ref ?? null },
         sql: record.sql, inputs: (record.read_inputs ?? []).map((input) => [input.path, input.sha256]), members: [...memberSet].sort(),
+        input_refs: inputs, registry_reference: registry,
       };
     }
   }
