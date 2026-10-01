@@ -502,7 +502,7 @@ export function featurePath(geometry, project, { lon0, lat0, limitDeg = 90, prec
  * example min=19.6/max=96.3/classes=5 resolves to step=20 at the first
  * candidate: [0,20,40,60,80,100]).
  */
-export function niceBreaks(min, max, classes = 5) {
+export function niceBreaks(min, max, classes = 5, opts = {}) {
   let lo = Number(min);
   let hi = Number(max);
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) { lo = 0; hi = 1; }
@@ -516,6 +516,9 @@ export function niceBreaks(min, max, classes = 5) {
     for (const factor of NICE_FACTORS) {
       const step = factor * base;
       if (step < rawStep - 1e-9) continue;
+      // integer data (counts, calendar years): whole-number steps only, so
+      // no legend edge reads 1.2 / 1.4
+      if (opts?.integer && (step < 1 || !Number.isInteger(step))) continue;
       const niceMin = Math.floor(lo / step) * step;
       if (niceMin + n * step >= hi - 1e-9) {
         const breaks = [];
