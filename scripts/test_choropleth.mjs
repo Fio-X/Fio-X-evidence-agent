@@ -1077,35 +1077,55 @@ console.log("choropleth inset: panel reserved outside the map frame on desktop a
 //     nothing here is specific to any one story.
 {
   const SHAPES = {
-    // [World Bank name list, expected projection kind]
-    global_cross_hemisphere: [["New Zealand", "Papua New Guinea", "Indonesia", "Cambodia", "Ethiopia", "Greece", "Brazil", "France", "Panama"], "world"],
-    antimeridian_pacific: [["New Zealand", "Fiji", "Tonga", "Samoa", "Vanuatu"], "azimuthal"],
-    single_continent_africa: [["Nigeria", "Ghana", "Kenya", "Ethiopia", "Egypt, Arab Rep.", "South Africa", "Chad", "Mali"], "azimuthal"],
-    small_cluster_balkans: [["Serbia", "Croatia", "Bosnia and Herzegovina", "North Macedonia", "Albania", "Montenegro", "Slovenia", "Bulgaria"], "azimuthal"],
-    high_latitude_nordics: [["Norway", "Sweden", "Finland", "Iceland", "Denmark"], "azimuthal"],
+    global_cross_hemisphere: ["New Zealand", "Papua New Guinea", "Indonesia", "Cambodia", "Ethiopia", "Greece", "Brazil", "France", "Panama", "Viet Nam"],
+    antimeridian_pacific: ["New Zealand", "Fiji", "Tonga", "Samoa", "Vanuatu"],
+    fiji_kiribati: ["Fiji", "Kiribati"],
+    single_continent_africa: ["Nigeria", "Ghana", "Kenya", "Ethiopia", "Egypt, Arab Rep.", "South Africa", "Chad", "Mali"],
+    small_cluster_balkans: ["Serbia", "Croatia", "Bosnia and Herzegovina", "North Macedonia", "Albania", "Montenegro", "Slovenia", "Bulgaria"],
+    high_latitude_nordics: ["Norway", "Sweden", "Finland", "Iceland", "Denmark"],
   };
-  const { chooseMapProjection } = await import("../runtime/pi/choropleth.mjs");
-  for (const [shape, [countries, kind]] of Object.entries(SHAPES)) {
+  for (const [shape, countries] of Object.entries(SHAPES)) {
     const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 10 + i * 7, year: 2021 }));
     const spec = { ...base, highlight_values: [] };
     const bundle = renderVizBundle(spec, rows);
     const joined = joinChoroplethRows(rows, spec);
     const expected = joined.map((item) => item.iso3);
     assert.equal(expected.length, countries.length, `${shape}: every fixture name must join to an iso3`);
-    const points = joined.flatMap((item) => item.featureIndices.flatMap((idx) => geometryRings(neFeatureGeometry(idx)).flat()));
-    assert.equal(chooseMapProjection(points).kind, kind, `${shape}: projection kind`);
     for (const [variant, svg] of [["desktop", bundle.desktop], ["mobile", bundle.mobile]]) {
       const drawn = new Set([...svg.matchAll(/<path data-role="choropleth-data" data-iso3="([A-Z]{3})"/g)].map((m) => m[1]));
       for (const iso3 of expected) assert.ok(drawn.has(iso3), `${shape}/${variant}: ${iso3} has a data row but no choropleth-data path (drawn: ${[...drawn].join(",")})`);
-      if (kind === "world") assert.doesNotMatch(svg, /data-role="choropleth-locator"/, `${shape}/${variant}: a world projection needs no locator inset`);
+      // No land path may leap across the map (a ring wrapped over the antimeridian
+      // or the horizon): consecutive points stay within 0.6 of the canvas width.
+      const width = Number(svg.match(/viewBox="0 0 ([\d.]+)/)[1]);
+      for (const m of svg.matchAll(/<path data-role="choropleth-(?:data|context)"[^>]* d="([^"]+)"/g)) {
+        let prev = null;
+        for (const seg of m[1].match(/[ML][-\d.]+,[-\d.]+/g) ?? []) {
+          const x = Number(seg.slice(1).split(",")[0]);
+          if (seg[0] === "L" && prev !== null) assert.ok(Math.abs(x - prev) < 0.6 * width, `${shape}/${variant}: a path leaps ${Math.abs(x - prev).toFixed(0)}px across the map`);
+          prev = x;
+        }
+      }
+      // A locator, when shown, must contain land and the area marker must lie inside it.
+      const locator = svg.match(/<g data-role="choropleth-locator"><rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"[\s\S]*?<\/g><\/g>/);
+      if (locator) {
+        const [, lx, ly, lw, lh] = locator.map(Number);
+        const paths = locator[0].match(/<path /g) ?? [];
+        assert.ok(paths.length >= 2, `${shape}/${variant}: locator is empty (${paths.length} paths)`);
+        assert.ok(locator[0].includes(`fill="${PALETTE.context}"`), `${shape}/${variant}: locator draws no data-bearing land`);
+        const area = locator[0].match(/data-role="choropleth-locator-area" x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"/);
+        if (area) {
+          const [, ax, ay, aw, ah] = area.map(Number);
+          assert.ok(ax >= lx - 1 && ay >= ly - 1 && ax + aw <= lx + lw + 1 && ay + ah <= ly + lh + 1, `${shape}/${variant}: locator area marker leaves its panel`);
+        }
+      }
     }
     const qa = runRenderQa(
       { desktop: bundle.desktop, mobile: bundle.mobile },
       { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } },
     );
     for (const variant of ["desktop", "mobile"]) {
-      const missing = (qa.viewports[variant].value_labels?.failures ?? []).filter((f) => f.rule === "value_label_missing_region");
-      assert.equal(missing.length, 0, `${shape}/${variant}: ${JSON.stringify(missing)}`);
+      const bad = (qa.viewports[variant].value_labels?.failures ?? []).filter((f) => String(f.rule).startsWith("value_label_missing"));
+      assert.equal(bad.length, 0, `${shape}/${variant}: ${JSON.stringify(bad)}`);
     }
   }
 }
