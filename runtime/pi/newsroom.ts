@@ -36,7 +36,7 @@ import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
-import { bindClaimsToChart, computationInputState } from "./claim_binding.mjs";
+import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
@@ -1239,7 +1239,7 @@ async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
 // Claim-to-chart binding (claim_binding.mjs): what each cited claim's
 // computations read versus what the chart's own computation reads.
 function claimBindingDeps() {
-  return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot() };
+  return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot(), serializeSql: (sql: string) => serializeSqlAst(sql) };
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -2142,7 +2142,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const vizClaimRecords = await verifiedClaimRecords();
       const inputSnapshot = await evidenceSnapshot();
       const claimBindings = await bindClaimsToChart(
-        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints },
+        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
         vizClaimIds,
         vizClaimRecords,
         claimBindingDeps(),
@@ -3194,9 +3194,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           ...((Array.isArray(module.annotations) ? module.annotations : []).map((annotation: any) => annotation?.claim_id)),
         ].filter(Boolean).map(String))].filter((id) => verifiedRecords.has(id));
         if (!claimIds.length) continue;
-        const chartState = manifest?.computation_ref
+        let chartState: any = manifest?.computation_ref
           ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
           : { input_binding: "legacy", effective_inputs: [] };
+        if (manifest?.computation_ref) {
+          // The numeric encoding fields come from the visual's own plan; an
+          // unreadable plan leaves them unknown and the direct-read relation fails closed.
+          let planSpec: any = null;
+          try { planSpec = await readArtifactJson(String(manifest.plan_ref ?? ""), "visualizations/plans/"); } catch { planSpec = null; }
+          chartState = { ...chartState, numeric_fields: planSpec ? numericFieldsOfSpec(planSpec) : undefined };
+        }
         visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
       }
       const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });

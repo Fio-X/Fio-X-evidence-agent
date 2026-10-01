@@ -24,10 +24,13 @@
 //                     same name and every chart row, taken on those columns,
 //                     is a row of the claim's result (a subset, projection or
 //                     reordering of the claim's own numbers);
-//       reads_claim_computation  the chart reads the claim's stored computation
-//                     directly.
-// Anything else (an aggregate or pivot over the claim's rows, a renamed column)
-// fails closed: record the claim from the chart's own computation. Strict
+//       reads_claim_computation  the chart is a plain SELECT (WHERE / GROUP BY /
+//                     ORDER BY / LIMIT) over the claim's stored computation and
+//                     nothing else, whose numeric encoding columns are root
+//                     columns or COUNT/SUM/AVG/MIN/MAX of them (see
+//                     chartRootedInComputation); merely reading it somewhere in
+//                     the SQL proves nothing.
+// Anything else fails closed: record the claim from the chart's own computation. Strict
 // row-set equality (result_hash) is not a lint input; it is reported through
 // `strictResultHashMatches` for the shadow record only.
 import { evidenceRefFromFingerprint } from "./evidence_gate.mjs";
@@ -63,9 +66,15 @@ function listPaths(paths, limit = 3) {
   return paths.length > limit ? `${shown}, +${paths.length - limit} more` : shown;
 }
 
-/** SQL text with comments, whitespace, keyword case and a trailing ';' removed (string literals and quoted identifiers kept verbatim). */
+/**
+ * SQL text with comments, whitespace, keyword case and a trailing ';' removed.
+ * Only text OUTSIDE quotes is normalized: string literals and quoted
+ * identifiers are carried through byte for byte (so 'a - b' and 'a-b' stay
+ * different statements).
+ */
 export function normalizeSql(sql) {
   const text = String(sql ?? "");
+  const quoted = [];
   let out = "";
   let i = 0;
   const pushSpace = () => { if (out && !out.endsWith(" ")) out += " "; };
@@ -76,7 +85,8 @@ export function normalizeSql(sql) {
     if (ch === "'" || ch === '"') {
       let j = i + 1;
       while (j < text.length) { if (text[j] === ch) { if (text[j + 1] === ch) { j += 2; continue; } break; } j += 1; }
-      out += text.slice(i, j + 1);
+      quoted.push(text.slice(i, j + 1));
+      out += `\u0000${quoted.length - 1}\u0000`;
       i = j + 1;
       continue;
     }
@@ -84,7 +94,8 @@ export function normalizeSql(sql) {
     out += ch.toLowerCase();
     i += 1;
   }
-  return out.trim().replace(/[;\s]+$/, "").replace(/\s*([(),=<>+\-*\/])\s*/g, "$1");
+  const squeezed = out.trim().replace(/[;\s]+$/, "").replace(/\s*([(),=<>+\-*\/])\s*/g, "$1");
+  return squeezed.replace(/\u0000(\d+)\u0000/g, (_, index) => quoted[Number(index)]);
 }
 
 function cellKey(value) {
@@ -108,9 +119,16 @@ export function chartValuesInRows(chartRows, claimRows) {
   if (chartColumns.length === 0) return { ok: false, reason: "the chart result has no columns" };
   const missing = chartColumns.filter((column) => !claimColumns.has(column));
   if (missing.length) return { ok: false, reason: `chart column(s) ${missing.slice(0, 3).map((name) => `'${name}'`).join(", ")} are not in the claim's result` };
-  const claimTuples = new Set(claimRows.map((row) => chartColumns.map((column) => cellKey(row?.[column])).join("\u0001")));
+  // Multiset containment: a row may appear in the chart no more often than it
+  // does in the claim's result (a JOIN that duplicates rows is not a subset).
+  const tupleKey = (row) => chartColumns.map((column) => cellKey(row?.[column])).join("\u0001");
+  const available = new Map();
+  for (const row of claimRows) { const key = tupleKey(row); available.set(key, (available.get(key) ?? 0) + 1); }
   for (const row of chartRows) {
-    if (!claimTuples.has(chartColumns.map((column) => cellKey(row?.[column])).join("\u0001"))) return { ok: false, reason: "a chart row is not a row of the claim's result" };
+    const key = tupleKey(row);
+    const left = available.get(key) ?? 0;
+    if (left === 0) return { ok: false, reason: (available.has(key) ? "a chart row appears more often than in the claim's result" : "a chart row is not a row of the claim's result") };
+    available.set(key, left - 1);
   }
   return { ok: true, reason: "" };
 }
@@ -127,6 +145,96 @@ function hashMap(state) {
     if (isEvidencePath(input?.path) && /^[0-9a-f]{64}$/.test(String(input?.sha256 ?? ""))) map.set(input.path, input.sha256);
   }
   return map;
+}
+
+const COMPUTATION_REF_PATTERN = /^computations\/[0-9a-f]{64}\.json$/;
+const ROOT_READERS = new Set(["read_json", "read_json_auto"]);
+const NUMERIC_AGGREGATES = new Set(["count_star", "count", "sum", "avg", "min", "max"]);
+// Encoding fields whose values are drawn as numbers. A label, category or
+// series column may be any expression; these may only be the root table's own
+// numbers (or a plain aggregate of them).
+const NUMERIC_FIELD_KEYS = ["value_field", "start_field", "end_field", "y_field", "size_field", "altitude_field", "speed_field", "source_lat_field", "source_lon_field", "target_lat_field", "target_lon_field"];
+
+/** The spec's numeric encoding fields (x_field only for a scatter, where it is a measure). */
+export function numericFieldsOfSpec(spec) {
+  const fields = NUMERIC_FIELD_KEYS.map((key) => spec?.[key]).filter((value) => typeof value === "string" && value);
+  if (spec?.chart_type === "scatter" && typeof spec?.x_field === "string" && spec.x_field) fields.push(spec.x_field);
+  return [...new Set(fields)];
+}
+
+function anyNode(node, test) {
+  if (Array.isArray(node)) return node.some((item) => anyNode(item, test));
+  if (!node || typeof node !== "object") return false;
+  if (test(node)) return true;
+  return Object.values(node).some((value) => anyNode(value, test));
+}
+
+/**
+ * reads_claim_computation, proven and not merely observed. The chart's whole
+ * read set must be exactly the one claim computation, and the statement must
+ * be a plain SELECT over that table: WHERE / GROUP BY / ORDER BY / LIMIT only
+ * (no CTE, JOIN, UNION, subquery, window, HAVING, DISTINCT, SAMPLE). Every
+ * output column drawn as a number must be a column of the root table or
+ * COUNT(*) / COUNT / SUM / AVG / MIN / MAX of such columns; no literal, no
+ * arithmetic, no other function. Anything unparsed or doubtful fails closed.
+ * Returns {ok, reason}.
+ */
+export function chartRootedInComputation(chart, computation) {
+  const no = (reason) => ({ ok: false, reason });
+  const ref = String(computation?.ref ?? "");
+  if (!COMPUTATION_REF_PATTERN.test(ref)) return no("the claim's computation has no canonical computations/<hash>.json path");
+  const reads = (Array.isArray(chart?.read_inputs) ? chart.read_inputs : []).map((input) => String(input?.path ?? ""));
+  if (reads.length !== 1 || reads[0] !== ref) return no("the chart also reads files other than the claim's computation");
+  const numericFields = chart?.numeric_fields;
+  if (!Array.isArray(numericFields)) return no("the chart's numeric fields are unknown");
+  const ast = chart?.ast;
+  const statements = ast && ast.error === false ? ast.statements : null;
+  if (!Array.isArray(statements) || statements.length !== 1) return no("the chart SQL could not be parsed");
+  const node = statements[0]?.node;
+  if (node?.type !== "SELECT_NODE") return no("the chart SQL is not a plain SELECT");
+  if (Array.isArray(node.cte_map?.map) && node.cte_map.map.length) return no("the chart SQL uses a CTE");
+  for (const key of ["having", "qualify", "sample"]) if (node[key]) return no(`the chart SQL uses ${key.toUpperCase()}`);
+  if (node.aggregate_handling && !["STANDARD_HANDLING", "FORCE_AGGREGATES"].includes(node.aggregate_handling)) return no("the chart SQL groups in an unsupported way");
+  for (const modifier of Array.isArray(node.modifiers) ? node.modifiers : []) {
+    if (modifier?.type !== "ORDER_MODIFIER" && modifier?.type !== "LIMIT_MODIFIER") return no("the chart SQL uses a modifier other than ORDER BY / LIMIT");
+  }
+  if (anyNode(ast, (item) => item.class === "SUBQUERY" || item.class === "WINDOW" || item.class === "LAMBDA" || item.type === "SUBQUERY")) return no("the chart SQL uses a subquery, window or lambda");
+  const from = node.from_table;
+  const fn = from?.function;
+  if (from?.type !== "TABLE_FUNCTION" || !ROOT_READERS.has(String(fn?.function_name ?? "").toLowerCase())) return no("the chart does not select directly from the claim's computation");
+  const args = Array.isArray(fn.children) ? fn.children : [];
+  if (args.length !== 1 || args[0]?.class !== "CONSTANT" || args[0]?.value?.value !== ref) return no("the chart's table is not the claim's computation");
+
+  const rootColumns = new Set(Object.keys(computation?.rows?.[0] ?? {}));
+  const chartColumns = Object.keys(chart?.rows?.[0] ?? {});
+  const select = Array.isArray(node.select_list) ? node.select_list : [];
+  if (select.some((expr) => expr?.class === "STAR")) return no("the chart SQL selects * from the claim's computation");
+  if (rootColumns.size === 0 || select.length === 0 || select.length !== chartColumns.length) return no("the chart's output columns cannot be matched to its SELECT list");
+  const alias = from.alias ? String(from.alias) : "";
+  const isRootColumn = (expr) => {
+    if (expr?.class !== "COLUMN_REF" || !Array.isArray(expr.column_names)) return false;
+    const names = expr.column_names.map(String);
+    if (names.length === 2 && names[0] !== alias) return false;
+    if (names.length > 2) return false;
+    return rootColumns.has(names[names.length - 1]);
+  };
+  const plainAggregate = (expr) => {
+    if (expr?.class !== "FUNCTION") return false;
+    const name = String(expr.function_name ?? "").toLowerCase();
+    if (!NUMERIC_AGGREGATES.has(name) || expr.filter || (Array.isArray(expr.order_bys?.orders) && expr.order_bys.orders.length)) return false;
+    const children = Array.isArray(expr.children) ? expr.children : [];
+    return name === "count_star" ? children.length === 0 : children.length === 1 && isRootColumn(children[0]);
+  };
+  const numeric = new Set(numericFields.map(String));
+  for (let index = 0; index < select.length; index += 1) {
+    const expr = select[index];
+    if (expr?.class === "STAR") return no("the chart SQL selects * from the claim's computation");
+    const outName = chartColumns[index];
+    if (expr?.alias && String(expr.alias) !== outName) return no("the chart's output columns cannot be matched to its SELECT list");
+    if (!numeric.has(outName)) continue;
+    if (!isRootColumn(expr) && !plainAggregate(expr)) return no(`numeric field '${outName}' is not a column of the claim's computation or a plain COUNT/SUM/AVG/MIN/MAX of one`);
+  }
+  return { ok: true, reason: "" };
 }
 
 /**
@@ -168,8 +276,12 @@ export function claimBindsComputation(chart, claimComputations) {
     });
     if (shared.length === 0) continue;
     allShared.push(...shared);
-    if (!hintRef && computation.ref) hintRef = String(computation.ref);
-    if (computation.ref && chartReads.has(String(computation.ref))) return verdict(true, CLAIM_BINDING_OK, "", shared, "reads_claim_computation");
+    if (!hintRef && COMPUTATION_REF_PATTERN.test(String(computation.ref ?? ""))) hintRef = String(computation.ref);
+    if (computation.ref && chartReads.has(String(computation.ref))) {
+      const rooted = chartRootedInComputation(chart, computation);
+      if (rooted.ok) return verdict(true, CLAIM_BINDING_OK, "", shared, "reads_claim_computation");
+      reasons.push(`it reads the claim's computation but ${rooted.reason}`);
+    }
     if (chartSql && chartSql === normalizeSql(computation.sql)) return verdict(true, CLAIM_BINDING_OK, "", shared, "same_sql");
     const contained = chartValuesInRows(chart?.rows, computation.rows);
     if (contained.ok) return verdict(true, CLAIM_BINDING_OK, "", shared, "values_in_rows");
@@ -230,8 +342,14 @@ export async function claimComputationStates(claim, deps) {
  * verified claim records; an id with no record is left out, so the existing
  * "not a verified recorded claim" blocker stays the only message for it.
  */
-export async function bindClaimsToChart(chartState, claimIds, claimRecords, deps) {
+export async function bindClaimsToChart(chartInput, claimIds, claimRecords, deps) {
   const verdicts = {};
+  let chartState = chartInput;
+  if (chartState && chartState.ast === undefined && chartState.sql && typeof deps?.serializeSql === "function") {
+    let ast = null;
+    try { ast = await deps.serializeSql(chartState.sql); } catch { ast = null; }
+    chartState = { ...chartState, ast };
+  }
   for (const claimId of [...new Set((claimIds ?? []).map(String).filter(Boolean))]) {
     const claim = claimRecords?.get?.(claimId);
     if (!claim) continue;
