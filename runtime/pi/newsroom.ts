@@ -37,6 +37,7 @@ import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQu
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState } from "./claim_binding.mjs";
+import { runShadow, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -2098,10 +2099,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const verified = await verifiedClaimIds();
       const lintInputs = await deriveInputsForSql(spec.sql, signal);
       const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
+      const vizClaimRecords = await verifiedClaimRecords();
       const claimBindings = await bindClaimsToChart(
         { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs },
         vizClaimIds,
-        await verifiedClaimRecords(),
+        vizClaimRecords,
         claimBindingDeps(),
       );
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
@@ -2131,6 +2133,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
         publishable: systemVerified,
       });
+      // Shadow check (off unless NEWSROOM_SHADOW_CHECKS=1): runs after every
+      // artifact above is written and only adds a side file plus details.shadow.
+      const vizShadow = shadowChecksEnabled()
+        ? await runShadow(() => shadowVizNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, chart: { rows, data_hash: lint.data_hash }, claimRecords: vizClaimRecords, deps: claimBindingDeps() }))
+        : null;
       const status = lint.passed ? "PASS" : "BLOCKED";
       const verificationText = systemVerified ? "VERIFIED / publishable after QA" : "DRAFT / exploratory only; not publishable";
       return textResult(`${status}: visualization lint\nPlan: ${params.plan_ref}\nLint: ${lintRef}\nVerification: ${verificationText}\nData hash: ${lint.data_hash}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_viz_render with plan_ref and lint_ref." : "Revise the visualization plan and lint again before rendering."}`, {
@@ -2142,6 +2149,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         warnings: lint.warnings,
         verificationMode: systemVerified ? "verified" : "draft",
         publishable: systemVerified,
+        ...(vizShadow ? { shadow: vizShadow } : {}),
       });
     },
   });
@@ -3156,7 +3164,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes }));
       const lintRef = `infographics/lints/${key}.json`;
       await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes });
-      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings });
+      const igShadow = shadowChecksEnabled()
+        ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
+        : null;
+      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings, ...(igShadow ? { shadow: igShadow } : {}) });
     },
   });
 
