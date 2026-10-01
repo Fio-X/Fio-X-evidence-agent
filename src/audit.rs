@@ -46,6 +46,120 @@ pub struct ToolCall {
     pub start_seq: usize,
     pub end_seq: usize,
     pub capability_class: Option<&'static str>,
+    /// Set on an inner step expanded from a chain call's result; absent on real calls.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_call_id: Option<String>,
+}
+
+/// Fixed step order of each runtime-only chain tool (runtime/pi/tool_chain.mjs).
+const CHAIN_STEPS: [(&str, &[&str]); 2] = [
+    (
+        "newsroom_viz_chain",
+        &[
+            "newsroom_viz_plan",
+            "newsroom_viz_lint",
+            "newsroom_viz_render",
+            "newsroom_viz_critic",
+        ],
+    ),
+    (
+        "newsroom_infographic_chain",
+        &[
+            "newsroom_infographic_plan",
+            "newsroom_infographic_lint",
+            "newsroom_infographic_render",
+            "newsroom_infographic_critic",
+            "newsroom_infographic_preview",
+        ],
+    ),
+];
+
+/// Inner calls of a finished chain call, read only from the outer call's own
+/// result in the main event stream. Anything missing or malformed yields no
+/// inner calls at all: an incomplete record is never partly believed.
+fn chain_inner_calls(
+    outer_tool: &str,
+    outer_id: &str,
+    event: &Value,
+    start_seq: usize,
+    end_seq: usize,
+) -> Vec<ToolCall> {
+    let Some((_, expected)) = CHAIN_STEPS.iter().find(|(name, _)| *name == outer_tool) else {
+        return Vec::new();
+    };
+    if event.get("isError").and_then(Value::as_bool) != Some(false) {
+        return Vec::new();
+    }
+    let Some(details) = event.pointer("/result/details").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    if details.get("chain").and_then(Value::as_str) != Some(outer_tool) {
+        return Vec::new();
+    }
+    let Some(steps) = details.get("steps").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    if steps.len() > expected.len() {
+        return Vec::new();
+    }
+    let mut names: Vec<&str> = Vec::new();
+    for (index, step) in steps.iter().enumerate() {
+        let Some(object) = step.as_object() else {
+            return Vec::new();
+        };
+        let tool = object.get("tool").and_then(Value::as_str);
+        let params_ok = object.get("params").is_some_and(Value::is_object);
+        let details_ok = object.get("details").is_some_and(Value::is_object);
+        if tool != Some(expected[index]) || !params_ok || !details_ok {
+            return Vec::new();
+        }
+        names.push(expected[index]);
+    }
+    // The status must agree with the steps present, or the record is incomplete.
+    let failed_step = match details.get("chainStatus").and_then(Value::as_str) {
+        Some("COMPLETE") if steps.len() == expected.len() => None,
+        Some("STOPPED") => {
+            let stop_code = details.get("stopCode").and_then(Value::as_str);
+            let failed_at = details.get("failedAt").and_then(Value::as_str);
+            let after_last = expected.get(steps.len()).copied();
+            let at_last = steps.len().checked_sub(1).map(|i| expected[i]);
+            match (stop_code, failed_at) {
+                (Some("STEP_ERROR"), Some(at)) if Some(at) == after_last && !steps.is_empty() => {
+                    Some(at)
+                }
+                (Some(_), Some(at)) if Some(at) == after_last || Some(at) == at_last => None,
+                _ => return Vec::new(),
+            }
+        }
+        _ => return Vec::new(),
+    };
+    let mut inner: Vec<ToolCall> = steps
+        .iter()
+        .zip(names)
+        .map(|(step, tool)| ToolCall {
+            id: format!("{outer_id}:{tool}"),
+            tool: tool.to_string(),
+            args: step.get("params").cloned().unwrap_or(Value::Null),
+            is_error: Some(false),
+            start_seq,
+            end_seq,
+            capability_class: capability_class(tool),
+            parent_call_id: Some(outer_id.to_string()),
+        })
+        .collect();
+    if let Some(tool) = failed_step {
+        inner.push(ToolCall {
+            id: format!("{outer_id}:{tool}"),
+            tool: tool.to_string(),
+            args: Value::Null,
+            is_error: Some(true),
+            start_seq,
+            end_seq,
+            capability_class: capability_class(tool),
+            parent_call_id: Some(outer_id.to_string()),
+        });
+    }
+    inner
 }
 
 impl AuditSummary {
@@ -180,6 +294,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     .remove(&id)
                     .unwrap_or_else(|| ("unknown".to_string(), Value::Null, sequence));
                 let class = capability_class(&tool);
+                let inner = chain_inner_calls(&tool, &id, &event, start_seq, sequence);
                 calls.push(ToolCall {
                     id,
                     tool,
@@ -188,7 +303,9 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
                     start_seq,
                     end_seq: sequence,
                     capability_class: class,
+                    parent_call_id: None,
                 });
+                calls.extend(inner);
             }
             _ => {}
         }
@@ -204,6 +321,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
             start_seq,
             end_seq: sequence.saturating_add(1),
             capability_class: class,
+            parent_call_id: None,
         });
     }
     calls.sort_by_key(|call| (call.start_seq, call.end_seq));
@@ -459,5 +577,235 @@ mod tests {
             1
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    const VIZ: [&str; 4] = [
+        "newsroom_viz_plan",
+        "newsroom_viz_lint",
+        "newsroom_viz_render",
+        "newsroom_viz_critic",
+    ];
+
+    fn chain_steps(tools: &[&str]) -> Vec<Value> {
+        tools
+            .iter()
+            .map(|tool| json!({"tool": tool, "params": {"plan_ref": "p"}, "details": {"passed": true}}))
+            .collect()
+    }
+
+    fn chain_call(id: &str, tool: &str, is_error: bool, details: Value) -> Vec<Value> {
+        vec![
+            json!({"type":"tool_execution_start","toolCallId":id,"toolName":tool,"args":{}}),
+            json!({"type":"tool_execution_end","toolCallId":id,"toolName":tool,"isError":is_error,
+                   "result":{"content":[],"details":details}}),
+        ]
+    }
+
+    fn viz_done(steps: &[&str]) -> Value {
+        json!({"chain":"newsroom_viz_chain","chainStatus":"COMPLETE","steps":chain_steps(steps)})
+    }
+
+    fn inner_count(summary: &AuditSummary) -> usize {
+        summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .count()
+    }
+
+    #[test]
+    fn a_finished_viz_chain_shows_its_four_inner_tools_once() {
+        let summary = build_fixture(chain_call(
+            "c1",
+            "newsroom_viz_chain",
+            false,
+            viz_done(&VIZ),
+        ));
+        for tool in VIZ {
+            assert_eq!(summary.tools.get(tool), Some(&1), "{tool}");
+        }
+        assert_eq!(
+            summary.tool_calls, 5,
+            "the outer call plus four inner steps"
+        );
+        assert_eq!(summary.failed_tool_calls, 0);
+        let order: Vec<&str> = summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .map(|call| call.tool.as_str())
+            .collect();
+        assert_eq!(order, VIZ);
+        assert!(summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .all(|call| call.parent_call_id.as_deref() == Some("c1")));
+    }
+
+    #[test]
+    fn expanded_inner_calls_read_like_direct_calls() {
+        let mut direct = Vec::new();
+        for tool in VIZ {
+            direct.push(json!({"type":"tool_execution_start","toolCallId":tool,"toolName":tool,"args":{"plan_ref":"p"}}));
+            direct.push(json!({"type":"tool_execution_end","toolCallId":tool,"toolName":tool,"isError":false}));
+        }
+        let direct = build_fixture(direct);
+        let chained = build_fixture(chain_call(
+            "c1",
+            "newsroom_viz_chain",
+            false,
+            viz_done(&VIZ),
+        ));
+        let key = |call: &ToolCall| {
+            (
+                call.tool.clone(),
+                call.args.clone(),
+                call.is_error,
+                call.capability_class,
+            )
+        };
+        let inner: Vec<_> = chained
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .map(key)
+            .collect();
+        let direct: Vec<_> = direct.calls.iter().map(key).collect();
+        assert_eq!(inner, direct);
+    }
+
+    #[test]
+    fn a_page_chain_expands_five_steps_and_a_blocker_stop_keeps_its_steps() {
+        let page = [
+            "newsroom_infographic_plan",
+            "newsroom_infographic_lint",
+            "newsroom_infographic_render",
+            "newsroom_infographic_critic",
+            "newsroom_infographic_preview",
+        ];
+        let full = json!({"chain":"newsroom_infographic_chain","chainStatus":"COMPLETE","steps":chain_steps(&page)});
+        assert_eq!(
+            inner_count(&build_fixture(chain_call(
+                "g1",
+                "newsroom_infographic_chain",
+                false,
+                full
+            ))),
+            5
+        );
+        let blocked = json!({"chain":"newsroom_infographic_chain","chainStatus":"STOPPED","failedAt":"newsroom_infographic_lint","stopCode":"BLOCKED","steps":chain_steps(&page[..2])});
+        let summary = build_fixture(chain_call(
+            "g2",
+            "newsroom_infographic_chain",
+            false,
+            blocked,
+        ));
+        assert_eq!(inner_count(&summary), 2);
+        assert_eq!(
+            summary.failed_tool_calls, 0,
+            "a lint blocker is a normal result, as in a direct call"
+        );
+    }
+
+    #[test]
+    fn an_inner_step_error_counts_once_as_a_failure() {
+        let details = json!({"chain":"newsroom_viz_chain","chainStatus":"STOPPED","failedAt":"newsroom_viz_render","stopCode":"STEP_ERROR","steps":chain_steps(&VIZ[..2])});
+        let summary = build_fixture(chain_call("c1", "newsroom_viz_chain", false, details));
+        assert_eq!(inner_count(&summary), 3);
+        assert_eq!(summary.failed_tool_calls, 1);
+        let failed: Vec<_> = summary
+            .calls
+            .iter()
+            .filter(|call| call.is_error == Some(true))
+            .collect();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].tool, "newsroom_viz_render");
+    }
+
+    #[test]
+    fn untrusted_or_incomplete_chain_records_expand_to_nothing() {
+        let mut shapes: Vec<(&str, bool, Value)> = vec![
+            ("outer error", true, viz_done(&VIZ)),
+            ("details missing", false, Value::Null),
+            ("details not an object", false, json!("COMPLETE")),
+            (
+                "steps missing",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"COMPLETE"}),
+            ),
+            (
+                "steps not an array",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"COMPLETE","steps":{}}),
+            ),
+            ("complete but a step is missing", false, viz_done(&VIZ[..3])),
+            (
+                "wrong chain name",
+                false,
+                json!({"chain":"newsroom_infographic_chain","chainStatus":"COMPLETE","steps":chain_steps(&VIZ)}),
+            ),
+            (
+                "step out of order",
+                false,
+                viz_done(&[VIZ[1], VIZ[0], VIZ[2], VIZ[3]]),
+            ),
+            (
+                "a step of another tool",
+                false,
+                viz_done(&["duckdb_query", VIZ[1], VIZ[2], VIZ[3]]),
+            ),
+            (
+                "too many steps",
+                false,
+                viz_done(&[VIZ[0], VIZ[1], VIZ[2], VIZ[3], VIZ[3]]),
+            ),
+            (
+                "step without params",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"COMPLETE","steps":VIZ.iter().map(|t| json!({"tool":t,"details":{}})).collect::<Vec<_>>()}),
+            ),
+            (
+                "unknown status",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"RUNNING","steps":chain_steps(&VIZ)}),
+            ),
+            (
+                "stopped without a stop code",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"STOPPED","failedAt":"newsroom_viz_lint","steps":chain_steps(&VIZ[..2])}),
+            ),
+            (
+                "step error naming the wrong tool",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"STOPPED","failedAt":"newsroom_viz_critic","stopCode":"STEP_ERROR","steps":chain_steps(&VIZ[..2])}),
+            ),
+        ];
+        shapes.push(("not a chain tool", false, viz_done(&VIZ)));
+        for (label, is_error, details) in shapes {
+            let tool = if label == "not a chain tool" {
+                "duckdb_query"
+            } else {
+                "newsroom_viz_chain"
+            };
+            let summary = build_fixture(chain_call("c1", tool, is_error, details));
+            assert_eq!(inner_count(&summary), 0, "{label}");
+            assert_eq!(summary.tool_calls, 1, "{label}");
+        }
+    }
+
+    #[test]
+    fn a_chain_end_with_no_start_or_no_end_is_not_expanded() {
+        // Inner-looking steps in a sidecar never reach events.jsonl; and a
+        // chain end event without its own start, or a start without an end, adds nothing.
+        let end_only = vec![
+            json!({"type":"tool_execution_end","toolCallId":"x","toolName":"newsroom_viz_chain","isError":false,
+            "result":{"details":viz_done(&VIZ)}}),
+        ];
+        assert_eq!(inner_count(&build_fixture(end_only)), 0);
+        let start_only = vec![
+            json!({"type":"tool_execution_start","toolCallId":"x","toolName":"newsroom_viz_chain","args":{}}),
+        ];
+        assert_eq!(inner_count(&build_fixture(start_only)), 0);
     }
 }

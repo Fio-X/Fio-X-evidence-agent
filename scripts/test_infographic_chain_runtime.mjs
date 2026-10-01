@@ -335,6 +335,17 @@ if (previewWorks) { // chain == manual, byte for byte; the reader question and t
     assert.deepEqual(out.details.steps.map((s) => s.tool), PAGE_TOOLS);
     for (const [key, ref] of [["planRef", m.plan.details.planRef], ["lintRef", m.lint.details.lintRef], ["manifestRef", m.render.details.manifestRef], ["criticRef", m.critic.details.criticRef], ["previewRef", m.preview.details.previewRef]]) assert.equal(out.details[key], ref, key);
     assert.deepEqual(snapshot(chainArt), snapshot(manualArt), "chain and step-by-step produce byte-identical artifacts");
+    // The shape src/audit.rs expands inner calls from (outer end event -> result.details), and
+    // inner args/details equal to what the step-by-step calls carried.
+    assert.equal(out.details.chain, "newsroom_infographic_chain");
+    assert.deepEqual(out.details.steps[1].params, { plan_ref: m.plan.details.planRef });
+    assert.deepEqual(out.details.steps[4].params, { manifest_ref: m.render.details.manifestRef, critic_ref: m.critic.details.criticRef });
+    for (const [i, key] of ["plan", "lint", "render", "critic", "preview"].entries()) {
+      const step = out.details.steps[i];
+      assert.equal(step.tool, PAGE_TOOLS[i]);
+      assert.equal(typeof step.params, "object");
+      assert.deepEqual(step.details, m[key].details, `${key}: inner details equal the direct call's`);
+    }
     const image = out.content.filter((b) => b.type === "image");
     assert.equal(image.length, 1);
     assert.deepEqual(image[0], m.preview.content.find((b) => b.type === "image"), "preview image passed through verbatim");
