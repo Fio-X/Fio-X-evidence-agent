@@ -658,6 +658,13 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
       if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
       if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
+      {
+        // The claim must belong to this visual's own computation (verdict from
+        // claim_binding.mjs, computed per visual in the async layer). Absent
+        // context means the caller did not compute it: skip.
+        const verdict = context.visual_claim_bindings?.[String(module.id)];
+        if (verdict && verdict.ok !== true && asset.manifest?.claim_id && (!verified.size || verified.has(String(asset.manifest.claim_id)))) blockers.push(`visual '${module.id}' claim '${asset.manifest.claim_id}' is not bound to the visual's own computation: ${verdict.message}`);
+      }
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
       {
         // B1: a chart declares its own language (runtime/pi/newsroom.ts

@@ -36,6 +36,7 @@ import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
+import { bindClaimsToChart, computationInputState } from "./claim_binding.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -1194,6 +1195,12 @@ async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
   });
 }
 
+// Claim-to-chart binding (claim_binding.mjs): what each cited claim's
+// computations read versus what the chart's own computation reads.
+function claimBindingDeps() {
+  return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot() };
+}
+
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
   const sourceRefs = refs.filter((ref) => String(ref).startsWith("sources/") || String(ref).startsWith("data/"));
   const computationRefs = refs.filter((ref) => String(ref).startsWith("computations/"));
@@ -2089,12 +2096,19 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
       const verified = await verifiedClaimIds();
-      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)));
-      const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified });
+      const lintInputs = await deriveInputsForSql(spec.sql, signal);
+      const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
+      const claimBindings = await bindClaimsToChart(
+        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs },
+        vizClaimIds,
+        await verifiedClaimRecords(),
+        claimBindingDeps(),
+      );
+      const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
+      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshot = await evidenceSnapshot();
       const inputSnapshotHash = inputSnapshot.hash;
       const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
-      const lintInputs = await deriveInputsForSql(spec.sql, signal);
       await writeArtifactIfAbsent(computationRef, {
         schema_version: "0.7.0",
         sql: spec.sql,
@@ -3120,7 +3134,18 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
         }
       }
-      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts });
+      const visualClaimBindings: Record<string, any> = {};
+      for (const module of spec.modules ?? []) {
+        if (module?.type !== "visual") continue;
+        const manifest = assets[String(module.manifest_ref ?? "")]?.manifest;
+        const claimId = String(manifest?.claim_id ?? "");
+        if (!claimId || !verifiedRecords.has(claimId)) continue;
+        const chartState = manifest.computation_ref
+          ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
+          : { input_binding: "legacy", effective_inputs: [] };
+        visualClaimBindings[String(module.id)] = (await bindClaimsToChart(chartState, [claimId], verifiedRecords, claimBindingDeps()))[claimId];
+      }
+      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
       if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
