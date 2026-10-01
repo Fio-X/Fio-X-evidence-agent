@@ -28,6 +28,10 @@ pub struct PromptSpeed {
     /// `NEWSROOM_SPEED_COMPUTE_BATCH=1`: tell the model to batch independent
     /// duckdb_query calls, then their record_claim calls, one batch per turn.
     pub compute_batch: bool,
+    /// `NEWSROOM_SPEED_CHAIN_VIZ=1`: expose `newsroom_viz_chain`, which runs
+    /// plan -> lint -> render -> critic in one call. No prompt text changes;
+    /// the tool carries its own guidance.
+    pub chain_viz: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
@@ -424,6 +428,7 @@ mod tests {
         let both = PromptSpeed {
             parallel_hints: true,
             compute_batch: true,
+            ..PromptSpeed::default()
         };
         for topic in ["summarize the source", SCMP_LONG_IMAGE_GOAL] {
             let off = investigation_with_classifier(topic, &[], false);

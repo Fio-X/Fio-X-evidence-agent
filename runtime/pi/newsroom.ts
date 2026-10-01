@@ -88,6 +88,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 }
 
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
+import { chainResultFor, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -131,6 +132,10 @@ function withSpeedGuidelines(tool: any) {
   return { ...tool, promptGuidelines: [...(tool.promptGuidelines ?? []), ...extra] };
 }
 
+// Tools exactly as handed to pi.registerTool (after the phase/profile filter,
+// guidelines and fault injection), so a chain calls the same execute Pi would.
+const registeredTools = new Map<string, any>();
+
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
   const phase=normalizedNewsroomPhase();
@@ -167,6 +172,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
+  registeredTools.set(name, tool);
   pi.registerTool(tool);
 }
 
@@ -1388,7 +1394,59 @@ async function listArtifactFiles(root: string, child: string) {
   return entries;
 }
 
+// The chain tool exists only when its switch is exactly "1" in the Pi child
+// environment and the chain's first tool is enabled for this phase/profile.
+function registerVizChain(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1") return;
+  const name = "newsroom_viz_chain";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_viz_plan");
+  if (!planTool || !toolEnabled("newsroom_viz_plan", { phase, profile })) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  pi.registerTool({
+    name,
+    label: "Plan, lint, render and critique a newsroom visualization",
+    description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it.",
+    promptSnippet: "Plan, lint, render and critique a visualization in one call",
+    promptGuidelines: [
+      "Prefer this over calling newsroom_viz_plan, newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic one by one; send the chain calls for independent charts in the same assistant message.",
+      "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+    ],
+    parameters: Type.Object({
+      ...(planTool.parameters?.properties ?? {}),
+      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It is compared with the verified result and rejected on mismatch." })),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
+      const claimId = String(planParams.claim_id ?? "");
+      const outcome = await runToolChain({
+        steps: vizChainSteps({
+          modelComputationRef,
+          claimComputationRefs: async () => {
+            const claim = (await verifiedClaimRecords()).get(claimId);
+            return Array.isArray(claim?.computation_refs) ? claim.computation_refs.map(String) : [];
+          },
+        }),
+        state: { planParams },
+        enabled,
+        schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
+        record: async (event: any) => {
+          const at = new Date().toISOString();
+          const toolCallId = `${id}:${event.tool}`;
+          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+        },
+      });
+      return chainResultFor(outcome, { chain: name, textResult });
+    },
+  });
+}
+
 export default function newsroomExtension(pi: ExtensionAPI) {
+  registeredTools.clear();
   // Orphaned temp files from a writer that was killed mid-write (switch on only).
   if (atomicArtifactWritesEnabled()) void cleanupStaleArtifactTmp().catch(() => {});
   registerScopedTool(pi, {
@@ -2523,6 +2581,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       });
     },
   });
+
+  // NEWSROOM_SPEED_CHAIN_VIZ=1: one call runs plan -> lint -> render -> critic.
+  // Not a registry tool, so with the switch off nothing is registered and the
+  // tool surface is unchanged. Every gate stays inside the four inner executes.
+  registerVizChain(pi);
 
 
   const explanatoryPartParameters = Type.Object({
