@@ -76,18 +76,84 @@ const textX = (svg, needle) => +svg.match(new RegExp(`<text x="([\\d.]+)"[^>]*>[
   assert.ok(statBox(out.desktop.svg, 's1').w < 500);
   assert.ok(statBox(out.desktop.svg, 's2').w < 500);
 }
-// (e) a stat inside a scene is untouched (scene boxes, no stat bar)
-{
-  const spec = { ...page([header('h1'), { ...chart, id: 'bar', span: 'full' }, stat('s1', { span: 'third' })]), schema_version: '1.3.0', intent: 'Check where a lone big number sits inside a scene.', primary_message: 'A scene keeps its own layout.', story_arc: 'explain', audience: 'informed', quality_target: 'publishable',
-    editorial_discovery_ref: 'editorial/discovery/test.json', visual_concept_ref: 'editorial/concepts/test.json', selected_concept_id: 'concept-scene', novelty_ref: 'editorial/novelty/test.json', asset_plan_ref: 'editorial/assets/test.json',
-    scene_graph: { schema_version: '0.1.0', scenes: [{ id: 'sc', pattern: 'hero_with_rail', eyebrow: 'Scene', title: 'A scene', dek: 'A scene deck.', anchor_module_id: 'bar', sidecar_module_ids: ['s1'], shared_source_scope: true }] } };
-  const l = lintInfographicSpec(spec, assets, context);
+// Scene helper: a 1.3.0 page with a hero_with_rail scene over the full-width chart.
+const scenePage = (sidecars, modules, pattern = 'hero_with_rail') => ({ ...page([header('h1'), { ...chart, id: 'bar', span: 'full' }, ...modules]), schema_version: '1.3.0', intent: 'Check where a lone big number sits inside a scene.', primary_message: 'A scene keeps its own layout.', story_arc: 'explain', audience: 'informed', quality_target: 'publishable',
+  editorial_discovery_ref: 'editorial/discovery/test.json', visual_concept_ref: 'editorial/concepts/test.json', selected_concept_id: 'concept-scene', novelty_ref: 'editorial/novelty/test.json', asset_plan_ref: 'editorial/assets/test.json',
+  scene_graph: { schema_version: '0.1.0', scenes: [{ id: 'sc', pattern, eyebrow: 'Scene', title: 'A scene', dek: 'A scene deck.', anchor_module_id: 'bar', sidecar_module_ids: sidecars, shared_source_scope: true }] } });
+function composeScene(spec, mobilePages = false) {
+  const l = lintInfographicSpec(spec, assets, { ...context, mobile_pages: mobilePages });
   assert.equal(l.passed, true, l.blockers.join(' | '));
-  const out = composeInfographicBundle(spec, assets, { mobilePages: false });
+  const out = composeInfographicBundle(spec, assets, { mobilePages });
+  const qa = runRenderQa({ desktop: out.desktop.svg });
+  assert.equal(qa.passed, true, JSON.stringify(Object.values(qa.viewports).flatMap((v) => v.geometry.failures).slice(0, 5)));
+  return out;
+}
+// The previous layout (commit before the scene band), for byte-identity checks.
+const parentPath = new URL('../runtime/pi/_parent_infographic.mjs', import.meta.url);
+let parent = null;
+try {
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync, rmSync } = await import('node:fs');
+  const src = execFileSync('git', ['show', '0f2dbd7:runtime/pi/infographic.mjs'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  writeFileSync(parentPath, src);
+  try { parent = await import(parentPath.href); } finally { rmSync(parentPath); }
+} catch { parent = null; }
+const sameAsParent = (spec, mobilePages = false) => {
+  if (!parent) return;
+  const now = composeInfographicBundle(spec, assets, { mobilePages });
+  const before = parent.composeInfographicBundle(spec, assets, { mobilePages });
+  assert.equal(now.desktop.svg, before.desktop.svg, 'desktop is byte-identical to the previous layout');
+  if (mobilePages) assert.equal(now.mobile.svg, before.mobile.svg, 'mobile is byte-identical to the previous layout');
+};
+
+// (e)/(g) a rail holding ONE big number draws the full-width band
+{
+  const spec = scenePage(['s1'], [stat('s1', { span: 'third' })]);
+  const out = composeScene(spec);
   assert.equal(out.desktop.scenes.length, 1);
-  assert.equal(out.desktop.boxes.find((box) => box.id === 's1').scene_role, 'sidecar');
-  assert.ok(!out.desktop.boxes.find((box) => box.id === 's1').stat_bar);
-  assert.equal(statBox(out.desktop.svg, 's1').w, 1248, 'rail slot width, identical to the pre-E2 layout');
+  const box = out.desktop.boxes.find((b) => b.id === 's1');
+  assert.equal(box.scene_role, 'sidecar');
+  assert.equal(box.stat_bar, true);
+  assert.equal(box.w, 1248);
+  assert.ok(box.h < 150, `band is shorter than the stacked stat, got ${box.h}`);
+  const anchor = out.desktop.boxes.find((b) => b.id === 'bar');
+  assert.equal(box.y, anchor.y + anchor.h + 14, 'rail spacing unchanged');
+  assert.ok(textX(out.desktop.svg, 'Synthetic items counted') > 96 + 120, 'label sits right of the numeral');
+}
+// (h) a rail with two big numbers is unchanged
+{
+  const spec = scenePage(['s1', 's2'], [stat('s1'), stat('s2', { value: '20', label: 'Another synthetic count' })]);
+  const out = composeScene(spec);
+  assert.ok(!out.desktop.boxes.some((b) => b.stat_bar));
+  sameAsParent(spec);
+}
+// (i) a rail with one text sidecar is unchanged
+{
+  const spec = scenePage(['t1'], [text('t1', SHORT)]);
+  const out = composeScene(spec);
+  assert.ok(!out.desktop.boxes.some((b) => b.stat_bar));
+  sameAsParent(spec);
+}
+// (j) mobile is unchanged (also with the one-stat rail)
+{
+  const spec = scenePage(['s1'], [stat('s1', { span: 'third' })]);
+  const out = composeScene(spec, true);
+  assert.ok(!out.mobile.boxes.some((b) => b.stat_bar));
+  if (parent) assert.equal(out.mobile.svg, parent.composeInfographicBundle(spec, assets, { mobilePages: true }).mobile.svg);
+}
+// hero_sidecar_stack is unchanged (a lone stat sidecar stays a 4-column card)
+{
+  const spec = scenePage(['s1'], [stat('s1', { span: 'third' })], 'hero_sidecar_stack');
+  const l = lintInfographicSpec(spec, assets, context);
+  if (l.passed) { assert.ok(!composeInfographicBundle(spec, assets, { mobilePages: false }).desktop.boxes.some((b) => b.stat_bar)); sameAsParent(spec); }
+}
+// (k) long label + long detail in the scene band wrap with no overflow, QA passes
+{
+  const spec = scenePage(['s1'], [stat('s1', { span: 'third', label: LONG.slice(0, 160), detail: LONG })]);
+  const out = composeScene(spec);
+  const box = out.desktop.boxes.find((b) => b.id === 's1');
+  assert.equal(box.stat_bar, true);
+  assert.ok(/Sentence 14/.test(out.desktop.svg));
 }
 // (f) a very long description folds inside the bar; QA passes (font floor, bounds, overlap)
 {
@@ -96,4 +162,4 @@ const textX = (svg, needle) => +svg.match(new RegExp(`<text x="([\\d.]+)"[^>]*>[
   assert.ok(!/…/.test(out.desktop.svg.match(/<text[^>]*font-size="12"[^>]*>[^<]*Sentence 14[^<]*/)?.[0] ?? ''), 'detail is folded, not truncated');
   assert.ok(/Sentence 14/.test(out.desktop.svg));
 }
-console.log('stat row layout: PASS');
+console.log(`stat row layout: PASS (parent identity checks ${parent ? "ran" : "SKIPPED"})`);
