@@ -1113,8 +1113,17 @@ export function fmt(value, unit = "", decimals = null) {
 // `abs>=10` stripping of a trailing ".0"/".00". Only choropleth per-region
 // labels (on-map, overflow and inset) use this; fmt() itself is untouched so
 // every other chart type's own formatting/snapshot tests are unaffected.
-export function choroplethValueText(value, unit = "") {
+export function choroplethValueText(value, unit = "", spec = null) {
   if (!Number.isFinite(value)) return "";
+  // P2: a calendar year or an integer count is spelled as the integer it is
+  // ("2017", "3"), never "2.0k" / "3.0". No thousands separator and no zh
+  // unit conversion here on purpose: the Python/Rust label verifiers read the
+  // leading number back out of this text and compare it to data-value.
+  const kind = spec ? specValueKind(spec) : null;
+  if (kind && Number.isInteger(value)) {
+    if (kind === "year" || !unit) return String(value);
+    return `${value} ${unit}`;
+  }
   const abs = Math.abs(value);
   let text;
   if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(1)}bn`;
@@ -1162,7 +1171,64 @@ function fmtLocalizedUnit(spec, value, unit = spec?.unit) {
     const zh = fmtZhUnit(value, unit);
     if (zh) return zh;
   }
-  return fmt(value, unit);
+  return fmtSpec(spec, value, unit);
+}
+
+// P2: one place that decides how a spec's numbers are *spelled*, so every
+// chart type agrees. fmt() only ever sees a unit string; it cannot tell a
+// calendar year or a count from a quantity, so 2017 became "2.0k" and 3
+// became "3.0". The kind comes from spec.measure_kind, or from a
+// spec.measure_semantics entry (same shape as measure_semantics.mjs: field,
+// unit, measure_kind) matching spec.value_field (or the only entry).
+// Returns "year" | "count" | null. Never guesses from the unit alone except
+// that a year-ish unit on an `index` measure is a calendar year (a year unit
+// on a `duration` is an elapsed span, e.g. 72.4 years, and stays a number).
+const YEAR_UNITS = new Set(["year", "years", "yr", "yrs", "年", "年份"]);
+export function specValueKind(spec) {
+  let kind = typeof spec?.measure_kind === "string" ? spec.measure_kind : null;
+  let unit = spec?.unit;
+  if (!kind && Array.isArray(spec?.measure_semantics)) {
+    const list = spec.measure_semantics.filter((m) => m && typeof m === "object");
+    const entry = list.find((m) => m.field && m.field === spec.value_field) ?? (list.length === 1 ? list[0] : null);
+    if (entry) {
+      kind = entry.measure_kind ?? null;
+      unit = unit ?? entry.unit;
+    }
+  }
+  if (kind === "year") return "year";
+  if (kind === "count") return "count";
+  if (kind === "index" && YEAR_UNITS.has(String(unit ?? "").trim().toLowerCase())) return "year";
+  return null;
+}
+
+function zhBillionsActive(spec, unit) {
+  return vizLang(spec) === "zh" && spec?.unit === "$B" && (unit === "$B" || unit === "");
+}
+
+// Value-label formatter shared by every chart type that has a spec.
+// `unit` is what this particular label should carry ("" for a bare number
+// on a house-style row that shows the unit once elsewhere).
+export function fmtSpec(spec, value, unit = spec?.unit, decimals = null) {
+  if (!Number.isFinite(value)) return "";
+  const kind = specValueKind(spec);
+  if (kind && Number.isInteger(value)) {
+    if (kind === "year") return String(value);
+    const text = Math.abs(value) >= 10_000 ? value.toLocaleString("en-US") : String(value);
+    return unit ? `${text} ${unit}` : text;
+  }
+  if (zhBillionsActive(spec, unit)) {
+    const num = treemapZhOkuFromBillions(value);
+    return unit ? `${num}亿美元` : num;
+  }
+  return fmt(value, unit, decimals);
+}
+
+export function tickLabelSpec(spec, value, unit = "") {
+  if (!spec) return tickLabel(value, unit);
+  const kind = specValueKind(spec);
+  if (kind && Number.isInteger(value)) return fmtSpec(spec, value, unit);
+  if (zhBillionsActive(spec, unit)) return fmtSpec(spec, value, unit);
+  return tickLabel(value, unit);
 }
 
 // JSON number parsing is not bit-for-bit identical across V8, serde_json and
@@ -2686,7 +2752,7 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit) {
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null) {
   const ticks = tickValues(domain, 4);
   ticks.forEach((tick, i) => {
     const x = horizontalScale(domain, left, right)(tick);
@@ -2695,7 +2761,7 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit) {
     }
     // Fix 3: the unit shows once, on the last (right-most) tick, not on
     // every one - see axisTickUnit.
-    parts.push(`<text x="${x}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, axisTickUnit(unit, i, ticks.length)))}</text>`);
+    parts.push(`<text x="${x}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length)))}</text>`);
   });
 }
 
@@ -2737,7 +2803,7 @@ function renderGroupedDots(spec, rows) {
     f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(68, String(name).length * 12 + 30);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -2756,7 +2822,7 @@ function renderGroupedDots(spec, rows) {
       const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5.5" fill="${color}"/>`);
-      const label = fmt(value, spec.label_unit ?? "");
+      const label = fmtSpec(spec, value, spec.label_unit ?? "");
       const labelWidth = Math.max(24, textUnits(label) * 6.8);
       const canPlaceRight = x + 9 + labelWidth <= right;
       const canPlaceLeft = x - 9 - labelWidth >= left;
@@ -2804,7 +2870,7 @@ function renderHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -2845,11 +2911,11 @@ function renderHorizontal(spec, rows, mode) {
       const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
       const labelX = inside ? x + (value < 0 ? 9 : -9) : x + (value >= 0 ? 9 : -9);
       const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout }));
   });
@@ -2871,7 +2937,7 @@ function renderDumbbell(spec, rows) {
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   // LAYERING_FIX: draw reference lines before the connectors so a
   // connector/dot covers whatever it crosses (see renderHorizontal for the
   // same treatment on bars).
@@ -2885,8 +2951,8 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmt(b, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -2927,8 +2993,8 @@ function renderSlope(spec, rows) {
   // right within a row), not `e.i` (the pre-filter row index used only as
   // repelEndLabels' identity key). Legacy is untouched: HOUSE_STYLE_ACTIVE
   // false keeps every label showing its unit, byte-for-byte.
-  const leftLabelText = (e, idx) => `${resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, vizLang(spec))} ${fmt(e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
-  const rightLabelText = (e) => fmt(e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
+  const leftLabelText = (e, idx) => `${resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, vizLang(spec))} ${fmtSpec(spec, e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
+  const rightLabelText = (e) => fmtSpec(spec, e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
   const leftPlaced = repelEndLabels(entries.map((e, idx) => ({ id: e.i, y: e.y1, text: leftLabelText(e, idx) })), top, bottom, END_LABEL_MIN_GAP);
   const rightPlaced = repelEndLabels(entries.map((e) => ({ id: e.i, y: e.y2, text: rightLabelText(e) })), top, bottom, END_LABEL_MIN_GAP);
   const leftById = new Map(leftPlaced.map((p) => [p.id, p]));
@@ -3066,7 +3132,7 @@ function renderLine(spec, rows, multi = false) {
   yTicks.forEach((tick, i) => {
     const y = yScale(tick);
     f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
   });
   const labelEvery = Math.max(1, Math.ceil(xValues.length / 8));
   const directLabels = [];
@@ -3133,7 +3199,7 @@ function renderLine(spec, rows, multi = false) {
       // exact value appended to its end label, not just its name.
       const name = resolveEconomyDisplayName(series, spec.category_names, vizLang(spec));
       const value = n(last[spec.value_field]);
-      const valueText = value === null ? null : fmt(value, spec.unit, labelDecimals);
+      const valueText = value === null ? null : fmtSpec(spec, value, spec.unit, labelDecimals);
       const text = valueText === null ? name : `${name} ${valueText}`;
       const pointX = xScale(last[spec.x_field]);
       // The label now always carries its value appended (task B), which can
@@ -3149,7 +3215,7 @@ function renderLine(spec, rows, multi = false) {
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(972, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmt(n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="direct-label" x="${Math.min(972, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
     }
   });
   if (multi && spec.direct_labels !== false) {
@@ -3186,6 +3252,16 @@ function renderLine(spec, rows, multi = false) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+// P4: stamp every <text> pushed to `parts` since `startIdx` with the box of the
+// panel (its facet cell, out to the gutter that separates it from the next panel) it belongs to, so render QA's text_outside_panel can prove
+// no label spills into a neighbouring panel. Pure attribute addition.
+function tagPanelTexts(parts, startIdx, box) {
+  const attr = ` data-panel-box="${box.map((v) => Number(v).toFixed(1)).join(",")}"`;
+  for (let i = startIdx; i < parts.length; i++) {
+    if (typeof parts[i] === "string" && parts[i].includes("<text ")) parts[i] = parts[i].replace(/<text (?![^>]*data-panel-box)/g, `<text${attr} `);
+  }
+}
+
 function renderSmallMultiples(spec, rows) {
   const facets = sortX(unique(rows.map((r) => r[spec.facet_field])));
   const cols = facets.length === 1 ? 1 : 2;
@@ -3207,6 +3283,7 @@ function renderSmallMultiples(spec, rows) {
     facets.forEach((facet, fi) => {
       const col = fi % cols, rowN = Math.floor(fi / cols);
       const x0 = 54 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+      const facetPartStart = f.parts.length;
       const group = sortRows(rows.filter((r) => String(r[spec.facet_field]) === facet), spec, spec.value_field);
       const labelW = 150;
       const plotLeft = x0 + labelW, plotRight = x0 + panelW - 12;
@@ -3216,7 +3293,7 @@ function renderSmallMultiples(spec, rows) {
       tickValues(domain, 2).forEach((tick) => {
         const x = xScale(tick);
         f.parts.push(`<line x1="${x}" y1="${plotTop - 4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-        f.parts.push(`<text x="${x}" y="${plotTop - 10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x}" y="${plotTop - 10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.unit))}</text>`);
       });
       const step = Math.max(27, (plotBottom - plotTop) / Math.max(group.length, 1));
       group.forEach((r, i) => {
@@ -3228,7 +3305,7 @@ function renderSmallMultiples(spec, rows) {
         f.parts.push(`<text x="${plotLeft - 9}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(category)}</text>`);
         f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.5"/>`);
         f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted ? 6 : 4.8}" fill="${highlighted ? PALETTE.accent : PALETTE.accent2}"/>`);
-        f.parts.push(`<text x="${x + 7}" y="${y + 4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x + 7}" y="${y + 4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, spec.unit))}</text>`);
         pointAnnotations(spec, r).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: "right", layout: f.annotationLayout }));
       });
       refLines.forEach((line, i) => {
@@ -3242,6 +3319,7 @@ function renderSmallMultiples(spec, rows) {
           f.parts.push(`<text data-role="reference-line-label" x="${x + (anchor === "end" ? -5 : 5)}" y="${labelY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 26))}</text>`);
         }
       });
+      tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
     });
     addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
   }
@@ -3256,6 +3334,7 @@ function renderSmallMultiples(spec, rows) {
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
     const x0 = 70 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+    const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
     const xMap = new Map(xs.map((v, i) => [String(v), i]));
@@ -3288,6 +3367,7 @@ function renderSmallMultiples(spec, rows) {
         f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase, i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 34))}</text>`);
       }
     });
+    tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
   });
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
@@ -3305,7 +3385,7 @@ function renderScatter(spec, rows) {
   const yTicks = spec.y_scale === "log" ? logTickValues(yDomainRaw) : tickValues(yDomainRaw, 4);
   yTicks.forEach((tick) => {
     const y = yScale(tick); f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.y_unit ?? spec.unit))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.y_unit ?? spec.unit))}</text>`);
   });
   xInfo.ticks.forEach((tick) => {
     const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? ""))}</text>`);
@@ -3359,15 +3439,15 @@ function renderHeatmap(spec, rows) {
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
   const legendY=bottom+13, legendW=150;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-d)"/>`);
-  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(min,spec.unit))}</text>`);
-  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(max,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
@@ -3427,7 +3507,7 @@ function renderMobileHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(1, sorted.length);
   sorted.forEach((row, i) => {
@@ -3455,11 +3535,11 @@ function renderMobileHorizontal(spec, rows, mode) {
       const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
       const labelX = inside ? x + (value < 0 ? 8 : -8) : x + (value >= 0 ? 8 : -8);
       const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 8 : -8);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout, maxChars: 30 }));
   });
@@ -3497,7 +3577,7 @@ function renderGroupedDotsMobile(spec, rows) {
     f.parts.push(`<text x="${legendX + 8}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(56, String(name).length * 11 + 24);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.1"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -3516,7 +3596,7 @@ function renderGroupedDotsMobile(spec, rows) {
       const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.5"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.8" fill="${color}"/>`);
-      const label = fmt(value, spec.label_unit ?? "");
+      const label = fmtSpec(spec, value, spec.label_unit ?? "");
       const labelWidth = Math.max(22, textUnits(label) * 6.9);
       const canPlaceRight = x + 7 + labelWidth <= right;
       const canPlaceLeft = x - 7 - labelWidth >= left;
@@ -3549,7 +3629,7 @@ function renderMobileDumbbell(spec, rows) {
   const values = rows.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   const step = (bottom - top) / Math.max(1, rows.length);
   rows.forEach((row, i) => {
     const a = n(row[spec.start_field]), b = n(row[spec.end_field]); if (a === null || b === null) return;
@@ -3558,8 +3638,8 @@ function renderMobileDumbbell(spec, rows) {
     f.parts.push(`<text x="165" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category) > 20 ? sliceUnits(category, 19) + "…" : category)}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="4.8" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="4.8" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmt(b, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout, maxChars: 30 }));
   });
   drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -3583,8 +3663,8 @@ function renderMobileSlope(spec, rows) {
     .map((e) => ({ ...e, y1: scaleY(e.a), y2: scaleY(e.b) }));
   // Fix 13: see the matching comment in renderSlope - unit on row 0's left
   // label only (the first label actually drawn); every other label bare.
-  const leftText = (e, idx) => `${textUnits(String(e.row[spec.category_field] ?? "")) > 18 ? sliceUnits(String(e.row[spec.category_field] ?? ""), 17) + "…" : String(e.row[spec.category_field] ?? "")} ${fmt(e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
-  const rightText = (e) => fmt(e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
+  const leftText = (e, idx) => `${textUnits(String(e.row[spec.category_field] ?? "")) > 18 ? sliceUnits(String(e.row[spec.category_field] ?? ""), 17) + "…" : String(e.row[spec.category_field] ?? "")} ${fmtSpec(spec, e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
+  const rightText = (e) => fmtSpec(spec, e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
   const leftPlaced = repelEndLabels(entries.map((e, idx) => ({ id: e.i, y: e.y1, text: leftText(e, idx) })), top, bottom, END_LABEL_MIN_GAP);
   const rightPlaced = repelEndLabels(entries.map((e) => ({ id: e.i, y: e.y2, text: rightText(e) })), top, bottom, END_LABEL_MIN_GAP);
   const leftById = new Map(leftPlaced.map((p) => [p.id, p]));
@@ -3645,7 +3725,7 @@ function renderMobileLine(spec, rows, multi=false) {
   for (const [annotation,row] of pointAnnotationAssignment) { if(!annotationsByRow.has(row)) annotationsByRow.set(row,[]); annotationsByRow.get(row).push(annotation); }
   // Fix 3: see the matching comment in renderLine - unit once, on the
   // top-most tick.
-  yTicksMobile.forEach((tick,i)=>{ const y=yScale(tick); f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`); f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,axisTickUnit(spec.unit,i,yTicksMobile.length)))}</text>`); });
+  yTicksMobile.forEach((tick,i)=>{ const y=yScale(tick); f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`); f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,axisTickUnit(spec.unit,i,yTicksMobile.length)))}</text>`); });
   const every=Math.max(1,Math.ceil(xValues.length/5)); xValues.forEach((xv,i)=>{ if(i%every!==0&&i!==xValues.length-1)return; f.parts.push(`<text x="${xScale(xv)}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`); });
   const directLabels=[];
   // Fix 2: see the matching comment in renderLine - one decimal count per
@@ -3671,7 +3751,7 @@ function renderMobileLine(spec, rows, multi=false) {
     const last=group[group.length-1];
     if(last&&multi&&spec.direct_labels!==false) {
       const name=String(series); const value=n(last[spec.value_field]);
-      const valueText=value===null?null:fmt(value,spec.unit,labelDecimals);
+      const valueText=value===null?null:fmtSpec(spec, value,spec.unit,labelDecimals);
       const text=valueText===null?name:`${name} ${valueText}`;
       const pointX=xScale(last[spec.x_field]);
       // Fix 5 (mobile): same end-label-crosses-its-own-line fix as
@@ -3682,7 +3762,7 @@ function renderMobileLine(spec, rows, multi=false) {
         : [{text,x:Math.min(632-textUnits(text)*6.8,pointX+6)}];
       directLabels.push({lines,y:yScale(value)+4,highlighted});
     }
-    if(last&&!multi&&spec.direct_labels===true) f.parts.push(`<text data-role="direct-label" x="${Math.min(602,xScale(last[spec.x_field])+7)}" y="${yScale(n(last[spec.value_field]))-8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmt(n(last[spec.value_field]),spec.unit,labelDecimals))}</text>`);
+    if(last&&!multi&&spec.direct_labels===true) f.parts.push(`<text data-role="direct-label" x="${Math.min(602,xScale(last[spec.x_field])+7)}" y="${yScale(n(last[spec.value_field]))-8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]),spec.unit,labelDecimals))}</text>`);
   });
   if(multi&&spec.direct_labels!==false) {
     const anyTwoLine=directLabels.some((d)=>d.lines.length>1);
@@ -3715,23 +3795,25 @@ function renderMobileSmallMultiples(spec, rows) {
     const panelH=Math.max(245,maxItems*36+68)+refMargin, f=mobileFrame(spec,facets.length*panelH+Math.max(0,facets.length-1)*gapY+20);
     const all=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null); let domain=extent(all,true); if(spec.unit==="%"&&Math.min(...all)>=0&&Math.max(...all)<=100)domain=[0,100];
     facets.forEach((facet,fi)=>{
+      const facetPartStart=f.parts.length;
       const x0=32,y0=f.bodyTop+fi*(panelH+gapY),group=sortRows(rows.filter((r)=>String(r[spec.facet_field])===String(facet)),spec,spec.value_field),labelW=138,plotLeft=x0+labelW,plotRight=x0+panelW-6,plotBase=y0+38,plotTop=plotBase+refMargin,plotBottom=y0+panelH-34,xScale=horizontalScale(domain,plotLeft,plotRight);
       f.parts.push(`<text x="${x0}" y="${y0+16}" font-family="${FONT_SANS}" font-size="14" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);
-      tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.unit))}</text>`);});
-      const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
+      tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.unit))}</text>`);});
+      const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
       refLines.forEach((line,i)=>{const x=xScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x}" y1="${plotTop}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){const anchor=x>(plotLeft+plotRight)/2?"end":"start";f.parts.push(`<text data-role="reference-line-label" x="${x+(anchor==="end"?-5:5)}" y="${referenceLineRowY(plotBase,i)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,26))}</text>`);}});
+      tagPanelTexts(f.parts,facetPartStart,[x0-30,y0-gapY+2,x0+panelW+30,y0+panelH+gapY-2]);
     });
     addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
   }
   const refLines=referenceLineAnnotations(spec),refMargin=referenceLineMargin(refLines);
   const panelH=220+refMargin, f=mobileFrame(spec,facets.length*panelH+Math.max(0,facets.length-1)*gapY+20), all=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null), yDomain=extent(all,false);
-  facets.forEach((facet,fi)=>{const x0=42,y0=f.bodyTop+fi*(panelH+gapY),group=rows.filter((r)=>String(r[spec.facet_field])===String(facet)),xs=sortX(unique(group.map((r)=>r[spec.x_field]))),xMap=new Map(xs.map((v,i)=>[String(v),i])),xScale=(value)=>xs.length<=1?x0+panelW/2:x0+(xMap.get(String(value))/(xs.length-1))*panelW,plotBase=y0+30,yScale=verticalScale(yDomain,plotBase+refMargin,y0+panelH-30);f.parts.push(`<text x="${x0}" y="${y0+14}" font-family="${FONT_SANS}" font-size="13.5" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);[yDomain[0],(yDomain[0]+yDomain[1])/2,yDomain[1]].forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.grid}"/>`);});const sorted=[...group].sort((a,b)=>xMap.get(String(a[spec.x_field]))-xMap.get(String(b[spec.x_field])));if(xs.length>1){const coords=sorted.map((r)=>`${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");f.parts.push(`<polyline fill="none" stroke="${PALETTE.accent2}" stroke-width="2.2" points="${coords}"/>`);}sorted.forEach((r)=>{const x=xScale(r[spec.x_field]),y=yScale(n(r[spec.value_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="${PALETTE.accent2}"/>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:28}));});if(xs.length>1){f.parts.push(`<text x="${x0}" y="${y0+panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${x0+panelW}" y="${y0+panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length-1])}</text>`);}refLines.forEach((line,i)=>{const y=yScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase,i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,34))}</text>`);}});});
+  facets.forEach((facet,fi)=>{const facetPartStart=f.parts.length;const x0=42,y0=f.bodyTop+fi*(panelH+gapY),group=rows.filter((r)=>String(r[spec.facet_field])===String(facet)),xs=sortX(unique(group.map((r)=>r[spec.x_field]))),xMap=new Map(xs.map((v,i)=>[String(v),i])),xScale=(value)=>xs.length<=1?x0+panelW/2:x0+(xMap.get(String(value))/(xs.length-1))*panelW,plotBase=y0+30,yScale=verticalScale(yDomain,plotBase+refMargin,y0+panelH-30);f.parts.push(`<text x="${x0}" y="${y0+14}" font-family="${FONT_SANS}" font-size="13.5" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);[yDomain[0],(yDomain[0]+yDomain[1])/2,yDomain[1]].forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.grid}"/>`);});const sorted=[...group].sort((a,b)=>xMap.get(String(a[spec.x_field]))-xMap.get(String(b[spec.x_field])));if(xs.length>1){const coords=sorted.map((r)=>`${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");f.parts.push(`<polyline fill="none" stroke="${PALETTE.accent2}" stroke-width="2.2" points="${coords}"/>`);}sorted.forEach((r)=>{const x=xScale(r[spec.x_field]),y=yScale(n(r[spec.value_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="${PALETTE.accent2}"/>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:28}));});if(xs.length>1){f.parts.push(`<text x="${x0}" y="${y0+panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${x0+panelW}" y="${y0+panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length-1])}</text>`);}refLines.forEach((line,i)=>{const y=yScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase,i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,34))}</text>`);}});tagPanelTexts(f.parts,facetPartStart,[x0-30,y0-gapY+2,x0+panelW+30,y0+panelH+gapY-2]);});
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
 function renderMobileScatter(spec, rows) {
   const f=mobileFrame(spec,420),left=72,right=594,top=f.bodyTop+12,bottom=f.bodyBottom-64,xs=rows.map((r)=>n(r[spec.x_field])).filter((v)=>v!==null),ys=rows.map((r)=>n(r[spec.y_field])).filter((v)=>v!==null),xInfo=makeScale(xs,left,right,spec.x_scale??"linear"),yRaw=spec.y_scale==="log"?ys.map(Math.log10):ys,yDomainRaw=extent(yRaw,false),yLinear=verticalScale(yDomainRaw,top,bottom),yScale=(value)=>yLinear(spec.y_scale==="log"?Math.log10(value):value),yTicks=spec.y_scale==="log"?logTickValues(yDomainRaw):tickValues(yDomainRaw,4);
-  yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.y_unit??spec.unit))}</text>`);});
+  yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.y_unit??spec.unit))}</text>`);});
   xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??""))}</text>`);});
   if(spec.x_label)f.parts.push(`<text x="${(left+right)/2}" y="${bottom+47}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",placedLabel=f.annotationLayout.place(px,py,label,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10)f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${px+placedLabel.dx*.7}" y2="${placedLabel.ty+3}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
@@ -3746,8 +3828,8 @@ function renderMobileHeatmap(spec, rows) {
   const legendY=bottom+13,legendW=140;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-m" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-m)"/>`);
-  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(min,spec.unit))}</text>`);
-  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(max,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
@@ -4216,7 +4298,7 @@ function renderGeoFlowMap(spec, rows, mobile=false) {
     candidates.forEach((row)=>{
       const a=geoProjection(n(row[spec.source_lon_field]),n(row[spec.source_lat_field]),left,right,top,bottom),b=geoProjection(n(row[spec.target_lon_field]),n(row[spec.target_lat_field]),left,right,top,bottom),value=n(row[spec.value_field])??0;
       if(value<=0)return;
-      const lift=Math.min(70,Math.hypot(b.x-a.x,b.y-a.y)*0.16),mx=(a.x+b.x)/2,my0=clamp((a.y+b.y)/2-Math.max(20,lift*.5),top+12,bottom-12),label=fmt(value,spec.unit),font=mobile?12:12.5,w=Math.max(28,textUnits(label)*font*.55+8);
+      const lift=Math.min(70,Math.hypot(b.x-a.x,b.y-a.y)*0.16),mx=(a.x+b.x)/2,my0=clamp((a.y+b.y)/2-Math.max(20,lift*.5),top+12,bottom-12),label=fmtSpec(spec, value,spec.unit),font=mobile?12:12.5,w=Math.max(28,textUnits(label)*font*.55+8);
       const my=resolveLabelCollisionY(mx,my0,w,font,[...pointLabelBoxes,...placedValueBoxes],top+12,bottom-12);
       placedValueBoxes.push({x:mx-w/2,y:my-font-3,w,h:font+7});
       f.parts.push(`<rect data-role="geo-value-bg" x="${mx-w/2}" y="${my-font-3}" width="${w}" height="${font+7}" rx="2" fill="#fff" fill-opacity=".8"/>`);f.parts.push(`<text data-role="geo-value" x="${mx}" y="${my}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.muted}">${esc(label)}</text>`);
@@ -4277,10 +4359,10 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
     if(points&&points.length){const markerPoints=[{p:points[0],label:'coverage starts'},...points.filter((p,j)=>j>0&&p.segment!==points[j-1].segment).map(p=>({p,label:'coverage resumes'})),{p:points[points.length-1],label:points[points.length-1].altitude_ft===0?'ground / coverage ends':'coverage ends'}];const maxAlt=points.reduce((best,p)=>Number(p.altitude_ft)>Number(best.altitude_ft)?p:best,points[0]);if(maxAlt&&Number(maxAlt.altitude_ft)>0)markerPoints.splice(markerPoints.length-1,0,{p:maxAlt,label:`${Math.round(Number(maxAlt.altitude_ft)).toLocaleString('en-US')} ft`});for(const [mi,item] of markerPoints.entries()){const q=project(item.p.lon,item.p.lat),anchor=q.x>(left+right)/2?'end':'start',tx=q.x+(anchor==='end'?-7:7),ty=q.y+(mi%2?12:-8);f.parts.push(`<circle data-role="trajectory-marker" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${mobile?2.4:2.8}" fill="#fff" stroke="${color}" stroke-width="1.5"/><text data-role="trajectory-marker-label" x="${tx.toFixed(1)}" y="${clamp(ty,top+10,bottom-4).toFixed(1)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(item.label)}</text>`);}}
     if(a)f.parts.push(`<circle data-role="cartographic-origin" cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="${mobile?2.6:3.2}" fill="${PALETTE.ink}"/>`); if(b)f.parts.push(`<circle data-role="cartographic-destination" cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${mobile?2.9:3.5}" fill="${PALETTE.accent}"/>`);
     const routeLength=a&&b?Math.hypot(b.x-a.x,b.y-a.y):Infinity,sourceKey=spec.source_field&&row[spec.source_field]!==undefined?String(row[spec.source_field]):'',valueAtSource=routeLength<(mobile?105:145)&&sourceKey&&(sourceFrequency.get(sourceKey)??0)===1;
-    if(spec.source_field&&a&&row[spec.source_field]!==undefined){const text=valueAtSource?`${sourceKey} · ${fmt(value,'')}`:sourceKey;pointLabels.set(`s:${sourceKey}`,{...a,text,anchor:a.x>(left+right)/2?'end':'start'});} if(spec.target_field&&b&&row[spec.target_field]!==undefined)pointLabels.set(`t:${row[spec.target_field]}`,{...b,text:String(row[spec.target_field]),anchor:b.x>(left+right)/2?'end':'start'}); routeInfos.push({row,value,color,mid,routeLength,valueAtSource});
+    if(spec.source_field&&a&&row[spec.source_field]!==undefined){const text=valueAtSource?`${sourceKey} · ${fmtSpec(spec, value,'')}`:sourceKey;pointLabels.set(`s:${sourceKey}`,{...a,text,anchor:a.x>(left+right)/2?'end':'start'});} if(spec.target_field&&b&&row[spec.target_field]!==undefined)pointLabels.set(`t:${row[spec.target_field]}`,{...b,text:String(row[spec.target_field]),anchor:b.x>(left+right)/2?'end':'start'}); routeInfos.push({row,value,color,mid,routeLength,valueAtSource});
   });
   f.parts.push('</g>');
-  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmt(info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
+  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
   if(pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
   if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
   const keyY=bottom+18; f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
@@ -4296,7 +4378,7 @@ function renderTrajectoryProfile(spec,rows,mobile=false){
   const transitions=[];for(let i=1;i<sorted.length;i++)if(String(sorted[i][spec.segment_field])!==String(sorted[i-1][spec.segment_field]))transitions.push({a:sorted[i-1],b:sorted[i]});
   for(const tr of transitions){const x1=xScale(n(tr.a[spec.x_field])),x2=xScale(n(tr.b[spec.x_field])),w=Math.max(2,x2-x1),mins=(n(tr.b[spec.x_field])-n(tr.a[spec.x_field]));f.parts.push(`<rect data-role="trajectory-gap" x="${x1.toFixed(1)}" y="${top}" width="${w.toFixed(1)}" height="${(bottom-top).toFixed(1)}" fill="#f3eee9" fill-opacity=".78"/><text data-role="trajectory-gap-label" x="${((x1+x2)/2).toFixed(1)}" y="${(top+13).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.muted}">${esc(`${Math.round(mins)} min source gap`)}</text>`);}
   function panel(label,domain,yScale,y0,field,color,unit){for(const tick of tickValues(domain,4)){const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/><text x="${left-10}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(tickLabel(tick,unit))}</text>`);}f.parts.push(`<text x="${left}" y="${y0-8}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);const groups=[];for(const row of sorted){let g=groups.at(-1);if(!g||String(g.segment)!==String(row[spec.segment_field])){g={segment:row[spec.segment_field],rows:[]};groups.push(g);}if(n(row[field])!==null)g.rows.push(row);}for(const g of groups){if(g.rows.length<2)continue;const coords=g.rows.map(r=>`${xScale(n(r[spec.x_field])).toFixed(1)},${yScale(n(r[field])).toFixed(1)}`).join(' ');f.parts.push(`<polyline data-role="trajectory-profile-line" fill="none" stroke="${color}" stroke-width="${mobile?2.2:2.7}" points="${coords}"/>`);g.rows.forEach(r=>f.parts.push(`<circle cx="${xScale(n(r[spec.x_field])).toFixed(1)}" cy="${yScale(n(r[field])).toFixed(1)}" r="${mobile?2:2.4}" fill="${color}"/>`));}const last=sorted.filter(r=>n(r[field])!==null).at(-1);if(last)f.parts.push(`<text data-role="direct-label" x="${(xScale(n(last[spec.x_field]))-5).toFixed(1)}" y="${(yScale(n(last[field]))-8).toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${textSafeColor(color)}">${esc(fmt(n(last[field]),unit))}</text>`);}
-  panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');
+  {const ps=f.parts.length;panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');tagPanelTexts(f.parts,ps,[0,top-30,right+30,top+panelH+16]);}{const ps=f.parts.length;panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');tagPanelTexts(f.parts,ps,[0,speedTop-30,right+30,speedTop+panelH+16]);}
   for(const tick of tickValues(xDomain,4)){const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${speedTop+panelH}" x2="${x}" y2="${speedTop+panelH+4}" stroke="${PALETTE.muted}"/><text x="${x}" y="${speedTop+panelH+20}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(`${Math.round(tick)} min`)}</text>`);}f.parts.push(`<text x="${(left+right)/2}" y="${speedTop+panelH+37}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">elapsed time since observed coverage begins</text>`);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
 }
@@ -4386,7 +4468,7 @@ function renderWaffle(spec, rows, mobile = false) {
     const periodTspan = period !== undefined && period !== null && String(period).trim() !== ""
       ? `<tspan dx="6" font-family="${FONT_SANS}" font-weight="400" font-size="12" fill="${PALETTE.muted}">${esc(period)}</tspan>`
       : "";
-    f.parts.push(`<text x="${x0}" y="${valueY}" font-family="Georgia, 'Times New Roman', serif" font-weight="900" font-size="${mobile ? 24 : 30}" fill="${highlighted ? PALETTE.accent : PALETTE.ink}"><tspan>${esc(fmt(value, spec.unit))}</tspan>${periodTspan}</text>`);
+    f.parts.push(`<text x="${x0}" y="${valueY}" font-family="Georgia, 'Times New Roman', serif" font-weight="900" font-size="${mobile ? 24 : 30}" fill="${highlighted ? PALETTE.accent : PALETTE.ink}"><tspan>${esc(fmtSpec(spec, value, spec.unit))}</tspan>${periodTspan}</text>`);
     const filled = Math.round(value);
     for (let i = 0; i < 100; i++) {
       const r = Math.floor(i / 10);
@@ -4815,7 +4897,7 @@ function renderTreemap(spec, rows, mobile = false) {
     const categoryLabel = tile.row.__treemapOther ? String(tile.row[spec.category_field]) : resolveEconomyDisplayName(tile.row[spec.category_field], spec.category_names, lang);
     const rawValue = n(tile.row[spec.value_field]) ?? 0;
     const shareLabel = treemapSharePercent(total > 0 ? (rawValue / total) * 100 : 0);
-    const valueLabel = treemapValueLabel(rawValue, spec.unit, lang);
+    const valueLabel = specValueKind(spec) && Number.isInteger(rawValue) ? fmtSpec(spec, rawValue) : treemapValueLabel(rawValue, spec.unit, lang);
     tile.categoryLabel = categoryLabel;
     tile.shareLabel = shareLabel;
     tile.valueLabel = valueLabel;
@@ -4987,7 +5069,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(n(item.row[spec.value_field]))
   );
   const values = joined.map((item) => n(item.row[spec.value_field]));
-  const breaks = niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5);
+  const breaks = niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) });
   const colorForValue = (value) => CHOROPLETH_RAMP[classifyValue(value, breaks)];
 
   const width = mobile ? 640 : 1040;
@@ -5095,7 +5177,7 @@ function renderChoropleth(spec, rows, mobile = false) {
         const bbox = projectedFeatureBBox(item.featureIndices, project);
         const value = n(item.row[spec.value_field]) ?? 0;
         const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-        const valueText = choroplethValueText(value, spec.unit);
+        const valueText = choroplethValueText(value, spec.unit, spec);
         const neededW = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
         const neededH = lineH * 2 + 6;
         const tooSmall = !bbox || bbox.maxX - bbox.minX < neededW || bbox.maxY - bbox.minY < neededH;
@@ -5275,7 +5357,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-    const valueText = choroplethValueText(value, spec.unit);
+    const valueText = choroplethValueText(value, spec.unit, spec);
     const w = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
     return { item, x: p.x, y: p.y, fill: colorForValue(value), name, valueText, w, h: lineH * 2 + 6 };
   });
@@ -5609,6 +5691,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   // map) its own anchor already sits on, so it always travels the short way
   // out rather than crossing back over the map.
   const mapCenterX = (mapLeft + mapRight) / 2;
+  // P4: main-map name/value labels must stay in the main-map panel. When an
+  // inset column sits to the left of the map (mapLeft > plotLeft) a left-hand
+  // boundary label may not run into it; otherwise the canvas edge is the bound.
+  // Every main-map label carries this box as data-panel-box so render QA can
+  // prove it (text_outside_panel) instead of only comparing to the viewBox.
+  const labelLeftBound = mapLeft > plotLeft ? mapLeft : 0;
+  const mainPanelAttr = ` data-panel-box="${labelLeftBound.toFixed(1)},${top.toFixed(1)},${width.toFixed(1)},${bottom.toFixed(1)}"`;
   const mapCenterY = (top + bottom) / 2;
   const allDataFeatureIdxFlat = joined.flatMap((item) => item.featureIndices);
 
@@ -5775,7 +5864,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     // canvas, whatever anchors happen to be clustered there.
     const leftMaxW = leftItems.length ? Math.max(...leftItems.map((li) => li.w)) : 0;
     const rightMaxW = rightItems.length ? Math.max(...rightItems.map((li) => li.w)) : 0;
-    const leftColumnX = leftItems.length ? Math.max(mapLeft + 4, leftMaxW + 4, Math.min(...leftItems.map((li) => li.x)) - columnGap) : mapLeft + 4;
+    const leftColumnX = leftItems.length ? Math.max(mapLeft + 4, labelLeftBound + leftMaxW + 4, Math.min(...leftItems.map((li) => li.x)) - columnGap) : mapLeft + 4;
     const rightColumnX = rightItems.length ? Math.min(mapRight - 4, width - rightMaxW - 4, Math.max(...rightItems.map((li) => li.x)) + columnGap) : mapRight - 4;
     const leftLayout = layoutBoundaryColumn(leftItems, "left", leftColumnX, top + 4, bottom - 4, MAX_OVERFLOW_LEADER_PX);
     const rightLayout = layoutBoundaryColumn(rightItems, "right", rightColumnX, top + 4, bottom - 4, MAX_OVERFLOW_LEADER_PX);
@@ -5837,7 +5926,7 @@ function renderChoropleth(spec, rows, mobile = false) {
         const len = elbowLength(cand.anchor, cand.tip);
         if (len > MAX_OVERFLOW_LEADER_PX) break;
         if (len < MIN_LEADER_DRAWN_LENGTH) continue;
-        if (cand.box.x < 0 || cand.box.x + cand.box.w > width) break;
+        if (cand.box.x < labelLeftBound || cand.box.x + cand.box.w > width) break;
         if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(cand.anchor, cand.tip);
         if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) accepted = cand;
@@ -5934,8 +6023,8 @@ function renderChoropleth(spec, rows, mobile = false) {
     const valueAnchorY = cy + labelLineDy;
     const style = labelStyleOnFill(hexToRgb(li.fill));
     onMapParts.push(
-      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${nameAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
-      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${valueAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
+      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${cx.toFixed(1)}" y="${nameAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
+      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${cx.toFixed(1)}" y="${valueAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
     );
   }
 
@@ -5962,8 +6051,8 @@ function renderChoropleth(spec, rows, mobile = false) {
     overflowParts.push(anchorDotSvg("choropleth-leader-dot", anchor));
     overflowParts.push(leaderSvg("choropleth-leader", anchor, tip, ` data-iso3="${esc(li.item.iso3)}"`));
     overflowParts.push(
-      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}" x="${textX.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.name)}</text>`,
-      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}" x="${textX.toFixed(1)}" y="${valueY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.valueText)}</text>`
+      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${textX.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.name)}</text>`,
+      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${textX.toFixed(1)}" y="${valueY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.valueText)}</text>`
     );
   }
 
@@ -6141,7 +6230,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   // only when at least one region was actually selected into it.
   const insetLabelItems = insetItems.map((item) => {
     const value = n(item.row[spec.value_field]) ?? 0;
-    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit), fill: colorForValue(value) };
+    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec), fill: colorForValue(value) };
   });
   const insetTitleH = 18;
 
@@ -6800,6 +6889,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   const insetPanelParts = [];
   if (insetCorner) {
     const px = insetCorner.x, py = insetCorner.y;
+    const insetPanelAttr = ` data-panel-box="${px.toFixed(1)},${py.toFixed(1)},${(px + insetPanelW).toFixed(1)},${(py + insetPanelH).toFixed(1)}"`;
     const insetTitle = String(insetSpec?.title ?? (lang === "zh" ? "局部放大" : "Inset")).trim();
     const mapX0 = px + 6, mapX1 = px + insetMapSize + 6, mapY0 = py + insetTitleH + 4, mapY1 = mapY0 + insetMapH;
     const zoomProj = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], mapX0, mapX1, mapY0, mapY1, insetPad);
@@ -6871,8 +6961,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       const cy = li.ay + mapY0;
       const style = labelStyleOnFill(hexToRgb(li.fill));
       insetPanelParts.push(
-        `<text data-role="choropleth-inset-label" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${(cy - labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
-        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${(cy + labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
+        `<text data-role="choropleth-inset-label" data-iso3="${esc(li.item.iso3)}"${insetPanelAttr} x="${cx.toFixed(1)}" y="${(cy - labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
+        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(li.item.iso3)}"${insetPanelAttr} x="${cx.toFixed(1)}" y="${(cy + labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
       );
     }
     insetPanelParts.push("</g>");
@@ -6906,8 +6996,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       insetPanelParts.push(
         anchorDotSvg("choropleth-inset-leader-dot", from),
         leaderSvg("choropleth-inset-leader", from, to, ` data-iso3="${esc(item.item.iso3)}"`),
-        `<text data-role="choropleth-inset-label" data-iso3="${esc(item.item.iso3)}" x="${textX.toFixed(1)}" y="${(boxMidY - labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.name)}</text>`,
-        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(item.item.iso3)}" x="${textX.toFixed(1)}" y="${(boxMidY + labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.valueText)}</text>`
+        `<text data-role="choropleth-inset-label" data-iso3="${esc(item.item.iso3)}"${insetPanelAttr} x="${textX.toFixed(1)}" y="${(boxMidY - labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.name)}</text>`,
+        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(item.item.iso3)}"${insetPanelAttr} x="${textX.toFixed(1)}" y="${(boxMidY + labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.valueText)}</text>`
       );
     }
 
@@ -7054,7 +7144,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const isLast = i === breaks.length - 1;
     const x = plotLeft + i * legendStep;
     f.parts.push(
-      `<text x="${(isLast ? x - 2 : x).toFixed(1)}" y="${legendY + 26}" text-anchor="${isLast ? "end" : "middle"}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(isLast ? fmt(edgeValue, spec.unit) : fmt(edgeValue, ""))}</text>`
+      `<text x="${(isLast ? x - 2 : x).toFixed(1)}" y="${legendY + 26}" text-anchor="${isLast ? "end" : "middle"}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(isLast ? fmtSpec(spec, edgeValue, spec.unit) : fmtSpec(spec, edgeValue, ""))}</text>`
     );
   });
   f.parts.push("</g>");

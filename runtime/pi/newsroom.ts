@@ -8,9 +8,9 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename }
 import { dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, validateVizSpec } from "./viz.mjs";
+import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { composeInfographicBundle, critiqueInfographic, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyVisionPatches, normalizeVisionCriticReport, VISION_RUBRIC_KEYS } from "./vision.mjs";
@@ -224,6 +224,34 @@ async function readArtifactText(relativePath: string, requiredPrefix?: string) {
   return readFile(full, "utf8");
 }
 
+// D1: the runtime, never the model, reads the page subject set (the key field
+// of the declared computation's rows) and each chart's subjects (the category
+// field of that chart's own computation rows), then restyles any chart that
+// goes beyond the set. Unreadable rows leave the subjects unset, which lint
+// reports as unresolved.
+async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
+  const declared = spec?.subject_set;
+  if (!declared || typeof declared !== "object") return;
+  const readRows = async (ref: unknown) => {
+    try {
+      const computation = await readArtifactJson(String(ref), "computations/");
+      return Array.isArray(computation?.rows) ? computation.rows : null;
+    } catch { return null; }
+  };
+  const setRows = declared.computation_ref ? await readRows(declared.computation_ref) : null;
+  const members = new Set<string>(setRows && declared.key_field ? distinctSubjects(setRows, String(declared.key_field)) : []);
+  Object.defineProperty(assets, "__subject_set_members", { value: [...members], enumerable: false, configurable: true });
+  for (const module of spec?.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const asset = assets[String(module.manifest_ref ?? "")];
+    const field = asset?.manifest?.category_field;
+    if (!asset || !field || !asset.manifest?.computation_ref) continue;
+    const rows = await readRows(asset.manifest.computation_ref);
+    if (rows) asset.subjects = distinctSubjects(rows, String(field));
+  }
+  if (members.size) annotateSubjectSets(spec, assets, members);
+}
+
 // Accepts desktop-only chart/illustration assets when the phone-facing
 // mobile page is off (NEWSROOM_MOBILE_PAGES): the mobile variant is never
 // read from the manifest and never requested, matching newsroom_viz_render
@@ -259,6 +287,7 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       assets[assetRef] = { manifest, critic, desktopSvg: await readArtifactText(desktopRef, "visualizations/illustrations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/illustrations/") } : {}) };
     }
   }
+  await resolveSubjectSets(spec, assets);
   return assets;
 }
 
@@ -1875,6 +1904,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         derived_metric: Type.Optional(StringEnum(["percent_change", "absolute_change", "percentage_point_change", "ratio"] as const)),
       })),
       category_field: Type.Optional(Type.String()),
+      cutoff_date: Type.Optional(Type.String({ description: "Optional data cutoff date this chart states. If the infographic page declares subject_set.cutoff_date, a different value here blocks the page lint; leave it out to inherit the page's date." })),
       x_field: Type.Optional(Type.String()),
       y_field: Type.Optional(Type.String()),
       source_field: Type.Optional(Type.String()),
@@ -1934,6 +1964,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       sort: Type.Optional(StringEnum(["asc", "desc", "none"] as const)),
       highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
       direct_labels: Type.Optional(Type.Boolean()),
+      measure_kind: Type.Optional(StringEnum(["year", "count", "index", "level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "duration", "distance", "price"] as const, { description: "What the value_field measures, so numbers are spelled correctly: 'year' (a calendar year such as 2017) and 'count' (a whole-number tally) print as plain integers - never '2.0k' or '3.0' - and choropleth legends use whole-number steps. A year-like unit on measure_kind 'index' is also read as a calendar year. Omit for ordinary quantities." })),
+      measure_semantics: Type.Optional(Type.Array(Type.Object({ field: Type.Optional(Type.String()), unit: Type.Optional(Type.String()), measure_kind: Type.Optional(Type.String()) }), { maxItems: 8, description: "Optional per-field measure declarations (field, unit, measure_kind). A count or calendar-year value_field is spelled as a plain integer." })),
       category_names: Type.Optional(StringEnum(["worldbank", "iso3"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth, facet_field for small_multiples, series_field for multi_line): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes. On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
       annotations: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["point", "node", "reference_line", "range_bracket"] as const, { description: "point/node label a specific mark. reference_line draws a thin rule across the plot area at a fixed value on the value axis; supported only on horizontal_bar, dot, dumbbell, and small_multiples. range_bracket draws a bracket spanning a contiguous run of rows (match_value to end_match_value, in rendered order); supported only on horizontal_bar and dot, at most 2 per chart, and ranges must not overlap." }),
@@ -2130,6 +2162,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
                 value_field: spec.value_field,
                 category_names: spec.category_names,
                 unit: spec.unit,
+                // resolved once by the renderer's own rule (measure_kind or a measure_semantics entry)
+                // so QA spells expected labels exactly as the renderer did
+                measure_kind: specValueKind(spec) ?? spec.measure_kind,
+                measure_semantics: spec.measure_semantics,
               },
             }
           : {};
@@ -2168,6 +2204,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         verification: systemVerified ? (await verifiedClaimRecords()).get(String(spec.claim_id))?.verification : deriveClaimVerification({}),
         chart_type: spec.chart_type,
         language: spec.language ?? "en",
+        ...(spec.category_field ? { category_field: spec.category_field } : {}),
+        ...(spec.cutoff_date ? { cutoff_date: spec.cutoff_date } : {}),
         reader_task: spec.reader_task,
         takeaway: spec.takeaway,
         data_hash: currentHash,
@@ -2841,6 +2879,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const infographicModuleParameters = Type.Object({
     id: Type.String(),
+    subject_caption: Type.Optional(Type.String({ description: "Visual modules only. Caption readers see when the chart covers subjects outside the page subject_set; the runtime restyles the chart, you only write this text. Missing caption blocks lint." })),
     type: StringEnum(["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"] as const),
     span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const)),
     label: Type.Optional(Type.String()),
@@ -2963,6 +3002,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         }), { minItems: 1, maxItems: 6 }),
       }),
       source_note: Type.Optional(Type.String()),
+      subject_set: Type.Optional(Type.Object({
+        computation_ref: Type.String({ description: "Computation whose rows define the page's subject set; the runtime reads the members, never list them yourself." }),
+        key_field: Type.String({ description: "Field of that computation's rows that identifies a subject." }),
+        cutoff_date: Type.String({ description: "The single data cutoff date for the page; a chart that states a different cutoff_date blocks lint." }),
+      }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
     async execute(_id, params) {

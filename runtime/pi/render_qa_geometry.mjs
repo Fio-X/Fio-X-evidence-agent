@@ -190,6 +190,7 @@ const UA_DEFAULT_FONT_SIZE = 16;
 const DEFAULT_OPTIONS = Object.freeze({
   minFontSize: 12, // font_below_floor: effective font-size must be >= this
   viewboxTolerance: 0.5, // text_outside_viewbox: px slack around the viewBox edges
+  panelTolerance: 1, // text_outside_panel: px slack around a text's own data-panel-box
   textOverlapTolerance: 1, // text_overlap: intersection must exceed this on both axes
   edgeGapTolerance: 1, // indistinct_adjacent_marks: a gap in [-overlapTolerance, edgeGapTolerance) counts as touching
   overlapTolerance: 0.5, // indistinct_adjacent_marks: rects overlapping by more than this are one shape on purpose (e.g. an illustration), not adjacent segments - not flagged
@@ -909,6 +910,9 @@ function walkSvgTree(svgText, styleRules) {
       matrix,
       unresolved,
       role: (node.attrs || {})["data-role"] ?? null,
+      // P4: optional "x0,y0,x1,y1" box (in the text's own user space) of the
+      // chart panel this text belongs to; see ruleTextOutsidePanel.
+      panelBox: parsePanelBox((node.attrs || {})["data-panel-box"]),
       // <text> itself always starts a chunk; a tspan only does when it set
       // its own x (see resolveTspanPosition) - default true so a <text>
       // node (ownPos built inline in visit(), no isChunkStart field) still
@@ -1222,6 +1226,38 @@ function ruleTextOutsideViewbox(texts, viewBox, options) {
       failures.push({
         rule: "text_outside_viewbox",
         message: `text "${truncate(node.text)}" estimated box [${fmt(box.x)}, ${fmt(box.y)}, ${fmt(box.x + box.w)}, ${fmt(box.y + box.h)}] falls outside viewBox [${viewBox.minX}, ${viewBox.minY}, ${fmt(viewBox.minX + viewBox.width)}, ${fmt(viewBox.minY + viewBox.height)}]`,
+        element: node.id,
+        bbox: box,
+      });
+    }
+  }
+  return failures;
+}
+
+function parsePanelBox(raw) {
+  if (typeof raw !== "string") return null;
+  const parts = raw.split(",").map((p) => Number.parseFloat(p));
+  if (parts.length !== 4 || !parts.every(Number.isFinite)) return null;
+  const [x0, y0, x1, y1] = parts;
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+// P4 (add-only): a text that declares its own panel (data-panel-box) must sit
+// inside it. text_outside_viewbox only knows the whole canvas, so a label that
+// spills out of its map panel into a neighbouring panel (an inset column, a
+// side rail) still passed. Texts without the attribute are not affected.
+function ruleTextOutsidePanel(texts, options) {
+  const tol = options.panelTolerance;
+  const failures = [];
+  for (const node of texts) {
+    if (node.unresolved || !node.panelBox) continue;
+    const box = estimateDisplayBox(node);
+    const panel = transformedBox(node.panelBox, node.matrix);
+    if (box.x < panel.x - tol || box.y < panel.y - tol || box.x + box.w > panel.x + panel.w + tol || box.y + box.h > panel.y + panel.h + tol) {
+      failures.push({
+        rule: "text_outside_panel",
+        message: `text "${truncate(node.text)}" estimated box [${fmt(box.x)}, ${fmt(box.y)}, ${fmt(box.x + box.w)}, ${fmt(box.y + box.h)}] falls outside its own panel [${fmt(panel.x)}, ${fmt(panel.y)}, ${fmt(panel.x + panel.w)}, ${fmt(panel.y + panel.h)}]`,
         element: node.id,
         bbox: box,
       });
@@ -1640,6 +1676,7 @@ export function checkSvgGeometry(svgText, options = {}) {
 
   const failures = [
     ...ruleTextOutsideViewbox(texts, viewBox, opts),
+    ...ruleTextOutsidePanel(texts, opts),
     ...ruleTextOverlap(texts, opts),
     ...ruleFontBelowFloor(texts, opts),
     ...ruleIndistinctAdjacentMarks(rects, opts),
