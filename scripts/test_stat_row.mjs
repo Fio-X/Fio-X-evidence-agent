@@ -65,6 +65,14 @@ const textX = (svg, needle) => +svg.match(new RegExp(`<text x="([\\d.]+)"[^>]*>[
   const out = compose([chart, stat('s1'), text('t1', LONG, { span: 'two_thirds' })]);
   assert.ok(statBox(out.desktop.svg, 's1').w < 500);
 }
+// (l) a detail that fits 2 lines at 12 columns but not at 4 draws the band, in full
+{
+  const detail = '截至2017年12月31日，不含中国；奥地利、刚果（布）、尼日尔、俄罗斯无日期，另含若干说明文字，用来保证在窄栏里超过两行而在整宽下仍不超过两行，末尾标记为终点标记';
+  const out = compose([chart, stat('s1', { detail }), text('t1', SHORT)]);
+  assert.equal(statBox(out.desktop.svg, 's1').w, 1248, 'long detail: band, not a 4-column pair');
+  assert.ok(out.desktop.svg.includes('终点标记'), 'detail text is not cut');
+  assert.ok(!/…/.test(out.desktop.svg.slice(out.desktop.svg.indexOf('data-module-id="s1"'))), 'no ellipsis in the band');
+}
 // (c) followed by a long (>4 lines) text -> bar, not paired
 {
   const out = compose([chart, stat('s1'), text('t1', LONG)]);
