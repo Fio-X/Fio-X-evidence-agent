@@ -645,7 +645,7 @@ function insetLabelsContainedReport(svg) {
     { choropleth: { rows: AFRICA_ROWS, category_field: base.category_field, value_field: base.value_field, category_names: base.category_names, unit: base.unit } },
   );
   assert.equal(qaWithLabels.passed, true, `en render-QA with value_labels failed: ${JSON.stringify(qaWithLabels.viewports, null, 2)}`);
-  assert.equal(qaWithLabels.value_labels_check_version, "1.3.0");
+  assert.equal(qaWithLabels.value_labels_check_version, "1.4.0");
   assert.equal(qaWithLabels.viewports.desktop.value_labels.passed, true, JSON.stringify(qaWithLabels.viewports.desktop.value_labels.failures));
   assert.equal(qaWithLabels.viewports.desktop.value_labels.checked, AFRICA_ROWS.length);
   assert.equal(qaWithLabels.viewports.mobile.value_labels.passed, true, JSON.stringify(qaWithLabels.viewports.mobile.value_labels.failures));

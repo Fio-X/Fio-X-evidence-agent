@@ -43,7 +43,7 @@
 //     region must show its name+value label exactly once - in the main map
 //     or in the inset, never both, never neither, never twice in the same
 //     place.
-export const RENDER_QA_LABELS_VERSION = "1.3.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7)
+export const RENDER_QA_LABELS_VERSION = "1.4.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7); + marker_displaced_without_tether (1.4.0)
 
 function walk(node, out) {
   out.push(node);
@@ -416,6 +416,32 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
           break;
         }
       }
+    }
+  }
+
+  // A numbered marker whose circle no longer covers the point it stands for
+  // (data-anchor-x/y) must be joined to that point by a "<role>-leader" path
+  // that starts on its circle and ends at the point; otherwise the number has
+  // no visible geographic link.
+  for (const role of ["choropleth-footnote-marker", "choropleth-inset-footnote-marker"]) {
+    const tethers = nodes.filter((n) => n.tag === "path" && n.attrs["data-role"] === `${role}-leader`);
+    for (const marker of nodes.filter((n) => n.tag === "circle" && n.attrs["data-role"] === role)) {
+      const ax = Number(marker.attrs["data-anchor-x"]), ay = Number(marker.attrs["data-anchor-y"]);
+      const cx = Number(marker.attrs.cx), cy = Number(marker.attrs.cy), r = Number(marker.attrs.r) || 9;
+      const num = marker.attrs["data-number"];
+      if (![ax, ay, cx, cy].every(Number.isFinite)) {
+        failures.push({ rule: "marker_displaced_without_tether", message: `marker ${num} (${marker.attrs["data-iso3"]}) carries no anchor point` });
+        continue;
+      }
+      if (Math.hypot(cx - ax, cy - ay) <= r) continue;
+      const ok = tethers.some((t) => {
+        if (t.attrs["data-number"] !== num) return false;
+        const pts = (String(t.attrs.d ?? "").match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+        if (pts.length < 4) return false;
+        const [sx, sy] = pts, [ex, ey] = pts.slice(-2);
+        return Math.abs(Math.hypot(sx - cx, sy - cy) - r) <= 1.5 && Math.hypot(ex - ax, ey - ay) <= 0.6;
+      });
+      if (!ok) failures.push({ rule: "marker_displaced_without_tether", message: `marker ${num} (${marker.attrs["data-iso3"]}) is displaced ${Math.hypot(cx - ax, cy - ay).toFixed(0)}px from its point with no tether back to it` });
     }
   }
 
