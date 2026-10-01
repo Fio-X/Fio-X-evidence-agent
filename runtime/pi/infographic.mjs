@@ -232,6 +232,78 @@ function svgInfo(svg) {
   return { minX: nums[0], minY: nums[1], width: nums[2], height: nums[3], inner: match[2] };
 }
 
+// Lowest drawn ink (viewBox y) of a chart SVG, or null when it cannot be bound
+// with certainty (transforms, images, <use>, tspans that move). Text counts a
+// quarter em of descender, strokes half their width. Only the bottom edge is
+// used, to trim blank padding when a chart is embedded on the desktop page.
+function svgInkBottom(info) {
+  const inner = String(info.inner ?? "");
+  if (/\btransform=|<image\b|<use\b|<foreignObject\b|<tspan\b[^>]*\b(?:y|dy)=/i.test(inner)) return null;
+  const body = inner.replace(/<defs\b[\s\S]*?<\/defs>/gi, "").replace(/<(?:title|desc)\b[\s\S]*?<\/(?:title|desc)>/gi, "");
+  const num = (tag, name) => { const m = tag.match(new RegExp(`(?:^|\\s)${name}=["']\\s*(-?[\\d.]+)`)); return m ? Number(m[1]) : null; };
+  let bottom = -Infinity;
+  const take = (v) => { if (Number.isFinite(v)) bottom = Math.max(bottom, v); };
+  for (const m of body.matchAll(/<(text|line|rect|circle|ellipse|polygon|polyline|path)\b([^>]*?)\/?>/gi)) {
+    const kind = m[1].toLowerCase(), tag = ` ${m[2]}`;
+    const stroke = (num(tag, "stroke-width") ?? 1) / 2;
+    if (kind === "text") take((num(tag, "y") ?? 0) + 0.25 * (num(tag, "font-size") ?? 16));
+    else if (kind === "line") take(Math.max(num(tag, "y1") ?? 0, num(tag, "y2") ?? 0) + stroke);
+    else if (kind === "rect") { if (!/\sfill=["'](?:#fff(?:fff)?|white)["']/i.test(tag) || /\sstroke=["'](?!none)/i.test(tag)) take((num(tag, "y") ?? 0) + (num(tag, "height") ?? 0) + stroke); }
+    else if (kind === "circle") take((num(tag, "cy") ?? 0) + (num(tag, "r") ?? 0) + stroke);
+    else if (kind === "ellipse") take((num(tag, "cy") ?? 0) + (num(tag, "ry") ?? 0) + stroke);
+    else if (kind === "polygon" || kind === "polyline") {
+      const pts = (tag.match(/points=["']([^"']+)["']/)?.[1] ?? "").trim().split(/[\s,]+/).map(Number);
+      for (let i = 1; i < pts.length; i += 2) take(pts[i] + stroke);
+    } else {
+      const d = tag.match(/\sd=["']([^"']+)["']/)?.[1];
+      if (d === undefined) return null;
+      const yb = pathBottom(d);
+      if (yb === null) return null;
+      take(yb + stroke);
+    }
+  }
+  return Number.isFinite(bottom) ? Math.min(bottom, info.minY + info.height) : null;
+}
+
+// Largest y reached by an SVG path (control points included, so it never
+// under-estimates), or null if the path data cannot be read.
+function pathBottom(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g);
+  if (!tokens) return null;
+  const arity = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
+  let i = 0, cmd = "", cy = 0, sy = 0, max = -Infinity;
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) { cmd = tokens[i++]; if (cmd === "z" || cmd === "Z") { cy = sy; max = Math.max(max, cy); } continue; }
+    const k = arity[cmd.toLowerCase()];
+    if (!k) return null;
+    const a = tokens.slice(i, i + k).map(Number);
+    if (a.length < k || a.some((n) => !Number.isFinite(n))) return null;
+    i += k;
+    const rel = cmd === cmd.toLowerCase(), lower = cmd.toLowerCase();
+    const yAt = (v) => (rel ? cy + v : v);
+    if (lower === "h") { /* y unchanged */ }
+    else if (lower === "v") { cy = yAt(a[0]); max = Math.max(max, cy); }
+    else if (lower === "c") { max = Math.max(max, yAt(a[1]), yAt(a[3]), yAt(a[5])); cy = yAt(a[5]); }
+    else if (lower === "s" || lower === "q") { max = Math.max(max, yAt(a[1]), yAt(a[3])); cy = yAt(a[3]); }
+    else if (lower === "a") { max = Math.max(max, yAt(a[6]) + Math.abs(a[1])); cy = yAt(a[6]); }
+    else { cy = yAt(a[1]); max = Math.max(max, cy); if (lower === "m") sy = cy; }
+    if (lower === "m") { cmd = rel ? "l" : "L"; }
+  }
+  return Number.isFinite(max) ? max : null;
+}
+
+// Desktop page only: the embedded chart is cut just below its lowest ink (3
+// units), so the blank padding a chart carries at the bottom does not become
+// page spacing. Scale and width are unchanged; only blank rows are dropped.
+const CHART_INK_PAD = 3;
+function trimmedSvgInfo(svg) {
+  const info = svgInfo(svg);
+  const bottom = svgInkBottom(info);
+  if (bottom === null) return info;
+  const height = Math.min(info.height, Math.max(1, Math.ceil(bottom + CHART_INK_PAD - info.minY)));
+  return { ...info, height };
+}
+
 // Smallest font-size (px) drawn in an SVG, or null if it declares none.
 function svgMinFontSize(svg) {
   const sizes = [...String(svg ?? "").matchAll(/font-size=["']([\d.]+)(?:px)?["']/g)].map((m) => Number(m[1])).filter((n) => n > 0);
@@ -824,8 +896,9 @@ function compactFits(asset, width, mobile) {
   return !mobile && typeof asset?.compactSvg === "string" && Math.abs(width - COMPACT_VIEW_W) <= 2;
 }
 
-function visualAspect(asset, mobilePreferred) {
-  const info = svgInfo(mobilePreferred ? asset.mobileSvg : asset.desktopSvg);
+function visualAspect(asset, mobilePreferred, trim = false) {
+  const source = mobilePreferred ? asset.mobileSvg : asset.desktopSvg;
+  const info = trim ? trimmedSvgInfo(source) : svgInfo(source);
   return info.height / info.width;
 }
 
@@ -835,6 +908,8 @@ function moduleHeight(module, width, assets, mobile = false) {
     const labelChars = mobile ? 46 : Math.max(28, Math.round(width / 10));
     const labelLines = lines(module.label ?? "", labelChars, 3).length;
     const detailLines = module.detail ? lines(module.detail, mobile ? 62 : Math.max(38, Math.round(width / 8)), 2).length : 0;
+    // Desktop house style, no detail: the box ends just below the label (rhythm).
+    if (!mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !detailLines) return 126 + Math.max(0, labelLines - 1) * 20;
     return (mobile ? 166 : 154) + Math.max(0, labelLines - 1) * (mobile ? 20 : 20) + detailLines * 10;
   }
   if (type === "section_header") {
@@ -853,6 +928,8 @@ function moduleHeight(module, width, assets, mobile = false) {
     // Desktop headings wrap and step exactly as drawTextModule draws them.
     const heading = !module.heading ? 0 : mobile ? lines(module.heading, chars, 3).length * 28 : lines(module.heading, Math.max(30, Math.round(width / 17)), 3).length * 32;
     const bodyLines = String(module.body ?? "").trim() ? lines(module.body, chars, 12).length : 0;
+    // Desktop: the box ends just below the last drawn line (rhythm).
+    if (!mobile) return Math.ceil(textInkBottom(module, width) + TEXT_BOTTOM_PAD);
     let height = 72 + (mobile ? 0 : 6) + heading + bodyLines * (mobile ? 24 : 22);
     if (module.source_quote) height += sourceQuoteBlockHeight(module.source_quote, width, mobile);
     return height;
@@ -860,7 +937,7 @@ function moduleHeight(module, width, assets, mobile = false) {
   if (type === "visual" || type === "illustration") {
     const asset = assets[type === "visual" ? module.manifest_ref : module.asset_ref];
     if (!asset) return mobile ? 500 : 520;
-    const aspect = type === "visual" && compactFits(asset, width, mobile) ? (() => { const info = svgInfo(asset.compactSvg); return info.height / info.width; })() : visualAspect(asset, mobile || spanColumns(module.span) <= 6);
+    const aspect = type === "visual" && compactFits(asset, width, mobile) ? (() => { const info = mobile ? svgInfo(asset.compactSvg) : trimmedSvgInfo(asset.compactSvg); return info.height / info.width; })() : visualAspect(asset, mobile || spanColumns(module.span) <= 6, !mobile);
     const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 52 : 44) : 0;
     // The compact chart embeds 1:1, so its slot must hold the full top pad (see
     // embedVisual) or the chart shrinks below the 12px text floor.
@@ -874,7 +951,7 @@ function moduleHeight(module, width, assets, mobile = false) {
       // so give it the native height times 12 / smallest font, plus exactly
       // that padding. Charts that already fit are unchanged (max keeps 900).
       const source = compactFits(asset, width, mobile) ? asset.compactSvg : spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
-      const nativeH = svgInfo(source).height;
+      const nativeH = trimmedSvgInfo(source).height;
       const minFont = svgMinFontSize(source);
       const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
       maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
@@ -923,6 +1000,70 @@ function normalizedScenes(spec) {
   return spec.scene_graph.scenes.map((scene) => ({ ...scene, sidecar_module_ids: (scene.sidecar_module_ids ?? []).map(String), anchor_module_id: String(scene.anchor_module_id) }));
 }
 
+// ---- Desktop vertical rhythm ---------------------------------------------
+// Whitespace between modules is measured from visible ink (the lowest ink of
+// what is above to the highest ink of what is below), not from box edges, and
+// uses three values, all taken from the grid's existing constants:
+//   RHYTHM_AFTER_HEADING  section heading / scene header -> its first module
+//   RHYTHM_WITHIN         one module -> the next inside a section
+//   RHYTHM_BETWEEN        a section's last module -> the next section heading,
+//                         and the last module -> the footer rule
+// Proximity (Gestalt): things of one group sit closer than groups do, so
+// WITHIN < BETWEEN. Each module's blank inset above and below its ink is known
+// from how it is drawn (inkTop/inkBottom below), so no module carries a spare
+// minimum height.
+const RHYTHM_AFTER_HEADING = 28;
+const RHYTHM_WITHIN = 28;
+const RHYTHM_BETWEEN = 44;
+const TEXT_BOTTOM_PAD = 6;
+
+// Top of the ink, measured from a module box's top edge.
+function inkTop(module, bar) {
+  if (module.type === "hero_stat") return bar ? 0 : INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 14 : 28;
+  if (module.type === "section_header") return 33;
+  if (module.type === "pull_quote") return 28;
+  // Text, chart and illustration modules open with a hairline (too light to count as ink) and a small ordinal.
+  return module.emphasis === "hero" ? 8 : 10;
+}
+
+// Ink bottom of a desktop text module, measured from its box top (drawTextModule).
+function textInkBottom(module, width) {
+  const chars = Math.max(44, Math.round(width / 10));
+  const headLines = module.heading ? lines(module.heading, Math.max(30, Math.round(width / 17)), 3).length : 0;
+  const bodyLines = String(module.body ?? "").trim() ? lines(module.body, chars, 12).length : 0;
+  const bodyTop = 48 + headLines * 32 + (module.heading ? 16 : 0);
+  let bottom = bodyLines ? bodyTop + (bodyLines - 1) * 23 + 4 : 48 + Math.max(0, headLines - 1) * 32 + 7;
+  if (module.source_quote) bottom = bodyTop + bodyLines * 23 + 14 + sourceQuoteBlockHeight(module.source_quote, width, false);
+  return bottom;
+}
+
+// Blank space between the lowest ink and a module box's bottom edge.
+function inkBottomSlack(box, assets) {
+  const { module, h, w } = box;
+  if (module.type === "text") return h - textInkBottom(module, w);
+  if (module.type === "hero_stat") {
+    if (box.stat_bar) return TEXT_BOTTOM_PAD;
+    const detailLines = module.detail ? lines(module.detail, Math.max(38, Math.round(w / 8)), 2).length : 0;
+    return detailLines ? 17 - (detailLines - 1) * 16 : TEXT_BOTTOM_PAD;
+  }
+  if (module.type === "section_header") {
+    const headingLines = lines(module.heading ?? "", 48, 3).length;
+    const deckLines = module.deck ? lines(module.deck, 86, 3).length : 0;
+    return h - (deckLines ? 95 + headingLines * 42 + (deckLines - 1) * 23 + 4 : 91 + (headingLines - 1) * 42);
+  }
+  if (module.type === "visual") {
+    const asset = assets?.[module.manifest_ref];
+    if (!asset) return 0;
+    const captionH = outOfSetCaptionHeight(asset, module, false);
+    if (captionH) return 4;
+    const source = compactFits(asset, w, false) ? asset.compactSvg : spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+    const info = trimmedSvgInfo(source);
+    return 6 + (info.height === svgInfo(source).height ? 0 : CHART_INK_PAD * (w / info.width));
+  }
+  return 0;
+}
+
+export const _rhythmDebug = { svgInfo, svgInkBottom, trimmedSvgInfo, inkTop: (b) => inkTop(b.module, b.stat_bar), inkBottomSlack, sceneHeaderInk };
 function sceneHeaderHeight(scene) {
   const titleLines = scene.title ? lines(scene.title, 48, 2).length : 0;
   const dekLines = scene.dek ? lines(scene.dek, 82, 2).length : 0;
@@ -934,50 +1075,80 @@ function railStatBand(sidecars) {
   return INFOGRAPHIC_HOUSE_STYLE_ACTIVE && sidecars.length === 1 && sidecars[0].type === "hero_stat";
 }
 
+// Ink of a scene header, measured from the scene's top: [top, bottom], or null
+// when the scene has no header (drawSceneChrome).
+function sceneHeaderInk(scene) {
+  if (!(scene.eyebrow || scene.title || scene.dek)) return null;
+  const titleLines = scene.title ? lines(scene.title, 48, 2).length : 0;
+  const dekLines = scene.dek ? lines(scene.dek, 82, 2).length : 0;
+  const titleBase = scene.eyebrow ? 52 : 30;
+  const top = scene.eyebrow ? 6 : scene.title ? titleBase - (/[\u2e80-\u9fff\uff00-\uffef]/.test(scene.title) ? 29 : 23) : titleBase + 7 - 14;
+  const bottom = scene.dek ? titleBase + titleLines * 39 + 7 + (dekLines - 1) * 22 + 4 : scene.title ? titleBase + (titleLines - 1) * 39 + 4 : 19;
+  return { top, bottom };
+}
+
+// Lowest ink of a group of laid-out boxes, from the group's own origin.
+const boxesInkBottom = (boxes, assets, originY) => Math.max(...boxes.map((b) => b.y - originY + b.h - inkBottomSlack(b, assets)));
+const boxesInkTop = (boxes, originY) => Math.min(...boxes.map((b) => b.y - originY + inkTop(b.module, b.stat_bar)));
+
+// Built at y = 0; the caller moves it into place by its ink (see flush).
 function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, gap, col) {
   const byId = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
   const anchor = byId.get(scene.anchor_module_id);
   const sidecars = scene.sidecar_module_ids.map((id) => byId.get(id)).filter(Boolean);
-  const headerH = sceneHeaderHeight(scene);
+  const header = sceneHeaderInk(scene);
   const sceneY = y;
-  const contentY = y + headerH;
   const boxes = [];
+  // The anchor starts RHYTHM_AFTER_HEADING below the header's ink (or at the top without a header).
+  const anchorInkTop = inkTop(anchor, false);
+  const contentY = Math.round(header ? y + header.bottom + RHYTHM_AFTER_HEADING - anchorInkTop : y - anchorInkTop);
+  const finish = (inkBottomAbs) => {
+    const bottom = Math.max(...boxes.map((b) => b.y + b.h));
+    const top = header ? sceneY + header.top : boxesInkTop(boxes, 0);
+    return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: bottom - sceneY, header_h: header ? contentY - sceneY : 0 }, height: bottom - sceneY, ink_top: top - sceneY, ink_bottom: inkBottomAbs - sceneY, header_ink_bottom: header ? header.bottom : null, body_ink_top: contentY + anchorInkTop - sceneY };
+  };
   if (scene.pattern === "hero_with_rail") {
     const anchorW = contentW;
     const anchorH = moduleHeight(anchor, anchorW, assets, false);
-    boxes.push({ id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: 12, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" });
-    const railGap = sidecars.every((m) => m.type === "hero_stat") ? 14 : gap;
-    const railY = contentY + anchorH + railGap;
+    const anchorBox = { id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: 12, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" };
+    boxes.push(anchorBox);
     const sideCols = sidecars.length === 1 ? 12 : sidecars.length === 2 ? 6 : 4;
-    let xCols = 0;
-    let railH = 0;
-    sidecars.forEach((module) => {
+    const bar = railStatBand(sidecars);
+    const sized = sidecars.map((module) => {
       const w = shortTextWidth(module, sideCols * col + Math.max(0, sideCols - 1) * gap);
-      // A rail holding exactly one big number draws it as the full-width band
-      // (house style, desktop) instead of a stacked 12-column stat.
-      const bar = railStatBand(sidecars);
-      const h = bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false);
-      boxes.push({ id: module.id, module, x: margin + xCols * (col + gap), y: railY, w, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar", ...(bar ? { stat_bar: true } : {}) });
-      xCols += sideCols;
-      railH = Math.max(railH, h);
+      return { module, w, h: bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false) };
     });
-    return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: headerH + anchorH + railGap + railH, header_h: headerH }, height: headerH + anchorH + railGap + railH };
+    // The rail starts RHYTHM_WITHIN below the anchor's ink; its top is the highest ink among the sidecars.
+    const railInkTop = sized.length ? Math.min(...sized.map((item) => inkTop(item.module, bar))) : 0;
+    const railY = Math.round(contentY + anchorH - inkBottomSlack(anchorBox, assets) + RHYTHM_WITHIN - railInkTop);
+    let xCols = 0;
+    let railBottom = contentY + anchorH - inkBottomSlack(anchorBox, assets);
+    sized.forEach(({ module, w, h }) => {
+      const box = { id: module.id, module, x: margin + xCols * (col + gap), y: railY, w, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar", ...(bar ? { stat_bar: true } : {}) };
+      boxes.push(box);
+      xCols += sideCols;
+      railBottom = Math.max(railBottom, railY + h - inkBottomSlack(box, assets));
+    });
+    return finish(railBottom);
   }
   const anchorCols = 8;
   const sideCols = 4;
   const anchorW = anchorCols * col + (anchorCols - 1) * gap;
   const sideW = sideCols * col + (sideCols - 1) * gap;
   const anchorH = moduleHeight(anchor, anchorW, assets, false);
-  boxes.push({ id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: anchorCols, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" });
-  let sideY = contentY;
-  for (const module of sidecars) {
+  const anchorBox = { id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: anchorCols, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" };
+  boxes.push(anchorBox);
+  let inkBottomAbs = contentY + anchorH - inkBottomSlack(anchorBox, assets);
+  let sideY = Math.round(contentY + anchorInkTop - (sidecars[0] ? inkTop(sidecars[0], false) : 0));
+  for (const [index, module] of sidecars.entries()) {
     const h = moduleHeight(module, sideW, assets, false);
-    boxes.push({ id: module.id, module, x: margin + anchorCols * (col + gap), y: sideY, w: sideW, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar" });
-    sideY += h + gap;
+    const box = { id: module.id, module, x: margin + anchorCols * (col + gap), y: sideY, w: sideW, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar" };
+    boxes.push(box);
+    const bottom = sideY + h - inkBottomSlack(box, assets);
+    inkBottomAbs = Math.max(inkBottomAbs, bottom);
+    sideY = Math.round(bottom + RHYTHM_WITHIN - (sidecars[index + 1] ? inkTop(sidecars[index + 1], false) : 0));
   }
-  const sideH = Math.max(0, sideY - contentY - gap);
-  const contentH = Math.max(anchorH, sideH);
-  return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: headerH + contentH, header_h: headerH }, height: headerH + contentH };
+  return finish(inkBottomAbs);
 }
 
 function layoutDesktopWithStrategy(spec, assets, strategy) {
@@ -985,14 +1156,23 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
   const col = (contentW - gap * 11) / 12;
   const boxes = [];
   const scenes = [];
-  let y = 0, rowCols = 0, row = [], rowIndex = 0;
+  let rowCols = 0, row = [], rowIndex = 0;
+  // Vertical placement by ink (see RHYTHM_*): `prev` is the unit above - the
+  // lowest ink of it, and whether it is a heading its next unit belongs to.
+  let prev = null;
+  const rhythm = [];
+  const gapAfter = (startsSection) => (prev.heading ? RHYTHM_AFTER_HEADING : startsSection ? RHYTHM_BETWEEN : RHYTHM_WITHIN);
   const flush = () => {
     if (!row.length) return;
     const rowH = Math.max(...row.map((item) => item.h));
-    const rowHasHero = row.some((item) => item.module.emphasis === "hero");
-    const rowHasTurn = row.some((item) => item.module.story_role === "turn");
+    const heading = row.length === 1 && row[0].module.type === "section_header";
+    const startsSection = row.some((item) => item.module.type === "section_header");
+    const top = Math.min(...row.map((item) => inkTop(item.module, item.stat_bar)));
+    const bottom = Math.max(...row.map((item) => item.h - inkBottomSlack(item, assets)));
+    const y = prev ? Math.round(prev.inkBottom + gapAfter(startsSection) - top) : 0;
     for (const item of row) boxes.push({ ...item, y, h: rowH, row_index: rowIndex });
-    y += rowH + 40 + (rowHasHero ? 18 : 0) + (rowHasTurn ? 12 : 0);
+    rhythm.push({ kind: heading ? "heading" : "row", section_start: startsSection, ink_top: y + top, ink_bottom: y + bottom });
+    prev = { inkBottom: y + bottom, heading };
     rowCols = 0; row = []; rowIndex += 1;
   };
   const configuredScenes = normalizedScenes(spec);
@@ -1015,10 +1195,13 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
     if (scene) {
       if (!placedScenes.has(scene.id)) {
         flush();
-        const built = buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, gap, col);
-        boxes.push(...built.boxes);
-        scenes.push(built.meta);
-        y += built.height + 44;
+        const built = buildDesktopScene(scene, spec, assets, 0, rowIndex, margin, contentW, gap, col);
+        const sceneY = prev ? Math.round(prev.inkBottom + (prev.heading ? RHYTHM_AFTER_HEADING : RHYTHM_BETWEEN) - built.ink_top) : 0;
+        boxes.push(...built.boxes.map((b) => ({ ...b, y: b.y + sceneY })));
+        scenes.push({ ...built.meta, y: built.meta.y + sceneY });
+        if (built.header_ink_bottom !== null) rhythm.push({ kind: "heading", section_start: true, ink_top: sceneY + built.ink_top, ink_bottom: sceneY + built.header_ink_bottom });
+        rhythm.push({ kind: "row", section_start: built.header_ink_bottom === null, ink_top: sceneY + built.body_ink_top, ink_bottom: sceneY + built.ink_bottom });
+        prev = { inkBottom: sceneY + built.ink_bottom, heading: false };
         rowIndex += 1;
         placedScenes.add(scene.id);
       }
@@ -1068,7 +1251,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
     if (cols === 12 || rowCols === 12) flush();
   }
   flush();
-  return { width, margin, contentW, boxes, scenes, contentHeight: Math.max(0, y - 40), strategy };
+  return { width, margin, contentW, boxes, scenes, contentHeight: Math.max(0, prev ? prev.inkBottom + RHYTHM_BETWEEN - 54 : 0), rhythm, strategy };
 }
 
 function scoreLayoutCandidate(spec, layout) {
@@ -1284,7 +1467,7 @@ function outOfSetCaptionHeight(asset, module, mobile) {
 
 function embedVisual(parts, asset, box, module, mobile) {
   const sourceSvg = compactFits(asset, box.w, mobile) ? asset.compactSvg : mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
-  const info = svgInfo(sourceSvg);
+  const info = mobile ? svgInfo(sourceSvg) : trimmedSvgInfo(sourceSvg);
   const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
   const captionH = outOfSetCaptionHeight(asset, module, mobile);
   const availableH = box.h - topPad - 6 - captionH;
@@ -1409,7 +1592,7 @@ function heroStatBarMetrics(module, width) {
   const labelLines = lines(module.label ?? "", Math.max(20, Math.floor(avail / 10.5)));
   const detailLines = module.detail ? lines(module.detail, Math.max(24, Math.floor(avail / 8.2))) : [];
   const textH = 22 + (labelLines.length - 1) * 20 + (detailLines.length ? 10 + detailLines.length * 16 : 0);
-  return { pad, textX, labelLines, detailLines, h: Math.max(3 + 62, 3 + 6 + textH + 12) };
+  return { pad, textX, labelLines, detailLines, h: Math.max(59, detailLines.length ? 36 + (labelLines.length - 1) * 20 + 16 * detailLines.length : 31 + (labelLines.length - 1) * 20) + TEXT_BOTTOM_PAD };
 }
 
 function drawHeroStatBar(parts, box, module) {
@@ -1600,6 +1783,10 @@ function composeOne(spec, assets, mobile) {
     svg: parts.join("\n") + "\n",
     width: layout.width,
     height: pageHeight,
+    ...(mobile ? {} : {
+      rhythm: (layout.rhythm ?? []).map((u) => ({ ...u, ink_top: u.ink_top + startY, ink_bottom: u.ink_bottom + startY })),
+      footer_y: footerY,
+    }),
     boxes: shiftedBoxes,
     scenes: (layout.scenes ?? []).map((scene) => ({ ...scene, y: scene.y + startY })),
     sources,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
-import { lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
+import { lintInfographicSpec, composeInfographicBundle, _rhythmDebug } from '../runtime/pi/infographic.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim='claim-floor';
@@ -48,7 +48,9 @@ const base={schema_version:'1.0.0',kicker:'SYSTEMS / DATA FEATURE',title:'A long
   assert.equal(qa.passed,true,JSON.stringify([qa.viewports.desktop.geometry.failures.slice(0,5),qa.viewports.desktop.contrast?.failures?.slice(0,3)]));
   noFloorFailure(qa);
   const eh=embeddedH(b.desktop.svg);
-  assert.ok(eh>=native-0.01,`embedded height ${eh} >= native ${native}`);
+  // The page trims a chart's blank bottom padding, so compare with the trimmed native height (same scale).
+  const nativeTrimmed=_rhythmDebug.trimmedSvgInfo(f.bundle.desktop).height;
+  assert.ok(eh>=nativeTrimmed-0.01,`embedded height ${eh} >= native ${nativeTrimmed}`);
   console.log(`PASS (a) tall full-width chart: native=${native} embedded=${eh}, lint+render QA ok, no font_below_floor`);
 }
 
@@ -74,6 +76,7 @@ const base={schema_version:'1.0.0',kicker:'SYSTEMS / DATA FEATURE',title:'A long
   assert.equal(qa.passed,true,JSON.stringify([qa.viewports.desktop.geometry.failures.slice(0,5),qa.viewports.desktop.contrast?.failures?.slice(0,3)]));
   noFloorFailure(qa);
   const eh=embeddedH(b.desktop.svg);
-  assert.ok(eh>=native-0.01,`embedded height ${eh} >= native compact ${native}`);
+  const nativeTrimmed=_rhythmDebug.trimmedSvgInfo(f.bundle.compact).height;
+  assert.ok(eh>=nativeTrimmed-0.01,`embedded height ${eh} >= native compact ${nativeTrimmed}`);
   console.log(`PASS (b) compact sidecar anchor: native=${native} embedded=${eh}, lint+render QA ok, no font_below_floor`);
 }

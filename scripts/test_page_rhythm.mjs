@@ -161,4 +161,67 @@ for (const [name, sidecars, mods] of [
     assert.deepEqual(rec.repeated_numbers.map((e) => [e.value, e.count]), [['7', 3]]);
   } finally { rmSync(r2, { recursive: true, force: true }); }
 }
+
+// Vertical spacing between modules: three classes measured ink to ink (layout's own ink model).
+//   a: section heading -> first module, b: module -> module in a section, c: last module -> next heading / footer.
+import { _rhythmDebug } from '../runtime/pi/infographic.mjs';
+const plainSceneSpec = (sidecars, modules) => ({ ...page([header('h1'), chart, ...modules]), schema_version: '1.3.0', intent: 'Check page rhythm in a scene.', primary_message: 'A scene keeps its own layout.', story_arc: 'explain', audience: 'informed', quality_target: 'publishable',
+  editorial_discovery_ref: 'editorial/discovery/test.json', visual_concept_ref: 'editorial/concepts/test.json', selected_concept_id: 'concept-scene', novelty_ref: 'editorial/novelty/test.json', asset_plan_ref: 'editorial/assets/test.json',
+  scene_graph: { schema_version: '0.1.0', scenes: [{ id: 'sc', pattern: 'hero_with_rail', title: 'A scene title', dek: 'A scene deck that explains the scene in one line.', anchor_module_id: 'bar', sidecar_module_ids: sidecars, shared_source_scope: true }] } });
+const TIERS = { a: 28, b: 28, c: 44 };
+function gapClasses(out) {
+  const units = [...out.desktop.rhythm, { kind: 'footer', section_start: true, ink_top: out.desktop.footer_y, ink_bottom: out.desktop.footer_y }];
+  return units.slice(0, -1).map((u, i) => {
+    const n = units[i + 1];
+    return { cls: u.kind === 'heading' ? 'a' : n.section_start ? 'c' : 'b', gap: n.ink_top - u.ink_bottom };
+  });
+}
+function checkTiers(name, out) {
+  const gaps = gapClasses(out);
+  assert.ok(gaps.length >= 2, name);
+  for (const { cls, gap } of gaps) assert.ok(Math.abs(gap - TIERS[cls]) <= 4, `${name}: class ${cls} gap ${gap} should be ${TIERS[cls]} +-4`);
+  assert.ok(gaps.some((g) => g.cls === 'c'), `${name}: has a section-to-section or footer gap`);
+}
+{
+  checkTiers('flat mix', compose([header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG), text('t3', TWO), stat('s2', { value: '9' })]));
+  checkTiers('flat stats', compose([chart, stat('s1'), stat('s2', { value: '8' }), stat('s3', { value: '7' }), header('h2'), text('t1', ONE), text('t2', TWO)]));
+  const scenes = [['one stat', ['s1'], [stat('s1')]], ['one text', ['t1'], [text('t1', TWO)]], ['three stats', ['s1', 's2', 's3'], [stat('s1'), stat('s2', { value: '20' }), stat('s3', { value: '9' })]], ['stat + text', ['s1', 't1'], [stat('s1'), text('t1', LONG)]]];
+  for (const [name, sidecars, modules] of scenes) {
+    const spec = plainSceneSpec(sidecars, modules);
+    assert.equal(lintInfographicSpec(spec, assets, context).passed, true, name);
+    const out = composeInfographicBundle(spec, assets, { mobilePages: false });
+    assert.equal(runRenderQa({ desktop: out.desktop.svg }).passed, true, name);
+    checkTiers(`scene ${name}`, out);
+  }
+}
+// Charts are trimmed of blank bottom padding only when their ink is known for certain.
+{
+  const bare = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200"><rect width="100" height="200" fill="#fff"/><text x="1" y="60" font-size="10">x</text></svg>';
+  const trimmed = _rhythmDebug.trimmedSvgInfo(bare);
+  assert.ok(trimmed.height < 200 && trimmed.height >= 60, `blank bottom is trimmed, got ${trimmed.height}`);
+  for (const unsafe of ['<g transform="translate(0,50)"><text x="1" y="60">x</text></g>', '<image href="data:image/png;base64,AAAA" x="0" y="0" width="10" height="190"/>', '<use href="#a" y="150"/>', '<text x="1" y="60"><tspan y="150">x</tspan></text>']) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 200">${unsafe}</svg>`;
+    assert.equal(_rhythmDebug.trimmedSvgInfo(svg).height, 200, `not trimmed: ${unsafe.slice(0, 30)}`);
+  }
+}
+// The mobile page does not change with desktop spacing.
+{
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync, rmSync: rm } = await import('node:fs');
+  const parentPath = new URL('../runtime/pi/_parent_rhythm.mjs', import.meta.url);
+  let parent = null;
+  try {
+    const src = execFileSync('git', ['show', 'a4d4cb0:runtime/pi/infographic.mjs'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    writeFileSync(parentPath, src);
+    try { parent = await import(parentPath.href); } finally { rm(parentPath); }
+  } catch { parent = null; }
+  if (parent) {
+    for (const modules of [[header('h1'), chart, stat('s1'), text('t1', ONE), header('h2'), text('t2', LONG)], [chart, stat('s1'), stat('s2', { value: '8' }), text('t1', TWO)]]) {
+      const spec = page(modules);
+      assert.equal(composeInfographicBundle(spec, assets, { mobilePages: true }).mobile.svg, parent.composeInfographicBundle(spec, assets, { mobilePages: true }).mobile.svg, 'mobile is byte-identical');
+    }
+    const sc = plainSceneSpec(['s1'], [stat('s1')]);
+    assert.equal(composeInfographicBundle(sc, assets, { mobilePages: true }).mobile.svg, parent.composeInfographicBundle(sc, assets, { mobilePages: true }).mobile.svg, 'mobile scene is byte-identical');
+  }
+}
 console.log('page rhythm: PASS');
