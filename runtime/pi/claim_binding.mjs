@@ -155,10 +155,13 @@ const NUMERIC_AGGREGATES = new Set(["count_star", "count", "sum", "avg", "min", 
 // numbers (or a plain aggregate of them).
 const NUMERIC_FIELD_KEYS = ["value_field", "start_field", "end_field", "y_field", "size_field", "altitude_field", "speed_field", "source_lat_field", "source_lon_field", "target_lat_field", "target_lon_field"];
 
-/** The spec's numeric encoding fields (x_field only for a scatter, where it is a measure). */
+// Chart types whose x axis is a measure rather than a time or category label.
+const X_IS_MEASURE = new Set(["scatter", "trajectory_profile"]);
+
+/** The spec's numeric encoding fields; empty when the chart type encodes no number this way (structure/label charts), which the direct-read relation refuses. */
 export function numericFieldsOfSpec(spec) {
   const fields = NUMERIC_FIELD_KEYS.map((key) => spec?.[key]).filter((value) => typeof value === "string" && value);
-  if (spec?.chart_type === "scatter" && typeof spec?.x_field === "string" && spec.x_field) fields.push(spec.x_field);
+  if (X_IS_MEASURE.has(String(spec?.chart_type)) && typeof spec?.x_field === "string" && spec.x_field) fields.push(spec.x_field);
   return [...new Set(fields)];
 }
 
@@ -186,7 +189,7 @@ export function chartRootedInComputation(chart, computation) {
   const reads = (Array.isArray(chart?.read_inputs) ? chart.read_inputs : []).map((input) => String(input?.path ?? ""));
   if (reads.length !== 1 || reads[0] !== ref) return no("the chart also reads files other than the claim's computation");
   const numericFields = chart?.numeric_fields;
-  if (!Array.isArray(numericFields)) return no("the chart's numeric fields are unknown");
+  if (!Array.isArray(numericFields) || numericFields.length === 0) return no("no numeric encoding field is known for this chart, so its numbers cannot be checked");
   const ast = chart?.ast;
   const statements = ast && ast.error === false ? ast.statements : null;
   if (!Array.isArray(statements) || statements.length !== 1) return no("the chart SQL could not be parsed");
@@ -226,6 +229,7 @@ export function chartRootedInComputation(chart, computation) {
     return name === "count_star" ? children.length === 0 : children.length === 1 && isRootColumn(children[0]);
   };
   const numeric = new Set(numericFields.map(String));
+  if (!chartColumns.some((column) => numeric.has(column))) return no("none of the chart's numeric encoding fields is an output column of its SQL");
   for (let index = 0; index < select.length; index += 1) {
     const expr = select[index];
     if (expr?.class === "STAR") return no("the chart SQL selects * from the claim's computation");
