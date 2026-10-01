@@ -75,7 +75,7 @@ const off = await scenario({ shadow: false });
 const on = await scenario({ shadow: true });
 delete process.env.NEWSROOM_SHADOW_CHECKS;
 
-const withoutShadowDetails = (call) => ({ ...call, details: call.details && typeof call.details === "object" ? Object.fromEntries(Object.entries(call.details).filter(([key]) => key !== "shadow")) : call.details });
+const withoutShadowDetails = (call) => ({ ...call, details: call.details && typeof call.details === "object" ? Object.fromEntries(Object.entries(call.details).filter(([key]) => key !== "shadow" && key !== "shadow_asof")) : call.details });
 const comparable = (files) => new Map([...files].filter(([path]) => path !== "claims.jsonl" && !path.startsWith("shadow/")));
 
 // OFF == baseline, byte for byte.
@@ -85,7 +85,7 @@ assert.deepEqual(off.calls, base.calls, "model-visible text and details identica
 assert.deepEqual([...comparable(off.files).keys()], [...comparable(base.files).keys()], "same artifact file set as the baseline");
 for (const [path, bytes] of comparable(base.files)) assert.ok(bytes.equals(comparable(off.files).get(path)), `artifact bytes differ from the baseline: ${path}`);
 assert.equal([...off.files.keys()].some((path) => path.startsWith("shadow/")), false, "off: nothing is written under shadow/");
-for (const call of off.calls) assert.equal("shadow" in (call.details ?? {}), false, "off: details carry no shadow key");
+for (const call of off.calls) assert.equal("shadow" in (call.details ?? {}) || "shadow_asof" in (call.details ?? {}), false, "off: details carry no shadow key");
 
 // ON: same model-visible text, same artifacts, details differ only by `shadow`.
 assert.equal(on.defs, off.defs, "tool definitions identical with the switch on");
@@ -100,7 +100,9 @@ for (const call of on.calls.filter((entry) => ["newsroom_viz_lint", "newsroom_in
 }
 for (const call of on.calls.filter((entry) => !["newsroom_viz_lint", "newsroom_infographic_lint"].includes(entry.name))) assert.equal("shadow" in (call.details ?? {}), false);
 const shadowFiles = [...on.files.keys()].filter((path) => path.startsWith("shadow/"));
-assert.equal(shadowFiles.length, 3, "one side file per shadowed lint call");
+assert.equal(shadowFiles.filter((path) => path.startsWith("shadow/prose_numbers-")).length, 3, "one prose-number side file per shadowed lint call");
+assert.equal(shadowFiles.filter((path) => path.startsWith("shadow/asof_probe-")).length, 1, "one as-of side file for the infographic lint");
+assert.equal(shadowFiles.length, 4);
 // Warnings and blockers never carry shadow results.
 for (const [index, call] of on.calls.entries()) {
   assert.deepEqual(call.details?.warnings, off.calls[index].details?.warnings);

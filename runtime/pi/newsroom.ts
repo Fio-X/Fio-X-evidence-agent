@@ -37,7 +37,8 @@ import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQu
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState } from "./claim_binding.mjs";
-import { runShadow, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
+import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
+import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -232,7 +233,46 @@ async function readArtifactText(relativePath: string, requiredPrefix?: string) {
 // field of that chart's own computation rows), then restyles any chart that
 // goes beyond the set. Unreadable rows leave the subjects unset, which lint
 // reports as unresolved.
-async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
+async function resolveSubjectSets(spec: any, assets: Record<string, any>, shadowAsOfCheck: boolean = false) {
+  await resolveSubjectSetsCore(spec, assets);
+  // Shadow check A (off unless NEWSROOM_SHADOW_CHECKS=1): never changes the
+  // subjects or members resolved above; stashes {path, counts} on the assets,
+  // out of sight of lint, for the lint tool's details.
+  if (!shadowAsOfCheck || !shadowChecksEnabled()) return;
+  const shadow = await runShadow(() => shadowAsOf({
+    root: artifactRoot(), spec, assets, planRef: "", members: (assets as any).__subject_set_members,
+    deps: {
+      ...claimBindingDeps(),
+      serializeSql: (sql: string) => serializeSqlAst(sql),
+      describe: async (source: string) => (await queryDuckDb(`DESCRIBE SELECT * FROM ${source}`) as any[]).map((row) => ({ name: String(row.column_name), type: String(row.column_type) })),
+      query: (sql: string) => queryDuckDb(sql) as Promise<Record<string, unknown>[]>,
+      registryDate: (path: string) => registryDateFor(path),
+    },
+  }));
+  if (shadow) Object.defineProperty(assets, "__asof_shadow", { value: shadow, enumerable: false, configurable: true });
+}
+
+// The reference date of a data file from the source registry (data/origins/*.json
+// records that name the file), never from the clock. Null when none is recorded.
+async function registryDateFor(dataPath: string) {
+  const root = artifactRoot();
+  if (!root) return null;
+  let names: string[] = [];
+  try { names = (await readdir(join(root, "data", "origins"))).filter((name) => name.endsWith(".json")).sort(); } catch { return null; }
+  for (const name of names) {
+    try {
+      const record = JSON.parse(await readFile(join(root, "data", "origins", name), "utf8"));
+      if (record?.file !== dataPath) continue;
+      for (const field of REGISTRY_DATE_FIELDS) {
+        const value = String(record?.[field] ?? "").trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function resolveSubjectSetsCore(spec: any, assets: Record<string, any>) {
   const declared = spec?.subject_set;
   if (!declared || typeof declared !== "object") return;
   const readRows = async (ref: unknown) => {
@@ -260,7 +300,7 @@ async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
 // read from the manifest and never requested, matching newsroom_viz_render
 // and newsroom_explainer_render/newsroom_illustration_generate, which stop
 // producing one. Callers that don't pass mobilePages follow the live switch.
-async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled()) {
+async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled(), shadowAsOfCheck: boolean = false) {
   const assets: Record<string, any> = {};
   for (const module of spec?.modules ?? []) {
     if (module?.type === "visual") {
@@ -290,7 +330,7 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       assets[assetRef] = { manifest, critic, desktopSvg: await readArtifactText(desktopRef, "visualizations/illustrations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/illustrations/") } : {}) };
     }
   }
-  await resolveSubjectSets(spec, assets);
+  await resolveSubjectSets(spec, assets, shadowAsOfCheck);
   return assets;
 }
 
@@ -3122,7 +3162,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages);
+      const assets = await loadInfographicAssets(spec, mobilePages, true);
       const verified = await verifiedClaimIds();
       const verifiedRecords = await verifiedClaimRecords();
       const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
@@ -3167,7 +3207,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const igShadow = shadowChecksEnabled()
         ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
         : null;
-      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings, ...(igShadow ? { shadow: igShadow } : {}) });
+      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings, ...(igShadow ? { shadow: igShadow } : {}), ...((assets as any).__asof_shadow ? { shadow_asof: (assets as any).__asof_shadow } : {}) });
     },
   });
 

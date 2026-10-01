@@ -24,7 +24,8 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { claimComputationStates, strictResultHashMatches } from "./claim_binding.mjs";
+import { cutoffCoverage, probeAsOf } from "./asof_probe.mjs";
+import { claimComputationStates, computationInputState, strictResultHashMatches } from "./claim_binding.mjs";
 import { buildCandidates, checkField, summarizeChecks } from "./number_shadow.mjs";
 
 export const SHADOW_DIR = "shadow";
@@ -179,5 +180,49 @@ export async function shadowInfographicNumbers({ root, spec, planRef, assets, cl
     visuals: modules.filter((module) => module.type === "visual").map((module) => [module.id, assets?.[String(module.manifest_ref ?? "")]?.manifest?.data_hash ?? null]),
     claims: [...cache.entries()].map(([key, value]) => [key, [...value.states.entries()].map(([claimId, claimStates]) => [claimId, claimStates.map((state) => [state.ref, state.result_hash])])]),
   }, { surface: "infographic_lint", plan_ref: planRef, compute_ms: computeMs, counts, numbers: records, strict_result_hash: strict });
+  return { path, counts };
+}
+
+// ---- A: as-of leaks in subject-set SQL ------------------------------------
+
+/**
+ * Probe the page's subject set against its source files (asof_probe.mjs) and
+ * record cutoff coverage by module type. Runs only when the switch is on, from
+ * the resolveSubjectSets glue. `deps`: readComputation, root, describe, query,
+ * registryDate, serializeSql. Returns { path, counts } for tool `details`.
+ */
+export async function shadowAsOf({ root, spec, assets, planRef, members, deps }) {
+  const started = performance.now();
+  const declared = spec?.subject_set && typeof spec.subject_set === "object" ? spec.subject_set : null;
+  const coverage = cutoffCoverage(spec, assets);
+  let probe = { status: "skipped", reason: "no_subject_set", classification: "skipped" };
+  let keyInputs = { surface: "subject_set", plan_ref: planRef, subject_set: null };
+  if (declared) {
+    let record = null;
+    try { record = await deps.readComputation(String(declared.computation_ref ?? "")); } catch { record = null; }
+    if (!record || typeof record.sql !== "string") probe = { status: "skipped", reason: "set_computation_unreadable", classification: "skipped" };
+    else {
+      const state = await computationInputState(String(declared.computation_ref), deps);
+      const inputs = state.effective_inputs.filter((path) => path.startsWith("data/") || path.startsWith("sources/"));
+      let ast = null;
+      try { ast = await deps.serializeSql(record.sql); } catch { ast = null; }
+      const memberSet = new Set([...(members ?? [])].map(String));
+      probe = await probeAsOf({ subjectSet: declared, members: memberSet, sql: record.sql, inputs, ast, describe: deps.describe, query: deps.query, registryDate: deps.registryDate });
+      keyInputs = {
+        surface: "subject_set", plan_ref: planRef,
+        subject_set: { key_field: declared.key_field ?? null, cutoff_date: declared.cutoff_date ?? null, computation_ref: declared.computation_ref ?? null },
+        sql: record.sql, inputs: (record.read_inputs ?? []).map((input) => [input.path, input.sha256]), members: [...memberSet].sort(),
+      };
+    }
+  }
+  const files = Array.isArray(probe.files) ? probe.files : [];
+  const counts = {
+    probed_files: files.filter((file) => file.status === "probed").length,
+    crossers_missing: Number(probe.crossers_missing ?? 0),
+    open_active_missing: Number(probe.open_active_missing ?? 0),
+    skipped_modules: Object.values(coverage.skipped_by_type).reduce((a, b) => a + b, 0),
+  };
+  const computeMs = Math.round((performance.now() - started) * 100) / 100;
+  const path = await writeShadowRecord(root, "asof_probe", { ...keyInputs, coverage }, { surface: "subject_set", plan_ref: planRef, compute_ms: computeMs, counts, coverage, probe });
   return { path, counts };
 }
