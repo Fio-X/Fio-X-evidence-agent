@@ -5739,6 +5739,43 @@ function renderChoropleth(spec, rows, mobile = false) {
     const acceptedBoxes = onMap.map((p) => p.box);
     let allPlaced = true;
     placedOverflow = [];
+    // Numbering is the last resort: before it, look for any open spot on the
+    // map near the region where its label fits, and run a short leader to it.
+    // Candidate boxes sit on rings around the anchor (16 directions, growing
+    // distance), shortest leader first; each must lie inside the map frame,
+    // clear every data region and every accepted label, and its leader must
+    // cross nothing (same checks as the boundary column).
+    const tryFreeSpot = (li) => {
+      const idx0 = li.item.featureIndices[0];
+      const anchor = { x: li.x, y: li.y };
+      const cands = [];
+      for (let dist = 14; dist <= MAX_OVERFLOW_LEADER_PX; dist += 10) {
+        for (let k = 0; k < 16; k++) {
+          const ang = (k / 16) * Math.PI * 2;
+          const px = li.x + Math.cos(ang) * dist, py = li.y + Math.sin(ang) * dist;
+          const side = Math.cos(ang) >= 0 ? "right" : "left";
+          const box = side === "right" ? { x: px, y: py - lineH - 2, w: li.w, h: li.h } : { x: px - li.w, y: py - lineH - 2, w: li.w, h: li.h };
+          const tip = { x: side === "right" ? px - LEADER_GAP_PX : px + LEADER_GAP_PX, y: py };
+          if (box.x < mapLeft + 2 || box.x + box.w > mapRight - 2 || box.y < top + 2 || box.y + box.h > bottom - 2) continue;
+          const len = elbowLength(anchor, tip);
+          if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) continue;
+          cands.push({ li, box, anchor, tip, side, len });
+        }
+      }
+      cands.sort((u, v) => u.len - v.len);
+      for (const cand of cands) {
+        if (acceptedBoxes.some((b) => boxesOverlap(b, cand.box))) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
+        const segs = elbowSegments(cand.anchor, cand.tip);
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) return cand;
+      }
+      return null;
+    };
+    const acceptFree = (cand) => {
+      placedOverflow.push(cand);
+      for (const [p1, p2] of elbowSegments(cand.anchor, cand.tip)) acceptedLeaders.push({ a: p1, b: p2 });
+      acceptedBoxes.push(cand.box);
+    };
     for (const entry of [...leftLayout.placed, ...rightLayout.placed]) {
       const idx0 = entry.li.item.featureIndices[0];
       // v7 fix: try the column's own slot first (step 0, unchanged for every
@@ -5761,6 +5798,8 @@ function renderChoropleth(spec, rows, mobile = false) {
         for (const [p1, p2] of elbowSegments(accepted.anchor, accepted.tip)) acceptedLeaders.push({ a: p1, b: p2 });
         acceptedBoxes.push(accepted.box);
       } else {
+        const free = tryFreeSpot(entry.li);
+        if (free) { acceptFree(free); continue; }
         allPlaced = false;
         // Only demote into the zoom inset when one is actually configured
         // (spec.inset) - with no inset panel to receive it, forcing this
@@ -5818,6 +5857,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       // Neither side worked - task: "fall back to numbered markers + a
       // footnote list, same as the line-chart" rather than stretch a leader
       // past a legible length or through another region's own polygon.
+      const free = tryFreeSpot(li);
+      if (free) { acceptFree(free); continue; }
       allPlaced = false;
       footnoteIso3.add(li.item.iso3);
     }
