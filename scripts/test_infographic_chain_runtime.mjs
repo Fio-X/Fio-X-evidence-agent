@@ -275,7 +275,12 @@ async function manual(params) {
   assert.ok(schema.properties.title && schema.required.includes("title") && !schema.required.includes("reader_question") && !schema.required.includes("visual_thesis"));
   assert.ok(schema.required.includes("story_graph_ref"));
   register(mod, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1" });
-  check("switch off registers nothing new; on adds only newsroom_infographic_chain; question/thesis optional");
+  for (const atomic of [undefined, "0", "true"]) {
+    const t = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: atomic });
+    assert.ok(!t.has("newsroom_infographic_chain"), `chain needs atomic writes exactly "1" (got ${atomic})`);
+    assert.deepEqual([...t.keys()].sort(), [...off.keys()].sort(), "other tools unchanged when the chain is refused");
+  }
+  check("switch off registers nothing new; on adds only newsroom_infographic_chain; question/thesis optional; chain x atomic on/off");
 }
 
 let previewWorks = true;
