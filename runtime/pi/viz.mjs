@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
+import { checkSvgGeometry } from "./render_qa_geometry.mjs";
+import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
+import { parseXml } from "./render_qa_svg.mjs";
 import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
@@ -5081,7 +5084,51 @@ function pointOnFeature(index, x, y, project, lon0, lat0) {
  * africa/page.js, read-only reference) translated from d3 into this file's
  * own hand-written SVG/geometry conventions (no mapping dependency added).
  */
+// Zoom-inset size ladder (share of the plot width, fraction of the map height).
+// Step 0 is the long-standing default; a larger step is tried only when the
+// numbered-marker pass could not put more than a quarter of its regions on the
+// map, so a render that already passes never changes.
+// Adaptive zoom-inset ladder. The first rung is the long-standing default
+// (a third of the plot width, 25-degree cluster radius). When that render
+// leaves numbered regions without a map marker, progressively larger frames
+// and tighter cluster radii are tried; the render with the fewest list-only
+// regions wins, ties broken by fewer render-QA failures and then by the
+// earlier (less intrusive) rung. No QA threshold is changed - the ladder only
+// chooses among renders the unchanged checks then score.
+const INSET_LADDER = [
+  { share: 0.33, heightFrac: 0.62, clusterDeg: 25 },
+  { share: 0.5, heightFrac: 0.75, clusterDeg: 25 },
+  { share: 0.5, heightFrac: 0.75, clusterDeg: 18 },
+  { share: 0.7, heightFrac: 0.85, clusterDeg: 18 },
+  { share: 0.7, heightFrac: 0.85, clusterDeg: 12 },
+  { share: 0.9, heightFrac: 0.92, clusterDeg: 12 },
+  { share: 0.9, heightFrac: 0.92, clusterDeg: 8 },
+];
+function insetRenderQaFailures(svg, spec, rows) {
+  try {
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid });
+    return [...checkSvgGeometry(svg).failures, ...labels.failures].map((f) => f.rule);
+  } catch {
+    return [];
+  }
+}
 function renderChoropleth(spec, rows, mobile = false) {
+  let best = null;
+  for (const tune of INSET_LADDER) {
+    const meta = {};
+    const svg = renderChoroplethOnce(spec, rows, mobile, tune, meta);
+    if (!best && (!meta.hasInset || meta.listOnly === 0)) return svg;
+    const qa = insetRenderQaFailures(svg, spec, rows);
+    // A rung replaces the incumbent only when it has fewer failures, or when
+    // it has the same count, strictly fewer list-only regions and introduces
+    // no failure rule the incumbent did not already have.
+    const noNewRule = qa.every((rule) => best?.qa.includes(rule));
+    if (!best || qa.length < best.qa.length || (qa.length === best.qa.length && noNewRule && meta.listOnly < best.meta.listOnly)) best = { svg, meta, qa };
+    if (best.meta.listOnly === 0 && best.qa.length === 0) break;
+  }
+  return best.svg;
+}
+function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const lang = vizLang(spec);
   const font = mobile ? 12 : 12.5;
   const lineH = mobile ? 14 : 15;
@@ -5187,7 +5234,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   // main map, same as any other plotted region.
   const insetSpec = spec.inset && typeof spec.inset === "object" ? spec.inset : null;
   const insetIso3Set = new Set();
-  const INSET_CLUSTER_DEG = 25;
+  const INSET_CLUSTER_DEG = tune.clusterDeg;
   // Centre for a secondary view (locator, zoom inset, clustering): the same
   // rule as the main map (bbox centre when everything is within reach, else the
   // minimal enclosing cap), never the bbox midpoint alone, which lands on the
@@ -5284,7 +5331,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
     const aspect = x1 > x0 && y1 > y0 ? Math.min(3, Math.max(0.5, (x1 - x0) / (y1 - y0))) : 1;
     const w = Math.max(nat, Math.round((INSET_WIDTH_SHARE * (plotRight - plotLeft - INSET_COLUMN_GAP)) / (1 + INSET_WIDTH_SHARE)));
-    const h = Math.max(nat, Math.min(w / aspect, 0.62 * mapH));
+    const h = Math.max(nat, Math.min(w / aspect, tune.heightFrac * mapH));
     return { w, h };
   }
 
@@ -5304,7 +5351,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   // of their own labels and into the inset), the panel gets a strip BELOW the
   // map instead (insetStripH), between the map and the legend.
   const INSET_COLUMN_GAP = 14;
-  const INSET_WIDTH_SHARE = 0.33;
+  const INSET_WIDTH_SHARE = tune.share;
   const MIN_MAP_W_WITH_COLUMN = 560;
   const INSET_STRIP_LEGEND_GAP = 8;
   let insetColumnW = 0;
@@ -7401,6 +7448,9 @@ function renderChoropleth(spec, rows, mobile = false) {
   };
   (mobile ? addMobileFooter : addFooter)(f.parts, effectiveSpec, f.footerTop);
   f.parts.push("</svg>");
+  meta.listOnly = listOnlyIso3.length;
+  meta.markerTotal = markerTotal;
+  meta.hasInset = insetIso3Set.size > 0;
   return f.parts.join("\n") + "\n";
 }
 
