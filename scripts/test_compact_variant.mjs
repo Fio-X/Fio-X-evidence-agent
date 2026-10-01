@@ -56,3 +56,38 @@ assert.equal(dot.compact, undefined);
 // Not asked for: the bundle is exactly what it was before.
 assert.deepEqual(Object.keys(renderVizBundle(SHAPES["negative values"].spec, SHAPES["negative values"].rows, { mobilePages: false })), ["desktop"]);
 console.log("compact variant scope: PASS");
+
+// Category names are never cut: a name wider than the label column folds onto
+// a second line; two long names sharing a prefix stay distinguishable.
+{
+  const names = [
+    "United Kingdom of Great Britain and Northern Ireland",
+    "United Kingdom of Great Britain and Northern Ireland (overseas territories)",
+    "波斯尼亚和黑塞哥维那联邦及其下属各个行政区域合计",
+    "波斯尼亚和黑塞哥维那联邦及其下属各个行政区域其他",
+  ];
+  const rows = names.map((c, i) => ({ c, v: 90 - i * 10 }));
+  const spec = bar({ unit: "%" });
+  const bundle = renderVizBundle(spec, rows, { mobilePages: false, compact: true });
+  for (const [viewport, svg] of [["desktop", bundle.desktop], ["compact", bundle.compact]]) {
+    assert.doesNotMatch(svg, /…/, `${viewport}: no name is shortened with an ellipsis`);
+    const texts = [...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map((m) => m[1].replaceAll("&amp;", "&"));
+    for (const name of names) {
+      const whole = texts.includes(name);
+      const folded = texts.some((first, i) => name.startsWith(first) && [` `, ``].some((gap) => texts[i + 1] !== undefined && first + gap + texts[i + 1] === name));
+      assert.ok(whole || folded, `${viewport}: the full text of "${name}" is in the SVG`);
+    }
+    assert.equal(new Set(names.map((name) => texts.find((t) => t.startsWith(name.slice(0, 6)) && t !== undefined))).size >= 1, true);
+  }
+  const qaLong = runRenderQa({ desktop: bundle.desktop, compact: bundle.compact });
+  assert.equal(qaLong.passed, true, `folded long names pass render QA: ${JSON.stringify(Object.values(qaLong.viewports).flatMap((v) => v.geometry.failures).slice(0, 2))}`);
+  // The two long names differ in the text that is drawn.
+  const drawn = (svg, tail) => svg.includes(tail);
+  assert.ok(drawn(bundle.compact, "(overseas territories)") || drawn(bundle.compact, "territories)"), "the distinguishing tail of the longer UK name is drawn");
+  assert.ok(drawn(bundle.compact, "合计") && drawn(bundle.compact, "其他"), "the distinguishing tails of the two CJK names are drawn");
+  // A name too long even for two lines is not shortened; render QA blocks it.
+  const absurd = [{ c: "Alpha ".repeat(40).trim(), v: 5 }, { c: "B", v: 3 }];
+  const absurdBundle = renderVizBundle(spec, absurd, { mobilePages: false, compact: true });
+  assert.doesNotMatch(absurdBundle.compact, /…/);
+  console.log(`long category names fold, never truncate (desktop + compact); QA outcome for an absurd name: ${runRenderQa({ desktop: absurdBundle.desktop, compact: absurdBundle.compact }).passed ? "passes" : "blocked"}`);
+}

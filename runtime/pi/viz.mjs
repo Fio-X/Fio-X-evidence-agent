@@ -2935,11 +2935,19 @@ function renderHorizontal(spec, rows, mode) {
     const maxCatUnits = Math.max(6, Math.floor((LAYOUT_W * 0.4 - 69) / PX));
     categoryLabels = sorted.map((row) => {
       const name = String(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)));
-      return textUnits(name) > maxCatUnits ? sliceUnits(name, maxCatUnits - 1).trimEnd() + "…" : name;
+      // Never cut a name: one that does not fit the label column is folded
+      // onto a second line (a row is 38px, two 12px lines fit). If the second
+      // line is still too wide the text runs past the column and render QA
+      // blocks the chart; it is not shortened.
+      if (textUnits(name) <= maxCatUnits) return [name];
+      const head = sliceUnits(name, maxCatUnits);
+      const space = head.lastIndexOf(" ");
+      const cut = space > head.length * 0.4 ? space : head.length;
+      return [name.slice(0, cut).trimEnd(), name.slice(cut).trimStart()];
     });
     const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: fmtSpec(spec, v, i > 0 ? "" : spec.unit, labelDecimals) }; });
     const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
-    const catW = Math.ceil(Math.max(1, ...categoryLabels.map(textUnits)) * PX);
+    const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
     const negW = widest((v) => v < 0), posW = widest((v) => v >= 0);
     catX = 54 + catW;
     left = catX + 15 + (negW ? negW + 9 : 0);
@@ -2967,7 +2975,8 @@ function renderHorizontal(spec, rows, mode) {
     const value = n(row[valueField]);
     if (value === null) return;
     const y = top + step * i + step * 0.5;
-    f.parts.push(`<text x="${catX}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(categoryLabels ? categoryLabels[i] : resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
+    const catLines = categoryLabels ? categoryLabels[i] : [resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec))];
+    catLines.forEach((line, k) => f.parts.push(`<text x="${catX}" y="${catLines.length > 1 ? y - 3 + k * 14 : y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`));
     const x = scale(value);
     const highlighted = (spec.highlight_values ?? []).map(String).includes(String(row[spec.category_field]));
     const fill = highlighted ? PALETTE.accent : PALETTE.context;

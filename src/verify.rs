@@ -1408,6 +1408,11 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             let is_choropleth =
                 manifest.get("chart_type").and_then(Value::as_str) == Some("choropleth");
             if draft {
+                // A listed compact variant is never exempt from render QA.
+                report.check(
+                    !render_qa_ref.is_empty() || !variants.map(|v| v.contains_key("compact")).unwrap_or(false),
+                    format!("visualization {name} lists a compact variant without a render_qa_ref"),
+                );
                 if !render_qa_ref.is_empty() {
                     check_render_qa_ref(
                         root,
@@ -4562,6 +4567,35 @@ mod tests {
                 .any(|e| e.contains("compact variant without hashes.compact_sha256")),
             "{errors:?}"
         );
+    }
+
+    #[test]
+    fn compact_variant_without_render_qa_ref_fails() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m.as_object_mut().unwrap().remove("render_qa_ref");
+        });
+        let errors = compact_errors(&temp);
+        assert!(!errors.is_empty(), "a compact variant with no render_qa_ref must fail");
+    }
+
+    #[test]
+    fn compact_variant_with_missing_render_qa_file_fails() {
+        let temp = build_compact_fixture();
+        fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(!errors.is_empty(), "a compact variant whose QA report is gone must fail");
+    }
+
+    #[test]
+    fn compact_variant_with_qa_lacking_compact_viewport_fails() {
+        let temp = build_compact_fixture();
+        let path = temp.path().join("visualizations/qa/x.json");
+        let mut qa: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        qa["viewports"].as_object_mut().unwrap().remove("compact");
+        fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(!errors.is_empty(), "QA without a compact viewport must fail");
     }
 
     #[test]
