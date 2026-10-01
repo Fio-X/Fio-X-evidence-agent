@@ -159,36 +159,51 @@ try {
   })();
   const keep = { rows: readFileSync(rowsPath), meta: readFileSync(metaPath), origin: readFileSync(originPath) };
   const restore = () => { writeFileSync(rowsPath, keep.rows); writeFileSync(metaPath, keep.meta); writeFileSync(originPath, keep.origin); };
-  const jsFails = async (label) => {
-    assert.equal((await verifyDerivedInput(art, target.rowsRef)).ok, false, `${label}: JS chain check must fail`);
+  // Every tampering case names the exact reason it must fail for, in the JS chain
+  // check, the JS claim gate and the Rust verifier, so a case cannot start failing
+  // for an unrelated reason and still pass.
+  const jsFails = async (label, reason) => {
+    const chain = await verifyDerivedInput(art, target.rowsRef);
+    assert.equal(chain.ok, false, `${label}: JS chain check must fail`);
+    assert.ok(chain.reason.startsWith(reason), `${label}: JS chain reason was "${chain.reason}", expected "${reason}"`);
     await assert.rejects(
       claim.execute("c", { claim: "page subtotals reconcile", claim_kind: "quantitative", status: "supported", source_refs: [target.dataRef], computation_refs: [target.compRef] }),
-      /COMPUTATION_PROVENANCE_REQUIRED|INVALID_COMPUTATION_EVIDENCE|COMPUTATION_REPLAY_FAILED/, `${label}: JS claim gate must fail`);
+      /COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL/, `${label}: JS claim gate must fail`);
   };
-  const rustFails = (label) => { if (haveRust) { const r = rustVerify(); assert.notEqual(r.status, 0, `${label}: Rust verify must fail`); } };
+  const rustFails = (label, reason) => {
+    if (!haveRust) return;
+    const r = rustVerify();
+    assert.notEqual(r.status, 0, `${label}: Rust verify must fail`);
+    assert.ok(rustMessage(r).includes(`failed its provenance chain: ${reason}`), `${label}: Rust verify must report "${reason}", got:\n${rustMessage(r)}`);
+  };
   const json = (b) => JSON.parse(b.toString("utf8"));
 
   const before = claimsOnDisk().length;
   // 1. alter a row in the derived file
   writeFileSync(rowsPath, keep.rows.toString("utf8").replace('"text":"Alpha', '"text":"Alphx'));
-  await jsFails("edited derived row"); rustFails("edited derived row"); restore();
+  { const why = "derived table bytes do not match rows_sha256"; await jsFails("edited derived row", why); rustFails("edited derived row", why); restore(); }
   // 2. alter the derived file AND make its metadata agree: the download record no longer matches
   const forged = keep.rows.toString("utf8").replace("Alpha", "Alphx");
   writeFileSync(rowsPath, forged);
   writeFileSync(metaPath, JSON.stringify({ ...json(keep.meta), rows_sha256: sha(Buffer.from(forged)) }));
-  await jsFails("forged derived+meta"); rustFails("forged derived+meta"); restore();
+  { const why = "no download record binds this table to the PDF"; await jsFails("forged derived+meta", why); rustFails("forged derived+meta", why); restore(); }
   // 3. metadata claims a different source PDF hash
   writeFileSync(metaPath, JSON.stringify({ ...json(keep.meta), source_sha256: "0".repeat(64) }));
-  await jsFails("wrong source_sha256"); rustFails("wrong source_sha256"); restore();
+  { const why = "derived table is not named for its source sha256"; await jsFails("wrong source_sha256", why); rustFails("wrong source_sha256", why); restore(); }
   // 4. the source PDF bytes changed
   const dataPath = join(art, target.dataRef);
   const pdfBytes = readFileSync(dataPath);
   writeFileSync(dataPath, Buffer.concat([pdfBytes, Buffer.from("\n%tampered\n")]));
-  assert.equal((await verifyDerivedInput(art, target.rowsRef)).ok, false, "changed PDF: JS chain check must fail");
-  rustFails("changed PDF"); writeFileSync(dataPath, pdfBytes);
+  { const why = "source PDF bytes do not match source_sha256"; assert.equal((await verifyDerivedInput(art, target.rowsRef)).reason, why, "changed PDF: JS chain reason"); rustFails("changed PDF", why); writeFileSync(dataPath, pdfBytes); }
   // 5. no download record binds the table to the PDF
   writeFileSync(originPath, JSON.stringify({ ...json(keep.origin), derived_text: undefined }));
-  await jsFails("origin without derived_text"); rustFails("origin without derived_text"); restore();
+  { const why = "no download record binds this table to the PDF"; await jsFails("origin without derived_text", why); rustFails("origin without derived_text", why); restore(); }
+  // 6. the metadata file is missing
+  { rmSync(metaPath); await jsFails("missing meta", "derived chain unreadable: ENOENT"); rustFails("missing meta", "derived metadata unreadable:"); restore(); }
+  // 7. rows_file in the metadata names another table
+  { const why = "derived metadata does not describe this table"; writeFileSync(metaPath, JSON.stringify({ ...json(keep.meta), rows_file: `data/derived/${"1".repeat(64)}.pdf-rows.json` })); await jsFails("rows_file mismatch", why); rustFails("rows_file mismatch", why); restore(); }
+  // 8. the download record is missing
+  { const why = "no download record binds this table to the PDF"; rmSync(originPath); await jsFails("missing origin", why); rustFails("missing origin", why); restore(); }
   assert.equal(claimsOnDisk().length, before, "no claim recorded while the chain was broken");
 
   // Everything restored: chain verifies again (must-pass counterpart).
@@ -196,8 +211,8 @@ try {
   if (haveRust) assert.equal(rustVerify().status, 0, "restored chain passes Rust verify again");
   // A path under data/derived/ that is not a recognised table never verifies.
   writeFileSync(join(art, "data", "derived", "stray.csv"), "a\n1\n");
-  assert.equal((await verifyDerivedInput(art, "data/derived/stray.csv")).ok, false);
-  rustFails("stray derived file");
+  assert.equal((await verifyDerivedInput(art, "data/derived/stray.csv")).reason, "not a recognised derived table path");
+  rustFails("stray derived file", "not a recognised derived table path");
   console.log("test_pdf_derived_chain.mjs ok");
 } finally {
   rmSync(tmp, { recursive: true, force: true });
