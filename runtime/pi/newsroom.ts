@@ -13,7 +13,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap }
 import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
-import { applyVisionPatches, normalizeVisionCriticReport, VISION_RUBRIC_KEYS } from "./vision.mjs";
+import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph } from "./story_graph.mjs";
@@ -1484,6 +1484,97 @@ function registerVizChain(pi: ExtensionAPI) {
         },
       });
       return chainResultFor(outcome, { chain: name, textResult });
+    },
+  });
+}
+
+// The deterministic page lint over a stored or proposed plan; shared by
+// newsroom_infographic_lint and the opt-in plan-edit check.
+async function lintInfographicPlan(spec: any) {
+  const mobilePages = mobilePagesEnabled();
+  const assets = await loadInfographicAssets(spec, mobilePages);
+  const verified = await verifiedClaimIds();
+  const verifiedRecords = await verifiedClaimRecords();
+  const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
+  const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
+  // Source-only quote notes verify against the saved source's own text,
+  // hash-bound and read fresh here (never trusted from the plan), so an
+  // edited quote, a source swapped after planning, or a wrong page is
+  // caught before render rather than only at the final artifact verify.
+  const sourceQuoteErrors: string[] = [];
+  const sourceTexts = new Map<string, string>();
+  for (const module of spec.modules ?? []) {
+    const ref = module?.type === "text" ? String(module.source_quote?.source_ref ?? "") : "";
+    if (!ref || sourceTexts.has(ref)) continue;
+    try {
+      sourceTexts.set(ref, await loadSourceQuoteText(ref));
+    } catch (error: any) {
+      sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
+    }
+  }
+  const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts });
+  if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
+  return { lint, assets, mobilePages };
+}
+
+// Plan edit: exists only with NEWSROOM_SPEED_PLAN_EDIT exactly "1" and
+// newsroom_infographic_plan enabled here. The model names the layout change
+// (span, emphasis, priority, order, scene pattern/anchor/sidecars) instead of
+// re-sending the whole plan. The edited plan goes through the registered plan
+// tool, so every plan validator runs again, and the page lint must not gain a
+// blocker the source plan did not already have.
+function registerPlanEdit(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_PLAN_EDIT !== "1") return;
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_infographic_plan");
+  if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  pi.registerTool({
+    name: "newsroom_infographic_edit",
+    label: "Edit the layout of an infographic plan",
+    description: "Change only layout fields of an existing infographic plan and record the result as a new plan, without re-sending the plan. Module fields: span, emphasis, priority, move_before, mobile_move_before. Scene fields: pattern, anchor_module_id, sidecar_module_ids (existing module ids only). Copy, claims, story nodes, references, numbers, scene budgets, visual channels and module membership cannot be edited here. The edited plan runs through every newsroom_infographic_plan validation again, and the edit is refused if it adds a newsroom_infographic_lint blocker the source plan did not have.",
+    promptSnippet: "Change span/emphasis/priority/order or a scene's pattern, anchor and sidecars of a plan",
+    promptGuidelines: [
+      "Prefer this over re-sending the whole newsroom_infographic_plan when only layout needs to change.",
+      "Each op is {scope:'module'|'scene', id, field, value}. For anything else, call newsroom_infographic_plan with the full plan.",
+      "After editing, run newsroom_infographic_lint, render, critic and preview on the new plan again.",
+    ],
+    parameters: Type.Object({
+      plan_ref: Type.String(),
+      ops: Type.Array(Type.Object({
+        scope: StringEnum(["module", "scene"] as const),
+        id: Type.String(),
+        field: Type.String(),
+        value: Type.Union([Type.String(), Type.Number(), Type.Array(Type.String())]),
+      }), { minItems: 1, maxItems: PLAN_EDIT_MAX_OPS }),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const sourcePlan = await readArtifactJson(String(params.plan_ref), "infographics/plans/");
+      const revised = applyPlanEdits(sourcePlan, params.ops);
+      const proposed = { ...revised.spec, content_hash: sha256Hex(JSON.stringify(revised.spec)) };
+      const proposalErrors = validateInfographicSpec(proposed);
+      if (proposalErrors.length) throw new Error(`Plan edit produced an invalid infographic plan: ${proposalErrors.join("; ")}`);
+      const before = new Set<string>((await lintInfographicPlan(sourcePlan)).lint.blockers.map(String));
+      const after = (await lintInfographicPlan(proposed)).lint.blockers.map(String);
+      const added = after.filter((blocker: string) => !before.has(blocker));
+      if (added.length) throw new Error(`Plan edit refused: it would add ${added.length} lint blocker(s) the source plan did not have: ${added.join(" | ")}`);
+      if (signal?.aborted) throw new Error("plan edit cancelled before the revised plan was written");
+      // The registered plan tool re-runs every plan validation and writes the plan.
+      const result = await registeredTools.get("newsroom_infographic_plan").execute(`${id}:newsroom_infographic_plan`, revised.spec, signal, undefined, ctx);
+      const planRef = String(result?.details?.planRef ?? "");
+      if (!planRef) throw new Error("newsroom_infographic_plan returned no planRef for the edited plan");
+      const revisionKey = sha256Hex(JSON.stringify({ source_plan_ref: params.plan_ref, plan_ref: planRef, applied: revised.applied }));
+      const revisionRef = `infographics/revisions/${revisionKey}.json`;
+      await writeArtifactIfAbsent(revisionRef, {
+        schema_version: "0.2.0",
+        kind: "plan_edit",
+        source_plan_ref: params.plan_ref,
+        revised_plan_ref: planRef,
+        applied_edits: revised.applied,
+        remaining_lint_blockers: after,
+        safety: revised.safety,
+      });
+      return textResult(`Applied ${revised.applied.length} layout edit(s).\nRevised plan: ${planRef}${planRef === params.plan_ref ? " (identical to the source plan)" : ""}\nRevision audit: ${revisionRef}\nLint blockers still present: ${after.length ? after.join(" | ") : "none"}\nNext: call newsroom_infographic_lint on the revised plan, then render, critic and preview.`, { planRef, revisionRef, applied: revised.applied, unchanged: planRef === params.plan_ref, remainingLintBlockers: after });
     },
   });
 }
@@ -3453,30 +3544,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Run deterministic magazine-page quality checks",
     parameters: Type.Object({ plan_ref: Type.String() }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages);
-      const verified = await verifiedClaimIds();
-      const verifiedRecords = await verifiedClaimRecords();
-      const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
-      const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
-      // Source-only quote notes verify against the saved source's own text,
-      // hash-bound and read fresh here (never trusted from the plan), so an
-      // edited quote, a source swapped after planning, or a wrong page is
-      // caught before render rather than only at the final artifact verify.
-      const sourceQuoteErrors: string[] = [];
-      const sourceTexts = new Map<string, string>();
-      for (const module of spec.modules ?? []) {
-        const ref = module?.type === "text" ? String(module.source_quote?.source_ref ?? "") : "";
-        if (!ref || sourceTexts.has(ref)) continue;
-        try {
-          sourceTexts.set(ref, await loadSourceQuoteText(ref));
-        } catch (error: any) {
-          sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
-        }
-      }
-      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts });
-      if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
+      const { lint, assets, mobilePages } = await lintInfographicPlan(spec);
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
         ...(mobilePages ? { mobile_sha256: sha256Hex(asset.mobileSvg) } : {}),
@@ -4391,6 +4460,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
 
   registerInfographicChain(pi);
+  registerPlanEdit(pi);
 
   registerScopedTool(pi, {
     name: "newsroom_infographic_revise",
