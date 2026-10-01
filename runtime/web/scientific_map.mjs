@@ -14,8 +14,8 @@ function basemapTrace(entry){
   for(const f of entry.data.features||[]) for(const ring of ringCoords(f.geometry)){for(const p of ring){x.push(p[0]);y.push(p[1]);}x.push(null);y.push(null);}
   return {type:'scatter',mode:'lines',x,y,line:{width:.45,color:'#c3cbc6'},fill:'toself',fillcolor:'#f2f4f1',hoverinfo:'skip',showlegend:false,name:'Land context'};
 }
-function obsTrace(layer){
-  const pts=layer.points||[];const vals=pts.map(p=>p.value).filter(Number.isFinite);const hasValue=vals.length===pts.length&&vals.length>0;
+function obsTrace(layer,pts){
+const vals=pts.map(p=>p.value).filter(Number.isFinite);const hasValue=vals.length===pts.length&&vals.length>0;
   const marker={size:pts.map(p=>Math.max(6,Math.min(18,6+Number(p.size_value??p.value??0)*1.4))),opacity:.82,line:{width:.7,color:'#ffffff'}};
   if(hasValue){marker.color=pts.map(p=>p.value);marker.colorscale=[[0,'#d9e4df'],[.5,'#789b8e'],[1,'#274f44']];marker.showscale=Boolean(layer.encoding?.show_colorbar);marker.colorbar={title:layer.encoding?.colorbar_title||layer.unit||''};}
   else marker.color='#3f675c';
@@ -81,7 +81,7 @@ function scaleBar(spec){
 export function compileScientificMap(spec,resolution=null){
   const gate=assertMapSpec(spec);let data=[];if(spec.basemap_asset){const c=lineFeatureCoords(spec.basemap_asset.features);data.push({type:'scatter',mode:'lines',x:c.x,y:c.y,line:{width:.55,color:'#9ba8a1'},hoverinfo:'skip',showlegend:false,name:'Physical context'});}else{const base=requireBasemap(spec.basemap_id);data=[basemapTrace(base)];}
   const rendered=new Set();
-  for(const l of spec.layers||[]){if(l.type==='observations'){data.push(obsTrace(l));rendered.add(l.id);}}
+  for(const l of spec.layers||[]){if(l.type==='observations'){const pts=resolution?.layers?.[l.id]?.points;if(!Array.isArray(pts)||!pts.length)throw new Error(`MAP_LAYER_NOT_RESOLVED: ${l.id} has no points resolved from its pinned source`);data.push(obsTrace(l,pts));rendered.add(l.id);}}
   const ref=referenceTraces(spec,resolution);for(const t of ref.traces)data.push(t);
   for(const l of spec.layers||[])if(resolution?.layers?.[l.id])rendered.add(l.id);
   // Add-only guard: a layer that passed validation must produce output, so a
