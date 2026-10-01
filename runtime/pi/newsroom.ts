@@ -84,12 +84,34 @@ function lieflatHidden() {
   return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
 }
 
+// Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
+// promptGuidelines only when its switch is exactly "1" in the Pi child
+// environment (the Rust side sets it from the parent's opt-in, and resets it
+// otherwise); with the switch off the tool definition is untouched.
+const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = [
+  {
+    env: "NEWSROOM_SPEED_PARALLEL_HINTS",
+    tools: {
+      newsroom_update_plan: "newsroom_update_plan does not need a turn of its own: send it in the same assistant message as the first independent research calls.",
+      fetch_url: "When several candidate pages do not depend on each other, call fetch_url for all of them in the same assistant message instead of one per turn.",
+      download_data: "When several candidate data files do not depend on each other, call download_data for all of them in the same assistant message instead of one per turn.",
+    },
+  },
+];
+
+function withSpeedGuidelines(tool: any) {
+  const extra = SPEED_GUIDELINES.filter((entry) => process.env[entry.env] === "1" && entry.tools[String(tool?.name ?? "")]).map((entry) => entry.tools[String(tool.name)]);
+  if (!extra.length) return tool;
+  return { ...tool, promptGuidelines: [...(tool.promptGuidelines ?? []), ...extra] };
+}
+
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
   const phase=normalizedNewsroomPhase();
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
   if (lieflatHidden() && name.startsWith("newsroom_lieflat_")) return;
+  tool = withSpeedGuidelines(tool);
 
   if (process.env.NEWSROOM_PHASE_METRICS === "1") {
     const metric = {type:"newsroom_phase_scope",phase,profile,tool:name,schema_bytes:Buffer.byteLength(JSON.stringify(tool?.parameters ?? {}), "utf8")};

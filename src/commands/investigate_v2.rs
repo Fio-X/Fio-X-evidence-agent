@@ -347,6 +347,7 @@ fn visual_story_pi_config(
         continue_session: false,
         tool_profile: "visual-story".to_string(),
         hide_lieflat: false,
+        speed: Default::default(),
     }
 }
 
