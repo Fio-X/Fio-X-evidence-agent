@@ -223,6 +223,7 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
             &declared_local_data,
             split_classifier,
             hide_lieflat,
+            pi::speed_switches_from_env(),
         );
         print!("{prompt}");
         return Ok(());
@@ -277,8 +278,14 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         local_data.push(bundle.import_data(source)?);
     }
     let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
-    let prompt =
-        prompt::investigation_with_options(&topic, &local_data, split_classifier, hide_lieflat);
+    let speed = pi::speed_switches_from_env();
+    let prompt = prompt::investigation_with_options(
+        &topic,
+        &local_data,
+        split_classifier,
+        hide_lieflat,
+        speed,
+    );
     bundle.write_prompt(&prompt)?;
     let reported_provider = PiConfig::normalize_provider(args.pi.provider.as_deref());
     bundle.write_manifest(
@@ -313,6 +320,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         continue_session: false,
         tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier),
         hide_lieflat,
+        speed,
     };
     let reported_provider = config.effective_provider();
 

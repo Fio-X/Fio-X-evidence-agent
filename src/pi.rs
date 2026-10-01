@@ -32,6 +32,10 @@ pub struct PiConfig {
     /// the non-v2 `investigate` command when `NEWSROOM_HIDE_LIEFLAT` is on;
     /// every other caller (v2 included) leaves it false.
     pub hide_lieflat: bool,
+    /// Opt-in turn-saving guidance (prompt text and tool guidelines). Set only
+    /// by the non-v2 `investigate` command from the parent environment;
+    /// every other caller leaves it at the default (all off).
+    pub speed: crate::prompt::PromptSpeed,
 }
 
 /// Env var that is both the opt-in switch read by `investigate` and the
@@ -39,10 +43,24 @@ pub struct PiConfig {
 /// resets it, so a value in the parent environment never reaches a child
 /// that did not ask for it.
 pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
+/// Parent-environment switches and the matching markers the runtime reads in
+/// the Pi child. `PiConfig::command` always resets them from the config.
+pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
 
 #[cfg(test)]
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn env_switch(name: &str) -> bool {
+    matches!(std::env::var(name).ok().as_deref(), Some("1" | "true"))
+}
+
+/// The turn-saving switches the parent environment asks for.
+pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
+    crate::prompt::PromptSpeed {
+        parallel_hints: env_switch(PARALLEL_HINTS_ENV),
+    }
+}
 
 pub fn hide_lieflat_switch_enabled() -> bool {
     matches!(
@@ -679,6 +697,11 @@ impl PiConfig {
             cmd.env(HIDE_LIEFLAT_ENV, "1");
         } else {
             cmd.env_remove(HIDE_LIEFLAT_ENV);
+        }
+        if self.speed.parallel_hints {
+            cmd.env(PARALLEL_HINTS_ENV, "1");
+        } else {
+            cmd.env_remove(PARALLEL_HINTS_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1401,6 +1424,7 @@ mod tests {
             continue_session: false,
             tool_profile: "investigate".to_string(),
             hide_lieflat: false,
+            speed: Default::default(),
         };
         assert_eq!(
             cfg.display_runtime(),
@@ -1423,6 +1447,7 @@ mod tests {
             continue_session: false,
             tool_profile: profile.to_string(),
             hide_lieflat,
+            speed: Default::default(),
         }
     }
 
@@ -1481,6 +1506,31 @@ mod tests {
             visual_story_config(false, "visual-story").tools_arg(),
             crate::tool_registry::tools_for_profile("visual-story").unwrap()
         );
+    }
+
+    #[test]
+    fn speed_markers_follow_the_config_not_the_parent() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(PARALLEL_HINTS_ENV, "1");
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PARALLEL_HINTS_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        // The parent asked for it, the config did not: the child must not see it.
+        assert_eq!(marker(&config), Some(None));
+        config.speed.parallel_hints = true;
+        assert_eq!(marker(&config), Some(Some("1".to_string())));
+        assert!(speed_switches_from_env().parallel_hints);
+        std::env::set_var(PARALLEL_HINTS_ENV, "0");
+        assert!(!speed_switches_from_env().parallel_hints);
+        std::env::remove_var(PARALLEL_HINTS_ENV);
+        assert!(!speed_switches_from_env().parallel_hints);
     }
 
     #[test]
