@@ -29,12 +29,13 @@ pub struct PromptSpeed {
     /// duckdb_query calls, then their record_claim calls, one batch per turn.
     pub compute_batch: bool,
     /// `NEWSROOM_SPEED_CHAIN_VIZ=1`: expose `newsroom_viz_chain`, which runs
-    /// plan -> lint -> render -> critic in one call. No prompt text changes;
-    /// the tool carries its own guidance.
+    /// plan -> lint -> render -> critic in one call. The prompt adds a short
+    /// paragraph saying the chain is the same chart path in one call, because
+    /// the base prompt names the four steps as the only chart path.
     pub chain_viz: bool,
     /// `NEWSROOM_SPEED_CHAIN_INFOGRAPHIC=1`: expose `newsroom_infographic_chain`
-    /// (plan -> lint -> render -> critic -> preview in one call). No prompt
-    /// text changes; the tool carries its own guidance.
+    /// (plan -> lint -> render -> critic -> preview in one call). The prompt adds
+    /// a short paragraph saying the chain is the same page path in one call.
     pub chain_infographic: bool,
     /// `NEWSROOM_SPEED_PREFLIGHT=1`: the runtime lists every unmet page-stage
     /// precondition at once and fills a reference only when exactly one
@@ -49,6 +50,10 @@ pub struct PromptSpeed {
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
+
+const CHAIN_VIZ_PARAGRAPH: &str = "\n\nChart chain: when `newsroom_viz_chain` is in your tool list it is the same chart path (plan, lint, render, critic) run in one call with the same parameters as `newsroom_viz_plan`; use it for each chart and send the chain calls for independent charts together. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
+
+const CHAIN_INFOGRAPHIC_PARAGRAPH: &str = "\n\nPage chain: when `newsroom_infographic_chain` is in your tool list it runs the page plan, lint, render, critic and preview in one call with the same parameters as `newsroom_infographic_plan`; use it for the page. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
 
 const COMPUTE_BATCH_PARAGRAPH: &str = "\n\nCompute batching: send independent duckdb_query calls together in one turn. A record_claim needs the computation_ref returned by its duckdb_query, so once every result is back, send all of the record_claim calls together in the next turn. Never put two identical SQL statements in one turn, and do not run fetch_url or download_data in the same turn as duckdb_query, because new files change what a computation reads. Repair a failing SQL statement on its own; do not merge the repair with other steps.\n";
 
@@ -74,6 +79,12 @@ pub fn investigation_with_options(
     }
     if speed.compute_batch {
         prompt.push_str(COMPUTE_BATCH_PARAGRAPH);
+    }
+    if speed.chain_viz {
+        prompt.push_str(CHAIN_VIZ_PARAGRAPH);
+    }
+    if speed.chain_infographic {
+        prompt.push_str(CHAIN_INFOGRAPHIC_PARAGRAPH);
     }
     if is_visual_request(topic) {
         prompt.push_str(
@@ -399,6 +410,20 @@ mod tests {
         assert!(prompt.contains("EVIDENCE_BLOCKED"));
         assert!(prompt.contains("SVG/PNG or self-contained HTML"));
         assert!(prompt.contains("runtime grant verified"));
+    }
+
+    #[test]
+    fn chain_switches_add_only_their_own_paragraph() {
+        let off = investigation_with_options("制作一个信息图", &[], false, false, PromptSpeed::default());
+        let viz = PromptSpeed { chain_viz: true, ..PromptSpeed::default() };
+        let page = PromptSpeed { chain_infographic: true, ..PromptSpeed::default() };
+        let with_viz = investigation_with_options("制作一个信息图", &[], false, false, viz);
+        let with_page = investigation_with_options("制作一个信息图", &[], false, false, page);
+        assert_eq!(with_viz.len(), off.len() + CHAIN_VIZ_PARAGRAPH.len());
+        assert_eq!(with_page.len(), off.len() + CHAIN_INFOGRAPHIC_PARAGRAPH.len());
+        assert!(with_viz.contains("newsroom_viz_chain") && !with_viz.contains("newsroom_infographic_chain"));
+        assert!(with_page.contains("newsroom_infographic_chain") && !with_page.contains("newsroom_viz_chain"));
+        assert!(off.contains("newsroom_viz_plan") && !off.contains("_chain"));
     }
 
     #[test]
