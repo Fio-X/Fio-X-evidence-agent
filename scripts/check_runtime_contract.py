@@ -252,6 +252,7 @@ for module, const, path_var in [
     ('scientific_map.mjs','SCIENTIFIC_MAP_RUNTIME','scientific_map_path'),
     ('basemap_registry.mjs','BASEMAP_REGISTRY_RUNTIME','basemap_registry_path'),
     ('flow_layout.mjs','FLOW_LAYOUT_RUNTIME','flow_layout_path'),
+    ('map_reference_layers.mjs','MAP_REFERENCE_LAYERS_RUNTIME','map_reference_layers_path'),
     ('browser_qa.py','BROWSER_QA_RUNTIME','browser_qa_path'),
     ('computation_rows.mjs','COMPUTATION_ROWS_RUNTIME','computation_rows_path'),
     ('networkx_analyze.py','NETWORKX_ANALYZE_RUNTIME','networkx_analyze_path'),
