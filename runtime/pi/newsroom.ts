@@ -88,7 +88,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 }
 
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
-import { chainResultFor, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -1441,6 +1441,83 @@ function registerVizChain(pi: ExtensionAPI) {
         },
       });
       return chainResultFor(outcome, { chain: name, textResult });
+    },
+  });
+}
+
+// Page chain: exists only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC exactly "1" and
+// newsroom_infographic_plan enabled here. It stops before the image-aware vision
+// critic, which only the model can write after looking at the preview image.
+function registerInfographicChain(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;
+  const name = "newsroom_infographic_chain";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_infographic_plan");
+  if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  const planProperties = planTool.parameters?.properties ?? {};
+  pi.registerTool({
+    name,
+    label: "Plan, lint, render, critique and preview a magazine infographic",
+    description: "Takes the same parameters as newsroom_infographic_plan and runs newsroom_infographic_plan, _lint, _render, _critic and _preview in the same call, filling only the plan/lint/manifest/critic references they return. reader_question and visual_thesis may be omitted: they are copied verbatim from the StoryGraph named by story_graph_ref (a value you supply is never overridden and must match it). It stops at the first blocker, failed render QA, DRAFT plan, visual manifest not bound to its module's claim, or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. It returns the preview image; you must still inspect it and call newsroom_infographic_vision_critic yourself.",
+    promptSnippet: "Plan, lint, render, critique and preview a magazine infographic in one call",
+    promptGuidelines: [
+      "Prefer this over calling newsroom_infographic_plan, _lint, _render, _critic and _preview one by one.",
+      "After it completes, look at the returned image and call newsroom_infographic_vision_critic with your own verdict; the chain never writes the vision critique.",
+      "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+    ],
+    parameters: Type.Object({
+      ...planProperties,
+      reader_question: Type.Optional(planProperties.reader_question ?? Type.String()),
+      visual_thesis: Type.Optional(planProperties.visual_thesis ?? Type.String()),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const planParams: any = { ...(params ?? {}) };
+      if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
+        // Copied verbatim from the StoryGraph artifact; an unreadable graph leaves the
+        // fields absent so the plan step fails exactly as a direct call would.
+        try {
+          const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
+          if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
+          if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
+        } catch { /* fall through */ }
+      }
+      const state: any = { planParams };
+      const outcome = await runToolChain({
+        steps: infographicChainSteps({
+          visualClaimMismatch: async () => {
+            const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
+            for (const module of plan.modules ?? []) {
+              if (module?.type !== "visual") continue;
+              const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+              const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+              if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
+              const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+              if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
+                return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
+              }
+            }
+            return null;
+          },
+        }),
+        state,
+        enabled,
+        schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
+        record: async (event: any) => {
+          const at = new Date().toISOString();
+          const toolCallId = `${id}:${event.tool}`;
+          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+        },
+      });
+      return chainResultFor(outcome, {
+        chain: name,
+        textResult,
+        handoff: (final: any) => `Next: inspect the returned image, then call newsroom_infographic_vision_critic with manifest_ref=${final.manifestRef}, preview_ref=${final.previewRef}, deterministic_critic_ref=${final.criticRef} and your own passed/score/confidence/rubric/issues.`,
+      });
     },
   });
 }
@@ -4244,6 +4321,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     },
   });
 
+
+  registerInfographicChain(pi);
 
   registerScopedTool(pi, {
     name: "newsroom_infographic_revise",
