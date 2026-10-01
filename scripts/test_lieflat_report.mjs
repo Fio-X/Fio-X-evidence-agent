@@ -186,8 +186,30 @@ try {
   assert.ok(html.includes("<noscript>"));
   for (const forbidden of ["cdn.jsdelivr.net", "fonts.googleapis.com", "moxt.ai", "<script", "2026 SAMPLE"]) assert.equal(html.toLowerCase().includes(forbidden.toLowerCase()), false, forbidden);
   const manifest = JSON.parse(await readFile(result.manifest_path, "utf8"));
-  assert.equal(manifest.artifact_status, "PUBLISHABLE");
-  assert.equal(manifest.publication_qa, "PASS");
+  // A Lieflat page is never measured: no self-issued pass, score or QA
+  // constants, and no PUBLISHABLE status (issue #37).
+  assert.equal(manifest.artifact_status, "UNQUALIFIED");
+  assert.equal(manifest.publication_qa, "UNMEASURED");
+  assert.equal(manifest.qualification.status, "UNQUALIFIED");
+  assert.equal(manifest.qualification.measured, false);
+  assert.equal(manifest.qualification.deliverable, false);
+  assert.equal(manifest.desktop_qa, undefined);
+  assert.equal(manifest.mobile_qa, undefined);
+  for (const flag of ["infographic_plan_passed", "infographic_rendered", "infographic_critic_passed", "publication_html_verified", "publication_qa_passed"]) {
+    assert.equal(manifest.story_completion[flag], false, flag);
+  }
+  assert.equal(result.artifact_status, "UNQUALIFIED");
+  assert.equal(result.publication_qa, "UNMEASURED");
+  assert.equal(result.desktop_qa, undefined);
+  for (const ref of [manifest.infographic_lint_ref, manifest.infographic_critic_ref, manifest.publication_qa_ref]) {
+    const aux = JSON.parse(await readFile(join(zh.base, ref), "utf8"));
+    assert.equal(aux.status, "UNMEASURED", ref);
+    assert.equal(aux.measured, false, ref);
+    for (const forbidden of ["passed", "score", "publication_qa", "desktop_qa", "mobile_qa", "dimensions", "checks"]) assert.equal(aux[forbidden], undefined, `${ref}.${forbidden}`);
+  }
+  const planAux = JSON.parse(await readFile(join(zh.base, manifest.infographic_plan_ref), "utf8"));
+  assert.equal(planAux.passed, undefined);
+  assert.equal(planAux.measured, false);
   assert.equal(manifest.visual_assets.length, 5);
   assert.equal(manifest.editorial_discovery_ref.startsWith("editorial/"), true);
   assert.equal(manifest.infographic_lint_ref.startsWith("infographics/"), true);
@@ -195,6 +217,8 @@ try {
   const report = await readFile(result.report_path, "utf8");
   assert.ok(report.includes(result.html_path));
   assert.ok(report.includes(result.manifest_path));
+  assert.ok(report.includes("UNMEASURED"));
+  assert.equal(/: PASS|PUBLISHABLE/.test(report), false, "report.md must not claim a pass");
   assert.ok(await stat(join(zh.base, "story.json")));
   assert.ok(await stat(join(zh.base, "lieflat", "LICENSE")));
   assert.ok(await stat(join(zh.base, "lieflat", "THIRD_PARTY_NOTICES.md")));
@@ -279,8 +303,8 @@ try {
     source_bound_module_count: result.source_bound_module_count,
     self_contained: result.self_contained,
     network_requests: result.network_requests,
-    desktop_qa: result.desktop_qa,
-    mobile_qa: result.mobile_qa,
+    artifact_status: result.artifact_status,
+    publication_qa: result.publication_qa,
   }, null, 2));
 } finally {
   await Promise.all(tempRoots.map((path) => rm(path, { recursive: true, force: true })));
