@@ -5,6 +5,7 @@
 // reach with real data. Part 2 loads runtime/pi/newsroom.ts from a type-stripped
 // copy (as test_atomic_artifact_runtime.mjs does) and runs real charts.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
@@ -253,7 +254,9 @@ async function bindClaim(tools, art, sql, claimId, { boundTo } = {}) {
   return rel;
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !f.startsWith("runtime/")).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
+// Only the chain's own timestamped event log differs between a chain run and a manual run.
+const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
+const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f)).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
 
 const { mod, dir: treeDir } = await loadTree("main");
 void treeDir;
@@ -287,15 +290,23 @@ async function runManual(tools, art, sql, claimId) {
   return { plan, lint, render, critic };
 }
 
-let renderWorks = true;
-{ // chain == manual, byte for byte; N=3 charts in one round
+// Skip the real-render checks only when a dependency is explicitly absent
+// (the duckdb binary cannot be started); any other failure is a real failure.
+const dependencyMissing = () => {
+  const probe = spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" });
+  return probe.error?.code === "ENOENT" ? "duckdb binary not found" : null;
+};
+const missingDependency = dependencyMissing();
+const renderWorks = !missingDependency;
+if (missingDependency) console.log(`${missingDependency}; skipping the real-chart checks`);
+if (renderWorks) { // chain == manual, byte for byte; N=3 charts in one round
   const tools = register(mod, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_VIZ: "1" });
   const manualArt = freshRun("manual");
   const claims = SQLS.map((_, i) => `claim-n${i}`);
   for (const [i, sql] of SQLS.entries()) await bindClaim(tools, manualArt, sql, claims[i]);
   const manual = [];
-  try { for (const [i, sql] of SQLS.entries()) manual.push(await runManual(tools, manualArt, sql, claims[i])); } catch (error) { renderWorks = false; console.log(`render unavailable here (${String(error.message).slice(0, 120)}); skipping the chain==manual comparison`); }
-  if (renderWorks) {
+  for (const [i, sql] of SQLS.entries()) manual.push(await runManual(tools, manualArt, sql, claims[i]));
+  {
     const chainArt = freshRun("chain");
     for (const [i, sql] of SQLS.entries()) await bindClaim(tools, chainArt, sql, claims[i]);
     const outs = await Promise.all(SQLS.map((sql, i) => tools.get("newsroom_viz_chain").execute(`chain-${i}`, planParams(sql, claims[i]))));
@@ -379,7 +390,7 @@ if (renderWorks) {
     check("real: chain calls the fault-injection-wrapped execute", true);
   }
 }
-{ // cross-phase: a registry in which render is not enabled for the profile
+if (renderWorks) { // cross-phase: a registry in which render is not enabled for the profile
   const { mod: patched } = await loadTree("xphase", (text) => text.replace(/("name": "newsroom_viz_render"[\s\S]*?"agent_visible": )true/, "$1false"));
   const tools = register(patched, { ...BASE_ENV, NEWSROOM_SPEED_CHAIN_VIZ: "1" });
   assert.ok(tools.has("newsroom_viz_chain") && tools.has("newsroom_viz_lint") && !tools.has("newsroom_viz_render"));
@@ -395,4 +406,4 @@ if (renderWorks) {
 
 for (const [name, ok] of results) assert.ok(ok, name);
 console.log(results.map(([name]) => `  ok  ${name}`).join("\n"));
-console.log(`viz chain: ${results.length} checks -- PASS${renderWorks ? "" : " (render unavailable: chain==manual comparison skipped)"}`);
+console.log(`viz chain: ${results.length} checks -- PASS${renderWorks ? "" : " (duckdb unavailable: real checks skipped)"}`);
