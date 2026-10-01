@@ -386,7 +386,13 @@ export function geometryRings(geometry) {
  * or on the far side of the antimeridian) would otherwise stretch the framed
  * extent across the whole ocean and leave most of the map blank. A ring is
  * dropped only when it is both tiny next to the region's largest ring and far
- * from it; it is still drawn (and clipped) like any other ring.
+ * from it.
+ *
+ * COVERAGE CONTRACT: this function decides the FRAME only. The dropped rings
+ * are still part of the region's geometry (colour, joins and coverage checks
+ * use all of it), but any dropped ring that then falls outside the frame is
+ * clipped away. omittedFramingRings() names exactly those rings so the
+ * renderer can say so in the chart note; nothing is clipped without that note.
  */
 export function framingRings(rings, { tinyShare = 0.05, farDeg = 15 } = {}) {
   const boxes = (rings ?? []).map((ring) => {
@@ -399,6 +405,31 @@ export function framingRings(rings, { tinyShare = 0.05, farDeg = 15 } = {}) {
   return boxes
     .filter((b) => b === main || b.area >= main.area * tinyShare || angularDistanceDeg(b.lon, b.lat, main.lon, main.lat) <= farDeg)
     .map((b) => b.ring);
+}
+
+/** The rings framingRings() leaves out of the frame (same options). */
+export function omittedFramingRings(rings, opts) {
+  const kept = new Set(framingRings(rings, opts));
+  return (rings ?? []).filter((ring) => ring?.length && !kept.has(ring));
+}
+
+/**
+ * Omitted rings that are big enough to see (bbox >= minAreaDeg deg^2) and lie
+ * wholly outside `rect` once projected: the territories that framing would
+ * otherwise clip without a word. `project(lon, lat)` -> {x, y}.
+ */
+export function clippedFramingRings(rings, project, rect, { minAreaDeg = 1 } = {}) {
+  return omittedFramingRings(rings).filter((ring) => ringBBoxAreaDeg(ring) >= minAreaDeg && !ring.some(([lon, lat]) => {
+    const p = project(lon, lat);
+    return Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom;
+  }));
+}
+
+/** Lon/lat bbox area (deg^2) of a ring. */
+export function ringBBoxAreaDeg(ring) {
+  let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+  for (const [lon, lat] of ring ?? []) { w = Math.min(w, lon); e = Math.max(e, lon); s = Math.min(s, lat); n = Math.max(n, lat); }
+  return Number.isFinite(w) ? Math.max(0, e - w) * Math.max(0, n - s) : 0;
 }
 
 /** True when every point of `ring` is within `limitDeg` of the projection centre. */
