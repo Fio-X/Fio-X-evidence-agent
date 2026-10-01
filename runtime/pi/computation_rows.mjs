@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 const COMPUTATION_REF = /(["'])(computations\/[0-9a-f]{64}\.json)\1/gi;
@@ -155,23 +155,32 @@ async function hashFileStream(path) {
 }
 
 /** State of an already recorded computation: {binding|legacy, effective:[paths]}. */
-export async function recordedInputState(record, readComputation, depth = 0, seen = new Set()) {
+export async function recordedInputState(record, readComputation, depth = 0, seen = new Set(), opts = {}) {
   if (!record || !Array.isArray(record.read_inputs) || !INPUT_BINDINGS.includes(record.input_binding)) {
     return { binding: "legacy", effective: [] };
   }
   if (depth > MAX_CHAIN_DEPTH) return { binding: INPUT_BINDING_UNRESOLVED, effective: [] };
-  return classifyInputs(record.read_inputs.map((input) => String(input?.path ?? "")), record.input_binding === INPUT_BINDING_UNRESOLVED, readComputation, depth, seen);
+  return classifyInputs(record.read_inputs.map((input) => String(input?.path ?? "")), record.input_binding === INPUT_BINDING_UNRESOLVED, readComputation, depth, seen, opts);
 }
 
-async function classifyInputs(paths, hadUnresolved, readComputation, depth, seen) {
+async function classifyInputs(paths, hadUnresolved, readComputation, depth, seen, opts = {}) {
   const effective = new Set();
   let unresolved = hadUnresolved;
   for (const path of paths) {
+    if (path.startsWith(DERIVED_PREFIX)) {
+      // A derived table is evidence only while its chain to the downloaded
+      // PDF checks out; without an artifact root it cannot be checked, so it
+      // fails closed.
+      const chain = opts.root ? await verifyDerivedInput(opts.root, path) : { ok: false };
+      if (!chain.ok) { unresolved = true; continue; }
+      effective.add(path); effective.add(chain.source_file);
+      continue;
+    }
     if (path.startsWith("data/") || path.startsWith("sources/")) { effective.add(path); continue; }
     if (!COMPUTATION_PATH.test(path) || seen.has(path)) { unresolved = true; continue; }
     let dependency = null;
     try { dependency = await readComputation(path); } catch { dependency = null; }
-    const state = await recordedInputState(dependency, readComputation, depth + 1, new Set([...seen, path]));
+    const state = await recordedInputState(dependency, readComputation, depth + 1, new Set([...seen, path]), opts);
     if (state.binding === "legacy" || state.binding === INPUT_BINDING_UNRESOLVED) unresolved = true;
     for (const inner of state.effective) effective.add(inner);
   }
@@ -202,6 +211,50 @@ export async function deriveComputationInputs(sql, { root, serializeSql, readCom
       unresolved.push(`input file is missing or not a regular file: ${path}`);
     }
   }
-  const { binding, effective } = await classifyInputs(readInputs.map((input) => input.path), unresolved.length > 0, readComputation, 0, new Set());
+  const { binding, effective } = await classifyInputs(readInputs.map((input) => input.path), unresolved.length > 0, readComputation, 0, new Set(), { root });
   return { read_inputs: readInputs, input_binding: binding, effective_inputs: effective, reasons: unresolved };
+}
+
+// ---------------------------------------------------------------------------
+// Derived PDF row tables (data/derived/<sha>.pdf-rows.json).
+//
+// download_data extracts a downloaded PDF into a row table. The table is only
+// evidence while this chain holds, recomputed from bytes on disk:
+//   rows file --sha256--> meta.rows_sha256
+//   meta.source_sha256 == sha256 of the PDF data file named by meta.source_file
+//   a download record (data/origins) for that PDF names the same sha256 and
+//   the same rows_sha256.
+// Any other file under data/derived/ is not an accepted input.
+// ---------------------------------------------------------------------------
+export const DERIVED_PREFIX = "data/derived/";
+export const DERIVED_ROWS_PATH = /^data\/derived\/([0-9a-f]{64})\.pdf-rows\.json$/;
+
+const sha256Of = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+export async function verifyDerivedInput(root, path) {
+  const fail = (reason) => ({ ok: false, reason });
+  const match = DERIVED_ROWS_PATH.exec(String(path ?? ""));
+  if (!match) return fail("not a recognised derived table path");
+  try {
+    const rowsBytes = await readFile(join(root, path));
+    const meta = JSON.parse(await readFile(join(root, path.replace(/\.json$/, ".meta.json")), "utf8"));
+    if (meta.kind !== "pdf_row_table" || meta.rows_file !== path) return fail("derived metadata does not describe this table");
+    if (sha256Of(rowsBytes) !== meta.rows_sha256) return fail("derived table bytes do not match rows_sha256");
+    if (meta.source_sha256 !== match[1]) return fail("derived table is not named for its source sha256");
+    const source = String(meta.source_file ?? "");
+    const base = source.split("/").pop() ?? "";
+    if (!/^data\/[^/]+$/.test(source) || !base.startsWith(`${meta.source_sha256}.`)) return fail("source_file is not the content-addressed PDF");
+    if (sha256Of(await readFile(join(root, source))) !== meta.source_sha256) return fail("source PDF bytes do not match source_sha256");
+    let linked = false;
+    for (const name of await readdir(join(root, "data", "origins"))) {
+      if (!name.endsWith(".json")) continue;
+      let origin;
+      try { origin = JSON.parse(await readFile(join(root, "data", "origins", name), "utf8")); } catch { continue; }
+      if (origin?.file === source && origin?.sha256 === meta.source_sha256 && origin?.derived_text?.file === path && origin?.derived_text?.rows_sha256 === meta.rows_sha256) { linked = true; break; }
+    }
+    if (!linked) return fail("no download record binds this table to the PDF");
+    return { ok: true, source_file: source };
+  } catch (error) {
+    return fail(`derived chain unreadable: ${error?.code ?? error?.message ?? "error"}`);
+  }
 }

@@ -1122,7 +1122,7 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
     // Bind on what the SQL really reads, re-derived now and required to match
     // what was recorded at query time. Legacy records (no read_inputs) and
     // literal-only or unresolved computations can never support a claim.
-    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"));
+    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"), 0, new Set(), { root: artifactRoot() });
     if (recorded.binding === "legacy") {
       throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} has no recorded read inputs (legacy record); rerun the query`);
     }
@@ -1431,11 +1431,16 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           sha256,
           file: relativeFile,
         });
-        // A downloaded PDF is complete, so extract its full text into a
-        // derived artifact bound to the data file's sha256. The data file
-        // itself stays byte-identical; the text is evidence derived from it.
+        // A downloaded PDF is complete, so extract it in full into a row
+        // table ({page, line, x, text}) bound to the data file's sha256. The
+        // data file stays byte-identical; the table is evidence derived from it.
         const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
-        const derivedTextPath = derivedPdf ? await writeArtifactIfAbsent(`data/derived/${sha256}.pdf-text.json`, derivedPdf) : null;
+        let derivedRowsPath: string | null = null;
+        if (derivedPdf?.available) {
+          await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
+          derivedRowsPath = derivedPdf.rowsFile;
+          await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
+        }
         const origin = {
           schema_version: "0.7.0",
           origin: "download",
@@ -1445,13 +1450,13 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           content_type: response.headers.get("content-type"),
           sha256,
           file: relativeFile,
-          ...(derivedPdf ? { derived_text: { file: `data/derived/${sha256}.pdf-text.json`, text_sha256: derivedPdf.text_sha256, extraction: derivedPdf.extraction } } : {}),
+          ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
         };
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
-        const derivedLine = derivedPdf ? `\nPDF text (full, ${derivedPdf.available ? `${derivedPdf.extraction.pages} pages` : derivedPdf.extraction.unavailable_reason}): ${derivedTextPath} (JSON; read the text field, e.g. with duckdb read_json_auto)` : "";
+        const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
         return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}${derivedLine}`, {
-          derivedTextPath,
+          derivedRowsPath,
           filePath: relativeFile,
           metadataPath,
           originPath,
