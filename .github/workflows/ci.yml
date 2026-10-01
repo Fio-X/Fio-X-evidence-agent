@@ -95,6 +95,7 @@ jobs:
           node scripts/test_lieflat_catalog.mjs
           node scripts/test_lieflat_report.mjs
           node scripts/test_lieflat_reader_text.mjs
+          node scripts/test_lieflat_unqualified.mjs
           node scripts/test_visual_story_completion.mjs
           node scripts/test_visual_story_routing.mjs
           node scripts/test_evidence_bound_composite.mjs
