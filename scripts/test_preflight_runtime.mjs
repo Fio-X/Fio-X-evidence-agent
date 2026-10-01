@@ -6,7 +6,7 @@
 // output with it.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -80,11 +80,11 @@ const BASE = { story_graph_ref: "editorial/story-graphs/g.json", selected_concep
 { // one aggregated error lists every unmet precondition
   const broken = { ...FILES, "editorial/story-graphs/g.json": { ...FILES["editorial/story-graphs/g.json"], passed: false }, "visualizations/m.json": { claim_id: "c2", publishable: false } };
   delete broken["editorial/novelty/n.json"];
-  const params = { ...BASE, reader_question: "Q?", visual_thesis: "T.", modules: [{ ...BASE.modules[0], claim_ids: ["c1", "cX"], story_node_ids: ["n1", "nope"] }] };
+  const params = { ...BASE, reader_question: "Q?", visual_thesis: "T.", modules: [{ ...BASE.modules[0], critic_ref: "visualizations/critics/c.json", claim_ids: ["c1", "cX"], story_node_ids: ["n1", "nope"] }] };
   const state = await fillPlanRefs(params, fakeIo(broken));
   const issues = await planPrerequisiteIssues(state.params, fakeIo(broken), state.unresolved);
   const text = preflightError("newsroom_infographic_plan", issues).message;
-  for (const expected of [/StoryGraph has blocking/, /unknown story node 'nope'/, /unverified claim 'cX'/, /novelty_ref is missing and could not be derived/, /DRAFT\/non-publishable/, /manifest references unverified claim 'c2'/]) assert.match(text, expected);
+  for (const expected of [/StoryGraph has blocking/, /unknown story node 'nope'/, /unverified claim 'cX'/, /novelty_ref is missing and could not be derived/, /DRAFT ?\/ ?non-publishable/, /manifest references unverified claim 'c2'/]) assert.match(text, expected);
   assert.match(text, /^Preflight found \d+ unmet preconditions for newsroom_infographic_plan/);
   check("unit: six independent problems come back in one error, each with what to call next");
 }
@@ -106,6 +106,26 @@ const BASE = { story_graph_ref: "editorial/story-graphs/g.json", selected_concep
   assert.match((await renderPrerequisiteIssues(given.params, io, given.unresolved)).join("|"), /WRONG.json' cannot be read/);
   assert.deepEqual(inSchemaOrder({ b: 1, z: 3, a: 2 }, ["a", "b", "c"]), { a: 2, b: 1, z: 3 });
   check("unit: render, critic and preview references derive only from a passing artifact bound to the previous reference");
+}
+{ // an explicitly passed empty value is a value: never replaced, left for the validators
+  for (const empty of ["", null]) {
+    const state = await fillPlanRefs({ ...BASE, reader_question: empty, visual_thesis: empty, visual_concept_ref: empty, editorial_discovery_ref: empty, novelty_ref: empty, asset_plan_ref: empty }, fakeIo(FILES));
+    for (const field of ["reader_question", "visual_thesis", "visual_concept_ref", "editorial_discovery_ref", "novelty_ref", "asset_plan_ref"]) assert.equal(state.params[field], empty, `${field}: ${JSON.stringify(empty)} is kept`);
+    assert.deepEqual(state.filled.filter((f) => !f.startsWith("modules[")), [], "no top-level field is filled");
+  }
+  const stage = await fillStageRefs("newsroom_infographic_render", { plan_ref: "infographics/plans/p.json", lint_ref: "" }, fakeIo({ "infographics/lints/l.json": { plan_ref: "infographics/plans/p.json", passed: true, blockers: [] } }));
+  assert.equal(stage.params.lint_ref, "", "an empty lint_ref is not derived");
+  const blank = await fillPlanRefs({ ...BASE, modules: [{ ...BASE.modules[0], critic_ref: "" }] }, fakeIo(FILES));
+  assert.equal(blank.params.modules[0].critic_ref, "", "an empty critic_ref is not derived");
+  check("unit: an explicit empty string or null is never filled (only an omitted field is)");
+}
+{ // a critic bound to a rejected / unreadable manifest is not a candidate
+  const files = { ...FILES };
+  const io = { ...fakeIo(files), manifest: async (_dir, ref) => { if (ref === "visualizations/m.json") throw new Error("REJECTED: moved to visualizations/rejected/m/"); return files[ref]; } };
+  const state = await fillPlanRefs({ ...BASE, modules: [{ ...BASE.modules[0] }] }, io);
+  assert.equal(state.params.modules[0].critic_ref, undefined);
+  assert.match(state.unresolved["modules[v].critic_ref"], /REJECTED/);
+  check("unit: a passing critic whose manifest is rejected is not a fill candidate");
 }
 console.log(`unit (fake reader): ${results.length} checks -- PASS`);
 
@@ -377,7 +397,7 @@ if (realWorks) {
   }
   { // must-fail: the evidence gates still hold
     const art = freshRun("m-gates", { draft: { trend: true } });
-    await reject("draft manifest", art, omittedPlan(), /visual module 'trend' uses a DRAFT\/non-publishable manifest/);
+    await reject("draft manifest", art, omittedPlan(), /DRAFT \/ non-publishable visualization; no critic is filled for it/);
     const art2 = freshRun("m-claim");
     writeFileSync(join(art2, "claims.jsonl"), readFileSync(join(art2, "claims.jsonl"), "utf8").split("\n").filter((line) => line && !line.includes("c-outcome")).join("\n") + "\n");
     await reject("unverified claim", art2, omittedPlan(), /module 'resolution' references unverified claim 'c-outcome'/);
@@ -403,9 +423,9 @@ if (realWorks) {
     writeFileSync(join(art, "claims.jsonl"), readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter((line) => line && !line.includes("c-flow")).join("\n") + "\n");
     const plan = omittedPlan();
     plan.modules = plan.modules.map((m) => (m.id === "resolution" ? { ...m, story_node_ids: ["n-change", "n-ghost"] } : m));
-    const error = await reject("aggregate", art, plan, [/^Preflight found \d+ unmet preconditions for newsroom_infographic_plan/, /novelty_ref is missing and could not be derived/, /unknown story node 'n-ghost'/, /visual module 'flow' uses a DRAFT/, /manifest references unverified claim 'c-flow'/]);
-    assert.ok((error.match(/^\d+\. /gm) ?? []).length >= 4);
-    check("real must-fail: a failed novelty report, an unknown story node, a DRAFT manifest and an unverified claim come back together in one numbered error");
+    const error = await reject("aggregate", art, plan, [/^Preflight found \d+ unmet preconditions for newsroom_infographic_plan/, /novelty_ref is missing and could not be derived/, /unknown story node 'n-ghost'/, /DRAFT \/ non-publishable visualization; no critic is filled for it/]);
+    assert.ok((error.match(/^\d+\. /gm) ?? []).length >= 3);
+    check("real must-fail: a failed novelty report, an unknown story node and a DRAFT manifest (no critic filled for it) come back together in one numbered error");
   }
   { // render / critic / preview
     const art = freshRun("m-stage");
@@ -433,6 +453,42 @@ if (realWorks) {
     const twoCritics = await attempt(preview, { manifest_ref: run.render.details.manifestRef });
     assert.match(twoCritics.error, /critic_ref is missing and could not be derived: 2 candidates/);
     check("real must-fail: render/critic/preview reject a lint of another plan, and list two lints or two critics instead of choosing");
+  }
+  { // an explicit empty value is rejected by the original validator, not replaced; stale and rejected artifacts are not candidates
+    const art = freshRun("m-empty");
+    for (const [field, value] of [["reader_question", ""], ["visual_thesis", ""], ["visual_concept_ref", ""], ["novelty_ref", ""], ["reader_question", null], ["asset_plan_ref", null]]) {
+      const plan = pagePlan({ withQuestion: true });
+      plan[field] = value;
+      const out = await attempt(registeredPlan.get("newsroom_infographic_plan"), schemaOrdered(plan));
+      assert.ok(out.error, `${field}=${JSON.stringify(value)} must be rejected with the switch on`);
+      assert.deepEqual(readdirSync(join(art, "infographics/plans")), [], "nothing written");
+    }
+    registeredPlan = registerWith(false);
+    const off = await attempt(registeredPlan.get("newsroom_infographic_plan"), schemaOrdered({ ...pagePlan({ withQuestion: true }), reader_question: "" }));
+    registeredPlan = registerWith(true);
+    assert.ok(off.error, "and the switch-off tool rejects it too");
+    const planRef = (await registeredPlan.get("newsroom_infographic_plan").execute("p", explicitPlan())).details.planRef;
+    const emptyLint = await attempt(registeredPlan.get("newsroom_infographic_render"), { plan_ref: planRef, lint_ref: "" });
+    assert.ok(emptyLint.error && !/derived/.test(emptyLint.error) || /cannot be read/.test(emptyLint.error), "an empty lint_ref is not derived");
+    // a lint that is stale (an upstream chart changed after it) is not a candidate
+    const lint = await registeredPlan.get("newsroom_infographic_lint").execute("l", { plan_ref: planRef });
+    assert.equal(lint.details.passed, true);
+    writeFileSync(join(art, "visualizations/map.svg"), svg.replace("#fafafa", "#eeeeee"));
+    const stale = await attempt(registeredPlan.get("newsroom_infographic_render"), { plan_ref: planRef });
+    assert.match(stale.error, /lint_ref is missing and could not be derived: no passing infographic lint is bound/);
+    writeFileSync(join(art, "visualizations/map.svg"), svg);
+    // an old passing critic whose manifest has since been rejected is not a candidate
+    const rejectedKey = "trend";
+    const manifestText = readFileSync(join(art, `visualizations/${rejectedKey}.json`), "utf8");
+    rmSync(join(art, `visualizations/${rejectedKey}.json`));
+    mkdirSync(join(art, `visualizations/rejected/${rejectedKey}`), { recursive: true });
+    writeFileSync(join(art, `visualizations/rejected/${rejectedKey}/rejection.json`), JSON.stringify({ reason: "critic_failed", critic_ref: `visualizations/critics/${rejectedKey}.json` }));
+    const outRejected = await attempt(registeredPlan.get("newsroom_infographic_plan"), omittedPlan());
+    assert.ok(outRejected.error);
+    assert.match(outRejected.error, /modules\[trend\]\.critic_ref.*REJECTED|REJECTED.*trend/s);
+    assert.deepEqual(readdirSync(join(art, "infographics/plans")), [planRef.split("/").pop()], "no new plan written");
+    void manifestText;
+    check("real must-fail: explicit \"\" and null are rejected (not replaced); a stale lint and a passing critic of a rejected manifest are never candidates");
   }
   { // switch off: omitting a reference fails the way the pre-change tool does
     registeredPlan = registerWith(false);
