@@ -1918,7 +1918,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         derived_metric: Type.Optional(StringEnum(["percent_change", "absolute_change", "percentage_point_change", "ratio"] as const)),
       })),
       category_field: Type.Optional(Type.String()),
-      cutoff_date: Type.Optional(Type.String({ description: "Optional data cutoff date this chart states. If the infographic page declares subject_set.cutoff_date, a different value here blocks the page lint; leave it out to inherit the page's date." })),
+      cutoff_date: Type.Optional(Type.String({ description: "Optional data cutoff date this chart states. If the infographic page declares subject_set.cutoff_date, every chart on the page must state that same date: a different value or a missing one blocks the page lint." })),
       x_field: Type.Optional(Type.String()),
       y_field: Type.Optional(Type.String()),
       source_field: Type.Optional(Type.String()),
@@ -3019,7 +3019,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       subject_set: Type.Optional(Type.Object({
         computation_ref: Type.String({ description: "Computation whose rows define the page's subject set; the runtime reads the members, never list them yourself." }),
         key_field: Type.String({ description: "Field of that computation's rows that identifies a subject." }),
-        cutoff_date: Type.String({ description: "The single data cutoff date for the page; a chart that states a different cutoff_date blocks lint." }),
+        cutoff_date: Type.String({ description: "The single data cutoff date for the page; every chart on the page must state this same cutoff_date; a chart that states a different one, or none, blocks lint." }),
       }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
