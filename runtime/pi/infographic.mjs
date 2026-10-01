@@ -232,6 +232,12 @@ function svgInfo(svg) {
   return { minX: nums[0], minY: nums[1], width: nums[2], height: nums[3], inner: match[2] };
 }
 
+// Smallest font-size (px) drawn in an SVG, or null if it declares none.
+function svgMinFontSize(svg) {
+  const sizes = [...String(svg ?? "").matchAll(/font-size=["']([\d.]+)(?:px)?["']/g)].map((m) => Number(m[1])).filter((n) => n > 0);
+  return sizes.length ? Math.min(...sizes) : null;
+}
+
 function namespaceSvgInner(inner, prefix) {
   const ids = [];
   let output = inner.replace(/\bid=["']([^"']+)["']/g, (_m, id) => {
@@ -860,7 +866,20 @@ function moduleHeight(module, width, assets, mobile = false) {
     // embedVisual) or the chart shrinks below the 12px text floor.
     const compact = type === "visual" && compactFits(asset, width, mobile);
     const reserve = compact ? (module.emphasis === "hero" ? 30 : module.label ? 32 : 20) + 6 : module.label ? 36 : 12;
-    return clamp(width * aspect + reserve + provenanceCaption + outOfSetCaptionHeight(asset, module, mobile), mobile ? 390 : 330, mobile ? 980 : 900);
+    const captionH = outOfSetCaptionHeight(asset, module, mobile);
+    let maxHeight = mobile ? 980 : 900;
+    if (type === "visual" && !mobile) {
+      // Desktop: the 900 cap must not shrink the chart below its 12px text
+      // floor. embedVisual fits the chart into (box.h - topPad - 6 - caption),
+      // so give it the native height times 12 / smallest font, plus exactly
+      // that padding. Charts that already fit are unchanged (max keeps 900).
+      const source = compactFits(asset, width, mobile) ? asset.compactSvg : spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+      const nativeH = svgInfo(source).height;
+      const minFont = svgMinFontSize(source);
+      const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
+      maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
+    }
+    return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 330, maxHeight);
   }
   return 180;
 }

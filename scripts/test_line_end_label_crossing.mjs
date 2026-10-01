@@ -28,7 +28,8 @@
 // House-style-only: legacy keeps its old, single-line-only layout - and
 // therefore this exact crossing - byte-for-byte (verified below).
 import assert from "node:assert/strict";
-import { renderVizSvg, renderVizMobileSvg } from "../runtime/pi/viz.mjs";
+import { renderVizSvg, renderVizMobileSvg, renderVizCompactSvg } from "../runtime/pi/viz.mjs";
+import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 
 function crossings(svg) {
@@ -94,6 +95,15 @@ console.log("viz-world.json fixture: no end label crosses its own series' line, 
   const longSpec = { ...worldSpec, highlight_values: ["中华人民共和国（含港澳台以外地区的全部常住人口统计口径）"], category_names: undefined };
   const longLabels = extractDirectLabelTexts(renderVizSvg(longSpec, longNames));
   assert.ok(longLabels.includes("2.251 个孩子") && longLabels.includes("0.999 个孩子"), `an over-wide label splits into a name line + a value line: ${JSON.stringify(longLabels)}`);
+  // Both full series names are drawn (fragments stitched back together), and
+  // the geometry check (no text over a data mark) passes at both widths.
+  for (const [width, svg] of [["desktop", renderVizSvg(longSpec, longNames)], ["compact", renderVizCompactSvg(longSpec, longNames)]]) {
+    const drawn = extractDirectLabelTexts(svg).join("");
+    for (const name of ["中华人民共和国（含港澳台以外地区的全部常住人口统计口径）", "世界各国与地区的加权平均水平（按人口加权后的估计值）"]) assert.ok(drawn.includes(name), `${width}: the full series name "${name}" is drawn: ${drawn}`);
+    const qa = runRenderQa({ desktop: svg });
+    const crossing = qa.viewports.desktop.geometry.failures.filter((f) => f.rule === "text_crosses_data_mark");
+    assert.deepEqual(crossing, [], `${width}: no label over a data mark: ${JSON.stringify(crossing).slice(0, 300)}`);
+  }
   console.log("end labels: fit on one line when the band allows, split (never dropped) when it does not: PASS");
 }
 

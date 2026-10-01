@@ -89,5 +89,11 @@ console.log("compact variant scope: PASS");
   const absurd = [{ c: "Alpha ".repeat(40).trim(), v: 5 }, { c: "B", v: 3 }];
   const absurdBundle = renderVizBundle(spec, absurd, { mobilePages: false, compact: true });
   assert.doesNotMatch(absurdBundle.compact, /…/);
-  console.log(`long category names fold, never truncate (desktop + compact); QA outcome for an absurd name: ${runRenderQa({ desktop: absurdBundle.desktop, compact: absurdBundle.compact }).passed ? "passes" : "blocked"}`);
+  const absurdQa = runRenderQa({ desktop: absurdBundle.desktop, compact: absurdBundle.compact });
+  assert.equal(absurdQa.passed, false, "a name too long even for two lines must fail render QA");
+  for (const viewport of ["desktop", "compact"]) {
+    const rules = absurdQa.viewports[viewport].geometry.failures.map((f) => f.rule);
+    assert.ok(rules.includes("text_outside_viewbox"), `${viewport}: blocked by text_outside_viewbox, got ${JSON.stringify(rules)}`);
+  }
+  console.log("long category names fold, never truncate (desktop + compact); an absurd name is blocked by text_outside_viewbox: PASS");
 }

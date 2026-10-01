@@ -4576,7 +4576,10 @@ mod tests {
             m.as_object_mut().unwrap().remove("render_qa_ref");
         });
         let errors = compact_errors(&temp);
-        assert!(!errors.is_empty(), "a compact variant with no render_qa_ref must fail");
+        assert!(
+            errors.iter().any(|e| e.contains("missing render_qa_ref")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -4584,7 +4587,10 @@ mod tests {
         let temp = build_compact_fixture();
         fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
         let errors = compact_errors(&temp);
-        assert!(!errors.is_empty(), "a compact variant whose QA report is gone must fail");
+        assert!(
+            errors.iter().any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -4595,7 +4601,10 @@ mod tests {
         qa["viewports"].as_object_mut().unwrap().remove("compact");
         fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
         let errors = compact_errors(&temp);
-        assert!(!errors.is_empty(), "QA without a compact viewport must fail");
+        assert!(
+            errors.iter().any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
+            "{errors:?}"
+        );
     }
 
     #[test]

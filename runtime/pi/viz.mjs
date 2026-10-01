@@ -3181,13 +3181,20 @@ function renderLine(spec, rows, multi = false) {
     left = Math.ceil(54 + tickPx + 12);
     let band = 46;
     if (multi && spec.direct_labels !== false) {
+      // A label that fits the 30% share sits on one line; a wider one splits
+      // (layoutLineEndLabel) and then needs the width of its longer line, up
+      // to 45% of the chart. Beyond that the text still crosses the line and
+      // render QA blocks the chart.
+      const oneLineCap = Math.floor(LAYOUT_W * 0.3);
       const widest = Math.max(0, ...seriesNames.map((series) => {
         const g = lineSeriesGroup(series); const last = g[g.length - 1];
         const value = last ? n(last[spec.value_field]) : null;
         const name = resolveEconomyDisplayName(series, spec.category_names, vizLang(spec));
-        return textUnits(value === null ? name : `${name} ${fmtSpec(spec, value, spec.unit, labelDecimals)}`) * PX + 14;
+        const valueText = value === null ? "" : fmtSpec(spec, value, spec.unit, labelDecimals);
+        const oneLine = textUnits(value === null ? name : `${name} ${valueText}`) * PX + 14;
+        return oneLine <= oneLineCap ? oneLine : Math.max(textUnits(name), textUnits(valueText)) * PX + 14;
       }));
-      band = Math.min(Math.max(band, Math.ceil(widest)), Math.floor(LAYOUT_W * 0.3));
+      band = Math.min(Math.max(band, Math.ceil(widest)), Math.floor(LAYOUT_W * 0.45));
     }
     right = LAYOUT_W - 54 - band;
   }
@@ -7526,11 +7533,12 @@ export function hasCompactVariant(spec) {
 // The same desktop renderers, re-laid out (not scaled) for COMPACT_VIEW_W.
 export function renderVizCompactSvg(spec, rows) {
   if (!hasCompactVariant(spec)) throw new Error(`No compact variant for chart_type '${spec?.chart_type}'`);
+  const previousLayoutW = LAYOUT_W;
   LAYOUT_W = COMPACT_VIEW_W;
   try {
     return renderVizSvg(spec, rows);
   } finally {
-    LAYOUT_W = DESKTOP_VIEW_W;
+    LAYOUT_W = previousLayoutW;
   }
 }
 
