@@ -244,11 +244,54 @@ export async function localSpotlight(query, { limit = 50 } = {}) {
 // functions, so these names are rejected here and `-safe` is passed as a second layer.
 const SQLITE_FILE_FUNCTIONS = /\b(writefile|readfile|edit|load_extension|fsdir|zipfile|fts3_tokenizer)\b/i;
 
+// Drops comments and replaces string literals and quoted identifiers with a
+// placeholder, so a ';' inside them is not mistaken for a statement separator.
+// Returns null when a quote or block comment is left open: unsure means refuse.
+function stripSqliteLiterals(sql) {
+  let out = '';
+  for (let i = 0; i < sql.length;) {
+    const c = sql[i];
+    if (c === '-' && sql[i + 1] === '-') {
+      const end = sql.indexOf('\n', i);
+      if (end < 0) break;
+      i = end;
+    } else if (c === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      if (end < 0) return null;
+      out += ' ';
+      i = end + 2;
+    } else if (c === "'" || c === '"' || c === '`' || c === '[') {
+      const close = c === '[' ? ']' : c;
+      let j = i + 1;
+      for (;;) {
+        if (j >= sql.length) return null;
+        if (sql[j] === close) {
+          if (close !== ']' && sql[j + 1] === close) { j += 2; continue; }
+          break;
+        }
+        j += 1;
+      }
+      out += '?';
+      i = j + 1;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  return out;
+}
+
 export function safeReadOnlySql(sql) {
-  const normalized = String(sql || '').trim().replace(/^--.*$/gm, '').trim();
-  return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized)
-    && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized)
-    && !SQLITE_FILE_FUNCTIONS.test(normalized);
+  const text = String(sql || '');
+  const stripped = stripSqliteLiterals(text);
+  if (stripped === null) return false;
+  // One statement only: a single trailing ';' is fine, any other ';' is refused,
+  // so the PRAGMA allow-list below applies to the whole input.
+  const body = stripped.trim().replace(/;\s*$/, '').trim();
+  if (body.includes(';')) return false;
+  return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(body)
+    && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(text)
+    && !SQLITE_FILE_FUNCTIONS.test(text);
 }
 
 export async function localSqliteQuery(input, sql) {
