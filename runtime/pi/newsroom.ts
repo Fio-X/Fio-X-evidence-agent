@@ -35,6 +35,7 @@ import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
+import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -3281,9 +3282,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       let spec: any; try { spec = JSON.parse(params.spec_json); } catch { throw new Error("MapSpec JSON is invalid"); }
       const gate = validateMapSpec(spec);
-      const key = sha256Hex(JSON.stringify({ spec, gate }));
+      // Reference layers read their coordinates from recorded data only; the
+      // resolution (with the sha256 of every input file) is stored with the map.
+      let resolution: any = null;
+      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line"].includes(l?.type))) {
+        const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
+        const inside = (ref: string) => { const abs = resolve(root, ref); if (!/^(data|computations)\//.test(ref) || !abs.startsWith(resolve(root) + "/")) throw new Error(`MAP_SOURCE_PATH_REJECTED: ${ref}`); return abs; };
+        resolution = await resolveReferenceLayers(spec, { readBytes: async (ref: string) => readFile(inside(ref)), readJson: async (ref: string) => JSON.parse(await readFile(inside(ref), "utf8")) });
+      }
+      const key = sha256Hex(JSON.stringify({ spec, gate, resolution }));
       const rel = `maps/${key}.json`;
-      await writeArtifactIfAbsent(rel, { spec, status: gate.status, gate, content_hash: key });
+      await writeArtifactIfAbsent(rel, { spec, status: gate.status, gate, ...(resolution ? { resolution } : {}), content_hash: key });
       if (gate.status !== "PASS") throw new Error(`MAP_SPEC_BLOCKED: ${(gate.errors ?? []).join(" | ")}`);
       return textResult(`PASS: scientific map validation\nMap: ${rel}\nBasemap: ${gate.basemap?.id}`, { passed: true, mapRef: rel, gate });
     },
