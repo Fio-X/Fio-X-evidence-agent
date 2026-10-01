@@ -22,7 +22,7 @@ async function candidates(io, dir, accept) {
   for (const ref of refs.slice(0, MAX_SCAN)) {
     let artifact;
     try { artifact = await io.read(ref); } catch { continue; }
-    if (accept(artifact, ref)) found.push(ref);
+    if (await accept(artifact, ref)) found.push(ref);
   }
   return { found, truncated };
 }
@@ -34,6 +34,20 @@ function settle(state, field, result, none) {
   else if (result.found.length === 1) { state.params[field] = result.found[0]; state.filled.push(field); }
   else if (!result.found.length) state.unresolved[field] = none;
   else state.unresolved[field] = `${result.found.length} candidates (${result.found.slice(0, 4).join(", ")}${result.found.length > 4 ? ", ..." : ""}); supply the one you mean`;
+}
+
+// A manifest that is rejected (moved away), unreadable, or a DRAFT / non-publishable
+// visual is not a current artifact: nothing bound to it is a fill candidate. Uses
+// the same loader the tools use, so "current" means what they accept.
+async function unusableManifest(io, module) {
+  const visual = module.type === "visual";
+  try {
+    const manifest = await io.manifest(visual ? "visualizations" : "visualizations/illustrations", String(module[visual ? "manifest_ref" : "asset_ref"]), visual ? "visualizations/" : "visualizations/illustrations/");
+    if (visual && (manifest?.verification_mode === "draft" || manifest?.artifact_status === "DRAFT" || manifest?.publishable === false)) return `the manifest ${module.manifest_ref} is a DRAFT / non-publishable visualization; no critic is filled for it`;
+  } catch (error) {
+    return `the manifest cannot be used (${message(error)}); no critic is filled for it`;
+  }
+  return null;
 }
 
 // The filled key lands right after the key it is derived from, which is where
@@ -48,7 +62,9 @@ function insertAfter(object, afterKey, key, value) {
   return out;
 }
 
-const missing = (value) => value === undefined || value === null || value === "";
+// Only an omitted field is derivable. An explicit "" or null is a value the model
+// supplied: it is never replaced here and the original validators reject it.
+const missing = (value) => value === undefined;
 
 export async function fillPlanRefs(params, io) {
   const state = { params: { ...params }, filled: [], unresolved: {} };
@@ -103,6 +119,8 @@ export async function fillPlanRefs(params, io) {
         const key = module.type === "visual" ? "manifest_ref" : "asset_ref";
         const dir = module.type === "visual" ? "visualizations/critics/" : "visualizations/illustrations/critics/";
         if (!missing(module[key])) {
+          const unusable = await unusableManifest(io, module);
+          if (unusable) { state.unresolved[`modules[${module.id}].critic_ref`] = unusable; modules.push(module); continue; }
           const found = await candidates(io, dir, (c) => c?.manifest_ref === module[key] && c?.passed === true);
           if (!found.truncated && found.found.length === 1) { modules.push(insertAfter(module, key, "critic_ref", found.found[0])); changed = true; state.filled.push(`modules[${module.id}].critic_ref`); continue; }
           state.unresolved[`modules[${module.id}].critic_ref`] = found.found.length ? `${found.found.length} passing critics bind ${module[key]}; supply the one you mean` : `no passing critic is bound to ${module[key]}; call ${module.type === "visual" ? "newsroom_viz_critic" : "the illustration critic"} first`;
@@ -199,13 +217,17 @@ export async function moduleIssues(modules, io, verified, unresolved = {}) {
 }
 
 // render / critic / preview: each reference is derivable from the one before it.
+// A passing lint of this plan whose upstream asset hashes still match (the render's
+// own staleness test, supplied by the reader when it can load the assets).
+const lintAccept = async (a, p, io) => a?.plan_ref === p.plan_ref && a?.passed === true && !(a?.blockers ?? []).length && (typeof io.lintCurrent !== "function" || (await io.lintCurrent(a)));
+const manifestAccept = async (a, p, io, ref) => a?.plan_ref === p.plan_ref && a?.lint_ref === p.lint_ref && Boolean(a?.variants) && (typeof io.pageManifestUsableRef !== "function" || (await io.pageManifestUsableRef(ref)));
 const STAGE_FILL = {
-  newsroom_infographic_render: [{ field: "lint_ref", from: ["plan_ref"], dir: "infographics/lints/", accept: (a, p) => a?.plan_ref === p.plan_ref && a?.passed === true && !(a?.blockers ?? []).length, none: (p) => `no passing infographic lint is bound to ${p.plan_ref}; call newsroom_infographic_lint first` }],
+  newsroom_infographic_render: [{ field: "lint_ref", from: ["plan_ref"], dir: "infographics/lints/", accept: lintAccept, none: (p) => `no passing infographic lint is bound to ${p.plan_ref}; call newsroom_infographic_lint first` }],
   newsroom_infographic_critic: [
-    { field: "lint_ref", from: ["plan_ref"], dir: "infographics/lints/", accept: (a, p) => a?.plan_ref === p.plan_ref && a?.passed === true && !(a?.blockers ?? []).length, none: (p) => `no passing infographic lint is bound to ${p.plan_ref}; call newsroom_infographic_lint first` },
-    { field: "manifest_ref", from: ["plan_ref", "lint_ref"], dir: "infographics/", accept: (a, p) => a?.plan_ref === p.plan_ref && a?.lint_ref === p.lint_ref && Boolean(a?.variants), none: (p) => `no rendered infographic manifest is bound to ${p.plan_ref}; call newsroom_infographic_render first` },
+    { field: "lint_ref", from: ["plan_ref"], dir: "infographics/lints/", accept: lintAccept, none: (p) => `no passing infographic lint is bound to ${p.plan_ref}; call newsroom_infographic_lint first` },
+    { field: "manifest_ref", from: ["plan_ref", "lint_ref"], dir: "infographics/", accept: manifestAccept, none: (p) => `no rendered infographic manifest is bound to ${p.plan_ref}; call newsroom_infographic_render first` },
   ],
-  newsroom_infographic_preview: [{ field: "critic_ref", from: ["manifest_ref"], dir: "infographics/critics/", accept: (a, p) => a?.manifest_ref === p.manifest_ref && a?.passed === true, none: (p) => `no passing deterministic infographic critic is bound to ${p.manifest_ref}; call newsroom_infographic_critic first` }],
+  newsroom_infographic_preview: [{ field: "critic_ref", from: ["manifest_ref"], dir: "infographics/critics/", accept: async (a, p, io) => a?.manifest_ref === p.manifest_ref && a?.passed === true && (typeof io.pageManifestUsableRef !== "function" || (await io.pageManifestUsableRef(p.manifest_ref))), none: (p) => `no passing deterministic infographic critic is bound to ${p.manifest_ref}; call newsroom_infographic_critic first` }],
 };
 
 export const STAGE_FILL_TOOLS = Object.keys(STAGE_FILL);
@@ -216,7 +238,7 @@ export async function fillStageRefs(tool, params, io) {
   for (const rule of STAGE_FILL[tool] ?? []) {
     if (!missing(state.params[rule.field])) continue;
     if (rule.from.some((key) => missing(state.params[key]))) { state.unresolved[rule.field] = `needs ${rule.from.join(" and ")} first`; continue; }
-    settle(state, rule.field, await candidates(io, rule.dir, (a) => rule.accept(a, state.params)), rule.none(state.params));
+    settle(state, rule.field, await candidates(io, rule.dir, (a, ref) => rule.accept(a, state.params, io, ref)), rule.none(state.params));
   }
   return state;
 }

@@ -252,6 +252,7 @@ console.log(`unit: ${results.length} checks -- PASS`);
   const tool = on.get(EDIT_TOOL);
   assert.deepEqual(tool.parameters.required.sort(), ["ops", "plan_ref"]);
   check("registration: the switch adds only newsroom_infographic_edit; every other tool is unchanged; off or non-'1' leaves it absent");
+
   if (process.env.BASELINE_NEWSROOM_TS) {
     const { mod: baseline } = await loadTree("baseline", undefined, readFileSync(process.env.BASELINE_NEWSROOM_TS, "utf8"));
     const base = register(baseline, { ...BASE_ENV, NEWSROOM_SPEED_PREFLIGHT: undefined, [EDIT]: undefined });
@@ -347,6 +348,26 @@ if (realWorks) {
     const controller = new AbortController();
     controller.abort();
     await refused("cancelled", [{ scope: "module", id: "resolution", field: "priority", value: 2 }], /cancelled/, sourceRef, controller.signal);
+
+    // cancellation that lands after the edit began: a signal that reports "aborted" from its Nth check on
+    const abortOnCheck = (n) => { let reads = 0; return { get aborted() { reads += 1; return reads >= n; }, addEventListener() {}, removeEventListener() {} }; };
+    const planCount = () => readdirSync(join(art, "infographics/plans")).length;
+    const revisionCount = () => (existsSync(join(art, "infographics/revisions")) ? readdirSync(join(art, "infographics/revisions")).length : 0);
+    const cancelOps = [{ scope: "module", id: "resolution", field: "priority", value: 3 }];
+    const plansBefore = planCount();
+    const revisionsBefore = revisionCount();
+    // 2nd check is inside the plan tool, just before it writes the plan
+    const midPlan = await attempt(edit, { plan_ref: sourceRef, ops: cancelOps }, abortOnCheck(2));
+    assert.match(midPlan.error, /cancelled before the plan was written/);
+    assert.equal(planCount(), plansBefore, "cancelled before the plan write: no new plan");
+    assert.equal(revisionCount(), revisionsBefore, "and no revision record");
+    // 3rd check is after the plan tool returned, just before the revision record
+    const beforeRevision = await attempt(edit, { plan_ref: sourceRef, ops: cancelOps }, abortOnCheck(3));
+    assert.match(beforeRevision.error, /cancelled before the revision record was written/);
+    assert.equal(revisionCount(), revisionsBefore, "cancelled before the revision write: no revision record");
+    // a call that is never cancelled still completes on the same input
+    const done = await edit.execute("e", { plan_ref: sourceRef, ops: cancelOps }, abortOnCheck(1000));
+    assert.ok(existsSync(join(art, done.details.revisionRef)));
     // the fields model output must never reach, rejected before anything reads the plan
     for (const [scope, id, field, value] of [["module", "resolution", "body", "x"], ["module", "resolution", "claim_ids", ["c-map"]], ["module", "resolution", "story_node_ids", ["n-map"]], ["module", "map", "manifest_ref", "visualizations/sankey.json"], ["module", "map", "visual_channels", ["x"]], ["scene", "orient", "scene_budget", ["x"]], ["scene", "orient", "supporting_claim_ids", ["c-trend"]], ["module", "map", "type", "text"], ["module", "ghost", "span", "full"], ["module", "map", "claim_id", "c-unverified"]]) {
       await refused(`${scope}.${field}`, [{ scope, id, field, value }], /plan edit rejected/);
@@ -374,6 +395,38 @@ if (realWorks) {
     assert.equal(partial.details.remainingLintBlockers.length, 1);
     assert.ok(existsSync(join(art, partial.details.planRef)));
     check("real: an edit that fixes a lint blocker succeeds; an unrelated edit of a plan that already has one is not refused for it, and the blocker is reported");
+  }
+
+  { // a successful scene edit equals the direct plan call with the same content
+    const art = freshRun("scene");
+    const sourceRef = await planRun(explicitPlan());
+    const edited = await tools.get(EDIT_TOOL).execute("e", { plan_ref: sourceRef, ops: [{ scope: "scene", id: "orient", field: "anchor_module_id", value: "flow" }, { scope: "scene", id: "orient", field: "sidecar_module_ids", value: ["map"] }] });
+    assert.notEqual(edited.details.planRef, sourceRef);
+    assert.equal(JSON.parse(readFileSync(join(art, edited.details.planRef), "utf8")).scene_graph.scenes[0].anchor_module_id, "flow");
+    assert.equal(readJson(art, edited.details.revisionRef).applied_edits[0].scope, "scene");
+    const art2 = freshRun("scene-direct");
+    const direct = pagePlan({ withQuestion: true });
+    direct.scene_graph.scenes[0].anchor_module_id = "flow"; direct.scene_graph.scenes[0].sidecar_module_ids = ["map"];
+    const directRef = await planRun(keyOrder(direct));
+    assert.equal(edited.details.planRef, directRef, "same content -> same plan hash");
+    assert.equal(readFileSync(join(art, edited.details.planRef), "utf8"), readFileSync(join(art2, directRef), "utf8"), "plan artifact is byte-identical to the direct call");
+    const lint = await tools.get("newsroom_infographic_lint").execute("l", { plan_ref: edited.details.planRef });
+    assert.equal(lint.details.passed, true);
+    check("real: a scene anchor/sidecar edit writes the same plan bytes as sending that plan whole, and lint passes on it");
+  }
+  { // residual blockers survive an edit, and render refuses the edited plan
+    const art = freshRun("residual");
+    const narrow = pagePlan({ withQuestion: true });
+    narrow.modules.find((m) => m.id === "flow").span = "half";
+    const narrowRef = await planRun(keyOrder(narrow));
+    const partial = await tools.get(EDIT_TOOL).execute("e", { plan_ref: narrowRef, ops: [{ scope: "module", id: "resolution", field: "priority", value: 2 }] });
+    assert.equal(partial.details.remainingLintBlockers.length, 1);
+    const lint = await tools.get("newsroom_infographic_lint").execute("l", { plan_ref: partial.details.planRef });
+    assert.equal(lint.details.passed, false);
+    const render = await attempt(tools.get("newsroom_infographic_render"), { plan_ref: partial.details.planRef, lint_ref: lint.details.lintRef });
+    assert.ok(render.error, "render must refuse an edited plan whose lint did not pass");
+    assert.equal(existsSync(join(art, "infographics/manifests")) ? readdirSync(join(art, "infographics/manifests")).length : 0, 0, "no page manifest written");
+    check("real must-fail: an edited plan that still has a lint blocker is refused by render (lint -> render gate is not bypassed)");
   }
 
   if (process.env.BASELINE_NEWSROOM_TS) { // switch off: the whole page run equals the pre-change code, byte for byte

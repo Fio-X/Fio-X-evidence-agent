@@ -148,7 +148,7 @@ async function preflightStage(tool: string, params: any) {
   if (!preflightEnabled()) return params;
   const filled = await fillStageRefs(tool, params, preflightIo);
   const issues = tool === "newsroom_infographic_preview"
-    ? Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined || filled.params[field] === "").map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`)
+    ? Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined).map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`)
     : await renderPrerequisiteIssues(filled.params, preflightIo, filled.unresolved);
   if (issues.length) throw preflightError(tool, issues);
   return filled.params;
@@ -163,6 +163,24 @@ const preflightIo = {
   read: (ref: string, prefix?: string) => readArtifactJson(ref, prefix),
   manifest: (dir: string, ref: string, prefix: string) => readManifestOrRejected(dir, ref, prefix),
   verified: async () => new Set(await verifiedClaimIds()),
+  // A lint is current while the upstream assets still hash as the lint recorded
+  // (the same test the render applies).
+  async lintCurrent(lint: any) {
+    try {
+      const mobilePages = mobilePagesEnabled();
+      const spec = await readArtifactJson(String(lint.plan_ref), "infographics/plans/");
+      const assets = await loadInfographicAssets(spec, mobilePages);
+      for (const [ref, asset] of Object.entries(assets) as any) {
+        const expected = lint.asset_hashes?.[ref];
+        if (!expected || sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256)) return false;
+      }
+      return true;
+    } catch { return false; }
+  },
+  // A rendered page manifest is current while it has not been moved to rejected/.
+  async pageManifestUsableRef(ref: string) {
+    try { await readManifestOrRejected("infographics", String(ref), "infographics/"); return true; } catch { return false; }
+  },
 };
 
 function withSpeedGuidelines(tool: any) {
@@ -1563,6 +1581,7 @@ function registerPlanEdit(pi: ExtensionAPI) {
       const result = await registeredTools.get("newsroom_infographic_plan").execute(`${id}:newsroom_infographic_plan`, revised.spec, signal, undefined, ctx);
       const planRef = String(result?.details?.planRef ?? "");
       if (!planRef) throw new Error("newsroom_infographic_plan returned no planRef for the edited plan");
+      if (signal?.aborted) throw new Error("plan edit cancelled before the revision record was written");
       const revisionKey = sha256Hex(JSON.stringify({ source_plan_ref: params.plan_ref, plan_ref: planRef, applied: revised.applied }));
       const revisionRef = `infographics/revisions/${revisionKey}.json`;
       await writeArtifactIfAbsent(revisionRef, {
@@ -3450,7 +3469,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
-    async execute(_id, rawParams) {
+    async execute(_id, rawParams, signal?: AbortSignal) {
       let params = rawParams;
       let unresolvedRefs: Record<string, string> = {};
       if (preflightEnabled()) {
@@ -3532,6 +3551,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify(specCore));
       const spec = { ...specCore, content_hash: key };
       const rel = `infographics/plans/${key}.json`;
+      if (signal?.aborted) throw new Error("newsroom_infographic_plan cancelled before the plan was written");
       await writeArtifactIfAbsent(rel, spec);
       return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.`, { planRef: rel, modules: specCore.modules.length });
     },
