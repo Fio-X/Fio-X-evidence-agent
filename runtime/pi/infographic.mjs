@@ -1031,7 +1031,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
         const nextScened = next ? sceneByMember.has(String(next.id)) : false;
         const nextCols = next ? (statColsOverride.get(String(next.id)) ?? effectiveColumns(next, strategy)) : 0;
         if (statIsAlone(own, next, nextCols, nextScened, previousDensities, module)) {
-          if (statPairsWithText(next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
+          if (statPairsWithText(module, next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
           else statBars.add(String(module.id));
         }
       }
@@ -1333,7 +1333,13 @@ function statIsAlone(own, next, nextCols, nextScened, previousDensities, module)
 }
 
 // Pairing rule: may the next module share the stat's row at (12 - stat cols)?
-function statPairsWithText(next, nextScened, col, gap) {
+function statPairsWithText(stat, next, nextScened, col, gap) {
+  // The stacked stat cuts its label and detail at 2 lines: pair only when
+  // both fit at the narrow width (drawHeroStat's own maxChars formulas),
+  // otherwise the band, which never truncates.
+  const statW = STAT_PAIR_STAT_COLS * col + (STAT_PAIR_STAT_COLS - 1) * gap;
+  if (lines(stat.label ?? "", Math.max(28, Math.round(statW / 10))).length > 2) return false;
+  if (stat.detail && lines(stat.detail, Math.max(38, Math.round(statW / 8))).length > 2) return false;
   if (!next || nextScened || next.type !== "text" || next.source_quote || next.emphasis === "hero" || next.story_role === "turn") return false;
   const width = (12 - STAT_PAIR_STAT_COLS) * col + (11 - STAT_PAIR_STAT_COLS) * gap;
   const body = String(next.body ?? "").trim();
