@@ -1111,4 +1111,38 @@ console.log("choropleth inset: panel reserved outside the map frame on desktop a
 }
 console.log("choropleth projection choice: global, antimeridian, single-continent, small-cluster and high-latitude data draw every region -- PASS");
 
+// P3: the auto zoom inset magnifies ONE neighbourhood (regions within 25 deg of
+// each other), draws neighbouring land around them, and never merges far-apart
+// regions into one near-global extent. Synthetic data, three layouts: tiny
+// states scattered across the globe, a tight regional group, an island arc.
+{
+  const BIG = ["Brazil", "India", "Russian Federation", "Australia"];
+  const LAYOUTS = {
+    scattered: [["Djibouti", "Luxembourg", "Singapore", "Brunei Darussalam", "Malta", "Maldives"], ["SGP", "BRN"], false],
+    tight_group: [["Montenegro", "Albania", "North Macedonia", "Slovenia", "Luxembourg", "Kosovo"], ["MNE", "ALB", "MKD", "SVN", "LUX", "XKX"], true],
+    island_arc: [["Barbados", "Dominica", "St. Lucia", "Grenada", "Antigua and Barbuda"], ["BRB", "DMA", "LCA", "GRD", "ATG"], true],
+  };
+  for (const [layout, [small, group, exact]] of Object.entries(LAYOUTS)) {
+    const countries = [...small, ...BIG];
+    const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 5 + i * 8, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset: { auto: true } };
+    const bundle = renderVizBundle(spec, rows);
+    const qa = runRenderQa(
+      { desktop: bundle.desktop, mobile: bundle.mobile },
+      { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } },
+    );
+    for (const variant of ["desktop", "mobile"]) {
+      const svg = bundle[variant];
+      const inset = new Set([...svg.matchAll(/data-role="choropleth-inset-data" data-iso3="([A-Z]{3})"/g)].map((m) => m[1]));
+      assert.ok(inset.size > 0, `${layout}/${variant}: expected a zoom inset`);
+      for (const iso3 of inset) assert.ok(group.includes(iso3), `${layout}/${variant}: ${iso3} is far from the cluster and must stay out of the inset (got ${[...inset].join(",")})`);
+      if (exact) for (const iso3 of group) assert.ok(inset.has(iso3), `${layout}/${variant}: ${iso3} belongs in the inset`);
+      assert.match(svg, /data-role="choropleth-inset-context"/, `${layout}/${variant}: inset should draw neighbouring land`);
+      const missing = (qa.viewports[variant].value_labels?.failures ?? []).filter((f) => String(f.rule).startsWith("value_label_missing"));
+      assert.equal(missing.length, 0, `${layout}/${variant}: every region keeps a label somewhere: ${JSON.stringify(missing)}`);
+    }
+  }
+}
+console.log("choropleth inset cluster: one neighbourhood per inset, neighbouring land drawn, no region loses its label -- PASS");
+
 console.log("choropleth chart: PASS");
