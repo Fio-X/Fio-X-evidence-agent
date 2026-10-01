@@ -1113,8 +1113,17 @@ export function fmt(value, unit = "", decimals = null) {
 // `abs>=10` stripping of a trailing ".0"/".00". Only choropleth per-region
 // labels (on-map, overflow and inset) use this; fmt() itself is untouched so
 // every other chart type's own formatting/snapshot tests are unaffected.
-export function choroplethValueText(value, unit = "") {
+export function choroplethValueText(value, unit = "", spec = null) {
   if (!Number.isFinite(value)) return "";
+  // P2: a calendar year or an integer count is spelled as the integer it is
+  // ("2017", "3"), never "2.0k" / "3.0". No thousands separator and no zh
+  // unit conversion here on purpose: the Python/Rust label verifiers read the
+  // leading number back out of this text and compare it to data-value.
+  const kind = spec ? specValueKind(spec) : null;
+  if (kind && Number.isInteger(value)) {
+    if (kind === "year" || !unit) return String(value);
+    return `${value} ${unit}`;
+  }
   const abs = Math.abs(value);
   let text;
   if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(1)}bn`;
@@ -1162,7 +1171,64 @@ function fmtLocalizedUnit(spec, value, unit = spec?.unit) {
     const zh = fmtZhUnit(value, unit);
     if (zh) return zh;
   }
-  return fmt(value, unit);
+  return fmtSpec(spec, value, unit);
+}
+
+// P2: one place that decides how a spec's numbers are *spelled*, so every
+// chart type agrees. fmt() only ever sees a unit string; it cannot tell a
+// calendar year or a count from a quantity, so 2017 became "2.0k" and 3
+// became "3.0". The kind comes from spec.measure_kind, or from a
+// spec.measure_semantics entry (same shape as measure_semantics.mjs: field,
+// unit, measure_kind) matching spec.value_field (or the only entry).
+// Returns "year" | "count" | null. Never guesses from the unit alone except
+// that a year-ish unit on an `index` measure is a calendar year (a year unit
+// on a `duration` is an elapsed span, e.g. 72.4 years, and stays a number).
+const YEAR_UNITS = new Set(["year", "years", "yr", "yrs", "年", "年份"]);
+export function specValueKind(spec) {
+  let kind = typeof spec?.measure_kind === "string" ? spec.measure_kind : null;
+  let unit = spec?.unit;
+  if (!kind && Array.isArray(spec?.measure_semantics)) {
+    const list = spec.measure_semantics.filter((m) => m && typeof m === "object");
+    const entry = list.find((m) => m.field && m.field === spec.value_field) ?? (list.length === 1 ? list[0] : null);
+    if (entry) {
+      kind = entry.measure_kind ?? null;
+      unit = unit ?? entry.unit;
+    }
+  }
+  if (kind === "year") return "year";
+  if (kind === "count") return "count";
+  if (kind === "index" && YEAR_UNITS.has(String(unit ?? "").trim().toLowerCase())) return "year";
+  return null;
+}
+
+function zhBillionsActive(spec, unit) {
+  return vizLang(spec) === "zh" && spec?.unit === "$B" && (unit === "$B" || unit === "");
+}
+
+// Value-label formatter shared by every chart type that has a spec.
+// `unit` is what this particular label should carry ("" for a bare number
+// on a house-style row that shows the unit once elsewhere).
+export function fmtSpec(spec, value, unit = spec?.unit, decimals = null) {
+  if (!Number.isFinite(value)) return "";
+  const kind = specValueKind(spec);
+  if (kind && Number.isInteger(value)) {
+    if (kind === "year") return String(value);
+    const text = Math.abs(value) >= 10_000 ? value.toLocaleString("en-US") : String(value);
+    return unit ? `${text} ${unit}` : text;
+  }
+  if (zhBillionsActive(spec, unit)) {
+    const num = treemapZhOkuFromBillions(value);
+    return unit ? `${num}亿美元` : num;
+  }
+  return fmt(value, unit, decimals);
+}
+
+export function tickLabelSpec(spec, value, unit = "") {
+  if (!spec) return tickLabel(value, unit);
+  const kind = specValueKind(spec);
+  if (kind && Number.isInteger(value)) return fmtSpec(spec, value, unit);
+  if (zhBillionsActive(spec, unit)) return fmtSpec(spec, value, unit);
+  return tickLabel(value, unit);
 }
 
 // JSON number parsing is not bit-for-bit identical across V8, serde_json and
@@ -2686,7 +2752,7 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit) {
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null) {
   const ticks = tickValues(domain, 4);
   ticks.forEach((tick, i) => {
     const x = horizontalScale(domain, left, right)(tick);
@@ -2695,7 +2761,7 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit) {
     }
     // Fix 3: the unit shows once, on the last (right-most) tick, not on
     // every one - see axisTickUnit.
-    parts.push(`<text x="${x}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, axisTickUnit(unit, i, ticks.length)))}</text>`);
+    parts.push(`<text x="${x}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length)))}</text>`);
   });
 }
 
@@ -2737,7 +2803,7 @@ function renderGroupedDots(spec, rows) {
     f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(68, String(name).length * 12 + 30);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -2804,7 +2870,7 @@ function renderHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -2845,11 +2911,11 @@ function renderHorizontal(spec, rows, mode) {
       const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
       const labelX = inside ? x + (value < 0 ? 9 : -9) : x + (value >= 0 ? 9 : -9);
       const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout }));
   });
@@ -2871,7 +2937,7 @@ function renderDumbbell(spec, rows) {
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   // LAYERING_FIX: draw reference lines before the connectors so a
   // connector/dot covers whatever it crosses (see renderHorizontal for the
   // same treatment on bars).
@@ -2885,8 +2951,8 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmt(b, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -2927,8 +2993,8 @@ function renderSlope(spec, rows) {
   // right within a row), not `e.i` (the pre-filter row index used only as
   // repelEndLabels' identity key). Legacy is untouched: HOUSE_STYLE_ACTIVE
   // false keeps every label showing its unit, byte-for-byte.
-  const leftLabelText = (e, idx) => `${resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, vizLang(spec))} ${fmt(e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
-  const rightLabelText = (e) => fmt(e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
+  const leftLabelText = (e, idx) => `${resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, vizLang(spec))} ${fmtSpec(spec, e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
+  const rightLabelText = (e) => fmtSpec(spec, e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
   const leftPlaced = repelEndLabels(entries.map((e, idx) => ({ id: e.i, y: e.y1, text: leftLabelText(e, idx) })), top, bottom, END_LABEL_MIN_GAP);
   const rightPlaced = repelEndLabels(entries.map((e) => ({ id: e.i, y: e.y2, text: rightLabelText(e) })), top, bottom, END_LABEL_MIN_GAP);
   const leftById = new Map(leftPlaced.map((p) => [p.id, p]));
@@ -3066,7 +3132,7 @@ function renderLine(spec, rows, multi = false) {
   yTicks.forEach((tick, i) => {
     const y = yScale(tick);
     f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
   });
   const labelEvery = Math.max(1, Math.ceil(xValues.length / 8));
   const directLabels = [];
@@ -3133,7 +3199,7 @@ function renderLine(spec, rows, multi = false) {
       // exact value appended to its end label, not just its name.
       const name = resolveEconomyDisplayName(series, spec.category_names, vizLang(spec));
       const value = n(last[spec.value_field]);
-      const valueText = value === null ? null : fmt(value, spec.unit, labelDecimals);
+      const valueText = value === null ? null : fmtSpec(spec, value, spec.unit, labelDecimals);
       const text = valueText === null ? name : `${name} ${valueText}`;
       const pointX = xScale(last[spec.x_field]);
       // The label now always carries its value appended (task B), which can
@@ -3149,7 +3215,7 @@ function renderLine(spec, rows, multi = false) {
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(972, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmt(n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="direct-label" x="${Math.min(972, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
     }
   });
   if (multi && spec.direct_labels !== false) {
@@ -3216,7 +3282,7 @@ function renderSmallMultiples(spec, rows) {
       tickValues(domain, 2).forEach((tick) => {
         const x = xScale(tick);
         f.parts.push(`<line x1="${x}" y1="${plotTop - 4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-        f.parts.push(`<text x="${x}" y="${plotTop - 10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x}" y="${plotTop - 10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.unit))}</text>`);
       });
       const step = Math.max(27, (plotBottom - plotTop) / Math.max(group.length, 1));
       group.forEach((r, i) => {
@@ -3228,7 +3294,7 @@ function renderSmallMultiples(spec, rows) {
         f.parts.push(`<text x="${plotLeft - 9}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(category)}</text>`);
         f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.5"/>`);
         f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted ? 6 : 4.8}" fill="${highlighted ? PALETTE.accent : PALETTE.accent2}"/>`);
-        f.parts.push(`<text x="${x + 7}" y="${y + 4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x + 7}" y="${y + 4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, spec.unit))}</text>`);
         pointAnnotations(spec, r).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: "right", layout: f.annotationLayout }));
       });
       refLines.forEach((line, i) => {
@@ -3305,7 +3371,7 @@ function renderScatter(spec, rows) {
   const yTicks = spec.y_scale === "log" ? logTickValues(yDomainRaw) : tickValues(yDomainRaw, 4);
   yTicks.forEach((tick) => {
     const y = yScale(tick); f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.y_unit ?? spec.unit))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.y_unit ?? spec.unit))}</text>`);
   });
   xInfo.ticks.forEach((tick) => {
     const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? ""))}</text>`);
@@ -3359,15 +3425,15 @@ function renderHeatmap(spec, rows) {
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
   const legendY=bottom+13, legendW=150;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-d)"/>`);
-  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(min,spec.unit))}</text>`);
-  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(max,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
@@ -3427,7 +3493,7 @@ function renderMobileHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(1, sorted.length);
   sorted.forEach((row, i) => {
@@ -3455,11 +3521,11 @@ function renderMobileHorizontal(spec, rows, mode) {
       const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
       const labelX = inside ? x + (value < 0 ? 8 : -8) : x + (value >= 0 ? 8 : -8);
       const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 8 : -8);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout, maxChars: 30 }));
   });
@@ -3497,7 +3563,7 @@ function renderGroupedDotsMobile(spec, rows) {
     f.parts.push(`<text x="${legendX + 8}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(56, String(name).length * 11 + 24);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.1"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -3549,7 +3615,7 @@ function renderMobileDumbbell(spec, rows) {
   const values = rows.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   const step = (bottom - top) / Math.max(1, rows.length);
   rows.forEach((row, i) => {
     const a = n(row[spec.start_field]), b = n(row[spec.end_field]); if (a === null || b === null) return;
@@ -3558,8 +3624,8 @@ function renderMobileDumbbell(spec, rows) {
     f.parts.push(`<text x="165" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category) > 20 ? sliceUnits(category, 19) + "…" : category)}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="4.8" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="4.8" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmt(b, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
+    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout, maxChars: 30 }));
   });
   drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -3583,8 +3649,8 @@ function renderMobileSlope(spec, rows) {
     .map((e) => ({ ...e, y1: scaleY(e.a), y2: scaleY(e.b) }));
   // Fix 13: see the matching comment in renderSlope - unit on row 0's left
   // label only (the first label actually drawn); every other label bare.
-  const leftText = (e, idx) => `${textUnits(String(e.row[spec.category_field] ?? "")) > 18 ? sliceUnits(String(e.row[spec.category_field] ?? ""), 17) + "…" : String(e.row[spec.category_field] ?? "")} ${fmt(e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
-  const rightText = (e) => fmt(e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
+  const leftText = (e, idx) => `${textUnits(String(e.row[spec.category_field] ?? "")) > 18 ? sliceUnits(String(e.row[spec.category_field] ?? ""), 17) + "…" : String(e.row[spec.category_field] ?? "")} ${fmtSpec(spec, e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
+  const rightText = (e) => fmtSpec(spec, e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
   const leftPlaced = repelEndLabels(entries.map((e, idx) => ({ id: e.i, y: e.y1, text: leftText(e, idx) })), top, bottom, END_LABEL_MIN_GAP);
   const rightPlaced = repelEndLabels(entries.map((e) => ({ id: e.i, y: e.y2, text: rightText(e) })), top, bottom, END_LABEL_MIN_GAP);
   const leftById = new Map(leftPlaced.map((p) => [p.id, p]));
@@ -3645,7 +3711,7 @@ function renderMobileLine(spec, rows, multi=false) {
   for (const [annotation,row] of pointAnnotationAssignment) { if(!annotationsByRow.has(row)) annotationsByRow.set(row,[]); annotationsByRow.get(row).push(annotation); }
   // Fix 3: see the matching comment in renderLine - unit once, on the
   // top-most tick.
-  yTicksMobile.forEach((tick,i)=>{ const y=yScale(tick); f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`); f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,axisTickUnit(spec.unit,i,yTicksMobile.length)))}</text>`); });
+  yTicksMobile.forEach((tick,i)=>{ const y=yScale(tick); f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`); f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,axisTickUnit(spec.unit,i,yTicksMobile.length)))}</text>`); });
   const every=Math.max(1,Math.ceil(xValues.length/5)); xValues.forEach((xv,i)=>{ if(i%every!==0&&i!==xValues.length-1)return; f.parts.push(`<text x="${xScale(xv)}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`); });
   const directLabels=[];
   // Fix 2: see the matching comment in renderLine - one decimal count per
@@ -3671,7 +3737,7 @@ function renderMobileLine(spec, rows, multi=false) {
     const last=group[group.length-1];
     if(last&&multi&&spec.direct_labels!==false) {
       const name=String(series); const value=n(last[spec.value_field]);
-      const valueText=value===null?null:fmt(value,spec.unit,labelDecimals);
+      const valueText=value===null?null:fmtSpec(spec, value,spec.unit,labelDecimals);
       const text=valueText===null?name:`${name} ${valueText}`;
       const pointX=xScale(last[spec.x_field]);
       // Fix 5 (mobile): same end-label-crosses-its-own-line fix as
@@ -3682,7 +3748,7 @@ function renderMobileLine(spec, rows, multi=false) {
         : [{text,x:Math.min(632-textUnits(text)*6.8,pointX+6)}];
       directLabels.push({lines,y:yScale(value)+4,highlighted});
     }
-    if(last&&!multi&&spec.direct_labels===true) f.parts.push(`<text data-role="direct-label" x="${Math.min(602,xScale(last[spec.x_field])+7)}" y="${yScale(n(last[spec.value_field]))-8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmt(n(last[spec.value_field]),spec.unit,labelDecimals))}</text>`);
+    if(last&&!multi&&spec.direct_labels===true) f.parts.push(`<text data-role="direct-label" x="${Math.min(602,xScale(last[spec.x_field])+7)}" y="${yScale(n(last[spec.value_field]))-8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]),spec.unit,labelDecimals))}</text>`);
   });
   if(multi&&spec.direct_labels!==false) {
     const anyTwoLine=directLabels.some((d)=>d.lines.length>1);
@@ -3717,8 +3783,8 @@ function renderMobileSmallMultiples(spec, rows) {
     facets.forEach((facet,fi)=>{
       const x0=32,y0=f.bodyTop+fi*(panelH+gapY),group=sortRows(rows.filter((r)=>String(r[spec.facet_field])===String(facet)),spec,spec.value_field),labelW=138,plotLeft=x0+labelW,plotRight=x0+panelW-6,plotBase=y0+38,plotTop=plotBase+refMargin,plotBottom=y0+panelH-34,xScale=horizontalScale(domain,plotLeft,plotRight);
       f.parts.push(`<text x="${x0}" y="${y0+16}" font-family="${FONT_SANS}" font-size="14" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);
-      tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.unit))}</text>`);});
-      const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
+      tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.unit))}</text>`);});
+      const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
       refLines.forEach((line,i)=>{const x=xScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x}" y1="${plotTop}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){const anchor=x>(plotLeft+plotRight)/2?"end":"start";f.parts.push(`<text data-role="reference-line-label" x="${x+(anchor==="end"?-5:5)}" y="${referenceLineRowY(plotBase,i)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,26))}</text>`);}});
     });
     addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
@@ -3731,7 +3797,7 @@ function renderMobileSmallMultiples(spec, rows) {
 
 function renderMobileScatter(spec, rows) {
   const f=mobileFrame(spec,420),left=72,right=594,top=f.bodyTop+12,bottom=f.bodyBottom-64,xs=rows.map((r)=>n(r[spec.x_field])).filter((v)=>v!==null),ys=rows.map((r)=>n(r[spec.y_field])).filter((v)=>v!==null),xInfo=makeScale(xs,left,right,spec.x_scale??"linear"),yRaw=spec.y_scale==="log"?ys.map(Math.log10):ys,yDomainRaw=extent(yRaw,false),yLinear=verticalScale(yDomainRaw,top,bottom),yScale=(value)=>yLinear(spec.y_scale==="log"?Math.log10(value):value),yTicks=spec.y_scale==="log"?logTickValues(yDomainRaw):tickValues(yDomainRaw,4);
-  yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.y_unit??spec.unit))}</text>`);});
+  yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.y_unit??spec.unit))}</text>`);});
   xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??""))}</text>`);});
   if(spec.x_label)f.parts.push(`<text x="${(left+right)/2}" y="${bottom+47}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",placedLabel=f.annotationLayout.place(px,py,label,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10)f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${px+placedLabel.dx*.7}" y2="${placedLabel.ty+3}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
@@ -3746,8 +3812,8 @@ function renderMobileHeatmap(spec, rows) {
   const legendY=bottom+13,legendW=140;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-m" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-m)"/>`);
-  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(min,spec.unit))}</text>`);
-  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(max,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
@@ -4987,7 +5053,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(n(item.row[spec.value_field]))
   );
   const values = joined.map((item) => n(item.row[spec.value_field]));
-  const breaks = niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5);
+  const breaks = niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) });
   const colorForValue = (value) => CHOROPLETH_RAMP[classifyValue(value, breaks)];
 
   const width = mobile ? 640 : 1040;
@@ -5067,7 +5133,7 @@ function renderChoropleth(spec, rows, mobile = false) {
         const bbox = projectedFeatureBBox(item.featureIndices, project);
         const value = n(item.row[spec.value_field]) ?? 0;
         const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-        const valueText = choroplethValueText(value, spec.unit);
+        const valueText = choroplethValueText(value, spec.unit, spec);
         const neededW = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
         const neededH = lineH * 2 + 6;
         const tooSmall = !bbox || bbox.maxX - bbox.minX < neededW || bbox.maxY - bbox.minY < neededH;
@@ -5182,7 +5248,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const p = project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-    const valueText = choroplethValueText(value, spec.unit);
+    const valueText = choroplethValueText(value, spec.unit, spec);
     const w = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
     return { item, x: p.x, y: p.y, fill: colorForValue(value), name, valueText, w, h: lineH * 2 + 6 };
   });
@@ -6007,7 +6073,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   // only when at least one region was actually selected into it.
   const insetLabelItems = insetItems.map((item) => {
     const value = n(item.row[spec.value_field]) ?? 0;
-    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit), fill: colorForValue(value) };
+    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec), fill: colorForValue(value) };
   });
   const insetTitleH = 18;
 
@@ -6755,7 +6821,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const isLast = i === breaks.length - 1;
     const x = plotLeft + i * legendStep;
     f.parts.push(
-      `<text x="${(isLast ? x - 2 : x).toFixed(1)}" y="${legendY + 26}" text-anchor="${isLast ? "end" : "middle"}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(isLast ? fmt(edgeValue, spec.unit) : fmt(edgeValue, ""))}</text>`
+      `<text x="${(isLast ? x - 2 : x).toFixed(1)}" y="${legendY + 26}" text-anchor="${isLast ? "end" : "middle"}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(isLast ? fmtSpec(spec, edgeValue, spec.unit) : fmtSpec(spec, edgeValue, ""))}</text>`
     );
   });
   f.parts.push("</g>");

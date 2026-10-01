@@ -126,6 +126,25 @@
       "maximum": 3,
       "description": "Explicit shared decimal count for this chart's value labels (end labels, dot/bar direct labels). Overrides the renderer's auto-picked default. Axis ticks are unaffected - they always use their own separate nice-number formatting."
     },
+    "measure_kind": {
+      "enum": [
+        "year",
+        "count",
+        "index",
+        "level",
+        "flow",
+        "stock",
+        "rate",
+        "share",
+        "capacity",
+        "change",
+        "cumulative",
+        "duration",
+        "distance",
+        "price"
+      ],
+      "description": "What value_field measures: 'year' (calendar year) and 'count' print as plain integers; legends use whole-number steps. A year-like unit on 'index' is also a calendar year."
+    },
     "category_field": {
       "type": "string",
       "minLength": 1
