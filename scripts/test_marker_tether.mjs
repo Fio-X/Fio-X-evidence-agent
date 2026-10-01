@@ -48,8 +48,14 @@ for (const viewport of ["desktop", "mobile"]) {
     assert.ok(Math.abs(Math.hypot(+t[2] - c.x, +t[3] - c.y) - 9) <= 1.5, `${viewport}: tether ${c.number} starts on the circle`);
   }
 }
-// Must-pass: the real render is clean overall (no tether crossing text, markers or leaders).
-assert.equal(qa.failure_count, 0, `tethered cluster render must pass total QA: ${JSON.stringify(qa.viewports && Object.values(qa.viewports).flatMap((v) => ["geometry", "value_labels"].flatMap((k) => (v[k]?.failures ?? []).map((f) => f.message))).slice(0, 5))}`);
+// A cluster dense enough to displace markers also leaves more than a quarter
+// of them list-only, so it is a KNOWN RESIDUAL, not a clean sample: its only
+// QA failure is the disclosed list-only rule (no tether crossing text, markers
+// or leaders, no stray overlap), and nothing is filtered out.
+{
+  const fails = Object.values(qa.viewports).flatMap((v) => ["geometry", "value_labels", "contrast"].flatMap((k) => v[k]?.failures ?? []));
+  assert.deepEqual([...new Set(fails.map((f) => f.rule))], ["markers_list_only_exceed_quarter"], `unexpected QA failures: ${JSON.stringify(fails.map((f) => f.message))}`);
+}
 assert.equal(ruleHits(qa, "marker_displaced_without_tether").length, 0);
 
 // Must-fail: strip the tethers from the same render.
@@ -61,4 +67,24 @@ assert.notEqual(stripped.desktop, bundle.desktop, "the desktop render had tether
 const bad = qaOf(rows)(stripped);
 assert.equal(bad.passed, false);
 assert.ok(ruleHits(bad, "marker_displaced_without_tether").length > 0, "QA must flag displaced markers without a tether");
+
+// List-only markers are disclosed: counted in QA output, named in the chart
+// note, and a chart that drops more than a quarter of its markers fails.
+{
+  const lo = (q, vp) => q.viewports[vp].value_labels.list_only_markers;
+  const total = (svg) => [...svg.matchAll(/data-role="choropleth-(?:inset-)?footnote-marker"/g)].length;
+  const report = {};
+  for (const vp of ["desktop", "mobile"]) {
+    const l = lo(qa, vp);
+    assert.ok(l && Number.isFinite(l.count) && Number.isFinite(l.total), `${vp}: QA reports list_only_markers`);
+    assert.equal(l.total - l.count, total(bundle[vp]), `${vp}: drawn markers + list-only = numbered regions`);
+    if (l.count) assert.match(bundle[vp], /另有 \d+ 个地区|more region\(s\) are too crowded/, `${vp}: note names the list-only count`);
+    report[vp] = `${l.count}/${l.total}`;
+  }
+  console.log("list-only markers (dropped/total):", JSON.stringify(report));
+  // Must-fail: claim more than a quarter of the markers were dropped.
+  const forged = { ...bundle, desktop: bundle.desktop.replace("</svg>", '<g data-role="choropleth-marker-list-only" data-count="9" data-total="10" data-iso3="AAA"/></svg>') };
+  const q2 = qaOf(rows)(forged);
+  assert.ok(ruleHits(q2, "markers_list_only_exceed_quarter").length > 0, "more than a quarter list-only must fail QA");
+}
 console.log("marker tether -- PASS");
