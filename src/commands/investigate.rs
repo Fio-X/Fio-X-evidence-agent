@@ -492,7 +492,7 @@ mod completion_tests {
         let _guard = crate::pi::ENV_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        let complex = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
+        let complex = SCMP_LONG_IMAGE_GOAL;
         for value in [None, Some("0"), Some("")] {
             match value {
                 Some(v) => std::env::set_var(pi::HIDE_LIEFLAT_ENV, v),

@@ -77,13 +77,19 @@ function normalizedNewsroomPhase() {
   return phases.length && phases.every((phase) => VALID_TOOL_PHASES.includes(phase)) ? phases.join(",") : "core";
 }
 
+// Opt-in lean surface, set by the CLI only for non-v2 visual-story runs. It
+// also removes the other places that would point the model at a tool it
+// cannot call: the visual-skill enum and the reference-pattern corpus.
+function lieflatHidden() {
+  return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
+}
+
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
   const phase=normalizedNewsroomPhase();
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
-  // Opt-in lean surface, set by the CLI only for non-v2 visual-story runs.
-  if (process.env.NEWSROOM_HIDE_LIEFLAT === "1" && profile === "visual-story" && name.startsWith("newsroom_lieflat_")) return;
+  if (lieflatHidden() && name.startsWith("newsroom_lieflat_")) return;
 
   if (process.env.NEWSROOM_PHASE_METRICS === "1") {
     const metric = {type:"newsroom_phase_scope",phase,profile,tool:name,schema_bytes:Buffer.byteLength(JSON.stringify(tool?.parameters ?? {}), "utf8")};
@@ -1673,7 +1679,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     description: "Load the reproducible project-local Skill guidance for a professional visualization backend; loading guidance itself does not require a verified claim. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime. Omit claim_id for a draft, or bind a system-verified claim for publishable output.",
     promptSnippet: "Load the backend-specific visual production method before generating an execution request",
     parameters: Type.Object({
-      skill: StringEnum(["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const),
+      skill: StringEnum((["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const).filter((skill) => !(lieflatHidden() && skill === "lieflat-charts")) as any),
     }),
     async execute(_id, params) {
       const skill = visualSkill(params.skill);
@@ -2843,7 +2849,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Compare the concept with abstract world-class visual patterns",
     parameters: Type.Object({ tags: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })) }),
     async execute(_id, params) {
-      const result = retrieveReferencePatterns({ corpus: DEFAULT_REFERENCE_PATTERNS, tags: params.tags, limit: params.limit ?? 4 });
+      const result = retrieveReferencePatterns({ corpus: lieflatHidden() ? DEFAULT_REFERENCE_PATTERNS.filter((item: any) => item.id !== "lieflat-charts") : DEFAULT_REFERENCE_PATTERNS, tags: params.tags, limit: params.limit ?? 4 });
       const rel = `editorial/references/${result.content_hash}.json`;
       await writeArtifactIfAbsent(rel, result);
       return textResult(`Reference patterns retrieved.\nArtifact: ${rel}\nMatches: ${result.matches.map((item: any) => item.id).join(", ") || "none"}`, { referenceRef: rel, matches: result.matches });
