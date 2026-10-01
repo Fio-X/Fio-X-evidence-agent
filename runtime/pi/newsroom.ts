@@ -1541,11 +1541,10 @@ function registerVizChain(pi: ExtensionAPI) {
     ],
     parameters: Type.Object({
       ...(planTool.parameters?.properties ?? {}),
-      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It is compared with the verified result and rejected on mismatch." })),
+      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It must be the computation the chart produces or one its SQL reads; any other value is rejected, never overridden." })),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
-      const claimId = String(planParams.claim_id ?? "");
       const outcome = await runToolChain({
         steps: vizChainSteps({
           modelComputationRef,
@@ -1554,9 +1553,10 @@ function registerVizChain(pi: ExtensionAPI) {
             const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
             return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
           },
-          claimComputationRefs: async () => {
-            const claim = (await verifiedClaimRecords()).get(claimId);
-            return Array.isArray(claim?.computation_refs) ? claim.computation_refs.map(String) : [];
+          chartReadComputationRefs: async (planRef: string) => {
+            const spec = await readArtifactJson(planRef, "visualizations/plans/");
+            const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
+            return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
           },
         }),
         state: { planParams },

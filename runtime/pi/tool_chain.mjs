@@ -141,8 +141,8 @@ const isTrue = (value) => value === true;
 
 // Plan -> lint -> render -> critic. Success is read only from typed details
 // fields; a missing field is a stop, never a pass.
-export function vizChainSteps({ modelComputationRef, claimComputationRefs, claimBinding }) {
-  // claimComputationRefs() (async) reads the verified claim record named by the plan.
+export function vizChainSteps({ modelComputationRef, chartReadComputationRefs, claimBinding }) {
+  // chartReadComputationRefs(planRef) (async) lists the computations/ artifacts the plan's SQL actually reads (the lint's read_inputs).
   const needRef = (state, key, from) => {
     if (typeof state[key] !== "string" || !state[key]) throw new ChainStop("MISSING_FIELD", `${from} did not return ${key}; the chain cannot continue`);
     return state[key];
@@ -171,10 +171,11 @@ export function vizChainSteps({ modelComputationRef, claimComputationRefs, claim
           // before anything is rendered: the model's own value and the claim
           // binding are checked against the verified result.
           after: async () => {
-            // The model's own value must be one of the claim's computations or the
-            // one the chart actually read; it is never overridden.
-            if (modelComputationRef !== undefined && modelComputationRef !== state.computationRef && !(await claimComputationRefs()).includes(modelComputationRef)) {
-              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} is neither one of the claim's computation_refs nor the computation the chart read (${state.computationRef}); it is not overridden`, nextTool: "newsroom_viz_plan" };
+            // The model's own value is an expectation of what the plan SQL produces: it must
+            // be the chart's own computation or one the chart's SQL actually read. Any other
+            // value (even one of the claim's computations) is wrong and is rejected, never overridden.
+            if (modelComputationRef !== undefined && modelComputationRef !== state.computationRef && !(await chartReadComputationRefs(state.planRef)).includes(modelComputationRef)) {
+              return { code: "CLAIM_COMPUTATION_MISMATCH", message: `computation_ref ${modelComputationRef} is neither the computation the chart produced (${state.computationRef}) nor one its SQL read; it is not overridden`, nextTool: "newsroom_viz_plan" };
             }
             // The same judgement the lint just applied (claim_binding gate C): no extra,
             // no looser rule. Blocked claims already failed the lint step; this repeats

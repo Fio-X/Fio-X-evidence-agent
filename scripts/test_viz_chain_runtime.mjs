@@ -32,12 +32,12 @@ const GOOD = {
   newsroom_viz_render: () => ({ content: [{ type: "text", text: "rendered" }, { type: "image", data: "AAAA", mimeType: "image/png" }], details: { renderQaPassed: true, manifestRef: "visualizations/m.json" } }),
   newsroom_viz_critic: () => textResult("PASS critic", { passed: true, score: 91, criticRef: "visualizations/critics/c.json" }),
 };
-async function fake({ over = {}, enabled = () => true, model, claimRefs = ["computations/c.json"], binding = { ok: true, message: "" }, schemas = SCHEMAS, planParams = { claim_id: "claim-x" }, signal } = {}) {
+async function fake({ over = {}, enabled = () => true, model, readRefs = [], binding = { ok: true, message: "" }, schemas = SCHEMAS, planParams = { claim_id: "claim-x" }, signal } = {}) {
   const calls = [];
   const events = [];
   const impl = { ...GOOD, ...over };
   const outcome = await runToolChain({
-    steps: vizChainSteps({ modelComputationRef: model, claimComputationRefs: async () => claimRefs, claimBinding: async () => binding }),
+    steps: vizChainSteps({ modelComputationRef: model, chartReadComputationRefs: async () => readRefs, claimBinding: async () => binding }),
     state: { planParams },
     enabled,
     schemaOf: (name) => schemas[name],
@@ -86,7 +86,7 @@ const names = (calls) => calls.map(([name]) => name);
     assert.ok(res.details.planRef && !res.details.publishable, "no completion claim after cancellation");
   }
   const late = new AbortController();
-  const afterHook = await fake({ signal: late.signal, over: { newsroom_viz_lint: (params) => { const r = GOOD.newsroom_viz_lint(params); return r; } }, claimRefs: ["computations/c.json"] });
+  const afterHook = await fake({ signal: late.signal, over: { newsroom_viz_lint: (params) => { const r = GOOD.newsroom_viz_lint(params); return r; } } });
   assert.equal(afterHook.outcome.status, "COMPLETE", "an unaborted signal changes nothing");
   check("AbortSignal: checked before and after each step, no later step starts, finished steps kept", true);
 }
@@ -95,7 +95,7 @@ const names = (calls) => calls.map(([name]) => name);
     const controller = new AbortController();
     const calls = [];
     const outcome = await runToolChain({
-      steps: vizChainSteps({ modelComputationRef: undefined, claimComputationRefs: async () => ["computations/c.json"], claimBinding: async () => ({ ok: true, message: "" }) }),
+      steps: vizChainSteps({ modelComputationRef: undefined, chartReadComputationRefs: async () => [], claimBinding: async () => ({ ok: true, message: "" }) }),
       state: { planParams: { claim_id: "claim-x" } },
       enabled: () => true,
       schemaOf: (name) => SCHEMAS[name],
@@ -175,17 +175,21 @@ for (const [label, tool, details, code, expectCalls] of [
   const unboundClaim = await fake({ binding: { ok: false, message: "no_shared_input" } });
   assert.equal(unboundClaim.outcome.code, "CLAIM_COMPUTATION_MISMATCH");
   assert.deepEqual(names(unboundClaim.calls), ["newsroom_viz_plan", "newsroom_viz_lint"], "claim not bound to the lint computation: stop before render");
-  // A model value that is one of the claim's own computations is accepted as-is (the claim may be
-  // read by the chart); it is never used to override what the lint verified.
-  const claimOwn = await fake({ model: "computations/c2.json", claimRefs: ["computations/c.json", "computations/c2.json"] });
-  assert.equal(claimOwn.outcome.status, "COMPLETE");
+  // The model value is an expectation of what the chart produces: another computation of the same
+  // claim that the chart neither produced nor read is a wrong value and is rejected.
+  const claimOtherOnly = await fake({ model: "computations/c2.json", readRefs: ["computations/c.json"] });
+  assert.equal(claimOtherOnly.outcome.code, "CLAIM_COMPUTATION_MISMATCH");
+  assert.deepEqual(names(claimOtherOnly.calls), ["newsroom_viz_plan", "newsroom_viz_lint"]);
+  // A computation the chart's SQL actually read (aggregating a claim computation) is accepted.
+  const chartRead = await fake({ model: "computations/c2.json", readRefs: ["computations/c2.json"] });
+  assert.equal(chartRead.outcome.status, "COMPLETE");
   const agrees = await fake({ model: "computations/c.json" });
   assert.equal(agrees.outcome.status, "COMPLETE");
   check("claim/computation mismatch stops (before and after filling); agreeing value passes", true);
 }
 { // first-step errors are thrown as the direct call would; later errors keep earlier results
   await assert.rejects(() => runToolChain({
-    steps: vizChainSteps({ claimComputationRefs: async () => [], claimBinding: async () => ({ ok: true, message: "" }) }), state: { planParams: { claim_id: "c" } }, enabled: () => true,
+    steps: vizChainSteps({ chartReadComputationRefs: async () => [], claimBinding: async () => ({ ok: true, message: "" }) }), state: { planParams: { claim_id: "c" } }, enabled: () => true,
     schemaOf: () => undefined, call: async () => { throw new Error("VERIFIED_CLAIM_REQUIRED: nope"); },
   }), /VERIFIED_CLAIM_REQUIRED/);
   const { outcome } = await fake({ over: { newsroom_viz_render: () => { throw new Error("boom"); } } });
@@ -401,10 +405,21 @@ if (renderWorks) {
     await bindClaim(tools, art, SQLS[0], "claim-m");
     const out = await tools.get("newsroom_viz_chain").execute("m", planParams(SQLS[1], "claim-m"));
     assert.equal(out.details.chainStatus, "COMPLETE", JSON.stringify(out.details).slice(0, 300));
-    // The model's own computation_ref must be a claim computation or the one the chart read.
+    // The model's own computation_ref must be the chart's computation or one its SQL read: the claim's
+    // own computation c, which this chart (reading the csv) neither produced nor read, is a wrong value.
+    const claimRef = JSON.parse(readFileSync(join(art, "claims.jsonl"), "utf8").trim().split("\n")[0]).computation_refs[0];
+    const claimOnly = await tools.get("newsroom_viz_chain").execute("m1", { ...planParams(SQLS[1], "claim-m"), computation_ref: claimRef });
+    assert.equal(claimOnly.details.stopCode, "CLAIM_COMPUTATION_MISMATCH");
+    assert.equal(claimOnly.details.failedAt, "newsroom_viz_lint");
     const wrong = await tools.get("newsroom_viz_chain").execute("m2", { ...planParams(SQLS[1], "claim-m"), computation_ref: "computations/" + "1".repeat(64) + ".json" });
     assert.equal(wrong.details.stopCode, "CLAIM_COMPUTATION_MISMATCH");
     assert.equal(wrong.details.failedAt, "newsroom_viz_lint");
+    // A chart that reads the claim's computation c and filters it: the model's c is accepted.
+    const art3 = freshRun("mismatch3");
+    const cRel = await bindClaim(tools, art3, SQLS[0], "claim-r");
+    const readsC = `SELECT country, year, share FROM read_json('${cRel}') WHERE share > 60 ORDER BY country`;
+    const readOk = await tools.get("newsroom_viz_chain").execute("m4", { ...planParams(readsC, "claim-r"), computation_ref: cRel });
+    assert.equal(readOk.details.chainStatus, "COMPLETE", JSON.stringify(readOk.details).slice(0, 300));
     // A claim the chart does not bind to is stopped by the lint itself (see test_claim_binding.mjs for the matrix).
     const art2 = freshRun("mismatch2");
     await bindClaim(tools, art2, SQLS[0], "claim-u", { boundTo: "computations/" + "2".repeat(64) + ".json" });
