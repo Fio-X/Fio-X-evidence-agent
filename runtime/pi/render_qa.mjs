@@ -67,7 +67,7 @@ function checkViewport(svgText, options) {
  * desktop alone when the caller has no mobile viewport to check (for example
  * an infographic page rendered with phone-facing pages off).
  *
- * @param {{desktop: string, mobile?: string}} svgByViewport - full rendered
+ * @param {{desktop: string, mobile?: string, compact?: string}} svgByViewport - full rendered
  *   `<svg ...>...</svg>` document text for each responsive viewport. `mobile`
  *   is optional; when omitted, the report covers desktop only.
  * @param {object} [options]
@@ -84,18 +84,23 @@ function checkViewport(svgText, options) {
  *   value_labels_check_version?: string,
  *   passed: boolean,
  *   failure_count: number,
- *   viewports: {desktop: object, mobile?: object},
+ *   viewports: {desktop: object, mobile?: object, compact?: object},
  * }}
  */
-export function runRenderQa({ desktop, mobile } = {}, options = {}) {
+export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
   if (typeof desktop !== "string") {
     throw new Error("runRenderQa: desktop SVG text is required");
   }
   if (mobile !== undefined && typeof mobile !== "string") {
     throw new Error("runRenderQa: mobile SVG text must be a string when present");
   }
+  if (compact !== undefined && typeof compact !== "string") {
+    throw new Error("runRenderQa: compact SVG text must be a string when present");
+  }
   const viewports = { desktop: checkViewport(desktop, options) };
   if (mobile !== undefined) viewports.mobile = checkViewport(mobile, options);
+  // The 8-column chart variant is checked exactly like the others, in full.
+  if (compact !== undefined) viewports.compact = checkViewport(compact, options);
   const viewportNames = Object.keys(viewports);
   const failureCount = viewportNames.reduce(
     (total, viewport) =>

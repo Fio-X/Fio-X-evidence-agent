@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS } from "./viz.mjs";
+import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, COMPACT_VIEW_W } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
 import { evaluateQuestionClosure } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
@@ -230,6 +230,12 @@ function svgInfo(svg) {
   const nums = match[1].trim().split(/\s+/).map(Number);
   if (nums.length !== 4 || nums.some((n) => !Number.isFinite(n))) throw new Error("Embedded visualization has an invalid viewBox");
   return { minX: nums[0], minY: nums[1], width: nums[2], height: nums[3], inner: match[2] };
+}
+
+// Smallest font-size (px) drawn in an SVG, or null if it declares none.
+function svgMinFontSize(svg) {
+  const sizes = [...String(svg ?? "").matchAll(/font-size=["']([\d.]+)(?:px)?["']/g)].map((m) => Number(m[1])).filter((n) => n > 0);
+  return sizes.length ? Math.min(...sizes) : null;
 }
 
 function namespaceSvgInner(inner, prefix) {
@@ -652,7 +658,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`visual '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
       if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`visual '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
       const visualSlot = sceneSlots.get(String(module.id));
-      if (visualSlot && visualSlot.cols < 12) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
+      if (visualSlot && visualSlot.cols < 12 && !(visualSlot.cols === 8 && typeof asset.compactSvg === "string")) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`visual '${module.id}' is missing visualization manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
@@ -811,6 +817,13 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
 
 function spanColumns(span) { return ({ full: 12, two_thirds: 8, half: 6, third: 4 })[span ?? "full"] ?? 12; }
 
+// A chart that has a compact (8-column) SVG uses it, and only it, in a slot
+// exactly as wide as that variant was laid out for. Any other width keeps the
+// desktop/mobile choice below, so the 12px floor is never met by shrinking.
+function compactFits(asset, width, mobile) {
+  return !mobile && typeof asset?.compactSvg === "string" && Math.abs(width - COMPACT_VIEW_W) <= 2;
+}
+
 function visualAspect(asset, mobilePreferred) {
   const info = svgInfo(mobilePreferred ? asset.mobileSvg : asset.desktopSvg);
   return info.height / info.width;
@@ -847,9 +860,26 @@ function moduleHeight(module, width, assets, mobile = false) {
   if (type === "visual" || type === "illustration") {
     const asset = assets[type === "visual" ? module.manifest_ref : module.asset_ref];
     if (!asset) return mobile ? 500 : 520;
-    const aspect = visualAspect(asset, mobile || spanColumns(module.span) <= 6);
+    const aspect = type === "visual" && compactFits(asset, width, mobile) ? (() => { const info = svgInfo(asset.compactSvg); return info.height / info.width; })() : visualAspect(asset, mobile || spanColumns(module.span) <= 6);
     const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 52 : 44) : 0;
-    return clamp(width * aspect + (module.label ? 36 : 12) + provenanceCaption + outOfSetCaptionHeight(asset, module, mobile), mobile ? 390 : 330, mobile ? 980 : 900);
+    // The compact chart embeds 1:1, so its slot must hold the full top pad (see
+    // embedVisual) or the chart shrinks below the 12px text floor.
+    const compact = type === "visual" && compactFits(asset, width, mobile);
+    const reserve = compact ? (module.emphasis === "hero" ? 30 : module.label ? 32 : 20) + 6 : module.label ? 36 : 12;
+    const captionH = outOfSetCaptionHeight(asset, module, mobile);
+    let maxHeight = mobile ? 980 : 900;
+    if (type === "visual" && !mobile) {
+      // Desktop: the 900 cap must not shrink the chart below its 12px text
+      // floor. embedVisual fits the chart into (box.h - topPad - 6 - caption),
+      // so give it the native height times 12 / smallest font, plus exactly
+      // that padding. Charts that already fit are unchanged (max keeps 900).
+      const source = compactFits(asset, width, mobile) ? asset.compactSvg : spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+      const nativeH = svgInfo(source).height;
+      const minFont = svgMinFontSize(source);
+      const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
+      maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
+    }
+    return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 330, maxHeight);
   }
   return 180;
 }
@@ -911,7 +941,7 @@ function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, g
     const anchorW = contentW;
     const anchorH = moduleHeight(anchor, anchorW, assets, false);
     boxes.push({ id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: 12, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" });
-    const railY = contentY + anchorH + gap;
+    const railY = contentY + anchorH + (sidecars.every((m) => m.type === "hero_stat") ? 14 : gap);
     const sideCols = sidecars.length === 1 ? 12 : sidecars.length === 2 ? 6 : 4;
     let xCols = 0;
     let railH = 0;
@@ -961,7 +991,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
   for (const scene of configuredScenes) for (const id of [scene.anchor_module_id, ...scene.sidecar_module_ids]) sceneByMember.set(String(id), scene);
   const placedScenes = new Set();
   let previousDensities = [];
-  for (const module of spec.modules) {
+  for (const module of statsAfterLinkedVisual(spec.modules, configuredScenes)) {
     const scene = sceneByMember.get(String(module.id));
     if (scene) {
       if (!placedScenes.has(scene.id)) {
@@ -969,7 +999,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
         const built = buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, gap, col);
         boxes.push(...built.boxes);
         scenes.push(built.meta);
-        y += built.height + 58;
+        y += built.height + 44;
         rowIndex += 1;
         placedScenes.add(scene.id);
       }
@@ -1105,11 +1135,32 @@ function drawHeader(parts, spec, width, margin, mobile) {
   return h.height;
 }
 
+// A big number that shares a claim with a visual reads best directly after
+// that visual. Stable: only an unscened stat that precedes its linked
+// visual moves, to just behind it; every other module keeps its place.
+function statsAfterLinkedVisual(modules, scenes = []) {
+  const claimsOf = (m) => new Set([m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? [])].filter(Boolean).map(String));
+  const scened = new Set(scenes.flatMap((sc) => [sc.anchor_module_id, ...(sc.sidecar_module_ids ?? [])]).map(String));
+  const out = [...modules];
+  for (const stat of modules) {
+    if (stat.type !== "hero_stat" || scened.has(String(stat.id))) continue;
+    const mine = claimsOf(stat);
+    if (!mine.size) continue;
+    const from = out.indexOf(stat);
+    const to = out.findIndex((m, i) => i > from && m.type === "visual" && !scened.has(String(m.id)) && [...claimsOf(m)].some((c) => mine.has(c)));
+    if (to < 0) continue;
+    out.splice(from, 1);
+    out.splice(to, 0, stat);
+  }
+  return out;
+}
+
 function editorialOrdinalMap(spec) {
   const map = new Map();
   let ordinal = 1;
   for (const module of spec.modules ?? []) {
-    if (module.type === "section_header" || module.emphasis === "hero") continue;
+    // hero_stat draws no ordinal chrome, so it must not consume a number either.
+    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero") continue;
     map.set(String(module.id), ordinal++);
   }
   return map;
@@ -1188,7 +1239,7 @@ function outOfSetCaptionHeight(asset, module, mobile) {
 }
 
 function embedVisual(parts, asset, box, module, mobile) {
-  const sourceSvg = mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+  const sourceSvg = compactFits(asset, box.w, mobile) ? asset.compactSvg : mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
   const info = svgInfo(sourceSvg);
   const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
   const captionH = outOfSetCaptionHeight(asset, module, mobile);
@@ -1234,7 +1285,7 @@ function embedIllustration(parts, asset, box, module, mobile) {
 
 function drawHeroStat(parts, box, module, mobile) {
   const pad = mobile ? 28 : 30;
-  const top = box.y + 28;
+  const top = box.y + (INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 14 : 28);
   if (!INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
     // Legacy: unchanged, byte-for-byte - the solid tone-coloured card fix 9
     // replaces under house style. tone still selects the card colour and
@@ -1344,11 +1395,18 @@ function drawPullQuote(parts, box, module, mobile) {
 }
 
 function sourceList(spec, assets) {
-  return uniq([
+  const notes = uniq([
     spec.source_note,
     ...(spec.modules ?? []).filter((m) => m.type === "visual").map((m) => assets[m.manifest_ref]?.manifest?.source_note),
     ...(spec.modules ?? []).filter((m) => m.type === "illustration").map((m) => assets[m.asset_ref]?.manifest?.source_note),
   ]);
+  // Notes often join several citations with "；"/";" and the page-level note
+  // usually restates the chart notes: write each citation once, dropping any
+  // segment already contained in a longer one.
+  const norm = (x) => x.replace(/\s+/g, "").toLowerCase();
+  const segments = notes.flatMap((note) => String(note).split(/[；;]\s*/).map((x) => x.trim()).filter(Boolean));
+  const kept = segments.filter((seg, i) => !segments.some((other, j) => j !== i && (norm(other).includes(norm(seg)) && (norm(other).length > norm(seg).length || j < i))));
+  return kept;
 }
 
 function composeOne(spec, assets, mobile) {
