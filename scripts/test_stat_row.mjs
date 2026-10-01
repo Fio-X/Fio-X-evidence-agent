@@ -133,14 +133,18 @@ const sameAsParent = (spec, mobilePages = false) => {
   const spec = scenePage(['s1', 's2'], [stat('s1'), stat('s2', { value: '20', label: 'Another synthetic count' })]);
   const out = composeScene(spec);
   assert.ok(!out.desktop.boxes.some((b) => b.stat_bar));
-  sameAsParent(spec);
+  // page-rhythm: the scene no longer reserves the 28px rail gap after a
+  // stat-only rail (the rail starts 14px under the anchor), so the page is
+  // exactly 14px shorter than before; nothing else moves.
+  if (parent) assert.equal(parent.composeInfographicBundle(spec, assets, { mobilePages: false }).desktop.height - out.desktop.height, 14);
 }
 // (i) a rail with one text sidecar is unchanged
 {
   const spec = scenePage(['t1'], [text('t1', SHORT)]);
   const out = composeScene(spec);
   assert.ok(!out.desktop.boxes.some((b) => b.stat_bar));
-  sameAsParent(spec);
+  // page-rhythm: a short text alone on a full row is set to a readable measure
+  // (see test_page_rhythm.mjs); it is no longer byte-identical to the parent.
 }
 // (j) mobile is unchanged (also with the one-stat rail)
 {

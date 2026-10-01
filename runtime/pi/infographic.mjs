@@ -879,7 +879,7 @@ function moduleHeight(module, width, assets, mobile = false) {
       const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
       maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
     }
-    return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 330, maxHeight);
+    return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 0, maxHeight);
   }
   return 180;
 }
@@ -946,12 +946,13 @@ function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, g
     const anchorW = contentW;
     const anchorH = moduleHeight(anchor, anchorW, assets, false);
     boxes.push({ id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: 12, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" });
-    const railY = contentY + anchorH + (sidecars.every((m) => m.type === "hero_stat") ? 14 : gap);
+    const railGap = sidecars.every((m) => m.type === "hero_stat") ? 14 : gap;
+    const railY = contentY + anchorH + railGap;
     const sideCols = sidecars.length === 1 ? 12 : sidecars.length === 2 ? 6 : 4;
     let xCols = 0;
     let railH = 0;
     sidecars.forEach((module) => {
-      const w = sideCols * col + Math.max(0, sideCols - 1) * gap;
+      const w = shortTextWidth(module, sideCols * col + Math.max(0, sideCols - 1) * gap);
       // A rail holding exactly one big number draws it as the full-width band
       // (house style, desktop) instead of a stacked 12-column stat.
       const bar = railStatBand(sidecars);
@@ -960,7 +961,7 @@ function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, g
       xCols += sideCols;
       railH = Math.max(railH, h);
     });
-    return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: headerH + anchorH + gap + railH, header_h: headerH }, height: headerH + anchorH + gap + railH };
+    return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: headerH + anchorH + railGap + railH, header_h: headerH }, height: headerH + anchorH + railGap + railH };
   }
   const anchorCols = 8;
   const sideCols = 4;
@@ -1023,7 +1024,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
       }
       continue;
     }
-    if (module.type === "hero_stat" && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
+    if (module.type === "hero_stat" && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !statColsOverride.has(String(module.id))) {
       const own = effectiveColumns(module, strategy);
       const startsRow = !rowCols || forceBreakFor(module, rowCols, previousDensities) || own === 12 || rowCols + own > 12;
       if (startsRow) {
@@ -1034,6 +1035,17 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
           if (statPairsWithText(module, next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
           else statBars.add(String(module.id));
         }
+      }
+    }
+    if (module.type === "text" && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !statColsOverride.has(String(module.id))) {
+      const own = effectiveColumns(module, strategy);
+      const next = ordered[index + 1];
+      const nextScened = next ? sceneByMember.has(String(next.id)) : false;
+      const startsRow = !rowCols || forceBreakFor(module, rowCols, previousDensities) || own === 12 || rowCols + own > 12;
+      if (startsRow && own === 12 && textPairsWithStat(module, next, nextScened, col, gap)
+        && !forceBreakFor(next, 8, [...previousDensities, moduleDensity(module)])) {
+        statColsOverride.set(String(module.id), 12 - STAT_PAIR_STAT_COLS);
+        statColsOverride.set(String(next.id), STAT_PAIR_STAT_COLS);
       }
     }
     const bar = statBars.has(String(module.id));
@@ -1048,7 +1060,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
     );
     if (forceBreak || (rowCols && rowCols + cols > 12) || (cols === 12 && rowCols)) flush();
     const x = margin + rowCols * (col + gap);
-    const w = cols * col + Math.max(0, cols - 1) * gap;
+    const w = shortTextWidth(module, cols * col + Math.max(0, cols - 1) * gap);
     const h = bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false);
     row.push({ id: module.id, module, x, w, h, cols, density, ...(bar ? { stat_bar: true } : {}) });
     rowCols += cols;
@@ -1326,6 +1338,44 @@ const STAT_BAR_PAD = 30;
 const STAT_BAR_MIN_NUMERAL_ZONE = 150;
 const STAT_BAR_GUTTER = 36;
 
+// Page-rhythm tuning knobs. A text block that sets in at most
+// TEXT_SHORT_MAX_LINES lines across a full 12-column row never fills that row
+// on its own: it pairs with a big number right after it (8 + 4 columns), and
+// otherwise its box is narrowed to a readable measure (the row height already
+// follows the text). clreq (W3C) gives no numeric line length, so the cap is converted from
+// Bringhurst's 45-75 Latin characters: 75 is the upper bound and the code's
+// width unit counts a Latin character as 1 and a Han character as 2
+// (viz.mjs textUnits), i.e. about 37 Han characters.
+const TEXT_SHORT_MAX_LINES = 2;
+const TEXT_MEASURE_MAX_UNITS = 75;
+const TEXT_FULL_ROW_MIN_W = 1200;
+
+function textIsShortFullRow(module, width) {
+  if (module.source_quote || width < TEXT_FULL_ROW_MIN_W) return false;
+  const body = String(module.body ?? "").trim();
+  return Boolean(body) && lines(body, Math.max(44, Math.round(width / 10))).length <= TEXT_SHORT_MAX_LINES;
+}
+
+// Box width for a short text that has a whole 12-column row to itself: the
+// readable measure, not the row. Anything else keeps the width it was given.
+function shortTextWidth(module, width) {
+  return module.type === "text" && textIsShortFullRow(module, width) ? Math.min(width, TEXT_MEASURE_MAX_UNITS * 10) : width;
+}
+
+// Does a stat's label and detail still fit its 2-line cut at the paired width?
+function statFitsPaired(stat, col, gap) {
+  const statW = STAT_PAIR_STAT_COLS * col + (STAT_PAIR_STAT_COLS - 1) * gap;
+  if (lines(stat.label ?? "", Math.max(28, Math.round(statW / 10))).length > 2) return false;
+  return !stat.detail || lines(stat.detail, Math.max(38, Math.round(statW / 8))).length <= 2;
+}
+
+// A short lone text pairs with the big number right after it (text 8, stat 4).
+function textPairsWithStat(text, next, nextScened, col, gap) {
+  if (text.type !== "text" || !next || nextScened || next.type !== "hero_stat") return false;
+  if (!textIsShortFullRow(text, 12 * col + 11 * gap)) return false;
+  return statFitsPaired(next, col, gap);
+}
+
 // Pairing rule: is the stat alone in its row? (next is the module after it.)
 function statIsAlone(own, next, nextCols, nextScened, previousDensities, module) {
   if (own === 12 || !next || nextScened || next.type === "section_header" || nextCols === 12 || own + nextCols > 12) return true;
@@ -1335,11 +1385,8 @@ function statIsAlone(own, next, nextCols, nextScened, previousDensities, module)
 // Pairing rule: may the next module share the stat's row at (12 - stat cols)?
 function statPairsWithText(stat, next, nextScened, col, gap) {
   // The stacked stat cuts its label and detail at 2 lines: pair only when
-  // both fit at the narrow width (drawHeroStat's own maxChars formulas),
-  // otherwise the band, which never truncates.
-  const statW = STAT_PAIR_STAT_COLS * col + (STAT_PAIR_STAT_COLS - 1) * gap;
-  if (lines(stat.label ?? "", Math.max(28, Math.round(statW / 10))).length > 2) return false;
-  if (stat.detail && lines(stat.detail, Math.max(38, Math.round(statW / 8))).length > 2) return false;
+  // both fit at the narrow width, otherwise the band, which never truncates.
+  if (!statFitsPaired(stat, col, gap)) return false;
   if (!next || nextScened || next.type !== "text" || next.source_quote || next.emphasis === "hero" || next.story_role === "turn") return false;
   const width = (12 - STAT_PAIR_STAT_COLS) * col + (11 - STAT_PAIR_STAT_COLS) * gap;
   const body = String(next.body ?? "").trim();
@@ -1362,12 +1409,14 @@ function heroStatBarMetrics(module, width) {
   const labelLines = lines(module.label ?? "", Math.max(20, Math.floor(avail / 10.5)));
   const detailLines = module.detail ? lines(module.detail, Math.max(24, Math.floor(avail / 8.2))) : [];
   const textH = 22 + (labelLines.length - 1) * 20 + (detailLines.length ? 10 + detailLines.length * 16 : 0);
-  return { pad, textX, labelLines, detailLines, h: Math.max(14 + 3 + 62, 14 + 3 + 6 + textH + 12) };
+  return { pad, textX, labelLines, detailLines, h: Math.max(3 + 62, 3 + 6 + textH + 12) };
 }
 
 function drawHeroStatBar(parts, box, module) {
   const m = heroStatBarMetrics(module, box.w);
-  const top = box.y + 14;
+  // The row gap above (40px) or the rail gap (14px) already separates the band
+  // from the module above, so its rule sits on the box edge.
+  const top = box.y;
   parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${ACCENT}"/>`);
   parts.push(`<text x="${box.x + m.pad}" y="${top + 58}" font-family="${SERIF}" font-size="58" font-weight="700" fill="${ACCENT}">${esc(module.value)}${module.unit ? `<tspan font-size="24" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
   const x = box.x + m.textX;
