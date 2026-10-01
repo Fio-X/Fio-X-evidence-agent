@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
 import { checkSvgGeometry } from "./render_qa_geometry.mjs";
+import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
 import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
@@ -5044,6 +5045,41 @@ function choroplethLabelWidth(text, font) {
   return textUnits(text) * font * 0.56 + 8;
 }
 
+// Projected, horizon-filtered rings of one feature. The label-placement
+// searches below test thousands of candidate points/boxes/segments against the
+// same few features, and each test used to re-filter and re-project every ring
+// vertex; the projected points depend only on (projection, feature, centre),
+// so they are computed once per projection function and reused. Callers only
+// read the returned arrays.
+const PROJECTED_RING_CACHE = new WeakMap();
+function projectedFeatureRings(index, project, lon0, lat0) {
+  let byKey = PROJECTED_RING_CACHE.get(project);
+  if (!byKey) PROJECTED_RING_CACHE.set(project, (byKey = new Map()));
+  const key = `${index}|${lon0}|${lat0}`;
+  let rings = byKey.get(key);
+  if (!rings) {
+    rings = geometryRings(neFeatureGeometry(index))
+      .filter((ring) => ringWithinHorizon(ring, lon0, lat0, 90))
+      .map((ring) => {
+        const pts = ring.map(([lon, lat]) => project(lon, lat));
+        // Bounding box of the finite vertices: lets the callers skip a ring
+        // that provably cannot intersect the point/box/segment they test.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const q of pts) {
+          if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+          if (q.x < minX) minX = q.x;
+          if (q.x > maxX) maxX = q.x;
+          if (q.y < minY) minY = q.y;
+          if (q.y > maxY) maxY = q.y;
+        }
+        pts.bb = { minX, minY, maxX, maxY };
+        return pts;
+      });
+    byKey.set(key, rings);
+  }
+  return rings;
+}
+
 // Nonzero-winding point-in-polygon over feature `index`'s own projected
 // rings (unclipped - a query point already known to be within the map rect,
 // which is every caller here, is unaffected by clipping either way). Used
@@ -5059,10 +5095,10 @@ function choroplethLabelWidth(text, font) {
 // this renderer's own contrast decision always agree with that gate, rather
 // than relying on the halo alone to paper over a wrong colour choice.
 function pointOnFeature(index, x, y, project, lon0, lat0) {
-  const rings = geometryRings(neFeatureGeometry(index)).filter((ring) => ringWithinHorizon(ring, lon0, lat0, 90));
   let inside = false;
-  for (const ring of rings) {
-    const pts = ring.map(([lon, lat]) => project(lon, lat));
+  for (const pts of projectedFeatureRings(index, project, lon0, lat0)) {
+    // A crossing needs y inside the ring's y-range and x left of its far edge.
+    if (y < pts.bb.minY || y > pts.bb.maxY || x >= pts.bb.maxX) continue;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
       const a = pts[i], b = pts[j];
       if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -5084,49 +5120,57 @@ function pointOnFeature(index, x, y, project, lon0, lat0) {
  * africa/page.js, read-only reference) translated from d3 into this file's
  * own hand-written SVG/geometry conventions (no mapping dependency added).
  */
-// Zoom-inset size ladder (share of the plot width, fraction of the map height).
-// Step 0 is the long-standing default; a larger step is tried only when the
-// numbered-marker pass could not put more than a quarter of its regions on the
-// map, so a render that already passes never changes.
-// Adaptive zoom-inset ladder. The first rung is the long-standing default
-// (a third of the plot width, 25-degree cluster radius). When that render
-// leaves numbered regions without a map marker, progressively larger frames
-// and tighter cluster radii are tried; the render with the fewest list-only
-// regions wins, ties broken by fewer render-QA failures and then by the
-// earlier (less intrusive) rung. No QA threshold is changed - the ladder only
-// chooses among renders the unchanged checks then score.
+// Adaptive zoom-inset ladder (desktop only). Rung 0 is the long-standing
+// default (a third of the plot width, 25-degree cluster radius) and is what
+// every render that already places its markers gets, byte for byte. Only when
+// rung 0 has a zoom inset AND leaves numbered regions without a map marker are
+// the later rungs tried: progressively larger frames (share of the plot width,
+// fraction of the map height) and tighter cluster radii, with a strip panel
+// that spans the plot width. Every candidate is scored by the same render QA
+// the gate runs (geometry, contrast, value labels - no rule or threshold is
+// changed). A candidate replaces the incumbent when it has fewer QA failures
+// in total (every failure blocks equally, whichever rule it is), or the same
+// number and strictly fewer list-only regions without any failure rule the
+// incumbent lacks; remaining ties keep the earlier, less intrusive rung. A
+// candidate whose QA cannot be computed is never chosen (fail closed). The
+// search stops at the first rung with no list-only regions and no failures.
 const INSET_LADDER = [
   { share: 0.33, heightFrac: 0.62, clusterDeg: 25 },
-  { share: 0.5, heightFrac: 0.75, clusterDeg: 25 },
-  { share: 0.5, heightFrac: 0.75, clusterDeg: 18 },
-  { share: 0.7, heightFrac: 0.85, clusterDeg: 18 },
-  { share: 0.7, heightFrac: 0.85, clusterDeg: 12 },
-  { share: 0.9, heightFrac: 0.92, clusterDeg: 12 },
-  { share: 0.9, heightFrac: 0.92, clusterDeg: 8 },
+  { share: 0.5, heightFrac: 0.75, clusterDeg: 25, wideStrip: true },
+  { share: 0.5, heightFrac: 0.75, clusterDeg: 18, wideStrip: true },
+  { share: 0.7, heightFrac: 0.85, clusterDeg: 18, wideStrip: true },
+  { share: 0.7, heightFrac: 0.85, clusterDeg: 12, wideStrip: true },
+  { share: 0.9, heightFrac: 0.92, clusterDeg: 12, wideStrip: true },
+  { share: 0.9, heightFrac: 0.92, clusterDeg: 8, wideStrip: true },
 ];
-function insetRenderQaFailures(svg, spec, rows) {
+// Rule names of every render-QA failure in `svg`, or null when the QA itself
+// could not run (never treated as "no failures").
+function insetRenderQaRules(svg, spec, rows) {
   try {
     const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid });
-    return [...checkSvgGeometry(svg).failures, ...labels.failures].map((f) => f.rule);
+    return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
   } catch {
-    return [];
+    return null;
   }
 }
 function renderChoropleth(spec, rows, mobile = false) {
+  const meta0 = {};
+  const first = renderChoroplethOnce(spec, rows, mobile, INSET_LADDER[0], meta0);
+  if (mobile || !meta0.hasInset || meta0.listOnly === 0) return first;
   let best = null;
-  for (const tune of INSET_LADDER) {
-    const meta = {};
-    const svg = renderChoroplethOnce(spec, rows, mobile, tune, meta);
-    if (!best && (!meta.hasInset || meta.listOnly === 0)) return svg;
-    const qa = insetRenderQaFailures(svg, spec, rows);
-    // A rung replaces the incumbent only when it has fewer failures, or when
-    // it has the same count, strictly fewer list-only regions and introduces
-    // no failure rule the incumbent did not already have.
+  const consider = (svg, meta) => {
+    const qa = insetRenderQaRules(svg, spec, rows);
+    if (!qa) return;
     const noNewRule = qa.every((rule) => best?.qa.includes(rule));
     if (!best || qa.length < best.qa.length || (qa.length === best.qa.length && noNewRule && meta.listOnly < best.meta.listOnly)) best = { svg, meta, qa };
-    if (best.meta.listOnly === 0 && best.qa.length === 0) break;
+  };
+  consider(first, meta0);
+  for (const tune of INSET_LADDER.slice(1)) {
+    if (best && best.meta.listOnly === 0 && best.qa.length === 0) break;
+    const meta = {};
+    consider(renderChoroplethOnce(spec, rows, mobile, tune, meta), meta);
   }
-  return best.svg;
+  return best ? best.svg : first;
 }
 function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const lang = vizLang(spec);
@@ -5317,7 +5361,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // below the natural square size, capped so it cannot swallow the frame).
   // The map inside is then fitted to that W x H rectangle, so the extent is
   // widened to the panel's aspect and the surrounding land fills the rest.
-  function insetNaturalDims(points, mainScale) {
+  function insetNaturalDims(points, mainScale, widthOverride) {
     const nat = insetNaturalMapSize(points, mainScale);
     if (mobile) return { w: nat, h: nat };
     const pts = points.length ? points : [[lon0, lat0]];
@@ -5330,7 +5374,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
     }
     const aspect = x1 > x0 && y1 > y0 ? Math.min(3, Math.max(0.5, (x1 - x0) / (y1 - y0))) : 1;
-    const w = Math.max(nat, Math.round((INSET_WIDTH_SHARE * (plotRight - plotLeft - INSET_COLUMN_GAP)) / (1 + INSET_WIDTH_SHARE)));
+    const w = widthOverride ?? Math.max(nat, Math.round((INSET_WIDTH_SHARE * (plotRight - plotLeft - INSET_COLUMN_GAP)) / (1 + INSET_WIDTH_SHARE)));
     const h = Math.max(nat, Math.min(w / aspect, tune.heightFrac * mapH));
     return { w, h };
   }
@@ -5356,6 +5400,11 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const INSET_STRIP_LEGEND_GAP = 8;
   let insetColumnW = 0;
   let insetStripH = 0;
+  // Enlarged ladder rungs: a strip panel spans the whole plot width (more
+  // surrounding context and label room) instead of the share-based width,
+  // which would leave blank page areas on both sides of it. The default rung
+  // keeps its original strip width.
+  const stripPanelWidth = tune.wideStrip ? plotRight - plotLeft - 12 : undefined;
   if (insetIso3Set.size) {
     const pts = [];
     for (const item of joined) {
@@ -5370,7 +5419,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     } else {
       // Same upper-bound reasoning for the height: the title row, the
       // natural-size map and the panel's own padding (see insetPanelH).
-      const mapSize = insetNaturalDims(pts, proj.scale).h;
+      const mapSize = insetNaturalDims(pts, proj.scale, stripPanelWidth).h;
       insetStripH = Math.min(mapH - 2 * 8, 18 + mapSize + 8) + INSET_COLUMN_GAP + INSET_STRIP_LEGEND_GAP;
       f = mobile ? mobileFrame(spec, bodyH + insetStripH) : frame(spec, bodyH + insetStripH);
     }
@@ -5520,9 +5569,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   function interiorMargin(featureIndices, x, y, projectFn, lonC, latC) {
     let best = Infinity;
     for (const idx of featureIndices) {
-      const rings = geometryRings(neFeatureGeometry(idx)).filter((ring) => ringWithinHorizon(ring, lonC, latC, 90));
-      for (const ring of rings) {
-        const pts = ring.map(([lon, lat]) => projectFn(lon, lat));
+      for (const pts of projectedFeatureRings(idx, projectFn, lonC, latC)) {
         for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
           const a = pts[i], b = pts[j];
           if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -5616,9 +5663,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
   }
   function segmentCrossesFeature(idx, p1, p2, projectFn, lonC, latC) {
-    const rings = geometryRings(neFeatureGeometry(idx)).filter((ring) => ringWithinHorizon(ring, lonC, latC, 90));
-    for (const ring of rings) {
-      const pts = ring.map(([lon, lat]) => projectFn(lon, lat));
+    for (const pts of projectedFeatureRings(idx, projectFn, lonC, latC)) {
+      const bb = pts.bb;
+      if (Math.max(p1.x, p2.x) < bb.minX || Math.min(p1.x, p2.x) > bb.maxX || Math.max(p1.y, p2.y) < bb.minY || Math.min(p1.y, p2.y) > bb.maxY) continue;
       for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
         const a = pts[i], b = pts[j];
         if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -5932,9 +5979,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const MIN_LEADER_DRAWN_LENGTH = 10;
   function boxOverlapsFeature(featureIndices, box, projectFn, lonC, latC) {
     for (const idx of featureIndices) {
-      const rings = geometryRings(neFeatureGeometry(idx)).filter((ring) => ringWithinHorizon(ring, lonC, latC, 90));
-      for (const ring of rings) {
-        const pts = ring.map(([lon, lat]) => projectFn(lon, lat));
+      for (const pts of projectedFeatureRings(idx, projectFn, lonC, latC)) {
+        const bb = pts.bb;
+        if (box.x + box.w < bb.minX || box.x > bb.maxX || box.y + box.h < bb.minY || box.y > bb.maxY) continue;
         for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
           const a = pts[i], b = pts[j];
           if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -6397,7 +6444,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // so the common case (room for the panel at its natural size) never
   // shrinks anything.
   const insetMapSizeNatural = insetNaturalMapSize(insetPoints2, proj.scale);
-  const insetDimsNatural = insetNaturalDims(insetPoints2, proj.scale);
+  const insetDimsNatural = insetNaturalDims(insetPoints2, proj.scale, insetStripH ? stripPanelWidth : undefined);
   // Wide panel only where it has its own reserved space (column / strip); a
   // floating in-plot panel stays square so it covers as little as possible.
   const insetMapSizeFull = insetColumnW
