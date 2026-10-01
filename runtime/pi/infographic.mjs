@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS } from "./viz.mjs";
+import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, COMPACT_VIEW_W } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
 import { evaluateQuestionClosure } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
@@ -652,7 +652,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`visual '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
       if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`visual '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
       const visualSlot = sceneSlots.get(String(module.id));
-      if (visualSlot && visualSlot.cols < 12) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
+      if (visualSlot && visualSlot.cols < 12 && !(visualSlot.cols === 8 && typeof asset.compactSvg === "string")) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`visual '${module.id}' is missing visualization manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
@@ -811,6 +811,13 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
 
 function spanColumns(span) { return ({ full: 12, two_thirds: 8, half: 6, third: 4 })[span ?? "full"] ?? 12; }
 
+// A chart that has a compact (8-column) SVG uses it, and only it, in a slot
+// exactly as wide as that variant was laid out for. Any other width keeps the
+// desktop/mobile choice below, so the 12px floor is never met by shrinking.
+function compactFits(asset, width, mobile) {
+  return !mobile && typeof asset?.compactSvg === "string" && Math.abs(width - COMPACT_VIEW_W) <= 2;
+}
+
 function visualAspect(asset, mobilePreferred) {
   const info = svgInfo(mobilePreferred ? asset.mobileSvg : asset.desktopSvg);
   return info.height / info.width;
@@ -847,9 +854,13 @@ function moduleHeight(module, width, assets, mobile = false) {
   if (type === "visual" || type === "illustration") {
     const asset = assets[type === "visual" ? module.manifest_ref : module.asset_ref];
     if (!asset) return mobile ? 500 : 520;
-    const aspect = visualAspect(asset, mobile || spanColumns(module.span) <= 6);
+    const aspect = type === "visual" && compactFits(asset, width, mobile) ? (() => { const info = svgInfo(asset.compactSvg); return info.height / info.width; })() : visualAspect(asset, mobile || spanColumns(module.span) <= 6);
     const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 52 : 44) : 0;
-    return clamp(width * aspect + (module.label ? 36 : 12) + provenanceCaption + outOfSetCaptionHeight(asset, module, mobile), mobile ? 390 : 330, mobile ? 980 : 900);
+    // The compact chart embeds 1:1, so its slot must hold the full top pad (see
+    // embedVisual) or the chart shrinks below the 12px text floor.
+    const compact = type === "visual" && compactFits(asset, width, mobile);
+    const reserve = compact ? (module.emphasis === "hero" ? 30 : module.label ? 32 : 20) + 6 : module.label ? 36 : 12;
+    return clamp(width * aspect + reserve + provenanceCaption + outOfSetCaptionHeight(asset, module, mobile), mobile ? 390 : 330, mobile ? 980 : 900);
   }
   return 180;
 }
@@ -1209,7 +1220,7 @@ function outOfSetCaptionHeight(asset, module, mobile) {
 }
 
 function embedVisual(parts, asset, box, module, mobile) {
-  const sourceSvg = mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+  const sourceSvg = compactFits(asset, box.w, mobile) ? asset.compactSvg : mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
   const info = svgInfo(sourceSvg);
   const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
   const captionH = outOfSetCaptionHeight(asset, module, mobile);
