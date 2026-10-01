@@ -55,6 +55,8 @@ pub const VIZ_CHAIN_TOOL: &str = "newsroom_viz_chain";
 pub const CHAIN_INFOGRAPHIC_ENV: &str = "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC";
 /// Runtime-only tool that exists when `CHAIN_INFOGRAPHIC_ENV` is on; not in the registry.
 pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
+/// Page-stage preflight and derived-reference fill; the runtime reads the same name.
+pub const PREFLIGHT_ENV: &str = "NEWSROOM_SPEED_PREFLIGHT";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
 
 #[cfg(test)]
@@ -76,6 +78,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
         chain_viz: env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on(),
         chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
+        preflight: env_switch(PREFLIGHT_ENV),
     }
 }
 
@@ -738,6 +741,11 @@ impl PiConfig {
             cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
         } else {
             cmd.env_remove(CHAIN_INFOGRAPHIC_ENV);
+        }
+        if self.speed.preflight {
+            cmd.env(PREFLIGHT_ENV, "1");
+        } else {
+            cmd.env_remove(PREFLIGHT_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1634,6 +1642,25 @@ mod tests {
         std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
         assert!(!speed_switches_from_env().chain_infographic);
         std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+
+        // Preflight needs no other switch and follows the config like the rest.
+        let preflight_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PREFLIGHT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(PREFLIGHT_ENV, "1");
+        let mut config = visual_story_config(false, "investigate");
+        assert!(speed_switches_from_env().preflight);
+        assert_eq!(preflight_marker(&config), Some(None));
+        config.speed.preflight = true;
+        assert_eq!(preflight_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(PREFLIGHT_ENV);
+        assert!(!speed_switches_from_env().preflight);
     }
 
     #[test]

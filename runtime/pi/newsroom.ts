@@ -89,6 +89,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -110,6 +111,15 @@ function lieflatHidden() {
 // otherwise); with the switch off the tool definition is untouched.
 const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = [
   {
+    env: "NEWSROOM_SPEED_PREFLIGHT",
+    tools: {
+      newsroom_infographic_plan: "You may omit reader_question, visual_thesis, editorial_discovery_ref, visual_concept_ref, novelty_ref, asset_plan_ref and a visual module's critic_ref when exactly one existing artifact is bound to what you already named; the runtime copies it verbatim, never overrides a value you give, and lists every unmet precondition in one error. selected_concept_id, claim ids and story nodes are never filled for you.",
+      newsroom_infographic_render: "lint_ref may be omitted when exactly one passing lint is bound to plan_ref.",
+      newsroom_infographic_critic: "lint_ref and manifest_ref may be omitted when exactly one passing lint and one rendered manifest are bound to plan_ref.",
+      newsroom_infographic_preview: "critic_ref may be omitted when exactly one passing deterministic critic is bound to manifest_ref.",
+    },
+  },
+  {
     env: "NEWSROOM_SPEED_PARALLEL_HINTS",
     tools: {
       newsroom_update_plan: "newsroom_update_plan does not need a turn of its own: send it in the same assistant message as the first independent research calls.",
@@ -125,6 +135,35 @@ const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = 
     },
   },
 ];
+
+// NEWSROOM_SPEED_PREFLIGHT=1: derivable references become optional and unmet
+// preconditions are listed together (see preflight.mjs). Off: nothing changes.
+function preflightEnabled() {
+  return process.env.NEWSROOM_SPEED_PREFLIGHT === "1";
+}
+const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
+// Fill the references a later page stage can read off the artifacts it already
+// names, then list every unmet precondition together. Switch off: untouched.
+async function preflightStage(tool: string, params: any) {
+  if (!preflightEnabled()) return params;
+  const filled = await fillStageRefs(tool, params, preflightIo);
+  const issues = tool === "newsroom_infographic_preview"
+    ? Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined || filled.params[field] === "").map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`)
+    : await renderPrerequisiteIssues(filled.params, preflightIo, filled.unresolved);
+  if (issues.length) throw preflightError(tool, issues);
+  return filled.params;
+}
+const preflightIo = {
+  async list(dir: string) {
+    const root = artifactRoot();
+    if (!root) return [];
+    const entries = await readdir(join(root, dir), { withFileTypes: true });
+    return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => `${dir}${entry.name}`).sort();
+  },
+  read: (ref: string, prefix?: string) => readArtifactJson(ref, prefix),
+  manifest: (dir: string, ref: string, prefix: string) => readManifestOrRejected(dir, ref, prefix),
+  verified: async () => new Set(await verifiedClaimIds()),
+};
 
 function withSpeedGuidelines(tool: any) {
   const extra = SPEED_GUIDELINES.filter((entry) => process.env[entry.env] === "1" && entry.tools[String(tool?.name ?? "")]).map((entry) => entry.tools[String(tool.name)]);
@@ -3283,19 +3322,19 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
       intent: Type.String(),
       primary_message: Type.String(),
-      reader_question: Type.String(),
-      visual_thesis: Type.String(),
+      reader_question: optionalWhenPreflight(Type.String()),
+      visual_thesis: optionalWhenPreflight(Type.String()),
       story_graph_ref: Type.String(),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
       quality_target: Type.Optional(StringEnum(["publishable", "award"] as const)),
       competition_profile: Type.Optional(StringEnum(["editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"] as const)),
       mobile_module_order: Type.Optional(Type.Array(Type.String(), { minItems: 3, maxItems: 12 })),
-      editorial_discovery_ref: Type.String(),
-      visual_concept_ref: Type.String(),
+      editorial_discovery_ref: optionalWhenPreflight(Type.String()),
+      visual_concept_ref: optionalWhenPreflight(Type.String()),
       selected_concept_id: Type.String(),
-      novelty_ref: Type.String(),
-      asset_plan_ref: Type.String(),
+      novelty_ref: optionalWhenPreflight(Type.String()),
+      asset_plan_ref: optionalWhenPreflight(Type.String()),
       editorial_grammar: editorialGrammarParameters,
       scene_graph: Type.Object({
         schema_version: Type.Literal("0.2.0"),
@@ -3320,7 +3359,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
-    async execute(_id, params) {
+    async execute(_id, rawParams) {
+      let params = rawParams;
+      let unresolvedRefs: Record<string, string> = {};
+      if (preflightEnabled()) {
+        const filled = await fillPlanRefs(rawParams, preflightIo);
+        unresolvedRefs = filled.unresolved;
+        if (filled.filled.length) params = inSchemaOrder(filled.params, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
+      }
       const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
       const editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
       const specCore = {
@@ -3334,6 +3380,18 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         editorial_grammar: editorialGrammar,
         modules: params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" })),
       };
+      if (preflightEnabled()) {
+        // Everything the checks below would reject for a missing or unbound
+        // prerequisite, listed at once. They still run afterwards, unchanged.
+        const issues: string[] = [];
+        const specErrors = validateInfographicSpec(specCore);
+        // A field the fill could not derive is reported once, with its reason.
+        issues.push(...specErrors.filter((error: string) => !Object.keys(unresolvedRefs).some((field) => error.startsWith(`${field} is required`))));
+        const grammar = lintEditorialGrammarSelection(specCore.editorial_grammar, editorialGrammarRegistry);
+        if (!grammar.passed) issues.push(...grammar.issues.map((issue: any) => `editorial grammar ${issue.rule_id}: ${issue.message}`));
+        issues.push(...(await planPrerequisiteIssues(specCore, preflightIo, unresolvedRefs)));
+        if (issues.length) throw preflightError("newsroom_infographic_plan", issues);
+      }
       const storyGraph = await readArtifactJson(String(specCore.story_graph_ref), "editorial/story-graphs/");
       if (!storyGraph.passed) throw new Error("Infographic cannot proceed from a StoryGraph with blocking narrative-closure issues");
       if (String(storyGraph.reader_question) !== String(specCore.reader_question)) throw new Error("Infographic reader_question must exactly match StoryGraph reader_question");
@@ -3439,8 +3497,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       ? "Compose verified visualization artifacts and claim-bound editorial modules into responsive desktop and mobile magazine SVG pages after infographic lint passes."
       : "Compose verified visualization artifacts and claim-bound editorial modules into a magazine SVG page after infographic lint passes. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to render it too.",
     promptSnippet: "Render a responsive magazine-grade infographic",
-    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams) {
+      const params = await preflightStage("newsroom_infographic_render", rawParams);
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
@@ -3522,8 +3581,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       ? "Review the composed desktop and mobile feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, responsive execution, geometry and visual-language variety. A failing page should be replanned and rendered again."
       : "Review the composed desktop feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, geometry and visual-language variety. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to critique both desktop and mobile. A failing page should be replanned and rendered again.",
     promptSnippet: "Critique a responsive magazine infographic",
-    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String(), manifest_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()), manifest_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams) {
+      const params = await preflightStage("newsroom_infographic_critic", rawParams);
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
@@ -4197,8 +4257,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           "Do not infer data truth from pixels. Numerical truth and provenance remain governed by deterministic lint and verification.",
           "After observing the image, call newsroom_infographic_vision_critic with concrete visible evidence and only bounded layout patch suggestions.",
         ],
-    parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: Type.String() }),
-    async execute(_id, params, signal) {
+    parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams, signal) {
+      const params = await preflightStage("newsroom_infographic_preview", rawParams);
       const mobilePages = mobilePagesEnabled();
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const critic = await readArtifactJson(params.critic_ref, "infographics/critics/");
