@@ -100,64 +100,64 @@ assert.equal(formatPagesWithMarkers(["ALPHA LINE ONE\n", "BRAVO LINE TWO\n"]), "
   }
 }
 
-// --- extractDownloadedPdf: downloaded PDFs are extracted in full ----------
-// Synthetic PDFs of several shapes (page counts, size above fetch_url's
-// maxChars*4 read cap, non-PDF body, partial body).
+// --- extractDownloadedPdf: downloaded PDFs become a complete row table -----
+// Synthetic PDFs of several shapes (one page, many pages, a file above
+// fetch_url's byte cap, English and Chinese table layouts, non-PDF body,
+// corrupt body). Rows are {page, line, x, text}, ordered by (page, line) and
+// byte-identical across extractions of the same PDF.
 {
-  const { extractDownloadedPdf } = await import("../runtime/pi/pdf_extract.mjs");
+  const { extractDownloadedPdf, pdfPagesToRows, serializePdfRows } = await import("../runtime/pi/pdf_extract.mjs");
   const { sha256Hex } = await import("../runtime/pi/provenance.mjs");
-  function makePdf(pageTexts, padBytes = 0) {
-    const objs = [];
-    const kids = pageTexts.map((_, i) => `${3 + i * 2} 0 R`).join(" ");
-    objs.push("<< /Type /Catalog /Pages 2 0 R >>");
-    objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pageTexts.length} >>`);
-    const fontNum = 3 + pageTexts.length * 2;
-    pageTexts.forEach((t, i) => {
-      objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents ${4 + i * 2} 0 R /Resources << /Font << /F1 ${fontNum} 0 R >> >> >>`);
-      const pad = padBytes ? `\n% ${"x".repeat(padBytes)}` : "";
-      const stream = `BT /F1 12 Tf 20 100 Td (${t}) Tj ET${pad}`;
-      objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-    });
-    objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-    let out = "%PDF-1.4\n"; const offsets = [];
-    objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
-    const xref = out.length;
-    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
-    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-    return Buffer.from(out, "latin1");
-  }
+  const { buildPdf, reportPages } = await import("./pdf_fixtures.mjs");
   const probe = await extractPdfText({ bytes: fixtureBytes, truncated: false });
   if (probe.extraction?.unavailable_reason === "pdftotext_not_found") {
     console.log("SKIP: pdftotext not found; skipping extractDownloadedPdf assertions");
   } else {
+    const oneCell = (text, y = 700) => ({ x: 40, y, text });
     const shapes = [
-      { name: "one page", texts: ["SOLO PAGE TEXT"], pad: 0 },
-      { name: "twelve pages", texts: Array.from({ length: 12 }, (_, i) => `SEGMENT ${i + 1} MARK`), pad: 0 },
-      // Each page carries ~12 KB of padding: the whole file is far above the
-      // 320 KB fetch_url read cap, which is what used to truncate it.
-      { name: "oversize 40 pages", texts: Array.from({ length: 40 }, (_, i) => `LONGDOC ${i + 1} MARK`), pad: 12_000 },
+      { name: "one page", pages: [[oneCell("SOLO PAGE TEXT")]] },
+      { name: "twelve pages", pages: Array.from({ length: 12 }, (_, i) => [oneCell(`SEGMENT ${i + 1} MARK`)]) },
+      // 600 pages with padding cells: far above fetch_url's read cap in text volume
+      { name: "many pages", pages: Array.from({ length: 150 }, (_, i) => Array.from({ length: 30 }, (_, r) => oneCell(`LONGDOC ${i + 1} row ${r + 1} ${"lorem ".repeat(8)}`, 760 - r * 20))) },
+      { name: "chinese table", pages: reportPages({ header: "年度报告", columns: ["地区", "金额（百万元）"], colX: [40, 300], rowsByPage: [[["甲", "10"], ["乙", "20"], ["小计", "30"]]] }) },
     ];
     for (const shape of shapes) {
-      const bytes = makePdf(shape.texts, shape.pad);
-      if (shape.pad) assert.ok(bytes.length > 320 * 1024, "oversize shape must exceed the fetch_url byte cap");
+      const bytes = buildPdf(shape.pages);
       const sha = sha256Hex(bytes);
-      const rec = await extractDownloadedPdf({ bytes, contentType: "application/octet-stream", sourceSha256: sha, sourceFile: `data/${sha}.data` });
+      const args = { bytes, contentType: "application/octet-stream", sourceSha256: sha, sourceFile: `data/${sha}.pdf` };
+      const rec = await extractDownloadedPdf(args);
       assert.equal(rec.available, true, shape.name);
-      assert.equal(rec.extraction.pages, shape.texts.length, shape.name);
-      assert.equal(rec.source_sha256, sha);
-      for (const [i, t] of shape.texts.entries()) assert.ok(rec.text.includes(`[page ${i + 1}]`) && rec.text.includes(t), `${shape.name}: page ${i + 1}`);
-      assert.equal(rec.text_sha256, sha256Hex(Buffer.from(rec.text, "utf8")));
+      assert.equal(rec.extraction.pages, shape.pages.length, shape.name);
+      assert.equal(rec.meta.source_sha256, sha);
+      assert.equal(rec.rowsFile, `data/derived/${sha}.pdf-rows.json`);
+      assert.equal(rec.meta.rows_sha256, sha256Hex(Buffer.from(rec.rowsText, "utf8")));
+      // rows sorted by (page, line), complete columns, every page present
+      for (let i = 1; i < rec.rows.length; i += 1) {
+        const a = rec.rows[i - 1], b = rec.rows[i];
+        assert.ok(a.page < b.page || (a.page === b.page && a.line < b.line), `${shape.name}: rows sorted`);
+      }
+      for (const row of rec.rows) assert.deepEqual(Object.keys(row), ["page", "line", "x", "text"]);
+      assert.equal(new Set(rec.rows.map((r) => r.page)).size, shape.pages.length, `${shape.name}: every page has rows`);
+      if (shape.name === "many pages") assert.ok(bytes.length > 100 * 1024 && rec.rows.length === 150 * 30, "complete, not capped");
+      // determinism: a second extraction is byte-identical
+      const again = await extractDownloadedPdf(args);
+      assert.equal(again.rowsText, rec.rowsText, `${shape.name}: byte-identical across extractions`);
+      assert.equal(again.meta.rows_sha256, rec.meta.rows_sha256);
       // the same bytes through the capped (truncated) path still refuse
       const capped = await extractPdfText({ bytes: bytes.subarray(0, 4096), truncated: true });
       assert.equal(capped.text, "PDF text unavailable: pdf_truncated", `${shape.name}: truncated gate unchanged`);
     }
-    // must-fail shapes: non-PDF body yields no derived text; a corrupt PDF
-    // never yields available text.
+    // pure helper: blank lines dropped, nothing merged or converted
+    const rows = pdfPagesToRows(["  a  b\n\n  c", "d"]);
+    assert.deepEqual(rows, [{ page: 1, line: 1, x: 2, text: "a  b" }, { page: 1, line: 3, x: 2, text: "c" }, { page: 2, line: 1, x: 0, text: "d" }]);
+    assert.equal(serializePdfRows([]), "[\n\n]\n");
+    // must-fail shapes: non-PDF body yields no table; a corrupt PDF never
+    // yields an available table.
     assert.equal(await extractDownloadedPdf({ bytes: Buffer.from("a,b\n1,2\n"), contentType: "text/csv", sourceSha256: "x", sourceFile: "f" }), null);
     const corrupt = await extractDownloadedPdf({ bytes: Buffer.from("%PDF-1.4\nnot really a pdf"), contentType: "application/pdf", sourceSha256: "x", sourceFile: "f" });
     assert.equal(corrupt.available, false);
-    assert.match(corrupt.text, /^PDF text unavailable: /);
-    console.log("extractDownloadedPdf: 3 shapes PASS");
+    assert.equal(corrupt.rows.length, 0);
+    console.log("extractDownloadedPdf: 4 shapes PASS");
   }
 }
 

@@ -252,6 +252,7 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
             )),
         }
     }
+    verify_derived_tables(root, report);
     let origin_dir = data_dir.join("origins");
     if origin_dir.is_dir() {
         for entry in fs::read_dir(&origin_dir)? {
@@ -825,6 +826,82 @@ fn collect_sql_reads(ast: &Value) -> SqlReads {
     }
 }
 
+const DERIVED_PREFIX: &str = "data/derived/";
+
+fn is_hex64(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// `data/derived/<sha>.pdf-rows.json` -> `<sha>` when the path has that shape.
+fn derived_rows_sha(path: &str) -> Option<&str> {
+    path.strip_prefix(DERIVED_PREFIX)?
+        .strip_suffix(".pdf-rows.json")
+        .filter(|sha| is_hex64(sha))
+}
+
+/// Verify the chain of a derived PDF row table, recomputed from bytes on disk:
+/// rows file hash == meta.rows_sha256; meta.source_sha256 == sha256 of the PDF
+/// data file it names; and a download record binds that PDF to this table.
+/// Returns the source PDF path on success.
+fn verify_derived_input(root: &Path, path: &str) -> std::result::Result<String, String> {
+    let sha = derived_rows_sha(path).ok_or("not a recognised derived table path")?;
+    let rows_hash = sha256_file(&root.join(path)).map_err(|e| format!("derived table unreadable: {e}"))?;
+    let meta_path = root.join(path.trim_end_matches(".json").to_owned() + ".meta.json");
+    let meta = read_json(&meta_path).map_err(|e| format!("derived metadata unreadable: {e}"))?;
+    let text = |key: &str| meta.get(key).and_then(Value::as_str).unwrap_or("");
+    if text("kind") != "pdf_row_table" || text("rows_file") != path {
+        return Err("derived metadata does not describe this table".into());
+    }
+    if rows_hash != text("rows_sha256") {
+        return Err("derived table bytes do not match rows_sha256".into());
+    }
+    if text("source_sha256") != sha {
+        return Err("derived table is not named for its source sha256".into());
+    }
+    let source = text("source_file");
+    let in_data = source.strip_prefix("data/").is_some_and(|rest| !rest.contains('/'));
+    if !in_data || !source.rsplit('/').next().unwrap_or("").starts_with(&format!("{sha}.")) {
+        return Err("source_file is not the content-addressed PDF".into());
+    }
+    let source_hash = sha256_file(&root.join(source)).map_err(|e| format!("source PDF unreadable: {e}"))?;
+    if source_hash != sha {
+        return Err("source PDF bytes do not match source_sha256".into());
+    }
+    let origins = fs::read_dir(root.join("data").join("origins")).map_err(|e| format!("no download records: {e}"))?;
+    for entry in origins.flatten() {
+        let origin_path = entry.path();
+        if origin_path.extension().and_then(|v| v.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(origin) = read_json(&origin_path) else { continue };
+        let derived = origin.get("derived_text");
+        if origin.get("file").and_then(Value::as_str) == Some(source)
+            && origin.get("sha256").and_then(Value::as_str) == Some(sha)
+            && derived.and_then(|d| d.get("file")).and_then(Value::as_str) == Some(path)
+            && derived.and_then(|d| d.get("rows_sha256")).and_then(Value::as_str) == Some(rows_hash.as_str())
+        {
+            return Ok(source.to_owned());
+        }
+    }
+    Err("no download record binds this table to the PDF".into())
+}
+
+/// Every table under data/derived/ must pass the chain check, so an altered
+/// or orphaned derived file is reported even when no computation reads it.
+fn verify_derived_tables(root: &Path, report: &mut VerificationReport) {
+    let Ok(entries) = fs::read_dir(root.join("data").join("derived")) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".pdf-rows.meta.json") {
+            continue;
+        }
+        let rel = format!("{DERIVED_PREFIX}{name}");
+        if let Err(reason) = verify_derived_input(root, &rel) {
+            report.error(format!("derived table {rel} failed its provenance chain: {reason}"));
+        }
+    }
+}
+
 /// Classify a set of directly read paths, following chained computations.
 fn classify_inputs(
     root: &Path,
@@ -836,6 +913,19 @@ fn classify_inputs(
     let mut effective = std::collections::BTreeSet::new();
     let mut unresolved = had_unresolved;
     for path in paths {
+        if path.starts_with(DERIVED_PREFIX) {
+            // A derived table is evidence only while its chain to the
+            // downloaded PDF verifies; anything else under data/derived/ is
+            // unresolved (fails closed).
+            match verify_derived_input(root, path) {
+                Ok(source_file) => {
+                    effective.insert(path.clone());
+                    effective.insert(source_file);
+                }
+                Err(_) => unresolved = true,
+            }
+            continue;
+        }
         if path.starts_with("data/") || path.starts_with("sources/") {
             effective.insert(path.clone());
             continue;
