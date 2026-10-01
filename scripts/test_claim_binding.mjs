@@ -16,11 +16,24 @@ import { lintVizSpec } from "../runtime/pi/viz.mjs";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
 
 // ---- Part 1: pure decision ------------------------------------------------
-const bound = (...inputs) => ({ input_binding: "source_bound", effective_inputs: inputs });
-const claimC = (...inputs) => ({ ref: "computations/c.json", result_hash: "h1", input_binding: "source_bound", effective_inputs: inputs });
-assert.equal(claimBindsComputation(bound("data/a.csv"), [claimC("data/a.csv")]).ok, true, "same file");
-assert.equal(claimBindsComputation(bound("data/a.csv", "data/b.csv"), [claimC("data/b.csv")]).ok, true, "one shared file is enough");
+const H = (c) => c.repeat(64);
+const ROWS = [{ k: "a", v: 1 }, { k: "b", v: 2 }, { k: "c", v: 3 }];
+const state = (inputs, extra = {}) => ({
+  ref: "computations/c.json", result_hash: "h1", input_binding: "source_bound", effective_inputs: inputs,
+  sql: "SELECT k, v FROM read_csv_auto('data/a.csv')", rows: ROWS, read_inputs: inputs.map((path) => ({ path, sha256: H("1") })),
+  ...extra,
+});
+const bound = (...inputs) => state(inputs, { ref: undefined });
+const claimC = (...inputs) => state(inputs);
+assert.equal(claimBindsComputation(bound("data/a.csv"), [claimC("data/a.csv")]).relation, "same_sql", "same statement");
+assert.equal(claimBindsComputation(bound("data/a.csv"), [claimC("data/a.csv")]).ok, true);
+assert.equal(claimBindsComputation(bound("data/a.csv", "data/b.csv"), [claimC("data/b.csv", "data/a.csv")]).ok, true, "a join that reads one more file than the claim");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "select k,v from read_csv_auto('data/a.csv') -- c\nORDER BY k;" }), [claimC("data/a.csv")]).relation, "values_in_rows", "ORDER BY is a different statement; the rows decide");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "select k,v from read_csv_auto('data/a.csv') -- c\n;" }), [claimC("data/a.csv")]).relation, "same_sql", "comments, case, whitespace and ';' are normalized");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT v, k FROM x WHERE v>1", rows: [{ v: 3, k: "c" }, { v: 2, k: "b" }] }), [claimC("data/a.csv")]).relation, "values_in_rows", "subset and reorder of the claim's rows");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k FROM x", rows: [{ k: "a" }, { k: "c" }] }), [claimC("data/a.csv")]).relation, "values_in_rows", "projection");
 assert.equal(claimBindsComputation(bound("data/a.csv"), [claimC("data/z.csv"), claimC("data/a.csv")]).ok, true, "any of the claim's computations");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT x FROM read_json('computations/c.json')", rows: [{ x: 9 }], read_inputs: [{ path: "computations/c.json", sha256: H("2") }] }), [claimC("data/a.csv")]).relation, "reads_claim_computation", "a chart that reads the claim's stored computation");
 for (const [name, chart] of [
   ["literal_only", { input_binding: "literal_only", effective_inputs: [] }],
   ["unresolved", { input_binding: "unresolved", effective_inputs: [] }],
@@ -32,9 +45,19 @@ for (const [name, chart] of [
   assert.equal(verdict.ok, false, `chart ${name} must not carry a verified claim`);
   assert.equal(verdict.code, "chart_not_source_bound");
 }
+// Must fail: a shared FILE is not enough.
+const sameFileOtherMetric = claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, w FROM x", rows: [{ k: "a", w: 10 }, { k: "b", w: 20 }] }), [claimC("data/a.csv")]);
+assert.equal(sameFileOtherMetric.code, "no_computation_relation", "same file, different metric");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, v FROM x", rows: [{ k: "a", v: 99 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "same columns, a value the claim never computed");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, v FROM x", rows: [{ k: "a", v: 3 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "labels paired with another row's value");
+assert.equal(claimBindsComputation(state(["data/b.csv", "data/a.csv"], { ref: undefined, sql: "SELECT w FROM read_csv_auto('data/b.csv') CROSS JOIN (SELECT 1 FROM read_csv_auto('data/a.csv') LIMIT 1)", rows: [{ w: 7 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "unrelated file bridged to the claim's file by a one-row join");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT 'a' AS k, 63 AS v FROM read_csv_auto('data/a.csv') LIMIT 1", rows: [{ k: "a", v: 63 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "constant output from a real file");
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, sql: "SELECT k, count(*) AS n FROM x GROUP BY k", rows: [{ k: "a", n: 1 }] }), [claimC("data/a.csv")]).code, "no_computation_relation", "an aggregate over the claim's rows is not shown to come from it (fails closed)");
 assert.equal(claimBindsComputation(bound("data/a.csv"), [claimC("data/y.csv")]).code, "no_shared_input");
 assert.equal(claimBindsComputation(bound("data/a.csv"), []).code, "claim_has_no_computation");
 assert.equal(claimBindsComputation(bound("data/a.csv"), [{ ...claimC("data/a.csv"), input_binding: "literal_only" }]).code, "claim_computation_not_source_bound");
+// Same path, different content hash (fingerprints): not the same input.
+assert.equal(claimBindsComputation(state(["data/a.csv"], { ref: undefined, read_inputs: [{ path: "data/a.csv", sha256: H("2") }] }), [claimC("data/a.csv")]).code, "no_shared_input", "same path, different content hash");
 assert.deepEqual(claimBindsComputation(bound("data/a.csv"), [claimC("data/a.csv")]).shared_inputs, ["data/a.csv"]);
 // computations/ paths (they embed the directory snapshot hash) are never compared.
 assert.equal(claimBindsComputation(bound("computations/old.json"), [claimC("computations/old.json")]).ok, false, "only data/ and sources/ count");
@@ -56,8 +79,8 @@ const ig = (bindings) => lintInfographicSpec(
   { verified_claim_ids: ["k1"], mobile_pages: true, ...(bindings ? { visual_claim_bindings: bindings } : {}) },
 ).blockers.filter((blocker) => /not bound to the visual's own computation/.test(blocker));
 assert.equal(ig(undefined).length, 0, "infographic: absent context skipped");
-assert.equal(ig({ v1: bad }).length, 1, "infographic visual whose claim does not intersect its computation");
-assert.equal(ig({ v1: { ok: true } }).length, 0);
+assert.equal(ig({ v1: { k1: bad } }).length, 1, "infographic visual whose claim does not intersect its computation");
+assert.equal(ig({ v1: { k1: { ok: true } } }).length, 0);
 
 // Tripwire: every production call of the two lints must pass the binding
 // context, or the check would silently skip in the real tool path.
@@ -164,6 +187,46 @@ try {
     const result = await tools.get("newsroom_infographic_lint").execute("i", { plan_ref: planRef });
     return result.details.blockers.filter((blocker) => /not bound to the visual's own computation/.test(blocker));
   };
+  // Page-level: extra claims (claim_set, module claim_id/claim_ids, annotations)
+  // are bound per visual, not only the manifest's main claim.
+  const claimA2 = (await recordClaim("The same timeline, second claim", [fileA], [qa])).claim_id;
+  const igExtra = async (moduleExtra) => {
+    const planRef = `infographics/plans/plan-${++planN}.json`;
+    writeFileSync(join(art, planRef), JSON.stringify({
+      schema_version: "1.0.0", title: "Test infographic", dek: "A minimal deterministic fixture.",
+      alt: "A section header and a chart in a single-column feature layout.",
+      modules: [{ id: "m1", type: "section_header", span: "full", heading: "Overview" }, { id: "m3", type: "visual", span: "full", manifest_ref: goodManifest, ...moduleExtra }],
+    }));
+    const result = await tools.get("newsroom_infographic_lint").execute("i", { plan_ref: planRef });
+    return result.details.blockers.filter((blocker) => /not bound to the visual's own computation/.test(blocker));
+  };
+  const annotation = (claim) => ({ id: "n1", type: "callout", text: "note", target_object_id: "m3", claim_id: claim });
+  assert.equal((await igExtra({ claim_set: [claimA2] })).length, 0, "an extra claim recorded from the visual's own computation passes");
+  assert.equal((await igExtra({ claim_id: claimA2, annotations: [annotation(claimA2)] })).length, 0, "module claim and annotation on the visual's own computation pass");
+  const extraBad = await igExtra({ claim_set: [claimY] });
+  assert.equal(extraBad.length, 1, "an unrelated claim in claim_set is refused");
+  const annBad = await igExtra({ claim_set: [claimA2, claimY], annotations: [annotation(claimY)] });
+  assert.equal(annBad.length >= 1 && annBad.some((blocker) => /annotation 'n1'/.test(blocker)), true, "an annotation citing an unrelated claim is refused");
+  assert.equal((await igExtra({ claim_ids: [claimY] })).length, 1, "claim_ids is checked too");
+  assert.equal((await igExtra({ claim_id: claimY })).length, 1, "module claim_id is checked too");
+
+  // Real tool path: a shared file is not enough (the Codex bypasses).
+  const fileB = addData("B", "item,price\nbread,3\nmilk,4\n");
+  const bridge = await lint({ claim_id: claimA, sql: `SELECT b.item, b.price FROM read_csv_auto('${fileB}') b CROSS JOIN (SELECT 1 FROM read_csv_auto('${fileA}') LIMIT 1)` });
+  assert.equal(bridge.binding.length, 1, "unrelated file bridged to the claim's file by a one-row join");
+  assert.match(bridge.binding[0], /no_computation_relation|not shown to come from that computation/);
+  const fileM = addData("M", "k,pop,price\nx,10,100\ny,20,200\n");
+  const qm = await query(`SELECT k, pop FROM read_csv_auto('${fileM}') ORDER BY k`);
+  const claimPop = (await recordClaim("Population by key", [fileM], [qm])).claim_id;
+  const otherMetric = await lint({ claim_id: claimPop, sql: `SELECT k, price FROM read_csv_auto('${fileM}') ORDER BY k`, ...{ x_field: undefined } });
+  assert.equal(otherMetric.binding.length, 1, "same file, the claim is about pop while the chart shows price");
+  const sameMetric = await lint({ claim_id: claimPop, sql: `SELECT k, pop FROM read_csv_auto('${fileM}') WHERE pop > 10 ORDER BY k` });
+  assert.equal(sameMetric.binding.length, 0, "same file, same metric, a subset of the claim's rows");
+  const fileConst = await lint({ claim_id: claimPop, sql: `SELECT 'x' AS k, 99 AS pop FROM read_csv_auto('${fileM}') LIMIT 1` });
+  assert.equal(fileConst.binding.length, 1, "a constant output that reads the file");
+  const joined = await lint({ claim_id: claimA, sql: `SELECT a.date, a.event FROM read_csv_auto('${fileA}') a JOIN read_csv_auto('${fileY}') y ON length(a.event) > y.count ORDER BY a.date` });
+  assert.equal(joined.binding.length, 0, "a join that keeps the claim's own rows passes");
+
   assert.equal((await igLint(goodManifest)).length, 0, "visual on its own claim passes");
   assert.equal((await igLint(forgedRef)).length, 1, "visual whose claim shares no input with its computation");
   console.log("claim binding: real viz lint / infographic lint tool path -- PASS");

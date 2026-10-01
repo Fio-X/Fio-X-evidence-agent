@@ -2140,15 +2140,15 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const lintInputs = await deriveInputsForSql(spec.sql, signal);
       const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
       const vizClaimRecords = await verifiedClaimRecords();
+      const inputSnapshot = await evidenceSnapshot();
       const claimBindings = await bindClaimsToChart(
-        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs },
+        { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints },
         vizClaimIds,
         vizClaimRecords,
         claimBindingDeps(),
       );
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
-      const inputSnapshot = await evidenceSnapshot();
       const inputSnapshotHash = inputSnapshot.hash;
       const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
       await writeArtifactIfAbsent(computationRef, {
@@ -3182,16 +3182,22 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
         }
       }
-      const visualClaimBindings: Record<string, any> = {};
+      // Per visual: every verified claim the page hangs on it (the manifest's
+      // own claim, module claim_id/claim_ids/claim_set, and each module
+      // annotation's claim) must bind to the visual's own computation.
+      const visualClaimBindings: Record<string, Record<string, any>> = {};
       for (const module of spec.modules ?? []) {
         if (module?.type !== "visual") continue;
         const manifest = assets[String(module.manifest_ref ?? "")]?.manifest;
-        const claimId = String(manifest?.claim_id ?? "");
-        if (!claimId || !verifiedRecords.has(claimId)) continue;
-        const chartState = manifest.computation_ref
+        const claimIds = [...new Set([
+          manifest?.claim_id, module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? []),
+          ...((Array.isArray(module.annotations) ? module.annotations : []).map((annotation: any) => annotation?.claim_id)),
+        ].filter(Boolean).map(String))].filter((id) => verifiedRecords.has(id));
+        if (!claimIds.length) continue;
+        const chartState = manifest?.computation_ref
           ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
           : { input_binding: "legacy", effective_inputs: [] };
-        visualClaimBindings[String(module.id)] = (await bindClaimsToChart(chartState, [claimId], verifiedRecords, claimBindingDeps()))[claimId];
+        visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
       }
       const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
       if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
