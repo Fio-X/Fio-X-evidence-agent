@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -5155,6 +5155,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
 
+  // Coverage contract for framingRings: a region's far, tiny pieces do not
+  // drive the frame, so when one lies wholly outside the map rect (and is big
+  // enough to see, >= 1 deg^2) the chart note names the region instead of
+  // clipping it silently.
+  const clippedTerritoryItems = joined.filter((item) => item.featureIndices.some((idx) =>
+    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
+
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
   const featureCount = neFeatureCount();
@@ -6778,7 +6785,7 @@ function renderChoropleth(spec, rows, mobile = false) {
       const nameX = numX + footnoteFieldGap;
       const valueX = nameX + footnoteNameW + footnoteFieldGap + footnoteValueW;
       footnoteParts.push(
-        `<text x="${numX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" style="font-variant-numeric: tabular-nums" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
+        `<text data-role="choropleth-footnote-number" x="${numX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" style="font-variant-numeric: tabular-nums" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
         `<text data-role="choropleth-footnote-name" data-iso3="${esc(li.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(li.name)}</text>`,
         `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
       );
@@ -7276,33 +7283,43 @@ function renderChoropleth(spec, rows, mobile = false) {
   if (legendTitle) {
     f.parts.push(`<text data-role="choropleth-legend-title" x="${plotLeft}" y="${legendY - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(legendTitle)}</text>`);
   }
-  CHOROPLETH_RAMP.forEach((c, i) => {
-    f.parts.push(`<rect x="${(plotLeft + i * legendStep).toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${c}"/>`);
-  });
   // Whole-number measures (years, counts): the class edges are only bin
   // bounds, so the top edge (e.g. 2018 for data ending in 2017) names a value
-  // no region has. One value per class: label each swatch with its own value
-  // (centred) and stop at the data max; wider classes: cap the last edge at
-  // the data max.
+  // no region has. The legend therefore stops at the class holding the data
+  // max: no swatch or tick is drawn for a class above it (a single value gets
+  // one swatch labelled with that value, never a 5..9 scale). Swatches, ticks
+  // and the displayed range all come from the same shownClasses, so they
+  // cannot disagree. One value per class: each swatch is labelled with its own
+  // value (centred); wider classes: the last edge is capped at the data max
+  // when the max falls inside that class (classifyValue puts a value equal to
+  // a lower bound in the class that starts there).
   const legendIntegerData = Boolean(specValueKind(spec)) && values.length > 0 && values.every(Number.isInteger);
   const legendDataMax = legendIntegerData ? Math.max(...values) : null;
   const legendOneValuePerClass = legendIntegerData && breaks.length > 1 && breaks.every((b, i) => i === 0 || b - breaks[i - 1] === 1);
+  const legendClassCount = breaks.length - 1;
+  // Every region has the same value (one region, or all equal): one swatch
+  // labelled with that value, whatever the measure kind.
+  const legendSingleValue = values.length > 0 && values.every((v) => v === values[0]);
+  const shownClasses = legendSingleValue ? 1 : legendIntegerData ? Math.min(legendClassCount, Math.max(1, classifyValue(legendDataMax, breaks) + 1)) : legendClassCount;
+  CHOROPLETH_RAMP.slice(0, shownClasses).forEach((c, i) => {
+    f.parts.push(`<rect x="${(plotLeft + i * legendStep).toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${c}"/>`);
+  });
   const legendTick = (edgeValue, x, anchor, unit) =>
     `<text x="${x.toFixed(1)}" y="${legendY + 26}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, edgeValue, unit))}</text>`;
-  if (legendOneValuePerClass) {
-    const classCount = breaks.length - 1;
-    for (let i = 0; i < classCount; i++) {
-      f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === classCount - 1 ? spec.unit : ""));
+  if (legendSingleValue) {
+    f.parts.push(legendTick(values[0], plotLeft + 0.5 * legendStep, "middle", spec.unit));
+  } else if (legendOneValuePerClass) {
+    for (let i = 0; i < shownClasses; i++) {
+      f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === shownClasses - 1 ? spec.unit : ""));
     }
   } else {
-    breaks.forEach((edgeValue, i) => {
-      const isLast = i === breaks.length - 1;
+    for (let i = 0; i <= shownClasses; i++) {
+      const edgeValue = breaks[i];
+      const isLast = i === shownClasses;
       const x = plotLeft + i * legendStep;
-      // Cap only when the data max falls inside the last class; otherwise the
-      // swatch under this tick really spans the edge, so the edge is the truth.
       const shown = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(edgeValue, legendDataMax) : edgeValue;
       f.parts.push(legendTick(shown, isLast ? x - 2 : x, isLast ? "end" : "middle", isLast ? spec.unit : ""));
-    });
+    }
   }
   f.parts.push("</g>");
 
@@ -7337,9 +7354,17 @@ function renderChoropleth(spec, rows, mobile = false) {
   // under the legend into the footer's own source line, rather than sitting
   // as a second, disconnected attribution line on the map body.
   const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
+  let framingNote = "";
+  if (clippedTerritoryItems.length) {
+    const shownNames = clippedTerritoryItems.slice(0, 3).map((item) => resolveEconomyDisplayName(item.raw, spec.category_names, lang));
+    const more = clippedTerritoryItems.length > shownNames.length;
+    framingNote = lang === "zh"
+      ? `${shownNames.join("、")}${more ? "等" : ""}的远离本土的岛屿等领土在此范围外，未画出。`
+      : `Distant territories of ${shownNames.join(", ")}${more ? " and others" : ""} lie outside this frame and are not drawn.`;
+  }
   const effectiveSpec = {
     ...spec,
-    note: [spec.note, yearsNote].filter(Boolean).join(" "),
+    note: [spec.note, yearsNote, framingNote].filter(Boolean).join(" "),
     source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · "),
   };
   (mobile ? addMobileFooter : addFooter)(f.parts, effectiveSpec, f.footerTop);
