@@ -4,6 +4,7 @@
 // caller a fresh artifact directory with a verified claim to hang charts on.
 // Real DuckDB runs the SQL (NEWSROOM_DUCKDB_BIN, default `duckdb`).
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
@@ -13,12 +14,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const REPO = fileURLToPath(new URL("..", import.meta.url));
 export const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-// `newsroomSource` lets a test load another revision of newsroom.ts (for the
-// byte-for-byte comparison against the baseline) next to the working copy.
-export async function loadNewsroom({ prefix = "precision-", newsroomSource, env = {}, dirs = [] } = {}) {
+// `baselineRev` loads the runtime of another git revision instead of the
+// working copy (for the byte-for-byte comparison against the baseline).
+export async function loadNewsroom({ prefix = "precision-", baselineRev, env = {}, dirs = [] } = {}) {
   const tmp = mkdtempSync(join(tmpdir(), prefix));
-  cpSync(join(REPO, "runtime"), join(tmp, "runtime"), { recursive: true });
-  cpSync(join(REPO, "config"), join(tmp, "config"), { recursive: true });
+  if (baselineRev) {
+    // The whole runtime/ and config/ of that revision, not just newsroom.ts.
+    const archive = execFileSync("git", ["-C", REPO, "archive", baselineRev, "runtime", "config"], { maxBuffer: 256 * 1024 * 1024 });
+    execFileSync("tar", ["-x", "-C", tmp], { input: archive });
+  } else {
+    cpSync(join(REPO, "runtime"), join(tmp, "runtime"), { recursive: true });
+    cpSync(join(REPO, "config"), join(tmp, "config"), { recursive: true });
+  }
   const stub = (name, source) => {
     mkdirSync(join(tmp, "node_modules", name), { recursive: true });
     writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -27,7 +34,7 @@ export async function loadNewsroom({ prefix = "precision-", newsroomSource, env 
   stub("typebox", "const builder = () => ({});\nexport const Type = new Proxy({}, { get: () => builder });\n");
   stub("@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
   const pi = join(tmp, "runtime", "pi");
-  const source = newsroomSource ?? readFileSync(join(pi, "newsroom.ts"), "utf8");
+  const source = readFileSync(join(pi, "newsroom.ts"), "utf8");
   const copy = join(pi, "newsroom.test-copy.mjs");
   writeFileSync(copy, stripTypeScriptTypes(source, { mode: "strip" }));
   const art = join(tmp, "artifact");
