@@ -55,6 +55,35 @@ assert.ok(!r.stdout.includes(FAKE_SECRET) && !r.stdout.includes('\\u0046\\u0041\
 // -safe alone does NOT stop fsdir (it lists and reads files), which is why the regex layer must also reject it.
 assert.equal(safeReadOnlySql(`select name from fsdir('${root}')`), false);
 
+// 3b. One statement only: a second statement must not ride behind an allowed first one.
+for (const sql of [
+  'select 1; select 2',
+  "select 1; pragma temp_store_directory='/tmp/x'",
+  'select 1;\n.shell echo hi',
+  'select 1 /* x */; pragma x',
+  'select 1;;',
+  "select 'a'; select 'b'",
+  "select 'unterminated",
+  'select 1 /* unterminated',
+  'select 1 -- c\n; select 2',
+]) {
+  assert.equal(safeReadOnlySql(sql), false, sql);
+  await assert.rejects(localSqliteQuery('x.db', sql), /read-only SELECT/, sql);
+}
+for (const sql of [
+  'select 1',
+  'select 1;',
+  'select 1;  \n',
+  "select 'a;b'",
+  'select "a;b" from (select 1 as "a;b")',
+  'pragma table_info(t)',
+  'with c as (select a from t) select * from c',
+  'with c as (select a from t) select * from c;',
+  'select 1 /* note; */',
+  'select 1; -- trailing comment',
+]) {
+  assert.equal(safeReadOnlySql(sql), true, sql);
+}
 // 4. The backend still passes -safe, and ordinary reads work.
 const backend = await readFile(new URL('../runtime/pi/local_backend.mjs', import.meta.url), 'utf8');
 assert.match(backend, /\['-safe', '-readonly', '-json'/);
