@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -5060,7 +5060,17 @@ function renderChoropleth(spec, rows, mobile = false) {
   const insetSpec = spec.inset && typeof spec.inset === "object" ? spec.inset : null;
   const insetIso3Set = new Set();
   const INSET_CLUSTER_DEG = 25;
-  const insetCentreOf = (item) => bboxCenter(item.featureIndices.flatMap((idx) => geometryRings(neFeatureGeometry(idx)).flat()));
+  // Centre for a secondary view (locator, zoom inset, clustering): the same
+  // rule as the main map (bbox centre when everything is within reach, else the
+  // minimal enclosing cap), never the bbox midpoint alone, which lands on the
+  // far side of the globe for data straddling the antimeridian.
+  const viewCentre = (pts) => {
+    const choice = chooseMapProjection(pts);
+    if (choice.kind === "azimuthal") return [choice.lon0, choice.lat0];
+    const cap = enclosingCap(pts);
+    return [cap.lon, cap.lat];
+  };
+  const insetCentreOf = (item) => viewCentre(item.featureIndices.flatMap((idx) => geometryRings(neFeatureGeometry(idx)).flat()));
   const angDeg = (p1, p2) => {
     const r = Math.PI / 180;
     const cosd = Math.sin(p1[1] * r) * Math.sin(p2[1] * r) + Math.cos(p1[1] * r) * Math.cos(p2[1] * r) * Math.cos((p1[0] - p2[0]) * r);
@@ -5121,7 +5131,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   const MIN_INSET_MAGNIFICATION = 2.5;
   function insetNaturalMapSize(points, mainScale) {
     const pts = points.length ? points : [[lon0, lat0]];
-    const [zl0, zl1] = bboxCenter(pts);
+    const [zl0, zl1] = viewCentre(pts);
     const probe = fitAzimuthalProjection(zl0, zl1, pts, 0, 1, 0, 1, 0.12);
     const raw = probe.scale > 0 ? (mainScale * (MIN_INSET_MAGNIFICATION + 0.1)) / probe.scale : mobile ? 90 : 120;
     return Math.max(mobile ? 70 : 90, Math.min(mobile ? 170 : 230, raw));
@@ -6047,7 +6057,7 @@ function renderChoropleth(spec, rows, mobile = false) {
 
   const insetPoints2 = [];
   for (const idx of insetFeatureIndices) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) insetPoints2.push(pt);
-  const [zLon0, zLat0] = bboxCenter(insetPoints2.length ? insetPoints2 : [[lon0, lat0]]);
+  const [zLon0, zLat0] = viewCentre(insetPoints2.length ? insetPoints2 : [[lon0, lat0]]);
 
   // Review fix (magnification >=2.5x): see insetNaturalMapSize above. When a
   // column was reserved the size is also capped to it, so a later-forced
@@ -6519,7 +6529,7 @@ function renderChoropleth(spec, rows, mobile = false) {
 
   const locatorPoints = [];
   if (showLocator) for (const index of locatorIndices) for (const ring of geometryRings(neFeatureGeometry(index))) for (const pt of ring) locatorPoints.push(pt);
-  const [locatorLon0, locatorLat0] = bboxCenter(locatorPoints.length ? locatorPoints : [[lon0, lat0]]);
+  const [locatorLon0, locatorLat0] = viewCentre(locatorPoints.length ? locatorPoints : [[lon0, lat0]]);
   const locatorProj = showLocator
     ? fitAzimuthalProjection(
         locatorLon0, locatorLat0, locatorPoints.length ? locatorPoints : [[lon0, lat0]],
@@ -6565,9 +6575,12 @@ function renderChoropleth(spec, rows, mobile = false) {
     if (dataLons.length) {
       const dMinLon = Math.min(...dataLons), dMaxLon = Math.max(...dataLons);
       const dMinLat = Math.min(...dataLats), dMaxLat = Math.max(...dataLats);
-      const zoomCorners = [
-        [dMinLon, dMinLat], [dMinLon, dMaxLat], [dMaxLon, dMinLat], [dMaxLon, dMaxLat],
-      ].map(([flon, flat]) => locatorProj.project(flon, flat));
+      // Data crossing the antimeridian has a naive lon span near 360 deg, so its
+      // bbox corners project to the far side of the globe; project the data's
+      // own points instead.
+      const zoomCorners = dMaxLon - dMinLon > 180
+        ? dataPoints.map(([flon, flat]) => locatorProj.project(flon, flat))
+        : [[dMinLon, dMinLat], [dMinLon, dMaxLat], [dMaxLon, dMinLat], [dMaxLon, dMaxLat]].map(([flon, flat]) => locatorProj.project(flon, flat));
       const zx0 = Math.min(...zoomCorners.map((p) => p.x));
       const zx1 = Math.max(...zoomCorners.map((p) => p.x));
       const zy0 = Math.min(...zoomCorners.map((p) => p.y));
