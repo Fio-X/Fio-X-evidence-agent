@@ -172,7 +172,7 @@ function glyphWidth(text, size) {
  *   import cycle with render_qa_svg.mjs's own consumers; render_qa.mjs wires
  *   the real implementation through.
  * @param {(rows, spec) => any[]} deps.joinChoroplethRows
- * @param {(value: number, unit?: string) => string} deps.fmt
+ * @param {(value: number, unit?: string, spec?: object) => string} deps.fmt
  * @param {string} deps.noDataFill - must equal renderChoropleth's own current
  *   non-data fill (viz.mjs's live-bound PALETTE.grid). Injected the same way
  *   as parseXml/joinChoroplethRows/fmt above - this module stays pure and
@@ -188,6 +188,8 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
   const rows = Array.isArray(options?.rows) ? options.rows : [];
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
   const unit = options?.unit ?? "";
+  // measure kind/semantics (P2) so the expected label text is spelled the same way the renderer spelled it
+  const kindSpec = { unit, value_field: options?.value_field, measure_kind: options?.measure_kind, measure_semantics: options?.measure_semantics };
   const value_field = options?.value_field;
 
   const root = parseXml(svgText);
@@ -249,7 +251,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
-    const expectedValueText = fmt(value, unit);
+    const expectedValueText = fmt(value, unit, kindSpec);
     if (!dataIso3ByRegion.has(iso3)) {
       failures.push({ rule: "value_label_missing_region", message: `${iso3} has a data row but no rendered choropleth-data region` });
       continue;

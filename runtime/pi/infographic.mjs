@@ -502,6 +502,102 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// D1: page-level subject set.  The page plan may declare one
+// {computation_ref, key_field, cutoff_date}.  Members are read by the runtime
+// from that computation's rows (never typed by the model); each chart's
+// subjects are read by the runtime from the category field of that chart's own
+// SQL rows and arrive on the asset as `asset.subjects`.  A chart whose
+// subjects go beyond the set is restyled by the composer automatically
+// (annotateSubjectSets) and only needs the model's caption text; a missing
+// caption blocks, as does a chart that writes a different cutoff date.
+// ---------------------------------------------------------------------------
+const subjectKey = (value) => String(value ?? "").trim();
+
+export function distinctSubjects(rows, field) {
+  if (!Array.isArray(rows) || !field) return [];
+  return [...new Set(rows.map((row) => subjectKey(row?.[field])).filter(Boolean))];
+}
+
+function subjectSetMembers(assets, context) {
+  const raw = context?.subject_set_members ?? assets?.__subject_set_members;
+  if (raw === undefined || raw === null) return null;
+  return new Set([...raw].map(subjectKey).filter(Boolean));
+}
+
+export function outOfSetSubjects(subjects, members) {
+  return (subjects ?? []).map(subjectKey).filter((subject) => subject && !members.has(subject));
+}
+
+// Marks every visual asset whose subjects exceed the set so composeOne draws it
+// distinguished.  Runtime-owned: nothing here is read from model-written fields.
+export function annotateSubjectSets(spec, assets, members) {
+  for (const module of spec?.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const asset = assets?.[module.manifest_ref];
+    if (!asset) continue;
+    const out = members && Array.isArray(asset.subjects) ? outOfSetSubjects(asset.subjects, members) : [];
+    if (out.length) asset.out_of_set_subjects = out; else delete asset.out_of_set_subjects;
+  }
+}
+
+export function evaluateSubjectSets(spec, assets = {}, context = {}) {
+  const blockers = [];
+  const warnings = [];
+  const notes = [];
+  const visuals = (spec?.modules ?? []).filter((module) => module?.type === "visual");
+  const declared = spec?.subject_set;
+  if (declared === undefined || declared === null) {
+    // No set declared: keep today's behaviour (no block).  Two or more charts whose
+    // subjects partly overlap without being equal is the one thing worth a warning.
+    const lists = visuals
+      .map((module) => ({ id: module.id, subjects: new Set((assets[module.manifest_ref]?.subjects ?? []).map(subjectKey).filter(Boolean)) }))
+      .filter((entry) => entry.subjects.size > 0);
+    let partial = false;
+    for (let i = 0; i < lists.length && !partial; i += 1) {
+      for (let j = i + 1; j < lists.length && !partial; j += 1) {
+        const a = lists[i].subjects;
+        const b = lists[j].subjects;
+        const shared = [...a].filter((subject) => b.has(subject)).length;
+        if (shared > 0 && (shared < a.size || shared < b.size) && !(shared === a.size && shared === b.size)) partial = true;
+      }
+    }
+    if (partial) warnings.push("subject_sets_partially_overlap: two or more charts cover partly overlapping but unequal subjects; declare a page subject_set (computation_ref, key_field, cutoff_date) or align the charts");
+    return { blockers, warnings, notes };
+  }
+  const missing = ["computation_ref", "key_field", "cutoff_date"].filter((key) => !String(declared?.[key] ?? "").trim());
+  if (missing.length) {
+    blockers.push(`subject_set_incomplete: subject_set is missing ${missing.join(", ")}`);
+    return { blockers, warnings, notes };
+  }
+  const members = subjectSetMembers(assets, context);
+  if (!members || members.size === 0) {
+    blockers.push(`subject_set_unresolved: the runtime could not read any '${declared.key_field}' members from computation '${declared.computation_ref}'`);
+    return { blockers, warnings, notes };
+  }
+  notes.push(`subject_set_members=${members.size}`);
+  const cutoff = String(declared.cutoff_date).trim();
+  for (const module of visuals) {
+    const asset = assets[module.manifest_ref];
+    if (!asset) continue;
+    const chartCutoff = String(asset.manifest?.cutoff_date ?? "").trim();
+    if (chartCutoff && chartCutoff !== cutoff) blockers.push(`subject_set_cutoff_mismatch: visual '${module.id}' writes cutoff date '${chartCutoff}' but the page declares '${cutoff}'`);
+    if (!Array.isArray(asset.subjects)) {
+      if (asset.manifest?.category_field) blockers.push(`subject_set_unresolved: visual '${module.id}' subjects could not be read from its own rows`);
+      continue;
+    }
+    const out = outOfSetSubjects(asset.subjects, members);
+    if (out.length === 0) continue;
+    notes.push(`out_of_set:${module.id}=${out.length}`);
+    if (!String(module.subject_caption ?? "").trim()) {
+      const shown = out.slice(0, 5).join(", ") + (out.length > 5 ? `, +${out.length - 5} more` : "");
+      blockers.push(`subject_set_out_of_set_without_caption: visual '${module.id}' includes ${out.length} subject(s) outside the page subject set (${shown}) and has no subject_caption readers can see`);
+    }
+  }
+  return { blockers, warnings, notes };
+}
+
 export function lintInfographicSpec(spec, assets = {}, context = {}) {
   const blockers = validateInfographicSpec(spec);
   const warnings = [];
@@ -668,6 +764,10 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     else if (row.severity === "WARNING") warnings.push(message);
     else notes.push(message);
   }
+  const subjectSets = evaluateSubjectSets(spec, assets, context);
+  blockers.push(...subjectSets.blockers);
+  warnings.push(...subjectSets.warnings);
+  notes.push(...subjectSets.notes);
   const synthesis = evaluateInfographicSynthesis(spec, assets, context.story_graph ?? null);
   blockers.push(...synthesis.blockers);
   warnings.push(...synthesis.warnings);
@@ -724,7 +824,7 @@ function moduleHeight(module, width, assets, mobile = false) {
     if (!asset) return mobile ? 500 : 520;
     const aspect = visualAspect(asset, mobile || spanColumns(module.span) <= 6);
     const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 52 : 44) : 0;
-    return clamp(width * aspect + (module.label ? 36 : 12) + provenanceCaption, mobile ? 390 : 330, mobile ? 980 : 900);
+    return clamp(width * aspect + (module.label ? 36 : 12) + provenanceCaption + outOfSetCaptionHeight(asset, module, mobile), mobile ? 390 : 330, mobile ? 980 : 900);
   }
   return 180;
 }
@@ -1056,17 +1156,32 @@ function drawModuleChrome(parts, box, ordinal, mobile, spec) {
   parts.push(`<text x="${box.x}" y="${y + 20}" font-family="${SANS}" font-size="${size}" font-weight="700" letter-spacing="1.5" fill="${ACCENT}">${showLabel ? esc(fitChromeText(`${number} · `, box.module, box.w, size, 1.5)) : number}</text>`);
 }
 
+function outOfSetCaptionHeight(asset, module, mobile) {
+  return asset?.out_of_set_subjects?.length && String(module.subject_caption ?? "").trim()
+    ? lines(module.subject_caption, mobile ? 54 : 110, 3).length * (mobile ? 16 : 17) + 12
+    : 0;
+}
+
 function embedVisual(parts, asset, box, module, mobile) {
   const sourceSvg = mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
   const info = svgInfo(sourceSvg);
   const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
-  const availableH = box.h - topPad - 6;
+  const captionH = outOfSetCaptionHeight(asset, module, mobile);
+  const availableH = box.h - topPad - 6 - captionH;
   const targetW = box.w;
   const naturalH = targetW * (info.height / info.width);
   const targetH = Math.min(availableH, naturalH);
   const y = box.y + topPad;
   const inner = namespaceSvgInner(info.inner, `embed-${hash(module.id).slice(0, 8)}-${mobile ? "m" : "d"}`);
   parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="xMidYMin meet">${inner}</svg>`);
+  if (captionH) {
+    // D1: the chart goes beyond the page subject set, so the runtime restyles it
+    // (dashed frame) and prints the model's caption where readers see it.
+    parts.push(`<rect data-role="out-of-set-frame" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" fill="none" stroke="${MUTED}" stroke-width="1.2" stroke-dasharray="6 4"/>`);
+    parts.push('<g data-role="out-of-set-caption">');
+    textBlock(parts, module.subject_caption, box.x, y + targetH + 18, { size: mobile ? 12 : 13, lineHeight: mobile ? 16 : 17, maxChars: mobile ? 54 : 110, maxLines: 3, fill: MUTED, italic: true });
+    parts.push("</g>");
+  }
 }
 
 function illustrationCaption(asset, module) {
