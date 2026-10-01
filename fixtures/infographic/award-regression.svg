@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 2086.0307692307692" role="img" aria-labelledby="info-title info-desc" data-infographic-version="1.1.0" data-viewport="desktop" data-layout-strategy="balanced">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 2051.225641025641" role="img" aria-labelledby="info-title info-desc" data-infographic-version="1.1.0" data-viewport="desktop" data-layout-strategy="balanced">
 <title id="info-title">A system is easier to understand when the parts share one page</title>
 <desc id="info-desc">A magazine-style data feature with a large headline, two hero statistics, a ranking chart, a Sankey diagram and explanatory text.</desc>
-<rect width="1440" height="2086.0307692307692" fill="#FFFFFF"/>
+<rect width="1440" height="2051.225641025641" fill="#FFFFFF"/>
 <line x1="96" y1="40" x2="1344" y2="40" stroke="#1A1A1A" stroke-width="6"/>
 <text x="96" y="58" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="2" fill="#D0021B">SYSTEMS / DATA FEATURE</text>
 <text x="1344" y="58" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.5" fill="#666666">AGENTIC DATA NEWSROOM · 01</text>
@@ -20,38 +20,38 @@
 <text x="126" y="791" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="58" font-weight="700" fill="#D0021B">100<tspan font-size="24" dx="7" fill="#1A1A1A">PJ</tspan></text>
 <text x="126" y="827" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15.5" font-weight="700" fill="#1A1A1A" >Total energy entering the synthetic</text>
 <text x="126" y="847" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15.5" font-weight="700" fill="#1A1A1A" >system</text>
-<text x="126" y="1059.2307692307693" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666" >Verified claim fixture</text>
-<rect data-role="hero-stat" data-module-id="stat-total" x="96" y="1078.2307692307693" width="1" height="1" fill="none"/>
+<text x="126" y="1024.425641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666" >Verified claim fixture</text>
+<rect data-role="hero-stat" data-module-id="stat-total" x="96" y="1043.425641025641" width="1" height="1" fill="none"/>
 <line x1="521.3333333333333" y1="711" x2="1344" y2="711" stroke="#E5E5E5" stroke-width="1"/>
 <text x="521.3333333333333" y="731" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5" fill="#D0021B">01</text>
-<svg data-role="infographic-visual" data-module-id="bar" x="521.3333333333333" y="743" width="822.6666666666666" height="330.2307692307692" viewBox="0 0 1040 420" preserveAspectRatio="xMidYMin meet">
+<svg data-role="infographic-visual" data-module-id="bar" x="521.3333333333333" y="743" width="822.6666666666666" height="295.425641025641" viewBox="0 0 1040 376" preserveAspectRatio="xMidYMin meet">
 <title id="embed-fcde2b2e-d-viz-title">A leads this selected comparison</title>
 <desc id="embed-fcde2b2e-d-viz-desc">Horizontal bars rank four synthetic categories from A at 42 to D at 9.</desc>
-<rect width="1040" height="420" fill="#FFFFFF"/>
+<rect width="1040" height="376" fill="#FFFFFF"/>
 <text x="54" y="38" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1A1A1A">A leads this selected comparison</text>
 <text x="54" y="74" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666">Synthetic regression fixture</text>
-<text x="250" y="337" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
-<text x="417.8571428571429" y="337" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">10</text>
-<text x="585.7142857142858" y="337" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">20</text>
-<text x="753.5714285714286" y="337" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">30</text>
-<text x="921.4285714285714" y="337" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">40 units</text>
-<text x="235" y="140.625" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">A</text>
-<rect data-role="data-bar" x="250" y="128.625" width="705" height="16" fill="#D0021B"/>
-<text x="964" y="140.625" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">42 units</text>
-<text x="235" y="191.875" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">B</text>
-<rect data-role="data-bar" x="250" y="179.875" width="520.3571428571429" height="16" fill="#9E9E9E"/>
-<text x="779.3571428571429" y="191.875" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">31</text>
-<text x="235" y="243.125" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">C</text>
-<rect data-role="data-bar" x="250" y="231.125" width="302.1428571428571" height="16" fill="#9E9E9E"/>
-<text x="561.1428571428571" y="243.125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">18</text>
-<text x="235" y="294.375" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">D</text>
-<rect data-role="data-bar" x="250" y="282.375" width="151.07142857142856" height="16" fill="#9E9E9E"/>
-<text x="410.07142857142856" y="294.375" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">9</text>
-<line x1="54" y1="349" x2="986" y2="349" stroke="#E5E5E5" stroke-width="1"/>
-<text x="54" y="368" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">Source: Synthetic fixture</text>
+<text x="76" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text x="278.1428571428571" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">10</text>
+<text x="480.2857142857143" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">20</text>
+<text x="682.4285714285714" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">30</text>
+<text x="884.5714285714286" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">40 units</text>
+<text x="61" y="135.125" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">A</text>
+<rect data-role="data-bar" x="76" y="123.125" width="849" height="16" fill="#D0021B"/>
+<text x="934" y="135.125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">42 units</text>
+<text x="61" y="175.375" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">B</text>
+<rect data-role="data-bar" x="76" y="163.375" width="626.6428571428572" height="16" fill="#9E9E9E"/>
+<text x="711.6428571428572" y="175.375" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">31</text>
+<text x="61" y="215.625" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">C</text>
+<rect data-role="data-bar" x="76" y="203.625" width="363.85714285714283" height="16" fill="#9E9E9E"/>
+<text x="448.85714285714283" y="215.625" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">18</text>
+<text x="61" y="255.875" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">D</text>
+<rect data-role="data-bar" x="76" y="243.875" width="181.92857142857144" height="16" fill="#9E9E9E"/>
+<text x="266.92857142857144" y="255.875" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">9</text>
+<line x1="54" y1="305" x2="986" y2="305" stroke="#E5E5E5" stroke-width="1"/>
+<text x="54" y="324" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">Source: Synthetic fixture</text>
 </svg>
-<text x="96" y="1137.2307692307693" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.8" fill="#D0021B">THE SYSTEM</text>
-<svg data-role="infographic-visual" data-module-id="flow" x="96" y="1149.2307692307693" width="1248" height="514.8" viewBox="0 0 1040 429" preserveAspectRatio="xMidYMin meet">
+<text x="96" y="1102.425641025641" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.8" fill="#D0021B">THE SYSTEM</text>
+<svg data-role="infographic-visual" data-module-id="flow" x="96" y="1114.425641025641" width="1248" height="514.8" viewBox="0 0 1040 429" preserveAspectRatio="xMidYMin meet">
 <title id="embed-3b212781-d-viz-title">Energy moves through one system</title>
 <desc id="embed-3b212781-d-viz-desc">A Sankey diagram shows solar, wind and gas feeding a system that supplies homes and industry while some energy is lost.</desc>
 <rect width="1040" height="429" fill="#FFFFFF"/>
@@ -93,25 +93,25 @@
 <line x1="54" y1="358" x2="986" y2="358" stroke="#E5E5E5" stroke-width="1"/>
 <text x="54" y="377" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">Source: Synthetic fixture</text>
 </svg>
-<rect data-role="hero-stat" data-module-id="stat-loss" x="96" y="1742.0307692307692" width="397.3333333333333" height="3" fill="#D0021B"/>
-<text x="126" y="1808.0307692307692" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="58" font-weight="700" fill="#D0021B">20<tspan font-size="24" dx="7" fill="#1A1A1A">PJ</tspan></text>
-<text x="126" y="1844.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15.5" font-weight="700" fill="#1A1A1A" >Energy represented as losses</text>
-<text x="126" y="1884.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666" >One fifth of the synthetic total</text>
-<rect data-role="hero-stat" data-module-id="stat-loss" x="96" y="1903.0307692307692" width="1" height="1" fill="none"/>
-<line x1="521.3333333333333" y1="1728.0307692307692" x2="1344" y2="1728.0307692307692" stroke="#E5E5E5" stroke-width="1"/>
-<text x="521.3333333333333" y="1748.0307692307692" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5" fill="#D0021B">02 · WHY IT MATTERS</text>
-<text x="521.3333333333333" y="1776.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="27" font-weight="700" fill="#1A1A1A" >One feature, two reading speeds</text>
-<text x="521.3333333333333" y="1824.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16.5" font-weight="400" fill="#1A1A1A" >The headline and anchor visual provide the fast reading path. Supporting</text>
-<text x="521.3333333333333" y="1847.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16.5" font-weight="400" fill="#1A1A1A" >statistics and explanatory prose provide the slower path for readers who want</text>
-<text x="521.3333333333333" y="1870.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16.5" font-weight="400" fill="#1A1A1A" >evidence and context.</text>
-<line x1="96" y1="1970.0307692307692" x2="1344" y2="1970.0307692307692" stroke="#1A1A1A" stroke-width="2"/>
-<text x="96" y="2000.0307692307692" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.3" fill="#1A1A1A">SOURCES &amp; METHODS</text>
-<text x="96" y="2027.0307692307692" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="400" fill="#666666" >Synthetic infographic regression fixture · Synthetic fixture</text>
-<text x="1344" y="2060.0307692307692" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.2" fill="#666666">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>
+<rect data-role="hero-stat" data-module-id="stat-loss" x="96" y="1707.225641025641" width="397.3333333333333" height="3" fill="#D0021B"/>
+<text x="126" y="1773.225641025641" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="58" font-weight="700" fill="#D0021B">20<tspan font-size="24" dx="7" fill="#1A1A1A">PJ</tspan></text>
+<text x="126" y="1809.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15.5" font-weight="700" fill="#1A1A1A" >Energy represented as losses</text>
+<text x="126" y="1849.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666" >One fifth of the synthetic total</text>
+<rect data-role="hero-stat" data-module-id="stat-loss" x="96" y="1868.225641025641" width="1" height="1" fill="none"/>
+<line x1="521.3333333333333" y1="1693.225641025641" x2="1344" y2="1693.225641025641" stroke="#E5E5E5" stroke-width="1"/>
+<text x="521.3333333333333" y="1713.225641025641" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5" fill="#D0021B">02 · WHY IT MATTERS</text>
+<text x="521.3333333333333" y="1741.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="27" font-weight="700" fill="#1A1A1A" >One feature, two reading speeds</text>
+<text x="521.3333333333333" y="1789.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16.5" font-weight="400" fill="#1A1A1A" >The headline and anchor visual provide the fast reading path. Supporting</text>
+<text x="521.3333333333333" y="1812.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16.5" font-weight="400" fill="#1A1A1A" >statistics and explanatory prose provide the slower path for readers who want</text>
+<text x="521.3333333333333" y="1835.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="16.5" font-weight="400" fill="#1A1A1A" >evidence and context.</text>
+<line x1="96" y1="1935.225641025641" x2="1344" y2="1935.225641025641" stroke="#1A1A1A" stroke-width="2"/>
+<text x="96" y="1965.225641025641" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.3" fill="#1A1A1A">SOURCES &amp; METHODS</text>
+<text x="96" y="1992.225641025641" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="400" fill="#666666" >Synthetic infographic regression fixture · Synthetic fixture</text>
+<text x="1344" y="2025.225641025641" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.2" fill="#666666">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>
 <rect data-role="module-boundary" data-module-id="section-1" x="96" y="494" width="1248" height="177" fill="none" stroke="none"/>
-<rect data-role="module-boundary" data-module-id="stat-total" x="96" y="711" width="397.3333333333333" height="368.2307692307692" fill="none" stroke="none"/>
-<rect data-role="module-boundary" data-module-id="bar" x="521.3333333333333" y="711" width="822.6666666666666" height="368.2307692307692" fill="none" stroke="none"/>
-<rect data-role="module-boundary" data-module-id="flow" x="96" y="1119.2307692307693" width="1248" height="550.8" fill="none" stroke="none"/>
-<rect data-role="module-boundary" data-module-id="stat-loss" x="96" y="1728.0307692307692" width="397.3333333333333" height="176" fill="none" stroke="none"/>
-<rect data-role="module-boundary" data-module-id="text" x="521.3333333333333" y="1728.0307692307692" width="822.6666666666666" height="176" fill="none" stroke="none"/>
+<rect data-role="module-boundary" data-module-id="stat-total" x="96" y="711" width="397.3333333333333" height="333.425641025641" fill="none" stroke="none"/>
+<rect data-role="module-boundary" data-module-id="bar" x="521.3333333333333" y="711" width="822.6666666666666" height="333.425641025641" fill="none" stroke="none"/>
+<rect data-role="module-boundary" data-module-id="flow" x="96" y="1084.425641025641" width="1248" height="550.8" fill="none" stroke="none"/>
+<rect data-role="module-boundary" data-module-id="stat-loss" x="96" y="1693.225641025641" width="397.3333333333333" height="176" fill="none" stroke="none"/>
+<rect data-role="module-boundary" data-module-id="text" x="521.3333333333333" y="1693.225641025641" width="822.6666666666666" height="176" fill="none" stroke="none"/>
 </svg>

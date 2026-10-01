@@ -4,7 +4,7 @@
     "mobile": "c44aa46d4d0a17cf8f0e3f7978cd9aec184902c616bf721c53d06c9163d46f08"
   },
   "multi_line": {
-    "desktop": "36179aeb39b18ab0f2072078cce70869c8ec458ca6e3ed4c746cda5e8aed3469",
+    "desktop": "9608d690ccc2d5b557ddf3a83cc6ed1ff16f58c2ae7d10aa2ffde2569940950c",
     "mobile": "a8564542325db4921ca1e68c9442a4a8daa952e15f69975f67e94964f37c8467"
   },
   "heatmap": {
@@ -12,7 +12,7 @@
     "mobile": "15f7aeb3c0e10bbeea58adbc66f441b352eb1cb0a30ef593f9a637d62768e71a"
   },
   "horizontal_bar_reference_line": {
-    "desktop": "0c64c2a7a351f728097f915f64a4bc4fb28d9082d4cd317fda42d26aa91d66e4",
+    "desktop": "b802ae2e666c6936f052efa81edad4c6d9403bbaae5b35d66a9cf95b4bba736d",
     "mobile": "1fce12eeb2689c0534d7236564716671825a4e7911e95772a7b04e3e0ff67ca9"
   },
   "dot_grouped_reference_line": {
@@ -32,7 +32,7 @@
     "mobile": "b9f34a4d3f8e9650ed12191e158dd1ab1d0b97b6eb2f0a1e3180cbefa18df44c"
   },
   "horizontal_bar_zh": {
-    "desktop": "f880eead893b7ede5bafdd398d0a703ad1d287880894330e3b8d01fed15ab6fb",
+    "desktop": "9d3849a8809dd3ba14dda5e4b6c7cd6f3f40d6af226eb1e91f1d53b423d6013e",
     "mobile": "b841ecd213933d83b8c91380652d760acd577614739d45359e07cd42f7593137"
   },
   "waffle": {
@@ -40,7 +40,7 @@
     "mobile": "427b3e64a771794e583c5c0e78db1608c6cb152d79fb6037602267114d6afbd7"
   },
   "horizontal_bar_range_bracket": {
-    "desktop": "d2be4a6e2bdff340f6861dfff05b479bb1432048f88a94c3c48ccb8cce415db1",
+    "desktop": "cd1f4f408c8a6aa38746332bbb456b46a865059548a447865a4b5199ff203218",
     "mobile": "b64c6286953f02f03172ab4b694896b76ddb46b738ca3d983ee0df1118755fe7"
   },
   "dot_range_bracket_category_names_zh": {
