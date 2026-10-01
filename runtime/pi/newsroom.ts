@@ -1434,6 +1434,7 @@ function registerVizChain(pi: ExtensionAPI) {
         state: { planParams },
         enabled,
         schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        signal,
         call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
         record: async (event: any) => {
           const at = new Date().toISOString();
@@ -1509,6 +1510,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
         state,
         enabled,
         schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        signal,
         call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
         record: async (event: any) => {
           const at = new Date().toISOString();

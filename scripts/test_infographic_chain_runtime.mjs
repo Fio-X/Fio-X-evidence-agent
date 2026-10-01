@@ -29,7 +29,7 @@ const GOOD = {
   newsroom_infographic_critic: () => textResult("PASS critic", { passed: true, score: 88, criticRef: "infographics/critics/c.json" }),
   newsroom_infographic_preview: () => ({ content: [{ type: "text", text: "Observe" }, { type: "image", data: "AAAA", mimeType: "image/png" }], details: { previewRef: "infographics/previews/v.json" } }),
 };
-async function fake({ over = {}, enabled = () => true, mismatch = async () => null, schemas = {} } = {}) {
+async function fake({ over = {}, enabled = () => true, mismatch = async () => null, schemas = {}, signal } = {}) {
   const calls = [];
   const events = [];
   const impl = { ...GOOD, ...over };
@@ -40,6 +40,7 @@ async function fake({ over = {}, enabled = () => true, mismatch = async () => nu
     schemaOf: (name) => schemas[name],
     call: async (name, params) => { calls.push([name, params]); return impl[name](params); },
     record: (event) => { events.push(event); },
+    signal,
   });
   return { outcome, calls, events };
 }
@@ -60,6 +61,39 @@ const handoff = (state) => `Next: vision ${state.manifestRef} ${state.previewRef
   assert.deepEqual(events.map((e) => `${e.phase}:${e.tool}`), PAGE_TOOLS.flatMap((t) => [`start:${t}`, `end:${t}`]));
   assert.ok(!names(calls).includes("newsroom_infographic_vision_critic"));
   check("complete chain: refs flow, image passed through, hand-off to the vision critic, event per step");
+}
+{ // cancellation: no step starts after it; finished steps and their refs are kept
+  const pre = new AbortController();
+  pre.abort();
+  const before = await fake({ signal: pre.signal });
+  assert.equal(before.outcome.code, "CANCELLED");
+  assert.deepEqual(names(before.calls), []);
+  for (let i = 0; i < PAGE_TOOLS.length - 1; i += 1) {
+    const controller = new AbortController();
+    const abortIn = PAGE_TOOLS[i];
+    const { outcome, calls } = await fake({ signal: controller.signal, over: { [abortIn]: (params) => { controller.abort(); return GOOD[abortIn](params); } } });
+    assert.equal(outcome.code, "CANCELLED", abortIn);
+    assert.deepEqual(names(calls), PAGE_TOOLS.slice(0, i + 1), `abort during ${abortIn}`);
+    assert.equal(outcome.done.length, i + 1);
+    const res = chainResultFor(outcome, { chain: "newsroom_infographic_chain", textResult, handoff });
+    assert.equal(res.details.stopCode, "CANCELLED");
+    assert.ok(!res.content[0].text.includes("Next: vision"), "no hand-off after cancellation");
+  }
+  const afterHook = new AbortController();
+  const mid = await fake({ signal: afterHook.signal, mismatch: async () => { afterHook.abort(); return null; } });
+  assert.equal(mid.outcome.code, "CANCELLED", "abort during the claim check is honoured");
+  assert.deepEqual(names(mid.calls), ["newsroom_infographic_plan"]);
+  check("AbortSignal: checked before and after each step and the claim check; finished steps kept");
+}
+{ // an inner error result stops the chain; publishable is never copied from the plan
+  const { outcome, calls } = await fake({ over: { newsroom_infographic_render: () => ({ ...textResult("boom", { renderQaPassed: true, manifestRef: "m" }), isError: true }) } });
+  assert.equal(outcome.code, "STEP_ERROR");
+  assert.deepEqual(names(calls), PAGE_TOOLS.slice(0, 3));
+  const first = await fake({ over: { newsroom_infographic_plan: () => ({ ...textResult("bad plan", { planRef: "p" }), isError: true }) } }).catch((e) => e);
+  assert.ok(first instanceof Error && /bad plan/.test(first.message));
+  const done = await fake({ over: { newsroom_infographic_plan: () => textResult("p", { planRef: "p", publishable: true }) } });
+  assert.equal(chainResultFor(done.outcome, { chain: "x", textResult }).details.publishable, undefined, "the plan's older publishable is not copied");
+  check("an isError result stops the page chain; publishable is not copied from the plan");
 }
 for (const [label, tool, details, code, expectCalls] of [
   ["page plan DRAFT", "newsroom_infographic_plan", { planRef: "p", draft: true }, "DRAFT", 1],

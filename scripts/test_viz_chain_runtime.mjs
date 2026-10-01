@@ -31,7 +31,7 @@ const GOOD = {
   newsroom_viz_render: () => ({ content: [{ type: "text", text: "rendered" }, { type: "image", data: "AAAA", mimeType: "image/png" }], details: { renderQaPassed: true, manifestRef: "visualizations/m.json" } }),
   newsroom_viz_critic: () => textResult("PASS critic", { passed: true, score: 91, criticRef: "visualizations/critics/c.json" }),
 };
-async function fake({ over = {}, enabled = () => true, model, claimRefs = ["computations/c.json"], schemas = SCHEMAS, planParams = { claim_id: "claim-x" } } = {}) {
+async function fake({ over = {}, enabled = () => true, model, claimRefs = ["computations/c.json"], schemas = SCHEMAS, planParams = { claim_id: "claim-x" }, signal } = {}) {
   const calls = [];
   const events = [];
   const impl = { ...GOOD, ...over };
@@ -42,6 +42,7 @@ async function fake({ over = {}, enabled = () => true, model, claimRefs = ["comp
     schemaOf: (name) => schemas[name],
     call: async (name, params) => { calls.push([name, params]); return impl[name](params); },
     record: (event) => { events.push(event); },
+    signal,
   });
   return { outcome, calls, events };
 }
@@ -64,6 +65,50 @@ const names = (calls) => calls.map(([name]) => name);
   assert.equal(outcome.code, "DRAFT");
   assert.deepEqual(names(calls), ["newsroom_viz_plan"]);
   check("DRAFT plan stops after plan", true);
+}
+{ // cancellation: checked before each step and after each return; nothing starts afterwards, produced steps are kept
+  const pre = new AbortController();
+  pre.abort();
+  const before = await fake({ signal: pre.signal });
+  assert.equal(before.outcome.code, "CANCELLED");
+  assert.deepEqual(names(before.calls), [], "aborted before the first step: nothing runs");
+  for (const [abortIn, expected] of [["newsroom_viz_plan", ["newsroom_viz_plan"]], ["newsroom_viz_lint", ["newsroom_viz_plan", "newsroom_viz_lint"]], ["newsroom_viz_render", ["newsroom_viz_plan", "newsroom_viz_lint", "newsroom_viz_render"]]]) {
+    const controller = new AbortController();
+    const { outcome, calls, events } = await fake({ signal: controller.signal, over: { [abortIn]: (params) => { controller.abort(); return GOOD[abortIn](params); } } });
+    assert.equal(outcome.status, "STOPPED");
+    assert.equal(outcome.code, "CANCELLED", abortIn);
+    assert.deepEqual(names(calls), expected, `abort during ${abortIn}: no later step starts`);
+    assert.equal(outcome.done.length, expected.length, "the finished step's artifacts are kept");
+    assert.equal(events.filter((e) => e.phase === "end" && e.isError === false).length, expected.length);
+    const res = chainResultFor(outcome, { chain: "newsroom_viz_chain", textResult });
+    assert.equal(res.details.stopCode, "CANCELLED");
+    assert.ok(res.details.planRef && !res.details.publishable, "no completion claim after cancellation");
+  }
+  const late = new AbortController();
+  const afterHook = await fake({ signal: late.signal, over: { newsroom_viz_lint: (params) => { const r = GOOD.newsroom_viz_lint(params); return r; } }, claimRefs: ["computations/c.json"] });
+  assert.equal(afterHook.outcome.status, "COMPLETE", "an unaborted signal changes nothing");
+  check("AbortSignal: checked before and after each step, no later step starts, finished steps kept", true);
+}
+{ // an inner error result stops the chain even if it still carries old success details
+  const { outcome, calls } = await fake({ over: { newsroom_viz_render: () => ({ ...textResult("boom", { renderQaPassed: true, manifestRef: "visualizations/m.json" }), isError: true }) } });
+  assert.equal(outcome.code, "STEP_ERROR");
+  assert.deepEqual(names(calls), ["newsroom_viz_plan", "newsroom_viz_lint", "newsroom_viz_render"]);
+  const first = await fake({ over: { newsroom_viz_plan: () => ({ ...textResult("bad plan", { planRef: "p", publishable: true }), isError: true }) } }).catch((e) => e);
+  assert.ok(first instanceof Error && /bad plan/.test(first.message), "the first step's error is thrown like the direct call");
+  check("an isError result stops the chain at that step", true);
+}
+{ // publishable comes from the render/critic, not the plan's older answer
+  const stale = await fake({ over: { newsroom_viz_render: () => ({ content: [{ type: "text", text: "r" }], details: { renderQaPassed: true, manifestRef: "m", publishable: false } }) } });
+  assert.equal(stale.outcome.code, "DRAFT");
+  assert.deepEqual(names(stale.calls), ["newsroom_viz_plan", "newsroom_viz_lint", "newsroom_viz_render"], "a draft render stops before the critic");
+  const flipped = await fake({ over: { newsroom_viz_render: () => ({ content: [{ type: "text", text: "r" }], details: { renderQaPassed: true, manifestRef: "m", publishable: true } }), newsroom_viz_critic: () => textResult("c", { passed: true, criticRef: "c", publishable: false }) } });
+  assert.equal(flipped.outcome.status, "COMPLETE");
+  assert.equal(chainResultFor(flipped.outcome, { chain: "x", textResult }).details.publishable, false, "a later false beats the plan's true");
+  const none = await fake();
+  assert.equal(chainResultFor(none.outcome, { chain: "x", textResult }).details.publishable, undefined, "never copied from the plan");
+  const good = await fake({ over: { newsroom_viz_render: () => ({ content: [{ type: "text", text: "r" }], details: { renderQaPassed: true, manifestRef: "m", publishable: true } }), newsroom_viz_critic: () => textResult("c", { passed: true, criticRef: "c", publishable: true }) } });
+  assert.equal(chainResultFor(good.outcome, { chain: "x", textResult }).details.publishable, true);
+  check("final publishable follows the current render/critic state; a draft render stops the chain", true);
 }
 for (const [label, tool, details, code, expectCalls] of [
   ["lint blocked", "newsroom_viz_lint", { passed: false, lintRef: "x", computationRef: "y" }, "BLOCKED", 2],
