@@ -6857,7 +6857,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     for (const item of insetLabelItems) {
       const dot = tinyRegionDot(item.item.featureIndices, zoomProj.project, zLon0, zLat0);
       if (!dot) continue;
-      insetPanelParts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.item.iso3)}" data-value="${n(item.item.row[spec.value_field]) ?? 0}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="3.2" fill="${item.fill}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
+      insetPanelParts.push(`<circle data-role="choropleth-inset-dot" data-iso3="${esc(item.item.iso3)}" data-value="${n(item.item.row[spec.value_field]) ?? 0}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="3.2" fill="${item.fill}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
     }
     // Review fix (containment search): the anchor placement decided above
     // (onPolygonItems' own ax/ay) was found in the sizingProbe's own
