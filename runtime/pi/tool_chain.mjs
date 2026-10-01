@@ -67,8 +67,8 @@ export class ChainStop extends Error {
   }
 }
 
-// steps: [{ name, params(state) -> object, absorb(details, state) -> void,
-//           judge(details, state) -> { ok, code?, message? } }]
+// steps: [{ name, params(state) -> object, absorb(details, state, result) -> void,
+//           judge(details, state, result) -> { ok, code?, message? } }]
 // call(name, params) -> the registered tool's result; enabled(name) -> boolean;
 // schemaOf(name) -> JSON schema of that tool's parameters; record(event) -> void.
 // The first step's own errors are thrown unchanged (a chain call fails exactly
@@ -114,8 +114,8 @@ export async function runToolChain({ steps, call, enabled, schemaOf, record = ()
     const details = result?.details && typeof result.details === "object" ? result.details : {};
     await record({ phase: "end", step: index, tool: step.name, isError: false, details });
     done.push({ tool: step.name, params, result, details });
-    step.absorb?.(details, state);
-    const verdict = step.judge(details, state);
+    step.absorb?.(details, state, result);
+    const verdict = step.judge(details, state, result);
     if (!verdict.ok) {
       return { ...stop(index, verdict.code, verdict.message ?? verdict.code), nextTool: verdict.nextTool ?? step.name, stoppedAfter: step.name };
     }
@@ -204,16 +204,98 @@ export function vizChainSteps({ modelComputationRef, claimComputationRefs }) {
   ];
 }
 
+// Page chain (NEWSROOM_SPEED_CHAIN_INFOGRAPHIC): plan -> lint -> render ->
+// deterministic critic -> preview. It ends at the preview: the image-aware
+// vision critic is a judgment only the model can make after looking at the
+// returned image, so nothing from it is ever filled in here.
+// visualClaimMismatch() (async) returns a message when a visual module's
+// manifest is not bound to one of that module's own claims, else null.
+export function infographicChainSteps({ visualClaimMismatch }) {
+  const needRef = (state, key, from) => {
+    if (typeof state[key] !== "string" || !state[key]) throw new ChainStop("MISSING_FIELD", `${from} did not return ${key}; the chain cannot continue`);
+    return state[key];
+  };
+  const missing = (tool, field) => ({ ok: false, code: "MISSING_FIELD", message: `${tool} returned no ${field}` });
+  return [
+    {
+      name: "newsroom_infographic_plan",
+      params: (state) => state.planParams,
+      absorb: (details, state) => { state.planRef = details.planRef; },
+      judge: (details) => {
+        if (typeof details.planRef !== "string" || !details.planRef) return missing("newsroom_infographic_plan", "planRef");
+        if (details.publishable === false || details.draft === true) {
+          return { ok: false, code: "DRAFT", message: "the page plan is a DRAFT / not publishable and is not linted or rendered by the chain", nextTool: "newsroom_infographic_plan" };
+        }
+        return {
+          ok: true,
+          after: async () => {
+            const message = await visualClaimMismatch();
+            return message ? { code: "CLAIM_MANIFEST_MISMATCH", message, nextTool: "newsroom_infographic_plan" } : null;
+          },
+        };
+      },
+    },
+    {
+      name: "newsroom_infographic_lint",
+      params: (state) => ({ plan_ref: needRef(state, "planRef", "newsroom_infographic_plan") }),
+      absorb: (details, state) => { state.lintRef = details.lintRef; },
+      judge: (details) => {
+        if (details.passed !== true) return details.passed === false ? { ok: false, code: "BLOCKED", message: "page lint reported blockers" } : missing("newsroom_infographic_lint", "passed field");
+        if (typeof details.lintRef !== "string" || !details.lintRef) return missing("newsroom_infographic_lint", "lintRef");
+        return { ok: true };
+      },
+    },
+    {
+      name: "newsroom_infographic_render",
+      params: (state) => ({ plan_ref: needRef(state, "planRef", "newsroom_infographic_plan"), lint_ref: needRef(state, "lintRef", "newsroom_infographic_lint") }),
+      absorb: (details, state) => { state.manifestRef = details.manifestRef; },
+      judge: (details) => {
+        if (details.renderQaPassed !== true) return details.renderQaPassed === false ? { ok: false, code: "RENDER_QA_FAILED", message: "render QA failed; the rejected render is kept" } : missing("newsroom_infographic_render", "renderQaPassed field");
+        if (typeof details.manifestRef !== "string" || !details.manifestRef) return missing("newsroom_infographic_render", "manifestRef");
+        return { ok: true };
+      },
+    },
+    {
+      name: "newsroom_infographic_critic",
+      params: (state) => ({
+        plan_ref: needRef(state, "planRef", "newsroom_infographic_plan"),
+        lint_ref: needRef(state, "lintRef", "newsroom_infographic_lint"),
+        manifest_ref: needRef(state, "manifestRef", "newsroom_infographic_render"),
+      }),
+      absorb: (details, state) => { state.criticRef = details.criticRef; },
+      judge: (details) => {
+        if (details.passed !== true) return details.passed === false ? { ok: false, code: "REVISE", message: "the deterministic page critic asks for a revision" } : missing("newsroom_infographic_critic", "passed field");
+        if (typeof details.criticRef !== "string" || !details.criticRef) return missing("newsroom_infographic_critic", "criticRef");
+        return { ok: true };
+      },
+    },
+    {
+      name: "newsroom_infographic_preview",
+      params: (state) => ({
+        manifest_ref: needRef(state, "manifestRef", "newsroom_infographic_render"),
+        critic_ref: needRef(state, "criticRef", "newsroom_infographic_critic"),
+      }),
+      absorb: (details, state) => { state.previewRef = details.previewRef; },
+      judge: (details, _state, result) => {
+        if (typeof details.previewRef !== "string" || !details.previewRef) return missing("newsroom_infographic_preview", "previewRef");
+        // The vision step is blind without the picture: the preview must carry it.
+        if (!imagesOf(result).length) return missing("newsroom_infographic_preview", "image content block");
+        return { ok: true };
+      },
+    },
+  ];
+}
+
 // Builds the single result the model sees: each executed step's text verbatim,
 // the typed refs, and any image blocks passed through unchanged.
-export function chainResultFor(outcome, { chain, textResult }) {
+export function chainResultFor(outcome, { chain, textResult, handoff }) {
   const sections = outcome.done.map((entry) => `## ${entry.tool}\n${textOf(entry.result)}`);
   const refs = {};
-  for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef"]) if (outcome.state[key]) refs[key] = outcome.state[key];
-  const last = outcome.done.at(-1)?.details ?? {};
+  for (const key of ["planRef", "lintRef", "computationRef", "manifestRef", "criticRef", "previewRef"]) if (outcome.state[key]) refs[key] = outcome.state[key];
+  const last = outcome.done.find((entry) => entry.tool.endsWith("_critic"))?.details ?? outcome.done.at(-1)?.details ?? {};
   const complete = outcome.status === "COMPLETE";
   const footer = complete
-    ? `Chain ${chain}: COMPLETE after ${outcome.done.length} steps (${outcome.done.map((entry) => entry.tool).join(" -> ")}).`
+    ? `Chain ${chain}: COMPLETE after ${outcome.done.length} steps (${outcome.done.map((entry) => entry.tool).join(" -> ")}).${handoff ? `\n${handoff(outcome.state)}` : ""}`
     : `Chain ${chain}: STOPPED at ${outcome.failedAt} (${outcome.code}): ${outcome.message}\nCompleted steps: ${outcome.done.length ? outcome.done.map((entry) => entry.tool).join(" -> ") : "none"}. Nothing was retried, skipped or cleaned up. Call ${outcome.nextTool} separately next${outcome.code === "DRAFT" ? " after the plan has a verified claim_id" : ""}.`;
   const result = textResult([...sections, footer].join("\n\n"), {
     chain,

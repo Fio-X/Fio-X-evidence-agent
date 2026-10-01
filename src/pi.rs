@@ -50,6 +50,9 @@ pub const COMPUTE_BATCH_ENV: &str = "NEWSROOM_SPEED_COMPUTE_BATCH";
 pub const CHAIN_VIZ_ENV: &str = "NEWSROOM_SPEED_CHAIN_VIZ";
 /// Runtime-only tool that exists when `CHAIN_VIZ_ENV` is on; not in the registry.
 pub const VIZ_CHAIN_TOOL: &str = "newsroom_viz_chain";
+pub const CHAIN_INFOGRAPHIC_ENV: &str = "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC";
+/// Runtime-only tool that exists when `CHAIN_INFOGRAPHIC_ENV` is on; not in the registry.
+pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
 
 #[cfg(test)]
@@ -65,6 +68,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         parallel_hints: env_switch(PARALLEL_HINTS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
         chain_viz: env_switch(CHAIN_VIZ_ENV),
+        chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV),
     }
 }
 
@@ -568,6 +572,9 @@ impl PiConfig {
         if self.speed.chain_viz && names.contains(&"newsroom_viz_plan") {
             names.push(VIZ_CHAIN_TOOL);
         }
+        if self.speed.chain_infographic && names.contains(&"newsroom_infographic_plan") {
+            names.push(INFOGRAPHIC_CHAIN_TOOL);
+        }
         names.join(",")
     }
 
@@ -719,6 +726,11 @@ impl PiConfig {
             cmd.env(CHAIN_VIZ_ENV, "1");
         } else {
             cmd.env_remove(CHAIN_VIZ_ENV);
+        }
+        if self.speed.chain_infographic {
+            cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
+        } else {
+            cmd.env_remove(CHAIN_INFOGRAPHIC_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1584,6 +1596,63 @@ mod tests {
         assert_eq!(chain_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(CHAIN_VIZ_ENV);
         assert!(!speed_switches_from_env().chain_viz);
+
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        let page_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == CHAIN_INFOGRAPHIC_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(page_marker(&config), Some(None));
+        assert!(speed_switches_from_env().chain_infographic);
+        config.speed.chain_infographic = true;
+        assert_eq!(page_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
+        assert!(!speed_switches_from_env().chain_infographic);
+    }
+
+    #[test]
+    fn infographic_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let mut on = visual_story_config(false, profile);
+            on.speed.chain_infographic = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == INFOGRAPHIC_CHAIN_TOOL),
+                "{profile}"
+            );
+            let has_plan = base
+                .split(',')
+                .any(|name| name == "newsroom_infographic_plan");
+            let offered = on
+                .tools_arg()
+                .split(',')
+                .any(|name| name == INFOGRAPHIC_CHAIN_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{INFOGRAPHIC_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
     }
 
     #[test]

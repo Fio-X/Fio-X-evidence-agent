@@ -32,6 +32,10 @@ pub struct PromptSpeed {
     /// plan -> lint -> render -> critic in one call. No prompt text changes;
     /// the tool carries its own guidance.
     pub chain_viz: bool,
+    /// `NEWSROOM_SPEED_CHAIN_INFOGRAPHIC=1`: expose `newsroom_infographic_chain`
+    /// (plan -> lint -> render -> critic -> preview in one call). No prompt
+    /// text changes; the tool carries its own guidance.
+    pub chain_infographic: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
