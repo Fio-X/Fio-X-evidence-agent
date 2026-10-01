@@ -123,7 +123,24 @@ def main() -> int:
         write_json(qa_path, qa)
     run("compact-stale-qa-hash-fails", stale_qa, "compact SVG hash does not match render_qa report")
 
-    print("compact variant verifier suite: PASS (8 cases)")
+    # A listed compact variant must be bound to render QA; none of these may be skipped silently.
+    run("compact-without-render-qa-ref-fails", lambda r: add_viz(r, tweak=lambda root, m: m.pop("render_qa_ref")), "compact variant without a valid render_qa_ref")
+    run("compact-with-invalid-render-qa-ref-fails", lambda r: add_viz(r, tweak=lambda root, m: m.update({"render_qa_ref": "elsewhere/cmp.json"})), "compact variant without a valid render_qa_ref")
+
+    def missing_qa_file(root):
+        add_viz(root)
+        (root / "visualizations/qa/cmp.json").unlink()
+    run("compact-with-missing-render-qa-file-fails", missing_qa_file, "render_qa report visualizations/qa/cmp.json does not exist")
+
+    def qa_without_compact_viewport(root):
+        add_viz(root)
+        qa_path = root / "visualizations/qa/cmp.json"
+        qa = load_json(qa_path)
+        qa["viewports"].pop("compact")
+        write_json(qa_path, qa)
+    run("compact-with-qa-lacking-compact-viewport-fails", qa_without_compact_viewport, "missing viewports.compact.svg_sha256")
+
+    print("compact variant verifier suite: PASS (12 cases)")
     return 0
 
 

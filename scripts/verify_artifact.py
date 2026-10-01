@@ -1108,17 +1108,26 @@ def verify(root: Path) -> Report:
             # A listed compact variant is bound to render QA for every chart
             # type (viewports.compact.svg_sha256 must equal the file's hash);
             # choropleths get this through the full loop below.
-            if "compact" in viz_variants and manifest.get("chart_type") != "choropleth" and isinstance(manifest.get("render_qa_ref"), str) and manifest["render_qa_ref"].startswith("visualizations/qa/"):
-                try:
-                    compact_qa_path = safe_ref(root, manifest["render_qa_ref"])
-                    compact_svg_path = safe_ref(root, viz_variants["compact"]) if isinstance(viz_variants.get("compact"), str) else None
-                    if compact_qa_path.is_file() and compact_svg_path is not None and compact_svg_path.is_file():
-                        compact_expected = (((load_json(compact_qa_path).get("viewports") or {}).get("compact")) or {}).get("svg_sha256")
-                        report.check(isinstance(compact_expected, str), f"visualization {manifest_ref} render_qa report is missing viewports.compact.svg_sha256")
-                        if isinstance(compact_expected, str):
-                            report.check(sha256_file(compact_svg_path) == compact_expected, f"visualization {manifest_ref} compact SVG hash does not match render_qa report")
-                except Exception as exc:
-                    report.check(False, f"visualization {manifest_ref} unsafe compact render_qa binding: {exc}")
+            # Fail closed: a listed compact variant needs a valid render_qa_ref, an
+            # existing QA report, and viewports.compact.svg_sha256 - each missing
+            # piece is a failure, never a silent skip.
+            if "compact" in viz_variants:
+                compact_qa_ref = manifest.get("render_qa_ref")
+                compact_qa_ok = isinstance(compact_qa_ref, str) and compact_qa_ref.startswith("visualizations/qa/")
+                report.check(compact_qa_ok, f"visualization {manifest_ref} lists a compact variant without a valid render_qa_ref")
+                if compact_qa_ok:
+                    try:
+                        compact_qa_path = safe_ref(root, compact_qa_ref)
+                        report.check(compact_qa_path.is_file(), f"visualization {manifest_ref} compact variant: render_qa report {compact_qa_ref} does not exist")
+                        compact_ref_value = viz_variants.get("compact")
+                        compact_svg_path = safe_ref(root, compact_ref_value) if isinstance(compact_ref_value, str) else None
+                        if compact_qa_path.is_file() and compact_svg_path is not None and compact_svg_path.is_file():
+                            compact_expected = (((load_json(compact_qa_path).get("viewports") or {}).get("compact")) or {}).get("svg_sha256")
+                            report.check(isinstance(compact_expected, str), f"visualization {manifest_ref} render_qa report is missing viewports.compact.svg_sha256")
+                            if isinstance(compact_expected, str):
+                                report.check(sha256_file(compact_svg_path) == compact_expected, f"visualization {manifest_ref} compact SVG hash does not match render_qa report")
+                    except Exception as exc:
+                        report.check(False, f"visualization {manifest_ref} unsafe compact render_qa binding: {exc}")
             if manifest.get("chart_type") == "choropleth":
                 render_qa_ref = manifest.get("render_qa_ref")
                 if draft and not isinstance(render_qa_ref, str):
