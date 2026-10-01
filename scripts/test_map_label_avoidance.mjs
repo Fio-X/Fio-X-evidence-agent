@@ -104,12 +104,14 @@ const clean = ["Fiji", "Singapore", "Vanuatu", "Malta", "Luxembourg", "Bahrain",
 }
 
 // Numbered markers, legend title and footnote numbers, checked on the stress
-// sample (the one that really produces footnote markers), both viewports.
+// sample (the one that really produces footnote markers), both viewports. The
+// desktop inset ladder may now label every region directly, so desktop needs no
+// markers (the mobile render, which keeps the default inset, still must).
 {
   const rows = mk(names);
   const a = renderVizBundle(spec, rows);
   for (const vp of ["desktop", "mobile"]) {
-    const markers = pick(a[vp], /data-role="choropleth-(?:inset-)?footnote-marker"[^>]*cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g, { min: 1, label: `${vp} markers` })
+    const markers = pick(a[vp], /data-role="choropleth-(?:inset-)?footnote-marker"[^>]*cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g, { min: vp === "mobile" ? 1 : 0, label: `${vp} markers` })
       .map((m) => ({ x: +m[1], y: +m[2], r: +m[3] }));
     for (let x = 0; x < markers.length; x++) for (let y = x + 1; y < markers.length; y++) {
       assert.ok(Math.hypot(markers[x].x - markers[y].x, markers[x].y - markers[y].y) >= markers[x].r + markers[y].r, `${vp}: markers ${x}/${y} overlap`);
@@ -118,7 +120,7 @@ const clean = ["Fiji", "Singapore", "Vanuatu", "Malta", "Luxembourg", "Bahrain",
     const [t] = pick(a[vp], /data-role="choropleth-legend-title"[^>]*>([^<]*)</g, { count: 1, label: `${vp} legend title` });
     assert.notEqual(t[1], spec.title, "legend title must not repeat the chart title");
     // Footnote numbers are right-aligned so two-digit rows line up.
-    for (const [n] of pick(a[vp], /<text data-role="choropleth-footnote-number"[^>]*>/g, { min: 1, label: `${vp} footnote numbers` })) {
+    for (const [n] of pick(a[vp], /<text data-role="choropleth-footnote-number"[^>]*>/g, { min: vp === "mobile" ? 1 : 0, label: `${vp} footnote numbers` })) {
       assert.match(n, /text-anchor="end"/);
     }
   }
