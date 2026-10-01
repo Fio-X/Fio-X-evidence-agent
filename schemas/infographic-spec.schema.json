@@ -66,6 +66,17 @@
       "type": "string",
       "maxLength": 1000
     },
+    "subject_set": {
+      "type": "object",
+      "description": "Optional page-level subject set. Members are read by the runtime from the declared computation's rows; models never list them.",
+      "required": ["computation_ref", "key_field", "cutoff_date"],
+      "properties": {
+        "computation_ref": {"type": "string", "minLength": 1, "maxLength": 300},
+        "key_field": {"type": "string", "minLength": 1, "maxLength": 120},
+        "cutoff_date": {"type": "string", "minLength": 1, "maxLength": 40}
+      },
+      "additionalProperties": false
+    },
     "intent": {
       "type": "string",
       "minLength": 1,
@@ -435,6 +446,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 80
+        },
+        "subject_caption": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Caption readers see when a visual covers subjects outside the page subject_set."
         },
         "type": {
           "enum": [

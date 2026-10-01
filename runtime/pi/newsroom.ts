@@ -10,7 +10,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { composeInfographicBundle, critiqueInfographic, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyVisionPatches, normalizeVisionCriticReport, VISION_RUBRIC_KEYS } from "./vision.mjs";
@@ -224,6 +224,34 @@ async function readArtifactText(relativePath: string, requiredPrefix?: string) {
   return readFile(full, "utf8");
 }
 
+// D1: the runtime, never the model, reads the page subject set (the key field
+// of the declared computation's rows) and each chart's subjects (the category
+// field of that chart's own computation rows), then restyles any chart that
+// goes beyond the set. Unreadable rows leave the subjects unset, which lint
+// reports as unresolved.
+async function resolveSubjectSets(spec: any, assets: Record<string, any>) {
+  const declared = spec?.subject_set;
+  if (!declared || typeof declared !== "object") return;
+  const readRows = async (ref: unknown) => {
+    try {
+      const computation = await readArtifactJson(String(ref), "computations/");
+      return Array.isArray(computation?.rows) ? computation.rows : null;
+    } catch { return null; }
+  };
+  const setRows = declared.computation_ref ? await readRows(declared.computation_ref) : null;
+  const members = new Set<string>(setRows && declared.key_field ? distinctSubjects(setRows, String(declared.key_field)) : []);
+  Object.defineProperty(assets, "__subject_set_members", { value: [...members], enumerable: false, configurable: true });
+  for (const module of spec?.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const asset = assets[String(module.manifest_ref ?? "")];
+    const field = asset?.manifest?.category_field;
+    if (!asset || !field || !asset.manifest?.computation_ref) continue;
+    const rows = await readRows(asset.manifest.computation_ref);
+    if (rows) asset.subjects = distinctSubjects(rows, String(field));
+  }
+  if (members.size) annotateSubjectSets(spec, assets, members);
+}
+
 // Accepts desktop-only chart/illustration assets when the phone-facing
 // mobile page is off (NEWSROOM_MOBILE_PAGES): the mobile variant is never
 // read from the manifest and never requested, matching newsroom_viz_render
@@ -259,6 +287,7 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       assets[assetRef] = { manifest, critic, desktopSvg: await readArtifactText(desktopRef, "visualizations/illustrations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/illustrations/") } : {}) };
     }
   }
+  await resolveSubjectSets(spec, assets);
   return assets;
 }
 
@@ -1875,6 +1904,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         derived_metric: Type.Optional(StringEnum(["percent_change", "absolute_change", "percentage_point_change", "ratio"] as const)),
       })),
       category_field: Type.Optional(Type.String()),
+      cutoff_date: Type.Optional(Type.String({ description: "Optional data cutoff date this chart states. If the infographic page declares subject_set.cutoff_date, a different value here blocks the page lint; leave it out to inherit the page's date." })),
       x_field: Type.Optional(Type.String()),
       y_field: Type.Optional(Type.String()),
       source_field: Type.Optional(Type.String()),
@@ -2174,6 +2204,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         verification: systemVerified ? (await verifiedClaimRecords()).get(String(spec.claim_id))?.verification : deriveClaimVerification({}),
         chart_type: spec.chart_type,
         language: spec.language ?? "en",
+        ...(spec.category_field ? { category_field: spec.category_field } : {}),
+        ...(spec.cutoff_date ? { cutoff_date: spec.cutoff_date } : {}),
         reader_task: spec.reader_task,
         takeaway: spec.takeaway,
         data_hash: currentHash,
@@ -2847,6 +2879,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const infographicModuleParameters = Type.Object({
     id: Type.String(),
+    subject_caption: Type.Optional(Type.String({ description: "Visual modules only. Caption readers see when the chart covers subjects outside the page subject_set; the runtime restyles the chart, you only write this text. Missing caption blocks lint." })),
     type: StringEnum(["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"] as const),
     span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const)),
     label: Type.Optional(Type.String()),
@@ -2969,6 +3002,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         }), { minItems: 1, maxItems: 6 }),
       }),
       source_note: Type.Optional(Type.String()),
+      subject_set: Type.Optional(Type.Object({
+        computation_ref: Type.String({ description: "Computation whose rows define the page's subject set; the runtime reads the members, never list them yourself." }),
+        key_field: Type.String({ description: "Field of that computation's rows that identifies a subject." }),
+        cutoff_date: Type.String({ description: "The single data cutoff date for the page; a chart that states a different cutoff_date blocks lint." }),
+      }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
     async execute(_id, params) {

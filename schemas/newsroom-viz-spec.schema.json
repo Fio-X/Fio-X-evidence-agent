@@ -168,6 +168,12 @@
       "type": "string",
       "minLength": 1
     },
+    "cutoff_date": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Optional data cutoff date this chart states; must equal the infographic page subject_set.cutoff_date when the page declares one."
+    },
     "x_field": {
       "type": "string",
       "minLength": 1
