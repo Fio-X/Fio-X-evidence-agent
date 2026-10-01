@@ -7320,11 +7320,20 @@ function renderChoropleth(spec, rows, mobile = false) {
       f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === shownClasses - 1 ? spec.unit : ""));
     }
   } else {
+    // The end-anchored last label carries the unit and can reach back over the
+    // previous tick; that interior tick is left unlabelled (its swatch edge
+    // stays) rather than printed on top of it.
+    const tickText = (i) => {
+      const isLast = i === shownClasses;
+      const v = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(breaks[i], legendDataMax) : breaks[i];
+      return fmtSpec(spec, v, isLast ? spec.unit : "");
+    };
+    const lastLeft = plotLeft + shownClasses * legendStep - 2 - (choroplethLabelWidth(tickText(shownClasses), 12) - 8);
     for (let i = 0; i <= shownClasses; i++) {
-      const edgeValue = breaks[i];
       const isLast = i === shownClasses;
       const x = plotLeft + i * legendStep;
-      const shown = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(edgeValue, legendDataMax) : edgeValue;
+      if (i === shownClasses - 1 && i > 0 && x + (choroplethLabelWidth(tickText(i), 12) - 8) / 2 + 4 > lastLeft) continue;
+      const shown = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(breaks[i], legendDataMax) : breaks[i];
       f.parts.push(legendTick(shown, isLast ? x - 2 : x, isLast ? "end" : "middle", isLast ? spec.unit : ""));
     }
   }

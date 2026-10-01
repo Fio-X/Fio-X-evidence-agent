@@ -147,7 +147,10 @@ const clean = ["Fiji", "Singapore", "Vanuatu", "Malta", "Luxembourg", "Bahrain",
     for (const vp of ["desktop", "mobile"]) {
       const l = legendOf(b[vp], `${label}/${vp}`);
       assert.equal(l.swatches, swatches, `${label}/${vp}: swatch count`);
-      assert.deepEqual(l.ticks, ticks, `${label}/${vp}: ticks`);
+      // On the narrower mobile legend the tick just before the capped last
+      // label is left unlabelled when the two would print over each other.
+      const want = vp === "mobile" && label === "wide range" ? ["0", "2000", "4000", "6000", "9000 n"] : ticks;
+      assert.deepEqual(l.ticks, want, `${label}/${vp}: ticks`);
       assert.ok(l.ticks.every((t) => Number(t.replace(/[^\d.-]/g, "")) <= Math.max(...vals)), `${label}/${vp}: tick above data max`);
     }
   }
