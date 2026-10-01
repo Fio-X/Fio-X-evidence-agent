@@ -79,6 +79,7 @@ function scaleBar(spec){
   const e=spec.extent;const mid=(e.south+e.north)/2;const kmPerDeg=111.32*Math.max(.1,Math.cos(mid*Math.PI/180));const spanKm=(e.east-e.west)*kmPerDeg;const target=spec.scale.length_km||Math.max(10,Math.pow(10,Math.floor(Math.log10(spanKm/5))));const deg=target/kmPerDeg;const x0=e.west+(e.east-e.west)*.06;const y=e.south+(e.north-e.south)*.07;return {shape:{type:'line',x0,y0:y,x1:x0+deg,y1:y,line:{color:'#17191b',width:1.2}},annotation:{x:x0+deg/2,y:y,xref:'x',yref:'y',text:`${target} km`,showarrow:false,yshift:11,font:{size:11,color:'#17191b'}}};
 }
 export function compileScientificMap(spec,resolution=null){
+  // basemap_asset is drawn as declared (see the SCOPE note in map_spec.mjs): only observation/reference layers are source-bound.
   const gate=assertMapSpec(spec);let data=[];if(spec.basemap_asset){const c=lineFeatureCoords(spec.basemap_asset.features);data.push({type:'scatter',mode:'lines',x:c.x,y:c.y,line:{width:.55,color:'#9ba8a1'},hoverinfo:'skip',showlegend:false,name:'Physical context'});}else{const base=requireBasemap(spec.basemap_id);data=[basemapTrace(base)];}
   const rendered=new Set();
   for(const l of spec.layers||[]){if(l.type==='observations'){const pts=resolution?.layers?.[l.id]?.points;if(!Array.isArray(pts)||!pts.length)throw new Error(`MAP_LAYER_NOT_RESOLVED: ${l.id} has no points resolved from its pinned source`);data.push(obsTrace(l,pts));rendered.add(l.id);}}

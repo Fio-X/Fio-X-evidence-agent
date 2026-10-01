@@ -61,4 +61,17 @@ await assert.rejects(resolveReferenceLayers(obs({ ...goodSrc, sha256: sha(Buffer
 { const f = putData('csv', 'name,lon,lat,v\nA,0,0,2\n'); await assert.rejects(resolveReferenceLayers(obs({ ...f, format: 'csv', lon_field: 'lon', lat_field: 'lat' }), io), /./, '(0,0) null island rejected by coord()'); }
 { const bytes = Buffer.from('name,lon,lat\nA,15,5\n'); const h = sha(bytes); const rel = `data/${h}.csv`; writeFileSync(join(root, rel), bytes); // no provenance sidecar
   await assert.rejects(resolveReferenceLayers(obs({ path: rel, sha256: h, format: 'csv', lon_field: 'lon', lat_field: 'lat' }), io), /MAP_SOURCE_NOT_RECORDED/); }
+// --- scope of the guarantee: observation/reference layers are source-bound; an
+// inline basemap_asset is model-declared and is reported as such, never as verified.
+{
+  const asset = { id: 'inline-scaffold', content_hash: 'a'.repeat(64), source_url: 'https://example.invalid/scaffold', license: 'CC0', detail_class: 'intermediate', extent: e0, features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: [[11, 1], [12, 2]] } }] };
+  const withAsset = (layers) => ({ ...base(layers), schema_version: '0.2.0', basemap_id: undefined, basemap_asset: asset });
+  for (const validate of [validatePi, validateVisual]) {
+    const ok = validate(withAsset([{ id: 'o', type: 'observations', source: goodSrc }]));
+    assert.equal(ok.status, 'PASS', JSON.stringify(ok.errors));
+    assert.equal(ok.basemap.provenance, 'declared_inline', 'an inline basemap_asset is reported as declared, not verified');
+    assert.equal(validate(obs(goodSrc)).basemap.provenance, undefined, 'a registered basemap carries no declared_inline flag');
+    assert.equal(validate(withAsset([{ id: 'o', type: 'observations', points: [{ lon: 15, lat: 5 }] }])).status, 'BLOCK', 'inline observation points stay blocked beside an inline basemap');
+  }
+}
 console.log('map observation gate: PASS');
