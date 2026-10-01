@@ -1,4 +1,4 @@
-// Resolves reference_points / reference_lines map layers from recorded data.
+// Resolves reference_points / reference_lines / observations map layers from recorded data.
 // A MapSpec only *names* a file (or a source-bound computation) and pins its
 // sha256; every coordinate is read from those bytes here. Model-typed
 // coordinates never reach the map: the spec validator rejects them, and this
@@ -81,6 +81,50 @@ function featuresFromRows(layer, rows) {
   return out;
 }
 
+// Observation layers carry a measured value per point. Like reference layers,
+// every coordinate is read from the pinned source; value/label/size/uncertainty
+// are optional columns named by the spec and must be finite numbers when named.
+function obsNumber(raw, field, where) {
+  const text = typeof raw === "number" ? String(raw) : String(raw ?? "").trim();
+  const n = text === "" ? NaN : Number(text);
+  if (!Number.isFinite(n)) throw new Error(`MAP_VALUE_INVALID: ${where} has a missing or non-numeric ${field}`);
+  return n;
+}
+
+function obsExtras(src, get, row, where) {
+  const out = {};
+  if (src.value_field) out.value = obsNumber(get(row, src.value_field), src.value_field, where);
+  if (src.size_field) out.size_value = obsNumber(get(row, src.size_field), src.size_field, where);
+  if (src.uncertainty_field) out.uncertainty_km = obsNumber(get(row, src.uncertainty_field), src.uncertainty_field, where);
+  if (src.label_field) { const label = String(get(row, src.label_field) ?? "").trim(); if (label) out.label = label; }
+  return out;
+}
+
+function observationsFromRows(layer, rows) {
+  const src = layer.source;
+  return rows.map((row, i) => {
+    const where = `${layer.id} row ${i + 1}`;
+    const [lon, lat] = coord(row?.[src.lon_field], row?.[src.lat_field], where);
+    return { lon, lat, ...obsExtras(src, (r, k) => r?.[k], row, where) };
+  });
+}
+
+function observationsFromGeojson(layer, doc) {
+  const src = layer.source;
+  const out = [];
+  geojsonFeatures(doc).forEach((f, i) => {
+    const where = `${layer.id} feature ${i + 1}`;
+    const g = f?.geometry ?? {};
+    const pts = g.type === "Point" ? [g.coordinates] : g.type === "MultiPoint" ? g.coordinates : null;
+    if (!pts) throw new Error(`MAP_SOURCE_INVALID: ${where} is not a Point/MultiPoint`);
+    for (const p of pts) {
+      const [lon, lat] = coord(p?.[0], p?.[1], where);
+      out.push({ lon, lat, ...obsExtras(src, (r, k) => r?.[k], f?.properties ?? {}, where) });
+    }
+  });
+  return out;
+}
+
 function statusOf(layer, row) {
   if (!layer.status_field) return null;
   const v = String(row?.[layer.status_field] ?? "").trim();
@@ -125,8 +169,9 @@ function inExtent(c, e) { return c[0] >= e.west && c[0] <= e.east && c[1] >= e.s
 export async function resolveReferenceLayers(spec, io) {
   const resolution = { schema_version: "0.1.0", layers: {} };
   for (const layer of spec?.layers ?? []) {
-    if (!["reference_points", "reference_lines", "line"].includes(layer?.type)) continue;
+    if (!["reference_points", "reference_lines", "line", "observations"].includes(layer?.type)) continue;
     const l = layer.type === "line" ? { ...layer, type: "reference_lines" } : layer;
+    const observed = l.type === "observations";
     const src = l.source;
     const bytes = await io.readBytes(src.path);
     const actual = sha256(bytes);
@@ -140,8 +185,13 @@ export async function resolveReferenceLayers(spec, io) {
       let meta = null;
       try { meta = await io.readJson(`${src.path}.meta.json`); } catch { meta = null; }
       if (!meta || meta.sha256 !== actual) throw new Error(`MAP_SOURCE_NOT_RECORDED: ${src.path} has no matching provenance metadata`);
-      if (src.format === "geojson") features = featuresFromGeojson(l, JSON.parse(Buffer.from(bytes).toString("utf8")));
-      else features = featuresFromRows(l, parseCsv(Buffer.from(bytes).toString("utf8")));
+      if (src.format === "geojson") {
+        const doc = JSON.parse(Buffer.from(bytes).toString("utf8"));
+        features = observed ? observationsFromGeojson(l, doc) : featuresFromGeojson(l, doc);
+      } else {
+        const rows = parseCsv(Buffer.from(bytes).toString("utf8"));
+        features = observed ? observationsFromRows(l, rows) : featuresFromRows(l, rows);
+      }
     } else {
       const record = JSON.parse(Buffer.from(bytes).toString("utf8"));
       const state = await recordedInputState(record, (ref) => io.readJson(ref));
@@ -153,12 +203,19 @@ export async function resolveReferenceLayers(spec, io) {
         inputs.push({ path: input.path, sha256: h });
       }
       if (!Array.isArray(record.rows)) throw new Error("MAP_SOURCE_INVALID: computation has no rows");
-      features = featuresFromRows(l, record.rows);
+      features = observed ? observationsFromRows(l, record.rows) : featuresFromRows(l, record.rows);
     }
     if (!features.length) throw new Error(`MAP_SOURCE_INVALID: ${l.id} resolved to no features`);
+    const e = spec.extent;
+    if (observed) {
+      features.forEach((pt, i) => {
+        if (!inExtent([pt.lon, pt.lat], e)) throw new Error(`MAP_COORD_OUTSIDE_EXTENT: ${l.id} point ${i + 1} lies outside the map extent`);
+      });
+      resolution.layers[l.id] = { kind: "observations", points: features, inputs, content_sha256: sha256(JSON.stringify(features)) };
+      continue;
+    }
     const statuses = [...new Set(features.map((f) => f.status).filter((v) => v !== null))].sort();
     if (statuses.length > MAX_STATUS_VALUES) throw new Error(`MAP_STATUS_TOO_MANY: ${l.id} has ${statuses.length} status values; at most ${MAX_STATUS_VALUES} can be told apart`);
-    const e = spec.extent;
     for (const f of features) {
       const all = f.parts ? f.parts.flat() : f.coords;
       const inside = all.filter((c) => inExtent(c, e)).length;

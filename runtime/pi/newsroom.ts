@@ -22,7 +22,7 @@ import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
-import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData } from "./publication_binding.mjs";
+import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
@@ -3870,7 +3870,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       // Reference layers read their coordinates from recorded data only; the
       // resolution (with the sha256 of every input file) is stored with the map.
       let resolution: any = null;
-      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line"].includes(l?.type))) {
+      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line", "observations"].includes(l?.type))) {
         const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
         const inside = (ref: string) => { const abs = resolve(root, ref); if (!/^(data|computations)\//.test(ref) || !abs.startsWith(resolve(root) + "/")) throw new Error(`MAP_SOURCE_PATH_REJECTED: ${ref}`); return abs; };
         resolution = await resolveReferenceLayers(spec, { readBytes: async (ref: string) => readFile(inside(ref)), readJson: async (ref: string) => JSON.parse(await readFile(inside(ref), "utf8")) });
@@ -3995,6 +3995,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         if (module.view_spec_json) {
           try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Publication module '${module.id}' view_spec_json is not valid JSON`); }
           assertViewSpecHasNoInlineData(viewSpec);
+          assertViewSpecHasNoReservedEvidence(viewSpec);
         }
         let fieldMapping: any = {};
         if (module.field_mapping_json) {
@@ -4128,6 +4129,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         if (module.view_spec_json) {
           try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Portable module '${module.id}' view_spec_json is not valid JSON`); }
           assertViewSpecHasNoInlineData(viewSpec);
+          assertViewSpecHasNoReservedEvidence(viewSpec);
         }
         let fieldMapping: any = {};
         if (module.field_mapping_json) {
@@ -4225,17 +4227,21 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         } else if (binding.kind === "analysis") {
           const analysis = await readArtifactJson(String(binding.ref), "visualizations/graph-analysis/");
           if (String(analysis.result_hash ?? "") !== String(binding.result_hash)) throw new Error(`Publication analysis changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { nodes: analysis.nodes ?? [], edges: analysis.edges ?? [], analysis_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          resolvedModules.push({ ...module, spec: { ...(module.view_spec ?? {}), nodes: analysis.nodes ?? [], edges: analysis.edges ?? [], analysis_ref: binding.ref } });
         } else if (binding.kind === "map") {
           const mapArtifact = await readArtifactJson(String(binding.ref), "maps/");
           const currentHash = String(mapArtifact.content_hash ?? sha256Hex(JSON.stringify(mapArtifact)));
           if (currentHash !== String(binding.result_hash)) throw new Error(`Publication map changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { map_spec: mapArtifact.spec, map_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          // The bound map evidence is spread last: a view_spec can never replace the
+          // spec, the resolved coordinates or the artifact reference.
+          const { view_spec: mapViewSpec, ...mapModule } = module;
+          const { map_spec: _s, map_resolution: _r, map_ref: _m, ...mapLayout } = mapViewSpec ?? {};
+          resolvedModules.push({ ...mapModule, spec: { map_spec: mapArtifact.spec, map_resolution: mapArtifact.resolution ?? null, map_ref: binding.ref, ...mapLayout } });
         } else if (binding.kind === "model") {
           const modelArtifact = await readArtifactJson(String(binding.ref), "models/");
           const currentHash = String(modelArtifact.content_hash ?? sha256Hex(JSON.stringify(modelArtifact)));
           if (currentHash !== String(binding.result_hash)) throw new Error(`Publication model changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { model: modelArtifact, model_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          resolvedModules.push({ ...module, spec: { ...(module.view_spec ?? {}), model: modelArtifact, model_ref: binding.ref } });
         } else if (binding.kind === "asset") {
           const svg = await readArtifactText(String(binding.ref), "visualizations/");
           const clean = assertSafeSvg(svg, { label: `Publication asset ${binding.ref}` });
