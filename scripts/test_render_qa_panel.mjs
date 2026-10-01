@@ -57,5 +57,50 @@ for (const [shape, names] of Object.entries(shapes)) {
     }
   }
 }
+
+// small_multiples facets (dot and line, desktop and mobile): must-pass on the real render,
+// must-fail once a facet text is moved out of its own cell
+const smBase = { ...chBase, chart_type: "small_multiples", facet_field: "f", language: "en", unit: "%" };
+delete smBase.basemap_id; delete smBase.basemap_source_url; delete smBase.basemap_license; delete smBase.basemap_content_hash; delete smBase.category_names;
+const smShapes = {
+  dot_cities: [{ ...smBase, panel_mark: "dot", x_field: "c", value_field: "v" },
+    ["North", "South", "East"].flatMap((f, i) => ["Alpha", "Beta", "Gamma", "Delta"].map((c, j) => ({ f, c, v: 20 + i * 15 + j * 9 })))],
+  line_years: [{ ...smBase, x_field: "year", value_field: "v" },
+    ["Firm A", "Firm B", "Firm C", "Firm D"].flatMap((f, i) => [2018, 2019, 2020, 2021, 2022].map((year, j) => ({ f, year, v: 10 + i * 7 + j * 3 })))],
+};
+let facetLabels = 0;
+for (const [name, [spec, rows]] of Object.entries(smShapes)) {
+  const out = renderVizBundle(spec, rows, { mobilePages: false });
+  for (const [view, svg] of Object.entries({ desktop: out.desktop, mobile: out.mobile })) {
+    if (!svg) continue;
+    assert.deepEqual(checkSvgGeometry(svg).failures.filter((f) => f.rule === "text_outside_panel"), [], `${name}/${view} must pass`);
+    const n = (svg.match(/data-panel-box=/g) ?? []).length;
+    assert.ok(n >= rows.length / 2, `${name}/${view}: facet texts carry a panel box (${n})`);
+    facetLabels += n;
+    const m = svg.match(/<text ([^>]*?)data-panel-box="([\d.,-]+)"[^>]*>/);
+    assert.ok(m, `${name}/${view}: a boxed text exists`);
+    const left = Number(m[2].split(",")[0]);
+    const moved = svg.replace(m[0], m[0].replace(/ x="[^"]*"/, ` x="${left - 80}"`).replace(/text-anchor="[^"]*"/, 'text-anchor="end"'));
+    assert.ok(checkSvgGeometry(moved).failures.some((f) => f.rule === "text_outside_panel"), `${name}/${view} must fail when a facet text leaves its cell`);
+  }
+}
+
+// trajectory_profile (two stacked panels), generic synthetic series
+const tpSpec = { schema_version: "1.1.0", reader_task: "change", visual_family: "temporal", data_topology: "tabular", chart_type: "trajectory_profile", title: "T", alt: "Synthetic two-panel profile of two measures over shared elapsed time.", source_note: "synthetic", note: "n", claim_id: "c1", sql: "x", unit: "state", x_field: "t", altitude_field: "a", speed_field: "s", segment_field: "seg", altitude_unit: "m", speed_unit: "km/h", annotations: [] };
+const tpRows = [0, 10, 20, 30, 60, 70, 80].map((t, i) => ({ t, a: 100 + i * 900, s: 40 + (i % 3) * 25, seg: t < 40 ? "one" : "two" }));
+{
+  const out = renderVizBundle(tpSpec, tpRows, { mobilePages: false });
+  for (const [view, svg] of Object.entries({ desktop: out.desktop, mobile: out.mobile })) {
+    if (!svg) continue;
+    assert.deepEqual(checkSvgGeometry(svg).failures.filter((f) => f.rule === "text_outside_panel"), [], `trajectory/${view} must pass`);
+    const boxed = (svg.match(/data-panel-box=/g) ?? []).length;
+    assert.ok(boxed >= 6, `trajectory/${view} boxed texts ${boxed}`);
+    facetLabels += boxed;
+    const m = svg.match(/<text ([^>]*?)data-panel-box="([\d.,-]+)"[^>]*>/);
+    const bottom = Number(m[2].split(",")[3]);
+    const moved = svg.replace(m[0], m[0].replace(/ y="[^"]*"/, ` y="${bottom + 60}"`));
+    assert.ok(checkSvgGeometry(moved).failures.some((f) => f.rule === "text_outside_panel"), `trajectory/${view} must fail when a panel text drops out of its panel`);
+  }
+}
 assert.ok(checkedLabels > 50, `labels carrying a panel box: ${checkedLabels}`);
-console.log(`test_render_qa_panel ok (${checkedLabels} panel-boxed labels)`);
+console.log(`test_render_qa_panel ok (${checkedLabels} choropleth + ${facetLabels} facet panel-boxed labels)`);

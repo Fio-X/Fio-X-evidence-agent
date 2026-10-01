@@ -3252,6 +3252,16 @@ function renderLine(spec, rows, multi = false) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+// P4: stamp every <text> pushed to `parts` since `startIdx` with the box of the
+// panel (its facet cell, out to the gutter that separates it from the next panel) it belongs to, so render QA's text_outside_panel can prove
+// no label spills into a neighbouring panel. Pure attribute addition.
+function tagPanelTexts(parts, startIdx, box) {
+  const attr = ` data-panel-box="${box.map((v) => Number(v).toFixed(1)).join(",")}"`;
+  for (let i = startIdx; i < parts.length; i++) {
+    if (typeof parts[i] === "string" && parts[i].includes("<text ")) parts[i] = parts[i].replace(/<text (?![^>]*data-panel-box)/g, `<text${attr} `);
+  }
+}
+
 function renderSmallMultiples(spec, rows) {
   const facets = sortX(unique(rows.map((r) => r[spec.facet_field])));
   const cols = facets.length === 1 ? 1 : 2;
@@ -3273,6 +3283,7 @@ function renderSmallMultiples(spec, rows) {
     facets.forEach((facet, fi) => {
       const col = fi % cols, rowN = Math.floor(fi / cols);
       const x0 = 54 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+      const facetPartStart = f.parts.length;
       const group = sortRows(rows.filter((r) => String(r[spec.facet_field]) === facet), spec, spec.value_field);
       const labelW = 150;
       const plotLeft = x0 + labelW, plotRight = x0 + panelW - 12;
@@ -3308,6 +3319,7 @@ function renderSmallMultiples(spec, rows) {
           f.parts.push(`<text data-role="reference-line-label" x="${x + (anchor === "end" ? -5 : 5)}" y="${labelY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 26))}</text>`);
         }
       });
+      tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
     });
     addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
   }
@@ -3322,6 +3334,7 @@ function renderSmallMultiples(spec, rows) {
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
     const x0 = 70 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+    const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
     const xMap = new Map(xs.map((v, i) => [String(v), i]));
@@ -3354,6 +3367,7 @@ function renderSmallMultiples(spec, rows) {
         f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase, i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 34))}</text>`);
       }
     });
+    tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
   });
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
@@ -3781,17 +3795,19 @@ function renderMobileSmallMultiples(spec, rows) {
     const panelH=Math.max(245,maxItems*36+68)+refMargin, f=mobileFrame(spec,facets.length*panelH+Math.max(0,facets.length-1)*gapY+20);
     const all=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null); let domain=extent(all,true); if(spec.unit==="%"&&Math.min(...all)>=0&&Math.max(...all)<=100)domain=[0,100];
     facets.forEach((facet,fi)=>{
+      const facetPartStart=f.parts.length;
       const x0=32,y0=f.bodyTop+fi*(panelH+gapY),group=sortRows(rows.filter((r)=>String(r[spec.facet_field])===String(facet)),spec,spec.value_field),labelW=138,plotLeft=x0+labelW,plotRight=x0+panelW-6,plotBase=y0+38,plotTop=plotBase+refMargin,plotBottom=y0+panelH-34,xScale=horizontalScale(domain,plotLeft,plotRight);
       f.parts.push(`<text x="${x0}" y="${y0+16}" font-family="${FONT_SANS}" font-size="14" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);
       tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.unit))}</text>`);});
       const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
       refLines.forEach((line,i)=>{const x=xScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x}" y1="${plotTop}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){const anchor=x>(plotLeft+plotRight)/2?"end":"start";f.parts.push(`<text data-role="reference-line-label" x="${x+(anchor==="end"?-5:5)}" y="${referenceLineRowY(plotBase,i)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,26))}</text>`);}});
+      tagPanelTexts(f.parts,facetPartStart,[x0-30,y0-gapY+2,x0+panelW+30,y0+panelH+gapY-2]);
     });
     addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
   }
   const refLines=referenceLineAnnotations(spec),refMargin=referenceLineMargin(refLines);
   const panelH=220+refMargin, f=mobileFrame(spec,facets.length*panelH+Math.max(0,facets.length-1)*gapY+20), all=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null), yDomain=extent(all,false);
-  facets.forEach((facet,fi)=>{const x0=42,y0=f.bodyTop+fi*(panelH+gapY),group=rows.filter((r)=>String(r[spec.facet_field])===String(facet)),xs=sortX(unique(group.map((r)=>r[spec.x_field]))),xMap=new Map(xs.map((v,i)=>[String(v),i])),xScale=(value)=>xs.length<=1?x0+panelW/2:x0+(xMap.get(String(value))/(xs.length-1))*panelW,plotBase=y0+30,yScale=verticalScale(yDomain,plotBase+refMargin,y0+panelH-30);f.parts.push(`<text x="${x0}" y="${y0+14}" font-family="${FONT_SANS}" font-size="13.5" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);[yDomain[0],(yDomain[0]+yDomain[1])/2,yDomain[1]].forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.grid}"/>`);});const sorted=[...group].sort((a,b)=>xMap.get(String(a[spec.x_field]))-xMap.get(String(b[spec.x_field])));if(xs.length>1){const coords=sorted.map((r)=>`${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");f.parts.push(`<polyline fill="none" stroke="${PALETTE.accent2}" stroke-width="2.2" points="${coords}"/>`);}sorted.forEach((r)=>{const x=xScale(r[spec.x_field]),y=yScale(n(r[spec.value_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="${PALETTE.accent2}"/>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:28}));});if(xs.length>1){f.parts.push(`<text x="${x0}" y="${y0+panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${x0+panelW}" y="${y0+panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length-1])}</text>`);}refLines.forEach((line,i)=>{const y=yScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase,i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,34))}</text>`);}});});
+  facets.forEach((facet,fi)=>{const facetPartStart=f.parts.length;const x0=42,y0=f.bodyTop+fi*(panelH+gapY),group=rows.filter((r)=>String(r[spec.facet_field])===String(facet)),xs=sortX(unique(group.map((r)=>r[spec.x_field]))),xMap=new Map(xs.map((v,i)=>[String(v),i])),xScale=(value)=>xs.length<=1?x0+panelW/2:x0+(xMap.get(String(value))/(xs.length-1))*panelW,plotBase=y0+30,yScale=verticalScale(yDomain,plotBase+refMargin,y0+panelH-30);f.parts.push(`<text x="${x0}" y="${y0+14}" font-family="${FONT_SANS}" font-size="13.5" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);[yDomain[0],(yDomain[0]+yDomain[1])/2,yDomain[1]].forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.grid}"/>`);});const sorted=[...group].sort((a,b)=>xMap.get(String(a[spec.x_field]))-xMap.get(String(b[spec.x_field])));if(xs.length>1){const coords=sorted.map((r)=>`${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");f.parts.push(`<polyline fill="none" stroke="${PALETTE.accent2}" stroke-width="2.2" points="${coords}"/>`);}sorted.forEach((r)=>{const x=xScale(r[spec.x_field]),y=yScale(n(r[spec.value_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="${PALETTE.accent2}"/>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:28}));});if(xs.length>1){f.parts.push(`<text x="${x0}" y="${y0+panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${x0+panelW}" y="${y0+panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length-1])}</text>`);}refLines.forEach((line,i)=>{const y=yScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase,i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,34))}</text>`);}});tagPanelTexts(f.parts,facetPartStart,[x0-30,y0-gapY+2,x0+panelW+30,y0+panelH+gapY-2]);});
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
@@ -4362,7 +4378,7 @@ function renderTrajectoryProfile(spec,rows,mobile=false){
   const transitions=[];for(let i=1;i<sorted.length;i++)if(String(sorted[i][spec.segment_field])!==String(sorted[i-1][spec.segment_field]))transitions.push({a:sorted[i-1],b:sorted[i]});
   for(const tr of transitions){const x1=xScale(n(tr.a[spec.x_field])),x2=xScale(n(tr.b[spec.x_field])),w=Math.max(2,x2-x1),mins=(n(tr.b[spec.x_field])-n(tr.a[spec.x_field]));f.parts.push(`<rect data-role="trajectory-gap" x="${x1.toFixed(1)}" y="${top}" width="${w.toFixed(1)}" height="${(bottom-top).toFixed(1)}" fill="#f3eee9" fill-opacity=".78"/><text data-role="trajectory-gap-label" x="${((x1+x2)/2).toFixed(1)}" y="${(top+13).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.muted}">${esc(`${Math.round(mins)} min source gap`)}</text>`);}
   function panel(label,domain,yScale,y0,field,color,unit){for(const tick of tickValues(domain,4)){const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/><text x="${left-10}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(tickLabel(tick,unit))}</text>`);}f.parts.push(`<text x="${left}" y="${y0-8}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);const groups=[];for(const row of sorted){let g=groups.at(-1);if(!g||String(g.segment)!==String(row[spec.segment_field])){g={segment:row[spec.segment_field],rows:[]};groups.push(g);}if(n(row[field])!==null)g.rows.push(row);}for(const g of groups){if(g.rows.length<2)continue;const coords=g.rows.map(r=>`${xScale(n(r[spec.x_field])).toFixed(1)},${yScale(n(r[field])).toFixed(1)}`).join(' ');f.parts.push(`<polyline data-role="trajectory-profile-line" fill="none" stroke="${color}" stroke-width="${mobile?2.2:2.7}" points="${coords}"/>`);g.rows.forEach(r=>f.parts.push(`<circle cx="${xScale(n(r[spec.x_field])).toFixed(1)}" cy="${yScale(n(r[field])).toFixed(1)}" r="${mobile?2:2.4}" fill="${color}"/>`));}const last=sorted.filter(r=>n(r[field])!==null).at(-1);if(last)f.parts.push(`<text data-role="direct-label" x="${(xScale(n(last[spec.x_field]))-5).toFixed(1)}" y="${(yScale(n(last[field]))-8).toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${textSafeColor(color)}">${esc(fmt(n(last[field]),unit))}</text>`);}
-  panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');
+  {const ps=f.parts.length;panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');tagPanelTexts(f.parts,ps,[0,top-30,right+30,top+panelH+16]);}{const ps=f.parts.length;panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');tagPanelTexts(f.parts,ps,[0,speedTop-30,right+30,speedTop+panelH+16]);}
   for(const tick of tickValues(xDomain,4)){const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${speedTop+panelH}" x2="${x}" y2="${speedTop+panelH+4}" stroke="${PALETTE.muted}"/><text x="${x}" y="${speedTop+panelH+20}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(`${Math.round(tick)} min`)}</text>`);}f.parts.push(`<text x="${(left+right)/2}" y="${speedTop+panelH+37}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">elapsed time since observed coverage begins</text>`);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
 }
