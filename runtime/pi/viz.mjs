@@ -1633,8 +1633,18 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.claim_id && !verifiedClaimIds.has(spec.claim_id)) {
     blockers.push(`claim_id '${spec.claim_id}' is not a verified recorded claim`);
   }
+  // Binding of each cited claim to THIS chart's own computation. The verdicts
+  // come from claim_binding.mjs (computed in the async layer); absent context
+  // means the caller did not compute them and the check is skipped.
+  const claimBindings = context.claim_bindings && typeof context.claim_bindings === "object" ? context.claim_bindings : null;
+  const bindingBlocker = (label, claimId) => {
+    const verdict = claimBindings?.[claimId];
+    if (verdict && verdict.ok !== true) blockers.push(`${label} '${claimId}' is not bound to this chart's computation: ${verdict.message}`);
+  };
+  if (spec.claim_id && verifiedClaimIds.has(spec.claim_id)) bindingBlocker("claim_id", spec.claim_id);
   for (const [index, annotation] of annotations(spec).entries()) {
     if (annotation.claim_id && !verifiedClaimIds.has(annotation.claim_id)) blockers.push(`annotations[${index}].claim_id '${annotation.claim_id}' is not a verified recorded claim`);
+    else if (annotation.claim_id) bindingBlocker(`annotations[${index}].claim_id`, annotation.claim_id);
     if (["point", "node"].includes(annotation.type) && annotation.match_field) {
       if (!fieldExists(rows, annotation.match_field)) blockers.push(`annotations[${index}] match_field '${annotation.match_field}' is absent from query output`);
       else if (!rows.some((row) => String(row[annotation.match_field]) === String(annotation.match_value))) blockers.push(`annotations[${index}] target '${annotation.match_value}' was not found in '${annotation.match_field}'`);
