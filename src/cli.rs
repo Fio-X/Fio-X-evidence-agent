@@ -25,12 +25,20 @@ pub enum Commands {
     Chat(ChatArgs),
 
     /// Start a persistent, tool-using data-news investigation.
+    ///
+    /// Exit codes: 0 = completed and VERIFIED; 1 = completed but NOT VERIFIED;
+    /// 2 = error before any verdict (usage, I/O or provider failure). The final
+    /// stderr line is `VERIFIED` or `NOT VERIFIED: <reason>`.
     Investigate(InvestigateArgs),
 
     /// New autonomous investigation (Phase 3, bypasses Pi).
     InvestigateV2(InvestigateV2Args),
 
     /// Continue an existing investigation with full Pi session context.
+    ///
+    /// Exit codes: 0 = completed and VERIFIED; 1 = completed but NOT VERIFIED;
+    /// 2 = error before any verdict (usage, I/O or provider failure). The final
+    /// stderr line is `VERIFIED` or `NOT VERIFIED: <reason>`.
     Continue(ContinueArgs),
 
     /// Summarize the observable agent/tool audit trail for an investigation.

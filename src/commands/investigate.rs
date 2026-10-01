@@ -1,6 +1,7 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::InvestigateArgs;
+use crate::commands::verify;
 use crate::pi::{run_prompt, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
 use anyhow::{bail, Result};
@@ -187,13 +188,39 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
         print!("{prompt}");
         return Ok(());
     }
-    run_with_artifact(args).await.map(|_| ())
+    let (_, verified) = match run_inner(args).await {
+        Ok(done) => done,
+        Err(error) => return Err(verify::exit_on_error(&error)),
+    };
+    verify::exit_if_not_verified(verified);
+    Ok(())
 }
 
 /// Run a persistent investigation and return its directory so interactive
 /// callers can continue the same Pi session without asking the user to copy a
 /// path from stderr.
 pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
+    verify::mark_interactive_session();
+    run_inner(args).await.map(|(dir, _)| dir)
+}
+
+/// Answer written for a failed run: the redacted error plus any partial text
+/// the model had already streamed (kept so nothing on disk is lost).
+fn failure_answer(error: &anyhow::Error) -> String {
+    let mut text = format!("# Investigation failed\n\n{error:#}\n");
+    if let Some(failure) = error.downcast_ref::<crate::pi::ProviderFailure>() {
+        if !failure.partial_text.trim().is_empty() {
+            text.push_str("\n## Partial output before the failure\n\n");
+            text.push_str(&failure.partial_text);
+            if !failure.partial_text.ends_with('\n') {
+                text.push('\n');
+            }
+        }
+    }
+    text
+}
+
+async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
     let run_started = Instant::now();
     let split_classifier = complex_visual_routing_ab_enabled();
     let topic = args.topic.join(" ");
@@ -282,13 +309,36 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                     );
                     config.continue_session = true;
                     let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
-                    let retry = run_prompt_with_empty_recovery(
+                    let retry = match run_prompt_with_empty_recovery(
                         &config,
                         &correction,
                         recovery,
                         &bundle.events_path,
                     )
-                    .await?;
+                    .await
+                    {
+                        Ok(retry) => retry,
+                        Err(error) => {
+                            bundle.write_answer(&failure_answer(&error))?;
+                            let audit = audit::build(&bundle.events_path, &bundle.tools_path).ok();
+                            bundle.append_run_metric(
+                                "investigate",
+                                reported_provider.as_deref(),
+                                config.model.as_deref(),
+                                "failed",
+                                run_started.elapsed().as_millis(),
+                                audit.as_ref(),
+                            )?;
+                            bundle.write_manifest(
+                                &topic,
+                                reported_provider.as_deref(),
+                                config.model.as_deref(),
+                                "failed",
+                                audit.as_ref(),
+                            )?;
+                            return Err(error);
+                        }
+                    };
                     final_text = retry.text;
                     bundle.write_answer(&final_text)?;
                     if let Some(stats) = &retry.session_stats {
@@ -350,10 +400,11 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                 persistence_started.elapsed().as_millis(),
                 run_started.elapsed().as_millis()
             );
-            Ok(bundle.dir)
+            let verified = verify::announce_post_run_verdict(&bundle.dir).await;
+            Ok((bundle.dir, verified))
         }
         Err(error) => {
-            let diagnostic = format!("# Investigation failed\n\n{error:#}\n");
+            let diagnostic = failure_answer(&error);
             bundle.write_answer(&diagnostic)?;
             let audit = if bundle.events_path.is_file() {
                 audit::build(&bundle.events_path, &bundle.tools_path).ok()
