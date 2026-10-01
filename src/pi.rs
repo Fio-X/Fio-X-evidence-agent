@@ -28,6 +28,70 @@ pub struct PiConfig {
     pub session_dir: Option<PathBuf>,
     pub continue_session: bool,
     pub tool_profile: String,
+    /// Hide the Lieflat fallback tools from a `visual-story` run. Set only by
+    /// the non-v2 `investigate` command when `NEWSROOM_HIDE_LIEFLAT` is on;
+    /// every other caller (v2 included) leaves it false.
+    pub hide_lieflat: bool,
+    /// Opt-in turn-saving guidance (prompt text and tool guidelines). Set only
+    /// by the non-v2 `investigate` command from the parent environment;
+    /// every other caller leaves it at the default (all off).
+    pub speed: crate::prompt::PromptSpeed,
+}
+
+/// Env var that is both the opt-in switch read by `investigate` and the
+/// marker the runtime reads in the Pi child. `PiConfig::command` always
+/// resets it, so a value in the parent environment never reaches a child
+/// that did not ask for it.
+pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
+/// Parent-environment switches and the matching markers the runtime reads in
+/// the Pi child. `PiConfig::command` always resets them from the config.
+pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
+pub const COMPUTE_BATCH_ENV: &str = "NEWSROOM_SPEED_COMPUTE_BATCH";
+/// Parent switch the chains depend on; the runtime does not register a chain without it.
+pub const ATOMIC_ARTIFACT_ENV: &str = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
+pub const CHAIN_VIZ_ENV: &str = "NEWSROOM_SPEED_CHAIN_VIZ";
+/// Runtime-only tool that exists when `CHAIN_VIZ_ENV` is on; not in the registry.
+pub const VIZ_CHAIN_TOOL: &str = "newsroom_viz_chain";
+pub const CHAIN_INFOGRAPHIC_ENV: &str = "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC";
+/// Runtime-only tool that exists when `CHAIN_INFOGRAPHIC_ENV` is on; not in the registry.
+pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
+/// Page-stage preflight and derived-reference fill; the runtime reads the same name.
+pub const PREFLIGHT_ENV: &str = "NEWSROOM_SPEED_PREFLIGHT";
+/// Layout-only plan edits without re-sending the plan; the runtime reads the same name.
+pub const PLAN_EDIT_ENV: &str = "NEWSROOM_SPEED_PLAN_EDIT";
+/// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
+pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
+pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
+
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn env_switch(name: &str) -> bool {
+    matches!(std::env::var(name).ok().as_deref(), Some("1" | "true"))
+}
+
+// The runtime only accepts exactly "1" for this switch.
+fn atomic_artifact_on() -> bool {
+    std::env::var(ATOMIC_ARTIFACT_ENV).ok().as_deref() == Some("1")
+}
+
+/// The turn-saving switches the parent environment asks for.
+pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
+    crate::prompt::PromptSpeed {
+        parallel_hints: env_switch(PARALLEL_HINTS_ENV),
+        compute_batch: env_switch(COMPUTE_BATCH_ENV),
+        chain_viz: env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on(),
+        chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
+        preflight: env_switch(PREFLIGHT_ENV),
+        plan_edit: env_switch(PLAN_EDIT_ENV),
+    }
+}
+
+pub fn hide_lieflat_switch_enabled() -> bool {
+    matches!(
+        std::env::var(HIDE_LIEFLAT_ENV).ok().as_deref(),
+        Some("1" | "true")
+    )
 }
 
 #[derive(Debug)]
@@ -499,6 +563,40 @@ fn sanitize_provider_event(event: &mut Value, secrets: &[String]) -> Result<()> 
 }
 
 impl PiConfig {
+    fn effective_tool_profile(&self) -> &str {
+        if tools_for_profile(&self.tool_profile).is_some() {
+            self.tool_profile.as_str()
+        } else {
+            DEFAULT_TOOL_PROFILE
+        }
+    }
+
+    fn lieflat_hidden(&self) -> bool {
+        self.hide_lieflat && self.effective_tool_profile() == "visual-story"
+    }
+
+    /// Comma-separated tool allowlist handed to Pi via `--tools`.
+    pub fn tools_arg(&self) -> String {
+        let tools = tools_for_profile(self.effective_tool_profile())
+            .expect("effective tool profile must exist");
+        let mut names: Vec<&str> = tools.split(',').collect();
+        if self.lieflat_hidden() {
+            names.retain(|name| !LIEFLAT_TOOLS.contains(name));
+        }
+        // The chain wraps newsroom_viz_plan, so it is offered only where that tool is.
+        if self.speed.chain_viz && names.contains(&"newsroom_viz_plan") {
+            names.push(VIZ_CHAIN_TOOL);
+        }
+        if self.speed.chain_infographic && names.contains(&"newsroom_infographic_plan") {
+            names.push(INFOGRAPHIC_CHAIN_TOOL);
+        }
+        // The edit rewrites a page plan through the plan tool, so it is offered only where that is.
+        if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
+            names.push(PLAN_EDIT_TOOL);
+        }
+        names.join(",")
+    }
+
     fn dragoncode_endpoint(value: &str) -> bool {
         let authority = value
             .split_once("://")
@@ -610,10 +708,7 @@ impl PiConfig {
                 .arg("--no-prompt-templates")
                 .arg("--no-context-files")
                 .arg("--tools")
-                .arg(tools_for_profile(&self.tool_profile).unwrap_or_else(|| {
-                    tools_for_profile(DEFAULT_TOOL_PROFILE)
-                        .expect("default tool profile must exist")
-                }));
+                .arg(self.tools_arg());
         }
 
         if self.approve_project {
@@ -631,6 +726,41 @@ impl PiConfig {
             DEFAULT_TOOL_PROFILE
         };
         cmd.env("NEWSROOM_TOOL_PROFILE", effective_profile);
+        if self.lieflat_hidden() {
+            cmd.env(HIDE_LIEFLAT_ENV, "1");
+        } else {
+            cmd.env_remove(HIDE_LIEFLAT_ENV);
+        }
+        if self.speed.parallel_hints {
+            cmd.env(PARALLEL_HINTS_ENV, "1");
+        } else {
+            cmd.env_remove(PARALLEL_HINTS_ENV);
+        }
+        if self.speed.compute_batch {
+            cmd.env(COMPUTE_BATCH_ENV, "1");
+        } else {
+            cmd.env_remove(COMPUTE_BATCH_ENV);
+        }
+        if self.speed.chain_viz {
+            cmd.env(CHAIN_VIZ_ENV, "1");
+        } else {
+            cmd.env_remove(CHAIN_VIZ_ENV);
+        }
+        if self.speed.chain_infographic {
+            cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
+        } else {
+            cmd.env_remove(CHAIN_INFOGRAPHIC_ENV);
+        }
+        if self.speed.preflight {
+            cmd.env(PREFLIGHT_ENV, "1");
+        } else {
+            cmd.env_remove(PREFLIGHT_ENV);
+        }
+        if self.speed.plan_edit {
+            cmd.env(PLAN_EDIT_ENV, "1");
+        } else {
+            cmd.env_remove(PLAN_EDIT_ENV);
+        }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
         }
@@ -1163,9 +1293,11 @@ pub async fn run_prompt(
             } else {
                 DEFAULT_TOOL_PROFILE
             };
-            let tool_count = tools_for_profile(effective_profile)
-                .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
-                .unwrap_or(0);
+            let tool_count = config
+                .tools_arg()
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .count();
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
                 "schema_version": "0.2.0",
@@ -1349,11 +1481,315 @@ mod tests {
             session_dir: None,
             continue_session: false,
             tool_profile: "investigate".to_string(),
+            hide_lieflat: false,
+            speed: Default::default(),
         };
         assert_eq!(
             cfg.display_runtime(),
             "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
         );
+    }
+
+    fn visual_story_config(hide_lieflat: bool, profile: &str) -> PiConfig {
+        PiConfig {
+            binary: "pi".into(),
+            provider: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            thinking: None,
+            approve_project: false,
+            extension: Some("ext.ts".into()),
+            artifact_dir: None,
+            session_dir: None,
+            continue_session: false,
+            tool_profile: profile.to_string(),
+            hide_lieflat,
+            speed: Default::default(),
+        }
+    }
+
+    fn names(config: &PiConfig) -> Vec<String> {
+        config.tools_arg().split(',').map(str::to_string).collect()
+    }
+
+    #[test]
+    fn hide_lieflat_removes_exactly_one_design_and_one_publish_tool() {
+        let registry: Value =
+            serde_json::from_str(include_str!("../config/tool-registry.json")).unwrap();
+        let phase_of = |name: &str| {
+            registry["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .map(|tool| tool["phase"].as_str().unwrap().to_string())
+                .unwrap_or_else(|| panic!("{name} missing from tool-registry.json"))
+        };
+        let base = names(&visual_story_config(false, "visual-story"));
+        let lean = names(&visual_story_config(true, "visual-story"));
+        println!(
+            "visual-story baseline tools={} lean tools={}",
+            base.len(),
+            lean.len()
+        );
+        assert_eq!(base.len() - lean.len(), 2);
+        let removed: Vec<&String> = base.iter().filter(|name| !lean.contains(name)).collect();
+        let mut phases: Vec<String> = removed.iter().map(|name| phase_of(name)).collect();
+        phases.sort();
+        assert_eq!(phases, ["design", "publish"]);
+        let mut removed_names: Vec<&str> = removed.iter().map(|name| name.as_str()).collect();
+        removed_names.sort();
+        assert_eq!(removed_names, LIEFLAT_TOOLS);
+        // Order of everything else is unchanged.
+        let kept: Vec<&String> = base.iter().filter(|name| lean.contains(name)).collect();
+        assert_eq!(kept, lean.iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn hide_lieflat_never_touches_other_profiles() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let on = visual_story_config(true, profile);
+            assert_eq!(on.tools_arg(), off.tools_arg(), "{profile}");
+        }
+        assert_eq!(
+            visual_story_config(false, "visual-story").tools_arg(),
+            crate::tool_registry::tools_for_profile("visual-story").unwrap()
+        );
+    }
+
+    #[test]
+    fn speed_markers_follow_the_config_not_the_parent() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(PARALLEL_HINTS_ENV, "1");
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PARALLEL_HINTS_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        // The parent asked for it, the config did not: the child must not see it.
+        assert_eq!(marker(&config), Some(None));
+        config.speed.parallel_hints = true;
+        assert_eq!(marker(&config), Some(Some("1".to_string())));
+        assert!(speed_switches_from_env().parallel_hints);
+        std::env::set_var(PARALLEL_HINTS_ENV, "0");
+        assert!(!speed_switches_from_env().parallel_hints);
+        std::env::remove_var(PARALLEL_HINTS_ENV);
+        assert!(!speed_switches_from_env().parallel_hints);
+
+        std::env::set_var(COMPUTE_BATCH_ENV, "1");
+        let batch_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == COMPUTE_BATCH_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(batch_marker(&config), Some(None));
+        assert!(speed_switches_from_env().compute_batch);
+        config.speed.compute_batch = true;
+        assert_eq!(batch_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(COMPUTE_BATCH_ENV);
+        assert!(!speed_switches_from_env().compute_batch);
+
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().chain_viz,
+            "chains need atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        let chain_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == CHAIN_VIZ_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(chain_marker(&config), Some(None));
+        assert!(speed_switches_from_env().chain_viz);
+        config.speed.chain_viz = true;
+        assert_eq!(chain_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        assert!(!speed_switches_from_env().chain_viz);
+
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().chain_infographic,
+            "chains need atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        let page_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == CHAIN_INFOGRAPHIC_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(page_marker(&config), Some(None));
+        assert!(speed_switches_from_env().chain_infographic);
+        config.speed.chain_infographic = true;
+        assert_eq!(page_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
+        assert!(!speed_switches_from_env().chain_infographic);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+
+        // Preflight needs no other switch and follows the config like the rest.
+        let preflight_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PREFLIGHT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(PREFLIGHT_ENV, "1");
+        let mut config = visual_story_config(false, "investigate");
+        assert!(speed_switches_from_env().preflight);
+        assert_eq!(preflight_marker(&config), Some(None));
+        config.speed.preflight = true;
+        assert_eq!(preflight_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(PREFLIGHT_ENV);
+        assert!(!speed_switches_from_env().preflight);
+
+        // Plan edit: marker follows the config; the tool is offered only with the plan tool.
+        let edit_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PLAN_EDIT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(PLAN_EDIT_ENV, "1");
+        let mut config = visual_story_config(false, "investigate");
+        assert!(speed_switches_from_env().plan_edit);
+        assert_eq!(edit_marker(&config), Some(None));
+        assert!(!config.tools_arg().split(',').any(|name| name == PLAN_EDIT_TOOL));
+        config.speed.plan_edit = true;
+        assert_eq!(edit_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(PLAN_EDIT_ENV);
+        assert!(!speed_switches_from_env().plan_edit);
+    }
+
+    #[test]
+    fn infographic_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let mut on = visual_story_config(false, profile);
+            on.speed.chain_infographic = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == INFOGRAPHIC_CHAIN_TOOL),
+                "{profile}"
+            );
+            let has_plan = base
+                .split(',')
+                .any(|name| name == "newsroom_infographic_plan");
+            let offered = on
+                .tools_arg()
+                .split(',')
+                .any(|name| name == INFOGRAPHIC_CHAIN_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{INFOGRAPHIC_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
+    }
+
+    #[test]
+    fn viz_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let mut on = visual_story_config(false, profile);
+            on.speed.chain_viz = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == VIZ_CHAIN_TOOL),
+                "{profile}"
+            );
+            let has_plan = base.split(',').any(|name| name == "newsroom_viz_plan");
+            let offered = on.tools_arg().split(',').any(|name| name == VIZ_CHAIN_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{VIZ_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
+    }
+
+    #[test]
+    fn child_env_marker_follows_the_config_not_the_parent() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(HIDE_LIEFLAT_ENV, "1");
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == HIDE_LIEFLAT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let hidden = marker(&visual_story_config(true, "visual-story"));
+        let shown = marker(&visual_story_config(false, "visual-story"));
+        let other_profile = marker(&visual_story_config(true, "visual"));
+        std::env::remove_var(HIDE_LIEFLAT_ENV);
+        assert_eq!(hidden, Some(Some("1".to_string())));
+        assert_eq!(shown, Some(None));
+        assert_eq!(other_profile, Some(None));
     }
 
     #[test]

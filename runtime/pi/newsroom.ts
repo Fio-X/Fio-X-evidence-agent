@@ -2,10 +2,10 @@ import { runProcess } from "./process.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename } from "node:fs/promises";
-import { dirname, join, resolve, sep, relative } from "node:path";
+import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link } from "node:fs/promises";
+import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
@@ -13,7 +13,7 @@ import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap }
 import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
-import { applyVisionPatches, normalizeVisionCriticReport, VISION_RUBRIC_KEYS } from "./vision.mjs";
+import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph } from "./story_graph.mjs";
@@ -71,7 +71,28 @@ const CARTOGRAPHIC_DEFAULT_SOURCE_URL = CARTOGRAPHIC_DEFAULT_BASEMAP?.source_url
 const CARTOGRAPHIC_DEFAULT_LICENSE = CARTOGRAPHIC_DEFAULT_BASEMAP?.license ?? BASEMAP_LICENSE;
 const CARTOGRAPHIC_DEFAULT_CONTENT_HASH = CARTOGRAPHIC_DEFAULT_BASEMAP?.content_hash ?? BASEMAP_CONTENT_HASH;
 
+// Provenance defaults for the basemap the caller selected. Only omitted fields
+// are filled; anything the caller wrote is kept verbatim and still validated by
+// validateVizSpec against the registry. An unknown basemap_id gets no defaults,
+// so it is rejected rather than quietly paired with another basemap's provenance.
+function basemapProvenanceDefaults(basemapId: unknown) {
+  if (basemapId === undefined || basemapId === null || basemapId === CARTOGRAPHIC_DEFAULT_BASEMAP_ID) {
+    return {
+      basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
+      basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
+      basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
+      basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+    };
+  }
+  const entry = getBasemap(String(basemapId));
+  return entry
+    ? { basemap_id: String(basemapId), basemap_source_url: entry.source_url, basemap_license: entry.license, basemap_content_hash: entry.content_hash }
+    : {};
+}
+
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
+import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -80,11 +101,108 @@ function normalizedNewsroomPhase() {
   return phases.length && phases.every((phase) => VALID_TOOL_PHASES.includes(phase)) ? phases.join(",") : "core";
 }
 
+// Opt-in lean surface, set by the CLI only for non-v2 visual-story runs. It
+// also removes the other places that would point the model at a tool it
+// cannot call: the visual-skill enum and the reference-pattern corpus.
+function lieflatHidden() {
+  return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
+}
+
+// Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
+// promptGuidelines only when its switch is exactly "1" in the Pi child
+// environment (the Rust side sets it from the parent's opt-in, and resets it
+// otherwise); with the switch off the tool definition is untouched.
+const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = [
+  {
+    env: "NEWSROOM_SPEED_PREFLIGHT",
+    tools: {
+      newsroom_infographic_plan: "You may omit reader_question, visual_thesis, editorial_discovery_ref, visual_concept_ref, novelty_ref, asset_plan_ref and a visual module's critic_ref when exactly one existing artifact is bound to what you already named; the runtime copies it verbatim, never overrides a value you give, and lists every unmet precondition in one error. selected_concept_id, claim ids and story nodes are never filled for you.",
+      newsroom_infographic_render: "lint_ref may be omitted when exactly one passing lint is bound to plan_ref.",
+      newsroom_infographic_critic: "lint_ref and manifest_ref may be omitted when exactly one passing lint and one rendered manifest are bound to plan_ref.",
+      newsroom_infographic_preview: "critic_ref may be omitted when exactly one passing deterministic critic is bound to manifest_ref.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_PARALLEL_HINTS",
+    tools: {
+      newsroom_update_plan: "newsroom_update_plan does not need a turn of its own: send it in the same assistant message as the first independent research calls.",
+      fetch_url: "When several candidate pages do not depend on each other, call fetch_url for all of them in the same assistant message instead of one per turn.",
+      download_data: "When several candidate data files do not depend on each other, call download_data for all of them in the same assistant message instead of one per turn.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_COMPUTE_BATCH",
+    tools: {
+      duckdb_query: "Independent duckdb_query calls can be sent together in one assistant message; never send two identical SQL statements in one turn, and do not mix them with fetch_url or download_data in the same turn.",
+      record_claim: "record_claim needs the computation_ref from its duckdb_query result, so wait for the results, then send all of the independent record_claim calls together in one assistant message.",
+    },
+  },
+];
+
+// NEWSROOM_SPEED_PREFLIGHT=1: derivable references become optional and unmet
+// preconditions are listed together (see preflight.mjs). Off: nothing changes.
+function preflightEnabled() {
+  return process.env.NEWSROOM_SPEED_PREFLIGHT === "1";
+}
+const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
+// Fill the references a later page stage can read off the artifacts it already
+// names, then list every unmet precondition together. Switch off: untouched.
+async function preflightStage(tool: string, params: any) {
+  if (!preflightEnabled()) return params;
+  const filled = await fillStageRefs(tool, params, preflightIo);
+  const issues = tool === "newsroom_infographic_preview"
+    ? Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined).map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`)
+    : await renderPrerequisiteIssues(filled.params, preflightIo, filled.unresolved);
+  if (issues.length) throw preflightError(tool, issues);
+  return filled.params;
+}
+const preflightIo = {
+  async list(dir: string) {
+    const root = artifactRoot();
+    if (!root) return [];
+    const entries = await readdir(join(root, dir), { withFileTypes: true });
+    return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => `${dir}${entry.name}`).sort();
+  },
+  read: (ref: string, prefix?: string) => readArtifactJson(ref, prefix),
+  manifest: (dir: string, ref: string, prefix: string) => readManifestOrRejected(dir, ref, prefix),
+  verified: async () => new Set(await verifiedClaimIds()),
+  // A lint is current while the upstream assets still hash as the lint recorded
+  // (the same test the render applies).
+  async lintCurrent(lint: any) {
+    try {
+      const mobilePages = mobilePagesEnabled();
+      const spec = await readArtifactJson(String(lint.plan_ref), "infographics/plans/");
+      const assets = await loadInfographicAssets(spec, mobilePages);
+      for (const [ref, asset] of Object.entries(assets) as any) {
+        const expected = lint.asset_hashes?.[ref];
+        if (!expected || sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256)) return false;
+      }
+      return true;
+    } catch { return false; }
+  },
+  // A rendered page manifest is current while it has not been moved to rejected/.
+  async pageManifestUsableRef(ref: string) {
+    try { await readManifestOrRejected("infographics", String(ref), "infographics/"); return true; } catch { return false; }
+  },
+};
+
+function withSpeedGuidelines(tool: any) {
+  const extra = SPEED_GUIDELINES.filter((entry) => process.env[entry.env] === "1" && entry.tools[String(tool?.name ?? "")]).map((entry) => entry.tools[String(tool.name)]);
+  if (!extra.length) return tool;
+  return { ...tool, promptGuidelines: [...(tool.promptGuidelines ?? []), ...extra] };
+}
+
+// Tools exactly as handed to pi.registerTool (after the phase/profile filter,
+// guidelines and fault injection), so a chain calls the same execute Pi would.
+const registeredTools = new Map<string, any>();
+
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
   const phase=normalizedNewsroomPhase();
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
+  if (lieflatHidden() && name.startsWith("newsroom_lieflat_")) return;
+  tool = withSpeedGuidelines(tool);
 
   if (process.env.NEWSROOM_PHASE_METRICS === "1") {
     const metric = {type:"newsroom_phase_scope",phase,profile,tool:name,schema_bytes:Buffer.byteLength(JSON.stringify(tool?.parameters ?? {}), "utf8")};
@@ -114,6 +232,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
+  registeredTools.set(name, tool);
   pi.registerTool(tool);
 }
 
@@ -709,19 +828,92 @@ function stableId(input: string) {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
+// NEWSROOM_SPEED_ATOMIC_ARTIFACT=1 (default off) makes the immutable writers
+// publish a complete file with link(2) instead of creating the target first
+// and filling it afterwards. Read per call, never cached. With the switch off
+// the original exclusive-create path below runs unchanged.
+function atomicArtifactWritesEnabled(): boolean {
+  return process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT === "1";
+}
+
+// The fs calls the immutable writers use, behind one object so a test can
+// pause or break a specific step deterministically. Production never swaps it.
+const defaultArtifactFs = { writeFile, link, unlink, mkdir, readFile, stat, readdir };
+let artifactFs: typeof defaultArtifactFs = defaultArtifactFs;
+export function __setArtifactFsForTest(overrides: Partial<typeof defaultArtifactFs> | null) {
+  artifactFs = overrides ? { ...defaultArtifactFs, ...overrides } : defaultArtifactFs;
+}
+
+// Temp files live in a dot-directory next to the artifact root (same volume so
+// link works), never inside it: the verifiers and listArtifactFiles only walk
+// the root, and nothing in the repo enumerates the root's parent.
+const ARTIFACT_TMP_SUFFIX = ".tmp";
+const ARTIFACT_TMP_DIR_SUFFIX = ".write-tmp";
+function artifactTmpDir(root: string) {
+  return join(dirname(root), `.${basename(root)}${ARTIFACT_TMP_DIR_SUFFIX}`);
+}
+
+// Remove temp files left by a writer that died before its cleanup ran. A file
+// is named <pid>-<random>.tmp and is only removed when that pid is gone.
+export async function cleanupStaleArtifactTmp(root: string | null = artifactRoot()) {
+  if (!root) return 0;
+  const dir = artifactTmpDir(root);
+  let names: string[];
+  try { names = await artifactFs.readdir(dir) as string[]; } catch { return 0; }
+  let removed = 0;
+  for (const name of names) {
+    const match = /^(\d+)-[0-9a-f]+\.tmp$/.exec(name);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    let alive = false;
+    try { process.kill(pid, 0); alive = true; } catch (error: any) { alive = error?.code === "EPERM"; }
+    if (alive && pid !== process.pid) continue;
+    try { await artifactFs.unlink(join(dir, name)); removed++; } catch {}
+  }
+  return removed;
+}
+
+const LINK_UNSUPPORTED_CODES = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "EXDEV", "ENOSYS"]);
+
+// Returns "linked" (we created the target, complete), "exists" (target was
+// already there; the caller compares bytes), or "unsupported" (this volume
+// cannot link or the temp dir is unusable; the caller falls back to wx, where
+// a reader can still see a half-written file).
+async function createViaLink(root: string, path: string, bytes: Buffer): Promise<"linked" | "exists" | "unsupported"> {
+  const dir = artifactTmpDir(root);
+  try { await artifactFs.mkdir(dir, { recursive: true }); } catch { return "unsupported"; }
+  const tmp = join(dir, `${process.pid}-${randomBytes(8).toString("hex")}${ARTIFACT_TMP_SUFFIX}`);
+  try {
+    await artifactFs.writeFile(tmp, bytes, { flag: "wx" });
+    try {
+      await artifactFs.link(tmp, path);
+      return "linked";
+    } catch (error: any) {
+      if (error?.code === "EEXIST") return "exists";
+      if (LINK_UNSUPPORTED_CODES.has(error?.code)) return "unsupported";
+      throw error;
+    }
+  } finally {
+    try { await artifactFs.unlink(tmp); } catch {}
+  }
+}
+
 async function writeArtifactIfAbsent(relativePath: string, value: unknown) {
   const root = artifactRoot();
   if (!root) return null;
   const path = join(root, relativePath);
   await ensureParent(path);
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n";
+  const atomic = atomicArtifactWritesEnabled() ? await createViaLink(root, path, Buffer.from(text, "utf8")) : "unsupported";
+  if (atomic === "linked") return path;
   try {
-    await writeFile(path, text, { encoding: "utf8", flag: "wx" });
+    if (atomic === "exists") throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    await artifactFs.writeFile(path, text, { encoding: "utf8", flag: "wx" });
   } catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
-    const info = await stat(path);
+    const info = await artifactFs.stat(path);
     if (!info.isFile()) throw new Error(`Immutable artifact path exists but is not a file: ${relativePath}`);
-    const existing = await readFile(path, "utf8");
+    const existing = await artifactFs.readFile(path, "utf8");
     if (existing !== text) throw new Error(`Immutable artifact collision: existing bytes differ at ${relativePath}`);
   }
   return path;
@@ -733,16 +925,41 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
   const path = join(root, relativePath);
   await ensureParent(path);
   const bytes = Buffer.from(value);
+  const atomic = atomicArtifactWritesEnabled() ? await createViaLink(root, path, bytes) : "unsupported";
+  if (atomic === "linked") return path;
   try {
-    await writeFile(path, bytes, { flag: "wx" });
+    if (atomic === "exists") throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    await artifactFs.writeFile(path, bytes, { flag: "wx" });
   } catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
-    const info = await stat(path);
+    const info = await artifactFs.stat(path);
     if (!info.isFile()) throw new Error(`Immutable artifact path exists but is not a file: ${relativePath}`);
-    const existing = await readFile(path);
+    const existing = await artifactFs.readFile(path);
     if (!existing.equals(bytes)) throw new Error(`Immutable artifact collision: existing bytes differ at ${relativePath}`);
   }
   return path;
+}
+
+// Test-only entry points to the two immutable writers (not used by tools).
+export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
+export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
+
+// One shape for every computation record, so duckdb_query and viz_lint write
+// identical bytes for the same SQL, snapshot and result rows. dataHash is the
+// legacy extra field viz_lint used to add; it duplicates result_hash and is
+// only passed when the atomic switch is off, to keep old bytes unchanged.
+function buildComputationRecord(input: { sql: string; inputSnapshot: { hash: string; fingerprints: unknown }; derivedInputs: { read_inputs: unknown; input_binding: unknown }; resultHash: string; rows: unknown[]; dataHash?: string }) {
+  return {
+    schema_version: "0.7.0",
+    sql: input.sql,
+    input_snapshot_hash: input.inputSnapshot.hash,
+    input_fingerprints: input.inputSnapshot.fingerprints,
+    read_inputs: input.derivedInputs.read_inputs,
+    input_binding: input.derivedInputs.input_binding,
+    result_hash: input.resultHash,
+    ...(input.dataHash === undefined ? {} : { data_hash: input.dataHash }),
+    rows: input.rows,
+  };
 }
 
 async function evidenceSnapshot() {
@@ -974,6 +1191,15 @@ function validateReadOnlySql(sql: string) {
     throw new Error("Mutating or extension-loading SQL is blocked");
   }
   return cleaned;
+}
+
+// The SQL string a computation record is keyed and stored under. Validation
+// trims before it strips a trailing ";", so "x ;" becomes "x " and only a second
+// pass reaches "x". With the atomic switch on both tools take the second pass, so
+// the same query is one record whether or not the text had a space before ";".
+function computationSql(sql: string) {
+  const once = validateReadOnlySql(sql);
+  return atomicArtifactWritesEnabled() ? validateReadOnlySql(once) : once;
 }
 
 async function queryDuckDb(sql: string, signal?: AbortSignal) {
@@ -1273,7 +1499,261 @@ async function listArtifactFiles(root: string, child: string) {
   return entries;
 }
 
+// The chain tool exists only when its switch is exactly "1" in the Pi child
+// environment and the chain's first tool is enabled for this phase/profile.
+function registerVizChain(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1") return;
+  // Without atomic writes the lint step's computation record differs from the
+  // one duckdb_query wrote for the same SQL, so the chain would collide on it.
+  if (!atomicArtifactWritesEnabled()) return;
+  const name = "newsroom_viz_chain";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_viz_plan");
+  if (!planTool || !toolEnabled("newsroom_viz_plan", { phase, profile })) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  pi.registerTool({
+    name,
+    label: "Plan, lint, render and critique a newsroom visualization",
+    description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it.",
+    promptSnippet: "Plan, lint, render and critique a visualization in one call",
+    promptGuidelines: [
+      "Prefer this over calling newsroom_viz_plan, newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic one by one; send the chain calls for independent charts in the same assistant message.",
+      "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+    ],
+    parameters: Type.Object({
+      ...(planTool.parameters?.properties ?? {}),
+      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It is compared with the verified result and rejected on mismatch." })),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
+      const claimId = String(planParams.claim_id ?? "");
+      const outcome = await runToolChain({
+        steps: vizChainSteps({
+          modelComputationRef,
+          claimComputationRefs: async () => {
+            const claim = (await verifiedClaimRecords()).get(claimId);
+            return Array.isArray(claim?.computation_refs) ? claim.computation_refs.map(String) : [];
+          },
+        }),
+        state: { planParams },
+        enabled,
+        schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        signal,
+        call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
+        record: async (event: any) => {
+          const at = new Date().toISOString();
+          const toolCallId = `${id}:${event.tool}`;
+          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+        },
+      });
+      return chainResultFor(outcome, { chain: name, textResult });
+    },
+  });
+}
+
+// The deterministic page lint over a stored or proposed plan; shared by
+// newsroom_infographic_lint and the opt-in plan-edit check.
+async function lintInfographicPlan(spec: any) {
+  const mobilePages = mobilePagesEnabled();
+  const assets = await loadInfographicAssets(spec, mobilePages, true);
+  const verified = await verifiedClaimIds();
+  const verifiedRecords = await verifiedClaimRecords();
+  const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
+  const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
+  // Source-only quote notes verify against the saved source's own text,
+  // hash-bound and read fresh here (never trusted from the plan), so an
+  // edited quote, a source swapped after planning, or a wrong page is
+  // caught before render rather than only at the final artifact verify.
+  const sourceQuoteErrors: string[] = [];
+  const sourceTexts = new Map<string, string>();
+  for (const module of spec.modules ?? []) {
+    const ref = module?.type === "text" ? String(module.source_quote?.source_ref ?? "") : "";
+    if (!ref || sourceTexts.has(ref)) continue;
+    try {
+      sourceTexts.set(ref, await loadSourceQuoteText(ref));
+    } catch (error: any) {
+      sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
+    }
+  }
+  // Per visual: every verified claim the page hangs on it (the manifest's
+  // own claim, module claim_id/claim_ids/claim_set, and each module
+  // annotation's claim) must bind to the visual's own computation.
+  const visualClaimBindings: Record<string, Record<string, any>> = {};
+  for (const module of spec.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const manifest = assets[String(module.manifest_ref ?? "")]?.manifest;
+    const claimIds = [...new Set([
+      manifest?.claim_id, module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? []),
+      ...((Array.isArray(module.annotations) ? module.annotations : []).map((annotation: any) => annotation?.claim_id)),
+    ].filter(Boolean).map(String))].filter((id) => verifiedRecords.has(id));
+    if (!claimIds.length) continue;
+    let chartState: any = manifest?.computation_ref
+      ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
+      : { input_binding: "legacy", effective_inputs: [] };
+    if (manifest?.computation_ref) {
+      // The numeric encoding fields come from the visual's own plan; an
+      // unreadable plan leaves them unknown and the direct-read relation fails closed.
+      let planSpec: any = null;
+      try { planSpec = await readArtifactJson(String(manifest.plan_ref ?? ""), "visualizations/plans/"); } catch { planSpec = null; }
+      chartState = { ...chartState, numeric_fields: planSpec ? numericFieldsOfSpec(planSpec) : undefined };
+    }
+    visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
+  }
+  const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
+  if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
+  return { lint, assets, mobilePages, verifiedRecords };
+}
+
+// Plan edit: exists only with NEWSROOM_SPEED_PLAN_EDIT exactly "1" and
+// newsroom_infographic_plan enabled here. The model names the layout change
+// (span, emphasis, priority, order, scene pattern/anchor/sidecars) instead of
+// re-sending the whole plan. The edited plan goes through the registered plan
+// tool, so every plan validator runs again, and the page lint must not gain a
+// blocker the source plan did not already have.
+function registerPlanEdit(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_PLAN_EDIT !== "1") return;
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_infographic_plan");
+  if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  pi.registerTool({
+    name: "newsroom_infographic_edit",
+    label: "Edit the layout of an infographic plan",
+    description: "Change only layout fields of an existing infographic plan and record the result as a new plan, without re-sending the plan. Module fields: span, emphasis, priority, move_before, mobile_move_before. Scene fields: pattern, anchor_module_id, sidecar_module_ids (existing module ids only). Copy, claims, story nodes, references, numbers, scene budgets, visual channels and module membership cannot be edited here. The edited plan runs through every newsroom_infographic_plan validation again, and the edit is refused if it adds a newsroom_infographic_lint blocker the source plan did not have.",
+    promptSnippet: "Change span/emphasis/priority/order or a scene's pattern, anchor and sidecars of a plan",
+    promptGuidelines: [
+      "Prefer this over re-sending the whole newsroom_infographic_plan when only layout needs to change.",
+      "Each op is {scope:'module'|'scene', id, field, value}. For anything else, call newsroom_infographic_plan with the full plan.",
+      "After editing, run newsroom_infographic_lint, render, critic and preview on the new plan again.",
+    ],
+    parameters: Type.Object({
+      plan_ref: Type.String(),
+      ops: Type.Array(Type.Object({
+        scope: StringEnum(["module", "scene"] as const),
+        id: Type.String(),
+        field: Type.String(),
+        value: Type.Union([Type.String(), Type.Number(), Type.Array(Type.String())]),
+      }), { minItems: 1, maxItems: PLAN_EDIT_MAX_OPS }),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const sourcePlan = await readArtifactJson(String(params.plan_ref), "infographics/plans/");
+      const revised = applyPlanEdits(sourcePlan, params.ops);
+      const proposed = { ...revised.spec, content_hash: sha256Hex(JSON.stringify(revised.spec)) };
+      const proposalErrors = validateInfographicSpec(proposed);
+      if (proposalErrors.length) throw new Error(`Plan edit produced an invalid infographic plan: ${proposalErrors.join("; ")}`);
+      const before = new Set<string>((await lintInfographicPlan(sourcePlan)).lint.blockers.map(String));
+      const after = (await lintInfographicPlan(proposed)).lint.blockers.map(String);
+      const added = after.filter((blocker: string) => !before.has(blocker));
+      if (added.length) throw new Error(`Plan edit refused: it would add ${added.length} lint blocker(s) the source plan did not have: ${added.join(" | ")}`);
+      if (signal?.aborted) throw new Error("plan edit cancelled before the revised plan was written");
+      // The registered plan tool re-runs every plan validation and writes the plan.
+      const result = await registeredTools.get("newsroom_infographic_plan").execute(`${id}:newsroom_infographic_plan`, revised.spec, signal, undefined, ctx);
+      const planRef = String(result?.details?.planRef ?? "");
+      if (!planRef) throw new Error("newsroom_infographic_plan returned no planRef for the edited plan");
+      if (signal?.aborted) throw new Error("plan edit cancelled before the revision record was written");
+      const revisionKey = sha256Hex(JSON.stringify({ source_plan_ref: params.plan_ref, plan_ref: planRef, applied: revised.applied }));
+      const revisionRef = `infographics/revisions/${revisionKey}.json`;
+      await writeArtifactIfAbsent(revisionRef, {
+        schema_version: "0.2.0",
+        kind: "plan_edit",
+        source_plan_ref: params.plan_ref,
+        revised_plan_ref: planRef,
+        applied_edits: revised.applied,
+        remaining_lint_blockers: after,
+        safety: revised.safety,
+      });
+      return textResult(`Applied ${revised.applied.length} layout edit(s).\nRevised plan: ${planRef}${planRef === params.plan_ref ? " (identical to the source plan)" : ""}\nRevision audit: ${revisionRef}\nLint blockers still present: ${after.length ? after.join(" | ") : "none"}\nNext: call newsroom_infographic_lint on the revised plan, then render, critic and preview.`, { planRef, revisionRef, applied: revised.applied, unchanged: planRef === params.plan_ref, remainingLintBlockers: after });
+    },
+  });
+}
+
+// Page chain: exists only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC exactly "1" and
+// newsroom_infographic_plan enabled here. It stops before the image-aware vision
+// critic, which only the model can write after looking at the preview image.
+function registerInfographicChain(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;
+  // Its inner viz tools share the immutable computation writers; see registerVizChain.
+  if (!atomicArtifactWritesEnabled()) return;
+  const name = "newsroom_infographic_chain";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_infographic_plan");
+  if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  const planProperties = planTool.parameters?.properties ?? {};
+  pi.registerTool({
+    name,
+    label: "Plan, lint, render, critique and preview a magazine infographic",
+    description: "Takes the same parameters as newsroom_infographic_plan and runs newsroom_infographic_plan, _lint, _render, _critic and _preview in the same call, filling only the plan/lint/manifest/critic references they return. reader_question and visual_thesis may be omitted: they are copied verbatim from the StoryGraph named by story_graph_ref (a value you supply is never overridden and must match it). It stops at the first blocker, failed render QA, DRAFT plan, visual manifest not bound to its module's claim, or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. It returns the preview image; you must still inspect it and call newsroom_infographic_vision_critic yourself.",
+    promptSnippet: "Plan, lint, render, critique and preview a magazine infographic in one call",
+    promptGuidelines: [
+      "Prefer this over calling newsroom_infographic_plan, _lint, _render, _critic and _preview one by one.",
+      "After it completes, look at the returned image and call newsroom_infographic_vision_critic with your own verdict; the chain never writes the vision critique.",
+      "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+    ],
+    parameters: Type.Object({
+      ...planProperties,
+      reader_question: Type.Optional(planProperties.reader_question ?? Type.String()),
+      visual_thesis: Type.Optional(planProperties.visual_thesis ?? Type.String()),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const planParams: any = { ...(params ?? {}) };
+      if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
+        // Copied verbatim from the StoryGraph artifact; an unreadable graph leaves the
+        // fields absent so the plan step fails exactly as a direct call would.
+        try {
+          const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
+          if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
+          if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
+        } catch { /* fall through */ }
+      }
+      const state: any = { planParams };
+      const outcome = await runToolChain({
+        steps: infographicChainSteps({
+          visualClaimMismatch: async () => {
+            const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
+            for (const module of plan.modules ?? []) {
+              if (module?.type !== "visual") continue;
+              const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+              const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+              if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
+              const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+              if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
+                return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
+              }
+            }
+            return null;
+          },
+        }),
+        state,
+        enabled,
+        schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        signal,
+        call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
+        record: async (event: any) => {
+          const at = new Date().toISOString();
+          const toolCallId = `${id}:${event.tool}`;
+          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+        },
+      });
+      return chainResultFor(outcome, {
+        chain: name,
+        textResult,
+        handoff: (final: any) => `Next: inspect the returned image, then call newsroom_infographic_vision_critic with manifest_ref=${final.manifestRef}, preview_ref=${final.previewRef}, deterministic_critic_ref=${final.criticRef} and your own passed/score/confidence/rubric/issues.`,
+      });
+    },
+  });
+}
+
 export default function newsroomExtension(pi: ExtensionAPI) {
+  registeredTools.clear();
+  // Orphaned temp files from a writer that was killed mid-write (switch on only).
+  if (atomicArtifactWritesEnabled()) void cleanupStaleArtifactTmp().catch(() => {});
   registerScopedTool(pi, {
     name: "artifact_inventory",
     label: "Inspect investigation files",
@@ -1565,7 +2045,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         }, { description: "Opt-in bounded model-visible preview; the full computation remains replayable in computations/" })),
       }),
     async execute(_id, params, signal) {
-      const safeSql = validateReadOnlySql(params.sql);
+      const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const derivedInputs = await deriveInputsForSql(safeSql, signal);
       assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");
@@ -1573,16 +2053,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
       const computationRef = computationRelativePath(safeSql, inputSnapshotHash, resultHash);
-      const record = {
-        schema_version: "0.7.0",
-        sql: safeSql,
-        input_snapshot_hash: inputSnapshotHash,
-        input_fingerprints: inputSnapshot.fingerprints,
-        read_inputs: derivedInputs.read_inputs,
-        input_binding: derivedInputs.input_binding,
-        result_hash: resultHash,
-        rows,
-      };
+      const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
       const budget = modelResultBudget(params.result_budget);
       let modelResult: any = budget ? {
@@ -1719,7 +2190,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     description: "Load the reproducible project-local Skill guidance for a professional visualization backend; loading guidance itself does not require a verified claim. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime. Omit claim_id for a draft, or bind a system-verified claim for publishable output.",
     promptSnippet: "Load the backend-specific visual production method before generating an execution request",
     parameters: Type.Object({
-      skill: StringEnum(["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const),
+      skill: StringEnum((["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const).filter((skill) => !(lieflatHidden() && skill === "lieflat-charts")) as any),
     }),
     async execute(_id, params) {
       const skill = visualSkill(params.skill);
@@ -2051,10 +2522,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
         projection: "natural_earth_1",
-        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
-        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
-        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
-        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+        ...basemapProvenanceDefaults(params.basemap_id),
         aggregation_policy: "none",
         ...params,
         ...(params.geometry_semantics === "abstract_od" && !String(params.note ?? "").trim()
@@ -2066,10 +2534,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         // CHOROPLETH_BASEMAP_ID), the same naturalearth_admin0_50m
         // cartographic_flow_map already defaults to, so it reuses these same
         // four provenance constants rather than defining its own.
-        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
-        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
-        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
-        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+        ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
@@ -2150,18 +2615,19 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshotHash = inputSnapshot.hash;
-      const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
-      await writeArtifactIfAbsent(computationRef, {
-        schema_version: "0.7.0",
-        sql: spec.sql,
-        input_snapshot_hash: inputSnapshotHash,
-        input_fingerprints: inputSnapshot.fingerprints,
-        read_inputs: lintInputs.read_inputs,
-        input_binding: lintInputs.input_binding,
-        result_hash: lint.data_hash,
-        data_hash: lint.data_hash,
+      // With the atomic switch on, key and record use the same normalized SQL
+      // duckdb_query writes, so one computation is one file whichever tool ran first.
+      const lintSql = atomicArtifactWritesEnabled() ? computationSql(spec.sql) : spec.sql;
+      const computationRef = computationRelativePath(lintSql, inputSnapshotHash, lint.data_hash);
+      const recordInputs = lintSql === spec.sql ? lintInputs : await deriveInputsForSql(lintSql, signal);
+      await writeArtifactIfAbsent(computationRef, buildComputationRecord({
+        sql: lintSql,
+        inputSnapshot,
+        derivedInputs: recordInputs,
+        resultHash: lint.data_hash,
         rows,
-      });
+        dataHash: atomicArtifactWritesEnabled() ? undefined : lint.data_hash,
+      }));
       const lintKey = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, data_hash: lint.data_hash }));
       const lintRef = `visualizations/lints/${lintKey}.json`;
       await writeArtifactIfAbsent(lintRef, {
@@ -2435,6 +2901,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       });
     },
   });
+
+  // NEWSROOM_SPEED_CHAIN_VIZ=1: one call runs plan -> lint -> render -> critic.
+  // Not a registry tool, so with the switch off nothing is registered and the
+  // tool surface is unchanged. Every gate stays inside the four inner executes.
+  registerVizChain(pi);
 
 
   const explanatoryPartParameters = Type.Object({
@@ -2903,7 +3374,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Compare the concept with abstract world-class visual patterns",
     parameters: Type.Object({ tags: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })) }),
     async execute(_id, params) {
-      const result = retrieveReferencePatterns({ corpus: DEFAULT_REFERENCE_PATTERNS, tags: params.tags, limit: params.limit ?? 4 });
+      const result = retrieveReferencePatterns({ corpus: lieflatHidden() ? DEFAULT_REFERENCE_PATTERNS.filter((item: any) => item.id !== "lieflat-charts") : DEFAULT_REFERENCE_PATTERNS, tags: params.tags, limit: params.limit ?? 4 });
       const rel = `editorial/references/${result.content_hash}.json`;
       await writeArtifactIfAbsent(rel, result);
       return textResult(`Reference patterns retrieved.\nArtifact: ${rel}\nMatches: ${result.matches.map((item: any) => item.id).join(", ") || "none"}`, { referenceRef: rel, matches: result.matches });
@@ -3048,19 +3519,19 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
       intent: Type.String(),
       primary_message: Type.String(),
-      reader_question: Type.String(),
-      visual_thesis: Type.String(),
+      reader_question: optionalWhenPreflight(Type.String()),
+      visual_thesis: optionalWhenPreflight(Type.String()),
       story_graph_ref: Type.String(),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
       quality_target: Type.Optional(StringEnum(["publishable", "award"] as const)),
       competition_profile: Type.Optional(StringEnum(["editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"] as const)),
       mobile_module_order: Type.Optional(Type.Array(Type.String(), { minItems: 3, maxItems: 12 })),
-      editorial_discovery_ref: Type.String(),
-      visual_concept_ref: Type.String(),
+      editorial_discovery_ref: optionalWhenPreflight(Type.String()),
+      visual_concept_ref: optionalWhenPreflight(Type.String()),
       selected_concept_id: Type.String(),
-      novelty_ref: Type.String(),
-      asset_plan_ref: Type.String(),
+      novelty_ref: optionalWhenPreflight(Type.String()),
+      asset_plan_ref: optionalWhenPreflight(Type.String()),
       editorial_grammar: editorialGrammarParameters,
       scene_graph: Type.Object({
         schema_version: Type.Literal("0.2.0"),
@@ -3085,7 +3556,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
-    async execute(_id, params) {
+    async execute(_id, rawParams, signal?: AbortSignal) {
+      let params = rawParams;
+      let unresolvedRefs: Record<string, string> = {};
+      if (preflightEnabled()) {
+        const filled = await fillPlanRefs(rawParams, preflightIo);
+        unresolvedRefs = filled.unresolved;
+        if (filled.filled.length) params = inSchemaOrder(filled.params, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
+      }
       const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
       const editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
       const specCore = {
@@ -3099,6 +3577,18 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         editorial_grammar: editorialGrammar,
         modules: params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" })),
       };
+      if (preflightEnabled()) {
+        // Everything the checks below would reject for a missing or unbound
+        // prerequisite, listed at once. They still run afterwards, unchanged.
+        const issues: string[] = [];
+        const specErrors = validateInfographicSpec(specCore);
+        // A field the fill could not derive is reported once, with its reason.
+        issues.push(...specErrors.filter((error: string) => !Object.keys(unresolvedRefs).some((field) => error.startsWith(`${field} is required`))));
+        const grammar = lintEditorialGrammarSelection(specCore.editorial_grammar, editorialGrammarRegistry);
+        if (!grammar.passed) issues.push(...grammar.issues.map((issue: any) => `editorial grammar ${issue.rule_id}: ${issue.message}`));
+        issues.push(...(await planPrerequisiteIssues(specCore, preflightIo, unresolvedRefs)));
+        if (issues.length) throw preflightError("newsroom_infographic_plan", issues);
+      }
       const storyGraph = await readArtifactJson(String(specCore.story_graph_ref), "editorial/story-graphs/");
       if (!storyGraph.passed) throw new Error("Infographic cannot proceed from a StoryGraph with blocking narrative-closure issues");
       if (String(storyGraph.reader_question) !== String(specCore.reader_question)) throw new Error("Infographic reader_question must exactly match StoryGraph reader_question");
@@ -3148,6 +3638,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify(specCore));
       const spec = { ...specCore, content_hash: key };
       const rel = `infographics/plans/${key}.json`;
+      if (signal?.aborted) throw new Error("newsroom_infographic_plan cancelled before the plan was written");
       await writeArtifactIfAbsent(rel, spec);
       return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.`, { planRef: rel, modules: specCore.modules.length });
     },
@@ -3160,54 +3651,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Run deterministic magazine-page quality checks",
     parameters: Type.Object({ plan_ref: Type.String() }),
     async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages, true);
-      const verified = await verifiedClaimIds();
-      const verifiedRecords = await verifiedClaimRecords();
-      const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
-      const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
-      // Source-only quote notes verify against the saved source's own text,
-      // hash-bound and read fresh here (never trusted from the plan), so an
-      // edited quote, a source swapped after planning, or a wrong page is
-      // caught before render rather than only at the final artifact verify.
-      const sourceQuoteErrors: string[] = [];
-      const sourceTexts = new Map<string, string>();
-      for (const module of spec.modules ?? []) {
-        const ref = module?.type === "text" ? String(module.source_quote?.source_ref ?? "") : "";
-        if (!ref || sourceTexts.has(ref)) continue;
-        try {
-          sourceTexts.set(ref, await loadSourceQuoteText(ref));
-        } catch (error: any) {
-          sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
-        }
-      }
-      // Per visual: every verified claim the page hangs on it (the manifest's
-      // own claim, module claim_id/claim_ids/claim_set, and each module
-      // annotation's claim) must bind to the visual's own computation.
-      const visualClaimBindings: Record<string, Record<string, any>> = {};
-      for (const module of spec.modules ?? []) {
-        if (module?.type !== "visual") continue;
-        const manifest = assets[String(module.manifest_ref ?? "")]?.manifest;
-        const claimIds = [...new Set([
-          manifest?.claim_id, module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? []),
-          ...((Array.isArray(module.annotations) ? module.annotations : []).map((annotation: any) => annotation?.claim_id)),
-        ].filter(Boolean).map(String))].filter((id) => verifiedRecords.has(id));
-        if (!claimIds.length) continue;
-        let chartState: any = manifest?.computation_ref
-          ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
-          : { input_binding: "legacy", effective_inputs: [] };
-        if (manifest?.computation_ref) {
-          // The numeric encoding fields come from the visual's own plan; an
-          // unreadable plan leaves them unknown and the direct-read relation fails closed.
-          let planSpec: any = null;
-          try { planSpec = await readArtifactJson(String(manifest.plan_ref ?? ""), "visualizations/plans/"); } catch { planSpec = null; }
-          chartState = { ...chartState, numeric_fields: planSpec ? numericFieldsOfSpec(planSpec) : undefined };
-        }
-        visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
-      }
-      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
-      if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
+      const { lint, assets, mobilePages, verifiedRecords } = await lintInfographicPlan(spec);
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
         ...(mobilePages ? { mobile_sha256: sha256Hex(asset.mobileSvg) } : {}),
@@ -3231,8 +3676,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       ? "Compose verified visualization artifacts and claim-bound editorial modules into responsive desktop and mobile magazine SVG pages after infographic lint passes."
       : "Compose verified visualization artifacts and claim-bound editorial modules into a magazine SVG page after infographic lint passes. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to render it too.",
     promptSnippet: "Render a responsive magazine-grade infographic",
-    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams) {
+      const params = await preflightStage("newsroom_infographic_render", rawParams);
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
@@ -3314,8 +3760,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       ? "Review the composed desktop and mobile feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, responsive execution, geometry and visual-language variety. A failing page should be replanned and rendered again."
       : "Review the composed desktop feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, geometry and visual-language variety. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to critique both desktop and mobile. A failing page should be replanned and rendered again.",
     promptSnippet: "Critique a responsive magazine infographic",
-    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String(), manifest_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()), manifest_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams) {
+      const params = await preflightStage("newsroom_infographic_critic", rawParams);
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
@@ -3989,8 +4436,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           "Do not infer data truth from pixels. Numerical truth and provenance remain governed by deterministic lint and verification.",
           "After observing the image, call newsroom_infographic_vision_critic with concrete visible evidence and only bounded layout patch suggestions.",
         ],
-    parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: Type.String() }),
-    async execute(_id, params, signal) {
+    parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams, signal) {
+      const params = await preflightStage("newsroom_infographic_preview", rawParams);
       const mobilePages = mobilePagesEnabled();
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const critic = await readArtifactJson(params.critic_ref, "infographics/critics/");
@@ -4121,6 +4569,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   });
 
 
+  registerInfographicChain(pi);
+  registerPlanEdit(pi);
+
   registerScopedTool(pi, {
     name: "newsroom_infographic_revise",
     label: "Apply bounded visual-editor revision",
@@ -4230,7 +4681,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       note: Type.Optional(Type.String({ description: "Concise methodological caveat shown on the SVG" })),
     }),
     async execute(_id, params, signal) {
-      const safeSql = validateReadOnlySql(params.sql);
+      const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
       if (rows.length === 0) throw new Error("Chart query returned no rows");

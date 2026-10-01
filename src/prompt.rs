@@ -3,13 +3,78 @@ const INVESTIGATE_TEMPLATE: &str = include_str!("../prompts/investigate.md");
 /// Build the investigation prompt using the requested classifier variant.
 /// The split variant is intentionally opt-in; callers that do not select it
 /// retain the established delivery-oriented classifier.
+#[allow(dead_code)] // kept for scripts/test_visual_routing_cost.py, which includes this file
 pub fn investigation_with_classifier(
     topic: &str,
     local_data: &[String],
     split_classifier: bool,
 ) -> String {
+    investigation_with_options(
+        topic,
+        local_data,
+        split_classifier,
+        false,
+        PromptSpeed::default(),
+    )
+}
+
+/// Opt-in prompt additions that cut model turns. Every field defaults to off,
+/// and with all of them off the prompt is byte-identical to the baseline.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PromptSpeed {
+    /// `NEWSROOM_SPEED_PARALLEL_HINTS=1`: tell the model to send independent
+    /// tool calls in one assistant message.
+    pub parallel_hints: bool,
+    /// `NEWSROOM_SPEED_COMPUTE_BATCH=1`: tell the model to batch independent
+    /// duckdb_query calls, then their record_claim calls, one batch per turn.
+    pub compute_batch: bool,
+    /// `NEWSROOM_SPEED_CHAIN_VIZ=1`: expose `newsroom_viz_chain`, which runs
+    /// plan -> lint -> render -> critic in one call. No prompt text changes;
+    /// the tool carries its own guidance.
+    pub chain_viz: bool,
+    /// `NEWSROOM_SPEED_CHAIN_INFOGRAPHIC=1`: expose `newsroom_infographic_chain`
+    /// (plan -> lint -> render -> critic -> preview in one call). No prompt
+    /// text changes; the tool carries its own guidance.
+    pub chain_infographic: bool,
+    /// `NEWSROOM_SPEED_PREFLIGHT=1`: the runtime lists every unmet page-stage
+    /// precondition at once and fills a reference only when exactly one
+    /// existing artifact is bound to what the call already names. Tool
+    /// guidance is added by the runtime; the base prompt does not change.
+    pub preflight: bool,
+    /// `NEWSROOM_SPEED_PLAN_EDIT=1`: a runtime-only tool changes a page plan's
+    /// layout fields (module span/emphasis/priority/order, scene
+    /// pattern/anchor/sidecars) without re-sending the plan. The edited plan
+    /// passes every plan validation again. The tool carries its own guidance.
+    pub plan_edit: bool,
+}
+
+const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
+
+const COMPUTE_BATCH_PARAGRAPH: &str = "\n\nCompute batching: send independent duckdb_query calls together in one turn. A record_claim needs the computation_ref returned by its duckdb_query, so once every result is back, send all of the record_claim calls together in the next turn. Never put two identical SQL statements in one turn, and do not run fetch_url or download_data in the same turn as duckdb_query, because new files change what a computation reads. Repair a failing SQL statement on its own; do not merge the repair with other steps.\n";
+
+/// Prompt sentences that name the Lieflat tools. They are dropped when those
+/// tools are hidden from the run, so the prompt never points at a tool the
+/// model cannot call.
+const LIEFLAT_FALLBACK_SENTENCE: &str = " In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable.";
+const LIEFLAT_UNMEASURED_SENTENCE: &str = " A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request.";
+
+/// `hide_lieflat` mirrors the tool surface of the run: when the Lieflat tools
+/// are hidden the prompt must not name them either.
+pub fn investigation_with_options(
+    topic: &str,
+    local_data: &[String],
+    split_classifier: bool,
+    hide_lieflat: bool,
+    speed: PromptSpeed,
+) -> String {
     let mut prompt = INVESTIGATE_TEMPLATE.replace("{{TOPIC}}", topic);
     prompt.push_str(language_instruction(topic));
+    if speed.parallel_hints {
+        prompt.push_str(PARALLEL_HINTS_PARAGRAPH);
+    }
+    if speed.compute_batch {
+        prompt.push_str(COMPUTE_BATCH_PARAGRAPH);
+    }
     if is_visual_request(topic) {
         prompt.push_str(
             "\n\nVisual delivery contract: the user asked for a visual artifact. If no local dataset is present, first discover and download a credible machine-readable source, then profile it and compute the rows with DuckDB. Do not invent values. The final artifact may be a self-contained SVG/PNG or self-contained HTML; choose the smallest format that satisfies the request. Loading a visual skill does not require a claim: omit claim_id for exploratory work, which produces a clearly labeled non-publishable draft; bind a supported recorded claim for publication and let the runtime grant verified only after source validation and deterministic computation replay. Never request or assert verified status yourself. Classify every recorded claim with claim_kind. Data calculations can verify descriptive, quantitative, comparative, and uncertainty claims, but cannot verify causal explanations, motives, policy effects, crisis/war drivers, or labels such as labour migration unless an explicit supporting source and a separate support-review contract exist; keep such interpretation out of publishable claims. Every DuckDB result that is ordered must use a total deterministic ORDER BY with secondary tie-breakers, so replay produces the same row sequence. For evidence-bound chart modules, inspect the computation schema and bind label_field and value_field(s) explicitly whenever the metric is not named value/y/amount; never let year/id/rank become a measure, and use two value_fields for a scatter or multiple fields for a multi-series trend. In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable. If no credible evidence can be acquired after bounded alternatives, report EVIDENCE_BLOCKED and do not produce a factual chart.\n",
@@ -33,6 +98,11 @@ pub fn investigation_with_classifier(
             prompt.push_str(&format!("- {path}\n"));
         }
         prompt.push_str("Use artifact_inventory if you need to inspect available files before querying them. Treat local files as evidence inputs and profile their schema before drawing conclusions.\n");
+    }
+    if hide_lieflat {
+        prompt = prompt
+            .replace(LIEFLAT_FALLBACK_SENTENCE, "")
+            .replace(LIEFLAT_UNMEASURED_SENTENCE, "");
     }
     prompt
 }
@@ -329,6 +399,97 @@ mod tests {
         assert!(prompt.contains("EVIDENCE_BLOCKED"));
         assert!(prompt.contains("SVG/PNG or self-contained HTML"));
         assert!(prompt.contains("runtime grant verified"));
+    }
+
+    #[test]
+    fn parallel_hints_only_insert_one_paragraph_when_on() {
+        let on = PromptSpeed {
+            parallel_hints: true,
+            ..PromptSpeed::default()
+        };
+        for topic in [
+            "summarize the source",
+            "制作一个信息图",
+            SCMP_LONG_IMAGE_GOAL,
+        ] {
+            for split in [false, true] {
+                let off =
+                    investigation_with_options(topic, &[], split, false, PromptSpeed::default());
+                assert_eq!(off, investigation_with_classifier(topic, &[], split));
+                let hinted = investigation_with_options(topic, &[], split, false, on);
+                assert_eq!(
+                    hinted.len(),
+                    off.len() + PARALLEL_HINTS_PARAGRAPH.len(),
+                    "{topic}"
+                );
+                assert_eq!(
+                    hinted.replacen(PARALLEL_HINTS_PARAGRAPH, "", 1),
+                    off,
+                    "{topic}"
+                );
+                assert!(hinted.contains("same assistant message"));
+                assert!(!off.contains("same assistant message"));
+            }
+        }
+    }
+
+    #[test]
+    fn compute_batch_is_a_separate_paragraph_and_composes_with_parallel_hints() {
+        let batch = PromptSpeed {
+            compute_batch: true,
+            ..PromptSpeed::default()
+        };
+        let both = PromptSpeed {
+            parallel_hints: true,
+            compute_batch: true,
+            ..PromptSpeed::default()
+        };
+        for topic in ["summarize the source", SCMP_LONG_IMAGE_GOAL] {
+            let off = investigation_with_classifier(topic, &[], false);
+            let only = investigation_with_options(topic, &[], false, false, batch);
+            assert_eq!(
+                only.replacen(COMPUTE_BATCH_PARAGRAPH, "", 1),
+                off,
+                "{topic}"
+            );
+            assert!(only.contains("Compute batching") && !only.contains("Parallel tool calls"));
+            let all = investigation_with_options(topic, &[], false, false, both);
+            let stripped = all.replacen(PARALLEL_HINTS_PARAGRAPH, "", 1).replacen(
+                COMPUTE_BATCH_PARAGRAPH,
+                "",
+                1,
+            );
+            assert_eq!(stripped, off, "{topic}");
+        }
+    }
+
+    #[test]
+    fn hidden_lieflat_tools_are_not_named_in_visual_prompts() {
+        for topic in [
+            "制作一个信息图",
+            "制作复杂的多模块信息图并输出 HTML",
+            SCMP_LONG_IMAGE_GOAL,
+        ] {
+            for split in [false, true] {
+                let shown =
+                    investigation_with_options(topic, &[], split, false, PromptSpeed::default());
+                assert_eq!(shown, investigation_with_classifier(topic, &[], split));
+                let hidden =
+                    investigation_with_options(topic, &[], split, true, PromptSpeed::default());
+                assert!(!hidden.contains("newsroom_lieflat_"), "{topic}");
+                assert!(!hidden.contains("Lieflat"), "{topic}");
+                assert!(hidden.len() < shown.len());
+            }
+        }
+        let complex = investigation_with_options(
+            SCMP_LONG_IMAGE_GOAL,
+            &[],
+            false,
+            true,
+            PromptSpeed::default(),
+        );
+        assert!(complex.contains("newsroom_infographic_plan"));
+        assert!(complex.contains("newsroom_publication_qa"));
     }
 
     #[test]
