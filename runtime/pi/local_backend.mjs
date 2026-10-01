@@ -229,7 +229,8 @@ export async function localSpotlight(query, { limit = 50 } = {}) {
   if (typeof query !== 'string' || !query.trim()) throw new Error('query must be non-empty');
   const root = artifactRoot();
   const capped = Math.max(1, Math.min(Number(limit) || 50, 200));
-  if (process.platform === 'darwin' && await available(NATIVE.mdfind)) {
+  // mdfind has no `--` separator, so a query starting with '-' would be read as an option.
+  if (!query.trim().startsWith('-') && process.platform === 'darwin' && await available(NATIVE.mdfind)) {
     try {
       const { stdout } = await runCommand(NATIVE.mdfind, ['-onlyin', root, query], { maxBytes: 2 * 1024 * 1024 });
       const results = stdout.split(/\r?\n/).map((v) => v.trim()).filter(Boolean).filter((p) => within(root, path.resolve(p))).slice(0, capped);
