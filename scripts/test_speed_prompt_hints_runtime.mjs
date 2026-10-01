@@ -47,6 +47,7 @@ try {
 
   const definitions = (extension, profile, on) => {
     process.env.NEWSROOM_TOOL_PROFILE = profile;
+    delete process.env.NEWSROOM_HIDE_LIEFLAT; // ambient setting must not leak into the baseline comparison
     for (const name of ALL_SWITCHES) delete process.env[name];
     for (const name of on) process.env[name] = "1";
     const tools = new Map();
