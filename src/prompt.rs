@@ -3,10 +3,28 @@ const INVESTIGATE_TEMPLATE: &str = include_str!("../prompts/investigate.md");
 /// Build the investigation prompt using the requested classifier variant.
 /// The split variant is intentionally opt-in; callers that do not select it
 /// retain the established delivery-oriented classifier.
+#[allow(dead_code)] // kept for scripts/test_visual_routing_cost.py, which includes this file
 pub fn investigation_with_classifier(
     topic: &str,
     local_data: &[String],
     split_classifier: bool,
+) -> String {
+    investigation_with_options(topic, local_data, split_classifier, false)
+}
+
+/// Prompt sentences that name the Lieflat tools. They are dropped when those
+/// tools are hidden from the run, so the prompt never points at a tool the
+/// model cannot call.
+const LIEFLAT_FALLBACK_SENTENCE: &str = " In the visual tool profile, use newsroom_lieflat_catalog followed by newsroom_lieflat_render as the pinned Lieflat Charts fallback when the richer renderer is unavailable.";
+const LIEFLAT_UNMEASURED_SENTENCE: &str = " A page from newsroom_lieflat_render is an unmeasured fallback as well: it carries no measured lint, critic or browser QA, never counts as the delivered page, and cannot complete this request.";
+
+/// `hide_lieflat` mirrors the tool surface of the run: when the Lieflat tools
+/// are hidden the prompt must not name them either.
+pub fn investigation_with_options(
+    topic: &str,
+    local_data: &[String],
+    split_classifier: bool,
+    hide_lieflat: bool,
 ) -> String {
     let mut prompt = INVESTIGATE_TEMPLATE.replace("{{TOPIC}}", topic);
     prompt.push_str(language_instruction(topic));
@@ -33,6 +51,11 @@ pub fn investigation_with_classifier(
             prompt.push_str(&format!("- {path}\n"));
         }
         prompt.push_str("Use artifact_inventory if you need to inspect available files before querying them. Treat local files as evidence inputs and profile their schema before drawing conclusions.\n");
+    }
+    if hide_lieflat {
+        prompt = prompt
+            .replace(LIEFLAT_FALLBACK_SENTENCE, "")
+            .replace(LIEFLAT_UNMEASURED_SENTENCE, "");
     }
     prompt
 }
@@ -329,6 +352,27 @@ mod tests {
         assert!(prompt.contains("EVIDENCE_BLOCKED"));
         assert!(prompt.contains("SVG/PNG or self-contained HTML"));
         assert!(prompt.contains("runtime grant verified"));
+    }
+
+    #[test]
+    fn hidden_lieflat_tools_are_not_named_in_visual_prompts() {
+        for topic in [
+            "制作一个信息图",
+            "制作复杂的多模块信息图并输出 HTML",
+            SCMP_LONG_IMAGE_GOAL,
+        ] {
+            for split in [false, true] {
+                let shown = investigation_with_options(topic, &[], split, false);
+                assert_eq!(shown, investigation_with_classifier(topic, &[], split));
+                let hidden = investigation_with_options(topic, &[], split, true);
+                assert!(!hidden.contains("newsroom_lieflat_"), "{topic}");
+                assert!(!hidden.contains("Lieflat"), "{topic}");
+                assert!(hidden.len() < shown.len());
+            }
+        }
+        let complex = investigation_with_options(SCMP_LONG_IMAGE_GOAL, &[], false, true);
+        assert!(complex.contains("newsroom_infographic_plan"));
+        assert!(complex.contains("newsroom_publication_qa"));
     }
 
     #[test]

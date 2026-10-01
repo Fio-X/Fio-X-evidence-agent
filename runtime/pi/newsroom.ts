@@ -82,6 +82,8 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const phase=normalizedNewsroomPhase();
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
+  // Opt-in lean surface, set by the CLI only for non-v2 visual-story runs.
+  if (process.env.NEWSROOM_HIDE_LIEFLAT === "1" && profile === "visual-story" && name.startsWith("newsroom_lieflat_")) return;
 
   if (process.env.NEWSROOM_PHASE_METRICS === "1") {
     const metric = {type:"newsroom_phase_scope",phase,profile,tool:name,schema_bytes:Buffer.byteLength(JSON.stringify(tool?.parameters ?? {}), "utf8")};
