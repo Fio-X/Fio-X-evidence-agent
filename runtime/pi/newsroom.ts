@@ -1699,7 +1699,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
       const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
-      return textResult(`Rendered Lieflat ${params.mode} publication.\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
+      return textResult(`Rendered Lieflat ${params.mode} page (unqualified fallback: it carries no measured lint, critic or browser QA and does not complete a story or long-form request).\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
     },
   });
 

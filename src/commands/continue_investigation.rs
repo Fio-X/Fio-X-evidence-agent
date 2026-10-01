@@ -6,16 +6,39 @@ use crate::{prompt, runtime};
 use anyhow::Result;
 use std::time::Instant;
 
-fn effective_tool_profile(requested: &str, text: &str) -> String {
-    if requested != "investigate" {
-        return requested.to_string();
-    }
+/// Text-based routing used when nothing better is known.
+fn inferred_tool_profile(text: &str) -> &'static str {
     if prompt::is_complex_visual_request(text) {
-        "visual-story".to_string()
+        "visual-story"
     } else if prompt::is_visual_request(text) {
-        "visual".to_string()
+        "visual"
     } else {
-        requested.to_string()
+        "investigate"
+    }
+}
+
+/// The profile a follow-up runs with, and whether it was carried over from
+/// the previous run.
+///
+/// An explicit `--tool-profile` other than the default always wins. Left at
+/// the default, the profile the previous Pi run recorded is reused so a
+/// follow-up does not silently drop tools the investigation was built with
+/// (a visual-story run whose follow-up text no longer mentions a chart must
+/// not fall back to `investigate`). Nothing recorded, or a recorded
+/// `investigate`, keeps the text inference, including its escalation from a
+/// recorded `visual` to `visual-story` for a complex follow-up.
+///
+/// The default cannot be told apart from an explicit
+/// `--tool-profile investigate`; both count as "not specified".
+fn effective_tool_profile(requested: &str, text: &str, recorded: Option<&str>) -> (String, bool) {
+    if requested != "investigate" {
+        return (requested.to_string(), false);
+    }
+    let inferred = inferred_tool_profile(text);
+    match recorded {
+        Some("investigate") | None => (inferred.to_string(), false),
+        Some("visual") if inferred == "visual-story" => (inferred.to_string(), false),
+        Some(profile) => (profile.to_string(), true),
     }
 }
 
@@ -39,6 +62,18 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         runtime_started.elapsed().as_millis()
     );
 
+    let recorded_profile = bundle.recorded_tool_profile();
+    let (tool_profile, reused_profile) = effective_tool_profile(
+        &args.pi.tool_profile,
+        &format!("{topic} {message}"),
+        recorded_profile.as_deref(),
+    );
+    if reused_profile {
+        eprintln!(
+            "continue: reusing tool profile {tool_profile} recorded by the previous run (pass --tool-profile to override)"
+        );
+    }
+
     let config = PiConfig {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
@@ -51,7 +86,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         artifact_dir: Some(bundle.dir.clone()),
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: true,
-        tool_profile: effective_tool_profile(&args.pi.tool_profile, &format!("{topic} {message}")),
+        tool_profile,
     };
     let reported_provider = config.effective_provider();
 
@@ -135,5 +170,102 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             )?;
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_tool_profile;
+    use crate::artifact::InvestigationBundle;
+    use std::fs;
+
+    #[test]
+    fn default_flag_reuses_the_recorded_profile() {
+        let follow_up = "thanks, now add one more caveat";
+        assert_eq!(
+            effective_tool_profile("investigate", follow_up, Some("visual-story")),
+            ("visual-story".to_string(), true)
+        );
+        assert_eq!(
+            effective_tool_profile("investigate", follow_up, Some("publication")),
+            ("publication".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn explicit_profile_beats_the_recorded_one() {
+        assert_eq!(
+            effective_tool_profile("competition", "make a chart", Some("visual-story")),
+            ("competition".to_string(), false)
+        );
+        assert_eq!(
+            effective_tool_profile("visual", "anything", Some("visual-story")),
+            ("visual".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn nothing_recorded_keeps_the_text_inference() {
+        assert_eq!(
+            effective_tool_profile("investigate", "summarize the source", None),
+            ("investigate".to_string(), false)
+        );
+        assert_eq!(
+            effective_tool_profile("investigate", "make a chart", None),
+            ("visual".to_string(), false)
+        );
+        assert_eq!(
+            effective_tool_profile("investigate", "做一张信息长图", None),
+            ("visual-story".to_string(), false)
+        );
+        // A recorded plain-investigate run is not a reason to stay there.
+        assert_eq!(
+            effective_tool_profile("investigate", "make a chart", Some("investigate")),
+            ("visual".to_string(), false)
+        );
+        // An unknown recorded profile never reaches here (the artifact reader
+        // filters it), so inference applies.
+        assert_eq!(
+            effective_tool_profile("investigate", "make a chart", None).0,
+            "visual"
+        );
+    }
+
+    #[test]
+    fn complex_follow_up_still_escalates_a_recorded_visual_run() {
+        assert_eq!(
+            effective_tool_profile("investigate", "做一张信息长图", Some("visual")),
+            ("visual-story".to_string(), false)
+        );
+        assert_eq!(
+            effective_tool_profile("investigate", "make a chart", Some("visual")),
+            ("visual".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn profile_is_read_from_the_artifact_metrics() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = InvestigationBundle::create(root.path(), "profile memory").unwrap();
+        fs::write(
+            &bundle.events_path,
+            "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual-story\"}\n",
+        )
+        .unwrap();
+        let recorded = bundle.recorded_tool_profile();
+        assert_eq!(
+            effective_tool_profile("investigate", "keep going", recorded.as_deref()),
+            ("visual-story".to_string(), true)
+        );
+        let empty = tempfile::tempdir().unwrap();
+        let fresh = InvestigationBundle::create(empty.path(), "no metrics").unwrap();
+        assert_eq!(
+            effective_tool_profile(
+                "investigate",
+                "keep going",
+                fresh.recorded_tool_profile().as_deref()
+            ),
+            ("investigate".to_string(), false)
+        );
     }
 }
