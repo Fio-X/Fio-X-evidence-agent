@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename }
 import { dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, validateVizSpec } from "./viz.mjs";
+import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { composeInfographicBundle, critiqueInfographic, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
@@ -1935,6 +1935,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
       direct_labels: Type.Optional(Type.Boolean()),
       measure_kind: Type.Optional(StringEnum(["year", "count", "index", "level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "duration", "distance", "price"] as const, { description: "What the value_field measures, so numbers are spelled correctly: 'year' (a calendar year such as 2017) and 'count' (a whole-number tally) print as plain integers - never '2.0k' or '3.0' - and choropleth legends use whole-number steps. A year-like unit on measure_kind 'index' is also read as a calendar year. Omit for ordinary quantities." })),
+      measure_semantics: Type.Optional(Type.Array(Type.Object({ field: Type.Optional(Type.String()), unit: Type.Optional(Type.String()), measure_kind: Type.Optional(Type.String()) }), { maxItems: 8, description: "Optional per-field measure declarations (field, unit, measure_kind). A count or calendar-year value_field is spelled as a plain integer." })),
       category_names: Type.Optional(StringEnum(["worldbank", "iso3"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth, facet_field for small_multiples, series_field for multi_line): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes. On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
       annotations: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["point", "node", "reference_line", "range_bracket"] as const, { description: "point/node label a specific mark. reference_line draws a thin rule across the plot area at a fixed value on the value axis; supported only on horizontal_bar, dot, dumbbell, and small_multiples. range_bracket draws a bracket spanning a contiguous run of rows (match_value to end_match_value, in rendered order); supported only on horizontal_bar and dot, at most 2 per chart, and ranges must not overlap." }),
@@ -2131,7 +2132,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
                 value_field: spec.value_field,
                 category_names: spec.category_names,
                 unit: spec.unit,
-                measure_kind: spec.measure_kind,
+                // resolved once by the renderer's own rule (measure_kind or a measure_semantics entry)
+                // so QA spells expected labels exactly as the renderer did
+                measure_kind: specValueKind(spec) ?? spec.measure_kind,
+                measure_semantics: spec.measure_semantics,
               },
             }
           : {};
