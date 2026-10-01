@@ -31,6 +31,36 @@ function stableId(value, fallback) {
   return text(value, fallback).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || fallback;
 }
 
+export const SIGNED_VALUE_MODES = new Set(['reverse_direction']);
+
+// A flow width cannot be negative. A layer whose measure is signed (e.g. a
+// net balance) may say so explicitly: a negative value then means the flow
+// runs opposite to the row's source -> target. Rows are re-expressed as a
+// positive width with the endpoints swapped, and the original signed value is
+// kept beside it, so nothing is silently dropped, clamped, or abs()-ed.
+function signedModeProblems(layer, label) {
+  const problems = [];
+  if (layer.signed_values === undefined) return problems;
+  if (!SIGNED_VALUE_MODES.has(layer.signed_values)) problems.push(`layer '${label}' signed_values must be one of ${[...SIGNED_VALUE_MODES].join(', ')}`);
+  if (!text(layer.signed_note)) problems.push(`layer '${label}' signed_values needs a signed_note stating what a negative value means`);
+  return problems;
+}
+
+export function normalizeSignedRows(baseSpec, layer) {
+  const rows = Array.isArray(layer?.rows) ? layer.rows : [];
+  if (layer?.signed_values !== 'reverse_direction') return rows;
+  const pick = (key) => text(layer[key], baseSpec?.[key]);
+  const valueField = pick('value_field');
+  const pairs = [[pick('source_field'), pick('target_field')], [pick('source_lat_field'), pick('target_lat_field')], [pick('source_lon_field'), pick('target_lon_field')]].filter(([a, b]) => a && b);
+  return rows.map((row) => {
+    const v = finite(row?.[valueField]);
+    if (v === null || v >= 0) return row;
+    const out = { ...row, [valueField]: -v, [`${valueField}_signed`]: v };
+    for (const [a, b] of pairs) { out[a] = row[b]; out[b] = row[a]; }
+    return out;
+  });
+}
+
 function layerSpec(baseSpec, layer) {
   const {
     id: _id,
@@ -42,6 +72,8 @@ function layerSpec(baseSpec, layer) {
     note,
     geometry_semantics,
     route_provenance_note,
+    signed_values: _signed,
+    signed_note,
     ...overrides
   } = layer;
   // These fields belong to the composite contract, not to a single map
@@ -54,7 +86,7 @@ function layerSpec(baseSpec, layer) {
     subtitle: text(subtitle, `${baseSpec.subtitle ?? ''}${baseSpec.subtitle ? ' · ' : ''}${text(unit)} · width scale resets within this layer`),
     unit: text(unit),
     source_note: text(source_note, baseSpec.source_note),
-    note: [text(note, baseSpec.note), 'This layer has its own width scale; values are not comparable across layers.'].filter(Boolean).join(' '),
+    note: [text(note, baseSpec.note), text(signed_note), 'This layer has its own width scale; values are not comparable across layers.'].filter(Boolean).join(' '),
     geometry_semantics: text(geometry_semantics, baseSpec.geometry_semantics),
     route_provenance_note: text(route_provenance_note, baseSpec.route_provenance_note),
     flow_layer_field: undefined,
@@ -105,8 +137,10 @@ export function validateGeoFlowLayers(config) {
     if (!Array.isArray(layer.rows) || !layer.rows.length) blockers.push(`layer '${label}' needs non-empty rows`);
     if (Array.isArray(layer.rows)) {
       const valueField = text(layer.value_field, baseSpec?.value_field);
-      const badValues = layer.rows.filter((row) => finite(row?.[valueField]) === null || finite(row?.[valueField]) < 0).length;
-      if (badValues) blockers.push(`layer '${label}' has ${badValues} missing, non-numeric, or negative value(s)`);
+      blockers.push(...signedModeProblems(layer, label));
+      const allowNegative = layer.signed_values === 'reverse_direction';
+      const badValues = layer.rows.filter((row) => finite(row?.[valueField]) === null || (!allowNegative && finite(row?.[valueField]) < 0)).length;
+      if (badValues) blockers.push(`layer '${label}' has ${badValues} missing, non-numeric, or negative value(s)${allowNegative ? '' : "; a signed measure must declare signed_values='reverse_direction' with a signed_note"}`);
       const mapSpec = baseSpec ? layerSpec(baseSpec, { ...layer, id, label, unit }) : null;
       if (mapSpec) {
         const errors = validateVizSpec(mapSpec);
@@ -141,7 +175,7 @@ export function renderGeoFlowLayers(config) {
     layers: validation.layer_ids.map((id) => {
       const layer = byId.get(id);
       const spec = layerSpec(config.baseSpec, { ...layer, id });
-      const bundle = renderVizBundle(spec, layer.rows);
+      const bundle = renderVizBundle(spec, normalizeSignedRows(config.baseSpec, layer));
       return { ...layer, id, spec, bundle };
     }),
   };
@@ -164,7 +198,7 @@ function layerTable(layer) {
   const value = text(layer.value_field, 'value');
   const limit = Math.min(rows.length, 12);
   const body = rows.slice(0, limit).map((row) => `<tr><td>${esc(row?.[source])}</td><td>${esc(row?.[target])}</td><td>${esc(row?.[value])}</td></tr>`).join('');
-  return `<details class="flow-data"><summary>Show source rows (${rows.length})</summary><div class="table-scroll"><table><thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Value (${esc(layer.unit)})</th></tr></thead><tbody>${body}</tbody></table></div>${rows.length > limit ? `<p class="fine-print">First ${limit} rows shown; the artifact retains all ${rows.length} rows.</p>` : ''}</details>`;
+  return `<details class="flow-data"><summary>Show source rows (${rows.length})</summary><div class="table-scroll"><table><thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Value (${esc(layer.unit)}${layer.signed_values ? '; signed, negative = reverse direction' : ''})</th></tr></thead><tbody>${body}</tbody></table></div>${rows.length > limit ? `<p class="fine-print">First ${limit} rows shown; the artifact retains all ${rows.length} rows.</p>` : ''}</details>`;
 }
 
 /**
