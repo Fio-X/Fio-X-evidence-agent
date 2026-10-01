@@ -6,6 +6,7 @@
 // runtime/pi/newsroom.ts from a type-stripped copy and runs the real page tools on
 // a fixture whose editorial artifacts, claims and chart manifests are written by hand.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
@@ -187,7 +188,9 @@ function register(mod, env) {
 }
 const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined };
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !f.startsWith("runtime/") && !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
+// Only the chain's own timestamped event log differs between a chain run and a manual run.
+const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
+const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f) && !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
 
 const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
 void registry;
@@ -317,12 +320,15 @@ async function manual(params) {
   check("switch off registers nothing new; on adds only newsroom_infographic_chain; question/thesis optional; chain x atomic on/off");
 }
 
-let previewWorks = true;
-{ // chain == manual, byte for byte; the reader question and thesis are copied from the StoryGraph
+// Skip the real-tool checks only when a dependency is explicitly absent
+// (the duckdb binary cannot be started); any other failure is a real failure.
+const missingDependency = spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT" ? "duckdb binary not found" : null;
+const previewWorks = !missingDependency;
+if (missingDependency) console.log(`${missingDependency}; skipping the real-tool checks`);
+if (previewWorks) { // chain == manual, byte for byte; the reader question and thesis are copied from the StoryGraph
   const manualArt = freshRun("manual");
-  let m;
-  try { m = await manual(pagePlan({ withQuestion: true })); } catch (error) { previewWorks = false; console.log(`real page tools unavailable here (${String(error.message).slice(0, 1500)})`); }
-  if (previewWorks) {
+  const m = await manual(pagePlan({ withQuestion: true }));
+  {
     const chainArt = freshRun("chain");
     const out = await tools.get("newsroom_infographic_chain").execute("chain-0", pagePlan());
     assert.equal(out.details.chainStatus, "COMPLETE", JSON.stringify(out.details).slice(0, 600));
@@ -442,4 +448,4 @@ if (previewWorks) {
 
 for (const name of results) assert.ok(name);
 console.log(results.map((name) => `  ok  ${name}`).join("\n"));
-console.log(`infographic chain: ${results.length} checks -- PASS${previewWorks ? "" : " (real page tools unavailable here: real checks skipped)"}`);
+console.log(`infographic chain: ${results.length} checks -- PASS${previewWorks ? "" : " (duckdb unavailable: real checks skipped)"}`);
