@@ -15,6 +15,18 @@ export function assertViewSpecHasNoInlineData(value,path='view_spec'){
   }
 }
 
+// Evidence is bound by the plan's evidence_binding, never by view_spec: these
+// keys carry resolved map evidence and must not be supplied (at any depth).
+const RESERVED_EVIDENCE_KEYS=new Set(['map_spec','map_resolution','map_ref','basemap_asset','resolved_svg']);
+export function assertViewSpecHasNoReservedEvidence(value,path='view_spec'){
+  if(value==null||typeof value!=='object') return;
+  if(Array.isArray(value)){value.forEach((v,i)=>assertViewSpecHasNoReservedEvidence(v,`${path}[${i}]`));return;}
+  for(const [k,v] of Object.entries(value)){
+    if(RESERVED_EVIDENCE_KEYS.has(k)) throw new Error(`${path}.${k} is reserved evidence; it is bound by the plan's evidence_binding, not view_spec_json`);
+    assertViewSpecHasNoReservedEvidence(v,`${path}.${k}`);
+  }
+}
+
 function field(mapping,name,required=true){const v=String(mapping?.[name]??'').trim();if(required&&!v)throw new Error(`field_mapping.${name} is required`);return v||null;}
 function col(rows,key){return rows.map(r=>r?.[key]);}
 function finiteNumber(v){const n=Number(v);return Number.isFinite(n)?n:null;}
