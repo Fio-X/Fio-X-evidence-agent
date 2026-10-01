@@ -230,6 +230,8 @@ jobs:
           node scripts/test_render_qa_tool_path.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
+      - name: Investigate and continue exit-code acceptance
+        run: python3 scripts/test_investigate_exit_codes.py
       - name: Visualization performance budget
         run: node scripts/benchmark_viz.mjs
       - name: Complex visualization performance budget
