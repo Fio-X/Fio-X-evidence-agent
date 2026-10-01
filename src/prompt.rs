@@ -58,7 +58,7 @@ const EMPHASIS_GUIDANCE: &str = "\nWhen a chart's title names a category or seri
 const HERO_STAT_REFERENCE_GUIDANCE: &str = "\nGive each hero_stat a short reference point in its label or detail, such as the same measure in another period, the total, or the next-ranked item, using only numbers from the rows of the claim it cites; if those rows hold none, leave the reference out instead of adding a number.";
 
 /// Adjustable: appended after the hero_stat guidance, complex visual requests only.
-const NUMBER_REPEAT_GUIDANCE: &str = "\nA given number may appear at most twice on the whole page: once as the headline number (a hero_stat or a chart label) and once in the text that explains it; do not repeat it in the lede, a note or the body copy, and give any further mention a different angle instead.";
+const NUMBER_REPEAT_GUIDANCE: &str = "\nWithin the page's own text (the dek, hero_stat labels and details, notes and body copy; chart labels do not count), state any one number at most twice; where a further mention would only restate it, say it in words or leave it out, and never add a new number to replace it.";
 
 const CHAIN_VIZ_PARAGRAPH: &str = "\n\nChart chain: when `newsroom_viz_chain` is in your tool list it is the same chart path (plan, lint, render, critic) run in one call with the same parameters as `newsroom_viz_plan`; use it for each chart and send the chain calls for independent charts together. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
 
