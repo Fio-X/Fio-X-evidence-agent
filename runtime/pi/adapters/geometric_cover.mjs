@@ -47,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 
 const ADAPTER_ID = 'geometric-cover/1';
 const PROTOCOL = 'agentic-data-newsroom.rich-illustration.v1';
-const FAMILIES = Object.freeze(['arcs', 'grid', 'concentric', 'bands']);
+const FAMILIES = Object.freeze(['arcs', 'concentric', 'bands']);
 const EXIT = Object.freeze({ INTERNAL: 1, POLICY: 2, FACTUAL: 3, DIGITS: 4, MOTIF: 5, MALFORMED: 6, PALETTE: 7 });
 
 const DISCLOSURE = '软件生成的装饰图，不含数据';
@@ -67,11 +67,6 @@ const LAYOUT = Object.freeze({
     // tile x tile cells, two quarter arcs per cell
     desktop: { tile: 80, cols: 15, rows: 4, stroke: 16, accent: 3, dark: 0.35 },
     mobile: { tile: 65, cols: 6, rows: 4, stroke: 13, accent: 2, dark: 0.35 },
-  },
-  grid: {
-    // one primitive (circle, square, quarter disc or half disc) per cell
-    desktop: { tile: 80, cols: 15, rows: 4, inset: 8, accent: 3, dark: 0.35 },
-    mobile: { tile: 65, cols: 6, rows: 4, inset: 6.5, accent: 2, dark: 0.35 },
   },
   concentric: {
     // clusters of equally spaced rings, cluster centres on a fixed row
@@ -196,53 +191,6 @@ function drawArcs(vp, rng, tone) {
   return { elements: out, group: `fill="none" stroke-width="${stroke}" stroke-linecap="butt"` };
 }
 
-function drawGrid(vp, rng, tone) {
-  const { tile, cols, rows, inset, accent, dark } = LAYOUT.grid[vp.name];
-  const s = tile - 2 * inset;
-  const half = s / 2;
-  const tones = [];
-  for (let i = 0; i < cols * rows; i += 1) tones.push(rng() < dark ? 'dark' : 'light');
-  for (const [c, row] of spacedPicks(rng, cols, rows, accent, 3)) tones[row * cols + c] = 'accent';
-  const out = [];
-  for (let row = 0; row < rows; row += 1) {
-    for (let c = 0; c < cols; c += 1) {
-      const x0 = c * tile + inset;
-      const y0 = row * tile + inset;
-      const x1 = x0 + s;
-      const y1 = y0 + s;
-      const kind = int(rng, 4);
-      const turn = int(rng, 4);
-      const fill = tone(tones[row * cols + c]);
-      let shape;
-      if (kind === 0) {
-        shape = `<circle cx="${f(x0 + half)}" cy="${f(y0 + half)}" r="${f(half)}" fill="${fill}"/>`;
-      } else if (kind === 1) {
-        shape = `<path d="M ${pt(x0, y0)} L ${pt(x1, y0)} L ${pt(x1, y1)} L ${pt(x0, y1)} Z" fill="${fill}"/>`;
-      } else if (kind === 2) {
-        // quarter disc of radius s anchored on one corner of the cell square
-        const d = [
-          `M ${pt(x0, y0)} L ${pt(x1, y0)} A ${f(s)} ${f(s)} 0 0 1 ${pt(x0, y1)} Z`,
-          `M ${pt(x1, y0)} L ${pt(x1, y1)} A ${f(s)} ${f(s)} 0 0 1 ${pt(x0, y0)} Z`,
-          `M ${pt(x1, y1)} L ${pt(x0, y1)} A ${f(s)} ${f(s)} 0 0 1 ${pt(x1, y0)} Z`,
-          `M ${pt(x0, y1)} L ${pt(x0, y0)} A ${f(s)} ${f(s)} 0 0 1 ${pt(x1, y1)} Z`,
-        ][turn];
-        shape = `<path d="${d}" fill="${fill}"/>`;
-      } else {
-        // half disc of radius s/2 on one side of the cell square
-        const d = [
-          `M ${pt(x0, y0)} L ${pt(x1, y0)} A ${f(half)} ${f(half)} 0 0 1 ${pt(x0, y0)} Z`,
-          `M ${pt(x1, y0)} L ${pt(x1, y1)} A ${f(half)} ${f(half)} 0 0 1 ${pt(x1, y0)} Z`,
-          `M ${pt(x1, y1)} L ${pt(x0, y1)} A ${f(half)} ${f(half)} 0 0 1 ${pt(x1, y1)} Z`,
-          `M ${pt(x0, y1)} L ${pt(x0, y0)} A ${f(half)} ${f(half)} 0 0 1 ${pt(x0, y1)} Z`,
-        ][turn];
-        shape = `<path d="${d}" fill="${fill}"/>`;
-      }
-      out.push(shape);
-    }
-  }
-  return { elements: out, group: '' };
-}
-
 function drawConcentric(vp, rng, tone) {
   const { centers, cy, rings, step, stroke, sway, accent } = LAYOUT.concentric[vp.name];
   // The same fixed set of vertical offsets, dealt out to the clusters by seed.
@@ -303,7 +251,7 @@ function drawBands(vp, rng, tone) {
   return { elements: out, group: '' };
 }
 
-const DRAW = Object.freeze({ arcs: drawArcs, grid: drawGrid, concentric: drawConcentric, bands: drawBands });
+const DRAW = Object.freeze({ arcs: drawArcs, concentric: drawConcentric, bands: drawBands });
 
 // The only entry the drawing code has: family, seed material and viewport.
 function drawCover({ family, seed, viewport }, palette) {
