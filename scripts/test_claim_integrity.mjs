@@ -163,6 +163,41 @@ const BYTES = /^Error: INVALID_SOURCE_EVIDENCE: data bytes do not match their re
   check("refused: cancelled after the replay query and before the claim line, nothing written");
 }
 
+// ---- replay row order (default on) -----------------------------------------------
+{ // a replay that returns the same rows in another order says so; a changed value does not
+  const rewrite = (to) => {
+    const real = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
+    const wrapper = join(mkdtempSync(join(tmpdir(), "claim-integrity-wrap-")), "wrap-duckdb.py");
+    writeFileSync(wrapper, `#!/usr/bin/env python3\nimport os, sys\nargs = sys.argv[1:]\nif not any("json_serialize_sql" in a for a in args):\n    args = [a.replace("ORDER BY country", ${JSON.stringify(to)}) for a in args]\nos.execvp(${JSON.stringify(real)}, [${JSON.stringify(real)}] + args)\n`);
+    chmodSync(wrapper, 0o755);
+    return wrapper;
+  };
+  const HINT = /the same rows came back in another order: add a top-level ORDER BY over every key column so the order is total/;
+  for (const [label, to, pattern] of [["reordered rows", "ORDER BY country DESC", HINT], ["a changed result", "ORDER BY country DESC LIMIT 3", /^Error: COMPUTATION_REPLAY_FAILED: deterministic result changed: computations\/[0-9a-f]{64}\.json$/]]) {
+    const s = await story();
+    process.env.NEWSROOM_DUCKDB_BIN = rewrite(to);
+    try { await refuses(label, s, pattern); } finally { delete process.env.NEWSROOM_DUCKDB_BIN; }
+  }
+  check("a replay with the same rows in another order is refused with the ORDER BY hint; a replay with a changed result is refused without it");
+}
+{ // duckdb_query tells the model when a multi-row result has no top-level ORDER BY
+  const run = async (sql) => {
+    const s = await story(sql);
+    return tools.get("duckdb_query").execute("q", { sql: sql(s.ref) });
+  };
+  const body = async (sql) => JSON.parse((await run(sql)).content[0].text);
+  const NOTE = /^No top-level ORDER BY: row order is not guaranteed/;
+  assert.match((await body((r) => `SELECT year, COUNT(*) AS n FROM '${r}' GROUP BY year`)).order_note, NOTE, "multi-row GROUP BY without ORDER BY");
+  assert.match((await body((r) => `SELECT country FROM '${r}'`)).order_note, NOTE, "a plain multi-row scan");
+  assert.equal((await body((r) => `SELECT year, COUNT(*) AS n FROM '${r}' GROUP BY year ORDER BY year`)).order_note, undefined, "ORDER BY present");
+  assert.equal((await body((r) => `SELECT year FROM '${r}' ORDER BY year LIMIT 2`)).order_note, undefined, "ORDER BY with LIMIT");
+  assert.equal((await body((r) => `SELECT country FROM '${r}' UNION ALL SELECT country FROM '${r}' ORDER BY 1`)).order_note, undefined, "ORDER BY over a set operation");
+  assert.equal((await body((r) => `SELECT COUNT(*) AS n FROM '${r}'`)).order_note, undefined, "a 1-row result");
+  assert.equal((await body((r) => `SELECT country FROM '${r}' WHERE country = 'ORDER BY'`)).order_note, undefined, "no rows, and the text 'ORDER BY' in a string is not an ORDER BY");
+  const direct = await body((r) => `SELECT country, share FROM '${r}' ORDER BY country`);
+  assert.deepEqual(Object.keys(direct), ["row_count", "rows", "artifact"], "the rest of the result is unchanged");
+  check("duckdb_query adds order_note for a multi-row result with no top-level ORDER BY (read from the parse); absent with ORDER BY (also LIMIT, set operations), absent for 1 row; the rest of the result unchanged");
+}
 // ---- constants in claim SQL (opt-in) -------------------------------------------
 const FORGED_SQL = [
   ["a typed number", (r) => `SELECT country, 999 AS share FROM '${r}'`],
