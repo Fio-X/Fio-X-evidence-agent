@@ -157,7 +157,10 @@ function withoutHeroStat(svg) {
   const houseSvg = withoutHeroStat(composeInfographicBundle(baseSpec(), {}).desktop.svg);
   const legacySvg = withoutHeroStat(composeInfographicBundle(baseSpec({ style_id: "legacy" }), {}).desktop.svg);
   const stripFontFamily = (svg) => svg.replace(/font-family="[^"]*"/g, 'font-family="FONT"');
-  const normalize = (svg, colors) => stripFontFamily(svg)
+  // Q1: house hero_stat's red rule now sits at its box top (aligned with the neighbouring hairlines), so vertical
+  // positions legitimately differ from legacy; colours, fonts, text, x positions and structure still must match.
+  const stripY = (svg) => svg.replace(/\b(y|y1|y2|height|viewBox)="[^"]*"/g, '$1="N"');
+  const normalize = (svg, colors) => stripY(stripFontFamily(svg))
     .replaceAll(colors.ink, "INK").replaceAll(colors.muted, "MUTED")
     .replaceAll(colors.grid, "GRID").replaceAll(colors.accent, "ACCENT").replaceAll(colors.paper, "PAPER");
   const houseNormalized = normalize(houseSvg, HOUSE);

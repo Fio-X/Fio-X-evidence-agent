@@ -106,12 +106,13 @@ try {
   writeFileSync(parentPath, src);
   try { parent = await import(parentPath.href); } finally { rmSync(parentPath); }
 } catch { parent = null; }
-const sameAsParent = (spec, mobilePages = false) => {
+// Desktop spacing now follows ink (page rhythm, see test_page_rhythm.mjs), so
+// only the mobile page is still compared byte for byte.
+const sameAsParent = (spec) => {
   if (!parent) return;
-  const now = composeInfographicBundle(spec, assets, { mobilePages });
-  const before = parent.composeInfographicBundle(spec, assets, { mobilePages });
-  assert.equal(now.desktop.svg, before.desktop.svg, 'desktop is byte-identical to the previous layout');
-  if (mobilePages) assert.equal(now.mobile.svg, before.mobile.svg, 'mobile is byte-identical to the previous layout');
+  const now = composeInfographicBundle(spec, assets, { mobilePages: true });
+  const before = parent.composeInfographicBundle(spec, assets, { mobilePages: true });
+  assert.equal(now.mobile.svg, before.mobile.svg, 'mobile is byte-identical to the previous layout');
 };
 
 // (e)/(g) a rail holding ONE big number draws the full-width band
@@ -125,7 +126,7 @@ const sameAsParent = (spec, mobilePages = false) => {
   assert.equal(box.w, 1248);
   assert.ok(box.h < 150, `band is shorter than the stacked stat, got ${box.h}`);
   const anchor = out.desktop.boxes.find((b) => b.id === 'bar');
-  assert.equal(box.y, anchor.y + anchor.h + 14, 'rail spacing unchanged');
+  assert.ok(box.y - (anchor.y + anchor.h) <= 44, `band starts within the within-section spacing of the chart ink, got ${box.y - (anchor.y + anchor.h)}`);
   assert.ok(textX(out.desktop.svg, 'Synthetic items counted') > 96 + 120, 'label sits right of the numeral');
 }
 // (h) a rail with two big numbers is unchanged
@@ -133,6 +134,7 @@ const sameAsParent = (spec, mobilePages = false) => {
   const spec = scenePage(['s1', 's2'], [stat('s1'), stat('s2', { value: '20', label: 'Another synthetic count' })]);
   const out = composeScene(spec);
   assert.ok(!out.desktop.boxes.some((b) => b.stat_bar));
+  // page rhythm: desktop spacing is measured from ink; the mobile page is unchanged.
   sameAsParent(spec);
 }
 // (i) a rail with one text sidecar is unchanged
@@ -140,7 +142,8 @@ const sameAsParent = (spec, mobilePages = false) => {
   const spec = scenePage(['t1'], [text('t1', SHORT)]);
   const out = composeScene(spec);
   assert.ok(!out.desktop.boxes.some((b) => b.stat_bar));
-  sameAsParent(spec);
+  // page-rhythm: a short text alone on a full row is set to a readable measure
+  // (see test_page_rhythm.mjs); it is no longer byte-identical to the parent.
 }
 // (j) mobile is unchanged (also with the one-stat rail)
 {
