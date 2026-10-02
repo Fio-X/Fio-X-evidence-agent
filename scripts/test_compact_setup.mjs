@@ -120,7 +120,21 @@ const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description
   const base = register(baseMod, {});
   const off = register(mod, {});
   assert.deepEqual([...off.keys()], [...base.keys()]);
-  for (const [name, tool] of base) assert.equal(slim(off.get(name)), slim(tool), `switch off: ${name} is byte-identical to the integration head`);
+  // One approved difference since the integration head (fast-fail-1003 item 3, one explanatory_dimension vocabulary): semantic novelty and the
+  // infographic plan take every story-graph value. Only that enum may differ, and it must still differ (drop the entry if it is reverted).
+  const DIMENSION_ENUM_TOOLS = new Set(["newsroom_semantic_novelty", "newsroom_infographic_plan"]);
+  const withoutDimensionEnum = (tool) => {
+    const parameters = JSON.parse(JSON.stringify(tool.parameters));
+    const field = parameters?.properties?.modules?.items?.properties?.explanatory_dimension;
+    assert.ok(Array.isArray(field?.enum), `${tool.name} keeps its explanatory_dimension enum`);
+    field.enum = null;
+    return slim({ ...tool, parameters });
+  };
+  for (const [name, tool] of base) {
+    if (!DIMENSION_ENUM_TOOLS.has(name)) { assert.equal(slim(off.get(name)), slim(tool), `switch off: ${name} is byte-identical to the integration head`); continue; }
+    assert.equal(withoutDimensionEnum(off.get(name)), withoutDimensionEnum(tool), `switch off: ${name} is byte-identical to the integration head outside the explanatory_dimension enum`);
+    assert.notEqual(slim(off.get(name)), slim(tool), `${name}: the explanatory_dimension enum differs from the integration head (approved change)`);
+  }
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();

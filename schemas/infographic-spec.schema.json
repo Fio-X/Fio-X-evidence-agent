@@ -516,7 +516,8 @@
             "human_scale",
             "method",
             "context",
-            "outcome"
+            "outcome",
+            "relationship"
           ]
         },
         "dependency_on": {

@@ -5,7 +5,15 @@
 //      seconds, one generic hint) and an identical retry is refused at once.
 //   2. EDITORIAL_GRAMMAR_BLOCKED also names the relations that accept the chosen
 //      chart type, read from the same table; the block itself is unchanged.
+//   3. One explanatory_dimension vocabulary: every tool that takes it for a module
+//      accepts every value the story graph accepts, the publication plan maps
+//      relationship -> network through one shared function, and every
+//      "unsupported explanatory_dimension" error lists the allowed values.
+//      Semantic novelty scoring is pinned by a digest taken on the commit before
+//      the change (regenerate with: node scripts/test_fast_fail_errors.mjs
+//      --novelty-digest <dir holding editorial.mjs>).
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
@@ -15,6 +23,43 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const results = [];
 const check = (name) => { results.push(name); };
+
+// Semantic novelty scoring over the ten dimensions the tool accepted before item 3: every ordered
+// pair x six overlap profiles x a third module. The digest of the full artifacts is pinned below.
+const NOVELTY_ORIGINAL_DIMENSIONS = ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"];
+function noveltyMatrixDigest(scoreSemanticNovelty) {
+  const same = { q: "q1", claims: ["c1", "c2"], text: "tariff share of exports by partner" };
+  const profiles = [
+    { a: same, b: { q: "q2", claims: ["c3"], text: "port congestion delays shipments" } },
+    { a: same, b: same },
+    { a: same, b: { ...same, claims: ["c3", "c4"], text: "something else entirely" } },
+    { a: same, b: { ...same, claims: ["c1", "c3"], text: "tariff share of imports by partner" } },
+    { a: same, b: { ...same }, dependent: true },
+    { a: same, b: { ...same }, justified: true },
+  ];
+  const artifacts = [];
+  for (let i = 0; i < NOVELTY_ORIGINAL_DIMENSIONS.length; i++) {
+    for (let j = 0; j < NOVELTY_ORIGINAL_DIMENSIONS.length; j++) {
+      for (const p of profiles) {
+        const module = (id, side, dimension, extra = {}) => ({ id, reader_question_id: side.q, claim_set: side.claims, new_information: side.text, explanatory_dimension: dimension, ...extra });
+        artifacts.push(scoreSemanticNovelty({
+          concept_ref: "editorial/concepts/x.json",
+          modules: [
+            module("a", p.a, NOVELTY_ORIGINAL_DIMENSIONS[i]),
+            module("b", p.b, NOVELTY_ORIGINAL_DIMENSIONS[j], { ...(p.dependent ? { dependency_on: ["a"] } : {}), ...(p.justified ? { justification: "kept on purpose" } : {}) }),
+            module("c", { q: "q1", claims: ["c2", "c9"], text: "tariff share of exports" }, NOVELTY_ORIGINAL_DIMENSIONS[(i + j) % NOVELTY_ORIGINAL_DIMENSIONS.length]),
+          ],
+        }));
+      }
+    }
+  }
+  return { count: artifacts.length, digest: createHash("sha256").update(JSON.stringify(artifacts)).digest("hex") };
+}
+if (process.argv[2] === "--novelty-digest") {
+  const editorial = await import(pathToFileURL(join(process.argv[3], "editorial.mjs")).href);
+  console.log(JSON.stringify(noveltyMatrixDigest(editorial.scoreSemanticNovelty)));
+  process.exit(0);
+}
 
 const stub = (dir, name, source) => {
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
@@ -286,6 +331,157 @@ try {
   assert.match(String(await blockOf("comparison", "dumbbell")), /^Invalid visualization plan: Missing required field 'alt'/);
   assert.match(String(await blockOf("rank", "horizontal_bar")), /^Invalid visualization plan: Missing required field 'alt'/);
   check("a chart the relation accepts is not blocked");
+}
+
+// ---------------------------------------------------------------- 3. one dimension vocabulary
+{
+  const readJson = (rel) => JSON.parse(readFileSync(join(ROOT, rel), "utf8"));
+  const story = await import(join(ROOT, "runtime/pi/story_graph.mjs"));
+  const editorial = await import(join(ROOT, "runtime/pi/editorial.mjs"));
+  const infographic = await import(join(ROOT, "runtime/pi/infographic.mjs"));
+  const publicationPi = await import(join(ROOT, "runtime/pi/publication.mjs"));
+  const publicationWeb = await import(join(ROOT, "runtime/web/publication.mjs"));
+
+  // What "the story graph accepts" means is the story graph's own published contract, not our constant.
+  const findEnums = (node, key) => {
+    const found = [];
+    if (Array.isArray(node)) { for (const item of node) found.push(...findEnums(item, key)); return found; }
+    if (!node || typeof node !== "object") return found;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === key && v && typeof v === "object" && Array.isArray(v.enum)) found.push(v.enum);
+      else found.push(...findEnums(v, key));
+    }
+    return found;
+  };
+  const STORY_CONTRACT = findEnums(readJson("schemas/story-graph.schema.json"), "explanatory_dimension");
+  assert.equal(STORY_CONTRACT.length, 1);
+  const STORY = STORY_CONTRACT[0];
+  assert.equal(STORY.length, 12);
+  assert.deepEqual([...story.STORY_DIMENSIONS], STORY, "STORY_DIMENSIONS is the story graph schema's enum");
+  const PUBLICATION = [...story.PUBLICATION_DIMENSIONS];
+  assert.equal(PUBLICATION.length, 16);
+  assert.deepEqual(PUBLICATION, ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"], "the publication tools list the values in the order their schema had on abd9d8b, so their definitions do not change");
+  assert.ok(STORY.every((d) => PUBLICATION.includes(d)));
+  assert.deepEqual(PUBLICATION.filter((d) => !STORY.includes(d)), ["flow", "network", "hierarchy", "model"]);
+  const sameSet = (a, b) => assert.deepEqual([...a].sort(), [...b].sort());
+  check("one definition: STORY_DIMENSIONS equals the story-graph schema enum; the publication list is that plus flow, network, hierarchy, model");
+
+  // Every tool that takes explanatory_dimension for a module, read from the registered schemas.
+  const tools = await freshTools({});
+  const enumsByTool = {};
+  for (const [name, tool] of tools) {
+    const found = findEnumsInParameters(tool.parameters);
+    if (found.length) enumsByTool[name] = found;
+  }
+  function findEnumsInParameters(node) {
+    const found = [];
+    if (!node || typeof node !== "object") return found;
+    if (node.properties && typeof node.properties === "object") {
+      for (const [key, value] of Object.entries(node.properties)) {
+        if (key === "explanatory_dimension") found.push(value.enum);
+        found.push(...findEnumsInParameters(value));
+      }
+    }
+    if (node.items) found.push(...findEnumsInParameters(node.items));
+    for (const key of ["anyOf", "allOf", "oneOf"]) if (Array.isArray(node[key])) for (const sub of node[key]) found.push(...findEnumsInParameters(sub));
+    return found;
+  }
+  assert.deepEqual(Object.keys(enumsByTool).sort(), ["newsroom_infographic_plan", "newsroom_portable_publication", "newsroom_publication_plan", "newsroom_semantic_novelty", "newsroom_story_graph"], "a new tool taking explanatory_dimension must join this test");
+  for (const [name, found] of Object.entries(enumsByTool)) {
+    assert.equal(found.length, 1, `${name} declares explanatory_dimension once`);
+    for (const value of STORY) assert.ok(found[0].includes(value), `${name} accepts '${value}'`);
+    const publication = name.includes("publication");
+    assert.deepEqual(found[0], publication ? PUBLICATION : STORY, `${name} takes the shared list`);
+  }
+  check("story graph, semantic novelty, infographic plan and both publication tools accept every story-graph value");
+
+  // The JSON schemas that describe the artifacts these tools write agree with the same lists.
+  const infographicSchema = findEnums(readJson("schemas/infographic-spec.schema.json"), "explanatory_dimension");
+  assert.equal(infographicSchema.length, 1);
+  assert.deepEqual(infographicSchema[0], STORY);
+  const publicationSchema = findEnums(readJson("schemas/publication-spec.schema.json"), "explanatory_dimension");
+  assert.equal(publicationSchema.length, 1);
+  sameSet(publicationSchema[0], PUBLICATION);
+  for (const file of ["runtime/pi/publication.mjs", "runtime/web/publication.mjs"]) {
+    const declared = readFileSync(join(ROOT, file), "utf8").match(/const DIMENSIONS=new Set\(\[([^\]]*)\]\)/);
+    assert.ok(declared, `${file} declares DIMENSIONS`);
+    sameSet(declared[1].split(",").map((x) => x.trim().replace(/'/g, "")), PUBLICATION);
+  }
+  check("infographic and publication JSON schemas and both publication.mjs copies list the same values");
+
+  // The boundary mapping: one function, the plan's existing relationship -> network.
+  assert.equal(story.mapExplanatoryDimension("relationship"), "network");
+  for (const value of PUBLICATION.filter((d) => d !== "relationship")) assert.equal(story.mapExplanatoryDimension(value), value, `${value} is left alone`);
+  for (const value of [undefined, null, "", "Relationship", " relationship", 7, "constructor", "__proto__"]) assert.equal(story.mapExplanatoryDimension(value), value, `${String(value)} is left alone`);
+  assert.ok(PUBLICATION.includes(story.mapExplanatoryDimension("relationship")), "the mapped value is one the publication plan accepts");
+  const styles = readJson("config/editorial-style-mappings.json");
+  const styleDimensions = new Set(Object.values(styles.profiles).flatMap((profile) => profile.compatible_dimensions));
+  assert.ok(!styleDimensions.has("relationship") && styleDimensions.has("network"), "the style registry has no relationship profile: that is why the plan maps it to network");
+  const newsroomSource = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  assert.doesNotMatch(newsroomSource, /=== "relationship" \? "network"/, "no inline relationship -> network ternary is left");
+  assert.equal((newsroomSource.match(/explanatory_dimension: mapExplanatoryDimension\(module\.explanatory_dimension\)/g) ?? []).length, 2, "both publication boundaries call the shared function");
+  assert.equal((newsroomSource.match(/explanatory_dimension: (?:Type\.Optional\()?StringEnum\(\[/g) ?? []).length, 4, "four spread-from-shared enums");
+  assert.doesNotMatch(newsroomSource, /explanatory_dimension: (?:Type\.Optional\()?StringEnum\(\["/, "no tool carries its own literal dimension list");
+  check("relationship -> network lives in one shared function, used at both publication boundaries; no tool keeps its own literal list");
+
+  // Values with no defined handling stay refused, and every refusal lists the allowed values.
+  const allowed = (list) => `; allowed: ${list.join(", ")}`;
+  const nodes = (dimension) => [
+    { id: "n1", kind: "evidence", summary: "s1", explanatory_dimension: "trend" },
+    { id: "n2", kind: "claim", summary: "s2", explanatory_dimension: dimension },
+    { id: "n3", kind: "mechanism", summary: "s3", explanatory_dimension: "rank" },
+  ];
+  const storyInput = (dimension) => ({ story_id: "s", reader_question: "q", visual_thesis: "t", nodes: nodes(dimension), edges: [{ from: "n1", to: "n2", relation: "supports" }, { from: "n2", to: "n3", relation: "causes" }], entry_node_ids: ["n1"], answer_node_ids: ["n3"] });
+  const noveltyInput = (dimension) => ({ concept_ref: "editorial/concepts/x.json", modules: [
+    { id: "m1", reader_question_id: "q1", claim_set: ["c1"], new_information: "tariffs fell", explanatory_dimension: dimension },
+    { id: "m2", reader_question_id: "q2", claim_set: ["c2"], new_information: "ports filled", explanatory_dimension: dimension === "rank" ? "trend" : "rank" },
+  ] });
+  const infographicInput = (dimension) => ({ schema_version: infographic.INFOGRAPHIC_SCHEMA_VERSIONS[0], title: "t", modules: [{ id: "m1", type: "text", explanatory_dimension: dimension }, { id: "m2", type: "text" }, { id: "m3", type: "text" }] });
+  const publicationInput = (dimension) => ({ schema_version: "0.3.0", modules: [{ id: "a", type: "text", story_node_ids: ["n1"], explanatory_dimension: dimension }, { id: "b", type: "text", story_node_ids: ["n2"], explanatory_dimension: "trend" }] });
+  const dimensionErrors = (errors) => errors.filter((error) => /explanatory_dimension/.test(error));
+  // scoreSemanticNovelty throws every problem it found as one message; only m1 can be wrong here.
+  const noveltyErrors = (dimension) => { try { editorial.scoreSemanticNovelty(noveltyInput(dimension)); return []; } catch (error) { return dimensionErrors([error.message]); } };
+  const sites = {
+    "story graph": { run: (d) => dimensionErrors(story.validateStoryGraph(storyInput(d))), message: (d) => `story node 'n2' has unsupported explanatory_dimension '${d}'${allowed(STORY)}`, accepts: STORY },
+    "semantic novelty": { run: noveltyErrors, message: (d) => `module 'm1' has unsupported explanatory_dimension '${d}'${allowed(STORY)}`, accepts: STORY },
+    "infographic plan": { run: (d) => dimensionErrors(infographic.validateInfographicSpec(infographicInput(d))), message: (d) => `module 'm1' has unsupported explanatory_dimension '${d}'${allowed(STORY)}`, accepts: STORY },
+  };
+  for (const [name, site] of Object.entries(sites)) {
+    for (const value of site.accepts) assert.deepEqual(site.run(value), [], `${name} accepts '${value}'`);
+    for (const value of ["flow", "network", "hierarchy", "model", "bogus"]) assert.deepEqual(site.run(value), [site.message(value)], `${name} refuses '${value}' and lists what is allowed`);
+  }
+  for (const [name, module] of [["publication (pi)", publicationPi], ["publication (web)", publicationWeb]]) {
+    for (const value of PUBLICATION) assert.deepEqual(dimensionErrors(module.validatePublicationSpec(publicationInput(value))), [], `${name} accepts '${value}'`);
+    const refused = dimensionErrors(module.validatePublicationSpec(publicationInput("bogus")));
+    assert.equal(refused.length, 1);
+    const match = refused[0].match(/^modules\[0\]\.explanatory_dimension unsupported; allowed: (.*)$/);
+    assert.ok(match, refused[0]);
+    sameSet(match[1].split(", "), PUBLICATION);
+  }
+  check("flow, network, hierarchy, model and unknown values are still refused by story graph, novelty and infographic plan; each refusal lists the allowed values");
+
+  // Every error text for this field in the runtime is a list-carrying one.
+  const runtimeFiles = walk(join(ROOT, "runtime")).filter((file) => /\.(mjs|ts)$/.test(file));
+  const texts = runtimeFiles.flatMap((file) => readFileSync(file, "utf8").split("\n").filter((line) => /unsupported explanatory_dimension|explanatory_dimension unsupported/.test(line)).map((line) => `${file}: ${line.trim()}`));
+  assert.ok(texts.length >= 3, "the error texts were found");
+  for (const text of texts) assert.match(text, /allowed/, `error text without the allowed values: ${text}`);
+  check("no 'unsupported explanatory_dimension' error text in runtime/ is without the allowed values");
+
+  // Semantic novelty: the scoring function is untouched. Digest of 600 full artifacts taken on abd9d8b.
+  const NOVELTY_DIGEST_PIN = { count: 600, digest: "bf234211bffbf56dfea063c8e996f62f314dc8838c7055d297f2918b7773b8b5" };
+  assert.deepEqual(noveltyMatrixDigest(editorial.scoreSemanticNovelty), NOVELTY_DIGEST_PIN, "scoring over the ten original dimensions is byte-identical to abd9d8b");
+  assert.deepEqual(NOVELTY_ORIGINAL_DIMENSIONS, STORY.slice(0, 10));
+  // The two newly accepted values are compared exactly like the others: equality only, weight 0.05.
+  for (const value of STORY) {
+    const other = value === "trend" ? "rank" : "trend";
+    const overlap = (dimensionA, dimensionB) => editorial.scoreSemanticNovelty({ concept_ref: "c", modules: [
+      { id: "a", reader_question_id: "q1", claim_set: ["c1"], new_information: "alpha beta", explanatory_dimension: dimensionA },
+      { id: "b", reader_question_id: "q2", claim_set: ["c2"], new_information: "gamma delta", explanatory_dimension: dimensionB },
+    ] }).pairwise[0].overlap;
+    assert.equal(overlap(value, value), 0.05, `${value} vs itself`);
+    assert.equal(overlap(value, other), 0, `${value} vs ${other}`);
+  }
+  check("semantic novelty scoring is unchanged for the ten original values (600-artifact digest equals abd9d8b) and equality-only for outcome and relationship");
 }
 
 for (const name of results) console.log(`${name} -- PASS`);
