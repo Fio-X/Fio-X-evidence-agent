@@ -34,6 +34,7 @@ export const CHART_TYPES = [
   "waffle",
   "choropleth",
   "treemap",
+  "stacked_bar_100",
 ];
 
 export const VISUAL_FAMILIES = [
@@ -1422,6 +1423,7 @@ function requiredFields(spec) {
     process_schematic: ["source_field", "target_field"],
     choropleth: ["category_field", "value_field", "category_names", "basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"],
     treemap: ["category_field", "value_field"],
+    stacked_bar_100: ["category_field", "series_field", "value_field"],
   };
   return [...common, ...(byType[spec.chart_type] ?? [])];
 }
@@ -1535,6 +1537,20 @@ export function validateVizSpec(spec) {
     // this keeps the one-level grouping this task authorizes unambiguous
     // rather than inventing a per-group Other bucket nobody asked for.
     if (spec.group_field && spec.other_threshold_pct !== undefined) errors.push("treemap other_threshold_pct is not supported together with group_field");
+  }
+  if (spec.chart_type === "stacked_bar_100") {
+    // All of these are optional; a malformed one is refused here so the
+    // renderer (which only ever sees a validated spec) never has to guess.
+    if (spec.decimals !== undefined && spec.decimals !== 0 && spec.decimals !== 1) errors.push("stacked_bar_100 decimals must be 0 or 1");
+    if (spec.sort !== undefined && !["asc", "desc", "none"].includes(spec.sort)) errors.push("stacked_bar_100 sort must be asc, desc or none");
+    if (spec.segment_order !== undefined) {
+      if (!Array.isArray(spec.segment_order) || spec.segment_order.length < 1 || spec.segment_order.length > STACKED_MAX_SEGMENTS || spec.segment_order.some((item) => typeof item !== "string" || !item.trim())) errors.push(`stacked_bar_100 segment_order must list 1 to ${STACKED_MAX_SEGMENTS} non-empty segment names`);
+      else if (new Set(spec.segment_order).size !== spec.segment_order.length) errors.push("stacked_bar_100 segment_order must not repeat a segment");
+    }
+    for (const key of ["sort_segment", "highlight_segment"]) {
+      if (spec[key] !== undefined && (typeof spec[key] !== "string" || !spec[key].trim())) errors.push(`stacked_bar_100 ${key} must be a non-empty segment name when provided`);
+    }
+    if (spec.segment_values !== undefined && !STACKED_SEGMENT_VALUES.includes(spec.segment_values)) errors.push(`stacked_bar_100 segment_values must be one of ${STACKED_SEGMENT_VALUES.join(", ")}`);
   }
   for (const field of requiredFields(spec)) {
     if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") errors.push(`Missing required field '${field}'`);
@@ -1885,13 +1901,53 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
 
+  if (spec.chart_type === "stacked_bar_100") {
+    // Every bar is one entity's whole (0-100%) split into its segments. The
+    // renderer never rescales a value to make a bar add up, so the data must
+    // already do: each entity's values sum to 100 (+/- 1 for rounding in the
+    // source), and a value cannot be drawn as a negative width. A non-numeric
+    // or non-finite value is already blocked by the generic value_field check
+    // above, so it is not repeated here.
+    if (spec.unit !== "%") blockers.push("stacked_bar_100 requires unit='%'");
+    if (fieldExists(rows, spec.category_field) && fieldExists(rows, spec.series_field)) {
+      const model = stackedBarModel(spec, rows);
+      if (model.entities.length > STACKED_MAX_BARS) blockers.push(`stacked_bar_100 has ${model.entities.length} bars; maximum is ${STACKED_MAX_BARS} - filter rows in SQL to at most ${STACKED_MAX_BARS} entities`);
+      else if (model.entities.length > STACKED_WARN_BARS) warnings.push(`stacked_bar_100 has ${model.entities.length} bars; more than ${STACKED_WARN_BARS} bars make a long page - consider filtering to the entities the claim is about`);
+      if (model.segments.length > STACKED_MAX_SEGMENTS) blockers.push(`stacked_bar_100 has ${model.segments.length} segments; maximum is ${STACKED_MAX_SEGMENTS} - merge the smallest segments into one 'Other' segment in SQL`);
+      if (model.blank) blockers.push(`stacked_bar_100 has ${model.blank} row(s) with a blank category_field or series_field value`);
+      if (model.duplicates) blockers.push(`stacked_bar_100 has ${model.duplicates} repeated (category, series) pair(s); each segment may appear once per bar - aggregate in SQL`);
+      if (fieldExists(rows, spec.value_field)) {
+        if (rows.some((row) => { const value = n(row[spec.value_field]); return value !== null && value < 0; })) blockers.push(`stacked_bar_100 value_field '${spec.value_field}' must not be negative; a share cannot be drawn as a negative width`);
+        const offSum = model.entities
+          .map((entity) => {
+            const values = [...entity.cells.values()];
+            return { entity: entity.key, complete: values.every((value) => value !== null), sum: values.reduce((total, value) => total + (value ?? 0), 0) };
+          })
+          .filter((item) => item.complete && Math.abs(item.sum - 100) > STACKED_SUM_TOLERANCE + 1e-9);
+        if (offSum.length) blockers.push(`stacked_bar_100 bars must each sum to 100 +/- ${STACKED_SUM_TOLERANCE} (${offSum.slice(0, 3).map((item) => `${item.entity} sums to ${Number(item.sum.toFixed(4))}`).join(", ")}${offSum.length > 3 ? ", ..." : ""}); compute shares in SQL so that each row sums to 100`);
+      }
+      const knownSegments = new Set(model.segments);
+      for (const [name, value] of [["highlight_segment", spec.highlight_segment], ["sort_segment", spec.sort_segment]]) {
+        if (value !== undefined && !knownSegments.has(String(value))) blockers.push(`stacked_bar_100 ${name} '${value}' is not a value of series_field '${spec.series_field}'`);
+      }
+      if (Array.isArray(spec.segment_order)) {
+        const unknown = spec.segment_order.filter((value) => !knownSegments.has(String(value)));
+        if (unknown.length) blockers.push(`stacked_bar_100 segment_order lists ${unknown.map((value) => `'${value}'`).join(", ")}, not a value of series_field '${spec.series_field}'`);
+      }
+      const gaps = model.segments
+        .map((segment) => ({ segment, missing: model.entities.filter((entity) => !entity.cells.has(segment)).length }))
+        .filter((item) => item.missing > 0);
+      if (gaps.length) warnings.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' is missing from ${item.missing} bar(s)`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; a missing segment is drawn as 0`);
+    }
+  }
+
   const taskFit = {
     ranking: new Set(["horizontal_bar", "dot", "diverging_bar"]),
     comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix"]),
     change: new Set(["line", "multi_line", "slope", "small_multiples", "streamgraph"]),
     distribution: new Set(["dot", "scatter", "heatmap"]),
     correlation: new Set(["scatter"]),
-    part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap"]),
+    part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap", "stacked_bar_100"]),
     spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
     flow: new Set(["sankey", "alluvial", "parallel_sets", "geo_flow_map", "cartographic_flow_map"]),
     relationship: new Set(["node_link", "adjacency_matrix", "chord"]),
@@ -2205,10 +2261,12 @@ const VIZ_STRINGS = {
   en: {
     note: "Note: ", source: "Source: ", logScale: "log scale", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
+    stackedRoundingNote: "Figures may not add up to 100% because of rounding",
   },
   zh: {
     note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
+    stackedRoundingNote: "\u56E0\u56DB\u820D\u4E94\u5165\uFF0C\u5404\u9879\u76F8\u52A0\u53EF\u80FD\u4E0D\u7B49\u4E8E100%",
   },
 };
 
@@ -2550,6 +2608,7 @@ function categoryNamesField(spec) {
   if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "choropleth", "treemap"].includes(spec.chart_type)) return spec.category_field;
   if (spec.chart_type === "small_multiples") return spec.facet_field;
   if (spec.chart_type === "multi_line") return spec.series_field;
+  if (spec.chart_type === "stacked_bar_100") return spec.category_field;
   return null;
 }
 
@@ -5253,6 +5312,330 @@ function renderTreemap(spec, rows, mobile = false) {
   return f.parts.join("\n") + "\n";
 }
 
+// ---------------------------------------------------------------------------
+// stacked_bar_100: composition across many entities. Each entity gets one
+// horizontal bar running 0-100%, split into its segments (for example
+// employment by sector in each country), so the reader compares how the mix
+// differs from bar to bar. The bars are ordered by one named segment and that
+// segment is drawn against the 0 baseline (FT Visual Vocabulary lists the
+// form under part-to-whole; Datawrapper Academy: sort by one segment and keep
+// it on the baseline).
+//
+// Every number drawn is a value_field value read from the rows and rounded
+// only with fmtSpec and the spec's decimals (the axis ticks aside). A
+// segment's width is its value divided by its own row's sum, so a bar always
+// ends exactly at 100% and no value is ever adjusted to make a row add up;
+// lintVizSpec refuses rows that do not already sum to 100 +/- 1 instead.
+// ---------------------------------------------------------------------------
+import { LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS } from "./render_qa_geometry.mjs";
+
+const STACKED_MAX_BARS = 25;
+const STACKED_WARN_BARS = 20;
+const STACKED_MAX_SEGMENTS = 5;
+const STACKED_SUM_TOLERANCE = 1;
+const STACKED_SEGMENT_VALUES = ["in_bar", "highlight_column"];
+const STACKED_LABEL_PAD = 4; // px between an in-bar label and each edge of its segment
+const STACKED_FALLBACK_ADVANCE = 1.02; // render QA's width for a glyph outside its tables (not exported there)
+
+// Width of one line of text, estimated the way render QA measures it (same
+// per-glyph tables and 1.05 safety margin), so "this label fits inside its
+// segment" here and "this text overflows or overlaps" there cannot disagree.
+function stackedTextWidth(text, fontSize = 12, bold = false) {
+  const table = bold ? LATIN_BOLD_ADVANCE_WIDTHS : LATIN_ADVANCE_WIDTHS;
+  let units = 0;
+  for (const ch of Array.from(String(text ?? ""))) {
+    if (/\s/.test(ch)) units += TEXT_WIDTH_FACTORS.space;
+    else if (isWideChar(ch)) units += TEXT_WIDTH_FACTORS.cjk;
+    else units += table[ch] ?? STACKED_FALLBACK_ADVANCE;
+  }
+  return units * fontSize * TEXT_WIDTH_FACTORS.safetyMargin;
+}
+
+// Coordinates are written to two decimals; adjacent segments share the one
+// rounded boundary, so neighbours never overlap or leave a hairline gap.
+function stackedPx(value) {
+  return Math.round(value * 100) / 100;
+}
+
+// The rows read once into entities (bars, in first-appearance order) x
+// segments. cells maps a segment to that entity's value (null when the value
+// is not numeric). Shared by the renderer and by lintVizSpec so both see the
+// same bars, segments and repeats.
+function stackedBarModel(spec, rows) {
+  const entities = [];
+  const byKey = new Map();
+  const segments = [];
+  const seenSegment = new Set();
+  let duplicates = 0;
+  let blank = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = String(row?.[spec.category_field] ?? "");
+    const segment = String(row?.[spec.series_field] ?? "");
+    if (key.trim() === "" || segment.trim() === "") blank += 1;
+    if (!seenSegment.has(segment)) { seenSegment.add(segment); segments.push(segment); }
+    let entity = byKey.get(key);
+    if (!entity) { entity = { key, row, cells: new Map() }; byKey.set(key, entity); entities.push(entity); }
+    if (entity.cells.has(segment)) { duplicates += 1; continue; }
+    entity.cells.set(segment, n(row?.[spec.value_field]));
+  }
+  return { entities, segments, duplicates, blank };
+}
+
+// Segment order, highlight and sort segment, resolved from the spec's
+// defaults: highlight_segment defaults to sort_segment, sort_segment to the
+// first segment of segment_order, and segment_order to the highlight segment
+// followed by the segments in the order they first appear. A segment the
+// spec's segment_order does not list is appended (in first-appearance order)
+// rather than dropped, so a bar can never end short of 100%.
+function stackedPlan(spec, model) {
+  const known = new Set(model.segments);
+  const named = (value) => (value === undefined || value === null || String(value).trim() === "" ? null : String(value));
+  const listed = Array.isArray(spec.segment_order) ? [...new Set(spec.segment_order.map(String))].filter((segment) => known.has(segment)) : [];
+  const highlight = named(spec.highlight_segment) ?? named(spec.sort_segment) ?? listed[0] ?? model.segments[0] ?? null;
+  let order;
+  if (listed.length) order = [...listed, ...model.segments.filter((segment) => !listed.includes(segment))];
+  else if (highlight !== null && known.has(highlight)) order = [highlight, ...model.segments.filter((segment) => segment !== highlight)];
+  else order = [...model.segments];
+  const sortSegment = named(spec.sort_segment) ?? order[0] ?? null;
+  return { order, highlight, sortSegment };
+}
+
+// Bars ordered by the sort segment's own value (a bar without that segment
+// counts as 0); "none" keeps the SQL row order. Ties keep the SQL row order.
+function stackedSortedEntities(spec, model, sortSegment) {
+  const entities = [...model.entities];
+  const mode = spec.sort === "asc" || spec.sort === "none" ? spec.sort : "desc";
+  if (mode === "none") return entities;
+  const keyOf = (entity) => entity.cells.get(sortSegment) ?? 0;
+  entities.sort((a, b) => (mode === "asc" ? keyOf(a) - keyOf(b) : keyOf(b) - keyOf(a)));
+  return entities;
+}
+
+// 0 or 1 decimals: the spec's own choice, else one decimal when any value is
+// not a whole number.
+function stackedDecimals(spec, model) {
+  if (spec.decimals === 0 || spec.decimals === 1) return spec.decimals;
+  const fractional = model.entities.some((entity) => [...entity.cells.values()].some((value) => value !== null && Math.abs(value - Math.round(value)) > 1e-9));
+  return fractional ? 1 : 0;
+}
+
+// True when some bar's values, as printed at this precision, do not add up to
+// exactly 100. The printed strings are what get summed (never the raw values),
+// and nothing is nudged so that they do.
+function stackedNeedsRoundingNote(spec, entities, decimals) {
+  const scale = 10 ** decimals;
+  return entities.some((entity) => {
+    let total = 0;
+    for (const value of entity.cells.values()) {
+      if (value !== null && value > 0) total += Math.round(Number(fmtSpec(spec, value, "", decimals)) * scale);
+    }
+    return total !== 100 * scale;
+  });
+}
+
+// One accent for the highlight segment; every other segment takes the next of
+// five distinct greys (the style's own grey steps, darkest to lightest), so
+// two adjacent segments never share a fill (render QA's indistinct-adjacent-
+// marks rule), even when a bar skips a segment. The steps are taken
+// mid / darkest / light / dark so that neighbours differ strongly in
+// lightness, which keeps the 1px gap between them easy to see.
+function stackedFills(order, highlight) {
+  const greys = [2, 0, 3, 1, 4].map((index) => WAFFLE_GREYS[index]);
+  let next = 0;
+  return new Map(order.map((segment) => [segment, segment === highlight ? PALETTE.accent : greys[next++ % greys.length]]));
+}
+
+// A name is never cut: one that is wider than its column (an entity name in
+// the label column, the highlight name over the value column) is folded onto
+// further lines (at a space when there is one past the first 40% of the line,
+// else between characters).
+function stackedFoldName(name, maxWidth, bold = false) {
+  const lines = [];
+  let rest = String(name);
+  while (stackedTextWidth(rest, 12, bold) > maxWidth) {
+    const chars = Array.from(rest);
+    let cut = chars.length;
+    while (cut > 1 && stackedTextWidth(chars.slice(0, cut).join(""), 12, bold) > maxWidth) cut -= 1;
+    const head = chars.slice(0, cut).join("");
+    const space = head.lastIndexOf(" ");
+    const at = space > head.length * 0.4 ? space : head.length;
+    lines.push(rest.slice(0, at).trimEnd());
+    rest = rest.slice(at).trimStart();
+  }
+  lines.push(rest);
+  return lines;
+}
+
+function renderStackedBar100(spec, rows) {
+  const lang = vizLang(spec);
+  const t = VIZ_STRINGS[lang];
+  const model = stackedBarModel(spec, rows);
+  const { order, highlight, sortSegment } = stackedPlan(spec, model);
+  const entities = stackedSortedEntities(spec, model, sortSegment);
+  const decimals = stackedDecimals(spec, model);
+  const valueText = (value) => fmtSpec(spec, value, "", decimals);
+  const fills = stackedFills(order, highlight);
+  // segment_values "highlight_column": no value inside the bars; only the
+  // highlight segment's value is printed, right-aligned in a column just past
+  // the 100% end.
+  const columnMode = spec.segment_values === "highlight_column" && highlight !== null && order.includes(highlight);
+  const accentText = textSafeColor(PALETTE.accent);
+
+  const left0 = 54, right0 = LAYOUT_W - 54;
+  const roomy = entities.length <= 12;
+  const barH = roomy ? 24 : 18;
+  const nameLines = entities.map((entity) => stackedFoldName(String(resolveEconomyDisplayName(entity.row[spec.category_field], spec.category_names, lang)), Math.floor(LAYOUT_W * 0.3)));
+  const nameLineCount = Math.max(1, ...nameLines.map((lines) => lines.length));
+  const pitch = Math.max(roomy ? 36 : 26, nameLineCount > 1 ? 14 * nameLineCount + 6 : 0);
+  const nameColW = Math.ceil(Math.min(Math.max(0, ...nameLines.flat().map((line) => stackedTextWidth(line))), LAYOUT_W * 0.4));
+  const plotLeft = left0 + nameColW + 14;
+  const columnTexts = columnMode ? entities.map((entity) => { const value = entity.cells.get(highlight); return value === undefined || value === null ? null : `${valueText(value)}%`; }) : [];
+  const columnW = columnMode ? Math.ceil(Math.min(Math.max(stackedTextWidth(highlight, 12, true), ...columnTexts.filter((text) => text !== null).map((text) => stackedTextWidth(text))), LAYOUT_W * 0.2)) : 0;
+  const plotRight = columnMode ? right0 - columnW - 14 : right0 - 16;
+  const plotW = Math.max(1, plotRight - plotLeft);
+  // The column header is the highlight name; a name wider than the column
+  // folds onto further lines, and the rows below it move down to make room.
+  const headerLines = columnMode ? stackedFoldName(highlight, columnW, true) : [];
+  const headerExtra = Math.max(0, headerLines.length - 1) * 14;
+
+  // Each bar's segments, left to right in segment order. A segment's width is
+  // its value over this bar's own sum; the last segment ends exactly at the
+  // 100% mark.
+  const pieces = entities.map((entity) => {
+    const present = order.filter((segment) => (entity.cells.get(segment) ?? 0) > 0);
+    const total = present.reduce((sum, segment) => sum + entity.cells.get(segment), 0);
+    let running = 0;
+    return present.map((segment, index) => {
+      const value = entity.cells.get(segment);
+      const x0 = plotLeft + (plotW * running) / total;
+      running += value;
+      const x1 = index === present.length - 1 ? plotRight : plotLeft + (plotW * running) / total;
+      return { segment, value, x0: stackedPx(x0), x1: stackedPx(x1) };
+    });
+  });
+
+  // Segment names go once, centred on their own segment directly above the
+  // first bar. If any name does not fit its segment (or direct labels are
+  // switched off), one plain key line above the chart names them instead.
+  const firstPieces = pieces[0] ?? [];
+  const namesFit = spec.direct_labels !== false && firstPieces.length > 0 && order.every((segment) => {
+    const piece = firstPieces.find((candidate) => candidate.segment === segment);
+    return piece !== undefined && stackedTextWidth(segment, 12, segment === highlight) + 2 * STACKED_LABEL_PAD <= piece.x1 - piece.x0;
+  });
+  const keyLines = [];
+  if (!namesFit && order.length) {
+    const maxKeyW = (columnMode ? plotRight : right0) - plotLeft;
+    let line = [], cursor = 0;
+    for (const segment of order) {
+      const width = 16 + stackedTextWidth(segment, 12, segment === highlight);
+      if (line.length && cursor + 20 + width > maxKeyW) { keyLines.push(line); line = []; cursor = 0; }
+      const x = line.length ? cursor + 20 : 0;
+      line.push({ segment, x, width });
+      cursor = x + width;
+    }
+    if (line.length) keyLines.push(line);
+  }
+  // The rounding note is about printed figures that a reader could add up, so
+  // it is only drawn when a bar prints several of them (in-bar values); the
+  // single highlight column prints one figure per bar, with nothing to add.
+  const needNote = !columnMode && stackedNeedsRoundingNote(spec, entities, decimals);
+
+  // Vertical layout, relative to the top of the chart body: key line(s), the
+  // axis row, the segment-name row, then the bars and the rounding note.
+  let rel = 0;
+  const keyRel = [];
+  if (keyLines.length) { keyLines.forEach((_, k) => keyRel.push(rel + 12 + k * 18)); rel += keyLines.length * 18 + 8 + headerExtra; }
+  const axisRel = rel + 12;
+  rel = axisRel + 10;
+  let namesRel = null;
+  if (namesFit) { namesRel = rel + 12; rel = namesRel + 9 + headerExtra; } else rel += 2;
+  const barsRel = rel;
+  const barsEndRel = barsRel + Math.max(0, entities.length - 1) * pitch + barH;
+  const gridEndRel = barsEndRel + 6;
+  const noteRel = barsEndRel + 26;
+  const bodyHeight = (needNote ? noteRel + 6 : gridEndRel + 6) + 4;
+
+  const f = frame(spec, bodyHeight);
+  const o = f.bodyTop + 2;
+  const parts = f.parts;
+  const ticks = [0, 25, 50, 75, 100];
+  const tickX = (tick) => stackedPx(plotLeft + (plotW * tick) / 100);
+
+  // Gridlines first, so every bar and label paints over them.
+  for (const tick of ticks) {
+    parts.push(`<line data-role="grid-line" x1="${tickX(tick)}" y1="${o + axisRel + 5}" x2="${tickX(tick)}" y2="${o + gridEndRel}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  }
+  // A paper-coloured plate behind each segment name keeps a gridline from
+  // running through the text.
+  if (namesFit) {
+    for (const piece of firstPieces) {
+      const width = stackedTextWidth(piece.segment, 12, piece.segment === highlight);
+      parts.push(`<rect x="${stackedPx((piece.x0 + piece.x1) / 2 - width / 2 - 3)}" y="${o + namesRel - 11}" width="${stackedPx(width + 6)}" height="15" fill="${PAPER}"/>`);
+    }
+  }
+  ticks.forEach((tick, i) => {
+    parts.push(`<text x="${tickX(tick)}" y="${o + axisRel}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${tick}${axisTickUnit("%", i, ticks.length)}`)}</text>`);
+  });
+  if (namesFit) {
+    for (const piece of firstPieces) {
+      const isHighlight = piece.segment === highlight;
+      parts.push(`<text data-role="stacked-segment-name" x="${stackedPx((piece.x0 + piece.x1) / 2)}" y="${o + namesRel}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="${isHighlight ? 700 : 400}" fill="${isHighlight ? accentText : PALETTE.ink}">${esc(piece.segment)}</text>`);
+    }
+  } else {
+    keyLines.forEach((line, k) => {
+      for (const item of line) {
+        const isHighlight = item.segment === highlight;
+        parts.push(`<rect data-role="legend-swatch" x="${stackedPx(plotLeft + item.x)}" y="${o + keyRel[k] - 9}" width="10" height="10" fill="${fills.get(item.segment)}"/>`);
+        parts.push(`<text data-role="stacked-key" x="${stackedPx(plotLeft + item.x + 16)}" y="${o + keyRel[k]}" font-family="${FONT_SANS}" font-size="12" font-weight="${isHighlight ? 700 : 400}" fill="${isHighlight ? accentText : PALETTE.ink}">${esc(item.segment)}</text>`);
+      }
+    });
+  }
+  headerLines.forEach((line, k) => {
+    parts.push(`<text data-role="stacked-column-header" x="${right0}" y="${o + (namesFit ? namesRel : keyRel[0]) + 14 * k}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${accentText}">${esc(line)}</text>`);
+  });
+
+  // The bars: one rect per segment, a 1px paper-coloured stroke making the gap
+  // between neighbours.
+  entities.forEach((entity, i) => {
+    const barTop = o + barsRel + i * pitch;
+    for (const piece of pieces[i]) {
+      parts.push(`<rect data-role="stacked-segment" data-category="${esc(entity.key)}" data-series="${esc(piece.segment)}" data-value="${piece.value}" x="${piece.x0}" y="${barTop}" width="${stackedPx(piece.x1 - piece.x0)}" height="${barH}" fill="${fills.get(piece.segment)}" stroke="${PAPER}" stroke-width="1"/>`);
+    }
+  });
+  // In-bar values only where the label fits inside its segment with the
+  // padding on each side; white on the accent or a dark grey, ink on a light
+  // grey, whichever clears the contrast floor.
+  if (!columnMode) {
+    entities.forEach((entity, i) => {
+      const barTop = o + barsRel + i * pitch;
+      for (const piece of pieces[i]) {
+        const text = valueText(piece.value);
+        if (stackedTextWidth(text) + 2 * STACKED_LABEL_PAD > piece.x1 - piece.x0) continue;
+        const style = labelStyleOnFill(hexToRgb(fills.get(piece.segment)));
+        const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
+        parts.push(`<text data-role="stacked-value" x="${stackedPx((piece.x0 + piece.x1) / 2)}" y="${barTop + barH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(text)}</text>`);
+      }
+    });
+  }
+  entities.forEach((entity, i) => {
+    const centre = o + barsRel + i * pitch + barH / 2;
+    const lines = nameLines[i];
+    lines.forEach((line, k) => {
+      parts.push(`<text data-role="stacked-entity" x="${plotLeft - 14}" y="${centre + 4 - 7 * (lines.length - 1) + 14 * k}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`);
+    });
+    if (columnMode && columnTexts[i] !== null) {
+      parts.push(`<text data-role="stacked-column-value" x="${right0}" y="${centre + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(columnTexts[i])}</text>`);
+    }
+  });
+  if (needNote) {
+    parts.push(`<text data-role="stacked-rounding-note" x="${left0}" y="${o + noteRel}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(t.stackedRoundingNote)}</text>`);
+  }
+
+  addFooter(parts, spec, f.footerTop);
+  parts.push("</svg>");
+  return parts.join("\n") + "\n";
+}
+
 // Average glyph advance width (em/char) used only for this renderer's own
 // label-placement math (does a label's estimated box fit on the map / does
 // it collide with another placed label) - the same 0.56em/char heuristic
@@ -7754,6 +8137,7 @@ export function renderVizMobileSvg(spec, rows) {
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, true) : renderWaffle(spec, rows, true);
     case "choropleth": return renderChoropleth(spec, rows, true);
     case "treemap": return renderTreemap(spec, rows, true);
+    case "stacked_bar_100": return renderStackedBar100(spec, rows);
     default: throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
   }
 }
@@ -7823,6 +8207,7 @@ export function renderVizSvg(spec, rows) {
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, false) : renderWaffle(spec, rows, false);
     case "choropleth": return renderChoropleth(spec, rows, false);
     case "treemap": return renderTreemap(spec, rows, false);
+    case "stacked_bar_100": return renderStackedBar100(spec, rows);
     default: throw new Error(`Renderer does not support '${spec.chart_type}'`);
   }
 }

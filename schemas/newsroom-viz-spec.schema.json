@@ -75,7 +75,8 @@
         "process_schematic",
         "waffle",
         "choropleth",
-        "treemap"
+        "treemap",
+        "stacked_bar_100"
       ]
     },
     "title": {
@@ -331,6 +332,34 @@
       "type": "number",
       "minimum": 0,
       "maximum": 50
+    },
+    "segment_order": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "description": "stacked_bar_100: the segment values (series_field values) in the order they are drawn, left to right, so the key segment sits against the 0 baseline. At most 5. Default: highlight_segment first, then the segments in the order they first appear in the rows."
+    },
+    "sort_segment": {
+      "type": "string",
+      "minLength": 1,
+      "description": "stacked_bar_100: the segment whose own value orders the bars (direction from sort; none keeps the SQL row order). Default: the first segment in segment_order."
+    },
+    "highlight_segment": {
+      "type": "string",
+      "minLength": 1,
+      "description": "stacked_bar_100: the segment drawn in the accent colour; every other segment is a house grey. Default: sort_segment."
+    },
+    "segment_values": {
+      "enum": [
+        "in_bar",
+        "highlight_column"
+      ],
+      "description": "stacked_bar_100: where values are printed. in_bar (default) prints each value inside its segment wherever the label fits. highlight_column prints no value inside the bars and prints only the highlight segment's value in a column just right of the 100% end."
     },
     "x_scale": {
       "enum": [
@@ -1156,6 +1185,37 @@
         "required": [
           "flow_unit_field"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "stacked_bar_100"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "series_field",
+          "value_field",
+          "unit"
+        ],
+        "properties": {
+          "unit": {
+            "const": "%"
+          },
+          "decimals": {
+            "enum": [
+              0,
+              1
+            ]
+          }
+        }
       }
     }
   ],
