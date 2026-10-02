@@ -364,7 +364,7 @@ if (realWorks) {
     // cancellation that lands after the edit began: a signal that reports "aborted" from its Nth check on
     const abortOnCheck = (n) => { let reads = 0; return { get aborted() { reads += 1; return reads >= n; }, addEventListener() {}, removeEventListener() {} }; };
     const planCount = () => readdirSync(join(art, "infographics/plans")).length;
-    const revisionCount = () => (existsSync(join(art, "infographics/revisions")) ? readdirSync(join(art, "infographics/revisions")).length : 0);
+    const revisionCount = () => (existsSync(join(art, "infographics/plan-edits")) ? readdirSync(join(art, "infographics/plan-edits")).length : 0);
     const cancelOps = [{ scope: "module", id: "resolution", field: "priority", value: 3 }];
     const plansBefore = planCount();
     const revisionsBefore = revisionCount();
