@@ -603,6 +603,17 @@ function addPointAnnotation(parts, annotation, x, y, opts = {}) {
   parts.push(`<text data-role="annotation" x="${placed.tx}" y="${placed.ty}" text-anchor="${placed.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${lines.map((line, index) => `<tspan x="${placed.tx}" dy="${index === 0 ? 0 : 15}">${esc(line)}</tspan>`).join("")}</text>`);
 }
 
+// Endpoint of the leader that joins a data point (x, y) to its placed label
+// (createAnnotationLayout.place() -> leaderX/leaderY). It stops `gap` px short
+// of the label's near edge: leaderX/leaderY sit exactly on the edge of the
+// label's text box, and render QA counts a leader that touches any text box as
+// crossing it (leader_crosses_text).
+function leaderEndShortOfLabel(x, y, placed, gap = 2) {
+  const dx = placed.leaderX - x, dy = placed.leaderY - y, len = Math.hypot(dx, dy);
+  if (!(len > gap)) return { x2: placed.leaderX, y2: placed.leaderY };
+  return { x2: placed.leaderX - (dx / len) * gap, y2: placed.leaderY - (dy / len) * gap };
+}
+
 // ---------------------------------------------------------------------------
 // Event-annotation lane for line charts (round-3 house-style, replaces the
 // free 4-side repel above for line/multi_line point annotations only - the
@@ -2753,12 +2764,21 @@ export function lineAxisDomain(values, includeZero = false, count = 4) {
   return [niceMin, niceMax];
 }
 
-export function lineAxisTicks(domain, count = 4) {
+// `cover` (house style; renderLine/renderMobileLine pass HOUSE_STYLE_ACTIVE)
+// walks outward to the first tick at or beyond each edge of the domain.
+// lineAxisDomain widens by the step of the *data* range while this function
+// re-derives the step from the already-widened span, so the two can disagree
+// (data 18..64: domain [10, 70], tick step 20) and the nearest-tick rounding
+// below then lands the lowest tick just inside the domain (20) - above the
+// lowest plotted value, which fell off the axis. Legacy (`cover` false)
+// keeps the nearest-tick rounding byte-for-byte. The nudge keeps float noise
+// (an edge 3.0000000000000004 steps out) from adding a whole extra tick.
+export function lineAxisTicks(domain, count = 4, cover = true) {
   const [start, stop] = domain;
   if (!Number.isFinite(start) || !Number.isFinite(stop) || start === stop) return [start ?? 0];
   const step = niceAxisStep((stop - start) / count);
-  const i0 = Math.round(start / step);
-  const i1 = Math.round(stop / step);
+  const i0 = cover ? Math.floor(start / step + 1e-9) : Math.round(start / step);
+  const i1 = cover ? Math.ceil(stop / step - 1e-9) : Math.round(stop / step);
   const ticks = [];
   for (let i = i0; i <= i1; i++) ticks.push(i * step);
   return ticks.length ? ticks : [start, stop];
@@ -2978,6 +2998,21 @@ function renderGroupedDots(spec, rows) {
   return f.parts.join("\n") + "\n";
 }
 
+// diverging_bar value labels always sit just outside their bar's end, on the
+// bar's own side. This returns how many px to keep free beyond the plot's left
+// (negative bars) and right (positive bars) edge for the widest such label plus
+// its `gap` from the bar, measured on the label texts as they are drawn, so a
+// label never has to move inside a bar that reaches the plot edge.
+function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap) {
+  const PX = 7.5; // per text unit; bold 12px digits and "%" run wider than the 6.4 the label column uses
+  const widest = (pred) => Math.ceil(Math.max(0, ...sorted.map((row, i) => {
+    const v = n(row[valueField]);
+    return v === null || !pred(v) ? 0 : textUnits(fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
+  })));
+  const neg = widest((v) => v < 0), pos = widest((v) => v >= 0);
+  return { neg: neg ? neg + gap : 0, pos: pos ? pos + gap : 0 };
+}
+
 function renderHorizontal(spec, rows, mode) {
   const valueField = spec.value_field;
   if (mode === "dot" && spec.series_field && fieldExists(rows, spec.series_field)) {
@@ -3026,6 +3061,10 @@ function renderHorizontal(spec, rows, mode) {
     left = catX + 15 + (negW ? negW + 9 : 0);
     right = LAYOUT_W - 54 - bracketMargin - (posW ? posW + 9 : 0);
   }
+  if (spec.chart_type === "diverging_bar") {
+    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9);
+    left += margins.neg; right -= margins.pos;
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
@@ -3065,13 +3104,10 @@ function renderHorizontal(spec, rows, mode) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
     }
     if (spec.chart_type === "diverging_bar") {
-      const nearLeft = x <= left + 44;
-      const nearRight = x >= right - 44;
-      const inside = (value < 0 && nearLeft) || (value >= 0 && nearRight);
-      const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
-      const labelX = inside ? x + (value < 0 ? 9 : -9) : x + (value >= 0 ? 9 : -9);
-      const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
+      const anchor = value >= 0 ? "start" : "end";
+      const labelX = x + (value >= 0 ? 9 : -9);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
@@ -3084,6 +3120,20 @@ function renderHorizontal(spec, rows, mode) {
   addFooter(f.parts, spec, f.footerTop);
   f.parts.push("</svg>");
   return f.parts.join("\n") + "\n";
+}
+
+// Value labels for one dumbbell row, in the standard order: the lower value's
+// label sits beyond the lower end of the span and the higher value's beyond the
+// higher end, so the two labels always point away from each other. A reversed
+// pair (start above end) used to print each label on the inside of the span,
+// where close values stacked "18%" over "17%". Identical displayed values get
+// one label (beyond the right-hand dot) instead of the same text on both sides.
+function dumbbellValueLabels(x1, x2, a, b, startText, endText, pad) {
+  const start = { value: a, edge: x1, text: startText, fill: PALETTE.muted };
+  const end = { value: b, edge: x2, text: endText, fill: PALETTE.ink };
+  if (a === b || startText === endText) return [{ ...end, x: Math.max(x1, x2) + pad, anchor: "start" }];
+  const [low, high] = a < b ? [start, end] : [end, start];
+  return [{ ...low, x: low.edge - pad, anchor: "end" }, { ...high, x: high.edge + pad, anchor: "start" }];
 }
 
 function renderDumbbell(spec, rows) {
@@ -3111,8 +3161,7 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
+    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -3190,6 +3239,22 @@ function renderSlope(spec, rows) {
 function sortX(values) {
   const numeric = values.every((v) => n(v) !== null);
   return [...values].sort((a, b) => numeric ? n(a) - n(b) : String(a).localeCompare(String(b), undefined, { numeric: true }));
+}
+
+// Category order (small_multiples panels, chord / adjacency_matrix nodes,
+// hierarchy_tree siblings, streamgraph series): a text category keeps the
+// order its rows first mention it in - the author's or the query's order, a
+// rank or a story - and is never re-sorted by name, because name order is
+// no reading order: UTF-16 code-unit order turns 甲乙丙丁 into 丁丙乙甲.
+// Keys that are all numbers (years) or all ISO dates (2024-03, 2024-03-15)
+// are a sequence, so facetOrder sorts those ascending whatever order the
+// rows came in. Takes and returns unique() strings.
+const ISO_DATE_KEY = /^\d{4}-\d{2}(?:-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)?$/;
+function facetOrder(keys) {
+  if (keys.every((key) => n(key) !== null)) return [...keys].sort((a, b) => n(a) - n(b));
+  const times = keys.map((key) => (ISO_DATE_KEY.test(key) ? Date.parse(key) : NaN));
+  if (times.every(Number.isFinite)) return keys.map((key, i) => ({ key, time: times[i] })).sort((a, b) => a.time - b.time).map((entry) => entry.key);
+  return keys;
 }
 
 // Fix 5 (end label crosses its own series' line, house style only): a
@@ -3305,7 +3370,7 @@ function renderLine(spec, rows, multi = false) {
   // domain or the tick list's own extremes, so every drawn tick - not just
   // the plotted data - is guaranteed to land inside [top, bottom]. Legacy
   // keeps the old, narrower yDomain-only scale, byte-identical.
-  const yTicks = lineAxisTicks(yDomain, 4);
+  const yTicks = lineAxisTicks(yDomain, 4, HOUSE_STYLE_ACTIVE);
   const yScaleDomain = HOUSE_STYLE_ACTIVE ? [Math.min(yDomain[0], yTicks[0]), Math.max(yDomain[1], yTicks[yTicks.length - 1])] : yDomain;
   const yScale = verticalScale(yScaleDomain, top, bottom);
   // Task A: monotone interpolation is only ever applied to a dense, regularly
@@ -3454,7 +3519,7 @@ function tagPanelTexts(parts, startIdx, box) {
 }
 
 function renderSmallMultiples(spec, rows) {
-  const facets = sortX(unique(rows.map((r) => r[spec.facet_field])));
+  const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
   const cols = facets.length === 1 ? 1 : 2;
   const gapX = 34, gapY = 44;
 
@@ -3592,7 +3657,10 @@ function renderScatter(spec, rows) {
     if (highlighted) {
       const labelSide = px > right - 150 ? "left" : "right";
       const placedLabel = f.annotationLayout.place(px, py, label, labelSide, 1);
-      if (Math.abs(placedLabel.ty - (py - 13)) > 10) f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${px + placedLabel.dx * 0.7}" y2="${placedLabel.ty + 3}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+      if (Math.abs(placedLabel.ty - (py - 13)) > 10) {
+        const leaderEnd = leaderEndShortOfLabel(px, py, placedLabel);
+        f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+      }
       f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, px, py, { side: px > right - 180 ? "left" : "right", layout: f.annotationLayout, maxChars: 38, maxLines: 3 }));
@@ -3690,11 +3758,16 @@ function renderMobileHorizontal(spec, rows, mode) {
   const refMargin = referenceLineMargin(refLines);
   const f = mobileFrame(spec, Math.max(250, sorted.length * 42 + 50) + refMargin);
   const base = f.bodyTop + 5;
-  const left = 178, right = 595, top = base + refMargin, bottom = f.bodyBottom - 36;
+  let left = 178, right = 595;
+  const top = base + refMargin, bottom = f.bodyBottom - 36;
   const values = sorted.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   // Fix 2: see the matching comment in renderHorizontal - resolved once, up
   // front, from every value this chart will display as a direct label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  if (spec.chart_type === "diverging_bar") {
+    const margins = divergingLabelMargins(spec, sorted, spec.value_field, labelDecimals, 8);
+    left += margins.neg; right -= margins.pos;
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
@@ -3720,13 +3793,10 @@ function renderMobileHorizontal(spec, rows, mode) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.8" fill="${fill}"/>`);
     }
     if (spec.chart_type === "diverging_bar") {
-      const nearLeft = x <= left + 40;
-      const nearRight = x >= right - 40;
-      const inside = (value < 0 && nearLeft) || (value >= 0 && nearRight);
-      const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
-      const labelX = inside ? x + (value < 0 ? 8 : -8) : x + (value >= 0 ? 8 : -8);
-      const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
+      const anchor = value >= 0 ? "start" : "end";
+      const labelX = x + (value >= 0 ? 8 : -8);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 8 : -8);
@@ -3829,8 +3899,7 @@ function renderMobileDumbbell(spec, rows) {
     f.parts.push(`<text x="165" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category) > 20 ? sliceUnits(category, 19) + "…" : category)}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="4.8" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="4.8" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
+    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 6).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout, maxChars: 30 }));
   });
   drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -3908,7 +3977,7 @@ function renderMobileLine(spec, rows, multi=false) {
   const yDomain=lineAxisDomain(yValues,includeZero,4);
   // Fix 4 (mobile): same header/top-tick scale-overshoot fix as renderLine -
   // see the comment there.
-  const yTicksMobile=lineAxisTicks(yDomain,4);
+  const yTicksMobile=lineAxisTicks(yDomain,4,HOUSE_STYLE_ACTIVE);
   const yScaleDomain=HOUSE_STYLE_ACTIVE?[Math.min(yDomain[0],yTicksMobile[0]),Math.max(yDomain[1],yTicksMobile[yTicksMobile.length-1])]:yDomain;
   const yScale=verticalScale(yScaleDomain,top,bottom);
   const pointAnnotationAssignment=assignPointAnnotations(spec,rows,spec.value_field);
@@ -3979,7 +4048,7 @@ function renderMobileLine(spec, rows, multi=false) {
 }
 
 function renderMobileSmallMultiples(spec, rows) {
-  const facets=sortX(unique(rows.map((r)=>r[spec.facet_field]))), gapY=34, panelW=576;
+  const facets=facetOrder(unique(rows.map((r)=>r[spec.facet_field]))), gapY=34, panelW=576;
   if(spec.panel_mark==="dot") {
     const groups=facets.map((facet)=>rows.filter((r)=>String(r[spec.facet_field])===String(facet))), maxItems=Math.max(...groups.map((g)=>g.length),1);
     const refLines=referenceLineAnnotations(spec),refMargin=referenceLineMargin(refLines);
@@ -4007,7 +4076,7 @@ function renderMobileScatter(spec, rows) {
   yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.y_unit??spec.unit))}</text>`);});
   xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??""))}</text>`);});
   if(spec.x_label)f.parts.push(`<text x="${(left+right)/2}" y="${bottom+47}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
-  rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",placedLabel=f.annotationLayout.place(px,py,label,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10)f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${px+placedLabel.dx*.7}" y2="${placedLabel.ty+3}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
+  rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",placedLabel=f.annotationLayout.place(px,py,label,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10){const leaderEnd=leaderEndShortOfLabel(px,py,placedLabel);f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);}f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
   if(spec.x_scale==="log")f.parts.push(`<text x="${right}" y="${bottom+47}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${VIZ_STRINGS[vizLang(spec)].logScale}</text>`);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
@@ -4414,9 +4483,11 @@ function networkLayout(rows,spec,width,height,left,top,right,bottom){const ids=u
 
 function renderNodeLink(spec,rows,mobile=false){const f=mobile?mobileFrame(spec,440):frame(spec,440),left=mobile?58:110,right=mobile?582:930,top=f.bodyTop+35,bottom=f.bodyBottom-35,layout=networkLayout(rows,spec,mobile?640:1040,440,left,top,right,bottom),maxDegree=Math.max(...layout.ids.map((id)=>layout.degree.get(id)),1);for(const row of rows){const a=layout.pos.get(String(row[spec.source_field])),b=layout.pos.get(String(row[spec.target_field]));if(!a||!b)continue;const value=spec.value_field?(n(row[spec.value_field])??1):1;f.parts.push(`<line data-role="network-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${PALETTE.context}" stroke-width="${Math.min(5,Math.max(.7,Math.sqrt(Math.abs(value))))}" stroke-opacity=".48"/>`);}for(const id of layout.ids){const p=layout.pos.get(id),highlighted=(spec.highlight_values??[]).includes(id),r=4.5+(p.degree/maxDegree)*8;f.parts.push(`<circle data-role="network-node" cx="${p.x}" cy="${p.y}" r="${r}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" stroke="#fff" stroke-width="1.4"/>`);if(layout.ids.length<=24||highlighted)f.parts.push(`<text data-role="direct-label" x="${p.x+(p.x<(left+right)/2?-(r+5):(r+5))}" y="${p.y-7}" text-anchor="${p.x<(left+right)/2?"end":"start"}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
-function renderAdjacencyMatrix(spec,rows,mobile=false){const ids=unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]])).sort(),nIds=ids.length,bodyH=Math.max(mobile?360:420,nIds*(mobile?22:25)+100),f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?130:220,top=f.bodyTop+105,size=Math.min((mobile?640:1040)-left-(mobile?38:70),f.bodyBottom-top-25),cell=Math.max(3,size/Math.max(1,nIds)),index=new Map(ids.map((id,i)=>[String(id),i])),values=rows.map((row)=>spec.value_field?(n(row[spec.value_field])??1):1),max=Math.max(...values.map(Math.abs),1),edgeMap=new Map();rows.forEach((row)=>edgeMap.set(`${row[spec.source_field]}\0${row[spec.target_field]}`,spec.value_field?(n(row[spec.value_field])??1):1));ids.forEach((id,i)=>{const y=top+(i+.5)*cell,x=left+(i+.5)*cell;f.parts.push(`<text x="${left-8}" y="${y+3}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(id))>(mobile?11:16)?sliceUnits(String(id),mobile?10:15)+"…":id)}</text>`);if(nIds<=28)f.parts.push(`<text x="${x}" y="${top-8}" transform="rotate(-90 ${x} ${top-8})" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(textUnits(String(id))>13?sliceUnits(String(id),12)+"…":id)}</text>`);});for(const [key,value] of edgeMap){const [a,b]=key.split("\0"),i=index.get(a),j=index.get(b),t=Math.sqrt(Math.abs(value)/max);f.parts.push(`<rect data-role="matrix-cell" x="${left+j*cell+1}" y="${top+i*cell+1}" width="${Math.max(1,cell-2)}" height="${Math.max(1,cell-2)}" fill="${PALETTE.accent2}" fill-opacity="${.12+.78*t}"/>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
+// Nodes keep their first-appearance order (see facetOrder), not name order.
+function renderAdjacencyMatrix(spec,rows,mobile=false){const ids=facetOrder(unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]]))),nIds=ids.length,bodyH=Math.max(mobile?360:420,nIds*(mobile?22:25)+100),f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?130:220,top=f.bodyTop+105,size=Math.min((mobile?640:1040)-left-(mobile?38:70),f.bodyBottom-top-25),cell=Math.max(3,size/Math.max(1,nIds)),index=new Map(ids.map((id,i)=>[String(id),i])),values=rows.map((row)=>spec.value_field?(n(row[spec.value_field])??1):1),max=Math.max(...values.map(Math.abs),1),edgeMap=new Map();rows.forEach((row)=>edgeMap.set(`${row[spec.source_field]}\0${row[spec.target_field]}`,spec.value_field?(n(row[spec.value_field])??1):1));ids.forEach((id,i)=>{const y=top+(i+.5)*cell,x=left+(i+.5)*cell;f.parts.push(`<text x="${left-8}" y="${y+3}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(id))>(mobile?11:16)?sliceUnits(String(id),mobile?10:15)+"…":id)}</text>`);if(nIds<=28)f.parts.push(`<text x="${x}" y="${top-8}" transform="rotate(-90 ${x} ${top-8})" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(textUnits(String(id))>13?sliceUnits(String(id),12)+"…":id)}</text>`);});for(const [key,value] of edgeMap){const [a,b]=key.split("\0"),i=index.get(a),j=index.get(b),t=Math.sqrt(Math.abs(value)/max);f.parts.push(`<rect data-role="matrix-cell" x="${left+j*cell+1}" y="${top+i*cell+1}" width="${Math.max(1,cell-2)}" height="${Math.max(1,cell-2)}" fill="${PALETTE.accent2}" fill-opacity="${.12+.78*t}"/>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
-function hierarchyLayout(rows,spec){const byId=new Map(rows.map((row)=>[String(row[spec.node_field]),row])),children=new Map(),root=rows.find((row)=>row[spec.parent_field]===null||row[spec.parent_field]===undefined||String(row[spec.parent_field])==="");for(const row of rows){const p=row[spec.parent_field];if(p===null||p===undefined||String(p)==="")continue;const key=String(p);if(!children.has(key))children.set(key,[]);children.get(key).push(String(row[spec.node_field]));}for(const list of children.values())list.sort();const positions=new Map(),levels=[];let leaf=0;const visit=(id,level)=>{if(!levels[level])levels[level]=[];levels[level].push(id);const kids=children.get(id)??[];if(!kids.length){positions.set(id,{leaf:leaf++,level});return positions.get(id).leaf;}const xs=kids.map((kid)=>visit(kid,level+1));const x=xs.reduce((a,b)=>a+b,0)/xs.length;positions.set(id,{leaf:x,level});return x;};if(root)visit(String(root[spec.node_field]),0);return {byId,children,positions,levels,leafCount:Math.max(leaf,1)};}
+// Siblings keep their first-appearance order (see facetOrder), not name order.
+function hierarchyLayout(rows,spec){const byId=new Map(rows.map((row)=>[String(row[spec.node_field]),row])),children=new Map(),root=rows.find((row)=>row[spec.parent_field]===null||row[spec.parent_field]===undefined||String(row[spec.parent_field])==="");for(const row of rows){const p=row[spec.parent_field];if(p===null||p===undefined||String(p)==="")continue;const key=String(p);if(!children.has(key))children.set(key,[]);children.get(key).push(String(row[spec.node_field]));}for(const [key,list] of children)children.set(key,facetOrder(list));const positions=new Map(),levels=[];let leaf=0;const visit=(id,level)=>{if(!levels[level])levels[level]=[];levels[level].push(id);const kids=children.get(id)??[];if(!kids.length){positions.set(id,{leaf:leaf++,level});return positions.get(id).leaf;}const xs=kids.map((kid)=>visit(kid,level+1));const x=xs.reduce((a,b)=>a+b,0)/xs.length;positions.set(id,{leaf:x,level});return x;};if(root)visit(String(root[spec.node_field]),0);return {byId,children,positions,levels,leafCount:Math.max(leaf,1)};}
 
 function renderHierarchyTree(spec,rows,mobile=false){const h=hierarchyLayout(rows,spec),depth=Math.max(...[...h.positions.values()].map((p)=>p.level),0),bodyH=Math.max(mobile?420:410,h.leafCount*(mobile?36:32)+80),f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?70:100,right=mobile?590:940,top=f.bodyTop+28,bottom=f.bodyBottom-28,x=(leaf)=>left+(leaf/(Math.max(1,h.leafCount-1)))*(right-left),y=(level)=>top+(level/Math.max(1,depth))*(bottom-top);for(const [parent,kids] of h.children){const pp=h.positions.get(parent);for(const kid of kids){const kp=h.positions.get(kid);f.parts.push(`<path d="M${x(pp.leaf)},${y(pp.level)} C${x(pp.leaf)},${(y(pp.level)+y(kp.level))/2} ${x(kp.leaf)},${(y(pp.level)+y(kp.level))/2} ${x(kp.leaf)},${y(kp.level)}" fill="none" stroke="${PALETTE.context}" stroke-width="1.5"/>`);}}for(const [id,p] of h.positions){const highlighted=(spec.highlight_values??[]).includes(id);f.parts.push(`<circle cx="${x(p.leaf)}" cy="${y(p.level)}" r="${highlighted?6:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x(p.leaf)}" y="${y(p.level)+(p.level===depth?16:-10)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(textUnits(String(id))>(mobile?11:15)?sliceUnits(String(id),mobile?10:14)+"…":id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
@@ -4424,7 +4495,9 @@ function timelineValues(rows,spec){const parse=(v)=>{if(typeof v==="number")retu
 
 function renderTimeline(spec,rows,mobile=false){const sorted=timelineValues(rows,spec);if(mobile){const bodyH=Math.max(390,sorted.length*64+40),f=mobileFrame(spec,bodyH),x=75,top=f.bodyTop+20,bottom=f.bodyBottom-20;f.parts.push(`<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="${PALETTE.grid}" stroke-width="2"/>`);sorted.forEach((row,i)=>{const y=top+(i/(Math.max(1,sorted.length-1)))*(bottom-top),highlighted=(spec.highlight_values??[]).includes(String(row[spec.label_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?6:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+18}" y="${y-5}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(String(row[spec.x_field]))}</text>`);svgTextLines(f.parts,String(row[spec.label_field]),x+18,y+10,{size:12,lineHeight:16,weight:highlighted?700:500,maxChars:50});});addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}const f=frame(spec,390),left=90,right=950,y=(f.bodyTop+f.bodyBottom)/2,min=sorted[0]?.__time??0,max=sorted.at(-1)?.__time??1,scale=(v)=>left+((v-min)/(max-min||1))*(right-left);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);sorted.forEach((row,i)=>{const x=scale(row.__time),up=i%2===0,highlighted=(spec.highlight_values??[]).includes(String(row[spec.label_field])),stemEnd=y+(up?-42:42),dateY=y+(up?-49:51),eventY=y+(up?-78:72);f.parts.push(`<line x1="${x}" y1="${y}" x2="${x}" y2="${stemEnd}" stroke="${PALETTE.context}"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?6:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x}" y="${dateY}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(String(row[spec.x_field]))}</text>`);svgTextLines(f.parts,String(row[spec.label_field]),x,eventY,{size:12,lineHeight:16,weight:highlighted?700:500,maxChars:22,anchor:"middle"});});addFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
-function renderStreamgraph(spec,rows,mobile=false){const xs=sortX(unique(rows.map((r)=>r[spec.x_field]))),series=unique(rows.map((r)=>r[spec.series_field])).sort(),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\0${r[spec.series_field]}`,Math.max(0,n(r[spec.value_field])??0)])),totals=xs.map((x)=>series.reduce((sum,ser)=>sum+(index.get(`${x}\0${ser}`)??0),0)),maxTotal=Math.max(...totals,1),bodyH=mobile?380:400,f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?45:85,right=mobile?600:950,top=f.bodyTop+22,bottom=f.bodyBottom-40,xScale=(i)=>xs.length<=1?(left+right)/2:left+(i/(xs.length-1))*(right-left),yScale=(v)=>((v/maxTotal)*(bottom-top)*.82),upper=new Array(xs.length).fill(0);series.forEach((ser,si)=>{const topPts=[],bottomPts=[];xs.forEach((x,xi)=>{const total=totals[xi],baseline=(bottom+top)/2+yScale(total)/2,low=baseline-yScale(upper[xi]),value=index.get(`${x}\0${ser}`)??0,high=low-yScale(value);bottomPts.push(`${xScale(xi)},${low}`);topPts.push(`${xScale(xi)},${high}`);upper[xi]+=value;});const path=[`M${topPts[0]}`,...topPts.slice(1).map((p)=>`L${p}`),...bottomPts.reverse().map((p)=>`L${p}`),"Z"].join(" ");f.parts.push(`<path data-role="stream" d="${path}" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}" fill-opacity=".78" stroke="#fff" stroke-width=".8"/>`);});if(xs.length){f.parts.push(`<text x="${left}" y="${bottom+24}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${right}" y="${bottom+24}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs.at(-1))}</text>`);}let ly=top+4;series.forEach((ser,si)=>{f.parts.push(`<rect x="${right-(mobile?145:175)}" y="${ly-9}" width="9" height="9" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}"/>`);f.parts.push(`<text x="${right-(mobile?132:162)}" y="${ly}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(ser))>20?sliceUnits(String(ser),19)+"…":ser)}</text>`);ly+=17;});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
+// Series keep their first-appearance order (see facetOrder), not name order;
+// the x axis is a sequence and still sorts.
+function renderStreamgraph(spec,rows,mobile=false){const xs=sortX(unique(rows.map((r)=>r[spec.x_field]))),series=facetOrder(unique(rows.map((r)=>r[spec.series_field]))),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\0${r[spec.series_field]}`,Math.max(0,n(r[spec.value_field])??0)])),totals=xs.map((x)=>series.reduce((sum,ser)=>sum+(index.get(`${x}\0${ser}`)??0),0)),maxTotal=Math.max(...totals,1),bodyH=mobile?380:400,f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?45:85,right=mobile?600:950,top=f.bodyTop+22,bottom=f.bodyBottom-40,xScale=(i)=>xs.length<=1?(left+right)/2:left+(i/(xs.length-1))*(right-left),yScale=(v)=>((v/maxTotal)*(bottom-top)*.82),upper=new Array(xs.length).fill(0);series.forEach((ser,si)=>{const topPts=[],bottomPts=[];xs.forEach((x,xi)=>{const total=totals[xi],baseline=(bottom+top)/2+yScale(total)/2,low=baseline-yScale(upper[xi]),value=index.get(`${x}\0${ser}`)??0,high=low-yScale(value);bottomPts.push(`${xScale(xi)},${low}`);topPts.push(`${xScale(xi)},${high}`);upper[xi]+=value;});const path=[`M${topPts[0]}`,...topPts.slice(1).map((p)=>`L${p}`),...bottomPts.reverse().map((p)=>`L${p}`),"Z"].join(" ");f.parts.push(`<path data-role="stream" d="${path}" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}" fill-opacity=".78" stroke="#fff" stroke-width=".8"/>`);});if(xs.length){f.parts.push(`<text x="${left}" y="${bottom+24}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${right}" y="${bottom+24}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs.at(-1))}</text>`);}let ly=top+4;series.forEach((ser,si)=>{f.parts.push(`<rect x="${right-(mobile?145:175)}" y="${ly-9}" width="9" height="9" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}"/>`);f.parts.push(`<text x="${right-(mobile?132:162)}" y="${ly}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(ser))>20?sliceUnits(String(ser),19)+"…":ser)}</text>`);ly+=17;});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
 
 function geoProjection(lon, lat, left, right, top, bottom) {
@@ -4589,8 +4662,9 @@ function renderParallelSets(spec, rows, mobile=false) {
 function polar(cx,cy,r,a){return{x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r};}
 function arcPath(cx,cy,r,a0,a1){const p0=polar(cx,cy,r,a0),p1=polar(cx,cy,r,a1),large=a1-a0>Math.PI?1:0;return`M${p0.x},${p0.y} A${r},${r} 0 ${large} 1 ${p1.x},${p1.y}`;}
 
+// Nodes keep their first-appearance order (see facetOrder), not name order.
 function renderChord(spec, rows, mobile=false) {
-  const ids=unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]])).sort(), totals=new Map(ids.map((id)=>[id,0]));for(const row of rows){const v=Math.max(0,n(row[spec.value_field])??0);totals.set(String(row[spec.source_field]),(totals.get(String(row[spec.source_field]))??0)+v);totals.set(String(row[spec.target_field]),(totals.get(String(row[spec.target_field]))??0)+v);}const grand=Math.max([...totals.values()].reduce((a,b)=>a+b,0),1),f=mobile?mobileFrame(spec,470):frame(spec,470),cx=mobile?320:520,cy=(f.bodyTop+f.bodyBottom)/2+8,r=mobile?170:190,gap=.025,angles=new Map();let angle=-Math.PI/2;for(const id of ids){const span=(Math.PI*2-gap*ids.length)*(totals.get(id)/grand);angles.set(id,{a0:angle,a1:angle+span,mid:angle+span/2});angle+=span+gap;}const max=Math.max(...rows.map((row)=>n(row[spec.value_field])??0),1);let i=0;for(const row of rows){const a=angles.get(String(row[spec.source_field])),b=angles.get(String(row[spec.target_field]));if(!a||!b)continue;const p1=polar(cx,cy,r-8,a.mid),p2=polar(cx,cy,r-8,b.mid),v=n(row[spec.value_field])??0;if(v<=0)continue;const sw=Math.max(1.2,Math.sqrt(v/max)*(mobile?18:23));f.parts.push(`<path data-role="chord-ribbon" d="M${p1.x},${p1.y} Q${cx},${cy} ${p2.x},${p2.y}" fill="none" stroke="${SERIES_COLORS[i++%SERIES_COLORS.length]}" stroke-width="${sw}" stroke-opacity=".42" stroke-linecap="round"/>`);}for(let j=0;j<ids.length;j++){const id=ids[j],a=angles.get(id),highlighted=(spec.highlight_values??[]).includes(id);f.parts.push(`<path data-role="chord-arc" d="${arcPath(cx,cy,r,a.a0,a.a1)}" fill="none" stroke="${highlighted?PALETTE.accent:PALETTE.ink}" stroke-width="${mobile?12:14}"/>`);const p=polar(cx,cy,r+(mobile?22:26),a.mid),anchor=Math.cos(a.mid)>.18?'start':Math.cos(a.mid)<-.18?'end':'middle';f.parts.push(`<text x="${p.x}" y="${p.y+3}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(textUnits(id)>(mobile?11:15)?sliceUnits(id,mobile?10:14)+'…':id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
+  const ids=facetOrder(unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]]))), totals=new Map(ids.map((id)=>[id,0]));for(const row of rows){const v=Math.max(0,n(row[spec.value_field])??0);totals.set(String(row[spec.source_field]),(totals.get(String(row[spec.source_field]))??0)+v);totals.set(String(row[spec.target_field]),(totals.get(String(row[spec.target_field]))??0)+v);}const grand=Math.max([...totals.values()].reduce((a,b)=>a+b,0),1),f=mobile?mobileFrame(spec,470):frame(spec,470),cx=mobile?320:520,cy=(f.bodyTop+f.bodyBottom)/2+8,r=mobile?170:190,gap=.025,angles=new Map();let angle=-Math.PI/2;for(const id of ids){const span=(Math.PI*2-gap*ids.length)*(totals.get(id)/grand);angles.set(id,{a0:angle,a1:angle+span,mid:angle+span/2});angle+=span+gap;}const max=Math.max(...rows.map((row)=>n(row[spec.value_field])??0),1);let i=0;for(const row of rows){const a=angles.get(String(row[spec.source_field])),b=angles.get(String(row[spec.target_field]));if(!a||!b)continue;const p1=polar(cx,cy,r-8,a.mid),p2=polar(cx,cy,r-8,b.mid),v=n(row[spec.value_field])??0;if(v<=0)continue;const sw=Math.max(1.2,Math.sqrt(v/max)*(mobile?18:23));f.parts.push(`<path data-role="chord-ribbon" d="M${p1.x},${p1.y} Q${cx},${cy} ${p2.x},${p2.y}" fill="none" stroke="${SERIES_COLORS[i++%SERIES_COLORS.length]}" stroke-width="${sw}" stroke-opacity=".42" stroke-linecap="round"/>`);}for(let j=0;j<ids.length;j++){const id=ids[j],a=angles.get(id),highlighted=(spec.highlight_values??[]).includes(id);f.parts.push(`<path data-role="chord-arc" d="${arcPath(cx,cy,r,a.a0,a.a1)}" fill="none" stroke="${highlighted?PALETTE.accent:PALETTE.ink}" stroke-width="${mobile?12:14}"/>`);const p=polar(cx,cy,r+(mobile?22:26),a.mid),anchor=Math.cos(a.mid)>.18?'start':Math.cos(a.mid)<-.18?'end':'middle';f.parts.push(`<text x="${p.x}" y="${p.y+3}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(textUnits(id)>(mobile?11:15)?sliceUnits(id,mobile?10:14)+'…':id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
 }
 
 function processLayout(rows,spec){const pseudo=rows.map((row)=>({[spec.source_field]:row[spec.source_field],[spec.target_field]:row[spec.target_field],__value:1})),flowSpec={source_field:spec.source_field,target_field:spec.target_field,value_field:'__value',chart_type:'process_schematic'},layout=flowLayout(pseudo,flowSpec);return layout;}
