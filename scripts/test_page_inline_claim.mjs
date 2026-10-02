@@ -263,7 +263,10 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
 }
 
 // ---- 3. Switch off: the page line's tool surface is unchanged ----------------
-const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: t.parameters })]);
+// The one intended difference from the page line: viz_plan's and viz_chain's measure_semantics is the full schema again (the page line
+// registers a weaker duplicate). Mask only that property here; test_viz_plan_schema.mjs asserts the full schema itself.
+const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsroom_viz_chain"].includes(name) && parameters?.properties?.measure_semantics ? { ...parameters, properties: { ...parameters.properties, measure_semantics: "masked" } } : parameters);
+const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) })]);
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
 if (!baseline) console.log(`git history for ${BASELINE} is unavailable; skipping the comparison with the page line`);
@@ -310,7 +313,7 @@ if (baseline) {
       // newsroom_viz_plan: claim, claim_kind and claim_caveat follow claim_id; takeaway, alt and source_note become optional.
       const [keys0, keys1] = [Object.keys(plan0.parameters.properties), Object.keys(plan1.parameters.properties)];
       assert.deepEqual(keys1, keys0.flatMap((key) => (key === "claim_id" ? [key, "claim", "claim_kind", "claim_caveat"] : [key])), "the shared properties keep their order");
-      for (const key of keys0) if (!["takeaway", "alt", "source_note"].includes(key)) assert.deepEqual(plan1.parameters.properties[key], plan0.parameters.properties[key], `${key} is unchanged`);
+      for (const key of keys0) if (!["takeaway", "alt", "source_note", "measure_semantics"].includes(key)) assert.deepEqual(plan1.parameters.properties[key], plan0.parameters.properties[key], `${key} is unchanged`);
       assert.deepEqual(plan1.parameters.required, plan0.parameters.required.filter((key) => !["takeaway", "alt", "source_note"].includes(key)));
       for (const key of ["claim", "claim_kind", "claim_caveat", "takeaway", "alt", "source_note"]) assert.ok(plan1.parameters.properties[key].__optional, `${key} is optional`);
       assert.deepEqual(plan1.parameters.properties.claim_kind.enum, rc1.parameters.properties.claim_kind.enum, "the same claim kinds as record_claim");
