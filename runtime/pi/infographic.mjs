@@ -4,6 +4,7 @@ import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
 import { evaluateQuestionClosure } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
 import { evaluateClaimSupport } from "./evidence_gate.mjs";
+import { buildCandidates, extractNumbers, matchNumber } from "./number_shadow.mjs";
 
 // Fix 7 (house style wiring): page chrome - header/footer rules, kickers,
 // section heads, body text, pull quotes, the sources footer - now follows
@@ -607,6 +608,43 @@ export function evaluateSubjectSets(spec, assets = {}, context = {}) {
   return { blockers, warnings, notes };
 }
 
+// Hero value gate (NEWSROOM_HERO_VALUE_GATE=1, passed in by the caller as
+// context.hero_value_gate). A hero_stat's big number must be a number in its
+// own claim's computation rows, at display precision; label and detail numbers
+// may also match what derives from those rows. Pure: the rows come in through
+// context.hero_claim_rows ({ claim_id: [row table, ...] }). Unlike the other
+// claim checks, an empty verified set does not let a claim id through here.
+// A bare unit is appended to the value, so a one-letter scale word as the unit
+// ("m", "t", "b", "k") is read as that scale.
+function heroValueBlockers(module, verified, claimRows) {
+  const id = String(module.id);
+  const claimId = String(module.claim_id ?? "");
+  if (!verified.has(claimId)) return [`hero_stat '${id}' claim '${claimId}' is not verified (hero value gate)`];
+  const tables = claimRows && Array.isArray(claimRows[claimId]) ? claimRows[claimId] : [];
+  const candidates = buildCandidates(tables);
+  if (!candidates.rows.length) return [`hero_stat '${id}' claim '${claimId}' has no computation rows to check its value against`];
+  const out = [];
+  const valueText = `${module.value ?? ""}${module.unit ? ` ${module.unit}` : ""}`;
+  // A year-like number in the value is a number to match, never skipped.
+  const numbers = extractNumbers(valueText).flatMap((entry) => {
+    if (!entry.skipped) return [entry];
+    if (entry.skipped !== "year") return [];
+    const raw = entry.raw.replace(/^['\u2019]/, "");
+    return [{ ...entry, raw, value: Number(raw), decimals: 0, percent: false, scale: 1 }];
+  });
+  const shown = (entry) => entry.raw + (entry.suffix ? ` ${entry.suffix}`.replace(/^ (?=[%万亿千])/u, "") : "");
+  if (!numbers.length) out.push(`hero_stat '${id}' value has no number to check against claim '${claimId}'`);
+  else if (numbers.length > 1) out.push(`hero_stat '${id}' value has more than one number (${numbers.map(shown).join(", ")}); claim '${claimId}'`);
+  else if (matchNumber(numbers[0], { rows: candidates.rows }) !== "matched_rows") out.push(`hero_stat '${id}' value number '${shown(numbers[0])}' is not in the rows of claim '${claimId}'`);
+  for (const field of ["label", "detail"]) {
+    for (const entry of extractNumbers(module[field])) {
+      if (entry.skipped) continue;
+      if (!["matched_rows", "matched_derived"].includes(matchNumber(entry, candidates))) out.push(`hero_stat '${id}' ${field} number '${shown(entry)}' is not in the rows of claim '${claimId}'`);
+    }
+  }
+  return out;
+}
+
 export function lintInfographicSpec(spec, assets = {}, context = {}) {
   const blockers = validateInfographicSpec(spec);
   const warnings = [];
@@ -733,6 +771,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     if (module.type === "hero_stat") {
       claimCount += 1;
       if (verified.size && !verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
+      if (context.hero_value_gate === true) blockers.push(...heroValueBlockers(module, verified, context.hero_claim_rows));
       if (String(module.label ?? "").length > 120) warnings.push(`hero_stat '${module.id}' label is long for magazine display`);
     }
     if (module.type === "text") {
