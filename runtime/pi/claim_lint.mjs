@@ -6,6 +6,8 @@ import { FILE_READER_FUNCTIONS } from "./computation_rows.mjs";
 
 const NUMERIC_TYPES = new Set(["TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT", "FLOAT", "DOUBLE", "DECIMAL"]);
 const ROUNDERS = new Set(["round", "trunc", "truncate"]);
+// The pattern (2nd) argument of these is a regular expression, not a number the query claims; regexp_replace's replacement (3rd) stays checked.
+const REGEX_PATTERN_FUNCTIONS = new Set(["regexp_extract", "regexp_matches", "regexp_full_match", "regexp_replace", "regexp_split_to_array"]);
 
 const isNode = (value) => value !== null && typeof value === "object";
 
@@ -72,6 +74,8 @@ function constantsIn(expr, found) {
     const kids = expr.children ?? [];
     const name = String(expr.function_name ?? "").toLowerCase();
     kids.forEach((child, index) => {
+      if (REGEX_PATTERN_FUNCTIONS.has(name) && index === 1 && child?.class === "CONSTANT" && child.value?.type?.id === "VARCHAR") return;
+      if (name === "regexp_extract" && index === 2 && child?.class === "CONSTANT" && NUMERIC_TYPES.has(child.value?.type?.id) && Number.isInteger(constantNumber(child))) return;
       if (ROUNDERS.has(name) && index === 1 && child?.class === "CONSTANT" && NUMERIC_TYPES.has(child.value?.type?.id) && Number.isInteger(constantNumber(child))) return;
       if ((name === "*" || name === "/") && kids.length === 2 && isPowerOfTen(child) && mentionsData(kids[1 - index])) return;
       constantsIn(child, found);
@@ -111,16 +115,30 @@ export function lintClaimSqlAst(ast) {
 const LOW_WORDS = /\b(lowest|least|smallest|fewest)\b|最低|最少|最小/i;
 const HIGH_WORDS = /\b(highest|most|largest|greatest)\b|最高|最多|最大/i;
 
-/** In one clause (split on , . ; and their full-width forms) a max.* placeholder
- *  may not sit next to a low word, nor a min.* next to a high word. */
+/** In one clause (split on , . ; and their full-width forms), each direction
+ *  word looks at the nearest max/min placeholder before it and the nearest one
+ *  after it (first, last and @ placeholders are ignored). It is refused only
+ *  when every one of those that exists has the opposite direction: a low word
+ *  needs a min, a high word a max, on at least one side. */
 export function lintClaimTemplate(template) {
   const out = [];
   // A placeholder holds dots of its own: swap it for a marker before splitting.
   const marked = String(template ?? "").replace(/\{\s*([^{}]*?)\s*\}/g, (_, body) => (/^max\./.test(body) ? "\u0001MAX\u0001" : /^min\./.test(body) ? "\u0001MIN\u0001" : "\u0001"));
   for (const clause of marked.split(/[,.;，。；]/)) {
+    const holders = [...clause.matchAll(/\u0001(MAX|MIN)\u0001/g)].map((m) => ({ at: m.index, end: m.index + m[0].length, kind: m[1] }));
+    if (!holders.length) continue;
     const shown = clause.replace(/\u0001(MAX|MIN)\u0001/g, (_, k) => `{${k.toLowerCase()}.…}`).replace(/\u0001/g, "{…}").trim();
-    if (clause.includes("\u0001MAX\u0001") && LOW_WORDS.test(clause)) out.push(`the clause "${shown}" puts a max placeholder next to a word for the lowest value; use min, or change the words`);
-    if (clause.includes("\u0001MIN\u0001") && HIGH_WORDS.test(clause)) out.push(`the clause "${shown}" puts a min placeholder next to a word for the highest value; use max, or change the words`);
+    for (const [words, wanted, opposite, label] of [[LOW_WORDS, "MIN", "MAX", "lowest"], [HIGH_WORDS, "MAX", "MIN", "highest"]]) {
+      for (const word of clause.matchAll(new RegExp(words.source, "gi"))) {
+        const before = [...holders].reverse().find((h) => h.end <= word.index);
+        const after = holders.find((h) => h.at >= word.index + word[0].length);
+        const near = [before, after].filter(Boolean);
+        if (near.length && near.every((h) => h.kind === opposite)) {
+          out.push(`the clause "${shown}" puts a ${opposite.toLowerCase()} placeholder next to "${word[0]}", a word for the ${label} value; use ${wanted.toLowerCase()}, or change the words`);
+          break;
+        }
+      }
+    }
   }
   return out;
 }
