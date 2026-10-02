@@ -2989,6 +2989,21 @@ function renderGroupedDots(spec, rows) {
   return f.parts.join("\n") + "\n";
 }
 
+// diverging_bar value labels always sit just outside their bar's end, on the
+// bar's own side. This returns how many px to keep free beyond the plot's left
+// (negative bars) and right (positive bars) edge for the widest such label plus
+// its `gap` from the bar, measured on the label texts as they are drawn, so a
+// label never has to move inside a bar that reaches the plot edge.
+function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap) {
+  const PX = 7.5; // per text unit; bold 12px digits and "%" run wider than the 6.4 the label column uses
+  const widest = (pred) => Math.ceil(Math.max(0, ...sorted.map((row, i) => {
+    const v = n(row[valueField]);
+    return v === null || !pred(v) ? 0 : textUnits(fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
+  })));
+  const neg = widest((v) => v < 0), pos = widest((v) => v >= 0);
+  return { neg: neg ? neg + gap : 0, pos: pos ? pos + gap : 0 };
+}
+
 function renderHorizontal(spec, rows, mode) {
   const valueField = spec.value_field;
   if (mode === "dot" && spec.series_field && fieldExists(rows, spec.series_field)) {
@@ -3037,6 +3052,10 @@ function renderHorizontal(spec, rows, mode) {
     left = catX + 15 + (negW ? negW + 9 : 0);
     right = LAYOUT_W - 54 - bracketMargin - (posW ? posW + 9 : 0);
   }
+  if (spec.chart_type === "diverging_bar") {
+    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9);
+    left += margins.neg; right -= margins.pos;
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
@@ -3076,13 +3095,10 @@ function renderHorizontal(spec, rows, mode) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
     }
     if (spec.chart_type === "diverging_bar") {
-      const nearLeft = x <= left + 44;
-      const nearRight = x >= right - 44;
-      const inside = (value < 0 && nearLeft) || (value >= 0 && nearRight);
-      const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
-      const labelX = inside ? x + (value < 0 ? 9 : -9) : x + (value >= 0 ? 9 : -9);
-      const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
+      const anchor = value >= 0 ? "start" : "end";
+      const labelX = x + (value >= 0 ? 9 : -9);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
@@ -3717,11 +3733,16 @@ function renderMobileHorizontal(spec, rows, mode) {
   const refMargin = referenceLineMargin(refLines);
   const f = mobileFrame(spec, Math.max(250, sorted.length * 42 + 50) + refMargin);
   const base = f.bodyTop + 5;
-  const left = 178, right = 595, top = base + refMargin, bottom = f.bodyBottom - 36;
+  let left = 178, right = 595;
+  const top = base + refMargin, bottom = f.bodyBottom - 36;
   const values = sorted.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   // Fix 2: see the matching comment in renderHorizontal - resolved once, up
   // front, from every value this chart will display as a direct label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  if (spec.chart_type === "diverging_bar") {
+    const margins = divergingLabelMargins(spec, sorted, spec.value_field, labelDecimals, 8);
+    left += margins.neg; right -= margins.pos;
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
@@ -3747,13 +3768,10 @@ function renderMobileHorizontal(spec, rows, mode) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.8" fill="${fill}"/>`);
     }
     if (spec.chart_type === "diverging_bar") {
-      const nearLeft = x <= left + 40;
-      const nearRight = x >= right - 40;
-      const inside = (value < 0 && nearLeft) || (value >= 0 && nearRight);
-      const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
-      const labelX = inside ? x + (value < 0 ? 8 : -8) : x + (value >= 0 ? 8 : -8);
-      const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
+      const anchor = value >= 0 ? "start" : "end";
+      const labelX = x + (value >= 0 ? 8 : -8);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 8 : -8);
