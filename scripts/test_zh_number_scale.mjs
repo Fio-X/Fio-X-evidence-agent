@@ -53,7 +53,10 @@ const barZh = renderVizBundle(barSpec("zh"), bars, { mobilePages: false }).deskt
 // round 3 a zh label from 1万 up takes the same scaling instead of comma-grouped digits
 assert.match(barZh, />10亿</, "zh bar tick");
 assert.match(barZh, />30亿 元</, "zh bar tick with unit");
-assert.match(barZh, />35亿 元</, "zh bar value label uses 亿 like the axis");
+// one unit and one shared decimal count: the smallest value (1.1亿) needs one decimal, so all do
+assert.match(barZh, />35.0亿 元</, "zh bar value label uses 亿 like the axis");
+assert.match(barZh, />12.0亿</, "zh bar shares the decimal count");
+assert.match(barZh, />1.1亿</, "zh bar smallest value");
 assert.doesNotMatch(barZh, />3,500,000,000/, "no comma-grouped billions in the zh bar");
 assert.doesNotMatch(barZh, />\d+(\.\d+)?(k|m|bn)\b/, "no k/m/bn text in the zh bar");
 const barEn = renderVizBundle(barSpec("en"), bars, { mobilePages: false }).desktop;

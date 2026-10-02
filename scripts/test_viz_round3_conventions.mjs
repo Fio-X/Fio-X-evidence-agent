@@ -16,7 +16,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { renderVizSvg, zhScaleText, fmtSpec } from "../runtime/pi/viz.mjs";
+import { renderVizSvg, zhScaleText, fmtSpec, chartValueFormatter } from "../runtime/pi/viz.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID, classBreaks, lintChoroplethSpec } from "../runtime/pi/choropleth.mjs";
 
@@ -37,6 +37,9 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   const plan = classBreaks(skewed, 5);
   assert.ok(plan.skewed && plan.openTop && plan.openBottom, "skewed data gets open end classes");
   assert.deepEqual(plan.breaks.slice(1, 5), [2, 5, 10, 20], "1-2-5 interior edges");
+  // minimum at or above the first inner edge: never return breaks that do not ascend
+  const odd = classBreaks([15, 16, 18, 20, 25, 30, 40, 55, 60, 70, 300], 5);
+  assert.ok(odd.breaks.every((b, i, a) => i === 0 || b > a[i - 1]), `ascending breaks: ${odd.breaks}`);
   const flat = classBreaks([10, 12, 14, 16, 18, 20, 22, 24], 5);
   assert.ok(!flat.skewed, "unskewed data keeps linear nice breaks");
 
@@ -56,6 +59,9 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   const zhSvg = renderVizSvg({ ...spec, language: "zh" }, rows);
   assert.ok(zhSvg.includes("无数据"), "zh no-data label");
 
+  // a LIMIT slice is not "no data": the grey countries have data, they were just not selected
+  const sliced = renderVizSvg({ ...spec, sql: "SELECT country, v FROM t ORDER BY v DESC LIMIT 11" }, rows);
+  assert.ok(!sliced.includes('data-role="choropleth-no-data"') && !sliced.includes("No data"), "LIMIT slice: no 无数据 swatch");
   const warns = lintChoroplethSpec({ ...spec, sql: "SELECT country, v FROM t ORDER BY v DESC LIMIT 10" }, rows);
   assert.ok(JSON.stringify(warns).includes("LIMIT"), "LIMIT query warns");
   assert.ok(!JSON.stringify(lintChoroplethSpec(spec, rows)).includes("LIMIT"), "no LIMIT: no warning");
@@ -68,7 +74,7 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   const rows = [
     ...named.map((c, i) => ({ c, a: i + 1, b: ((i + 3) % 8) + 1 })),
     { c: "新一", a: 14, b: 9 + 0 }, { c: "新二", a: 15, b: 10 },
-    { c: "出一", a: 9, b: 12 }, { c: "出二", a: 10, b: 13 },
+    { c: "出一", a: 10, b: 13 }, { c: "出二", a: 9, b: 12 },
   ];
   // keep unique ranks in the top 10 at each end
   rows[0].b = 1; rows[1].b = 2; rows[2].b = 3; rows[3].b = 4; rows[4].b = 5; rows[5].b = 6; rows[6].b = 7; rows[7].b = 8;
@@ -82,7 +88,17 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   const ends = roleTexts(svg, "rank-label-end").map(textOf);
   assert.ok(starts.some((t) => t.includes("甲")) && ends.some((t) => t.includes("甲")), "name printed at both ends");
   assert.ok(starts.some((t) => t.includes("第14名") || t.includes("第15名")) || ends.some((t) => t.includes("第12名") || t.includes("第13名")), "outside-top-N true rank in the label");
-  assert.ok(ends.some((t) => t.includes("新进")) || starts.length > 0, "join tag");
+  assert.ok(ends.some((t) => t.includes("新进")), "join tag");
+  // the N+1 row is stacked on each side by that side's own true rank (12 above 13, 14 above 15)
+  const yOf = (list, needle) => Number(attr(list.find((t) => textOf(t).includes(needle)), "y"));
+  const endTags = roleTexts(svg, "rank-label-end"), startTags = roleTexts(svg, "rank-label-start");
+  assert.ok(yOf(endTags, "第12名") < yOf(endTags, "第13名"), "right side: 第12名 above 第13名");
+  assert.ok(yOf(startTags, "第14名") < yOf(startTags, "第15名"), "left side: 第14名 above 第15名");
+  // a highlight that stays in the top N keeps the context colour (accent is the 跌出 colour)
+  const lit = renderVizSvg({ ...spec, highlight_values: ["甲"] }, rows);
+  const litLines = tags(lit, /<line data-role="data-line"[^>]*>/g);
+  assert.ok(litLines.length > 0 && litLines.every((l) => attr(l, "stroke") !== attr(tags(lit, /<[^>]*data-role="rank-leave"[^>]*>/g)[0], "stroke")), "highlight does not reuse the leave colour");
+  assert.ok(litLines.some((l) => attr(l, "stroke-width") === "2.5"), "highlight keeps the heavier stroke");
   assert.ok(ends.some((t) => t.includes("跌出")), "leave tag");
   const joins = tags(svg, /<[^>]*data-role="rank-join"[^>]*>/g), leaves = tags(svg, /<[^>]*data-role="rank-leave"[^>]*>/g);
   assert.ok(joins.length >= 1 && leaves.length >= 1, "join and leave lines present");
@@ -102,7 +118,30 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   const xs = new Set(tags(svg, /<line data-role="index-base-line"[^>]*>/g).map((l) => attr(l, "x1")));
   assert.equal(tags(svg, /<line data-role="index-base-line"[^>]*>/g).length, 12, "base line in every panel");
   assert.ok(xs.size >= 3 && xs.size <= 4, `3-4 columns for 12 panels (saw ${xs.size})`);
-  assert.equal(roleTexts(svg, "index-base-label").length, 12, "base label in every panel");
+  assert.equal(roleTexts(svg, "index-base-label").length, 1, "the base is named once, in the first panel");
+  assert.ok(textOf(roleTexts(svg, "index-base-label")[0]).includes("100"));
+  // gridline labels sit at nice 1-2-5 values that include the base
+  const tickVals = [...new Set(roleTexts(svg, "value-axis-tick").map((t) => Number(textOf(t))))].sort((a, b) => a - b);
+  assert.ok(tickVals.includes(100), `base is a tick: ${tickVals}`);
+  const stepSet = new Set(tickVals.slice(1).map((v, i) => Math.round((v - tickVals[i]) * 1e6) / 1e6));
+  assert.equal(stepSet.size, 1, `even ticks: ${tickVals}`);
+  assert.ok([1, 2, 5].includes(Number(String([...stepSet][0]).replace(/[0.]/g, "")[0])), `1-2-5 step: ${[...stepSet]}`);
+  // no two text boxes inside a panel intersect (12 px per CJK glyph, 6.5 per other)
+  const allTexts = tags(svg, /<text [^>]*data-panel-box="[^"]*"[^>]*>[^<]*<\/text>/g);
+  const byPanel = new Map();
+  for (const t of allTexts) { const k = attr(t, "data-panel-box"); (byPanel.get(k) ?? byPanel.set(k, []).get(k)).push(t); }
+  const box = (t) => {
+    const w = [...textOf(t)].reduce((a, c) => a + (c.charCodeAt(0) > 255 ? 12 : 6.5), 0), x = Number(attr(t, "x")), y = Number(attr(t, "y")), an = attr(t, "text-anchor");
+    const x1 = an === "end" ? x - w : an === "middle" ? x - w / 2 : x;
+    return [x1, y - 11, x1 + w, y + 3];
+  };
+  for (const [k, list] of byPanel) {
+    const bs = list.map(box);
+    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+      const [a, b] = [bs[i], bs[j]];
+      assert.ok(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1], `panel ${k}: "${textOf(list[i])}" overlaps "${textOf(list[j])}"`);
+    }
+  }
   assert.equal(roleTexts(svg, "index-end-value").length, 12, "end value per panel");
   const tickTexts = roleTexts(svg, "value-axis-tick");
   assert.ok(tickTexts.length >= 3, "y tick labels on the first column");
@@ -133,22 +172,29 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   assert.ok(!linear.includes("对数刻度"), "linear axis has no note");
 }
 
-// ---- 5. value labels ---------------------------------------------------------------------------------
+// ---- 5. value labels: one unit and one decimal count per chart ---------------------------------------
 {
   assert.equal(zhScaleText(1611000), "161.1万");
   assert.equal(zhScaleText(-3256050), "-325.6万");
   assert.equal(zhScaleText(250000000), "2.5亿");
-  const zh = { ...base, language: "zh" }, en = { ...base, language: "en" };
-  assert.equal(fmtSpec(zh, 1611000, "", 2), "161.1万");
-  assert.equal(fmtSpec(zh, -3256050, "", 2), "-325.6万");
-  assert.ok(!/\.00/.test(fmtSpec(en, 1611000, "", 2)), "no trailing .00 at >= 1000 (en)");
-  assert.ok(!/\.00/.test(fmtSpec(en, 4200, "", 2)), "no trailing .00 at 4200");
-  assert.equal(fmtSpec(en, 12.5, "", 2), "12.50", "values below 1000 keep their decimals");
-  const rows = [{ r: "甲", d: 1611000 }, { r: "乙", d: -3256050 }, { r: "丙", d: 820000.5 }];
+  const zh = { ...base, language: "zh", unit: "公顷" }, en = { ...base, language: "en", unit: "" };
+  // G-shaped values: every label has the same unit and the same decimal count
+  const g = [1611000, 839550, 117060, 89400, 87566, 86000, 81480, 67548, -267027, -282893, -299339, -469000, -510029, -3256050];
+  const fz = chartValueFormatter(zh, g);
+  const texts = g.map((v) => fz(v, ""));
+  assert.equal(texts[0], "161.1万"); assert.equal(texts[1], "84.0万"); assert.equal(texts.at(-1), "-325.6万");
+  assert.ok(texts.every((t) => /^-?\d+\.\d万$/.test(t)), `one decimal everywhere: ${texts.join("|")}`);
+  // a chart of values in the thousands: no decimals; a mixed chart keeps its shared decimals
+  const f1 = chartValueFormatter(en, [4200, 15000, 1611000]);
+  assert.ok([4200, 15000, 1611000].every((v) => !f1(v, "").includes(".")), "all >= 1000: zero decimals");
+  const f2 = chartValueFormatter(en, [1234, 5678.05, 12.5]);
+  assert.deepEqual([1234, 5678.05, 12.5].map((v) => f2(v, "")), ["1234.0", "5678.1", "12.5"]);
+  assert.equal(fmtSpec(en, 1234, "", 2), "1234.00", "a single label is never stripped");
+  const rows = g.map((d, i) => ({ r: `地区${i + 1}`, d }));
   const svg = renderVizSvg({ ...base, reader_task: "comparison", chart_type: "diverging_bar", category_field: "r", value_field: "d", unit: "公顷", sort: "none" }, rows);
   const labels = roleTexts(svg, "bar-value-label").map(textOf);
-  assert.ok(labels.length === 3 && labels.every((t) => !/\.00/.test(t) && !/\d,\d{3}/.test(t)), `bar labels scaled: ${labels.join("|")}`);
-  assert.ok(labels[0].includes("161.1万") && labels[1].includes("325.6万"), "万 scale on bar labels");
+  assert.equal(labels.length, g.length);
+  assert.ok(labels.every((t) => /^-?\d+\.\d万/.test(t)) && labels.every((t) => !/\d,\d{3}/.test(t)), `bar labels share unit and decimals: ${labels.join("|")}`);
 }
 
 // ---- 6. axis frame -----------------------------------------------------------------------------------

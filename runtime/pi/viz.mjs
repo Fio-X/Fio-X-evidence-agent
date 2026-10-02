@@ -5,7 +5,7 @@ import { checkSvgGeometry } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1079,8 +1079,29 @@ function autoValueDecimals(values) {
 function resolveChartDecimals(spec, values) {
   if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return null;
   const explicit = spec?.decimals;
-  if (Number.isInteger(explicit) && explicit >= 0 && explicit <= 3) return explicit;
-  return autoValueDecimals(values);
+  const finite = (values ?? []).filter((v) => Number.isFinite(v));
+  const hasExplicit = Number.isInteger(explicit) && explicit >= 0 && explicit <= 3;
+  // zh chart with a label at or above 1万: one unit (from the largest |value|)
+  // and one shared decimal count for every label, so 8.6万 never sits beside 8.757万.
+  if (vizLang(spec) === "zh" && finite.some((v) => Math.abs(v) >= 10_000)) {
+    const top = Math.max(...finite.map((v) => Math.abs(v)));
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+    const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+    return { zhScale: { div, suffix }, decimals: hasExplicit ? explicit : auto };
+  }
+  if (hasExplicit) return explicit;
+  const auto = autoValueDecimals(finite);
+  // every labelled value in the thousands: no decimals at all, decided per chart
+  if (finite.length && finite.every((v) => Math.abs(v) >= 1000) && auto !== null && auto > 0) return 0;
+  return auto;
+}
+
+// Chart-level formatter: resolves the shared unit / decimal count once from all
+// the chart's values and returns a (value, unit) => text function.
+export function chartValueFormatter(spec, values) {
+  const decimals = resolveChartDecimals(spec, values);
+  return (value, unit = spec?.unit) => fmtSpec(spec, value, unit, decimals);
 }
 
 // zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
@@ -1104,6 +1125,11 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
   if (DECIMAL_MODE !== "default" && unit === "%") return `${value.toFixed(1)}%`;
   const abs = Math.abs(value);
   let text;
+  if (decimals && typeof decimals === "object" && decimals.zhScale) {
+    text = (value / decimals.zhScale.div).toFixed(decimals.decimals) + decimals.zhScale.suffix;
+    if (unit === "%") return `${text}%`;
+    return unit && !/^[£$€¥]$/.test(unit) ? `${text} ${unit}` : unit ? `${unit}${text}` : text;
+  }
   if (Number.isInteger(decimals)) {
     // Fix 2: a resolved shared decimal count (explicit spec.decimals, or
     // resolveChartDecimals()'s auto-picked default) always wins over the
@@ -1113,9 +1139,6 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     text = value.toFixed(decimals);
     if (lang === "zh" && abs >= 10_000) {
       text = zhScaleText(value);
-    } else if (abs >= 1_000 && decimals >= 2 && /\.0+$/.test(text)) {
-      // a value in the thousands never ends in ".00"
-      text = text.replace(/\.0+$/, "");
     }
     // Fix 2 follow-up (b): toFixed() never groups the integer part, and a
     // resolved decimals count takes this branch instead of the magnitude
@@ -3278,19 +3301,19 @@ function renderRankSlope(spec, rows, cutoff) {
   f.parts.push(`<text x="${right}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.end_label ?? spec.end_field)}</text>`);
   // faint ordinal row guides: one per rank, the last one is the "N+1" row
   for (let r = 1; r <= cutoff + 1; r++) f.parts.push(`<line data-role="rank-row" x1="${left}" y1="${rowY(r)}" x2="${right}" y2="${rowY(r)}" stroke="${PALETTE.grid}" stroke-width="0.5" stroke-dasharray="${r > cutoff ? "3 3" : "none"}"/>`);
-  const nextSlot = { a: 0, b: 0 };
+  // the N+1 row is stacked on each side by that side's own true rank
+  const slotOf = { a: new Map(), b: new Map() };
+  for (const key of ["a", "b"]) entries.filter((e) => e[key] > cutoff).sort((p, q) => p[key] - q[key] || p.i - q.i).forEach((e, k) => slotOf[key].set(e, k));
   const placed = entries
     .slice().sort((p, q) => (p.a - q.a) || (p.b - q.b))
-    .map((e) => {
-      const slot = (key) => (e[key] > cutoff ? nextSlot[key]++ : 0);
-      return { ...e, y1: rowY(e.a) + slot("a") * STACK, y2: rowY(e.b) + slot("b") * STACK };
-    });
+    .map((e) => ({ ...e, y1: rowY(e.a) + (slotOf.a.get(e) ?? 0) * STACK, y2: rowY(e.b) + (slotOf.b.get(e) ?? 0) * STACK }));
   const marks = [];
   placed.forEach((e) => {
     const category = String(e.row[spec.category_field] ?? "");
     const highlighted = (spec.highlight_values ?? []).map(String).includes(category);
     const entered = e.a > cutoff, dropped = e.b > cutoff;
-    const stroke = entered ? joinColor : dropped ? leaveColor : highlighted ? PALETTE.accent : PALETTE.context;
+    // a highlight that stays in the top N keeps the context colour (the accent is the 跌出 colour here)
+    const stroke = entered ? joinColor : dropped ? leaveColor : PALETTE.context;
     const width = highlighted || entered || dropped ? 2.5 : 1.5;
     const role = entered ? "rank-join" : dropped ? "rank-leave" : "data-line";
     marks.push(`<line data-role="${role}" x1="${left}" y1="${e.y1}" x2="${right}" y2="${e.y2}" stroke="${stroke}" stroke-width="${width}"/>`);
@@ -3725,6 +3748,16 @@ function renderSmallMultiples(spec, rows) {
   const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20);
   const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
+  // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
+  const idxTicks = (() => {
+    if (indexBase === null) return [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]];
+    const span = yDomain[1] - yDomain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 5, 10].map((m) => m * mag).find((c) => c >= raw);
+    const out = [];
+    for (let v = Math.ceil((yDomain[0] - 1e-9) / step) * step; v <= yDomain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    if (!out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
+    return out.sort((a, b) => a - b);
+  })();
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
     const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
@@ -3736,16 +3769,17 @@ function renderSmallMultiples(spec, rows) {
     const plotBase = y0 + 30;
     const yScale = verticalScale(yDomain, plotBase + refMargin, y0 + panelH - 30);
     f.parts.push(`<text x="${x0}" y="${y0 + 14}" font-family="${FONT_SANS}" font-size="14" font-weight="700" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(facet, spec.category_names, vizLang(spec)))}</text>`);
-    [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]].forEach((tick) => {
+    idxTicks.forEach((tick) => {
       const y = yScale(tick);
       f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0 + panelW}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
     });
     if (indexBase !== null) {
       const by = yScale(indexBase);
       f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
-      f.parts.push(`<text data-role="index-base-label" x="${x0 + panelW}" y="${by - 5}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0)))}</text>`);
+      // the base is named once, in the first panel; every panel still draws the line
+      if (fi === 0) f.parts.push(`<text data-role="index-base-label" x="${x0 + 4}" y="${by - 5}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0)))}</text>`);
       if (col === 0) {
-        [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]].forEach((tick) => {
+        idxTicks.forEach((tick) => {
           f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
         });
       }
@@ -7864,7 +7898,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     }
   }
   f.parts.push("</g>");
-  if (noDataDrawn && !mobile) {
+  if (noDataDrawn && !mobile && !isRowSlice(spec)) {
     // Regions drawn without a value are filled PALETTE.grid; name that fill.
     // Its own group, so the legend group still holds only the class swatches.
     const ndX = plotLeft + legendStep * CHOROPLETH_RAMP.length + 18;

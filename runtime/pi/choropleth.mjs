@@ -147,7 +147,7 @@ export function lintChoroplethSpec(spec, rows) {
       blockers.push(`choropleth inset.iso3 names ${unplotted.length} code(s) with no plotted data on this map: ${unplotted.slice(0, 8).join(", ")}`);
     }
   }
-  if (/\blimit\s+\d+/i.test(String(spec?.sql ?? ""))) {
+  if (isRowSlice(spec)) {
     warnings.push("choropleth rows come from a LIMIT query, so the map covers only a top-N slice while the source has more economies; map every economy with data and use a bar chart for a top list");
   }
   return { blockers, warnings };
@@ -615,7 +615,18 @@ export function classBreaks(values, classes = 5, opts = {}) {
   const topIdx = seq.findIndex((v) => v >= p90 - 1e-12);
   if (topIdx < 3) return linear;
   const inner = seq.slice(topIdx - 3, topIdx + 1).map((v) => Math.round(v * 1e9) / 1e9);
+  // the edges must rise strictly from the data minimum to the maximum, else the first class would be empty
+  if (!(min < inner[0] && inner[3] < max)) return linear;
   return { breaks: [min, ...inner, max], skewed: true, openBottom: true, openTop: true };
+}
+
+/**
+ * True when the rows look like a LIMIT slice of a larger source: the grey
+ * features then have data, they just were not selected. The lint warning and
+ * the "no data" swatch both read this one condition.
+ */
+export function isRowSlice(spec) {
+  return /\blimit\s+\d+/i.test(String(spec?.sql ?? ""));
 }
 
 // ---------------------------------------------------------------------------
