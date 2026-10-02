@@ -30,6 +30,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { FORM_FIELDS, FORM_GUIDELINE, formWiringMask, maskFor } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "a4d4cb0";
@@ -263,10 +264,12 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
 }
 
 // ---- 3. Switch off: the page line's tool surface is unchanged ----------------
-// The one intended difference from the page line: viz_plan's and viz_chain's measure_semantics is the full schema again (the page line
-// registers a weaker duplicate). Mask only that property here; test_viz_plan_schema.mjs asserts the full schema itself.
+// Two intended differences from the page line, both only in viz_plan and viz_chain. measure_semantics is the full schema again (the page
+// line registers a weaker duplicate). strip_plot, stacked_bar_100 and mirrored_bar are wired into the plan path: three chart_type values,
+// fourteen fields, three guideline sentences (scripts/lib_viz_form_wiring.mjs removes exactly those). Mask only these here;
+// test_viz_plan_schema.mjs asserts the full measure_semantics schema and the form wiring itself.
 const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsroom_viz_chain"].includes(name) && parameters?.properties?.measure_semantics ? { ...parameters, properties: { ...parameters.properties, measure_semantics: "masked" } } : parameters);
-const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) })]);
+const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) }, maskFor(name))]);
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
 if (!baseline) console.log(`git history for ${BASELINE} is unavailable; skipping the comparison with the page line`);
@@ -311,17 +314,24 @@ if (baseline) {
       assert.equal(rc1.promptGuidelines.length, rc0.promptGuidelines.length + 1);
       assert.match(rc1.promptGuidelines.at(-1), /^A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain/);
       // newsroom_viz_plan: claim, claim_kind and claim_caveat follow claim_id; takeaway, alt and source_note become optional.
-      const [keys0, keys1] = [Object.keys(plan0.parameters.properties), Object.keys(plan1.parameters.properties)];
+      // The form wiring (fourteen more properties, three more chart_type values, a longer category_names description) is not what the switch
+      // changes: compare without it, and require the fourteen fields in the plan and, in the same order, in the chain.
+      const unwired = (value) => JSON.parse(JSON.stringify(value, formWiringMask));
+      const keys0 = Object.keys(plan0.parameters.properties);
+      const keys1 = Object.keys(plan1.parameters.properties).filter((key) => !FORM_FIELDS.includes(key));
+      assert.deepEqual(FORM_FIELDS.filter((key) => !(key in plan1.parameters.properties)), [], "the plan registers every form field");
       assert.deepEqual(keys1, keys0.flatMap((key) => (key === "claim_id" ? [key, "claim", "claim_kind", "claim_caveat"] : [key])), "the shared properties keep their order");
-      for (const key of keys0) if (!["takeaway", "alt", "source_note", "measure_semantics"].includes(key)) assert.deepEqual(plan1.parameters.properties[key], plan0.parameters.properties[key], `${key} is unchanged`);
+      for (const key of keys0) if (!["takeaway", "alt", "source_note", "measure_semantics"].includes(key)) assert.deepEqual(unwired(plan1.parameters.properties[key]), unwired(plan0.parameters.properties[key]), `${key} is unchanged`);
       assert.deepEqual(plan1.parameters.required, plan0.parameters.required.filter((key) => !["takeaway", "alt", "source_note"].includes(key)));
       for (const key of ["claim", "claim_kind", "claim_caveat", "takeaway", "alt", "source_note"]) assert.ok(plan1.parameters.properties[key].__optional, `${key} is optional`);
       assert.deepEqual(plan1.parameters.properties.claim_kind.enum, rc1.parameters.properties.claim_kind.enum, "the same claim kinds as record_claim");
       assert.match(plan1.parameters.properties.claim.description, /\{max\.col\.other\}/);
-      assert.deepEqual(plan1.promptGuidelines.slice(0, plan0.promptGuidelines.length), plan0.promptGuidelines);
-      assert.match(plan1.promptGuidelines.at(-1), /^To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id/);
+      const guidelines1 = plan1.promptGuidelines.filter((line) => !FORM_GUIDELINE.test(line));
+      assert.deepEqual(guidelines1.slice(0, plan0.promptGuidelines.length), plan0.promptGuidelines);
+      assert.match(guidelines1.at(-1), /^To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id/);
       // The chain takes the plan's parameters, so it takes the claim too.
-      assert.deepEqual(Object.keys(chain1.parameters.properties), [...keys1, "computation_ref"]);
+      assert.deepEqual(Object.keys(chain1.parameters.properties).filter((key) => !FORM_FIELDS.includes(key)), [...keys1, "computation_ref"]);
+      assert.deepEqual(Object.keys(chain1.parameters.properties).filter((key) => FORM_FIELDS.includes(key)), Object.keys(plan1.parameters.properties).filter((key) => FORM_FIELDS.includes(key)), "the chain takes the plan's form fields in the same order");
       assert.deepEqual(chain1.parameters.required, plan1.parameters.required);
       assert.match(chain1.description, /With claim and claim_kind instead of claim_id/);
     }

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { maskFor } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -114,13 +115,15 @@ const baseSource = process.env.BASELINE_NEWSROOM_TS ? readFileSync(process.env.B
 assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");
 const mod = await loadTree("head");
 const baseMod = await loadTree("base", baseSource);
-const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines });
+const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines }, mask);
 
 { // switch off: identical definitions; switch on: only the four setup tools (+ plan guideline) change
   const base = register(baseMod, {});
   const off = register(mod, {});
   assert.deepEqual([...off.keys()], [...base.keys()]);
-  for (const [name, tool] of base) assert.equal(slim(off.get(name)), slim(tool), `switch off: ${name} is byte-identical to the integration head`);
+  // The viz tools carry the wiring of strip_plot, stacked_bar_100 and mirrored_bar (scripts/lib_viz_form_wiring.mjs masks exactly that;
+  // test_viz_plan_schema.mjs asserts it); every other tool, and everything else of the viz tools, must equal the baseline.
+  for (const [name, tool] of base) assert.equal(slim(off.get(name), maskFor(name)), slim(tool, maskFor(name)), `switch off: ${name} is byte-identical to the integration head`);
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();

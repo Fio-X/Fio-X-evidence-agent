@@ -24,6 +24,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { formWiringMask } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
@@ -106,7 +107,7 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines });
+const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines }, mask);
 const dropDescriptions = (schema) => JSON.stringify(schema, (k, v) => (k === "description" && typeof v === "string" ? undefined : v));
 function descriptionPaths(node, path = "", out = {}) {
   if (Array.isArray(node)) node.forEach((v, i) => descriptionPaths(v, `${path}[${i}]`, out));
@@ -126,16 +127,20 @@ const EXPECTED_DESCRIPTIONS = {
 // Default-on tool changes approved after a4d4cb0. For a listed tool the switch-off definition may differ from the baseline
 // only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
 // property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
+// newsroom_viz_plan has a second approved change, the wiring of strip_plot, stacked_bar_100 and mirrored_bar into the plan path:
+// its mask (scripts/lib_viz_form_wiring.mjs) removes exactly the three chart_type values, the fourteen form fields, the three form
+// names in the category_names description and the three form guideline lines from both sides before they are compared.
+// test_viz_plan_schema.mjs asserts that wiring against schemas/newsroom-viz-spec.schema.json.
 const APPROVED_LATER = {
-  newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"] },
+  newsroom_viz_plan: { commit: "b38a345 and the form wiring", path: ["properties", "measure_semantics"], mask: formWiringMask },
 };
-const withPathCleared = (tool, path) => {
+const withPathCleared = (tool, path, mask) => {
   const parameters = JSON.parse(JSON.stringify(tool.parameters));
   let node = parameters;
   for (const key of path.slice(0, -1)) node = node?.[key];
   const had = node && path[path.length - 1] in node;
   if (had) node[path[path.length - 1]] = null;
-  return { had, slim: slim({ ...tool, parameters }) };
+  return { had, slim: slim({ ...tool, parameters }, mask) };
 };
 function checkDefinitions(mod, { quiet = false } = {}) {
   let pairs = 0, delta = 0;
@@ -152,7 +157,7 @@ function checkDefinitions(mod, { quiet = false } = {}) {
       for (const name of base.keys()) {
         const approved = APPROVED_LATER[name];
         if (!approved) { assert.equal(slim(off.get(name)), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
-        const [o, b] = [withPathCleared(off.get(name), approved.path), withPathCleared(base.get(name), approved.path)];
+        const [o, b] = [withPathCleared(off.get(name), approved.path, approved.mask), withPathCleared(base.get(name), approved.path, approved.mask)];
         assert.ok(o.had && b.had, `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
         assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${approved.path.join(".")} (approved change ${approved.commit})`);
         assert.notEqual(slim(off.get(name)), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
