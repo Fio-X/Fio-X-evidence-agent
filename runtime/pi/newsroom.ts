@@ -196,6 +196,9 @@ const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_con
 const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
 const EDITORIAL_HINT_VERIFIED_LIMIT = 12;
 const EDITORIAL_HINT_CLAIM_TEXT_CHARS = 60;
+// Always on, not a speed switch: wording only. The words a model reaches for that are not in the quantity_kind enum
+// (level, rate, change, index), mapped onto it. The enum and the validators that read it are unchanged. At most 160 bytes.
+const QUANTITY_KIND_HINT = "For a measured level or rate use rate or other; for a change in a stock use stock_change; for an index use index.";
 
 // The suffix after the unchanged first sentence of the story-graph refusal. It is built only after the unchanged
 // check has decided to refuse, reads claims.jsonl and writes nothing. Every pair that failed the check is listed,
@@ -4382,7 +4385,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       field: Type.String(), role: StringEnum(["quantitative", "categorical", "identity", "emphasis", "uncertainty"] as const),
     }), ruleHint(RULE_HINT_CHANNELS, { maxItems: 12 }))),
     quantitative_encoding: Type.Optional(Type.Object({
-      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const),
+      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const, { description: QUANTITY_KIND_HINT }),
       mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width", "color"] as const),
       scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const),
       baseline_policy: StringEnum(["zero", "symmetric_zero", "included", "not_applicable"] as const),

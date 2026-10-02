@@ -120,20 +120,29 @@ const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description
   const base = register(baseMod, {});
   const off = register(mod, {});
   assert.deepEqual([...off.keys()], [...base.keys()]);
-  // One approved difference since the integration head (fast-fail-1003 item 3, one explanatory_dimension vocabulary): semantic novelty and the
-  // infographic plan take every story-graph value. Only that enum may differ, and it must still differ (drop the entry if it is reverted).
-  const DIMENSION_ENUM_TOOLS = new Set(["newsroom_semantic_novelty", "newsroom_infographic_plan"]);
-  const withoutDimensionEnum = (tool) => {
+  // Approved differences since the integration head (fast-fail-1003): item 3, one explanatory_dimension vocabulary (semantic novelty and
+  // the infographic plan take every story-graph value) and item 4 (one guidance clause on the infographic plan's quantity_kind). Only
+  // these paths may differ, and each must really differ (drop the entry if it is reverted); everything else stays byte-identical.
+  const MODULE = ["properties", "modules", "items", "properties"];
+  const DIMENSION_ENUM = [...MODULE, "explanatory_dimension", "enum"];
+  const QUANTITY_KIND_DESCRIPTION = [...MODULE, "quantitative_encoding", "properties", "quantity_kind", "description"];
+  const APPROVED = { newsroom_semantic_novelty: [DIMENSION_ENUM], newsroom_infographic_plan: [DIMENSION_ENUM, QUANTITY_KIND_DESCRIPTION] };
+  const parentOf = (tool, path) => path.slice(0, -1).reduce((node, key) => node?.[key], tool.parameters);
+  const withoutApproved = (tool) => {
     const parameters = JSON.parse(JSON.stringify(tool.parameters));
-    const field = parameters?.properties?.modules?.items?.properties?.explanatory_dimension;
-    assert.ok(Array.isArray(field?.enum), `${tool.name} keeps its explanatory_dimension enum`);
-    field.enum = null;
+    for (const path of APPROVED[tool.name]) {
+      const parent = path.slice(0, -1).reduce((node, key) => node?.[key], parameters);
+      assert.ok(parent && typeof parent === "object", `${tool.name} keeps ${path.slice(0, -1).join(".")}`);
+      parent[path.at(-1)] = null;
+    }
     return slim({ ...tool, parameters });
   };
   for (const [name, tool] of base) {
-    if (!DIMENSION_ENUM_TOOLS.has(name)) { assert.equal(slim(off.get(name)), slim(tool), `switch off: ${name} is byte-identical to the integration head`); continue; }
-    assert.equal(withoutDimensionEnum(off.get(name)), withoutDimensionEnum(tool), `switch off: ${name} is byte-identical to the integration head outside the explanatory_dimension enum`);
-    assert.notEqual(slim(off.get(name)), slim(tool), `${name}: the explanatory_dimension enum differs from the integration head (approved change)`);
+    if (!APPROVED[name]) { assert.equal(slim(off.get(name)), slim(tool), `switch off: ${name} is byte-identical to the integration head`); continue; }
+    assert.equal(withoutApproved(off.get(name)), withoutApproved(tool), `switch off: ${name} is byte-identical to the integration head outside ${APPROVED[name].map((path) => path.at(-1)).join(" and ")}`);
+    assert.ok(Array.isArray(parentOf(off.get(name), DIMENSION_ENUM).enum) && Array.isArray(parentOf(tool, DIMENSION_ENUM).enum), `${name} keeps its explanatory_dimension enum`);
+    assert.notDeepEqual(parentOf(off.get(name), DIMENSION_ENUM).enum, parentOf(tool, DIMENSION_ENUM).enum, `${name}: the explanatory_dimension enum differs from the integration head (approved change)`);
+    if (APPROVED[name].includes(QUANTITY_KIND_DESCRIPTION)) assert.ok(typeof parentOf(off.get(name), QUANTITY_KIND_DESCRIPTION).description === "string" && parentOf(tool, QUANTITY_KIND_DESCRIPTION).description === undefined, `${name}: quantity_kind has a description now and had none (approved change)`);
   }
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);

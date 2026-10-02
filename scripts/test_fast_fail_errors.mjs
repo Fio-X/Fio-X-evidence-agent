@@ -12,6 +12,8 @@
 //      Semantic novelty scoring is pinned by a digest taken on the commit before
 //      the change (regenerate with: node scripts/test_fast_fail_errors.mjs
 //      --novelty-digest <dir holding editorial.mjs>).
+//   4. quantity_kind (infographic plan) carries one clause of at most 160 bytes
+//      mapping the values a model reaches for onto the enum; the enum is unchanged.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -482,6 +484,22 @@ try {
     assert.equal(overlap(value, other), 0, `${value} vs ${other}`);
   }
   check("semantic novelty scoring is unchanged for the ten original values (600-artifact digest equals abd9d8b) and equality-only for outcome and relationship");
+}
+
+// ---------------------------------------------------------------- 4. quantity_kind guidance
+{
+  const tools = await freshTools({});
+  const encoding = tools.get("newsroom_infographic_plan").parameters.properties.modules.items.properties.quantitative_encoding;
+  const kind = encoding.properties.quantity_kind;
+  // Wording only: the enum is what it was on abd9d8b, so the values a model reaches for are still refused by the schema.
+  assert.deepEqual(kind.enum, ["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"]);
+  for (const reached of ["level", "change", "rate_of_change", "measure"]) assert.ok(!kind.enum.includes(reached), `${reached} is still not a value`);
+  assert.ok(Buffer.byteLength(kind.description) <= 160, `the clause is at most 160 bytes (${Buffer.byteLength(kind.description)})`);
+  // What the clause names must exist: a renamed enum value makes this fail instead of leaving a stale hint.
+  for (const named of kind.description.match(/\b(?:rate|other|stock_change|index)\b/g)) assert.ok(kind.enum.includes(named), `the clause names '${named}', which is in the enum`);
+  assert.equal(kind.description, "For a measured level or rate use rate or other; for a change in a stock use stock_change; for an index use index.");
+  for (const [key, field] of Object.entries(encoding.properties)) if (key !== "quantity_kind") assert.equal(field.description, undefined, `${key} gained no description`);
+  check("quantity_kind carries one clause of at most 160 bytes that maps level/rate, change in a stock and index onto rate|other, stock_change and index; the enum is unchanged");
 }
 
 for (const name of results) console.log(`${name} -- PASS`);
