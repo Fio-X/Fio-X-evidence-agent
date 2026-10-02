@@ -187,7 +187,7 @@ const rejects = (template, pattern, rows, measures = []) => assert.throws(() => 
   rejects("{first.change}", /selects a null value \(row 0\)/, series, ["rate"]);
   rejects("{last.change_total}", /no column 'change_total'/, series, ["rate"]);
   const ranking = [["Alpha", 1, 91.5], ["Beta", 2, 80.25], ["Gamma", 3, 80.25], ["Delta", 4, 12]].map(([name, rank, score]) => ({ name, rank, score }));
-  assert.equal(fillClaimTemplate("{first.name} ranks first with {first.score|1}; {name@rank=2} is second at {score@rank=2|2}; {last.name} is last with {last.score}.", ranking, ["score"]).text, "Alpha ranks first with 91.5; Beta is second at 80.25; Delta is last with 12.");
+  assert.equal(fillClaimTemplate("{first.name} leads with {first.score|1}; {name@rank=2} is second at {score@rank=2|2}; {last.name} is last with {last.score}.", ranking, ["score"]).text, "Alpha leads with 91.5; Beta is second at 80.25; Delta is last with 12.");
   rejects("{max.score.name}", /4 rows tie for the highest score \(row_index 0, 1, 2, 3\), so name of "the" max row is ambiguous/, ranking.map((row) => ({ ...row, score: 91.5 })), ["score"]);
   rejects("{name@score=80.25}", /2 result rows have score = 80\.25 \(row_index 1, 2\), so the lookup names no single row/, ranking, ["score"]);
   const share = [["Rent", 31.2], ["Food", 12.8], ["Other", 56]].map(([segment, share_pct]) => ({ segment, share_pct }));
@@ -624,6 +624,26 @@ if (!missingDependency) {
       ["Arabic-Indic digits", shape.template.replace(yearHole, "\u0662\u0660\u0662\u0661"), "\u0662\u0660\u0662\u0661"],
     ]) await refused(`typed: ${label}`, withClaim(claim), typed(digits));
     check("refused, nothing recorded: typed numbers (agreeing, disagreeing, a year, a count, full-width and Arabic-Indic digits)");
+  }
+
+  { // a number written in words is refused like a typed one, and the whole tree stays as it was
+    const words = (near) => new RegExp(`^Error: CLAIM_TEMPLATE_ERROR: the claim has a number word \\(near "[^"]*${near}[^"]*"\\); a number written in words is still a number no row backs`);
+    for (const [label, claim, near] of [
+      ["Chinese count word", shape.template.replace("Among the African", "Among the 十个 African"), "十个"],
+      ["English count word", shape.template.replace("Among the African", "Among the ten African"), "ten"],
+      ["a fraction", shape.template.replace("Among the African", "Two-thirds of the African"), "Two-thirds"],
+    ]) {
+      refusals += 1;
+      const story = seed(`refused-${refusals}`, shape);
+      // the chain's own event log notes the refusal; every other file must be untouched
+      const tree = () => listing(story.dir).filter(([file]) => file !== "runtime/tool-chain-events.jsonl");
+      const before = tree();
+      const tools = register(mod, ON_ENV);
+      await assert.rejects(() => callWith(tools, "newsroom_viz_chain", inline({ claim })(story, shape)), words(near), label);
+      assert.deepEqual(tree(), before, `${label}: the tree is unchanged`);
+      assert.deepEqual(recorded(story.dir), [], `${label}: nothing is recorded`);
+    }
+    check("refused, nothing recorded, tree unchanged: number words (Chinese count, English count, fraction)");
   }
 
   { // placeholders that name no single row, or no row, or no column

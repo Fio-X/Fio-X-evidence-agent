@@ -39,6 +39,7 @@ import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
+import { numberWordIn } from "./number_words.mjs";
 import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -1857,6 +1858,8 @@ export function fillClaimTemplate(template: string, rows: Record<string, unknown
   if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) throw claimTemplateError(`the claim has an unmatched { or }; placeholders look like ${CLAIM_TEMPLATE_GRAMMAR}`);
   const typed = literalNumberIn(template);
   if (typed !== null) throw claimTemplateError(`the claim has a typed number (near "${typed}"); every number, years included, must be a placeholder so that no number is transcribed. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}`);
+  const worded = numberWordIn(template);
+  if (worded !== null) throw claimTemplateError(`the claim has a number word (near "${worded}"); a number written in words is still a number no row backs. Drop it, or select it in the SQL (for example COUNT(*) AS n) and write a placeholder such as {first.n}. A scale or unit word right after a placeholder, as in {max.x} million, is fine.`);
   if (!Array.isArray(rows) || rows.length === 0) throw claimTemplateError("the plan SQL returned no rows, so no placeholder can be filled");
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))];
   const ranked = measures.filter((name) => columns.includes(name));
@@ -2265,6 +2268,8 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     if (/[{}]/.test(src.replace(/\{[^{}]*\}/g, ""))) throw new Error(`HERO_TEMPLATE_INVALID: hero_stat '${id}' ${field} has an unmatched { or }`);
     const near = literalNumberIn(src);
     if (near !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}`);
+    const wordedNear = numberWordIn(src);
+    if (wordedNear !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`);
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
     for (const placeholder of new Set(placeholders)) filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
