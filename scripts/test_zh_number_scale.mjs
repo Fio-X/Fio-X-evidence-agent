@@ -36,9 +36,10 @@ assert.equal(fmt(12000), "12k");
 assert.equal(fmt(1.2e8), "120m");
 assert.equal(fmt(3.5e9), "3.5bn");
 assert.equal(tickLabel(2000), "2k");
-// decimals branch is shared and unchanged in both languages
-assert.equal(fmtSpec(zh, 67500, "", 1), fmtSpec(en, 67500, "", 1));
-assert.equal(fmtSpec(zh, 67500, "", 1), "67,500.0");
+// shared-decimals branch: English is unchanged; zh labels from 1万 up use the
+// axis's 万/亿 scaling (round-3 rule), never comma-grouped digits
+assert.equal(fmtSpec(en, 67500, "", 1), "67,500.0");
+assert.equal(fmtSpec(zh, 67500, "", 1), "6.75万");
 
 // charts
 const base = {
@@ -48,11 +49,12 @@ const base = {
 const bars = ["甲", "乙", "丙", "丁"].map((category, i) => ({ category, value: [3.5e9, 1.2e9, 8.4e8, 1.1e8][i] }));
 const barSpec = (language) => ({ ...base, language, reader_task: "ranking", chart_type: "horizontal_bar", category_field: "category", value_field: "value", sort: "desc" });
 const barZh = renderVizBundle(barSpec("zh"), bars, { mobilePages: false }).desktop;
-// axis ticks take 亿; the value labels here carry a shared integer decimals count, whose
-// comma-grouped branch is unchanged in both languages
+// axis ticks take 亿; the value labels carry a shared integer decimals count, and since
+// round 3 a zh label from 1万 up takes the same scaling instead of comma-grouped digits
 assert.match(barZh, />10亿</, "zh bar tick");
 assert.match(barZh, />30亿 元</, "zh bar tick with unit");
-assert.match(barZh, />3,500,000,000 元</, "zh bar value label (shared-decimals branch) unchanged");
+assert.match(barZh, />35亿 元</, "zh bar value label uses 亿 like the axis");
+assert.doesNotMatch(barZh, />3,500,000,000/, "no comma-grouped billions in the zh bar");
 assert.doesNotMatch(barZh, />\d+(\.\d+)?(k|m|bn)\b/, "no k/m/bn text in the zh bar");
 const barEn = renderVizBundle(barSpec("en"), bars, { mobilePages: false }).desktop;
 assert.match(barEn, />1bn</, "en bar ticks still use bn");
