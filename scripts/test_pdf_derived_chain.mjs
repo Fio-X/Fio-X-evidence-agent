@@ -207,6 +207,30 @@ try {
   { const why = "no download record binds this table to the PDF"; rmSync(originPath); await jsFails("missing origin", why); rustFails("missing origin", why); restore(); }
   assert.equal(claimsOnDisk().length, before, "no claim recorded while the chain was broken");
 
+  // The derived ref cited directly (it is named for the PDF, not for its own bytes).
+  {
+    const walkAll = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkAll(join(d, e.name)) : [join(d, e.name)]));
+    const treeOf = () => Object.fromEntries(walkAll(art).map((f) => [f, sha(readFileSync(f))]));
+    const cite = () => claim.execute("c", { claim: "page subtotals reconcile, citing the rows", claim_kind: "quantitative", status: "supported", source_refs: [target.rowsRef], computation_refs: [target.compRef] });
+    const refuses = async (label, pattern) => {
+      const kept = treeOf();
+      await assert.rejects(cite(), pattern, label);
+      assert.deepEqual(treeOf(), kept, `${label}: nothing persisted`);
+    };
+    const DER = /INVALID_SOURCE_EVIDENCE: data bytes do not match their record \(derived /;
+    writeFileSync(rowsPath, keep.rows.toString("utf8").replace('"text":"Alpha', '"text":"Alphx'));
+    await refuses("rows changed, meta unchanged", /derived rows differ from rows_sha256/); restore();
+    writeFileSync(metaPath, JSON.stringify({ ...json(keep.meta), source_sha256: "0".repeat(64) }));
+    await refuses("meta names another source_sha256", /derived metadata names another source sha256/); restore();
+    writeFileSync(metaPath, JSON.stringify({ ...json(keep.meta), rows_file: `data/derived/${"1".repeat(64)}.pdf-rows.json` }));
+    await refuses("meta describes another rows_file", /derived metadata describes another rows file/); restore();
+    rmSync(metaPath);
+    await refuses("meta missing", /derived metadata is missing or unreadable/); restore();
+    void DER;
+    await cite();
+    assert.equal(claimsOnDisk().at(-1).status, "verified", "a claim citing the derived ref directly records as verified");
+    assert.deepEqual(claimsOnDisk().at(-1).source_refs, [target.rowsRef]);
+  }
   // Everything restored: chain verifies again (must-pass counterpart).
   assert.equal((await verifyDerivedInput(art, target.rowsRef)).ok, true);
   if (haveRust) assert.equal(rustVerify().status, 0, "restored chain passes Rust verify again");
