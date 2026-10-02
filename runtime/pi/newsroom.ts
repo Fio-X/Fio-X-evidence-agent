@@ -1990,6 +1990,15 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   const declared = new Set(Object.keys(registeredTools.get("newsroom_viz_plan")?.parameters?.properties ?? {}));
   const unknown = Object.keys(plan).filter((key) => !declared.has(key));
   if (unknown.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: ${unknown.slice(0, 8).join(", ")} ${unknown.length === 1 ? "is" : "are"} not a newsroom_viz_plan parameter; verification, publishable, status, passed, hash and artifact fields are written by the runtime and never taken from a call`);
+  // The claim id is the runtime's: an annotation that names one, or a claim_spec
+  // that carries refs of its own, is a forged reference, not a shortcut.
+  if (Array.isArray(plan.annotations) && plan.annotations.some((annotation: any) => annotation && typeof annotation === "object" && String(annotation.claim_id ?? "").trim())) {
+    throw new Error("INLINE_CLAIM_FIELD_NOT_ACCEPTED: an annotation names a claim_id, but this call records its own claim; the runtime binds the annotations to it, so leave claim_id out of the annotations");
+  }
+  if (plan.claim_spec && typeof plan.claim_spec === "object") {
+    const forged = Object.keys(plan.claim_spec).filter((key) => /(^|_)(refs?|verified|verification|status|publishable|hash)(_|$)/i.test(key));
+    if (forged.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: claim_spec.${forged.slice(0, 4).join(", claim_spec.")} cannot be set here; the runtime writes refs, status and verification`);
+  }
   inlineClaimAborted(signal);
   const safeSql = computationSql(String(rawParams.sql ?? ""));
   const snapshot = await evidenceSnapshot();
