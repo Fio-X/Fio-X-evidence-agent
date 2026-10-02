@@ -1632,6 +1632,8 @@ const HIGHLIGHT_NAME_FIELD = {
   slope: "category_field",
   multi_line: "series_field",
   scatter: "label_field",
+  strip_plot: "category_field", // paints highlight_values on a whole group (or on a unit named by label_field)
+  mirrored_bar: "category_field",
 };
 const HIGHLIGHT_HINT_MAX_NAMES = 4;
 const HIGHLIGHT_HINT_MIN_NAME_LENGTH = 2;
