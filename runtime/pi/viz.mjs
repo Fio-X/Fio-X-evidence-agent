@@ -5,7 +5,7 @@ import { checkSvgGeometry } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1083,6 +1083,18 @@ function resolveChartDecimals(spec, values) {
   return autoValueDecimals(values);
 }
 
+// zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
+// four significant digits (161.1万, -325.6万, 1.611亿, 1611万), never a trailing
+// zero. Exported so a hero number can print through the same formatter.
+export function zhScaleText(value) {
+  const abs = Math.abs(value);
+  const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+  const v = abs / div;
+  const d = v >= 1000 ? 0 : v >= 100 ? 1 : v >= 10 ? 2 : 3;
+  const text = (value < 0 ? "-" : "") + String(Number((v).toFixed(d)));
+  return `${text}${suffix}`;
+}
+
 export function fmt(value, unit = "", decimals = null, lang = "en") {
   if (!Number.isFinite(value)) return "";
   // House style only: a percent value always prints one decimal (83.0%,
@@ -1099,6 +1111,12 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     // strips trailing zeros: every label in the chart must show exactly the
     // same number of decimal places (0.720 must stay "0.720", not "0.72").
     text = value.toFixed(decimals);
+    if (lang === "zh" && abs >= 10_000) {
+      text = zhScaleText(value);
+    } else if (abs >= 1_000 && decimals >= 2 && /\.0+$/.test(text)) {
+      // a value in the thousands never ends in ".00"
+      text = text.replace(/\.0+$/, "");
+    }
     // Fix 2 follow-up (b): toFixed() never groups the integer part, and a
     // resolved decimals count takes this branch instead of the magnitude
     // branches below (whose own abbreviations - "k"/"m"/"bn" - never need
@@ -1106,7 +1124,7 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     // instead of "67,500". Group only the integer part, only for |value| >=
     // 10,000 (the reported threshold), so a value below it (e.g. 9999) is
     // unaffected and stays byte-identical to before this fix.
-    if (abs >= 10_000) {
+    if (abs >= 10_000 && !(lang === "zh")) {
       const [intPart, fracPart] = text.replace("-", "").split(".");
       const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
       text = (value < 0 ? "-" : "") + grouped + (fracPart !== undefined ? `.${fracPart}` : "");
@@ -2211,11 +2229,11 @@ export function vizLang(spec) {
 // logScale and group are standalone chrome words.
 const VIZ_STRINGS = {
   en: {
-    note: "Note: ", source: "Source: ", logScale: "log scale", group: "Group: ",
+    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (b) => `base = ${b}`, rankOutside: (r) => `#${r}`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
   },
   zh: {
-    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", group: "\u5206\u7EC4\uFF1A",
+    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (b) => `\u57FA\u671F = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
   },
 };
@@ -2911,16 +2929,47 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null) {
-  const ticks = tickValues(domain, 4);
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null) {
+  let ticks = tickValues(domain, 4);
+  // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
+  // zero-straddling axis that holds at least a quarter of the span gets at
+  // least two labelled ticks (0 counts as one), and no tick label may cross
+  // the SVG frame (it is slid inside, still as close to its tick as it fits).
+  if (frameW !== null && domain[0] < 0 && domain[1] > 0) {
+    const span = domain[1] - domain[0];
+    const nice = (extent) => {
+      let best = null;
+      for (let power = Math.floor(Math.log10(extent)) - 1; power <= Math.floor(Math.log10(extent)); power++) {
+        for (const f of [1, 2, 5]) { const v = f * 10 ** power; if (v <= extent + 1e-9 && (best === null || v > best)) best = v; }
+      }
+      return best;
+    };
+    const have = new Set(ticks.map((t) => Math.round(t * 1e9) / 1e9));
+    if (!have.has(0)) { ticks = [...ticks, 0]; have.add(0); }
+    for (const sign of [-1, 1]) {
+      const extent = sign < 0 ? -domain[0] : domain[1];
+      if (extent / span < 0.25) continue;
+      if (ticks.some((t) => t * sign > 1e-9)) continue;
+      const v = nice(extent);
+      if (v) ticks = [...ticks, sign * v];
+    }
+    ticks = [...ticks].sort((a, b) => a - b);
+  }
+  const scaleX = horizontalScale(domain, left, right);
   ticks.forEach((tick, i) => {
-    const x = horizontalScale(domain, left, right)(tick);
+    const x = scaleX(tick);
     if (!LAYERING_FIX) {
       parts.push(`<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
     }
     // Fix 3: the unit shows once, on the last (right-most) tick, not on
     // every one - see axisTickUnit.
-    parts.push(`<text x="${x}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length)))}</text>`);
+    const label = tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length));
+    let labelX = x;
+    if (frameW !== null) {
+      const half = (textUnits(label) * 12 * 0.56) / 2 + 2;
+      labelX = Math.min(Math.max(x, 8 + half), frameW - 8 - half);
+    }
+    parts.push(`<text x="${labelX}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(label)}</text>`);
   });
 }
 
@@ -3082,7 +3131,7 @@ function renderHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -3167,7 +3216,7 @@ function renderDumbbell(spec, rows) {
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
   {
     // Key: which dot is which period (start colour first, then end colour).
     const keyY = f.bodyTop + 4 + 12, KEY_PX = 6.4;
@@ -3201,7 +3250,63 @@ function renderDumbbell(spec, rows) {
 // between two end labels sharing the same x column.
 const END_LABEL_MIN_GAP = 18;
 
+// Rank slope (bump chart). Opt-in through spec.rank_cutoff = N: the start and
+// end fields hold ranks (1 = best). Axis inverted so rank 1 is on top; one
+// ordinal row per rank 1..N, and an entity outside the top N at one end sits on
+// the shared "N+1" row with its true rank in the label (第13名). The name is
+// printed at both ends; an entity that enters the top N is coloured and tagged
+// 新进, one that drops out 跌出. An entity outside the top N at both ends is not
+// drawn (it is in neither list).
+function renderRankSlope(spec, rows, cutoff) {
+  const lang = vizLang(spec);
+  const T = VIZ_STRINGS[lang];
+  const rankOf = (v) => { const r = n(v); return r !== null && r >= 1 ? Math.round(r) : null; };
+  const entries = rows
+    .map((row, i) => ({ row, i, a: rankOf(row[spec.start_field]), b: rankOf(row[spec.end_field]) }))
+    .filter((e) => e.a !== null && e.b !== null && (e.a <= cutoff || e.b <= cutoff));
+  const outsideCount = (key) => entries.filter((e) => e[key] > cutoff).length;
+  const stack = Math.max(1, outsideCount("a"), outsideCount("b"));
+  const ROW = 30, STACK = 17;
+  const f = frame(spec, Math.max(300, (cutoff + 1) * ROW + (stack - 1) * STACK + 70));
+  const left = 250, right = 790, top = f.bodyTop + 24;
+  const rowY = (rank) => top + (Math.min(rank, cutoff + 1) - 1) * ROW;
+  const name = (e) => resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, lang);
+  const joinColor = HOUSE_STYLE_ACTIVE ? PALETTE.ink : PALETTE.accent2;
+  const leaveColor = PALETTE.accent;
+  const rankText = (r) => (r > cutoff ? T.rankOutside(r) : String(r));
+  f.parts.push(`<text x="${left}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.start_label ?? spec.start_field)}</text>`);
+  f.parts.push(`<text x="${right}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.end_label ?? spec.end_field)}</text>`);
+  // faint ordinal row guides: one per rank, the last one is the "N+1" row
+  for (let r = 1; r <= cutoff + 1; r++) f.parts.push(`<line data-role="rank-row" x1="${left}" y1="${rowY(r)}" x2="${right}" y2="${rowY(r)}" stroke="${PALETTE.grid}" stroke-width="0.5" stroke-dasharray="${r > cutoff ? "3 3" : "none"}"/>`);
+  const nextSlot = { a: 0, b: 0 };
+  const placed = entries
+    .slice().sort((p, q) => (p.a - q.a) || (p.b - q.b))
+    .map((e) => {
+      const slot = (key) => (e[key] > cutoff ? nextSlot[key]++ : 0);
+      return { ...e, y1: rowY(e.a) + slot("a") * STACK, y2: rowY(e.b) + slot("b") * STACK };
+    });
+  const marks = [];
+  placed.forEach((e) => {
+    const category = String(e.row[spec.category_field] ?? "");
+    const highlighted = (spec.highlight_values ?? []).map(String).includes(category);
+    const entered = e.a > cutoff, dropped = e.b > cutoff;
+    const stroke = entered ? joinColor : dropped ? leaveColor : highlighted ? PALETTE.accent : PALETTE.context;
+    const width = highlighted || entered || dropped ? 2.5 : 1.5;
+    const role = entered ? "rank-join" : dropped ? "rank-leave" : "data-line";
+    marks.push(`<line data-role="${role}" x1="${left}" y1="${e.y1}" x2="${right}" y2="${e.y2}" stroke="${stroke}" stroke-width="${width}"/>`);
+    marks.push(`<circle cx="${left}" cy="${e.y1}" r="4" fill="${stroke}"/><circle cx="${right}" cy="${e.y2}" r="4" fill="${stroke}"/>`);
+    const weight = entered || dropped || highlighted ? 700 : 400;
+    marks.push(`<text data-role="rank-label-start" x="${left - 10}" y="${e.y1 + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="${weight}" fill="${PALETTE.ink}">${esc(`${name(e)}  ${rankText(e.a)}`)}</text>`);
+    const tag = entered ? `  ${T.rankEntered}` : dropped ? `  ${T.rankLeft}` : "";
+    marks.push(`<text data-role="rank-label-end" x="${right + 10}" y="${e.y2 + 4}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="${weight}" fill="${entered || dropped ? stroke : PALETTE.ink}">${esc(`${rankText(e.b)}  ${name(e)}${tag}`)}</text>`);
+  });
+  f.parts.push(...marks);
+  addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
+
 function renderSlope(spec, rows) {
+  const rankCutoff = Number(spec.rank_cutoff);
+  if (Number.isInteger(rankCutoff) && rankCutoff >= 2 && rankCutoff <= 30) return renderRankSlope(spec, rows, rankCutoff);
   const f = frame(spec, Math.max(300, rows.length * 26));
   const left = 250, right = 790, top = f.bodyTop + 10, bottom = f.bodyBottom - 25;
   const values = rows.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
@@ -3548,7 +3653,11 @@ function tagPanelTexts(parts, startIdx, box) {
 
 function renderSmallMultiples(spec, rows) {
   const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
-  const cols = facets.length === 1 ? 1 : 2;
+  // Rebased index panels (opt-in spec.index_base, e.g. 100): 7+ panels go 3-4
+  // columns wide, every panel gets a labelled base line and an end value, and
+  // the first column carries y tick labels.
+  const indexBase = spec.panel_mark !== "dot" && n(spec.index_base) !== null && n(spec.index_base) > 0 ? n(spec.index_base) : null;
+  const cols = facets.length === 1 ? 1 : indexBase !== null && facets.length >= 7 ? (facets.length >= 10 ? 4 : 3) : 2;
   const gapX = 34, gapY = 44;
 
   if (spec.panel_mark === "dot") {
@@ -3610,14 +3719,15 @@ function renderSmallMultiples(spec, rows) {
 
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
-  const panelW = 430, panelH = 230 + refMargin;
+  const idxLeft = indexBase !== null ? 54 + 40 : 70;
+  const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
   const rowsN = Math.ceil(facets.length / cols);
   const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20);
   const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const yDomain = extent(allY, false);
+  const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = 70 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -3630,6 +3740,16 @@ function renderSmallMultiples(spec, rows) {
       const y = yScale(tick);
       f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0 + panelW}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
     });
+    if (indexBase !== null) {
+      const by = yScale(indexBase);
+      f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
+      f.parts.push(`<text data-role="index-base-label" x="${x0 + panelW}" y="${by - 5}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0)))}</text>`);
+      if (col === 0) {
+        [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]].forEach((tick) => {
+          f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
+        });
+      }
+    }
     const sorted = [...group].sort((a, b) => xMap.get(String(a[spec.x_field])) - xMap.get(String(b[spec.x_field])));
     if (xs.length > 1) {
       const coords = sorted.map((r) => `${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");
@@ -3640,6 +3760,11 @@ function renderSmallMultiples(spec, rows) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.2" fill="${PALETTE.accent2}"/>`);
       pointAnnotations(spec, r).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: "right", layout: f.annotationLayout }));
     });
+    if (indexBase !== null && sorted.length) {
+      const last = sorted[sorted.length - 1];
+      const lv = n(last[spec.value_field]);
+      if (lv !== null) f.parts.push(`<text data-role="index-end-value" x="${x0 + panelW}" y="${yScale(lv) + (lv >= indexBase ? -9 : 17)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, lv, "", 1))}</text>`);
+    }
     if (xs.length > 1) {
       f.parts.push(`<text x="${x0}" y="${y0 + panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);
       f.parts.push(`<text x="${x0 + panelW}" y="${y0 + panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length - 1])}</text>`);
@@ -3693,7 +3818,43 @@ function renderScatter(spec, rows) {
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, px, py, { side: px > right - 180 ? "left" : "right", layout: f.annotationLayout, maxChars: 38, maxLines: 3 }));
   });
-  if (spec.x_scale === "log") f.parts.push(`<text x="${right}" y="${bottom + 50}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${VIZ_STRINGS[vizLang(spec)].logScale}</text>`);
+  // Auto labels (a scatter of many points names only its outliers): the two
+  // extremes on each axis (up to 8 distinct points, most extreme first), after
+  // the highlighted entities, capped so labelled points total about 8. Same
+  // collision-avoiding placer and leader as the highlighted labels.
+  const autoLabelField = spec.label_field ?? spec.category_field;
+  if (autoLabelField) {
+    const lang = vizLang(spec);
+    const highlightSet = new Set((spec.highlight_values ?? []).map(String));
+    const pts = rows.map((row) => ({ row, x: n(row[spec.x_field]), y: n(row[spec.y_field]), label: String(row[autoLabelField] ?? "") })).filter((p) => p.x !== null && p.y !== null && p.label);
+    const shown = new Set(pts.filter((p) => highlightSet.has(p.label)).map((p) => p.label));
+    const byX = [...pts].sort((a, b) => b.x - a.x), byY = [...pts].sort((a, b) => b.y - a.y);
+    const order = [];
+    for (let k = 0; k < 2; k++) order.push(byX[k], byX[byX.length - 1 - k], byY[k], byY[byY.length - 1 - k]);
+    const MAX_LABELLED = 8;
+    for (const p of order) {
+      if (!p || shown.size >= MAX_LABELLED) continue;
+      if (shown.has(p.label)) continue;
+      shown.add(p.label);
+      const px = xInfo.scale(p.x), py = yScale(p.y);
+      const labelSide = px > right - 150 ? "left" : "right";
+      const text = resolveEconomyDisplayName(p.label, spec.category_names, lang);
+      const placedLabel = f.annotationLayout.place(px, py, text, labelSide, 1);
+      if (Math.hypot(placedLabel.tx - px, placedLabel.ty - py) > 28) {
+        const leaderEnd = leaderEndShortOfLabel(px, py, placedLabel);
+        f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+      }
+      f.parts.push(`<text data-role="auto-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(text)}</text>`);
+    }
+  }
+  // 对数刻度 / log scale: said once per log axis. An axis title or the subtitle
+  // that already says it counts; the chart then adds nothing of its own.
+  {
+    const logWord = VIZ_STRINGS[vizLang(spec)].logScale;
+    const said = (text) => String(text ?? "").includes(logWord);
+    if (spec.x_scale === "log" && !said(spec.x_label) && !said(spec.subtitle)) f.parts.push(`<text x="${right}" y="${bottom + 50}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${logWord}</text>`);
+    if (spec.y_scale === "log" && !said(spec.y_label) && !said(spec.subtitle)) f.parts.push(`<text x="${left}" y="${top - 8}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${logWord}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
@@ -5449,7 +5610,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(n(item.row[spec.value_field]))
   );
   const values = joined.map((item) => n(item.row[spec.value_field]));
-  const breaks = niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) });
+  const classOpts = { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) };
+  const classPlan = mobile ? { breaks: niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, classOpts), skewed: false } : classBreaks(values, 5, classOpts);
+  const breaks = classPlan.breaks;
   const colorForValue = (value) => CHOROPLETH_RAMP[classifyValue(value, breaks)];
 
   const width = mobile ? 640 : 1040;
@@ -7560,12 +7723,14 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // live-bound match to that same shade) so it tracks the current style like
   // the rest of this renderer instead of staying frozen while everything
   // around it repaints under house/legacy.
+  let noDataDrawn = false;
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
   for (let index = 0; index < featureCount; index++) {
     const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
     if (!d) continue;
     const item = dataByIndex.get(index);
+    if (!item) noDataDrawn = true;
     const value = item ? n(item.row[spec.value_field]) ?? 0 : undefined;
     const fill = item ? colorForValue(value) : PALETTE.grid;
     // data-iso3/data-value: machine-readable proof for render_qa_labels.mjs's
@@ -7669,6 +7834,13 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     `<text x="${x.toFixed(1)}" y="${legendY + 26}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, edgeValue, unit))}</text>`;
   if (legendSingleValue) {
     f.parts.push(legendTick(values[0], plotLeft + 0.5 * legendStep, "middle", spec.unit));
+  } else if (classPlan.skewed) {
+    // Open-ended classes: the outer edges are only the data min/max, so they
+    // are never printed; the first and last swatches say "<e1" and ">=e4".
+    const e1 = breaks[1], e4 = breaks[breaks.length - 2];
+    f.parts.push(legendTick(e1, plotLeft + 0.5 * legendStep, "middle", "").replace(/>([^<]*)<\/text>/, (m, t) => `>&lt;${t}</text>`));
+    for (let i = 2; i < breaks.length - 2; i++) f.parts.push(legendTick(breaks[i], plotLeft + i * legendStep, "middle", ""));
+    f.parts.push(legendTick(e4, plotLeft + (legendClassCount - 0.5) * legendStep, "middle", spec.unit).replace(/>([^<]*)<\/text>/, (m, t) => `>\u2265${t}</text>`));
   } else if (legendOneValuePerClass) {
     for (let i = 0; i < shownClasses; i++) {
       f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === shownClasses - 1 ? spec.unit : ""));
@@ -7692,6 +7864,13 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     }
   }
   f.parts.push("</g>");
+  if (noDataDrawn && !mobile) {
+    // Regions drawn without a value are filled PALETTE.grid; name that fill.
+    // Its own group, so the legend group still holds only the class swatches.
+    const ndX = plotLeft + legendStep * CHOROPLETH_RAMP.length + 18;
+    f.parts.push(`<g data-role="choropleth-no-data"><rect data-role="choropleth-no-data-swatch" x="${ndX.toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${PALETTE.grid}"/>`);
+    f.parts.push(`<text data-role="choropleth-no-data-label" x="${(ndX + (legendStep - 2) / 2).toFixed(1)}" y="${legendY + 26}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[lang].noData)}</text></g>`);
+  }
 
   f.parts.push(...onMapParts);
   f.parts.push(...overflowParts);

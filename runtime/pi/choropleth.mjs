@@ -147,6 +147,9 @@ export function lintChoroplethSpec(spec, rows) {
       blockers.push(`choropleth inset.iso3 names ${unplotted.length} code(s) with no plotted data on this map: ${unplotted.slice(0, 8).join(", ")}`);
     }
   }
+  if (/\blimit\s+\d+/i.test(String(spec?.sql ?? ""))) {
+    warnings.push("choropleth rows come from a LIMIT query, so the map covers only a top-N slice while the source has more economies; map every economy with data and use a bar chart for a top list");
+  }
   return { blockers, warnings };
 }
 
@@ -584,6 +587,35 @@ export function niceBreaks(min, max, classes = 5, opts = {}) {
   // plain linear split so a caller always gets classes+1 finite numbers.
   const step = (hi - lo) / n;
   return Array.from({ length: n + 1 }, (_, i) => Math.round((lo + i * step) * 1e6) / 1e6);
+}
+
+/**
+ * Class edges for a choropleth. Unskewed data keeps niceBreaks' linear nice
+ * edges (unchanged). Right-skewed data (max at least 2.5x the 90th
+ * percentile, so one or two extreme values would leave nearly every region
+ * in the lightest equal-interval class) gets 1-2-5 geometric edges sized to
+ * the bulk of the data instead: the smallest 1-2-5 number at or above the
+ * 90th percentile closes the second-to-last class, and the three 1-2-5
+ * numbers below it open the others; the first class is open below and the
+ * last is open above (classifyValue already clamps into the end classes).
+ * Returns { breaks, skewed, openBottom, openTop }; `breaks` always has
+ * classes+1 ascending entries, the outer two being the data min and max.
+ */
+export function classBreaks(values, classes = 5, opts = {}) {
+  const nums = (values ?? []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  const min = nums.length ? nums[0] : 0;
+  const max = nums.length ? nums[nums.length - 1] : 1;
+  const linear = { breaks: niceBreaks(min, max, classes, opts), skewed: false, openBottom: false, openTop: false };
+  if (opts?.integer || classes !== 5 || nums.length < 6) return linear;
+  const q = (p) => { const pos = (nums.length - 1) * p; const lo = Math.floor(pos); return nums[lo] + (nums[Math.min(lo + 1, nums.length - 1)] - nums[lo]) * (pos - lo); };
+  const p90 = q(0.9);
+  if (!(p90 > 0) || !(max >= 2.5 * p90)) return linear;
+  const seq = [];
+  for (let power = -6; power <= 12; power++) for (const f of [1, 2, 5]) seq.push(f * 10 ** power);
+  const topIdx = seq.findIndex((v) => v >= p90 - 1e-12);
+  if (topIdx < 3) return linear;
+  const inner = seq.slice(topIdx - 3, topIdx + 1).map((v) => Math.round(v * 1e9) / 1e9);
+  return { breaks: [min, ...inner, max], skewed: true, openBottom: true, openTop: true };
 }
 
 // ---------------------------------------------------------------------------
