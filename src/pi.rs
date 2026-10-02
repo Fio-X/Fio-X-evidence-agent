@@ -59,6 +59,10 @@ pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
 pub const PREFLIGHT_ENV: &str = "NEWSROOM_SPEED_PREFLIGHT";
 /// Layout-only plan edits without re-sending the plan; the runtime reads the same name.
 pub const PLAN_EDIT_ENV: &str = "NEWSROOM_SPEED_PLAN_EDIT";
+/// Chart claims filled and recorded by the runtime from the chart's own SQL rows.
+/// Only exactly "1" counts, and only with the chart chain and atomic writes on;
+/// the runtime reads the same name and applies the same conditions.
+pub const INLINE_CLAIM_ENV: &str = "NEWSROOM_SPEED_INLINE_CLAIM";
 /// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
 pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
@@ -75,15 +79,22 @@ fn atomic_artifact_on() -> bool {
     std::env::var(ATOMIC_ARTIFACT_ENV).ok().as_deref() == Some("1")
 }
 
+// The runtime only accepts exactly "1" for this switch.
+fn inline_claim_on() -> bool {
+    std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
+}
+
 /// The turn-saving switches the parent environment asks for.
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
+    let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
     crate::prompt::PromptSpeed {
         parallel_hints: env_switch(PARALLEL_HINTS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
-        chain_viz: env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on(),
+        chain_viz,
         chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
         preflight: env_switch(PREFLIGHT_ENV),
         plan_edit: env_switch(PLAN_EDIT_ENV),
+        inline_claim: inline_claim_on() && chain_viz,
     }
 }
 
@@ -760,6 +771,11 @@ impl PiConfig {
             cmd.env(PLAN_EDIT_ENV, "1");
         } else {
             cmd.env_remove(PLAN_EDIT_ENV);
+        }
+        if self.speed.inline_claim {
+            cmd.env(INLINE_CLAIM_ENV, "1");
+        } else {
+            cmd.env_remove(INLINE_CLAIM_ENV);
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -1695,6 +1711,48 @@ mod tests {
         assert_eq!(edit_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(PLAN_EDIT_ENV);
         assert!(!speed_switches_from_env().plan_edit);
+    }
+
+    #[test]
+    fn inline_claim_switch_needs_the_chain_and_atomic_writes_and_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == INLINE_CLAIM_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(INLINE_CLAIM_ENV, "1");
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(!speed_switches_from_env().inline_claim, "needs the chart chain");
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        assert!(!speed_switches_from_env().inline_claim, "needs atomic writes");
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        assert!(speed_switches_from_env().inline_claim);
+        for not_one in ["true", "0", "", "yes", "1 "] {
+            std::env::set_var(INLINE_CLAIM_ENV, not_one);
+            assert!(!speed_switches_from_env().inline_claim, "{not_one:?}");
+        }
+        std::env::set_var(INLINE_CLAIM_ENV, "1");
+        // The child marker follows the config, never the parent.
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(marker(&config), Some(None));
+        config.speed.inline_claim = true;
+        assert_eq!(marker(&config), Some(Some("1".to_string())));
+        // It does not change the tool list: the chain tool carries the extra parameters.
+        let mut chain = visual_story_config(false, "visual-story");
+        chain.speed.chain_viz = true;
+        let without = chain.tools_arg();
+        chain.speed.inline_claim = true;
+        assert_eq!(chain.tools_arg(), without);
+        std::env::remove_var(INLINE_CLAIM_ENV);
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(!speed_switches_from_env().inline_claim);
     }
 
     #[test]
