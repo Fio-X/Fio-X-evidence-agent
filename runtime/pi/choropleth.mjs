@@ -103,6 +103,47 @@ export function joinChoroplethRows(rows, spec) {
  * (two rows resolving to the same iso3, which would colour/label the same
  * feature(s) twice with conflicting values).
  */
+/** True for the opt-in whole-world mode (`map_extent: "world"`). */
+export function isWorldExtent(spec) {
+  return spec?.map_extent === "world";
+}
+
+/** True when the SQL that produced the rows carries a LIMIT (a row slice, not the complete data). */
+export function hasSqlLimit(spec) {
+  return /\blimit\s+\d+/i.test(String(spec?.sql ?? ""));
+}
+
+/** World mode draws at most this many text labels on the map. */
+export const WORLD_LABEL_MAX = 8;
+
+/** Fixed frame for the world projection: Equal Earth over the populated latitudes (no Antarctica), never the data's bbox. */
+export const WORLD_FRAME_POINTS = [[-180, 0], [180, 0], [0, 84], [0, -58]];
+
+/** True for the basemap's Antarctica feature, which world mode leaves undrawn. */
+export function isAntarcticaFeature(index) {
+  return neFeatureAttributes(index)?.continent === "Antarctica";
+}
+
+/**
+ * The iso3 codes that carry a text label in world mode: the lowest and the
+ * highest value (ties: smallest iso3) plus every row named in
+ * highlight_values. `items` are joined, plottable rows. The renderer, the
+ * lint and render QA all call this, so they agree on who is labelled.
+ */
+export function worldLabelIso3s(items, spec) {
+  const out = new Set();
+  const list = (items ?? []).filter((item) => item?.iso3 && Number.isFinite(Number(item.row?.[spec?.value_field])));
+  if (!list.length) return out;
+  const val = (item) => Number(item.row[spec.value_field]);
+  const byValue = [...list].sort((a, b) => val(a) - val(b) || String(a.iso3).localeCompare(String(b.iso3)));
+  out.add(byValue[0].iso3);
+  const top = val(byValue[byValue.length - 1]);
+  out.add(byValue.find((item) => val(item) === top).iso3);
+  const highlights = new Set((spec?.highlight_values ?? []).map(String));
+  for (const item of list) if (highlights.has(String(item.row[spec.category_field]))) out.add(item.iso3);
+  return out;
+}
+
 export function lintChoroplethSpec(spec, rows) {
   const blockers = [];
   const warnings = [];
@@ -111,7 +152,9 @@ export function lintChoroplethSpec(spec, rows) {
     blockers.push("choropleth requires category_names to be 'worldbank' or 'iso3'");
   }
   const rowList = Array.isArray(rows) ? rows : [];
-  if (rowList.length > 60) blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
+  const world = isWorldExtent(spec);
+  if (!world && rowList.length > 60) blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
+  if (world && hasSqlLimit(spec)) blockers.push("choropleth map_extent 'world' needs every economy with data, but the SQL has a LIMIT - remove the LIMIT (or drop map_extent for a top-N slice)");
   if (!["worldbank", "iso3"].includes(categoryNames) || !spec?.category_field) return { blockers, warnings };
 
   const joined = joinChoroplethRows(rowList, spec);
@@ -133,6 +176,12 @@ export function lintChoroplethSpec(spec, rows) {
   if (duplicates.length) {
     const detail = duplicates.slice(0, 5).map(([iso3, raws]) => `${iso3} (${raws.join(", ")})`).join("; ");
     blockers.push(`choropleth category_field '${spec.category_field}' has ${duplicates.length} duplicate economy/economies mapping to the same map feature(s): ${detail}`);
+  }
+  if (world) {
+    const labelled = worldLabelIso3s(joined.filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[spec.value_field]))), spec);
+    if (labelled.size > WORLD_LABEL_MAX) {
+      blockers.push(`choropleth map_extent 'world' labels at most ${WORLD_LABEL_MAX} features (the range ends plus highlight_values) but ${labelled.size} would be labelled - shorten highlight_values`);
+    }
   }
   // inset.iso3 (manual mode) must name only economies actually plotted on
   // this map - a code with no data row would otherwise silently vanish from
