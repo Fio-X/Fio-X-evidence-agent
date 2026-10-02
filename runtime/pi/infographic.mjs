@@ -1006,7 +1006,8 @@ function moduleHeight(module, width, assets, mobile = false) {
     const deckChars = mobile ? 55 : 86;
     const headingLines = lines(module.heading ?? "", headingChars, 3).length;
     const deckLines = module.deck ? lines(module.deck, deckChars, 3).length : 0;
-    return (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23);
+    // Desktop: the last deck baseline plus its 4px descender allowance (inkBottomSlack) ended 6px below the box bottom; grow the box so that ink stays inside it.
+    return (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23) + (!mobile && deckLines ? 6 : 0);
   }
   if (type === "pull_quote") {
     if (!mobile) return 78 + lines(`“${module.text}”`, pullQuoteChars(width), 7).length * 38;
@@ -1110,8 +1111,7 @@ const TEXT_BOTTOM_PAD = 6;
 function inkTop(module, bar) {
   if (module.type === "hero_stat") return bar || INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 0 : 28;
   if (module.type === "section_header") return 33;
-  if (module.type === "pull_quote") return 28;
-  // Text, chart and illustration modules open with a hairline (too light to count as ink) and a small ordinal.
+  // Text, chart, illustration and pull-quote modules open with a hairline (too light to count as ink) and a small ordinal, which is their first ink.
   return module.emphasis === "hero" ? 8 : 10;
 }
 

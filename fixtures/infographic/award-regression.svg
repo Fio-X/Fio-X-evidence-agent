@@ -108,7 +108,7 @@
 <text x="96" y="1774" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.3" fill="#1A1A1A">SOURCES &amp; METHODS</text>
 <text x="96" y="1801" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12.5" font-weight="400" fill="#666666" >Synthetic infographic regression fixture · Synthetic fixture</text>
 <text x="1344" y="1834" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" letter-spacing="1.2" fill="#666666">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>
-<rect data-role="module-boundary" data-module-id="section-1" x="96" y="494" width="1248" height="177" fill="none" stroke="none"/>
+<rect data-role="module-boundary" data-module-id="section-1" x="96" y="494" width="1248" height="183" fill="none" stroke="none"/>
 <rect data-role="module-boundary" data-module-id="stat-total" x="96" y="705" width="397.3333333333333" height="311.0557244174265" fill="none" stroke="none"/>
 <rect data-role="module-boundary" data-module-id="bar" x="521.3333333333333" y="705" width="822.6666666666666" height="311.0557244174265" fill="none" stroke="none"/>
 <rect data-role="module-boundary" data-module-id="flow" x="96" y="1028" width="1248" height="507.38461538461536" fill="none" stroke="none"/>
