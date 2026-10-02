@@ -3363,6 +3363,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       y_scale: Type.Optional(StringEnum(["linear", "log"] as const)),
       x_label: Type.Optional(Type.String()),
       y_label: Type.Optional(Type.String()),
+      rank_cutoff: Type.Optional(Type.Integer({ minimum: 2, maximum: 30, description: "slope only: set when start_field and end_field hold ranks (1 = best). Draws a bump chart with rank 1 on top, one row per rank up to N, and anyone outside the top N on an N+1 row with their true rank." })),
+      index_base: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "small_multiples line only: set when value_field is an index rebased to this value (for example 100). Draws a labelled base line, y tick labels and an end value in each panel." })),
     })),
     async execute(_id, rawParams, signal) {
       // Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1): the plan SQL runs and the
