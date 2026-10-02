@@ -69,7 +69,11 @@ const desktopJuneLabel=assets['visualizations/rain.json'].desktopSvg.match(/data
 const mobileJuneLabel=assets['visualizations/rain.json'].mobileSvg.match(/data-role="bar-value-label" x="([^"]+)"[^>]*>-38%<\/text>/);
 assert.ok(desktopJuneLabel,'desktop June value label missing');
 assert.ok(mobileJuneLabel,'mobile June value label missing');
-assert.ok(Number(desktopJuneLabel[1])>=250,'desktop negative-edge label must move inside plot to avoid category collision');
+// the label column is sized from the drawn names now (no fixed 250 px), so the check is the collision itself:
+// the negative value label (anchored at its end) must start to the right of the end of its category name
+const desktopJuneName=assets['visualizations/rain.json'].desktopSvg.match(/<text x="([^"]+)" y="[^"]+" text-anchor="end"[^>]*>June<\/text>/);
+assert.ok(desktopJuneName,'desktop June category label missing');
+assert.ok(Number(desktopJuneLabel[1])-4*7.5>Number(desktopJuneName[1]),'desktop negative-edge label must stay clear of the category name');
 assert.ok(Number(mobileJuneLabel[1])>=178,'mobile negative-edge label must move inside plot to avoid category collision');
 
 const mechanismSpec={schema_version:'0.1.0',view:'system',not_to_scale:true,title:'Why more low-pressure activity did not guarantee enough rain',subject:'Monsoon moisture transport',subtitle:'A schematic mechanism linking circulation, rainfall distribution and crop risk.',alt:'A schematic system graphic shows El Nino weakening moisture transport, contributing to uneven rainfall and then crop-yield risk.',source_note:'Indian Express, Sept. 14, 2026, citing IMD and meteorological explanation',parts:[
