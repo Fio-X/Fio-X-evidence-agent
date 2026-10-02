@@ -2234,13 +2234,16 @@ function registerVizChain(pi: ExtensionAPI) {
   });
 }
 
-// ---- Hero value gate (NEWSROOM_HERO_VALUE_GATE=1) --------------------------------------------------------------
+// ---- Hero value gate (on by default; NEWSROOM_HERO_VALUE_GATE=0 turns it off) -----------------------------------
 // A hero_stat does not type its number: it names one placeholder of its claim (value_from) and the runtime copies the
 // text the claim itself shows. A claim recorded inline carries its bindings; a claim recorded with record_claim has none,
 // so the selector is resolved on the claim's own computation rows and the result must also be stated by the claim text.
 // label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
 // writes a number of its own and never changes a claim's status.
-const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE === "1";
+// Only the exact string "0" switches the gate off; unset, "1", empty or any other value leaves it on, so a typo can never
+// quietly open the gate. The pure lint in infographic.mjs stays opt-in through context.hero_value_gate: this runtime
+// is the only caller that passes it, and it passes it whenever this switch is on.
+const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE !== "0";
 const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
 
 type HeroClaimContext = { claimId: string; tables: Record<string, unknown>[][]; bindings: ClaimBinding[] | null; claimText: string; template: string | null };
@@ -2335,7 +2338,7 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
   return out.filter(Boolean);
 }
 
-/** NEWSROOM_HERO_VALUE_GATE=1: every hero_stat is filled from its claim before validation and storage; off, the modules pass untouched. */
+/** Gate on (the default): every hero_stat is filled from its claim before validation and storage. NEWSROOM_HERO_VALUE_GATE=0: the modules pass untouched. */
 async function fillHeroModules(modules: any[]): Promise<any[]> {
   if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
   const records = await verifiedClaimRecords();
@@ -2430,7 +2433,7 @@ async function lintInfographicPlan(spec: any) {
     }
     visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
   }
-  // NEWSROOM_HERO_VALUE_GATE=1: each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
+  // Gate on (the default; NEWSROOM_HERO_VALUE_GATE=0 turns it off): each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
   const heroGate: Record<string, any> = {};
   if (heroGateOn()) {
     const heroChecks: Record<string, string[]> = {};

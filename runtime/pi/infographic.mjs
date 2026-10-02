@@ -751,8 +751,9 @@ export function evaluateSubjectSets(spec, assets = {}, context = {}) {
   return { blockers, warnings, notes };
 }
 
-// Hero value gate (NEWSROOM_HERO_VALUE_GATE=1, passed in by the caller as
-// context.hero_value_gate). Each hero_stat is re-filled from its own claim's
+// Hero value gate (on by default in the runtime, off with NEWSROOM_HERO_VALUE_GATE=0; the runtime
+// passes it in as context.hero_value_gate, and this pure lint applies it only when the
+// caller does). Each hero_stat is re-filled from its own claim's
 // bindings by the runtime (newsroom.ts fillHeroModule: value from value_from,
 // label and detail placeholders, unit only as the claim shows it); context.hero_checks
 // ({ module_id: [blocker, ...] }) carries what that re-check refused, so the stored

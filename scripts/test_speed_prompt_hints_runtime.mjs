@@ -20,6 +20,8 @@ const SWITCHES = {
 };
 const ALL_SWITCHES = Object.keys(SWITCHES);
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
+// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with bc1ccfd, which has the old typed-hero path.
+process.env.NEWSROOM_HERO_VALUE_GATE = "0";
 
 const tmp = mkdtempSync(join(tmpdir(), "speed-hints-runtime-"));
 try {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// H1: with NEWSROOM_HERO_VALUE_GATE=1 (context.hero_value_gate), a hero_stat's number must be in its own
-// claim's rows. Synthetic data only. Off: lint output is unchanged from a4d4cb0 (compared when that commit exists).
+// H1: with the hero value gate on (the runtime default, NEWSROOM_HERO_VALUE_GATE=0 turns it off; the pure lint takes it as
+// context.hero_value_gate and stays off without it), a hero_stat's number must be in its own claim's rows. Synthetic
+// data only. Off: lint output is unchanged from a4d4cb0 (compared when that commit exists).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync } from 'node:fs';
