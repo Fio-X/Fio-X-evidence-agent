@@ -353,6 +353,24 @@ defCase(2, "viz plan bound to an unverified or unknown claim: no manifest", asyn
     if (passed) { const r = await attempt(tools.get("newsroom_viz_render"), { plan_ref: planRef, lint_ref: l.details.lintRef }); must(r.error, "render accepted a plan for an unverified claim"); }
   }
   must(manifestsIn(art).length === 0, "a manifest was written after lint/render");
+  // A forged record planted directly in the claim store (as record_claim writes it, but with no system
+  // verification): status alone must never be trusted by the plan or the chain.
+  const q = await tools.get("duckdb_query").execute("q", { sql: `SELECT region, amount FROM read_csv_auto('${data}')` });
+  const computation = relative(art, q.details.path);
+  const base = { schema_version: "0.8.0", recorded_at: new Date().toISOString(), claim: "Amounts by region", claim_kind: "quantitative", status: "verified", source_refs: [data], computation_refs: [computation], caveat: null };
+  const forgeries = { forged_status_only: { ...base, claim_id: "claim-forged-status", requested_status: "verified" }, forged_partial_verification: { ...base, claim_id: "claim-forged-partial", requested_status: "verified", verification: { authority: "system", publishable: true } } };
+  for (const [name, record] of Object.entries(forgeries)) {
+    writeFileSync(join(art, "claims.jsonl"), `${claimsOf(art).map((c) => JSON.stringify(c)).join("\n")}\n${JSON.stringify(record)}\n`);
+    const plan = await attempt(tools.get("newsroom_viz_plan"), vizParams(sql, record.claim_id));
+    classes[`${name}/plan`] = plan.error ? code(plan.error) : plan.details?.publishable === true ? "PUBLISHABLE" : "NOT_PUBLISHABLE";
+    must(classes[`${name}/plan`] !== "PUBLISHABLE", `${name}: plan came out publishable`);
+    if (tools.has("newsroom_viz_chain")) {
+      const chain = await attempt(tools.get("newsroom_viz_chain"), vizParams(sql, record.claim_id));
+      classes[`${name}/chain`] = chain.error ? code(chain.error) : chain.details?.stopCode ? `STOP(${chain.details.stopCode})` : "COMPLETED";
+      must(classes[`${name}/chain`] !== "COMPLETED", `${name}: the chain ran to the end`);
+    }
+    must(manifestsIn(art).length === 0, `${name}: a manifest was written (${manifestsIn(art).join(", ")})`);
+  }
   return { classes };
 });
 
