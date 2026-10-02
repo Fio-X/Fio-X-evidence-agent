@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
 import { renderLieflatPublication } from "../runtime/pi/lieflat.mjs";
+import { checkReaderText } from "../runtime/pi/infographic.mjs";
 
 // This test guards Task T1: a Lieflat reader page (chart or report) must
 // never show a claim id, a source/data/computation file path, or a raw hash
@@ -165,6 +166,10 @@ function assertNoInternalIdentifiers(html, label) {
   assert.equal(/claim-/i.test(text), false, `${label}: reader-visible text must not contain a claim id`);
   assert.equal(/\b(?:sources|data|computations)\//i.test(text), false, `${label}: reader-visible text must not contain a source/data/computation path`);
   assert.equal(/[0-9a-f]{12,}/i.test(text), false, `${label}: reader-visible text must not contain a 12+ character hex string`);
+  // The blocker terms of the page lint (infographic.mjs checkReaderText: process notes, field names, placeholder words,
+  // unfilled template braces) must not reach a page readers see either. Script bodies are code, not reader text.
+  const processTerms = checkReaderText(visibleText(html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " "))).blockers.map((hit) => `${hit.rule}:${hit.term}`);
+  assert.deepEqual(processTerms, [], `${label}: reader-visible text must not contain a process term, field name, placeholder word or template brace`);
   return text;
 }
 

@@ -768,6 +768,220 @@ function heroValueBlockers(module, verified, heroChecks) {
   return checks.map(String);
 }
 
+// ---- Page top ---------------------------------------------------------------------------------------------------
+// The page opens with its one prominent verified number, or else its lead chart - never with prose. The first content
+// module is the first module that is not a section_header and not a decorative illustration: a decorative cover
+// directly under the title is header art, not content. Spec order is the order the composer starts from. Warning
+// only; the warning text is the same guidance the plan tool gives the model (newsroom.ts imports this sentence).
+export const PAGE_TOP_GUIDANCE = "The first content module after the title and dek is a hero_stat bound with value_from when the story has one prominent verified number; otherwise it is the lead visual. Never open with a text module or a pull quote.";
+const PAGE_TOP_TYPES = new Set(["hero_stat", "visual", "illustration"]);
+
+export function pageTopWarning(spec, assets = {}) {
+  const modules = Array.isArray(spec?.modules) ? spec.modules : [];
+  const first = modules.find((module) => module && module.type !== "section_header" && !isDecorativeIllustration(module, assets));
+  if (!first || PAGE_TOP_TYPES.has(first.type)) return null;
+  return `page_top_not_hero_or_lead_visual: the first content module '${first.id}' is a ${first.type} module. ${PAGE_TOP_GUIDANCE}`;
+}
+
+// ---- Reader-facing words ----------------------------------------------------------------------------------------
+// Pure checks over the strings of a page that readers see. They never read the data behind a page, never grant
+// anything, and never change a string. Exported so render QA can run the same checker on the final page text.
+//
+// Fields read, as { field, text, copy } (readerTextEntries):
+//   page      title, dek, kicker (copy); byline, date_label, alt, source_note
+//   scene     title, dek (copy); eyebrow                                   (scene_graph.scenes[])
+//   module    label, heading, deck, body, text, detail, subject_caption (copy); label_short, eyebrow, value, unit,
+//             attribution, credit, alt; source_quote.translation
+//   assets    the source_note of every visual and illustration manifest, and an illustration manifest's credit and
+//             provenance disclosure (the page prints them in its source list and caption)
+// "copy" fields are running copy: they are also read for unsupported quantifiers and vague times.
+// Deliberately not read: planning fields no composer draws (intent, primary_message, reader_question,
+// visual_thesis, new_information, story_role, annotations, ids and refs), source_quote.quote (verbatim words of the
+// source) and label_template / detail_template (templates by design; the filled label and detail are read).
+const READER_COPY_KEYS = ["label", "heading", "deck", "body", "text", "detail", "subject_caption"];
+const READER_OTHER_KEYS = ["label_short", "eyebrow", "value", "unit", "attribution", "credit", "alt"];
+
+export function readerTextEntries(spec, assets = {}) {
+  const out = [];
+  const add = (field, value, copy) => {
+    if (value === undefined || value === null || typeof value === "object") return;
+    const text = String(value);
+    if (text.trim()) out.push({ field, text, copy });
+  };
+  for (const key of ["title", "dek", "kicker"]) add(key, spec?.[key], true);
+  for (const key of ["byline", "date_label", "alt", "source_note"]) add(key, spec?.[key], false);
+  for (const scene of Array.isArray(spec?.scene_graph?.scenes) ? spec.scene_graph.scenes : []) {
+    add(`scene:${scene?.id}:eyebrow`, scene?.eyebrow, false);
+    add(`scene:${scene?.id}:title`, scene?.title, true);
+    add(`scene:${scene?.id}:dek`, scene?.dek, true);
+  }
+  for (const module of Array.isArray(spec?.modules) ? spec.modules : []) {
+    if (!module || typeof module !== "object") continue;
+    const id = String(module.id ?? "?");
+    for (const key of READER_COPY_KEYS) add(`module:${id}:${key}`, module[key], true);
+    for (const key of READER_OTHER_KEYS) add(`module:${id}:${key}`, module[key], false);
+    add(`module:${id}:source_quote.translation`, module.source_quote?.translation, false);
+    const manifest = module.type === "visual" ? assets?.[module.manifest_ref]?.manifest : module.type === "illustration" ? assets?.[module.asset_ref]?.manifest : null;
+    if (manifest && typeof manifest === "object") {
+      add(`module:${id}:manifest.source_note`, manifest.source_note, false);
+      if (module.type === "illustration") {
+        add(`module:${id}:manifest.credit`, manifest.credit, false);
+        add(`module:${id}:manifest.disclosure`, manifest.provenance?.disclosure, false);
+      }
+    }
+  }
+  return out;
+}
+
+// Blockers: unambiguous process terms - words only the pipeline's own notes use. A reader never needs one.
+//   process_term      闸门 (gate), 缺口修复 (gap repair), 未经闸门, 行绑定 (row binding), 未绑定 (unbound). 行绑定 is
+//                     matched except as the tail of 进行绑定 / 银行绑定, which are ordinary words.
+//   field_name        value_from, claim_id(s), story_node(s) / story_node_id(s): whole field names only.
+//   placeholder_word  TODO, FIXME, TBD, placeholder(s), lorem - any case, whole words only.
+//   template_braces   any {...} with something inside, such as an unfilled {max.value}.
+// A story that really is about a sluice gate (闸门) or a funding gap repair (缺口修复) has to reword; the cost of a
+// process note on a published page is worse than that reword.
+const READER_BLOCKER_RULES = [
+  { id: "process_term", re: /未经闸门|闸门|缺口修复|(?<![进银])行绑定|未绑定/gu },
+  { id: "field_name", re: /(?<![A-Za-z0-9_])(?:value_from|claim_ids?|story_node(?:_ids?|s)?)(?![A-Za-z0-9_])/giu },
+  { id: "placeholder_word", re: /(?<![A-Za-z])(?:todo|fixme|tbd|placeholders?|lorem)(?![A-Za-z])/giu },
+  { id: "template_braces", re: /\{[^{}]*[^{}\s][^{}]*\}/gu },
+];
+
+// Warnings: broader words that are sometimes the story's own (a 模拟 model, a 测试 score, a movie's runtime).
+//   模拟 测试 校验 运行时 (not 运行时间/长/刻/段) and the whole words runtime, lint, mock, prompt (with plural / -ed).
+// Not caught, by design: 气候模型 (model), 门槛 (threshold), 测量 (measurement), 检测, 运行时间 (running time).
+const READER_WARNING_RULES = [
+  { id: "review_term", re: /模拟|测试|校验|运行时(?![间长刻段])|(?<![A-Za-z])(?:runtime|lint(?:s|ing)?|mock(?:s|ed)?|prompts?)(?![A-Za-z])/giu },
+];
+
+function readerExcerpt(text, index, length) {
+  const from = Math.max(0, index - 12);
+  const to = Math.min(text.length, index + length + 12);
+  return `${from > 0 ? "…" : ""}${text.slice(from, to).replace(/\s+/g, " ")}${to < text.length ? "…" : ""}`;
+}
+
+function scanReaderText(entries, rules) {
+  const out = [];
+  for (const { field, text } of entries) {
+    const seen = new Set();
+    for (const rule of rules) {
+      for (const match of text.matchAll(rule.re)) {
+        const term = match[0];
+        const key = `${rule.id}:${term.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ rule: rule.id, term, field, excerpt: readerExcerpt(text, match.index, term.length) });
+      }
+    }
+  }
+  return out;
+}
+
+// Input: one string (for example a whole rendered page's text), an array of strings, or an array of { field, text }.
+function readerEntryList(input) {
+  const many = Array.isArray(input);
+  return (many ? input : [input]).flatMap((item, index) => {
+    if (typeof item === "string") return item.trim() ? [{ field: many ? `text[${index}]` : "page text", text: item, copy: false }] : [];
+    if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) return [{ field: String(item.field ?? `text[${index}]`), text: item.text, copy: item.copy === true }];
+    return [];
+  });
+}
+
+/** Process terms (blockers) and broad review terms (warnings) in reader-facing text. Each finding is { rule, term, field, excerpt, message }. */
+export function checkReaderText(input) {
+  const entries = readerEntryList(input);
+  return {
+    blockers: scanReaderText(entries, READER_BLOCKER_RULES).map((hit) => ({ ...hit, message: `reader_text_${hit.rule}: ${hit.field} shows "${hit.term}" to readers (${hit.excerpt}); say it in story words, never as a process note, field name or template` })),
+    warnings: scanReaderText(entries, READER_WARNING_RULES).map((hit) => ({ ...hit, message: `reader_text_${hit.rule}: ${hit.field} uses "${hit.term}" (${hit.excerpt}); keep it only when it is a story word, not a process term` })),
+  };
+}
+
+// Quantifiers need a count behind them. A phrase of this list in running copy is supported only when some verified
+// claim bound to the page states that same phrase; otherwise the copy should give the count the data shows.
+// Longest phrase wins (绝大多数 before 大多数 before 多数). Not quantifiers: 多数据 / 少数量 / 少数字 (a word that
+// merely contains 多数/少数: more data, fewer digits), 少数民族 (an ethnic minority), and 过半 inside 通过半导体 /
+// 经过半年 / 超过半年 (过半数, 超过半数 and 已过半 are quantifiers).
+const QUANTIFIER_RE = /绝大多数|几乎所有|一半以上|更多国家|更少国家|大多数|多数|少数|过半/gu;
+// Vague time: a relative phrase with no period behind it. Read per field: a field that also states a four-digit
+// year is taken to state its period. Not vague: 项目前期 / 题目前面 (目 ends one word, 前 starts the next), 最新鲜 / 最新颖.
+const VAGUE_TIME_RE = /最近一年|近年来|近几年|近期|目前|如今|最新/gu;
+const STATED_YEAR_RE = /(?<!\d)(?:19|20)\d{2}(?!\d)/u;
+
+function quantifierPhrases(text) {
+  const out = [];
+  for (const match of text.matchAll(QUANTIFIER_RE)) {
+    const phrase = match[0];
+    const before = text[match.index - 1] ?? "";
+    const after = text[match.index + phrase.length] ?? "";
+    if (phrase.endsWith("数") && /[据量字值目码]/u.test(after)) continue;
+    if (phrase === "少数" && after === "民") continue;
+    if (phrase === "过半" && after !== "数" && (/[通经超越度穿错]/u.test(before) || /[年导个小天夜岛径月场途价]/u.test(after))) continue;
+    out.push(phrase);
+  }
+  return out;
+}
+
+function vagueTimePhrases(text) {
+  const out = [];
+  for (const match of text.matchAll(VAGUE_TIME_RE)) {
+    const phrase = match[0];
+    const before = text[match.index - 1] ?? "";
+    const after = text[match.index + phrase.length] ?? "";
+    if (phrase === "目前" && /[项题节栏科剧曲书条名篇数品总要纲眼]/u.test(before)) continue;
+    if (phrase === "最新" && /[鲜颖奇]/u.test(after)) continue;
+    out.push(phrase);
+  }
+  return out;
+}
+
+/**
+ * Warnings for unsupported quantifiers and vague times in the running copy ("copy" entries) of a page.
+ * options.claim_texts is the text of every verified claim bound to the page; without it (null) the quantifier check is
+ * skipped, because there is nothing to compare with. Each finding is { rule, term, field, message }.
+ */
+export function checkReaderWording(input, options = {}) {
+  const claimTexts = Array.isArray(options.claim_texts) ? options.claim_texts.map(String) : null;
+  const warnings = [];
+  for (const { field, text, copy } of readerEntryList(input)) {
+    if (!copy) continue;
+    if (claimTexts) {
+      for (const phrase of new Set(quantifierPhrases(text))) {
+        if (claimTexts.some((claim) => claim.includes(phrase))) continue;
+        warnings.push({ rule: "unsupported_quantifier", term: phrase, field, message: `unsupported_quantifier: ${field} says "${phrase}" but no verified claim bound to this page states it; state the count from the data (for example "12 of 20 countries") or bind a claim that supports the phrase` });
+      }
+    }
+    if (STATED_YEAR_RE.test(text)) continue;
+    for (const phrase of new Set(vagueTimePhrases(text))) {
+      warnings.push({ rule: "vague_time", term: phrase, field, message: `vague_time_reference: ${field} says "${phrase}" with no period stated; state the year or the date range (for example 2022年1月至2024年12月)` });
+    }
+  }
+  return { warnings };
+}
+
+// Text of every verified claim the page cites: a module's claim_id / claim_ids / claim_set, a module annotation's claim,
+// a chart or illustration manifest's own claim, and a scene's supporting claims. A record counts when the caller lists its
+// id as verified or the record carries the system's own publishable verification; the model cannot write either.
+function boundClaimTexts(spec, assets, records, verified) {
+  const cited = new Set();
+  const add = (id) => { if (id !== undefined && id !== null && String(id).trim()) cited.add(String(id)); };
+  const addAll = (ids) => { for (const id of Array.isArray(ids) ? ids : []) add(id); };
+  for (const module of Array.isArray(spec?.modules) ? spec.modules : []) {
+    if (!module || typeof module !== "object") continue;
+    add(module.claim_id);
+    addAll(module.claim_ids);
+    addAll(module.claim_set);
+    for (const annotation of Array.isArray(module.annotations) ? module.annotations : []) add(annotation?.claim_id);
+    const manifest = module.type === "visual" ? assets?.[module.manifest_ref]?.manifest : module.type === "illustration" ? assets?.[module.asset_ref]?.manifest : null;
+    add(manifest?.claim_id);
+    addAll(manifest?.claim_ids);
+  }
+  for (const scene of Array.isArray(spec?.scene_graph?.scenes) ? spec.scene_graph.scenes : []) addAll(scene?.supporting_claim_ids);
+  return records
+    .filter((record) => cited.has(String(record?.claim_id ?? "")) && (verified.has(String(record?.claim_id)) || (record?.verification?.authority === "system" && record?.verification?.publishable === true)))
+    .map((record) => String(record?.claim ?? ""));
+}
+
 export function lintInfographicSpec(spec, assets = {}, context = {}) {
   const blockers = validateInfographicSpec(spec);
   const warnings = [];
@@ -941,6 +1155,19 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     const missingRoles = (spec.modules ?? []).filter((m) => m.type !== "section_header" && !m.story_role).length;
     if (missingRoles) warnings.push(`${missingRoles} non-section modules have no story_role`);
   }
+  // Page top (warning only) and the words readers see. A process term, field name or template brace in reader text
+  // blocks; broader review terms, quantifiers no bound claim states and relative times with no period only warn. The
+  // quantifier check needs the bound claims' text, so it runs only when the caller supplies claim records.
+  const pageTop = pageTopWarning(spec, assets);
+  if (pageTop) warnings.push(pageTop);
+  const readerEntries = readerTextEntries(spec, assets);
+  const readerText = checkReaderText(readerEntries);
+  blockers.push(...readerText.blockers.map((hit) => hit.message));
+  warnings.push(...readerText.warnings.map((hit) => hit.message));
+  const readerWording = checkReaderWording(readerEntries, {
+    claim_texts: Array.isArray(context.verified_claim_records) ? boundClaimTexts(spec, assets, context.verified_claim_records, verified) : null,
+  });
+  warnings.push(...readerWording.warnings.map((hit) => hit.message));
   notes.push(`visual_modules=${visualCount}`);
   notes.push(`claim_references=${claimCount}`);
   notes.push(`unique_sources=${uniq(sourceNotes).length}`);
