@@ -37,6 +37,7 @@ const SWITCHES = [
   { name: "HIDE_LIEFLAT", env: "NEWSROOM_HIDE_LIEFLAT", profile: "visual-story" }, // only acts under the visual-story profile
   { name: "INLINE_CLAIM", env: "NEWSROOM_SPEED_INLINE_CLAIM", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_VIZ"] }, // only acts with the chain and atomic writes on
   { name: "EDITORIAL_HINTS", env: "NEWSROOM_SPEED_EDITORIAL_HINTS" },
+  { name: "COMPACT_SETUP", env: "NEWSROOM_SPEED_COMPACT_SETUP" },
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const CONFIGS = [

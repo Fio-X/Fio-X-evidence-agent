@@ -92,6 +92,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
@@ -123,6 +124,16 @@ const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record
       newsroom_infographic_render: "lint_ref may be omitted when exactly one passing lint is bound to plan_ref.",
       newsroom_infographic_critic: "lint_ref and manifest_ref may be omitted when exactly one passing lint and one rendered manifest are bound to plan_ref.",
       newsroom_infographic_preview: "critic_ref may be omitted when exactly one passing deterministic critic is bound to manifest_ref.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_COMPACT_SETUP",
+    tools: {
+      newsroom_editorial_discovery: "Page setup turn plan (each dependency checked in the tools): newsroom_update_plan, newsroom_editorial_discovery and newsroom_story_graph read no concept, discovery or plan artifact (story_graph only needs verified claim ids), so send them in one assistant message. newsroom_visual_concepts needs the discovery artifact, so it is the next turn. newsroom_semantic_novelty and newsroom_asset_requirements both read only the concept set, so send them together after it.",
+      newsroom_visual_concepts: "To avoid retyping text the concepts really share, pass shared: an object of defaults (reader_question, editorial_premise, surprise, hero_evidence_refs, supporting_evidence_refs, asset_requirements, media_mix, information_hierarchy, mobile_treatment, risk_flags, reporting_gaps, why_reject). Each concept is {...shared, ...concept}; the concept's value wins and arrays are replaced. concept_id, framing, visual_metaphor, hero_scene and why_memorable must be written in every concept and are refused in shared. The 8..20 concepts, required fields and three framings are checked as before on the expanded set. discovery_ref may be omitted when exactly one CONTINUE discovery exists.",
+      newsroom_semantic_novelty: "concept_ref may be omitted when exactly one editorial/concepts artifact exists; the runtime copies it verbatim and never overrides a value you give.",
+      newsroom_asset_requirements: "concept_ref may be omitted when exactly one editorial/concepts artifact lists concept_id as a finalist; concept_id is never filled for you.",
+      newsroom_infographic_plan: "Page-top refs you may leave out (with NEWSROOM_SPEED_PREFLIGHT on): story_graph_ref is never derived, but editorial_discovery_ref, visual_concept_ref, novelty_ref, asset_plan_ref, reader_question, visual_thesis and each visual module's critic_ref are copied when exactly one bound artifact exists. A module's claim_set must still match its claim_ids; selected_concept_id is never filled.",
     },
   },
   {
@@ -220,6 +231,17 @@ async function readConceptSetArtifact(conceptRef: string) {
 // preconditions are listed together (see preflight.mjs). Off: nothing changes.
 function preflightEnabled() {
   return process.env.NEWSROOM_SPEED_PREFLIGHT === "1";
+}
+// NEWSROOM_SPEED_COMPACT_SETUP=1: shared concept defaults and inferred setup refs (see compact_setup.mjs). Off: nothing changes.
+function compactSetupEnabled() {
+  return process.env.NEWSROOM_SPEED_COMPACT_SETUP === "1";
+}
+const optionalWhenCompact = (schema: any) => (compactSetupEnabled() ? Type.Optional(schema) : schema);
+async function compactSetupRefs(tool: string, params: any) {
+  if (!compactSetupEnabled()) return params;
+  const filled = await fillSetupRefs(tool, params, preflightIo);
+  if (Object.keys(filled.unresolved).length) throw setupRefError(tool, filled);
+  return filled.params;
 }
 const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
 // Fill the references a later page stage can read off the artifacts it already
@@ -3861,20 +3883,20 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const conceptParameters = Type.Object({
     concept_id: Type.String(),
-    reader_question: Type.String(),
-    editorial_premise: Type.String(),
+    reader_question: optionalWhenCompact(Type.String()),
+    editorial_premise: optionalWhenCompact(Type.String()),
     surprise: Type.Optional(Type.String()),
     visual_metaphor: Type.String(),
     hero_scene: Type.String(),
     framing: StringEnum(["spatial", "temporal", "mechanism", "comparison", "human_scale", "object_scene", "progressive_reveal"] as const),
-    hero_evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
-    supporting_evidence_refs: Type.Array(Type.String(), { maxItems: 20 }),
-    asset_requirements: Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 }),
-    media_mix: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
+    hero_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+    supporting_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 20 })),
+    asset_requirements: optionalWhenCompact(Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 })),
+    media_mix: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     information_hierarchy: Type.Optional(Type.String()),
     mobile_treatment: Type.Optional(Type.String()),
-    risk_flags: Type.Array(Type.String(), { maxItems: 12 }),
-    reporting_gaps: Type.Array(Type.String(), { maxItems: 12 }),
+    risk_flags: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
+    reporting_gaps: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
     why_memorable: Type.String(),
     why_reject: Type.Optional(Type.String()),
   });
@@ -3889,8 +3911,19 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Describe missing assets and blocking reporting gaps explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject.",
       "Use the finalists as prototypes, not as permission to alter verified claims or source provenance.",
     ],
-    parameters: Type.Object({ discovery_ref: Type.String(), concepts: Type.Array(conceptParameters, { minItems: 8, maxItems: 20 }) }),
-    async execute(_id, params) {
+    parameters: Type.Object({
+      discovery_ref: optionalWhenCompact(Type.String()),
+      ...(compactSetupEnabled() ? { shared: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Defaults merged under every concept (shallow; the concept wins; arrays are replaced). Never concept_id, framing, visual_metaphor, hero_scene or why_memorable." })) } : {}),
+      concepts: Type.Array(conceptParameters, { minItems: 8, maxItems: 20 }),
+    }),
+    async execute(_id, rawParams) {
+      let params = rawParams;
+      if (compactSetupEnabled()) {
+        params = await compactSetupRefs("newsroom_visual_concepts", rawParams);
+        const concepts = expandSharedConcepts(params.shared, params.concepts);
+        params = { discovery_ref: params.discovery_ref, concepts };
+        await appendArtifact("runtime/tool-chain-events.jsonl", { type: "setup_input_form", toolName: "newsroom_visual_concepts", input_form: rawParams.shared === undefined ? "full" : "shared_defaults", _newsroom_recorded_at: new Date().toISOString() });
+      }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
       const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: mobilePagesEnabled() });
@@ -3906,14 +3939,15 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     description: "Detect repeated reader answers before they consume page area. High-overlap award modules must be removed, demoted, or explicitly justified.",
     promptSnippet: "Make each visual module add a new explanatory dimension",
     parameters: Type.Object({
-      concept_ref: Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF)),
+      concept_ref: optionalWhenCompact(Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF))),
       modules: Type.Array(Type.Object({
         id: Type.String(), reader_question_id: Type.String(), claim_set: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), new_information: Type.String(),
         explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"] as const),
         dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), justification: Type.Optional(Type.String()),
       }), { minItems: 2, maxItems: 30 }),
     }),
-    async execute(_id, params) {
+    async execute(_id, rawParams) {
+      const params = await compactSetupRefs("newsroom_semantic_novelty", rawParams);
       await readConceptSetArtifact(params.concept_ref);
       const novelty = scoreSemanticNovelty(params);
       const rel = `editorial/novelty/${novelty.content_hash}.json`;
@@ -3934,7 +3968,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Choose a production lane that preserves origin and license metadata; human/vector/GIS assets should use the existing provenance-aware illustration boundary when reader-facing.",
     ],
     parameters: Type.Object({
-      concept_ref: Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF)), concept_id: Type.String(),
+      concept_ref: optionalWhenCompact(Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF))), concept_id: Type.String(),
       requirements: Type.Array(Type.Object({
         id: Type.Optional(Type.String()),
         asset_class: StringEnum(["published_gis", "archival_photo", "verified_diagram", "portrait_or_object_photo", "expert_explanation", "geographic_coordinates", "historical_series", "human_scale_reference", "vector_illustration", "verified_3d"] as const),
@@ -3945,7 +3979,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         evidence_needed: Type.Optional(Type.String()), rejection_reason: Type.Optional(Type.String()),
       }), { minItems: 1, maxItems: 20 }),
     }),
-    async execute(_id, params) {
+    async execute(_id, rawParams) {
+      const params = await compactSetupRefs("newsroom_asset_requirements", rawParams);
       const concepts = await readConceptSetArtifact(params.concept_ref);
       if (!(concepts.finalists ?? []).includes(params.concept_id)) throw new Error(`concept_id '${params.concept_id}' is not a finalist in the supplied concept set`);
       const plan = planEditorialAssets(params);
