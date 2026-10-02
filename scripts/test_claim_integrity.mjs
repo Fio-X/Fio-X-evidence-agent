@@ -214,7 +214,7 @@ const LEGIT_SQL = [
   ["LIMIT and OFFSET", (r) => `SELECT country, share FROM '${r}' ORDER BY share LIMIT 3 OFFSET 1`],
   ["WHERE, HAVING comparisons", (r) => `SELECT country, share FROM '${r}' WHERE share > 50 AND year = 2022`],
   ["a join condition", (r) => `SELECT a.country, b.share FROM '${r}' a JOIN '${r}' b ON a.country = b.country AND b.year > 2000`],
-  ["aggregate and GROUP BY", (r) => `SELECT year, COUNT(*) AS share FROM '${r}' GROUP BY year HAVING COUNT(*) > 0`],
+  ["aggregate and GROUP BY", (r) => `SELECT year, COUNT(*) AS share FROM '${r}' GROUP BY year HAVING COUNT(*) > 0 ORDER BY year`],
   ["LAG with an offset", (r) => `SELECT year, share - LAG(share, 1) OVER (ORDER BY year) AS share FROM '${r}'`],
   ["LAG without an offset", (r) => `SELECT year, share - LAG(share) OVER (ORDER BY year) AS share FROM '${r}'`],
   ["a frame bound", (r) => `SELECT year, AVG(share) OVER (ORDER BY year ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS share FROM '${r}'`],
@@ -229,7 +229,7 @@ const LEGIT_SQL = [
   ["a text CASE with a comparison", (r) => `SELECT country, CASE WHEN share > 0 THEN 'gain' ELSE 'loss' END AS share FROM '${r}'`],
   ["comparison operands in a select list", (r) => `SELECT country, share BETWEEN 1 AND 9 AS a, year IN (2019, 2020) AS b, country LIKE 'A%2' AS c, year <> 2021 AS d FROM '${r}'`],
   ["substr positions", (r) => `SELECT CAST(substr(CAST(year AS VARCHAR), 1, 4) AS INTEGER) AS share FROM '${r}'`],
-  ["bin by floor", (r) => `SELECT floor(share / 10) * 10 AS share, COUNT(*) AS n FROM '${r}' GROUP BY 1`],
+  ["bin by floor", (r) => `SELECT floor(share / 10) * 10 AS share, COUNT(*) AS n FROM '${r}' GROUP BY 1 ORDER BY 1`],
   ["rank()", (r) => `SELECT country, RANK() OVER (ORDER BY share DESC) AS share FROM '${r}'`],
 ];
 for (const [label, sql] of LEGIT_SQL) {
