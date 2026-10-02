@@ -40,7 +40,7 @@ import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
-import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
+import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const DEFAULT_RESULT_BUDGET_BYTES = 12 * 1024;
@@ -1514,6 +1514,18 @@ async function assertDataBytesMatchRecord(root: string, ref: string, full: strin
   const refuse = (why: string) => new Error(`INVALID_SOURCE_EVIDENCE: data bytes do not match their record (${why}): ${ref}`);
   const bytes = await readFile(full);
   const actual = sha256Hex(bytes);
+  // A derived rows table is named for its source PDF, not for its own bytes:
+  // its own metadata binds the name, the file and the rows hash instead.
+  const derived = DERIVED_ROWS_PATH.exec(ref);
+  if (derived) {
+    let rowsMeta: any = null;
+    try { rowsMeta = JSON.parse(await readFile(resolve(root, ref.replace(/\.json$/, ".meta.json")), "utf8")); } catch {}
+    if (!rowsMeta || typeof rowsMeta !== "object") throw refuse("derived metadata is missing or unreadable");
+    if (rowsMeta.source_sha256 !== derived[1]) throw refuse("derived metadata names another source sha256");
+    if (rowsMeta.rows_file !== ref) throw refuse("derived metadata describes another rows file");
+    if (rowsMeta.rows_sha256 !== actual) throw refuse("derived rows differ from rows_sha256");
+    return;
+  }
   const stem = (ref.split("/").pop() ?? "").split(".")[0];
   if (/^[0-9a-f]{64}$/.test(stem) && stem !== actual) throw refuse("file name hash differs from the bytes");
   let meta: any = null;
@@ -1524,7 +1536,7 @@ async function assertDataBytesMatchRecord(root: string, ref: string, full: strin
     } catch {}
   }
   if (!meta || typeof meta !== "object") throw refuse("sidecar is missing or unreadable");
-  const recorded = ref.startsWith("data/derived/") ? meta.rows_sha256 ?? meta.sha256 : meta.sha256;
+  const recorded = meta.sha256;
   if (typeof recorded !== "string" || !/^[0-9a-f]{64}$/.test(recorded)) throw refuse("sidecar has no sha256");
   if (recorded !== actual) throw refuse("sidecar sha256 differs from the bytes");
   if (meta.bytes !== undefined && meta.bytes !== bytes.byteLength) throw refuse("sidecar byte count differs from the file size");
