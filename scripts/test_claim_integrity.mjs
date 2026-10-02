@@ -9,6 +9,7 @@
 //   - a cancel after the replay query and before the claim is written
 //   - legitimate SQL (ROUND, power-of-ten factors) still records
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -214,14 +215,62 @@ const LEGIT_SQL = [
   ["WHERE, HAVING comparisons", (r) => `SELECT country, share FROM '${r}' WHERE share > 50 AND year = 2022`],
   ["a join condition", (r) => `SELECT a.country, b.share FROM '${r}' a JOIN '${r}' b ON a.country = b.country AND b.year > 2000`],
   ["aggregate and GROUP BY", (r) => `SELECT year, COUNT(*) AS share FROM '${r}' GROUP BY year HAVING COUNT(*) > 0`],
+  ["LAG with an offset", (r) => `SELECT year, share - LAG(share, 1) OVER (ORDER BY year) AS share FROM '${r}'`],
+  ["LAG without an offset", (r) => `SELECT year, share - LAG(share) OVER (ORDER BY year) AS share FROM '${r}'`],
+  ["a frame bound", (r) => `SELECT year, AVG(share) OVER (ORDER BY year ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS share FROM '${r}'`],
+  ["quantile_cont(v, 0.5)", (r) => `SELECT quantile_cont(share, 0.5) AS share FROM '${r}'`],
+  ["a list of quantiles", (r) => `SELECT quantile_cont(share, [0.25, 0.75]) AS share FROM '${r}'`],
+  ["percentile_cont WITHIN GROUP", (r) => `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY share) AS share FROM '${r}'`],
+  ["median()", (r) => `SELECT median(share) AS share FROM '${r}'`],
+  ["ntile(4)", (r) => `SELECT country, ntile(4) OVER (ORDER BY share) AS share FROM '${r}'`],
+  ["a share over NULLIF(b, 0)", (r) => `SELECT country, 100.0 * share / NULLIF(year, 0) AS share FROM '${r}'`],
+  ["COUNT(*) FILTER", (r) => `SELECT COUNT(*) FILTER (WHERE share > 0) AS share FROM '${r}'`],
+  ["count_if", (r) => `SELECT count_if(share > 0) AS share FROM '${r}'`],
+  ["a text CASE with a comparison", (r) => `SELECT country, CASE WHEN share > 0 THEN 'gain' ELSE 'loss' END AS share FROM '${r}'`],
+  ["comparison operands in a select list", (r) => `SELECT country, share BETWEEN 1 AND 9 AS a, year IN (2019, 2020) AS b, country LIKE 'A%2' AS c, year <> 2021 AS d FROM '${r}'`],
+  ["substr positions", (r) => `SELECT CAST(substr(CAST(year AS VARCHAR), 1, 4) AS INTEGER) AS share FROM '${r}'`],
+  ["bin by floor", (r) => `SELECT floor(share / 10) * 10 AS share, COUNT(*) AS n FROM '${r}' GROUP BY 1`],
+  ["rank()", (r) => `SELECT country, RANK() OVER (ORDER BY share DESC) AS share FROM '${r}'`],
 ];
 for (const [label, sql] of LEGIT_SQL) {
   const s = await story(sql);
   process.env.NEWSROOM_CLAIM_SQL_LINT = "1";
-  try { await record(s); } finally { delete process.env.NEWSROOM_CLAIM_SQL_LINT; }
+  try { await record(s); } catch (e) { throw new Error(`${label}: ${e.message}`); } finally { delete process.env.NEWSROOM_CLAIM_SQL_LINT; }
   assert.equal(claims(s.art).length, 1, `lint on: ${label} records`);
 }
 check(`still records with the lint on: ${LEGIT_SQL.map(([l]) => l).join("; ")}`);
+{ // the exemptions name comparisons, offsets, positions and probabilities only
+  const STILL_REFUSED = [
+    ["a CASE result number", (r) => `SELECT country, CASE WHEN share > 0 THEN 999 ELSE 0 END AS share FROM '${r}'`, /count_if\(condition\) or COUNT\(\*\) FILTER \(WHERE condition\)/],
+    ["SUM over a CASE of numbers", (r) => `SELECT SUM(CASE WHEN share > 0 THEN 1 ELSE 0 END) AS share FROM '${r}'`, /count_if\(condition\)/],
+    ["the LAG default", (r) => `SELECT year, LAG(share, 1, 999) OVER (ORDER BY year) AS share FROM '${r}'`, /holds the constant 999/],
+    ["a COALESCE fallback", (r) => `SELECT country, COALESCE(share, 0) AS share FROM '${r}'`, /holds the constant 0/],
+    ["an IFNULL fallback", (r) => `SELECT country, IFNULL(share, 7) AS share FROM '${r}'`, /holds the constant 7/],
+    ["a GREATEST floor", (r) => `SELECT country, GREATEST(share, 999) AS share FROM '${r}'`, /holds the constant 999/],
+    ["a LEAST cap", (r) => `SELECT country, LEAST(share, 999) AS share FROM '${r}'`, /holds the constant 999/],
+    ["a number beside a comparison", (r) => `SELECT country, CAST(share > 1 AS INTEGER) * 999 AS share FROM '${r}'`, /holds the constant 999/],
+    ["a typed number in a comparison's arithmetic", (r) => `SELECT country, share > 5 + 999 AS share FROM '${r}'`, /holds the constant/],
+    ["the NULLIF first argument", (r) => `SELECT NULLIF(999, share) AS share FROM '${r}'`, /holds the constant 999/],
+    ["a substr input", (r) => `SELECT substr('12345', 1, 2) AS share FROM '${r}'`, /holds the constant/],
+  ];
+  for (const [label, sql, pattern] of STILL_REFUSED) {
+    const s = await story(sql);
+    process.env.NEWSROOM_CLAIM_SQL_LINT = "1";
+    try { await refuses(`lint on: ${label}`, s, pattern); } finally { delete process.env.NEWSROOM_CLAIM_SQL_LINT; }
+  }
+  check(`still refused with the lint on, nothing written: ${STILL_REFUSED.map(([l]) => l).join("; ")}`);
+  // DuckDB itself rejects a probability outside [-1, 1], so these are checked on the parse alone.
+  const { lintClaimSqlAst } = await import(join(pi, "claim_lint.mjs"));
+  const parse = (sql) => JSON.parse(spawnSync("duckdb", ["-noheader", "-list", ":memory:", "-c", `SELECT json_serialize_sql('${sql.replace(/'/g, "''")}', skip_null := true, skip_empty := true)`], { encoding: "utf8" }).stdout.trim());
+  for (const [label, sql, violations] of [
+    ["quantile_cont(v, 5)", "SELECT quantile_cont(v, 5) AS m FROM 'data/x.csv'", 1],
+    ["quantile_cont(v, 1)", "SELECT quantile_cont(v, 1) AS m FROM 'data/x.csv'", 1],
+    ["a list with 1.5", "SELECT quantile_cont(v, [0.5, 1.5]) AS m FROM 'data/x.csv'", 1],
+    ["a non-integer position", "SELECT substr(c, 1.5, 4) AS m FROM 'data/x.csv'", 1],
+    ["quantile_cont(v, 0.5)", "SELECT quantile_cont(v, 0.5) AS m FROM 'data/x.csv'", 0],
+  ]) assert.equal(lintClaimSqlAst(parse(sql)).length, violations, label);
+  check("a quantile probability must lie strictly between 0 and 1: 5, 1 and a list holding 1.5 are refused, 0.5 passes");
+}
 
 // ---- templates -------------------------------------------------------------------
 {
@@ -239,6 +288,9 @@ check(`still records with the lint on: ${LEGIT_SQL.map(([l]) => l).join("; ")}`)
   for (const [label, template, expected] of dirs) assert.equal(lintClaimTemplate(template).length >= expected, true, `refused: ${label}`);
   for (const ok of ["The highest value is {max.share}.", "The lowest value is {min.share}.", "{max.share.country} is highest, {min.share.country} is lowest.", "最高的是{max.share.country}。最低的是{min.share.country}。", "The range is {min.share} to {max.share}."]) assert.deepEqual(lintClaimTemplate(ok), [], `passes: ${ok}`);
   assert.deepEqual(lintClaimTemplate("The most recent value is {first.share}."), [], "most beside a first. placeholder is not a direction");
+  for (const ok of ["{min.share.country} had the lowest share in the most recent year", "{max.growth.country} leads the least developed countries", "{min.x.country} has at most {min.x}", "{max.x.country} has the highest share, at least by this measure", "{min.x.country} was lowest most recently"]) assert.deepEqual(lintClaimTemplate(ok), [], `passes: ${ok}`);
+  for (const bad of ["{max.x.country} had the lowest share in the most recent year", "{max.x.country} has at most the lowest share"]) assert.equal(lintClaimTemplate(bad).length, 1, `still refused: ${bad}`);
+  check("'most recent(ly)', 'at most', 'at least', 'least developed' are not direction words; a real lowest/highest beside the wrong placeholder is still refused");
   check("lintClaimTemplate refuses max with lowest/least/smallest/fewest/最低/最少/最小 and min with highest/most/largest/greatest/最高/最多/最大 in one clause, and passes the matching pairs and split clauses");
   for (const ok of [
     "Among the African countries, {max.a.country} has the highest share at {max.a}% ({max.a.year} data) and {min.a.country} the lowest at {min.a}% ({min.a.year} data).",
