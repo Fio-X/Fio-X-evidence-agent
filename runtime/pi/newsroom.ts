@@ -365,6 +365,13 @@ const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   network: ["node_link", "adjacency_matrix", "chord"],
 };
 
+// The block below names the charts that fit the relation; this names the relations that fit the chart,
+// read from the same table, so the model can change the chart or the claim in one turn.
+function grammarFitClause(chartType: string): string {
+  const relations = Object.keys(STRICT_GRAMMAR_FORMS).filter((relation) => STRICT_GRAMMAR_FORMS[relation].includes(chartType));
+  return `; ${chartType} fits: ${relations.length ? relations.join(", ") : "no relation in the strict grammar"}`;
+}
+
 function assertEditorialGrammar(semanticGate: any, chartType: string) {
   if (!semanticGate || semanticGate.enforcement !== "strict") return;
   if (semanticGate.status === "BLOCK") {
@@ -374,7 +381,7 @@ function assertEditorialGrammar(semanticGate: any, chartType: string) {
   const relation = String(semanticGate.claim_spec?.relation ?? "");
   const allowed = STRICT_GRAMMAR_FORMS[relation];
   if (allowed && !allowed.includes(chartType)) {
-    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'`);
+    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'${grammarFitClause(chartType)}`);
   }
 }
 

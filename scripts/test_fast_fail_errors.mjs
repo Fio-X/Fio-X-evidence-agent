@@ -3,6 +3,8 @@
 // download timer is shortened by wrapping setTimeout for that one delay.
 //   1. download_data: a timeout is a structured DOWNLOAD_TIMEOUT (host, elapsed
 //      seconds, one generic hint) and an identical retry is refused at once.
+//   2. EDITORIAL_GRAMMAR_BLOCKED also names the relations that accept the chosen
+//      chart type, read from the same table; the block itself is unchanged.
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -224,6 +226,66 @@ try {
 } finally {
   globalThis.setTimeout = realSetTimeout;
   globalThis.fetch = realFetch;
+}
+
+// ---------------------------------------------------------------- 2. grammar hint
+{
+  const artifact = join(mkdtempSync(join(tmpdir(), "fast-fail-grammar-")), "run");
+  mkdirSync(artifact, { recursive: true });
+  const tools = await freshTools({ NEWSROOM_ARTIFACT_DIR: artifact });
+  const plan = tools.get("newsroom_viz_plan");
+  assert.ok(plan, "newsroom_viz_plan is registered");
+  const declared = (relation, chart_type, measure_kind = "level") => ({
+    sql: "select 'A' as category, 1 as value",
+    chart_type,
+    reader_task: relation === "rank" ? "ranking" : relation === "anomaly" ? "comparison" : relation,
+    title: "Exports by partner",
+    takeaway: "A leads.",
+    category_field: "category",
+    value_field: "value",
+    measure_semantics: [{ id: "m1", phenomenon: "exports", unit: "USD", measure_kind }],
+    claim_spec: { relation, reader_task: relation === "rank" ? "ranking" : relation, target_measure: "m1" },
+  });
+  const blockOf = async (relation, chart) => { try { await plan.execute("id", declared(relation, chart)); } catch (error) { return error.message; } return null; };
+
+  // The block is byte-for-byte what it was, plus one trailing clause.
+  assert.equal(
+    await blockOf("comparison", "diverging_bar"),
+    "EDITORIAL_GRAMMAR_BLOCKED: relation 'comparison' requires one of horizontal_bar, dot, dumbbell, slope, small_multiples; got 'diverging_bar'; diverging_bar fits: anomaly",
+  );
+  assert.equal(
+    await blockOf("rank", "small_multiples"),
+    "EDITORIAL_GRAMMAR_BLOCKED: relation 'rank' requires one of horizontal_bar, dot; got 'small_multiples'; small_multiples fits: comparison, trend, anomaly",
+  );
+  assert.equal(
+    await blockOf("rank", "dumbbell"),
+    "EDITORIAL_GRAMMAR_BLOCKED: relation 'rank' requires one of horizontal_bar, dot; got 'dumbbell'; dumbbell fits: comparison, change, benchmark",
+  );
+  // A chart no relation lists says so instead of an empty list.
+  assert.equal(
+    await blockOf("rank", "treemap"),
+    "EDITORIAL_GRAMMAR_BLOCKED: relation 'rank' requires one of horizontal_bar, dot; got 'treemap'; treemap fits: no relation in the strict grammar",
+  );
+  check("EDITORIAL_GRAMMAR_BLOCKED keeps its text and appends 'X fits: <relations>' read from the same table");
+
+  // The clause comes from the same table the gate uses: every relation it names accepts the chart.
+  const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  const table = Object.fromEntries([...src.match(/const STRICT_GRAMMAR_FORMS[^{]*\{([\s\S]*?)\n\};/)[1].matchAll(/^\s*(\w+): \[([^\]]*)\]/gm)].map((m) => [m[1], m[2].split(",").map((x) => x.trim().replace(/"/g, ""))]));
+  assert.ok(Object.keys(table).length >= 10);
+  for (const chart of new Set(Object.values(table).flat())) {
+    const fits = Object.keys(table).filter((relation) => table[relation].includes(chart));
+    for (const relation of Object.keys(table)) {
+      if (table[relation].includes(chart)) continue;
+      const message = await blockOf(relation === "relationship" ? "relationship" : relation, chart);
+      assert.ok(message?.startsWith(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${table[relation].join(", ")}; got '${chart}'`), `${relation} blocks ${chart}: ${message}`);
+      assert.ok(message.endsWith(`; ${chart} fits: ${fits.join(", ")}`), message);
+    }
+  }
+  check("every blocked relation x chart pair names exactly the relations that list the chart");
+  // Accepted pairs get past the grammar gate and stop at the next check (the fixture has no alt text or source note).
+  assert.match(String(await blockOf("comparison", "dumbbell")), /^Invalid visualization plan: Missing required field 'alt'/);
+  assert.match(String(await blockOf("rank", "horizontal_bar")), /^Invalid visualization plan: Missing required field 'alt'/);
+  check("a chart the relation accepts is not blocked");
 }
 
 for (const name of results) console.log(`${name} -- PASS`);
