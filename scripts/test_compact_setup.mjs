@@ -7,7 +7,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -74,11 +75,18 @@ async function loadTree(label, source) {
   cpSync(join(ROOT, "runtime"), join(dir, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(dir, "config"), { recursive: true });
   stub(dir, "typebox", TYPEBOX);
+  writeFileSync(join(dir, "node_modules", "typebox", "package.json"), JSON.stringify({ name: "typebox", type: "module", exports: { ".": "./index.js", "./compile": "./compile.js" } }));
+  writeFileSync(join(dir, "node_modules", "typebox", "compile.js"), `export * from ${JSON.stringify(pathToFileURL(REAL_COMPILE).href)};\n`);
   stub(dir, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const pi = join(dir, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(source ?? readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
   return import(join(pi, "newsroom.test-copy.mjs"));
 }
+// The stub Type builds plain JSON-schema objects; the Compile validator Pi applies to tool arguments is the real one, found in
+// the installed Pi (the stub package re-exports typebox/compile from there).
+const PI_DIR = spawnSync("npm", ["root", "-g"], { encoding: "utf8" }).stdout.trim() + "/@earendil-works/pi-coding-agent";
+const REAL_COMPILE = createRequire(join(PI_DIR, "package.json")).resolve("typebox/compile");
+const { Compile } = await import(pathToFileURL(REAL_COMPILE).href);
 const SWITCH = "NEWSROOM_SPEED_COMPACT_SETUP";
 const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
 function register(mod, env) {
@@ -116,7 +124,7 @@ const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();
-  assert.deepEqual(changed, ["newsroom_asset_requirements", "newsroom_editorial_discovery", "newsroom_infographic_plan", "newsroom_semantic_novelty", "newsroom_visual_concepts"]);
+  assert.deepEqual(changed, ["newsroom_asset_requirements", "newsroom_editorial_discovery", "newsroom_semantic_novelty", "newsroom_visual_concepts"]);
   const vc = on.get("newsroom_visual_concepts").parameters, vc0 = off.get("newsroom_visual_concepts").parameters;
   assert.deepEqual(vc0.required, ["discovery_ref", "concepts"]);
   assert.deepEqual(vc.required, ["concepts"]);
@@ -125,7 +133,7 @@ const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description
   assert.deepEqual(Object.keys(c.properties), Object.keys(c0.properties), "same field order");
   assert.deepEqual(on.get("newsroom_asset_requirements").parameters.required, ["concept_id", "requirements"]);
   assert.deepEqual(on.get("newsroom_semantic_novelty").parameters.required, ["modules"]);
-  check("tools: switch off is byte-identical to the integration head; on, only the setup tools change (shared + optional refs; creative fields stay required)");
+  check("tools: switch off is byte-identical to the integration head; on, only the four setup tools change, not the page-plan tool (shared + optional refs; creative fields stay required)");
 }
 
 const runSetup = async (label, env, conceptsInput) => {
@@ -176,6 +184,32 @@ const runSetup = async (label, env, conceptsInput) => {
   }
   assert.match(await refuse("g-unknown", () => ({ shared: { ...COMMON, colour: "x" }, concepts: compact() })) ?? "", /shared\.colour is not a concept field/);
   check("on: a creative field or an unknown key in shared is refused, naming it");
+  // shared values are checked against the strict full-form schema, as the full form would refuse them
+  const strict = async (label, shared, concepts) => (await runSetup(label, { [SWITCH]: "1" }, () => ({ shared, concepts }))).c.error ?? "";
+  // The switch-off full form is refused by Pi's argument validation (the same Compile) before execute runs.
+  const fullRefusal = async (label, edit) => {
+    const off = register(mod, {}).get("newsroom_visual_concepts");
+    const args = { discovery_ref: "editorial/discovery/x.json", concepts: full().map(edit) };
+    const v = Compile(off.parameters);
+    return v.Check(args) ? "" : [...v.Errors(args)].map((x) => `${x.instancePath} ${x.message}`).join("\n");
+  };
+  const thirty = Array.from({ length: 30 }, (_, i) => `r${i}`);
+  let e = await strict("s-max", { ...COMMON, risk_flags: thirty }, compact());
+  assert.match(e, /concepts\[0\]\.risk_flags/); assert.match(e, /concepts\[7\]\.risk_flags/, "every failing concept and path is listed");
+  assert.match(await fullRefusal("s-max-full", (c) => ({ ...c, risk_flags: thirty })), /risk_flags/, "the full form refuses the same input");
+  e = await strict("s-type", { ...COMMON, hero_evidence_refs: [123] }, compact());
+  assert.match(e, /concepts\[0\]\.hero_evidence_refs\.0/);
+  assert.match(await fullRefusal("s-type-full", (c) => ({ ...c, hero_evidence_refs: [123] })), /hero_evidence_refs/);
+  const { risk_flags: _r, reporting_gaps: _g, supporting_evidence_refs: _s, ...partial } = COMMON;
+  e = await strict("s-missing", partial, compact());
+  for (const f of ["risk_flags", "reporting_gaps", "supporting_evidence_refs"]) assert.match(e, new RegExp(`concepts\\[0\\]\\.${f}: `), `${f} is required as in the full form`);
+  const noRisk = (c) => { const { risk_flags, ...rest } = c; return rest; };
+  assert.match(await fullRefusal("s-missing-full", noRisk), /risk_flags/);
+  // a concept's own bad value is refused too, and a good set still passes
+  e = await strict("s-own", COMMON, compact().map((c, i) => (i === 2 ? { ...c, media_mix: ["a", 1] } : c)));
+  assert.match(e, /concepts\[2\]\.media_mix/);
+  assert.equal(await strict("s-ok", COMMON, compact()), "");
+  check("on: shared values that the full form refuses (30 risk_flags, a number in refs, missing required lists) are refused with every failing path");
 }
 { // ref inference through the real tools
   const { tools, art, discoveryRef, c } = await runSetup("refs", { [SWITCH]: "1" }, () => ({ shared: COMMON, concepts: compact() }));
