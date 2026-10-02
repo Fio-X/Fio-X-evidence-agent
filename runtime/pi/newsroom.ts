@@ -16,7 +16,7 @@ import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationS
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
-import { assessStoryGraph } from "./story_graph.mjs";
+import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection } from "./editorial_grammar.mjs";
 import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -4121,7 +4121,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     id: Type.String(),
     kind: StringEnum(["evidence", "claim", "mechanism", "context", "outcome", "uncertainty"] as const),
     summary: Type.String(),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "relationship"] as const),
+    explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
     claim_ids: Type.Optional(Type.Array(Type.String(), editorialHint(EDITORIAL_HINT_CLAIM_IDS, { maxItems: 20 }))),
     evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     module_hint: Type.Optional(Type.String()),
@@ -4228,7 +4228,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       concept_ref: optionalWhenCompact(Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF))),
       modules: Type.Array(Type.Object({
         id: Type.String(), reader_question_id: Type.String(), claim_set: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), new_information: Type.String(),
-        explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"] as const),
+        explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
         dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), justification: Type.Optional(Type.String()),
       }), { minItems: 2, maxItems: 30 }),
     }),
@@ -4369,7 +4369,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     reader_question_id: Type.Optional(Type.String()),
     claim_set: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     new_information: Type.Optional(Type.String()),
-    explanatory_dimension: Type.Optional(StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome"] as const)),
+    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS])),
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const)),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
@@ -4828,7 +4828,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     dek: Type.Optional(Type.String()),
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"] as const),
+    explanatory_dimension: StringEnum([...PUBLICATION_DIMENSIONS]),
     width: Type.Optional(StringEnum(["full", "wide", "half", "third"] as const)),
     computation_ref: Type.Optional(Type.String()),
     result_hash: Type.Optional(Type.String()),
@@ -4956,7 +4956,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           binding = { kind: "asset", ref: module.asset_ref, result_hash: sha256Text(clean), field_mapping: fieldMapping };
         }
         if (dataBearing && !binding) throw new Error(`Publication module '${module.id}' requires an immutable evidence binding`);
-        const rest: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        const rest: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete rest.computation_ref; delete rest.result_hash; delete rest.field_mapping_json; delete rest.view_spec_json;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(rest.type)) && !rest.view_spec && !rest.spec && !rest.map_ref && !rest.analysis_ref) rest.view_spec = { visual_type: rest.visual_type ?? "statistical" };
         const accessibility = dataBearing ? {
@@ -5054,7 +5054,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           try { fieldMapping = JSON.parse(module.field_mapping_json); } catch { throw new Error(`Portable module '${module.id}' field_mapping_json is not valid JSON`); }
           if (!fieldMapping || typeof fieldMapping !== "object" || Array.isArray(fieldMapping)) throw new Error(`Portable module '${module.id}' field_mapping_json must be an object`);
         }
-        const planned: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        const planned: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
         if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };

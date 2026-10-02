@@ -126,8 +126,12 @@ const EXPECTED_DESCRIPTIONS = {
 // Default-on tool changes approved after a4d4cb0. For a listed tool the switch-off definition may differ from the baseline
 // only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
 // property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
+const DIMENSION_ENUM_PATH = ["properties", "modules", "items", "properties", "explanatory_dimension", "enum"];
 const APPROVED_LATER = {
   newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"] },
+  // One explanatory_dimension vocabulary (fast-fail-1003 item 3): these two take every story-graph value. +25 B and +15 B.
+  newsroom_semantic_novelty: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
+  newsroom_infographic_plan: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
 };
 const withPathCleared = (tool, path) => {
   const parameters = JSON.parse(JSON.stringify(tool.parameters));

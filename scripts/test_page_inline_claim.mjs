@@ -266,7 +266,17 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
 // The one intended difference from the page line: viz_plan's and viz_chain's measure_semantics is the full schema again (the page line
 // registers a weaker duplicate). Mask only that property here; test_viz_plan_schema.mjs asserts the full schema itself.
 const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsroom_viz_chain"].includes(name) && parameters?.properties?.measure_semantics ? { ...parameters, properties: { ...parameters.properties, measure_semantics: "masked" } } : parameters);
-const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) })]);
+// The second intended difference (fast-fail-1003 item 3, one explanatory_dimension vocabulary): semantic novelty and the infographic plan take every
+// story-graph value, so only the enum of that field is masked, in the baseline and in the current tree alike. It is a loud failure if the field moves.
+const maskDimensionEnum = (name, parameters) => {
+  if (!["newsroom_semantic_novelty", "newsroom_infographic_plan"].includes(name)) return parameters;
+  const masked = JSON.parse(JSON.stringify(parameters));
+  const field = masked?.properties?.modules?.items?.properties?.explanatory_dimension;
+  assert.ok(Array.isArray(field?.enum), `${name} keeps its explanatory_dimension enum`);
+  field.enum = "masked";
+  return masked;
+};
+const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskDimensionEnum(name, maskMeasureSemantics(name, t.parameters)) })]);
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
 if (!baseline) console.log(`git history for ${BASELINE} is unavailable; skipping the comparison with the page line`);
@@ -301,7 +311,7 @@ if (baseline) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       const [before, after] = [register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
-      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, after.get(name).promptGuidelines, after.get(name).parameters]) !== JSON.stringify([before.get(name).description, before.get(name).promptGuidelines, before.get(name).parameters]));
+      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, after.get(name).promptGuidelines, maskDimensionEnum(name, after.get(name).parameters)]) !== JSON.stringify([before.get(name).description, before.get(name).promptGuidelines, maskDimensionEnum(name, before.get(name).parameters)]));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);
       const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), after.get("newsroom_viz_plan"), before.get("record_claim"), after.get("record_claim"), after.get("newsroom_viz_chain")];
       // record_claim: same description and schema, one more guideline.

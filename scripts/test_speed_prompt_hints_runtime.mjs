@@ -58,8 +58,17 @@ try {
   // Everything the model reads of a tool (all fields except the handler).
   // One intended difference from the baseline: viz_plan's and viz_chain's measure_semantics is the full schema again (the
   // baseline registers a weaker duplicate). Mask only that property; test_viz_plan_schema.mjs asserts the full schema.
+  // Second intended difference (fast-fail-1003 item 3, one explanatory_dimension vocabulary): semantic novelty and the infographic plan take
+  // every story-graph value. Mask only the enum of that field; the check after the loop below proves it really differs.
   const MASKED = new Set(["newsroom_viz_plan", "newsroom_viz_chain"]);
-  const visible = (tool) => JSON.stringify({ ...tool, execute: undefined }, MASKED.has(tool.name) ? (key, value) => (key === "measure_semantics" ? "masked" : value) : undefined);
+  const DIMENSION_ENUM_MASKED = new Set(["newsroom_semantic_novelty", "newsroom_infographic_plan"]);
+  const maskEnum = (value) => JSON.parse(JSON.stringify(value, (key, inner) => (key === "enum" ? "masked" : inner)));
+  const visibleWith = (tool, masks) => JSON.stringify({ ...tool, execute: undefined }, (key, value) => {
+    if (masks && MASKED.has(tool.name) && key === "measure_semantics") return "masked";
+    if (masks && DIMENSION_ENUM_MASKED.has(tool.name) && key === "explanatory_dimension") return maskEnum(value);
+    return value;
+  });
+  const visible = (tool) => visibleWith(tool, true);
 
   let compared = 0;
   for (const profile of PROFILES) {
@@ -93,6 +102,12 @@ try {
         assert.equal(afterGuidelines.length, beforeGuidelines.length + 1, `${profile}/${name}: exactly one sentence added`);
       }
     }
+  }
+  // The masked enum is a real, confined difference: unmasked, exactly these two tools differ from the baseline (drop the mask if it is reverted).
+  {
+    const [base, off] = [definitions(baseline, "full", []), definitions(current, "full", [])];
+    const differing = [...base.keys()].filter((name) => visibleWith(off.get(name), false) !== visibleWith(base.get(name), false) && !MASKED.has(name));
+    assert.deepEqual(differing.sort(), [...DIMENSION_ENUM_MASKED].sort(), "apart from viz_plan and viz_chain (measure_semantics), only the two dimension-enum tools differ from the baseline");
   }
   // The tools carrying the guidance exist in the profiles that matter.
   const inv = definitions(current, "investigate", ["NEWSROOM_SPEED_PARALLEL_HINTS"]);
