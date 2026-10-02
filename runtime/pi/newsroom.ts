@@ -186,7 +186,7 @@ const ruleHintsEnabled = () => process.env.NEWSROOM_SPEED_RULE_HINTS === "1";
 const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(base ?? {}), description: [base?.description, text].filter(Boolean).join(" ") } : base);
 const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows (strip_plot: 600), so aggregate in SQL first.";
 const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";
-const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
+const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples/mirrored_bar; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
 const RULE_HINT_QUESTIONS = "Send at least 3 questions, and fill at least one of surprises, mechanisms or spatial_dimensions; otherwise the decision is REVISE.";
 const RULE_HINT_CHANNELS = "Each channel may be owned by one field only.";
 const EDITORIAL_HINT_CLAIM_IDS = "Only claim_ids whose record_claim result read \"VERIFIED by system replay\". A claim recorded without computation_refs never verifies, and citing it refuses the whole graph.";
@@ -352,7 +352,7 @@ const SEMANTIC_REQUIRED_READER_TASKS = new Set(["ranking", "comparison", "change
 
 const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   rank: ["horizontal_bar", "dot"],
-  comparison: ["horizontal_bar", "dot", "dumbbell", "slope", "small_multiples"],
+  comparison: ["horizontal_bar", "dot", "dumbbell", "slope", "small_multiples", "mirrored_bar"],
   change: ["dumbbell", "slope"],
   trend: ["line", "multi_line", "small_multiples"],
   anomaly: ["diverging_bar", "dot", "small_multiples"],
