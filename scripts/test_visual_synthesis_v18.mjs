@@ -136,6 +136,46 @@ const oneChartLint=lintInfographicSpec(oneChartSpec,oneChartAssets,context);
 assert.equal(oneChartLint.passed,false);
 assert.ok(oneChartLint.blockers.some((x)=>x.includes('default_chart_equivalence')),JSON.stringify(oneChartLint));
 
+// Q3b: a decorative cover (illustration manifest metadata.decorative === true) earns no credit in any page gate.
+const coverAsset=(decorative)=>({...assets['visualizations/illustrations/mechanism.json'],manifest:{...assets['visualizations/illustrations/mechanism.json'].manifest,metadata:{decorative,motif:'arcs'}}});
+const coverModule={...structuredClone(spec.modules.find((m)=>m.id==='mechanism')),id:'cover',asset_ref:'visualizations/illustrations/cover.json',label:'Cover'};
+{
+  const withCover=(decorative)=>{
+    const s2=structuredClone(oneChartSpec);
+    s2.modules=[coverModule,...s2.modules];
+    return lintInfographicSpec(s2,{...oneChartAssets,'visualizations/illustrations/cover.json':coverAsset(decorative)},context);
+  };
+  const dec=withCover(true);
+  assert.equal(dec.passed,false);
+  assert.ok(dec.blockers.some((x)=>x.includes('default_chart_equivalence')),'decorative cover must not clear default_chart_equivalence');
+  assert.ok(dec.blockers.some((x)=>x.includes('visual_synthesis')),'decorative cover must not count as a visual module');
+  assert.equal(dec.synthesis.metrics.illustration_module_count,0);
+  const real=withCover(false);
+  assert.ok(!real.blockers.some((x)=>x.includes('default_chart_equivalence')),'a non-decorative illustration still counts, exactly as before');
+  assert.equal(real.synthesis.metrics.illustration_module_count,1);
+  // The flag is read from the stored manifest only, never from the page plan.
+  const planFlag=structuredClone(oneChartSpec);
+  planFlag.modules=[{...coverModule,decorative:true},...planFlag.modules];
+  const planLint=lintInfographicSpec(planFlag,{...oneChartAssets,'visualizations/illustrations/cover.json':coverAsset(false)},context);
+  assert.ok(!planLint.blockers.some((x)=>x.includes('default_chart_equivalence')),'a decorative flag in the plan is ignored');
+  // Rendering: no ordinal, no shift, no extra hairline; critic gives no hero or variety credit.
+  const base=composeInfographicBundle(spec,assets);
+  const covered=structuredClone(spec); covered.modules=[coverModule,...covered.modules];
+  const coveredAssets={...assets,'visualizations/illustrations/cover.json':coverAsset(true)};
+  const cb=composeInfographicBundle(covered,coveredAssets);
+  const ordinals=(svg)=>[...svg.matchAll(/letter-spacing="1.5" fill="[^"]+">(\d\d)(?: ·[^<]*)?<\/text>/g)].map((m)=>m[1]).join(',');
+  assert.equal(ordinals(cb.desktop.svg),ordinals(base.desktop.svg),'the cover consumes no ordinal');
+  assert.ok(ordinals(cb.desktop.svg).startsWith('01'),'first real module is 01');
+  const hair=(svg)=>(svg.match(/<line [^>]*stroke-width="1"\/>/g)??[]).length;
+  assert.equal(hair(cb.desktop.svg),hair(base.desktop.svg),'the cover draws no extra hairline');
+  assert.ok(cb.desktop.svg.includes('data-role="illustration-credit"'),'credit and disclosure caption stay');
+  assert.deepEqual(cb.desktop.decorative_module_ids,['cover']);
+  const critCover=critiqueInfographic(covered,cb);
+  const critBase=critiqueInfographic(spec,base);
+  assert.ok(critCover.score<=critBase.score,`decorative cover must not raise the critic score (${critCover.score} vs ${critBase.score})`);
+  console.log('decorative cover: no gate credit, no ordinal, no hairline: PASS');
+}
+
 const noClosure=structuredClone(spec);
 noClosure.modules.find((m)=>m.id==='resolution').story_node_ids=['yield-risk'];
 const noClosureLint=lintInfographicSpec(noClosure,assets,context);
