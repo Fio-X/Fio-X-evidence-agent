@@ -2130,6 +2130,152 @@ function registerVizChain(pi: ExtensionAPI) {
   });
 }
 
+// ---- Hero value gate (NEWSROOM_HERO_VALUE_GATE=1) --------------------------------------------------------------
+// A hero_stat does not type its number: it names one placeholder of its claim (value_from) and the runtime copies the
+// text the claim itself shows. A claim recorded inline carries its bindings; a claim recorded with record_claim has none,
+// so the selector is resolved on the claim's own computation rows and the result must also be stated by the claim text.
+// label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
+// writes a number of its own and never changes a claim's status.
+const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE === "1";
+const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
+
+type HeroClaimContext = { claimId: string; tables: Record<string, unknown>[][]; bindings: ClaimBinding[] | null; claimText: string; template: string | null };
+
+async function heroClaimContext(claimId: string, records: Map<string, any>): Promise<HeroClaimContext | null> {
+  const record = records.get(claimId);
+  if (!record) return null;
+  const tables: Record<string, unknown>[][] = [];
+  for (const ref of Array.isArray(record.computation_refs) ? record.computation_refs : []) {
+    try {
+      const computation = await readArtifactJson(String(ref), "computations/");
+      if (Array.isArray(computation?.rows)) tables.push(computation.rows);
+    } catch {}
+  }
+  const bindings = Array.isArray(record.claim_bindings) && record.claim_bindings.length ? (record.claim_bindings as ClaimBinding[]) : null;
+  return { claimId, tables, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null };
+}
+
+// Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
+// '−' and not followed by a digit or by '.' and a digit; any other text just has to occur.
+function heroTokenOffsets(text: string, claim: string): number[] {
+  const out: number[] = [];
+  if (!text) return out;
+  const numeric = /\p{Nd}/u.test(text);
+  for (let at = claim.indexOf(text); at !== -1; at = claim.indexOf(text, at + 1)) {
+    if (numeric) {
+      const before = at > 0 ? claim[at - 1] : "";
+      const after = claim[at + text.length] ?? "";
+      const next = claim[at + text.length + 1] ?? "";
+      if (/[\p{Nd}.+\-−]/u.test(before)) continue;
+      if (before === "," && at > 1 && /\p{Nd}/u.test(claim[at - 2])) continue;
+      if (/\p{Nd}/u.test(after) || (after === "." && /\p{Nd}/u.test(next))) continue;
+    }
+    out.push(at);
+  }
+  return out;
+}
+
+function resolveHeroPlaceholder(context: HeroClaimContext, placeholder: string, where: string): { text: string; column?: string } {
+  if (!/^\{[^{}]*\}$/.test(placeholder)) throw new Error(`HERO_PLACEHOLDER_INVALID: ${where} must be one placeholder of claim '${context.claimId}' written in braces, got '${placeholder.slice(0, 60)}'`);
+  if (context.bindings) {
+    const hit = context.bindings.find((binding) => binding.placeholder === placeholder);
+    if (!hit) throw new Error(`HERO_PLACEHOLDER_UNBOUND: ${where} ${placeholder} is not one of claim '${context.claimId}' bindings; use one of: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}`);
+    return { text: String(hit.text), column: hit.column };
+  }
+  let reason = "the claim has no computation rows to resolve it on";
+  for (const rows of context.tables) {
+    try {
+      const filled = fillClaimTemplate(placeholder, rows);
+      if (heroTokenOffsets(filled.text, context.claimText).length) return { text: filled.text, column: filled.bindings[0]?.column };
+      reason = `it resolves to '${filled.text.slice(0, 40)}', which the claim text does not state`;
+    } catch (error) {
+      reason = String((error as any)?.message ?? error).replace(/^CLAIM_TEMPLATE_ERROR:\s*/, "").slice(0, 200);
+    }
+  }
+  throw new Error(`HERO_PLACEHOLDER_NOT_STATED: ${where} ${placeholder} cannot be used with claim '${context.claimId}': ${reason}`);
+}
+
+// Units a hero may show: the literal that follows the placeholder in the claim itself, and the unit the page's own chart
+// for this claim declares for the bound column (its plan's measure_semantics). No page chart for the claim, no unit.
+async function heroPlanUnits(modules: any[], claimId: string, column: string | undefined) {
+  const out = new Set<string>();
+  if (!column) return [];
+  for (const module of modules ?? []) {
+    if (module?.type !== "visual" || !module.manifest_ref) continue;
+    try {
+      const manifest = await readArtifactJson(String(module.manifest_ref), "visualizations/");
+      if (String(manifest?.claim_id ?? "") !== claimId || !manifest.plan_ref) continue;
+      const plan = await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/");
+      for (const entry of Array.isArray(plan?.measure_semantics) ? plan.measure_semantics : []) if (entry?.field === column && typeof entry.unit === "string" && entry.unit) out.add(entry.unit);
+    } catch {}
+  }
+  return [...out];
+}
+
+function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, valueText: string): string[] {
+  let rest: string | null = null;
+  if (context.template) {
+    const at = context.template.indexOf(placeholder);
+    if (at !== -1) rest = context.template.slice(at + placeholder.length);
+  } else {
+    const [at] = heroTokenOffsets(valueText, context.claimText);
+    if (at !== undefined) rest = context.claimText.slice(at + valueText.length);
+  }
+  if (rest === null) return [];
+  // The literal right after the number, and a scale word after exactly one space (letters only: "million", never "3").
+  const out = [rest.match(HERO_LITERAL_STOP)?.[0] ?? ""];
+  if (/^ \S/u.test(rest)) {
+    const word = rest.slice(1).match(HERO_LITERAL_STOP)?.[0] ?? "";
+    if (/^\p{L}+$/u.test(word)) out.push(word);
+  }
+  return out.filter(Boolean);
+}
+
+/** NEWSROOM_HERO_VALUE_GATE=1: every hero_stat is filled from its claim before validation and storage; off, the modules pass untouched. */
+async function fillHeroModules(modules: any[]): Promise<any[]> {
+  if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
+  const records = await verifiedClaimRecords();
+  const out: any[] = [];
+  for (const module of modules) out.push(module?.type === "hero_stat" ? await fillHeroModule(module, await heroClaimContext(String(module.claim_id ?? ""), records), modules) : module);
+  return out;
+}
+
+/** The filled form of one hero_stat; throws the first refusal. Filling a stored (already filled) module gives the same module. */
+async function fillHeroModule(module: any, context: HeroClaimContext | null, modules: any[]) {
+  const id = String(module.id);
+  const claimId = String(module.claim_id ?? "");
+  if (!context) throw new Error(`HERO_CLAIM_NOT_VERIFIED: hero_stat '${id}' claim '${claimId}' is not a system-verified claim`);
+  const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
+  if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
+  const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
+  const typed = module.value !== undefined && module.value !== null && String(module.value).trim() !== "";
+  if (typed && String(module.value) !== value.text) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
+  const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);
+  if (unit !== "") {
+    const allowed = [...new Set([...heroLiteralsAfter(context, from, value.text), ...(await heroPlanUnits(modules, claimId, value.column))])];
+    if (!allowed.includes(unit)) throw new Error(`HERO_UNIT_NOT_ALLOWED: hero_stat '${id}' unit '${unit.slice(0, 20)}' is not shown by claim '${claimId}'; allowed: empty${allowed.map((entry) => `, '${entry}'`).join("")}`);
+  }
+  const text: Record<string, string> = {};
+  for (const field of ["label", "detail"]) {
+    const templateKey = `${field}_template`;
+    const hasTemplate = typeof module[templateKey] === "string";
+    const source = hasTemplate ? module[templateKey] : module[field];
+    if (source === undefined || source === null) continue;
+    const src = String(source);
+    if (/[{}]/.test(src.replace(/\{[^{}]*\}/g, ""))) throw new Error(`HERO_TEMPLATE_INVALID: hero_stat '${id}' ${field} has an unmatched { or }`);
+    const near = literalNumberIn(src);
+    if (near !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}`);
+    const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
+    let filled = src;
+    for (const placeholder of new Set(placeholders)) filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+    if (hasTemplate && String(module[field] ?? "") !== filled) throw new Error(`HERO_EDITED_AFTER_FILL: hero_stat '${id}' ${field} no longer matches its ${templateKey}; edit the template, not the filled text`);
+    text[field] = filled;
+    if (placeholders.length) text[templateKey] = src;
+  }
+  const { label_template: _l, detail_template: _d, ...rest } = module;
+  return { ...rest, value: value.text, value_from: from, ...text };
+}
+
 // The deterministic page lint over a stored or proposed plan; shared by
 // newsroom_infographic_lint and the opt-in plan-edit check.
 async function lintInfographicPlan(spec: any) {
@@ -2178,25 +2324,23 @@ async function lintInfographicPlan(spec: any) {
     }
     visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
   }
-  // NEWSROOM_HERO_VALUE_GATE=1: each hero_stat's own claim rows go to lint, which stays synchronous.
+  // NEWSROOM_HERO_VALUE_GATE=1: each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
   const heroGate: Record<string, any> = {};
-  if (process.env.NEWSROOM_HERO_VALUE_GATE === "1") {
-    const heroClaimRows: Record<string, any[]> = {};
+  if (heroGateOn()) {
+    const heroChecks: Record<string, string[]> = {};
     for (const module of spec.modules ?? []) {
-      if (module?.type !== "hero_stat" || !module.claim_id) continue;
-      const claimId = String(module.claim_id);
-      if (claimId in heroClaimRows) continue;
-      heroClaimRows[claimId] = [];
-      const claim = verifiedRecords.get(claimId);
-      for (const ref of Array.isArray(claim?.computation_refs) ? claim.computation_refs : []) {
-        try {
-          const record = await readArtifactJson(String(ref), "computations/");
-          if (Array.isArray(record?.rows)) heroClaimRows[claimId].push(record.rows);
-        } catch {}
+      if (module?.type !== "hero_stat") continue;
+      const claimId = String(module.claim_id ?? "");
+      try {
+        const filled = await fillHeroModule(module, await heroClaimContext(claimId, verifiedRecords), spec.modules);
+        const stored = ["value", "label", "detail", "label_template", "detail_template", "value_from"].filter((key) => (filled as any)[key] !== undefined && String((filled as any)[key]) !== String(module[key] ?? ""));
+        heroChecks[String(module.id)] = stored.length ? [`HERO_EDITED_AFTER_FILL: hero_stat '${module.id}' ${stored.join(", ")} differ from what its claim fills; leave the filled plan as the plan tool wrote it`] : [];
+      } catch (error) {
+        heroChecks[String(module.id)] = [String((error as any)?.message ?? error)];
       }
     }
     heroGate.hero_value_gate = true;
-    heroGate.hero_claim_rows = heroClaimRows;
+    heroGate.hero_checks = heroChecks;
   }
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
@@ -4073,6 +4217,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     value: Type.Optional(Type.Union([Type.String(), Type.Number()])),
     unit: Type.Optional(Type.String()),
     detail: Type.Optional(Type.String()),
+    ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." })) } : {}),
     claim_id: Type.Optional(Type.String()),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
     manifest_ref: Type.Optional(Type.String()),
@@ -4214,7 +4359,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         competition_profile: params.competition_profile ?? "editorial",
         ...params,
         editorial_grammar: editorialGrammar,
-        modules: params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" })),
+        modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))),
       };
       if (preflightEnabled()) {
         // Everything the checks below would reject for a missing or unbound
@@ -4324,6 +4469,13 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       if (lint.plan_ref !== params.plan_ref) throw new Error("Infographic lint does not belong to the supplied plan");
       if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
+      {
+        // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
+        const verifiedNow = new Set(await verifiedClaimIds());
+        const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
+        const unverified = cited.filter((id) => !verifiedNow.has(id));
+        if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
+      }
       const assets = await loadInfographicAssets(spec, mobilePages);
       for (const [ref, asset] of Object.entries(assets) as any) {
         const expected = lint.asset_hashes?.[ref];
