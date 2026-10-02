@@ -182,6 +182,8 @@ await refused("a typed value, with value_from", { value_from: "{max.value}", val
 await refused("a typed value, without value_from", { value: "9" }, /HERO_VALUE_FROM_REQUIRED.*do not type the number/);
 await refused("a typed '9 (77)'", { value: "9 (77)" }, /HERO_VALUE_FROM_REQUIRED/);
 await refused("2099 typed in the detail", { value_from: "{max.value}", detail: "Forecast for 2099" }, /HERO_TYPED_NUMBER.*detail/);
+await refused("a number word in the label", { value_from: "{max.value}", label: "Two-thirds of output" }, /HERO_TYPED_NUMBER.*label.*number word/);
+await refused("a number word in the detail", { value_from: "{max.value}", detail: "Top five regions" }, /HERO_TYPED_NUMBER.*detail.*number word/);
 await refused("unit 万 the claim does not show", { value_from: "{max.value}", unit: "万" }, /HERO_UNIT_NOT_ALLOWED/);
 await refused("unit kg on a measure with no unit", { value_from: "{max.value}", unit: "kg" }, /HERO_UNIT_NOT_ALLOWED.*allowed: empty/);
 await refused("a claim that is not verified", { value_from: "{max.value}" }, /HERO_CLAIM_NOT_VERIFIED/, { claim_id: "c-nope" });

@@ -255,6 +255,7 @@ for module, const, path_var in [
     ('map_reference_layers.mjs','MAP_REFERENCE_LAYERS_RUNTIME','map_reference_layers_path'),
     ('browser_qa.py','BROWSER_QA_RUNTIME','browser_qa_path'),
     ('computation_rows.mjs','COMPUTATION_ROWS_RUNTIME','computation_rows_path'),
+    ('number_words.mjs','NUMBER_WORDS_RUNTIME','number_words_path'),
     ('networkx_analyze.py','NETWORKX_ANALYZE_RUNTIME','networkx_analyze_path'),
     ('networkx_reduce.py','NETWORKX_REDUCE_RUNTIME','networkx_reduce_path'),
     ('scientific_basemap_prepare.py','SCIENTIFIC_BASEMAP_PREPARE_RUNTIME','scientific_basemap_prepare_path'),
@@ -266,7 +267,7 @@ for module, const, path_var in [
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
     if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
-for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs','computation_rows.mjs']:
+for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs','computation_rows.mjs','number_words.mjs']:
     if f'./{module}' not in extension:
         raise SystemExit(f'newsroom.ts does not import required runtime module {module}')
 if 'scientific_map.mjs' not in (ROOT/'runtime/pi/publication.mjs').read_text(encoding='utf-8'):
