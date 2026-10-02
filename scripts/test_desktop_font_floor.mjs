@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
-import { lintInfographicSpec, composeInfographicBundle, _rhythmDebug } from '../runtime/pi/infographic.mjs';
+import { lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
+import { measurePage, embeddedChart, nativeInk, mapToPage } from './lib_page_geometry.mjs';
 
 const claim='claim-floor';
 const context={verified_claim_ids:[claim],mobile_pages:false};
@@ -28,6 +29,21 @@ function noFloorFailure(qa){
     }
   }
 }
+// The page may trim a chart's blank padding but must not shrink it or cut it off. Measured from the two svgs alone
+// (scripts/lib_page_geometry.mjs; no layout helper is the oracle): the embedded svg's own width/height/viewBox give the
+// scale the chart is really drawn at (the "meet" rule, so a height-capped chart counts at the scale it is drawn at), and
+// the standalone chart svg gives its viewBox width, its lowest ink and its text sizes.
+function assertChartKeepsNativeSize(pageSvg,id,nativeSvg,label){
+  const v=embeddedChart(measurePage(pageSvg),id),n=nativeInk(nativeSvg);
+  assert.ok(v.w/n.width>=1-0.001,`${label}: embedded width ${v.w} / native viewBox width ${n.width} >= 1`);
+  assert.ok(v.scale>=1-0.001,`${label}: chart is drawn at scale ${v.scale} >= 1 of its native size`);
+  const ink=mapToPage(v,n.ink);
+  assert.ok(ink.y1<=v.y+v.h+0.01,`${label}: native ink bottom lands at ${ink.y1}, beyond the embedded height (bottom ${v.y+v.h})`);
+  assert.ok(ink.x0>=v.x-0.01&&ink.x1<=v.x+v.w+0.01&&ink.y0>=v.y-0.01,`${label}: native ink [${ink.x0},${ink.y0} - ${ink.x1},${ink.y1}] is clipped by the embedded viewport [${v.x},${v.y} - ${v.x+v.w},${v.y+v.h}]`);
+  const smallest=Math.min(...n.fontSizes)*v.scale;
+  assert.ok(smallest>=12-0.01,`${label}: smallest chart text is drawn at ${smallest}px, below the 12px floor`);
+  return {scale:v.scale,smallest};
+}
 const base={schema_version:'1.0.0',kicker:'SYSTEMS / DATA FEATURE',title:'A long ranking stays legible on the page',dek:'A synthetic page checks that a tall chart is not shrunk below the text floor.',alt:'A magazine-style page with a tall ranking chart.',byline:'Newsroom Agent',date_label:'Regression edition',layout:'feature',complexity_budget:'medium',source_note:'Synthetic fixture'};
 
 // (a) tall full-width chart
@@ -48,10 +64,8 @@ const base={schema_version:'1.0.0',kicker:'SYSTEMS / DATA FEATURE',title:'A long
   assert.equal(qa.passed,true,JSON.stringify([qa.viewports.desktop.geometry.failures.slice(0,5),qa.viewports.desktop.contrast?.failures?.slice(0,3)]));
   noFloorFailure(qa);
   const eh=embeddedH(b.desktop.svg);
-  // The page trims a chart's blank bottom padding, so compare with the trimmed native height (same scale).
-  const nativeTrimmed=_rhythmDebug.trimmedSvgInfo(f.bundle.desktop).height;
-  assert.ok(eh>=nativeTrimmed-0.01,`embedded height ${eh} >= native ${nativeTrimmed}`);
-  console.log(`PASS (a) tall full-width chart: native=${native} embedded=${eh}, lint+render QA ok, no font_below_floor`);
+  const fit=assertChartKeepsNativeSize(b.desktop.svg,'tall',f.bundle.desktop,'(a)');
+  console.log(`PASS (a) tall full-width chart: native=${native} embedded=${eh} scale=${fit.scale.toFixed(4)} smallest text=${fit.smallest.toFixed(2)}px, lint+render QA ok, no font_below_floor`);
 }
 
 // (b) compact 8-column anchor in hero_sidecar_stack
@@ -76,7 +90,6 @@ const base={schema_version:'1.0.0',kicker:'SYSTEMS / DATA FEATURE',title:'A long
   assert.equal(qa.passed,true,JSON.stringify([qa.viewports.desktop.geometry.failures.slice(0,5),qa.viewports.desktop.contrast?.failures?.slice(0,3)]));
   noFloorFailure(qa);
   const eh=embeddedH(b.desktop.svg);
-  const nativeTrimmed=_rhythmDebug.trimmedSvgInfo(f.bundle.compact).height;
-  assert.ok(eh>=nativeTrimmed-0.01,`embedded height ${eh} >= native compact ${nativeTrimmed}`);
-  console.log(`PASS (b) compact sidecar anchor: native=${native} embedded=${eh}, lint+render QA ok, no font_below_floor`);
+  const fit=assertChartKeepsNativeSize(b.desktop.svg,'anchor',f.bundle.compact,'(b)');
+  console.log(`PASS (b) compact sidecar anchor: native=${native} embedded=${eh} scale=${fit.scale.toFixed(4)} smallest text=${fit.smallest.toFixed(2)}px, lint+render QA ok, no font_below_floor`);
 }

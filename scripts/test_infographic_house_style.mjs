@@ -28,6 +28,7 @@
 import assert from "node:assert/strict";
 import { composeInfographicBundle, validateInfographicSpec } from "../runtime/pi/infographic.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
+import { measurePage, pageFingerprint, assertBoxesInOrder } from "./lib_page_geometry.mjs";
 
 const claim = "claim-house-style-fixture";
 
@@ -154,19 +155,52 @@ function withoutHeroStat(svg) {
 //         it has no place in a "pure colour/font swap" comparison - check #4
 //         covers it instead.
 {
-  const houseSvg = withoutHeroStat(composeInfographicBundle(baseSpec(), {}).desktop.svg);
-  const legacySvg = withoutHeroStat(composeInfographicBundle(baseSpec({ style_id: "legacy" }), {}).desktop.svg);
+  const houseFull = composeInfographicBundle(baseSpec(), {}).desktop.svg;
+  const legacyFull = composeInfographicBundle(baseSpec({ style_id: "legacy" }), {}).desktop.svg;
+  const houseSvg = withoutHeroStat(houseFull);
+  const legacySvg = withoutHeroStat(legacyFull);
   const stripFontFamily = (svg) => svg.replace(/font-family="[^"]*"/g, 'font-family="FONT"');
-  // Q1: house hero_stat's red rule now sits at its box top (aligned with the neighbouring hairlines), so vertical
-  // positions legitimately differ from legacy; colours, fonts, text, x positions and structure still must match.
-  const stripY = (svg) => svg.replace(/\b(y|y1|y2|height|viewBox)="[^"]*"/g, '$1="N"');
-  const normalize = (svg, colors) => stripY(stripFontFamily(svg))
+  const normalize = (svg, colors) => stripFontFamily(svg)
     .replaceAll(colors.ink, "INK").replaceAll(colors.muted, "MUTED")
     .replaceAll(colors.grid, "GRID").replaceAll(colors.accent, "ACCENT").replaceAll(colors.paper, "PAPER");
-  const houseNormalized = normalize(houseSvg, HOUSE);
-  const legacyNormalized = normalize(legacySvg, LEGACY);
-  assert.equal(houseNormalized, legacyNormalized, "house and legacy chrome (outside hero_stat) must be identical once each style's own five colours and its own font-family choice are normalized out - any remaining difference would mean fix 7/fix 12 changed more than colour/font");
-  console.log("house vs. legacy: chrome outside hero_stat differs by exactly the five swapped colours plus font-family, nothing else structural: PASS");
+
+  // Q1: house hero_stat's red rule now sits at its box top (aligned with the neighbouring hairlines), so the
+  // modules sit at different heights than under legacy. That is the only thing allowed to differ vertically, and it
+  // is checked from the two composed svgs alone (scripts/lib_page_geometry.mjs, which never calls the layout code):
+  //  - module box tops, and so the page height, may differ;
+  //  - every module keeps its place in the order, its x and its width, and boxes never overlap;
+  //  - a box keeps its height, except the hero stat itself (its structure differs by design, check #4) and the boxes
+  //    in its row, which take the row's height;
+  //  - the rest of the document is identical, element by element in document order (the root element, the page plate,
+  //    every module's elements, the footer and the module boundary rects, ink or not), once the five colours and the
+  //    font-family are normalized, with every y of an element taken relative to the box top of the module that owns
+  //    it (the header keeps its page y, the footer is taken from the page bottom): a one pixel shift of anything inside
+  //    a module fails, a shift of a whole module does not.
+  const hp = measurePage(houseFull), lp = measurePage(legacyFull);
+  assertBoxesInOrder(hp.modules, "house");
+  assertBoxesInOrder(lp.modules, "legacy");
+  assert.deepEqual(hp.modules.map((b) => b.id), lp.modules.map((b) => b.id), "house and legacy keep the same modules in the same order");
+  assert.equal(hp.width, lp.width, "house and legacy pages have the same width");
+  const heroRow = (page) => { const hero = page.modules.find((b) => b.id === "stat-total"); return { hero, mates: page.modules.filter((b) => Math.abs(b.y - hero.y) < 0.01) }; };
+  const houseRow = heroRow(hp), legacyRow = heroRow(lp);
+  for (const row of [houseRow, legacyRow]) {
+    for (const mate of row.mates) assert.ok(Math.abs(mate.h - row.hero.h) < 0.01, `${mate.id} takes the height of the row it shares with the hero stat`);
+  }
+  hp.modules.forEach((hb, i) => {
+    const lb = lp.modules[i];
+    assert.ok(Math.abs(hb.x - lb.x) < 0.01 && Math.abs(hb.w - lb.w) < 0.01, `${hb.id}: house x/width ${hb.x}/${hb.w} equal legacy ${lb.x}/${lb.w}`);
+    if (!houseRow.mates.some((m) => m.id === hb.id)) assert.ok(Math.abs(hb.h - lb.h) < 0.01, `${hb.id}: house box height ${hb.h} equals legacy ${lb.h}`);
+  });
+  const house = pageFingerprint(houseSvg, (el) => normalize(el, HOUSE));
+  const legacy = pageFingerprint(legacySvg, (el) => normalize(el, LEGACY));
+  const why = (part) => `house and legacy ${part} (outside hero_stat) must be identical, y values relative to their module box, once each style's own five colours and its own font-family choice are normalized out - any remaining difference would mean fix 7/fix 12 changed more than colour/font`;
+  assert.equal(house.root, legacy.root, why("root element"));
+  assert.deepEqual(house.sequence, legacy.sequence, why("page elements, in document order"));
+  const owners = new Set(house.sequence.map((entry) => entry.owner));
+  for (const owner of ["header", "plate", "module:section-1", "module:note", "module:quote-1", "footer", "module-boundary:note"]) {
+    assert.ok(owners.has(owner), `the fingerprint really holds the elements of ${owner}`);
+  }
+  console.log("house vs. legacy: chrome outside hero_stat differs by exactly the five swapped colours plus font-family, with module-relative y values identical and only box tops/heights moved: PASS");
 }
 
 // --- 3. Same NEWSROOM_HOUSE_STYLE=legacy env fallback viz.mjs itself uses --
