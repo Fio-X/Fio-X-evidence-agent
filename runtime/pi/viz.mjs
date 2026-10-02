@@ -2764,12 +2764,21 @@ export function lineAxisDomain(values, includeZero = false, count = 4) {
   return [niceMin, niceMax];
 }
 
-export function lineAxisTicks(domain, count = 4) {
+// `cover` (house style; renderLine/renderMobileLine pass HOUSE_STYLE_ACTIVE)
+// walks outward to the first tick at or beyond each edge of the domain.
+// lineAxisDomain widens by the step of the *data* range while this function
+// re-derives the step from the already-widened span, so the two can disagree
+// (data 18..64: domain [10, 70], tick step 20) and the nearest-tick rounding
+// below then lands the lowest tick just inside the domain (20) - above the
+// lowest plotted value, which fell off the axis. Legacy (`cover` false)
+// keeps the nearest-tick rounding byte-for-byte. The nudge keeps float noise
+// (an edge 3.0000000000000004 steps out) from adding a whole extra tick.
+export function lineAxisTicks(domain, count = 4, cover = true) {
   const [start, stop] = domain;
   if (!Number.isFinite(start) || !Number.isFinite(stop) || start === stop) return [start ?? 0];
   const step = niceAxisStep((stop - start) / count);
-  const i0 = Math.round(start / step);
-  const i1 = Math.round(stop / step);
+  const i0 = cover ? Math.floor(start / step + 1e-9) : Math.round(start / step);
+  const i1 = cover ? Math.ceil(stop / step - 1e-9) : Math.round(stop / step);
   const ticks = [];
   for (let i = i0; i <= i1; i++) ticks.push(i * step);
   return ticks.length ? ticks : [start, stop];
@@ -3345,7 +3354,7 @@ function renderLine(spec, rows, multi = false) {
   // domain or the tick list's own extremes, so every drawn tick - not just
   // the plotted data - is guaranteed to land inside [top, bottom]. Legacy
   // keeps the old, narrower yDomain-only scale, byte-identical.
-  const yTicks = lineAxisTicks(yDomain, 4);
+  const yTicks = lineAxisTicks(yDomain, 4, HOUSE_STYLE_ACTIVE);
   const yScaleDomain = HOUSE_STYLE_ACTIVE ? [Math.min(yDomain[0], yTicks[0]), Math.max(yDomain[1], yTicks[yTicks.length - 1])] : yDomain;
   const yScale = verticalScale(yScaleDomain, top, bottom);
   // Task A: monotone interpolation is only ever applied to a dense, regularly
@@ -3952,7 +3961,7 @@ function renderMobileLine(spec, rows, multi=false) {
   const yDomain=lineAxisDomain(yValues,includeZero,4);
   // Fix 4 (mobile): same header/top-tick scale-overshoot fix as renderLine -
   // see the comment there.
-  const yTicksMobile=lineAxisTicks(yDomain,4);
+  const yTicksMobile=lineAxisTicks(yDomain,4,HOUSE_STYLE_ACTIVE);
   const yScaleDomain=HOUSE_STYLE_ACTIVE?[Math.min(yDomain[0],yTicksMobile[0]),Math.max(yDomain[1],yTicksMobile[yTicksMobile.length-1])]:yDomain;
   const yScale=verticalScale(yScaleDomain,top,bottom);
   const pointAnnotationAssignment=assignPointAnnotations(spec,rows,spec.value_field);
