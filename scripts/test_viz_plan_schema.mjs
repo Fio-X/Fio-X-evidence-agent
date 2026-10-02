@@ -100,6 +100,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   const desc = (name, ...path) => path.reduce((o, k) => o?.[k], on.get(name).parameters.properties);
   const vp = "newsroom_viz_plan";
   must(/240 rows/.test(desc(vp, "sql").description), "sql hint missing");
+  must(/240 rows \(strip_plot: 600\)/.test(desc(vp, "sql").description), "sql hint lost the strip_plot 600-row exception (viz.mjs caps every other chart type at 240 rows)");
   must(/Required by chart_type/.test(desc(vp, "value_field").description), "value_field hint missing");
   must(/editorial grammar/.test(desc(vp, "claim_spec", "properties", "relation").description), "relation hint missing");
   must(/at least 3 questions/.test(desc("newsroom_editorial_discovery", "candidate_questions").description), "discovery hint missing");
