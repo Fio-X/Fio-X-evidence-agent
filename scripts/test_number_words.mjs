@@ -19,10 +19,12 @@ for (const t of [
   "A couple of countries lead", "a COUPLE OF regions", "Eleven countries report a rise", "The two-child policy ended", "the second-largest economy",
   "the top five exporters", "Two-thirds of output", "output doubled", "half of the sample", "something happened in ten years",
   "两国都在增长", "十年来持续上升", "共有十个国家", "第二大经济体", "前五名", "三成的产量", "一半的地区", "二十多个城市",
+  "a dozen countries", "threefold", "ten-fold", "上升三个百分点",
 ]) refuse(t);
 for (const t of [
   "{max.x} million", "{max.x} percent", "{max.x} percentage points", "{max.x} basis points", "{max.x}% rise", "net zero", "the Group of Seven", "in the first half",
   "{max.x}万吨", "{max.x}倍", "{max.x}成", "百分之{max.x}", "两国关系", "一带一路", "十四五", "the {first.decade}s", "{max.x} hundred", "{max.x}million",
+  "{max.x.country} has a score of {max.x}", "test scores rose", "上升了{max.x}个百分点", "上升了{max.x}个基点", "a manifold rise", "{max.x}-fold",
 ]) pass(t);
 refuse("{max.x} 3 times and ten more");
 refuse("{max.x} million, and ten others");

@@ -19,16 +19,16 @@ const CN_REFUSE = [
   /[二两三四五六七八九十]大(?![爷妈姐伯])|俩|仨/,
 ];
 
-const CARD = "(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?|billions?|trillions?|dozens?|scores?|tens)";
+const CARD = "(?:two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?|billions?|trillions?|dozens?|tens)";
 const ORD = "(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|twentieth)";
 const SUP = "(?:largest|biggest|highest|lowest|smallest|most|least|fastest|slowest|richest|poorest|ranked|place|best|worst|greatest|longest|oldest|youngest|busiest|wealthiest)";
 const EN_PASS = /\b(?:net|ground)[- ]zero\b|zero[- ](?:sum|tolerance|day|carbon|emissions?)|\b(?:first|second) half\b|half[- ](?:hearted|baked|measure|time)|\bhalfway\b|\btwo-way\b|\bnine-to-five\b|\bsecond-hand\b|\bone-way\b|\bone-off\b|\bone-time\b/gi;
 const EN_REFUSE = [
-  /\b(?:a|one) (?:hundred|thousand|million|billion|trillion|dozen|score)\b/i,
+  /\b(?:a|one) (?:hundred|thousand|million|billion|trillion|dozen)\b/i,
   /\b(?:one|two|three|four|five|six|seven|eight|nine)[- ](?:third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|quarter|half|halves)s?\b/i,
   /\bone[- ]in[- ](?:two|three|four|five|six|seven|eight|nine|ten)\b/i,
   /\b(?:about|around|nearly|almost|over|under|only|just|than|at least|roughly|exactly) one\b(?! of\b| another| thing| way| day| more| can)/i,
-  /\b(?:twice|thrice|doubled|doubles|doubling|tripled|triples|tripling|quadrupled|quintupled)\b|\bdouble(?= (?:the|that|those|these|its|their|what|as|from)\b)|\b\w+-?fold\b|\bdouble[- ]digits?|\bsingle[- ]digits?/i,
+  /\b(?:twice|thrice|doubled|doubles|doubling|tripled|triples|tripling|quadrupled|quintupled)\b|\bdouble(?= (?:the|that|those|these|its|their|what|as|from)\b)|\b(?:two|three|four|five|six|seven|eight|nine|ten|twenty|hundred|thousand)-?fold\b|\bdouble[- ]digits?|\bsingle[- ]digits?/i,
   /\bhalf\b|\bhalves\b/i,
   /\b(?:a|one) (?:third|fifth|sixth|tenth)\b(?! party| world| time| place| option| quarter| round| wheel| rail| person| country| term)|\b(?:a|three) quarters?\b(?! later| earlier| ago| to| past| after)|(?<!first )(?<!second )(?<!third )(?<!fourth )(?<!last )(?<!next )(?<!this )(?<!previous )\bquarter of\b/i,
   /\bper ?cent\b|\bpercent\b|\bpercentage points?\b|\bbasis points?\b/i,
@@ -38,7 +38,7 @@ const EN_REFUSE = [
 const CARD_RE = new RegExp(`\\b${CARD}\\b`, "gi");
 
 // A scale or unit word right after a placeholder (or a digit), with at most one space, is not a number word.
-const SCALE_AFTER = /(?<=[\u0000\d]) ?(?:百万|千万|万亿|十亿|百|千|万|亿|倍|成|度|级|(?:hundred|thousand|million|billion|trillion|percent|per cent|percentage points?|basis points?)(?![A-Za-z]))/gi;
+const SCALE_AFTER = /(?<=[\u0000\d]) ?(?:个百分点|个基点|百分点|百万|千万|万亿|十亿|百|千|万|亿|倍|成|度|级|(?:hundred|thousand|million|billion|trillion|percent|per cent|percentage points?|basis points?)(?![A-Za-z]))/gi;
 const PERCENT_BEFORE = /百分之(?=\u0000)/g;
 
 function first(text, patterns) {
