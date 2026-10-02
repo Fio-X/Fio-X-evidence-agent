@@ -909,8 +909,8 @@ function moduleHeight(module, width, assets, mobile = false) {
     const labelLines = lines(module.label ?? "", labelChars, 3).length;
     const detailLines = module.detail ? lines(module.detail, mobile ? 62 : Math.max(38, Math.round(width / 8)), 2).length : 0;
     // Desktop house style, no detail: the box ends just below the label (rhythm).
-    if (!mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !detailLines) return 126 + Math.max(0, labelLines - 1) * 20;
-    return (mobile ? 166 : 154) + Math.max(0, labelLines - 1) * (mobile ? 20 : 20) + detailLines * 10;
+    if (!mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !detailLines) return 112 + Math.max(0, labelLines - 1) * 20;
+    return (mobile ? 166 : INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 140 : 154) + Math.max(0, labelLines - 1) * (mobile ? 20 : 20) + detailLines * 10;
   }
   if (type === "section_header") {
     const headingChars = mobile ? 31 : 48;
@@ -1019,7 +1019,7 @@ const TEXT_BOTTOM_PAD = 6;
 
 // Top of the ink, measured from a module box's top edge.
 function inkTop(module, bar) {
-  if (module.type === "hero_stat") return bar ? 0 : INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 14 : 28;
+  if (module.type === "hero_stat") return bar || INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 0 : 28;
   if (module.type === "section_header") return 33;
   if (module.type === "pull_quote") return 28;
   // Text, chart and illustration modules open with a hairline (too light to count as ink) and a small ordinal.
@@ -1613,7 +1613,8 @@ function drawHeroStatBar(parts, box, module) {
 function drawHeroStat(parts, box, module, mobile) {
   if (box.stat_bar && !mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) return drawHeroStatBar(parts, box, module);
   const pad = mobile ? 28 : 30;
-  const top = box.y + (INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 14 : 28);
+  // Desktop house style: the red rule sits at box.y, the same y as the hairline drawModuleChrome draws for neighbouring modules.
+  const top = box.y + (INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? (mobile ? 14 : 0) : 28);
   if (!INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
     // Legacy: unchanged, byte-for-byte - the solid tone-coloured card fix 9
     // replaces under house style. tone still selects the card colour and
