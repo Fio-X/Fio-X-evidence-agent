@@ -3036,6 +3036,9 @@ function renderHorizontal(spec, rows, mode) {
   // right edge and the blank band under the bars come from the labels'
   // actual sizes instead of the fixed 250 / 955 / 230-minimum constants.
   const tight = HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar";
+  // diverging_bar takes the same label column sized from the drawn names (house style); its
+  // value-label room stays with divergingLabelMargins below, so negW/posW are not added for it.
+  const tightColumn = tight || (HOUSE_STYLE_ACTIVE && spec.chart_type === "diverging_bar");
   const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin;
   const f = frame(spec, bodyHeight, tight ? 300 : 420);
   const base = f.bodyTop + 4;
@@ -3047,7 +3050,7 @@ function renderHorizontal(spec, rows, mode) {
   // value the chart will actually display, not per-label.
   const labelDecimals = resolveChartDecimals(spec, values);
   let categoryLabels = null;
-  if (tight) {
+  if (tightColumn) {
     const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
     const maxCatUnits = Math.max(6, Math.floor((LAYOUT_W * 0.4 - 69) / PX));
     categoryLabels = sorted.map((row) => {
@@ -3065,10 +3068,12 @@ function renderHorizontal(spec, rows, mode) {
     const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: fmtSpec(spec, v, i > 0 ? "" : spec.unit, labelDecimals) }; });
     const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
     const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
-    const negW = widest((v) => v < 0), posW = widest((v) => v >= 0);
     catX = 54 + catW;
-    left = catX + 15 + (negW ? negW + 9 : 0);
-    right = LAYOUT_W - 54 - bracketMargin - (posW ? posW + 9 : 0);
+    if (tight) {
+      const negW = widest((v) => v < 0), posW = widest((v) => v >= 0);
+      left = catX + 15 + (negW ? negW + 9 : 0);
+      right = LAYOUT_W - 54 - bracketMargin - (posW ? posW + 9 : 0);
+    } else left = catX + 15;
   }
   if (spec.chart_type === "diverging_bar") {
     const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9);
@@ -3083,7 +3088,8 @@ function renderHorizontal(spec, rows, mode) {
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
   // mode still uses it as a real reference (the stem starts here, no mark
   // covers it), so it stays there.
-  if (!(LAYERING_FIX && mode === "bar")) {
+  // diverging_bar keeps it as the reference its two-colour sign convention reads against (drawn before the bars).
+  if (!(LAYERING_FIX && mode === "bar" && spec.chart_type !== "diverging_bar")) {
     const zeroLineRole = LAYERING_FIX ? ` data-role="zero-line"` : "";
     f.parts.push(`<line${zeroLineRole} x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   }
@@ -3100,14 +3106,18 @@ function renderHorizontal(spec, rows, mode) {
     catLines.forEach((line, k) => f.parts.push(`<text x="${catX}" y="${catLines.length > 1 ? y - 3 + k * 14 : y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`));
     const x = scale(value);
     const highlighted = (spec.highlight_values ?? []).map(String).includes(String(row[spec.category_field]));
-    const fill = highlighted ? PALETTE.accent : PALETTE.context;
+    const diverging = spec.chart_type === "diverging_bar";
+    const anyHighlight = (spec.highlight_values ?? []).length > 0;
+    // diverging_bar: two colours by sign; with a highlight the other bars are drawn lighter.
+    const fill = diverging ? (value >= 0 ? PALETTE.positive : PALETTE.negative) : highlighted ? PALETTE.accent : PALETTE.context;
+    const barOpacity = diverging && anyHighlight && !highlighted ? ` fill-opacity="0.45"` : "";
     // Fix 3: the unit goes on the first (top-most, as drawn) direct value
     // label only - every other row's label is a bare number, matching the
     // axis-tick convention above.
     const rowUnit = HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit;
     if (mode === "bar") {
       const rx = Math.min(x, zero), width = Math.max(1, Math.abs(x - zero));
-      f.parts.push(`<rect data-role="data-bar" x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"/>`);
+      f.parts.push(`<rect data-role="data-bar" x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
     } else {
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
@@ -3116,7 +3126,7 @@ function renderHorizontal(spec, rows, mode) {
       // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${anyHighlight && highlighted ? 700 : 600}" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
@@ -3149,14 +3159,23 @@ function renderDumbbell(spec, rows) {
   const sorted = [...rows];
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
-  const bodyHeight = Math.max(230, sorted.length * 42 + 40) + refMargin;
+  const DUMBBELL_KEY_H = 22; // one key line above the plot, above the reference-line band
+  const bodyHeight = Math.max(230, sorted.length * 42 + 40) + refMargin + DUMBBELL_KEY_H;
   const f = frame(spec, bodyHeight);
-  const base = f.bodyTop + 4;
+  const base = f.bodyTop + 4 + DUMBBELL_KEY_H;
   const left = 250, right = 945, top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
   addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
+  {
+    // Key: which dot is which period (start colour first, then end colour).
+    const keyY = f.bodyTop + 4 + 12, KEY_PX = 6.4;
+    const startName = String(spec.start_label ?? spec.start_field), endName = String(spec.end_label ?? spec.end_field);
+    const endDotX = left + 22 + Math.ceil(textUnits(startName) * KEY_PX) + 24;
+    f.parts.push(`<g data-role="dumbbell-key"><circle cx="${left + 5}" cy="${keyY - 4}" r="5" fill="${PALETTE.accent2}"/><text x="${left + 15}" y="${keyY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(startName)}</text>`
+      + `<circle cx="${endDotX}" cy="${keyY - 4}" r="5" fill="${PALETTE.accent}"/><text x="${endDotX + 10}" y="${keyY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(endName)}</text></g>`);
+  }
   // LAYERING_FIX: draw reference lines before the connectors so a
   // connector/dot covers whatever it crosses (see renderHorizontal for the
   // same treatment on bars).
