@@ -738,7 +738,7 @@ if (!missingDependency) {
     const [claim] = claimLines(story.dir);
     writeFileSync(dataFile, alteredData);
     const kept = listing(story.dir);
-    await assert.rejects(callWith(tools, "record_claim", { claim: claim.claim, claim_kind: claim.claim_kind, status: "supported", source_refs: claim.source_refs, computation_refs: claim.computation_refs }), /^Error: COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of computations\//, "the recorded computation no longer replays on the altered file");
+    await assert.rejects(callWith(tools, "record_claim", { claim: claim.claim, claim_kind: claim.claim_kind, status: "supported", source_refs: claim.source_refs, computation_refs: claim.computation_refs }), /^Error: INVALID_SOURCE_EVIDENCE: data bytes do not match their record \(file name hash differs from the bytes\): data\//, "the altered file is refused against its content-addressed hash before the computation replays");
     assert.deepEqual(listing(story.dir), kept, "the refused record_claim writes nothing");
     const lintAltered = await callWith(tools, "newsroom_viz_lint", { plan_ref: refs.plan_ref });
     assert.equal(lintAltered.details.passed, false, "the chart's lint is blocked once its data changed");

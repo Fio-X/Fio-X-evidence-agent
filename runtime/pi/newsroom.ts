@@ -1498,8 +1498,36 @@ async function validateSourceEvidence(refs: string[]) {
     } else if (ref.startsWith("data/")) {
       const info = await stat(full);
       assertDatasetPayload(ref, info.size);
+      await assertDataBytesMatchRecord(root, ref, full);
     }
   }
+}
+
+// A data/ ref is evidence only while its bytes still hash to what its sidecar
+// recorded: the sha256 in the content-addressed file name, the sidecar's
+// sha256 and its byte count must all agree with the file as it is now. A
+// sidecar that is missing or unreadable refuses (fail closed). A derived PDF
+// rows table is checked against its own rows_sha256; its source-chain
+// provenance is still verified where the computation is replayed.
+async function assertDataBytesMatchRecord(root: string, ref: string, full: string) {
+  const refuse = (why: string) => new Error(`INVALID_SOURCE_EVIDENCE: data bytes do not match their record (${why}): ${ref}`);
+  const bytes = await readFile(full);
+  const actual = sha256Hex(bytes);
+  const stem = (ref.split("/").pop() ?? "").split(".")[0];
+  if (/^[0-9a-f]{64}$/.test(stem) && stem !== actual) throw refuse("file name hash differs from the bytes");
+  let meta: any = null;
+  for (const candidate of [`${ref}.meta.json`, ref.replace(/\.[^./]+$/, ".meta.json")]) {
+    try {
+      meta = JSON.parse(await readFile(resolve(root, candidate), "utf8"));
+      break;
+    } catch {}
+  }
+  if (!meta || typeof meta !== "object") throw refuse("sidecar is missing or unreadable");
+  const recorded = ref.startsWith("data/derived/") ? meta.rows_sha256 ?? meta.sha256 : meta.sha256;
+  if (typeof recorded !== "string" || !/^[0-9a-f]{64}$/.test(recorded)) throw refuse("sidecar has no sha256");
+  if (recorded !== actual) throw refuse("sidecar sha256 differs from the bytes");
+  if (meta.bytes !== undefined && meta.bytes !== bytes.byteLength) throw refuse("sidecar byte count differs from the file size");
+  if (typeof meta.file === "string" && meta.file.split("/").pop() !== ref.split("/").pop()) throw refuse("sidecar describes a different file");
 }
 
 async function replayComputationEvidence(refs: string[], sourceRefs: string[], signal?: AbortSignal) {
@@ -1682,6 +1710,10 @@ async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
   };
   // Extra audit fields follow the record and never replace one of its fields.
   const record = { ...base, ...Object.fromEntries(Object.entries(input.extra ?? {}).filter(([key]) => !Object.hasOwn(base, key))) };
+  // The replay above can take a while: check the data bytes (and a cancel)
+  // once more right before anything is written.
+  if (signal?.aborted) throw new Error("CLAIM_ABORTED: the call was cancelled; no claim was recorded");
+  await validateSourceEvidence(sourceRefs);
   const path = await appendArtifact("claims.jsonl", record);
   return { path, record, claimId, verification };
 }
@@ -1997,6 +2029,7 @@ async function recordInlineClaim(claim: InlineClaim, signal?: AbortSignal) {
   await previous;
   try {
     inlineClaimAborted(signal);
+    await validateSourceEvidence(claim.sourceRefs);
     await writeArtifactIfAbsent(claim.computation.ref, claim.computation.record);
     const existing = (await verifiedClaimRecords()).get(claim.claimId);
     if (existing) {
