@@ -38,6 +38,7 @@ const SWITCHES = [
   { name: "INLINE_CLAIM", env: "NEWSROOM_SPEED_INLINE_CLAIM", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_VIZ"] }, // only acts with the chain and atomic writes on
   { name: "EDITORIAL_HINTS", env: "NEWSROOM_SPEED_EDITORIAL_HINTS" },
   { name: "RULE_HINTS", env: "NEWSROOM_SPEED_RULE_HINTS" },
+  { name: "COMPACT_SETUP", env: "NEWSROOM_SPEED_COMPACT_SETUP" },
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const CONFIGS = [
