@@ -1,7 +1,7 @@
 {
   "dumbbell": {
-    "desktop": "d9b0c25e6aecd26066fdd7f745bfc629096f13b88dd85eda7e5254e795256f2e",
-    "mobile": "c44aa46d4d0a17cf8f0e3f7978cd9aec184902c616bf721c53d06c9163d46f08"
+    "desktop": "f15d503cc1be16be8e7f86a1b80938b233f43142aca62973d6175a03680a1c7d",
+    "mobile": "1823a1d3555dc75b667313d93a7566750823ada86d57e256e6854e2e2fa3c950"
   },
   "multi_line": {
     "desktop": "9608d690ccc2d5b557ddf3a83cc6ed1ff16f58c2ae7d10aa2ffde2569940950c",
@@ -20,8 +20,8 @@
     "mobile": "0c44f677ee80e3b726e99dbbdfdfd0f4071e2f44cf0d12b63bb6b4b10226e389"
   },
   "dumbbell_reference_line": {
-    "desktop": "5761644a1823fa6b211fbb65bd1fbe667babccf4a7b36c6c7e644b1643588113",
-    "mobile": "389663a13cb399c785b84333ff2faf0e810c2be89c0dae3a083389a0fd86134b"
+    "desktop": "df9930476bd80e585c88ca1378c340c98761df9ec73e2219635367628162391e",
+    "mobile": "3f3d8927fe60a5c84fc8fdba294b9617e464fd7e0996f6f47c79f5565f30e020"
   },
   "small_multiples_dot_reference_line": {
     "desktop": "0fed43775378e84d39a616c42160dda84c62fdba49e0a0df51f853d3897138c3",
