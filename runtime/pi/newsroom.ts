@@ -2146,7 +2146,27 @@ async function lintInfographicPlan(spec: any) {
     }
     visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
   }
-  const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
+  // NEWSROOM_HERO_VALUE_GATE=1: each hero_stat's own claim rows go to lint, which stays synchronous.
+  const heroGate: Record<string, any> = {};
+  if (process.env.NEWSROOM_HERO_VALUE_GATE === "1") {
+    const heroClaimRows: Record<string, any[]> = {};
+    for (const module of spec.modules ?? []) {
+      if (module?.type !== "hero_stat" || !module.claim_id) continue;
+      const claimId = String(module.claim_id);
+      if (claimId in heroClaimRows) continue;
+      heroClaimRows[claimId] = [];
+      const claim = verifiedRecords.get(claimId);
+      for (const ref of Array.isArray(claim?.computation_refs) ? claim.computation_refs : []) {
+        try {
+          const record = await readArtifactJson(String(ref), "computations/");
+          if (Array.isArray(record?.rows)) heroClaimRows[claimId].push(record.rows);
+        } catch {}
+      }
+    }
+    heroGate.hero_value_gate = true;
+    heroGate.hero_claim_rows = heroClaimRows;
+  }
+  const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
   return { lint, assets, mobilePages, verifiedRecords };
 }
