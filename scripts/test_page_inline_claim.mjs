@@ -656,8 +656,8 @@ if (!missingDependency) {
     await refused("lint: constant in the plan SQL", (story) => inlineParams(shape, story.dataRef, { claim: top, sql: `SELECT country, year, 50.0 AS ${col}, country AS country_with_year FROM '${story.dataRef}'` }), E("CLAIM_SQL_CONSTANT", "the select-list expression 50 \\(AS "), { env: LINT_ENV });
     await refused("lint: a number as a string", (story) => inlineParams(shape, story.dataRef, { claim: top, sql: `SELECT country, year, '50' AS ${col}, country AS country_with_year FROM '${story.dataRef}'` }), E("CLAIM_SQL_CONSTANT"), { env: LINT_ENV });
     await refused("lint: VALUES joined to the data", (story) => inlineParams(shape, story.dataRef, { claim: top, sql: `SELECT d.country, d.year, v.x AS ${col}, d.country AS country_with_year FROM '${story.dataRef}' d, (VALUES (50)) v(x)` }), E("CLAIM_SQL_CONSTANT"), { env: LINT_ENV });
-    await refused("lint: max placeholder beside 'lowest'", withClaim(`The lowest reading is {max.${col}}.`), E("CLAIM_TEMPLATE_DIRECTION", ".*puts a max placeholder next to a word for the lowest value"), { env: LINT_ENV });
-    await refused("lint: min placeholder beside 最高", withClaim(`最高的是{min.${col}.country}。`), E("CLAIM_TEMPLATE_DIRECTION", ".*puts a min placeholder next to a word for the highest value"), { env: LINT_ENV });
+    await refused("lint: max placeholder beside 'lowest'", withClaim(`The lowest reading is {max.${col}}.`), E("CLAIM_TEMPLATE_DIRECTION", ".*puts a max placeholder next to .*a word for the lowest value"), { env: LINT_ENV });
+    await refused("lint: min placeholder beside 最高", withClaim(`最高的是{min.${col}.country}。`), E("CLAIM_TEMPLATE_DIRECTION", ".*puts a min placeholder next to .*a word for the highest value"), { env: LINT_ENV });
     check("inline path, NEWSROOM_CLAIM_SQL_LINT=1: typed number, string number, VALUES, max beside 'lowest', min beside 最高 are refused with nothing recorded");
   }
 

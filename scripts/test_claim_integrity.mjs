@@ -193,6 +193,17 @@ check(`refused with NEWSROOM_CLAIM_SQL_LINT=1 and nothing written; recorded as b
   delete process.env.NEWSROOM_CLAIM_SQL_LINT;
   check("the error names the expression and says the number must come from the data");
 }
+{ // regex patterns are exempt, a regexp_replace replacement is not
+  const rx = (expr) => (r) => `SELECT country, ${expr} AS share FROM '${r}'`;
+  const s1 = await story(rx("length(regexp_extract(country, '^(.*?)[0-9]{2,}(-?[0-9]+)$', 1))"));
+  process.env.NEWSROOM_CLAIM_SQL_LINT = "1";
+  try { await record(s1); } finally { delete process.env.NEWSROOM_CLAIM_SQL_LINT; }
+  assert.equal(claims(s1.art).length, 1, "a regexp_extract pattern with digits records");
+  const s2 = await story(rx("regexp_replace(country, 'x', '999')"));
+  process.env.NEWSROOM_CLAIM_SQL_LINT = "1";
+  try { await refuses("regexp_replace replacement", s2, /^Error: CLAIM_SQL_CONSTANT: /); } finally { delete process.env.NEWSROOM_CLAIM_SQL_LINT; }
+  check("regexp_extract pattern with digits passes; regexp_replace(col, 'x', '999') is refused");
+}
 const LEGIT_SQL = [
   ["ROUND precision", (r) => `SELECT country, ROUND(share, 1) AS share FROM '${r}'`],
   ["power-of-ten factor", (r) => `SELECT country, share*100 AS share FROM '${r}'`],
@@ -229,6 +240,14 @@ check(`still records with the lint on: ${LEGIT_SQL.map(([l]) => l).join("; ")}`)
   for (const ok of ["The highest value is {max.share}.", "The lowest value is {min.share}.", "{max.share.country} is highest, {min.share.country} is lowest.", "最高的是{max.share.country}。最低的是{min.share.country}。", "The range is {min.share} to {max.share}."]) assert.deepEqual(lintClaimTemplate(ok), [], `passes: ${ok}`);
   assert.deepEqual(lintClaimTemplate("The most recent value is {first.share}."), [], "most beside a first. placeholder is not a direction");
   check("lintClaimTemplate refuses max with lowest/least/smallest/fewest/最低/最少/最小 and min with highest/most/largest/greatest/最高/最多/最大 in one clause, and passes the matching pairs and split clauses");
+  for (const ok of [
+    "Among the African countries, {max.a.country} has the highest share at {max.a}% ({max.a.year} data) and {min.a.country} the lowest at {min.a}% ({min.a.year} data).",
+    "{max.a.country} has the highest and {min.a.country} the lowest.",
+    "从{min.x}升至最高的{max.x}。",
+    "The highest value was {max.x}.",
+  ]) assert.deepEqual(lintClaimTemplate(ok), [], `passes: ${ok}`);
+  for (const bad of ["{max.x.country} has the lowest share.", "最高的是{min.x.entity}。", "The lowest value is {max.share}."]) assert.equal(lintClaimTemplate(bad).length, 1, `refused: ${bad}`);
+  check("direction words pair with the nearest max/min placeholder on either side: Congo/Mauritania, 'highest and lowest', 从{min}升至最高的{max} pass; '{max} has the lowest', 最高的是{min} refused");
   const { fillClaimTemplate } = mod;
   const rows = [{ country: "A", share: 1 }, { country: "A", share: 2 }, { country: "B", share: 3 }];
   for (const [label, template, pattern] of [
