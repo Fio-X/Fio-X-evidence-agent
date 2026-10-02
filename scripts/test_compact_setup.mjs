@@ -115,7 +115,12 @@ const baseSource = process.env.BASELINE_NEWSROOM_TS ? readFileSync(process.env.B
 assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");
 const mod = await loadTree("head");
 const baseMod = await loadTree("base", baseSource);
-const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines });
+// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
+// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
+// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
+const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
+const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
+const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) });
 
 { // switch off: identical definitions; switch on: only the four setup tools (+ plan guideline) change
   const base = register(baseMod, {});

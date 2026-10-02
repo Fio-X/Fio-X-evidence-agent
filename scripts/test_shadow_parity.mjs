@@ -17,6 +17,11 @@ import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
 
 const BASELINE = "327de35";
+// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
+// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
+// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
+const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
+const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
 
 function walk(dir, root = dir, out = new Map()) {
@@ -31,7 +36,7 @@ function walk(dir, root = dir, out = new Map()) {
 async function scenario({ baselineRev, shadow }) {
   const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_HERO_VALUE_GATE: "0" } });
   try {
-    const defs = JSON.stringify([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => ({ ...tool, execute: undefined })));
+    const defs = JSON.stringify([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => ({ ...tool, execute: undefined, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) })));
     const csv = ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n";
     const fileA = h.addData("A", csv);
     const qa = await h.query(`SELECT date, event FROM read_csv_auto('${fileA}')`);

@@ -10,7 +10,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { PAGE_TOP_GUIDANCE, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
@@ -113,6 +113,14 @@ function lieflatHidden() {
 
 const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Pass claim or claim_id, never both.";
 const INLINE_CLAIM_RECORD_GUIDELINE = "A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain or newsroom_viz_plan, which records it from that chart's own SQL rows. Use record_claim for claims no chart carries.";
+
+// One sentence each, always shown (no switch). A hero label is read on its own under the big number, so it names its
+// subject, measure and period. With the hero value gate on (the default) typed digits in a label are refused, so the
+// period is a placeholder of the hero's claim; the gate-off text keeps the plain example. A relative window is written in
+// the SQL, so its sentence sits on duckdb_query; the page-top sentence is exported by infographic.mjs beside its lint.
+const HERO_LABEL_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「2024年阿根廷年通胀率」, not 「通胀率」.";
+const HERO_LABEL_GATED_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「{max.rate.year}年阿根廷年通胀率」, not 「通胀率」; the year comes from a placeholder of the hero's claim (typed digits are refused), so that claim must state the period.";
+const RELATIVE_WINDOW_GUIDELINE = "A relative window such as 近三年 means the 36 months up to the latest data point; state its start and end dates on the page.";
 
 // Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
 // promptGuidelines only when its switch is exactly "1" in the Pi child
@@ -2884,6 +2892,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use duckdb_query for aggregations, comparisons, joins, rankings, rates, and chart data whenever the required dataset is locally available.",
       "For every ordered result, make the ORDER BY a total order by adding deterministic secondary keys (usually country, iso_code, year, or all grouping fields). Do not rely on the arbitrary order of tied DuckDB rows; replay must reproduce the same row sequence.",
+      RELATIVE_WINDOW_GUIDELINE,
     ],
       parameters: Type.Object({
         sql: Type.String({ description: "One read-only analytical SQL statement" }),
@@ -4398,9 +4407,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Use SceneGraph 0.2 cognitive goals. Every scene has one bounded hero, supporting claims, and explicit limits for sidecars, annotations, and claims.",
       "Define the editorial intent, target audience, one primary message, and a story arc before selecting modules. Form follows the reporting purpose.",
       "Assign every module a story_role and priority. Use a single explicit visual anchor, then alternate dense evidence with lighter context, turns, or section resets.",
+      PAGE_TOP_GUIDANCE,
       "Prefer 4-9 modules. A magazine page should have a reading sequence, not a dashboard grid. The composer will generate and rank balanced, anchor, and rhythm layout candidates.",
       "For award-target pages, include a hook, evidence, at least one priority-1 module, and a resolution or explanation. Originality must not reduce clarity or provenance.",
       "Every quantitative hero statistic or explanatory text module must cite verified claim IDs. Visual modules must reference their visualization manifest and critic artifacts.",
+      heroGateOn() ? HERO_LABEL_GATED_GUIDELINE : HERO_LABEL_GUIDELINE,
     ],
     parameters: Type.Object({
       kicker: Type.Optional(Type.String()),
