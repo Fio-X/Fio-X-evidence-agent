@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { checkSvgGeometry } from "./render_qa_geometry.mjs";
+import { ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
@@ -16,6 +16,7 @@ export const CHART_TYPES = [
   "multi_line",
   "small_multiples",
   "scatter",
+  "strip_plot",
   "diverging_bar",
   "heatmap",
   "sankey",
@@ -1412,6 +1413,7 @@ function requiredFields(spec) {
     multi_line: ["x_field", "value_field", "series_field"],
     small_multiples: ["x_field", "value_field", "facet_field"],
     scatter: ["x_field", "y_field"],
+    strip_plot: ["category_field", "value_field"],
     diverging_bar: ["category_field", "value_field"],
     heatmap: ["x_field", "y_field", "value_field"],
     waffle: ["category_field", "value_field"],
@@ -1544,6 +1546,12 @@ export function validateVizSpec(spec) {
     // rather than inventing a per-group Other bucket nobody asked for.
     if (spec.group_field && spec.other_threshold_pct !== undefined) errors.push("treemap other_threshold_pct is not supported together with group_field");
   }
+  if (spec.chart_type === "strip_plot") {
+    if (spec.group_order !== undefined && !STRIP_GROUP_ORDERS.includes(spec.group_order)) errors.push(`strip_plot group_order must be one of ${STRIP_GROUP_ORDERS.join(", ")}`);
+    if (spec.point_layout !== undefined && !STRIP_POINT_LAYOUTS.includes(spec.point_layout)) errors.push(`strip_plot point_layout must be one of ${STRIP_POINT_LAYOUTS.join(", ")}`);
+    if (spec.show_median !== undefined && typeof spec.show_median !== "boolean") errors.push("strip_plot show_median must be true or false");
+    if (spec.label_extremes !== undefined && (typeof spec.label_extremes !== "number" || !Number.isInteger(spec.label_extremes) || spec.label_extremes < 0 || spec.label_extremes > STRIP_MAX_LABEL_EXTREMES)) errors.push(`strip_plot label_extremes must be an integer between 0 and ${STRIP_MAX_LABEL_EXTREMES}`);
+  }
   for (const field of requiredFields(spec)) {
     if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") errors.push(`Missing required field '${field}'`);
   }
@@ -1664,7 +1672,10 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.semantic_gate?.status === "BLOCK") blockers.push("semantic_comparison_blocked");
   if (spec.semantic_gate?.status === "CONTEXTUAL") notes.push("Semantic comparison is contextual; visual roles must remain explicitly differentiated");
   if (!Array.isArray(rows) || rows.length === 0) blockers.push("Visualization query returned no rows");
-  if (rows.length > 240) blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
+  // strip_plot draws one dot per row (many units per group), so it carries its
+  // own point cap (STRIP_MAX_POINTS, checked in lintStripPlotSpec) instead of
+  // this general row cap; every other chart type keeps the 240-row limit.
+  if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
 
   const requiredDataFields = [
     spec.category_field,
@@ -1897,7 +1908,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     ranking: new Set(["horizontal_bar", "dot", "diverging_bar"]),
     comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix"]),
     change: new Set(["line", "multi_line", "slope", "small_multiples", "streamgraph"]),
-    distribution: new Set(["dot", "scatter", "heatmap"]),
+    distribution: new Set(["dot", "scatter", "heatmap", "strip_plot"]),
     correlation: new Set(["scatter"]),
     part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap"]),
     spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
@@ -2074,6 +2085,11 @@ export function lintVizSpec(spec, rows, context = {}) {
     const ys = unique(rows.map((r) => r[spec.y_field]));
     if (xs.length * ys.length > 400) blockers.push("Heatmap exceeds 400 cells");
   }
+  if (spec.chart_type === "strip_plot") {
+    const stripLint = lintStripPlotSpec(spec, rows);
+    blockers.push(...stripLint.blockers);
+    warnings.push(...stripLint.warnings);
+  }
 
   if (spec.title && /\b(latest|current|today|now)\b/i.test(spec.title) && spec.reference_period_field) {
     warnings.push("Title uses currentness language; verify the observation period is actually current");
@@ -2211,10 +2227,12 @@ export function vizLang(spec) {
 // logScale and group are standalone chrome words.
 const VIZ_STRINGS = {
   en: {
+    stripMedianKey: "Line: median",
     note: "Note: ", source: "Source: ", logScale: "log scale", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
   },
   zh: {
+    stripMedianKey: "\u7AD6\u7EBF\uFF1A\u4E2D\u4F4D\u6570",
     note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
   },
@@ -2556,6 +2574,7 @@ const RANGE_BRACKET_CHART_TYPES = new Set(["horizontal_bar", "dot"]);
 // key off different fields.
 function categoryNamesField(spec) {
   if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "choropleth", "treemap"].includes(spec.chart_type)) return spec.category_field;
+  if (spec.chart_type === "strip_plot") return spec.category_field;
   if (spec.chart_type === "small_multiples") return spec.facet_field;
   if (spec.chart_type === "multi_line") return spec.series_field;
   return null;
@@ -3738,6 +3757,500 @@ function renderHeatmap(spec, rows) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+
+// ===========================================================================
+// strip_plot: a dot strip plot. One row per group on one shared linear value
+// axis and one dot per unit inside the group - "how spread out is each group,
+// and where are the extremes?". The FT Visual Vocabulary files it under
+// Distribution and Datawrapper draws its range/strip plots the same way. The
+// form is generic: groups, units and values are named by role
+// (category_field / label_field / value_field), never by topic.
+//
+// Text the chart prints: the group names (row labels), the axis ticks, the
+// median key, and at most STRIP_MAX_LABEL_EXTREMES "name value" labels whose
+// value is the unit's own value_field value through fmtSpec. The per-group
+// median (and the jitter offset) are derived, so they are drawn as marks only
+// and never printed.
+//
+// Everything below is deterministic: jitter offsets come from a sha256 of the
+// unit's label and row index, the beeswarm is a greedy dodge, and the extreme
+// labels are placed by a fixed candidate search - no Math.random anywhere.
+// The label search measures text with the same width tables the render-QA
+// geometry check uses (imported, not copied), so a label it accepts is one
+// that check accepts too.
+// ===========================================================================
+const STRIP_GROUP_ORDERS = ["median_desc", "median_asc", "data"];
+const STRIP_POINT_LAYOUTS = ["jitter", "beeswarm"];
+const STRIP_MAX_LABEL_EXTREMES = 6;
+const STRIP_DEFAULT_LABEL_EXTREMES = 4;
+const STRIP_MAX_GROUPS = 40;
+const STRIP_WARN_GROUPS = 30;
+const STRIP_MAX_POINTS = 600;
+const STRIP_DOT_RADIUS = 3;
+const STRIP_DOT_OPACITY = 0.5;
+const STRIP_FONT_SIZE = 12;
+const STRIP_LABEL_WEIGHT = 600;
+// Row band: 480px of rows shared by the groups, never thinner than 17px (a
+// 35-row chart is 17px per row) and never fatter than 28px, so a chart with
+// more rows grows taller instead of squeezing its rows.
+const STRIP_BAND_TARGET = 480;
+const STRIP_MIN_BAND = 17;
+const STRIP_MAX_BAND = 28;
+const STRIP_MAX_JITTER = 9;
+const STRIP_TICK_TARGET = 6;
+const STRIP_MIN_PLOT_WIDTH = 360;
+// Extreme-label search: the label sits STRIP_LABEL_GAP px from the dot's edge
+// (no leader) or, when that spot is taken, further out along one of
+// STRIP_LABEL_TURNS directions in STRIP_LABEL_STEP px steps, with a short
+// leader once it no longer touches the dot.
+const STRIP_LABEL_GAP = 4;
+const STRIP_LABEL_STEP = 6;
+const STRIP_LABEL_STEPS = 24;
+const STRIP_LABEL_TURNS = 24;
+// Extra px reserved right of a high label so rounding never pushes it past the limit.
+const STRIP_LABEL_SLACK = 3;
+// Label layout search: candidates tried per label at each level, and the total
+// number of placements it may try before settling for the first-choice layout.
+const STRIP_SEARCH_BREADTH = 10;
+const STRIP_SEARCH_BUDGET = 20000;
+// Same literal as WIDE_CHAR_RE in render_qa_geometry.mjs (not exported there):
+// CJK, kana, hangul and full-width forms all measure one em wide.
+const STRIP_WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
+// render_qa_geometry.mjs FALLBACK_LATIN_WIDTH (not exported there): the width
+// it assumes for a character missing from both advance-width tables.
+const STRIP_FALLBACK_LATIN_WIDTH = 1.02;
+
+// Lint for the strip_plot-only rules. The generic rules (non-finite or missing
+// value, unknown fields, ...) stay in lintVizSpec; the field-value rules
+// (label_extremes, group_order, ...) are validateVizSpec errors, which
+// lintVizSpec already turns into blockers.
+function lintStripPlotSpec(spec, rows) {
+  const blockers = [];
+  const warnings = [];
+  const list = Array.isArray(rows) ? rows : [];
+  const groupCount = new Set(list.map((row) => String(row?.[spec.category_field] ?? "")).filter(Boolean)).size;
+  if (groupCount > STRIP_MAX_GROUPS) blockers.push(`strip_plot has ${groupCount} groups; maximum is ${STRIP_MAX_GROUPS}`);
+  else if (groupCount > STRIP_WARN_GROUPS) warnings.push(`strip_plot has ${groupCount} groups; more than ${STRIP_WARN_GROUPS} rows are hard to read`);
+  if (list.length > STRIP_MAX_POINTS) blockers.push(`strip_plot has ${list.length} points; maximum is ${STRIP_MAX_POINTS}`);
+  const extremes = spec.label_extremes ?? STRIP_DEFAULT_LABEL_EXTREMES;
+  if (Number.isInteger(extremes) && extremes > 0) {
+    if (!spec.label_field) warnings.push("strip_plot label_extremes is above 0 but no label_field is set, so no extreme labels are drawn");
+    else if (!fieldExists(list, spec.label_field)) warnings.push(`strip_plot label_field '${spec.label_field}' is absent from the rows, so no extreme labels are drawn`);
+  }
+  if (annotations(spec).some((annotation) => annotation?.type === "point")) warnings.push("strip_plot does not draw point annotations; they are ignored");
+  return { blockers, warnings };
+}
+
+// Text size exactly as render_qa_geometry.mjs estimates it (same tables, same
+// 1.05 safety margin, same bold switch), so label placement and the QA gate
+// agree on every box.
+function stripTextWidth(text, bold) {
+  const table = bold ? QA_LATIN_BOLD_ADVANCE_WIDTHS : QA_LATIN_ADVANCE_WIDTHS;
+  let units = 0;
+  for (const ch of Array.from(String(text))) {
+    if (/\s/.test(ch)) units += QA_TEXT_WIDTH_FACTORS.space;
+    else if (STRIP_WIDE_CHAR_RE.test(ch)) units += QA_TEXT_WIDTH_FACTORS.cjk;
+    else units += table[ch] ?? STRIP_FALLBACK_LATIN_WIDTH;
+  }
+  return units * STRIP_FONT_SIZE * QA_TEXT_WIDTH_FACTORS.safetyMargin;
+}
+
+function stripTextBox(text, x, baseline, anchor, bold) {
+  const width = stripTextWidth(text, bold);
+  const x0 = anchor === "end" ? x - width : anchor === "middle" ? x - width / 2 : x;
+  return { x0, x1: x0 + width, y0: baseline - STRIP_FONT_SIZE * QA_ASCENT_RATIO, y1: baseline + STRIP_FONT_SIZE * QA_DESCENT_RATIO };
+}
+
+function stripBoxesOverlap(a, b, pad = 0) {
+  return a.x0 - pad < b.x1 && a.x1 + pad > b.x0 && a.y0 - pad < b.y1 && a.y1 + pad > b.y0;
+}
+
+function stripCircleHitsBox(circle, box, pad = 0) {
+  const nearestX = Math.max(box.x0 - pad, Math.min(circle.x, box.x1 + pad));
+  const nearestY = Math.max(box.y0 - pad, Math.min(circle.y, box.y1 + pad));
+  return Math.hypot(circle.x - nearestX, circle.y - nearestY) <= circle.r;
+}
+
+// Liang-Barsky clip of the segment a-b against the box grown by pad.
+function stripSegmentHitsBox(a, b, box, pad = 0) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  let t0 = 0, t1 = 1;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0;
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    return true;
+  };
+  return clip(-dx, a.x - (box.x0 - pad)) && clip(dx, box.x1 + pad - a.x) && clip(-dy, a.y - (box.y0 - pad)) && clip(dy, box.y1 + pad - a.y);
+}
+
+function stripSegmentsCross(a1, a2, b1, b2) {
+  const side = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = side(b1, b2, a1), d2 = side(b1, b2, a2), d3 = side(a1, a2, b1), d4 = side(a1, a2, b2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+function stripPointSegmentDistance(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// The median of an ascending, non-empty list. It orders the rows and places
+// the median tick; it is never printed.
+function stripMedian(sorted) {
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Value axis: starts at 0 when every value is >= 0 and the smallest is below a
+// quarter of the largest (a zero baseline then costs the dots no resolution);
+// otherwise at a rounded value strictly below the smallest. The top end is a
+// rounded value strictly above the largest. Ticks are integer multiples of one
+// {1,2,5}x10^k step, so none is float noise like 0.30000000000000004.
+function stripAxis(values) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const fromZero = min >= 0 && min < max / 4;
+  const span = fromZero ? max : (max > min ? max - min : Math.max(Math.abs(max), 1));
+  const step = niceAxisStep(span / STRIP_TICK_TARGET);
+  let first = fromZero ? 0 : Math.floor(min / step);
+  if (!fromZero && first * step >= min) first -= 1;
+  let last = Math.ceil(max / step);
+  if (last * step <= max) last += 1;
+  const ticks = [];
+  for (let k = first; k <= last; k++) ticks.push(Number((k * step).toPrecision(12)));
+  return { lo: ticks[0], hi: ticks[ticks.length - 1], step, ticks };
+}
+
+// A reproducible number in [0, 1) from a seed string (jitter offsets).
+function stripHashUnit(seed) {
+  return createHash("sha256").update(seed).digest().readUInt32BE(0) / 4294967296;
+}
+
+// Greedy beeswarm dodge inside one row band. Dots are placed left to right;
+// each takes the lane (vertical offset, whole pixels, centre lane first and
+// alternating sides) nearest the row centre where it clears every dot already
+// placed, or the lane with the most clearance when the band is too tight.
+function stripBeeswarmOffsets(xs, amp, minDistance) {
+  const order = xs.map((_x, i) => i).sort((a, b) => xs[a] - xs[b] || a - b);
+  const lanes = [0];
+  for (let k = 1; k <= Math.floor(amp); k++) lanes.push(k, -k);
+  const placed = [];
+  const offsets = new Array(xs.length).fill(0);
+  order.forEach((i, rank) => {
+    let chosen = 0, chosenGap = -1;
+    for (const lane of lanes) {
+      const y = rank % 2 === 1 ? -lane : lane;
+      let gap = Infinity;
+      for (const other of placed) gap = Math.min(gap, Math.hypot(other.x - xs[i], other.y - y));
+      if (gap >= minDistance) { chosen = y; chosenGap = gap; break; }
+      if (gap > chosenGap) { chosen = y; chosenGap = gap; }
+    }
+    offsets[i] = chosen;
+    placed.push({ x: xs[i], y: chosen });
+  });
+  return offsets;
+}
+
+// Every position an extreme label may take, cheapest first. The label is set
+// at distance d from its dot's centre along one of STRIP_LABEL_TURNS evenly
+// spaced directions, reading rightwards when the direction points right and
+// leftwards otherwise, and always keeps STRIP_LABEL_GAP px clear of its own
+// dot. Cost grows with the distance and with the turn away from "straight to
+// the right"; a label that does not touch its dot gets a leader that stops 2px
+// before the text.
+function stripLabelCandidates(label) {
+  const dot = label.dot;
+  const bold = STRIP_LABEL_WEIGHT >= QA_BOLD_WEIGHT_THRESHOLD;
+  const found = [];
+  const round2 = (value) => Math.round(value * 100) / 100;
+  for (let s = 0; s < STRIP_LABEL_STEPS; s++) {
+    const d = STRIP_DOT_RADIUS + STRIP_LABEL_GAP + s * STRIP_LABEL_STEP;
+    for (let k = 0; k < STRIP_LABEL_TURNS; k++) {
+      const turn = (k < STRIP_LABEL_TURNS / 2 ? k : k - STRIP_LABEL_TURNS) * (360 / STRIP_LABEL_TURNS);
+      const rad = (turn * Math.PI) / 180;
+      const ux = Math.round(Math.cos(rad) * 1e4) / 1e4;
+      const uy = Math.round(Math.sin(rad) * 1e4) / 1e4;
+      const anchor = ux >= -0.01 ? "start" : "end";
+      const tx = round2(dot.x + d * ux);
+      const baseline = round2(dot.y + d * uy + 4);
+      const box = stripTextBox(label.text, tx, baseline, anchor, bold);
+      const nearX = Math.max(box.x0, Math.min(dot.x, box.x1));
+      const nearY = Math.max(box.y0, Math.min(dot.y, box.y1));
+      const near = Math.hypot(nearX - dot.x, nearY - dot.y);
+      if (near < STRIP_DOT_RADIUS + STRIP_LABEL_GAP - 0.01) continue;
+      const touching = near <= STRIP_DOT_RADIUS + STRIP_LABEL_GAP + 1;
+      let leader = null;
+      if (!touching) {
+        const end = { x: anchor === "start" ? box.x0 - 2 : box.x1 + 2, y: baseline - 4 };
+        const length = Math.hypot(end.x - dot.x, end.y - dot.y);
+        const f = (STRIP_DOT_RADIUS + 0.8) / length;
+        leader = { a: { x: dot.x + (end.x - dot.x) * f, y: dot.y + (end.y - dot.y) * f }, b: end };
+      }
+      found.push({ tx, baseline, anchor, box, leader, cost: d + 0.2 * Math.abs(turn) + (touching ? 0 : 6) + (anchor === "end" ? 1 : 0) });
+    }
+  }
+  return found.sort((a, b) => a.cost - b.cost);
+}
+
+// Constraints that depend only on what is already on the page (dots, fixed
+// text, median ticks, the label bounds). strict: a leader may not pass within a
+// dot's radius (+1.5px) of any other dot or cross a median tick; the relaxed
+// test drops only those two rules. A label never overlaps a dot, other text or
+// a median tick, and a leader never crosses text, in either test.
+function stripCandidateFitsFixed(candidate, label, ctx, strict) {
+  const { box, leader } = candidate;
+  const b = ctx.bounds;
+  if (box.x0 < b.x0 || box.x1 > b.x1 || box.y0 < b.y0 || box.y1 > b.y1) return false;
+  for (const circle of ctx.circles) if (stripCircleHitsBox(circle, box, 1.5)) return false;
+  for (const other of ctx.boxes) if (stripBoxesOverlap(box, other, 2)) return false;
+  for (const tick of ctx.segments) if (stripSegmentHitsBox(tick.a, tick.b, box, 1.5)) return false;
+  if (!leader) return true;
+  if (stripSegmentHitsBox(leader.a, leader.b, box, 1.5)) return false;
+  for (const other of ctx.boxes) if (stripSegmentHitsBox(leader.a, leader.b, other, 1.5)) return false;
+  if (strict) {
+    for (const circle of ctx.circles) {
+      if (circle === label.dot) continue;
+      if (stripPointSegmentDistance(circle, leader.a, leader.b) < circle.r + 1.5) return false;
+    }
+    for (const tick of ctx.segments) if (stripSegmentsCross(leader.a, leader.b, tick.a, tick.b)) return false;
+  }
+  return true;
+}
+
+// Constraints against the labels already placed: no overlapping text, no label
+// on another label's leader, no leader across another label's text or leader.
+function stripCandidateFitsPlaced(candidate, placed) {
+  const { box, leader } = candidate;
+  for (const other of placed) {
+    if (stripBoxesOverlap(box, other.box, 2)) return false;
+    if (other.leader && stripSegmentHitsBox(other.leader.a, other.leader.b, box, 1.5)) return false;
+    if (!leader) continue;
+    if (stripSegmentHitsBox(leader.a, leader.b, other.box, 1.5)) return false;
+    if (other.leader && stripSegmentsCross(leader.a, leader.b, other.leader.a, other.leader.b)) return false;
+  }
+  return true;
+}
+
+// Places the labels (highest values first, then lowest). Each label has its
+// candidates in preference order - strict ones before relaxed ones, cheapest
+// first. The labels are placed one after another at their first candidate that
+// clears the labels already placed; when a later label is left with no
+// position, the search backs up and gives an earlier label its next candidate
+// (depth first, STRIP_SEARCH_BREADTH candidates per label, STRIP_SEARCH_BUDGET
+// steps in all, so the layout is always the same for the same input). Whenever
+// the first choices already work the result is exactly that first-choice
+// layout. A label that still has no position is left out rather than drawn over
+// something.
+function stripPlaceLabels(labels, ctx) {
+  const options = labels.map((label) => {
+    const strict = [];
+    const relaxed = [];
+    for (const candidate of stripLabelCandidates(label)) {
+      if (!stripCandidateFitsFixed(candidate, label, ctx, false)) continue;
+      (stripCandidateFitsFixed(candidate, label, ctx, true) ? strict : relaxed).push(candidate);
+    }
+    return [...strict, ...relaxed];
+  });
+  const omitted = labels.filter((_label, i) => options[i].length === 0);
+  const todo = labels.map((_label, i) => i).filter((i) => options[i].length > 0);
+  const picks = [];
+  let budget = STRIP_SEARCH_BUDGET;
+  const search = (depth) => {
+    if (depth === todo.length) return true;
+    let tried = 0;
+    for (const candidate of options[todo[depth]]) {
+      if (budget <= 0 || tried >= STRIP_SEARCH_BREADTH) return false;
+      if (!stripCandidateFitsPlaced(candidate, picks)) continue;
+      tried++;
+      budget--;
+      picks.push(candidate);
+      if (search(depth + 1)) return true;
+      picks.pop();
+    }
+    return false;
+  };
+  if (search(0)) return { placed: picks.map((candidate, k) => ({ label: labels[todo[k]], ...candidate })), omitted };
+  const placed = [];
+  for (const i of todo) {
+    const candidate = options[i].find((option) => stripCandidateFitsPlaced(option, placed));
+    if (candidate) placed.push({ label: labels[i], ...candidate });
+    else omitted.push(labels[i]);
+  }
+  return { placed, omitted };
+}
+
+function renderStripPlot(spec, rows) {
+  const lang = vizLang(spec);
+  const strings = VIZ_STRINGS[lang];
+  const categoryField = spec.category_field;
+  const valueField = spec.value_field;
+  const labelField = spec.label_field && fieldExists(rows, spec.label_field) ? spec.label_field : null;
+  const order = STRIP_GROUP_ORDERS.includes(spec.group_order) ? spec.group_order : "median_desc";
+  const layout = spec.point_layout === "beeswarm" ? "beeswarm" : "jitter";
+  const showMedian = spec.show_median !== false;
+  const extremeCount = Number.isInteger(spec.label_extremes) ? spec.label_extremes : STRIP_DEFAULT_LABEL_EXTREMES;
+  const highlight = new Set((Array.isArray(spec.highlight_values) ? spec.highlight_values : []).map(String));
+  const q = (value) => Math.round(value * 100) / 100;
+  const r = STRIP_DOT_RADIUS;
+
+  // Units, then groups (rows). A unit without a group name or a finite value
+  // is not drawn (lintVizSpec blocks a non-finite value before this point).
+  const points = [];
+  rows.forEach((row, index) => {
+    const group = String(row[categoryField] ?? "");
+    const value = n(row[valueField]);
+    if (!group || value === null) return;
+    points.push({ index, group, value, name: labelField ? String(row[labelField] ?? "").trim() : "" });
+  });
+  const byGroup = new Map();
+  for (const point of points) {
+    if (!byGroup.has(point.group)) byGroup.set(point.group, { key: point.group, first: byGroup.size, pts: [] });
+    byGroup.get(point.group).pts.push(point);
+  }
+  const groups = [...byGroup.values()];
+  for (const group of groups) group.median = stripMedian(group.pts.map((point) => point.value).sort((a, b) => a - b));
+  if (order !== "data") {
+    const sign = order === "median_desc" ? -1 : 1;
+    groups.sort((a, b) => sign * (a.median - b.median) || a.first - b.first);
+  }
+  groups.forEach((group, row) => {
+    group.row = row;
+    group.display = String(resolveEconomyDisplayName(group.key, spec.category_names, lang));
+    for (const point of group.pts) point.row = row;
+  });
+  const rowCount = groups.length;
+
+  // Extreme units of the whole chart: the ceil(n/2) highest and the floor(n/2)
+  // lowest, never the same unit twice. Labels read "name value"; in house style
+  // only the top-most label carries the unit (the "unit once" convention).
+  let highs = [];
+  let lows = [];
+  if (labelField && extremeCount > 0) {
+    highs = [...points].sort((a, b) => b.value - a.value || a.index - b.index).slice(0, Math.ceil(extremeCount / 2));
+    const taken = new Set(highs);
+    lows = [...points].sort((a, b) => a.value - b.value || a.index - b.index).filter((point) => !taken.has(point)).slice(0, Math.floor(extremeCount / 2));
+  }
+  const labeled = [...highs.map((point) => ({ point, high: true })), ...lows.map((point) => ({ point, high: false }))];
+  const labelDecimals = resolveChartDecimals(spec, labeled.map((item) => item.point.value));
+  const unitOwner = labeled.reduce((best, item) => (!best || item.point.row < best.point.row ? item : best), null);
+  for (const item of labeled) {
+    const valueText = fmtSpec(spec, item.point.value, HOUSE_STYLE_ACTIVE && item !== unitOwner ? "" : spec.unit, labelDecimals);
+    item.text = item.point.name ? `${item.point.name} ${valueText}` : valueText;
+    item.width = stripTextWidth(item.text, STRIP_LABEL_WEIGHT >= QA_BOLD_WEIGHT_THRESHOLD);
+  }
+
+  // Frame and plot box. The row-label column is as wide as the widest group
+  // name; the right edge leaves room for the high-side labels, which sit just
+  // right of their dots.
+  const axis = stripAxis(points.length ? points.map((point) => point.value) : [0, 1]);
+  const catX = 54 + Math.max(24, Math.ceil(Math.max(0, ...groups.map((group) => stripTextWidth(group.display, false)))));
+  const left = catX + 20;
+  const band = clamp(Math.round(STRIP_BAND_TARGET / Math.max(rowCount, 1)), STRIP_MIN_BAND, STRIP_MAX_BAND);
+  const amp = Math.min(STRIP_MAX_JITTER, (band - 2 * r - 1.5) / 2);
+  const keyHeight = showMedian && rowCount ? 26 : 8;
+  const f = frame(spec, keyHeight + rowCount * band + 34, 300);
+  const top = f.bodyTop + keyHeight;
+  const bottom = top + rowCount * band;
+  const rowCenters = groups.map((_group, i) => top + band * (i + 0.5));
+  const labelLimit = LAYOUT_W - 54;
+  let right = labelLimit;
+  for (const item of labeled) {
+    if (!item.high) continue;
+    const fraction = (item.point.value - axis.lo) / (axis.hi - axis.lo);
+    if (fraction > 0) right = Math.min(right, left + (labelLimit - (r + STRIP_LABEL_GAP + item.width + STRIP_LABEL_SLACK) - left) / fraction);
+  }
+  right = Math.min(labelLimit, Math.max(right, left + STRIP_MIN_PLOT_WIDTH));
+  const scale = (value) => left + ((value - axis.lo) / (axis.hi - axis.lo)) * (right - left);
+
+  // Dot positions: x from the value, y offset inside the row band by the
+  // chosen layout. A group with a single unit sits on its row's centre line.
+  for (const group of groups) {
+    const xs = group.pts.map((point) => scale(point.value));
+    const offsets = group.pts.length < 2
+      ? group.pts.map(() => 0)
+      : layout === "beeswarm"
+        ? stripBeeswarmOffsets(xs, amp, 2 * r + 0.4)
+        : group.pts.map((point) => (stripHashUnit(`${point.name || group.key}|${point.index}`) * 2 - 1) * amp);
+    group.pts.forEach((point, k) => {
+      point.dot = { x: q(xs[k]), y: q(rowCenters[group.row] + offsets[k]), r };
+    });
+  }
+
+  const parts = f.parts;
+  const fixedBoxes = [];
+  // Row guides and vertical gridlines come first so every mark covers them.
+  for (const group of groups) {
+    const y = q(rowCenters[group.row]);
+    parts.push(`<line x1="${q(left)}" y1="${y}" x2="${q(right)}" y2="${y}" stroke="${PALETTE.faint}" stroke-width="1"/>`);
+  }
+  axis.ticks.forEach((tick) => {
+    const x = q(scale(tick));
+    parts.push(`<line x1="${x}" y1="${q(top)}" x2="${x}" y2="${q(bottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  });
+  if (axis.lo === 0) {
+    parts.push(`<line data-role="zero-line" x1="${q(left)}" y1="${q(top)}" x2="${q(left)}" y2="${q(bottom)}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
+  }
+  axis.ticks.forEach((tick, i) => {
+    const x = q(scale(tick));
+    const text = tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, axis.ticks.length));
+    parts.push(`<text x="${x}" y="${q(bottom + 21)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+    fixedBoxes.push(stripTextBox(text, x, q(bottom + 21), "middle", false));
+  });
+  for (const group of groups) {
+    const y = q(rowCenters[group.row] + 4);
+    parts.push(`<text x="${catX}" y="${y}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(group.display)}</text>`);
+    fixedBoxes.push(stripTextBox(group.display, catX, y, "end", false));
+  }
+  if (showMedian && rowCount) {
+    const y = q(f.bodyTop + 12);
+    parts.push(`<text data-role="strip-median-key" x="${q(left)}" y="${y}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(strings.stripMedianKey)}</text>`);
+    fixedBoxes.push(stripTextBox(strings.stripMedianKey, q(left), y, "start", false));
+  }
+
+  // Dots: every ordinary unit in the house data colour at half opacity (so
+  // overlap darkens), highlighted units in the accent on top of them.
+  const isHighlighted = (point) => highlight.has(point.group) || (point.name !== "" && highlight.has(point.name));
+  const dotMarkup = (point, accent) => `<circle data-role="data-point" cx="${point.dot.x}" cy="${point.dot.y}" r="${r}" fill="${accent ? PALETTE.accent : PALETTE.accent2}"${accent ? "" : ` opacity="${STRIP_DOT_OPACITY}"`}/>`;
+  for (const point of points) if (!isHighlighted(point)) parts.push(dotMarkup(point, false));
+  for (const point of points) if (isHighlighted(point)) parts.push(dotMarkup(point, true));
+
+  // Median ticks: a mark only (no number); the key above the plot names it.
+  const medianTicks = [];
+  if (showMedian) {
+    const half = Math.min(10, band / 2 - 1.5);
+    for (const group of groups) {
+      const x = q(scale(group.median));
+      const cy = rowCenters[group.row];
+      parts.push(`<line data-role="data-median" x1="${x}" y1="${q(cy - half)}" x2="${x}" y2="${q(cy + half)}" stroke="${PALETTE.ink}" stroke-width="1.5"/>`);
+      medianTicks.push({ a: { x, y: cy - half }, b: { x, y: cy + half } });
+    }
+  }
+
+  // Extreme labels, highest first then lowest first, each clear of every dot,
+  // text, median tick and other leader.
+  const placement = stripPlaceLabels(
+    labeled.map((item) => ({ text: item.text, dot: item.point.dot })),
+    {
+      circles: points.map((point) => point.dot),
+      boxes: fixedBoxes,
+      segments: medianTicks,
+      bounds: { x0: left + 2, x1: labelLimit, y0: top - 1, y1: bottom + 1 },
+    },
+  );
+  for (const item of placement.placed) {
+    if (item.leader) {
+      parts.push(`<line data-role="direct-label-leader" x1="${q(item.leader.a.x)}" y1="${q(item.leader.a.y)}" x2="${q(item.leader.b.x)}" y2="${q(item.leader.b.y)}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+    }
+    parts.push(`<text data-role="direct-label" x="${q(item.tx)}" y="${q(item.baseline)}" text-anchor="${item.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${STRIP_LABEL_WEIGHT}" fill="${PALETTE.ink}">${esc(item.label.text)}</text>`);
+  }
+  addFooter(parts, spec, f.footerTop);
+  parts.push("</svg>");
+  return parts.join("\n") + "\n";
+}
 
 function mobileFrame(spec, bodyHeight) {
   const width = 640;
@@ -7765,6 +8278,7 @@ export function renderVizMobileSvg(spec, rows) {
     case "multi_line": return renderMobileLine(spec,rows,true);
     case "small_multiples": return renderMobileSmallMultiples(spec,rows);
     case "scatter": return renderMobileScatter(spec,rows);
+    case "strip_plot": return renderStripPlot(spec,rows);
     case "heatmap": return renderMobileHeatmap(spec,rows);
     case "sankey": return renderSankey(spec,rows,true);
     case "alluvial": return renderSankey(spec,rows,true);
@@ -7834,6 +8348,7 @@ export function renderVizSvg(spec, rows) {
     case "multi_line": return renderLine(spec, rows, true);
     case "small_multiples": return renderSmallMultiples(spec, rows);
     case "scatter": return renderScatter(spec, rows);
+    case "strip_plot": return renderStripPlot(spec, rows);
     case "heatmap": return renderHeatmap(spec, rows);
     case "sankey": return renderSankey(spec, rows, false);
     case "alluvial": return renderSankey(spec, rows, false);
