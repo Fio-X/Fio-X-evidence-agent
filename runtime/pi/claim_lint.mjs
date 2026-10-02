@@ -67,6 +67,18 @@ const isProbability = (c) => {
   return c?.class === "FUNCTION" && String(c.function_name).toLowerCase() === "list_value" && (c.children ?? []).length > 0 && c.children.every(isProbability);
 };
 
+function dataFreeComparison(expr) {
+  const kids = expr.children ?? [];
+  const type = String(expr.type ?? "");
+  const name = String(expr.function_name ?? "").toLowerCase();
+  let sides = [];
+  if (type === "COMPARE_BETWEEN") sides = [expr.input, expr.lower, expr.upper];
+  else if (type === "COMPARE_IN" || type === "COMPARE_NOT_IN") sides = kids;
+  else if (type.startsWith("COMPARE_")) sides = [expr.left, expr.right];
+  else if (expr.class === "FUNCTION" && LIKE_FUNCTIONS.has(name)) sides = kids.slice(0, 2);
+  return sides.length && !sides.some(mentionsData) ? sides : [];
+}
+
 // The constants of an expression that are not numbers the query claims: they
 // compare, offset, position or choose a quantile, and never reach the result.
 function exemptChildren(expr) {
@@ -75,9 +87,11 @@ function exemptChildren(expr) {
   const kids = expr.children ?? [];
   const name = String(expr.function_name ?? "").toLowerCase();
   const type = String(expr.type ?? "");
-  if (type === "COMPARE_BETWEEN") { add(expr.lower); add(expr.upper); }
-  else if (type === "COMPARE_IN" || type === "COMPARE_NOT_IN") kids.slice(1).forEach((c) => add(c));
-  else if (type.startsWith("COMPARE_")) { add(expr.left); add(expr.right); }
+  // A comparison constant is exempt only when what it is compared with mentions data;
+  // (1 = 1)::INT would otherwise type a count into the result.
+  if (type === "COMPARE_BETWEEN") { if (mentionsData(expr.input)) { add(expr.lower); add(expr.upper); } }
+  else if (type === "COMPARE_IN" || type === "COMPARE_NOT_IN") { if (mentionsData(kids[0])) kids.slice(1).forEach((c) => add(c)); }
+  else if (type.startsWith("COMPARE_")) { add(expr.left, isConstant(expr.left) && mentionsData(expr.right)); add(expr.right, isConstant(expr.right) && mentionsData(expr.left)); }
   else if (type === "ARRAY_EXTRACT" || type === "ARRAY_SLICE") kids.slice(1).forEach((c) => add(c, isIntegerConstant(c)));
   if (expr.class === "WINDOW") {
     if (name === "lag" || name === "lead") add(expr.offset_expr, isIntegerConstant(expr.offset_expr));
@@ -86,7 +100,8 @@ function exemptChildren(expr) {
     add(expr.end_expr, isIntegerConstant(expr.end_expr));
   }
   if (expr.class === "FUNCTION" || expr.class === "WINDOW") {
-    if (REGEX_PATTERN_FUNCTIONS.has(name) || LIKE_FUNCTIONS.has(name)) add(kids[1], kids[1]?.class === "CONSTANT" && kids[1].value?.type?.id === "VARCHAR");
+    if (REGEX_PATTERN_FUNCTIONS.has(name)) add(kids[1], kids[1]?.class === "CONSTANT" && kids[1].value?.type?.id === "VARCHAR");
+    if (LIKE_FUNCTIONS.has(name)) add(kids[1], kids[1]?.class === "CONSTANT" && kids[1].value?.type?.id === "VARCHAR" && mentionsData(kids[0]));
     if (name === "regexp_extract") add(kids[2], isIntegerConstant(kids[2]));
     if (ROUNDERS.has(name)) add(kids[1], isIntegerConstant(kids[1]));
     if (name === "nullif") add(kids[1]);
@@ -112,6 +127,8 @@ function constantsIn(expr, found) {
     else if (id === "VARCHAR" && /\d/.test(String(v.value))) found.push(expr);
     return;
   }
+  // A comparison with no data on any side yields a boolean the query typed; its constants are flagged whatever their type.
+  for (const operand of dataFreeComparison(expr)) if (isConstant(operand)) found.push(operand);
   const exempt = new Set(exemptChildren(expr));
   for (const [key, child] of Object.entries(expr)) {
     if (!isNode(child) || key === "type" || key === "value") continue;
