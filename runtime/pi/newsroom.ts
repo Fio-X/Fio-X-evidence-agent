@@ -1691,7 +1691,7 @@ function registerPlanEdit(pi: ExtensionAPI) {
       if (!planRef) throw new Error("newsroom_infographic_plan returned no planRef for the edited plan");
       if (signal?.aborted) throw new Error("plan edit cancelled before the revision record was written");
       const revisionKey = sha256Hex(JSON.stringify({ source_plan_ref: params.plan_ref, plan_ref: planRef, applied: revised.applied }));
-      const revisionRef = `infographics/revisions/${revisionKey}.json`;
+      const revisionRef = `infographics/plan-edits/${revisionKey}.json`;
       await writeArtifactIfAbsent(revisionRef, {
         schema_version: "0.2.0",
         kind: "plan_edit",

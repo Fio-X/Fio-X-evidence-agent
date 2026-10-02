@@ -184,6 +184,10 @@ INFOGRAPHIC_COMPETITION_PROFILES = {
     "editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"
 }
 VISION_PATCH_FIELDS = {"span", "emphasis", "priority", "move_before", "mobile_move_before"}
+# Mirrors runtime/pi/vision.mjs PLAN_EDIT_MODULE_FIELDS / PLAN_EDIT_SCENE_FIELDS / PLAN_EDIT_MAX_OPS.
+PLAN_EDIT_MODULE_FIELDS = VISION_PATCH_FIELDS
+PLAN_EDIT_SCENE_FIELDS = ("pattern", "anchor_module_id", "sidecar_module_ids")
+PLAN_EDIT_MAX_OPS = 12
 COMPETITION_POLICY_FLOORS = {
     "editorial": {
         "deterministic_score": 88, "vision_score": 80,
@@ -295,6 +299,86 @@ def replay_infographic_patches(source: dict, patches: list[dict]) -> dict:
             mobile_order = _move_before(mobile_order, target, value)
     next_plan["mobile_module_order"] = mobile_order
     return next_plan
+
+
+def _js_json(value):
+    # JSON.stringify prints an integral number without ".0".
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {k: _js_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_js_json(v) for v in value]
+    return value
+
+
+def infographic_plan_content_hash(plan: dict) -> str:
+    core = {k: v for k, v in plan.items() if k != "content_hash"}
+    text = json.dumps(_js_json(core), separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def replay_plan_edits(source: dict, ops: list) -> dict:
+    """Independent replay of newsroom_infographic_edit: only the module and scene fields the tool exposes."""
+    if not isinstance(ops, list) or not 1 <= len(ops) <= PLAN_EDIT_MAX_OPS:
+        raise ValueError(f"applied_edits must hold 1..{PLAN_EDIT_MAX_OPS} items")
+    plan = json.loads(json.dumps(source))
+    plan.pop("content_hash", None)
+    modules = plan.get("modules") or []
+    ids = [str(m.get("id")) for m in modules]
+    if not ids or len(ids) != len(set(ids)):
+        raise ValueError("source infographic modules must have unique ids")
+    scenes = (plan.get("scene_graph") or {}).get("scenes") or []
+    scene_ids = {str(sc.get("id")) for sc in scenes}
+    mobile_order = list(plan["mobile_module_order"]) if isinstance(plan.get("mobile_module_order"), list) and len(plan["mobile_module_order"]) == len(ids) else None
+    seen = set()
+    for op in ops:
+        if not isinstance(op, dict) or set(op) != {"scope", "id", "field", "value"}:
+            raise ValueError(f"invalid plan edit: {op!r}")
+        scope, field, value, target = op["scope"], op["field"], op["value"], str(op["id"])
+        if scope not in ("module", "scene"):
+            raise ValueError(f"invalid plan edit scope: {scope!r}")
+        if field not in (PLAN_EDIT_MODULE_FIELDS if scope == "module" else PLAN_EDIT_SCENE_FIELDS):
+            raise ValueError(f"field {field!r} is not editable on a {scope}")
+        if target not in (set(ids) if scope == "module" else scene_ids):
+            raise ValueError(f"plan edit refers to unknown {scope} {target!r}")
+        key = (scope, target, field)
+        if key in seen:
+            raise ValueError(f"duplicate plan edit: {key!r}")
+        seen.add(key)
+        if field == "span" and value not in {"full", "half", "two_thirds", "third"}:
+            raise ValueError(f"invalid span: {value!r}")
+        if field == "emphasis" and value not in {"hero", "primary", "secondary", "support"}:
+            raise ValueError(f"invalid emphasis: {value!r}")
+        if field == "priority" and not (isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 5):
+            raise ValueError(f"invalid priority: {value!r}")
+        if field in {"move_before", "mobile_move_before", "anchor_module_id"} and not (isinstance(value, str) and value in ids):
+            raise ValueError(f"{field} must name an existing module: {value!r}")
+        if field == "pattern" and value not in {"hero_sidecar_stack", "hero_with_rail"}:
+            raise ValueError(f"invalid scene pattern: {value!r}")
+        if field == "sidecar_module_ids" and not (isinstance(value, list) and 1 <= len(value) <= 3 and len(set(value)) == len(value) and all(isinstance(v, str) and v in ids for v in value)):
+            raise ValueError(f"invalid sidecar_module_ids: {value!r}")
+        by_id = {str(m.get("id")): m for m in plan["modules"]}
+        if scope == "scene":
+            next(sc for sc in scenes if str(sc.get("id")) == target)[field] = json.loads(json.dumps(value))
+        elif field == "move_before":
+            order = _move_before([str(m.get("id")) for m in plan["modules"]], target, value)
+            plan["modules"] = [by_id[i] for i in order]
+        elif field == "mobile_move_before":
+            mobile_order = _move_before(mobile_order if mobile_order is not None else ids, target, value)
+        else:
+            by_id[target][field] = value
+    if mobile_order is not None:
+        plan["mobile_module_order"] = mobile_order
+    return plan
+
+
+def plan_edit_immutable_hash(plan: dict) -> str:
+    projected = infographic_immutable_projection(plan)
+    scene_graph = projected.get("scene_graph")
+    if isinstance(scene_graph, dict) and isinstance(scene_graph.get("scenes"), list):
+        projected["scene_graph"] = {**scene_graph, "scenes": [{k: v for k, v in sc.items() if k not in PLAN_EDIT_SCENE_FIELDS} for sc in scene_graph["scenes"]]}
+    return hashlib.sha256(canonical_json(projected).encode("utf-8")).hexdigest()
 
 
 def recompute_competition_machine_pass(profile: str, deterministic: dict, vision: dict, origins: list[str]) -> tuple[bool, list[str]]:
@@ -1667,6 +1751,41 @@ def verify(root: Path) -> Report:
                 report.check(set(safety.get("allowed_patch_fields") or []) == VISION_PATCH_FIELDS, f"revision {rel} allowed patch field contract mismatch")
             except Exception as exc:
                 report.check(False, f"visual revision verification failed {rel}: {exc}")
+
+    # NEWSROOM_SPEED_PLAN_EDIT records live in their own folder and are replayed
+    # against the layout fields newsroom_infographic_edit may change; the vision
+    # revision audit above keeps reading only infographics/revisions/.
+    plan_edit_dir = root / "infographics" / "plan-edits"
+    if plan_edit_dir.is_dir():
+        for edit_path in sorted(plan_edit_dir.glob("*.json")):
+            rel = edit_path.relative_to(root).as_posix()
+            try:
+                record = load_json(edit_path)
+                report.check(record.get("schema_version") == "0.2.0", f"plan edit {rel} schema_version mismatch")
+                report.check(record.get("kind") == "plan_edit", f"plan edit {rel} kind mismatch")
+                source_ref = record.get("source_plan_ref")
+                revised_ref = record.get("revised_plan_ref")
+                for label, ref in [("source plan", source_ref), ("revised plan", revised_ref)]:
+                    report.check(isinstance(ref, str) and ref.startswith("infographics/plans/"), f"plan edit {rel} invalid {label} ref")
+                    if isinstance(ref, str):
+                        report.check(safe_ref(root, ref).is_file(), f"plan edit {rel} missing {label}: {ref}")
+                if not all(isinstance(ref, str) and safe_ref(root, ref).is_file() for ref in (source_ref, revised_ref)):
+                    continue
+                source = load_json(safe_ref(root, source_ref))
+                revised = load_json(safe_ref(root, revised_ref))
+                report.check(revised.get("content_hash") == infographic_plan_content_hash(revised), f"plan edit {rel} revised plan content_hash mismatch")
+                report.check({str(m.get("id")) for m in source.get("modules") or []} == {str(m.get("id")) for m in revised.get("modules") or []}, f"plan edit {rel} changed the module id set")
+                replayed = replay_plan_edits(source, record.get("applied_edits"))
+                revised_without_hash = {k: v for k, v in revised.items() if k != "content_hash"}
+                report.check(canonical_json(replayed) == canonical_json(revised_without_hash), f"plan edit {rel} revised plan does not equal the source plan with only the recorded layout edits applied")
+                source_immutable = plan_edit_immutable_hash(source)
+                report.check(source_immutable == plan_edit_immutable_hash(revised), f"plan edit {rel} changed immutable editorial evidence")
+                safety = record.get("safety") or {}
+                report.check(safety.get("evidence_fields_preserved") is True, f"plan edit {rel} missing evidence-preserved attestation")
+                report.check(safety.get("immutable_projection_sha256") == source_immutable, f"plan edit {rel} immutable projection hash mismatch")
+                report.check(set(safety.get("editable_module_fields") or []) == PLAN_EDIT_MODULE_FIELDS and set(safety.get("editable_scene_fields") or []) == set(PLAN_EDIT_SCENE_FIELDS), f"plan edit {rel} editable field contract mismatch")
+            except Exception as exc:
+                report.check(False, f"plan edit verification failed {rel}: {exc}")
 
     # Competition preflight is engineering evidence, not a jury prediction.
     # Recompute its machine-verifiable predicates from the linked final assets.
