@@ -58,6 +58,12 @@ const MAP_REFERENCE_LAYERS_RUNTIME: &str =
     include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
+const ASOF_PROBE_RUNTIME: &str = include_str!("../runtime/pi/asof_probe.mjs");
+const CLAIM_BINDING_RUNTIME: &str = include_str!("../runtime/pi/claim_binding.mjs");
+const NUMBER_SHADOW_RUNTIME: &str = include_str!("../runtime/pi/number_shadow.mjs");
+const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
+const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
+const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
@@ -164,6 +170,12 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let map_reference_layers_path = runtime_dir.join("map_reference_layers.mjs");
     let publication_binding_path = runtime_dir.join("publication_binding.mjs");
     let svg_security_path = runtime_dir.join("svg_security.mjs");
+    let asof_probe_path = runtime_dir.join("asof_probe.mjs");
+    let claim_binding_path = runtime_dir.join("claim_binding.mjs");
+    let number_shadow_path = runtime_dir.join("number_shadow.mjs");
+    let preflight_path = runtime_dir.join("preflight.mjs");
+    let shadow_path = runtime_dir.join("shadow.mjs");
+    let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
@@ -242,6 +254,12 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&map_reference_layers_path, MAP_REFERENCE_LAYERS_RUNTIME)?;
     write_if_changed(&publication_binding_path, PUBLICATION_BINDING_RUNTIME)?;
     write_if_changed(&svg_security_path, SVG_SECURITY_RUNTIME)?;
+    write_if_changed(&asof_probe_path, ASOF_PROBE_RUNTIME)?;
+    write_if_changed(&claim_binding_path, CLAIM_BINDING_RUNTIME)?;
+    write_if_changed(&number_shadow_path, NUMBER_SHADOW_RUNTIME)?;
+    write_if_changed(&preflight_path, PREFLIGHT_RUNTIME)?;
+    write_if_changed(&shadow_path, SHADOW_RUNTIME)?;
+    write_if_changed(&tool_chain_path, TOOL_CHAIN_RUNTIME)?;
     write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
     write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
     write_if_changed(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME)?;
@@ -292,6 +310,16 @@ mod tests {
             .join("editorial_validators.mjs")
             .is_file());
         assert!(root.path().join("runtime").join("render_qa.mjs").is_file());
+        for module in [
+            "asof_probe.mjs",
+            "claim_binding.mjs",
+            "number_shadow.mjs",
+            "preflight.mjs",
+            "shadow.mjs",
+            "tool_chain.mjs",
+        ] {
+            assert!(root.path().join("runtime").join(module).is_file(), "{module} missing");
+        }
         assert!(root
             .path()
             .join("runtime")
