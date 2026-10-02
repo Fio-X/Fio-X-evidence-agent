@@ -2167,6 +2167,7 @@ function heroTokenOffsets(text: string, claim: string): number[] {
       const after = claim[at + text.length] ?? "";
       const next = claim[at + text.length + 1] ?? "";
       if (/[\p{Nd}.+\-−]/u.test(before)) continue;
+      if (before === "," && at > 1 && /\p{Nd}/u.test(claim[at - 2])) continue;
       if (/\p{Nd}/u.test(after) || (after === "." && /\p{Nd}/u.test(next))) continue;
     }
     out.push(at);
@@ -2211,7 +2212,7 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
   return [...out];
 }
 
-function heroLiteralAfter(context: HeroClaimContext, placeholder: string, valueText: string): string {
+function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, valueText: string): string[] {
   let rest: string | null = null;
   if (context.template) {
     const at = context.template.indexOf(placeholder);
@@ -2220,7 +2221,14 @@ function heroLiteralAfter(context: HeroClaimContext, placeholder: string, valueT
     const [at] = heroTokenOffsets(valueText, context.claimText);
     if (at !== undefined) rest = context.claimText.slice(at + valueText.length);
   }
-  return rest === null ? "" : (rest.match(HERO_LITERAL_STOP)?.[0] ?? "");
+  if (rest === null) return [];
+  // The literal right after the number, and a scale word after exactly one space (letters only: "million", never "3").
+  const out = [rest.match(HERO_LITERAL_STOP)?.[0] ?? ""];
+  if (/^ \S/u.test(rest)) {
+    const word = rest.slice(1).match(HERO_LITERAL_STOP)?.[0] ?? "";
+    if (/^\p{L}+$/u.test(word)) out.push(word);
+  }
+  return out.filter(Boolean);
 }
 
 /** NEWSROOM_HERO_VALUE_GATE=1: every hero_stat is filled from its claim before validation and storage; off, the modules pass untouched. */
@@ -2244,8 +2252,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   if (typed && String(module.value) !== value.text) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
   const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);
   if (unit !== "") {
-    const literal = heroLiteralAfter(context, from, value.text);
-    const allowed = [...new Set([...(literal ? [literal] : []), ...(await heroPlanUnits(modules, claimId, value.column))])];
+    const allowed = [...new Set([...heroLiteralsAfter(context, from, value.text), ...(await heroPlanUnits(modules, claimId, value.column))])];
     if (!allowed.includes(unit)) throw new Error(`HERO_UNIT_NOT_ALLOWED: hero_stat '${id}' unit '${unit.slice(0, 20)}' is not shown by claim '${claimId}'; allowed: empty${allowed.map((entry) => `, '${entry}'`).join("")}`);
   }
   const text: Record<string, string> = {};
@@ -4465,7 +4472,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       {
         // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
         const verifiedNow = new Set(await verifiedClaimIds());
-        const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? [])]).filter(Boolean).map(String))];
+        const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
         const unverified = cited.filter((id) => !verifiedNow.has(id));
         if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
       }
