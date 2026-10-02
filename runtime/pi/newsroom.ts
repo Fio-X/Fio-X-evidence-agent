@@ -3318,6 +3318,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       extent_padding_ratio: Type.Optional(Type.Number({ minimum: 0, maximum: 0.35 })),
       reference_path: Type.Optional(StringEnum(["none", "great_circle"] as const)),
       locator_inset: Type.Optional(Type.Boolean()),
+      map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })),
       inset: Type.Optional(Type.Object({
         iso3: Type.Optional(Type.Array(Type.String())),
         auto: Type.Optional(Type.Boolean()),
@@ -3559,6 +3560,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
                 // so QA spells expected labels exactly as the renderer did
                 measure_kind: specValueKind(spec) ?? spec.measure_kind,
                 measure_semantics: spec.measure_semantics,
+                ...(spec.map_extent === "world" ? { map_extent: "world", highlight_values: spec.highlight_values } : {}),
               },
             }
           : {};
