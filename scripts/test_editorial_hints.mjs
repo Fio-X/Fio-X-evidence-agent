@@ -127,7 +127,20 @@ const EXPECTED_DESCRIPTIONS = {
 // only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
 // property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
 const APPROVED_LATER = {
-  newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"] },
+  newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"]], addedWhy: "round-3 opt-in chart fields" },
+};
+// Properties an approved later change added: they must be absent from the baseline and present in the switch-off
+// definition, and are then removed from the switch-off copy before the comparison with a4d4cb0.
+const withAddedRemoved = (tool, paths) => {
+  const parameters = JSON.parse(JSON.stringify(tool.parameters));
+  const present = paths.map((path) => {
+    let node = parameters;
+    for (const key of path.slice(0, -1)) node = node?.[key];
+    const had = !!node && path[path.length - 1] in node;
+    if (had) delete node[path[path.length - 1]];
+    return had;
+  });
+  return { tool: { ...tool, parameters }, present };
 };
 const withPathCleared = (tool, path) => {
   const parameters = JSON.parse(JSON.stringify(tool.parameters));
@@ -152,7 +165,11 @@ function checkDefinitions(mod, { quiet = false } = {}) {
       for (const name of base.keys()) {
         const approved = APPROVED_LATER[name];
         if (!approved) { assert.equal(slim(off.get(name)), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
-        const [o, b] = [withPathCleared(off.get(name), approved.path), withPathCleared(base.get(name), approved.path)];
+        const added = approved.added ?? [];
+        const offTool = withAddedRemoved(off.get(name), added), baseTool = withAddedRemoved(base.get(name), added);
+        assert.ok(offTool.present.every(Boolean), `${where}: ${name} has the added properties ${added.map((p) => p.join(".")).join(", ")} (${approved.addedWhy})`);
+        assert.ok(baseTool.present.every((x) => !x), `${where}: a4d4cb0 has none of the added properties`);
+        const [o, b] = [withPathCleared(offTool.tool, approved.path), withPathCleared(base.get(name), approved.path)];
         assert.ok(o.had && b.had, `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
         assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${approved.path.join(".")} (approved change ${approved.commit})`);
         assert.notEqual(slim(off.get(name)), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
