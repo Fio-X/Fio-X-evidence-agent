@@ -98,7 +98,8 @@ const mainMod = await loadTree("main");
 
 // Every other speed switch is unset so the only difference between two runs is the one under test.
 const OTHER_SWITCHES = Object.fromEntries(Object.keys(process.env).filter((k) => /^NEWSROOM_(SPEED_|SHADOW_|HIDE_)/.test(k) && k !== SWITCH).map((k) => [k, undefined]));
-const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined, NEWSROOM_MOBILE_PAGES: undefined };
+// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with a4d4cb0, which has the old typed-hero path.
+const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined, NEWSROOM_MOBILE_PAGES: undefined };
 const setEnv = (env) => { for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
 function register(mod, env) {
   setEnv({ ...BASE_ENV, ...env });

@@ -1,5 +1,5 @@
-// H1b: the hero value gate through the real tool path. With NEWSROOM_HERO_VALUE_GATE=1 the newsroom_infographic_lint
-// tool must read each hero_stat's claim computation (refs are written as "computations/<hash>.json") and block a
+// H1b: the hero value gate through the real tool path. With the gate on (the default; NEWSROOM_HERO_VALUE_GATE=0 turns it
+// off) the newsroom_infographic_lint tool must read each hero_stat's claim computation (refs are written as "computations/<hash>.json") and block a
 // value that is not in those rows. test_hero_value_gate.mjs covers the pure lint; this covers the newsroom.ts wiring,
 // on a temp artifact root with a system-verified claim whose computation record has real rows. Offline.
 import { createHash } from "node:crypto";
@@ -157,7 +157,8 @@ const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-outcome"
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
-  const tools = await registerFor({ env: gate ? { NEWSROOM_HERO_VALUE_GATE: "1", NEWSROOM_MOBILE_PAGES: "0" } : {} });
+  // Gate on is the default: no switch is set. The old path (typed hero values) is asked for with NEWSROOM_HERO_VALUE_GATE=0.
+  const tools = await registerFor({ env: gate ? { NEWSROOM_MOBILE_PAGES: "0" } : { NEWSROOM_HERO_VALUE_GATE: "0" } });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");
@@ -252,7 +253,7 @@ await ok("a stored plan edited after the fill is caught by lint", async () => {
   must((l.details.blockers ?? []).some((b) => /HERO_(EDITED_AFTER_FILL|VALUE_TYPED)/.test(b)), JSON.stringify(l.details.blockers));
 });
 
-// ---- empty verified set (default on, gate off) ----
+// ---- empty verified set (gate off with NEWSROOM_HERO_VALUE_GATE=0) ----
 await ok("no claim verified: a plan citing a claim is refused at lint and at render", async () => {
   const r = await heroRun(false, { value: "2", unit: "" }, { emptyAfterPlan: true });
   must(!r.refused, r.refused);
@@ -277,10 +278,15 @@ await ok("gate off: a typed hero value passes as before (no hero blocker)", asyn
   const r = await heroRun(false, { value: "9", unit: "" });
   must(!r.refused && r.blockers.length === 0, JSON.stringify(r.refused ?? r.blockers));
 });
-await ok("switch off: tool definitions carry no value_from and equal the gate-on ones minus it", async () => {
+await ok("switch =0: tool definitions carry no value_from and equal the default (gate-on) ones minus it", async () => {
   freshRun("defs");
-  const off = await registerFor({ env: {} });
-  const on = await registerFor({ env: { NEWSROOM_HERO_VALUE_GATE: "1" } });
+  const off = await registerFor({ env: { NEWSROOM_HERO_VALUE_GATE: "0" } });
+  const on = await registerFor({ env: {} });
+  // Only the exact string "0" turns the gate off: "1", an empty value and a typo all give the default definitions.
+  for (const value of ["1", "", "off", "false"]) {
+    const other = await registerFor({ env: { NEWSROOM_HERO_VALUE_GATE: value } });
+    must(JSON.stringify([...other.values()].map((t) => [t.name, t.description, t.promptGuidelines, t.parameters])) === JSON.stringify([...on.values()].map((t) => [t.name, t.description, t.promptGuidelines, t.parameters])), `NEWSROOM_HERO_VALUE_GATE=${JSON.stringify(value)} differs from the default`);
+  }
   const defs = (tools) => JSON.stringify([...tools.values()].map((t) => [t.name, t.description, t.parameters]));
   // Every tool's name, description and parameters: on minus value_from must equal off.
   const strip = (tools) => JSON.stringify([...tools.values()].map((t) => [t.name, t.description, JSON.parse(JSON.stringify(t.parameters, (k, v) => (k === "value_from" ? undefined : v)))]));

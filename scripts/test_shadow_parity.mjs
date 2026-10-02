@@ -29,7 +29,7 @@ function walk(dir, root = dir, out = new Map()) {
 }
 
 async function scenario({ baselineRev, shadow }) {
-  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
+  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_HERO_VALUE_GATE: "0" } });
   try {
     const defs = JSON.stringify([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => ({ ...tool, execute: undefined })));
     const csv = ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n";
