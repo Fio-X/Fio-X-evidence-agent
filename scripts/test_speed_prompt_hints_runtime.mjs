@@ -28,7 +28,7 @@ try {
     writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
     writeFileSync(join(tmp, "node_modules", name, "index.js"), source);
   };
-  stub("typebox", "export const Type = new Proxy({}, { get: (_, kind) => (...args) => ({ kind, args }) });\n");
+  stub("typebox", "export const Type = new Proxy({}, { get: (_, kind) => (...args) => { while (args.length && args[args.length - 1] === undefined) args.pop(); return { kind, args }; } });\n");
   stub("@earendil-works/pi-ai", "export const StringEnum = (values) => ({ enum: values });\n");
   const load = async (label, source) => {
     const dir = join(tmp, label);
@@ -56,7 +56,10 @@ try {
     return tools;
   };
   // Everything the model reads of a tool (all fields except the handler).
-  const visible = (tool) => JSON.stringify({ ...tool, execute: undefined });
+  // One intended difference from the baseline: viz_plan's and viz_chain's measure_semantics is the full schema again (the
+  // baseline registers a weaker duplicate). Mask only that property; test_viz_plan_schema.mjs asserts the full schema.
+  const MASKED = new Set(["newsroom_viz_plan", "newsroom_viz_chain"]);
+  const visible = (tool) => JSON.stringify({ ...tool, execute: undefined }, MASKED.has(tool.name) ? (key, value) => (key === "measure_semantics" ? "masked" : value) : undefined);
 
   let compared = 0;
   for (const profile of PROFILES) {

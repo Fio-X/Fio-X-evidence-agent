@@ -20,7 +20,7 @@ try {
   };
   // Structural stubs: parameters keep their shape (and enum values) so the
   // test can search them for Lieflat references.
-  stub("typebox", "export const Type = new Proxy({}, { get: (_, kind) => (...args) => ({ kind, args }) });\n");
+  stub("typebox", "export const Type = new Proxy({}, { get: (_, kind) => (...args) => { while (args.length && args[args.length - 1] === undefined) args.pop(); return { kind, args }; } });\n");
   stub("@earendil-works/pi-ai", "export const StringEnum = (values) => ({ enum: values });\n");
   const pi = join(tmp, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
