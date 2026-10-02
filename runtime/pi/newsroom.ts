@@ -1596,8 +1596,11 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
       throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
     }
     assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs);
-    if (hashRows(await queryDuckDb(sql, signal)) !== recordedResultHash) {
-      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}`);
+    const replayed = await queryDuckDb(sql, signal);
+    if (hashRows(replayed) !== recordedResultHash) {
+      const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
+      const reordered = JSON.stringify(sameRows(replayed)) === JSON.stringify(sameRows(computation.rows));
+      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}${reordered ? "; the same rows came back in another order: add a top-level ORDER BY over every key column so the order is total" : ""}`);
     }
   }
 }
@@ -1618,6 +1621,20 @@ async function serializeSqlAst(sql: string, signal?: AbortSignal) {
   const { stdout, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES * 4, 20_000, true);
   if (code !== 0) throw new Error("SQL could not be analyzed");
   return JSON.parse(stdout.trim());
+}
+
+// True when the statement's own top-level node carries an ORDER BY (read from
+// DuckDB's parse, not from the text). An unparsable statement counts as ordered:
+// the note is advice and never a refusal.
+async function hasTopLevelOrderBy(sql: string, signal?: AbortSignal) {
+  try {
+    const ast = await serializeSqlAst(sql, signal);
+    const node = ast?.statements?.[0]?.node;
+    if (!node) return true;
+    return (node.modifiers ?? []).some((modifier: any) => modifier?.type === "ORDER_MODIFIER");
+  } catch {
+    return true;
+  }
 }
 
 async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
@@ -2715,6 +2732,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
       const budget = modelResultBudget(params.result_budget);
+      const orderNote = rows.length > 1 && !(await hasTopLevelOrderBy(safeSql, signal));
       let modelResult: any = budget ? {
         row_count: rows.length,
         columns: [...new Set(rows.flatMap((row: any) => Object.keys(row)))],
@@ -2723,6 +2741,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         result_hash: resultHash,
         truncated_for_model: rows.length > budget.maxRows,
       } : { row_count: rows.length, rows, artifact: path };
+      if (orderNote) modelResult = { ...modelResult, order_note: "No top-level ORDER BY: row order is not guaranteed, and a claim's replay compares rows in order. Add ORDER BY over every key column." };
       if (budget) {
         while (Buffer.byteLength(JSON.stringify(modelResult, null, 2), "utf8") > budget.maxBytes && modelResult.preview_rows.length > 0) {
           modelResult = { ...modelResult, preview_rows: modelResult.preview_rows.slice(0, Math.max(0, Math.floor(modelResult.preview_rows.length * 0.75) - 1)) };
