@@ -299,9 +299,73 @@ const CHART_INK_PAD = 3;
 function trimmedSvgInfo(svg) {
   const info = svgInfo(svg);
   const bottom = svgInkBottom(info);
-  if (bottom === null) return info;
-  const height = Math.min(info.height, Math.max(1, Math.ceil(bottom + CHART_INK_PAD - info.minY)));
-  return { ...info, height };
+  const left = svgInkLeft(info);
+  const height = bottom === null ? info.height : Math.min(info.height, Math.max(1, Math.ceil(bottom + CHART_INK_PAD - info.minY)));
+  // Also cut the blank left margin so the chart's ink starts at the page text column's left edge.
+  const cut = left === null ? 0 : Math.max(0, Math.floor(left - info.minX));
+  return { ...info, height, minX: info.minX + cut, width: info.width - cut };
+}
+
+// Leftmost drawn ink (viewBox x) of a chart SVG, or null when it cannot be bound with certainty (transforms,
+// images, <use>, centred/right-anchored text, relative path starts). Strokes count half their width.
+function svgInkLeft(info) {
+  const inner = String(info.inner ?? "");
+  if (/\btransform=|<image\b|<use\b|<foreignObject\b|<tspan\b[^>]*\bx=/i.test(inner)) return null;
+  const body = inner.replace(/<defs\b[\s\S]*?<\/defs>/gi, "").replace(/<(?:title|desc)\b[\s\S]*?<\/(?:title|desc)>/gi, "");
+  const num = (tag, name) => { const m = tag.match(new RegExp(`(?:^|\\s)${name}=["']\\s*(-?[\\d.]+)`)); return m ? Number(m[1]) : null; };
+  let left = Infinity;
+  const take = (v) => { if (Number.isFinite(v)) left = Math.min(left, v); };
+  for (const m of body.matchAll(/<(text)\b([^>]*?)>([\s\S]*?)<\/text>|<(line|rect|circle|ellipse|polygon|polyline|path)\b([^>]*?)\/?>/gi)) {
+    const kind = (m[1] ?? m[4]).toLowerCase(), tag = ` ${m[2] ?? m[5]}`;
+    const stroke = (num(tag, "stroke-width") ?? 1) / 2;
+    if (kind === "text") {
+      // Anchored text reaches left by an over-estimate of its width (CJK 1 em, other glyphs 0.65 em), so the cut is never too deep.
+      const anchor = tag.match(/text-anchor=["'](start|middle|end)/i)?.[1]?.toLowerCase() ?? "start";
+      const chars = [...String(m[3]).replace(/<[^>]*>/g, "")];
+      const w = chars.reduce((sum, ch) => sum + (/[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 1 : 0.65), 0) * (num(tag, "font-size") ?? 16);
+      take((num(tag, "x") ?? 0) - (anchor === "end" ? w : anchor === "middle" ? w / 2 : 0));
+    } else if (kind === "line") take(Math.min(num(tag, "x1") ?? 0, num(tag, "x2") ?? 0) - stroke);
+    else if (kind === "rect") { if (!/\sfill=["'](?:#fff(?:fff)?|white)["']/i.test(tag) || /\sstroke=["'](?!none)/i.test(tag)) take((num(tag, "x") ?? 0) - stroke); }
+    else if (kind === "circle") take((num(tag, "cx") ?? 0) - (num(tag, "r") ?? 0) - stroke);
+    else if (kind === "ellipse") take((num(tag, "cx") ?? 0) - (num(tag, "rx") ?? 0) - stroke);
+    else if (kind === "polygon" || kind === "polyline") {
+      const pts = (tag.match(/points=["']([^"']+)["']/)?.[1] ?? "").trim().split(/[\s,]+/).map(Number);
+      for (let i = 0; i < pts.length; i += 2) take(pts[i] - stroke);
+    } else {
+      const d = tag.match(/\sd=["']([^"']+)["']/)?.[1];
+      if (d === undefined) return null;
+      const xl = pathLeft(d);
+      if (xl === null) return null;
+      take(xl - stroke);
+    }
+  }
+  return Number.isFinite(left) ? Math.max(left, info.minX) : null;
+}
+
+// Smallest x reached by an SVG path (control points included), or null if the path data cannot be read.
+function pathLeft(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g);
+  if (!tokens) return null;
+  const arity = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
+  let i = 0, cmd = "", cx = 0, sx = 0, min = Infinity;
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) { cmd = tokens[i++]; if (cmd === "z" || cmd === "Z") { cx = sx; min = Math.min(min, cx); } continue; }
+    const k = arity[cmd.toLowerCase()];
+    if (!k) return null;
+    const a = tokens.slice(i, i + k).map(Number);
+    if (a.length < k || a.some((n) => !Number.isFinite(n))) return null;
+    i += k;
+    const rel = cmd === cmd.toLowerCase(), lower = cmd.toLowerCase();
+    const xAt = (v) => (rel ? cx + v : v);
+    if (lower === "v") { /* x unchanged */ }
+    else if (lower === "h") { cx = xAt(a[0]); min = Math.min(min, cx); }
+    else if (lower === "c") { min = Math.min(min, xAt(a[0]), xAt(a[2]), xAt(a[4])); cx = xAt(a[4]); }
+    else if (lower === "s" || lower === "q") { min = Math.min(min, xAt(a[0]), xAt(a[2])); cx = xAt(a[2]); }
+    else if (lower === "a") { min = Math.min(min, xAt(a[5]) - Math.abs(a[0])); cx = xAt(a[5]); }
+    else { cx = xAt(a[0]); min = Math.min(min, cx); if (lower === "m") sx = cx; }
+    if (lower === "m") { cmd = rel ? "l" : "L"; }
+  }
+  return Number.isFinite(min) ? min : null;
 }
 
 // Smallest font-size (px) drawn in an SVG, or null if it declares none.
@@ -1063,7 +1127,7 @@ function inkBottomSlack(box, assets) {
   return 0;
 }
 
-export const _rhythmDebug = { svgInfo, svgInkBottom, trimmedSvgInfo, inkTop: (b) => inkTop(b.module, b.stat_bar), inkBottomSlack, sceneHeaderInk };
+export const _rhythmDebug = { svgInfo, svgInkBottom, trimmedSvgInfo, svgInkLeft, inkTop: (b) => inkTop(b.module, b.stat_bar), inkBottomSlack, sceneHeaderInk };
 function sceneHeaderHeight(scene) {
   const titleLines = scene.title ? lines(scene.title, 48, 2).length : 0;
   const dekLines = scene.dek ? lines(scene.dek, 82, 2).length : 0;
@@ -1476,7 +1540,7 @@ function embedVisual(parts, asset, box, module, mobile) {
   const targetH = Math.min(availableH, naturalH);
   const y = box.y + topPad;
   const inner = namespaceSvgInner(info.inner, `embed-${hash(module.id).slice(0, 8)}-${mobile ? "m" : "d"}`);
-  parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="xMidYMin meet">${inner}</svg>`);
+  parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="${mobile ? "xMidYMin" : "xMinYMin"} meet">${inner}</svg>`);
   if (captionH) {
     // D1: the chart goes beyond the page subject set, so the runtime restyles it
     // (dashed frame) and prints the model's caption where readers see it.
