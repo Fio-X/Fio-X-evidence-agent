@@ -123,6 +123,20 @@ const EXPECTED_DESCRIPTIONS = {
   [FOUR.assets]: { "properties.concept_ref": WORDING.conceptRef },
   [FOUR.concepts]: {},
 };
+// Default-on tool changes approved after a4d4cb0. For a listed tool the switch-off definition may differ from the baseline
+// only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
+// property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
+const APPROVED_LATER = {
+  newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"] },
+};
+const withPathCleared = (tool, path) => {
+  const parameters = JSON.parse(JSON.stringify(tool.parameters));
+  let node = parameters;
+  for (const key of path.slice(0, -1)) node = node?.[key];
+  const had = node && path[path.length - 1] in node;
+  if (had) node[path[path.length - 1]] = null;
+  return { had, slim: slim({ ...tool, parameters }) };
+};
 function checkDefinitions(mod, { quiet = false } = {}) {
   let pairs = 0, delta = 0;
   for (const profile of PROFILES) for (const phase of PHASES) {
@@ -135,7 +149,14 @@ function checkDefinitions(mod, { quiet = false } = {}) {
     assert.deepEqual([...on.keys()], [...off.keys()], `${where}: the switch adds or removes no tool`);
     if (base) {
       assert.deepEqual([...off.keys()], [...base.keys()], `${where}: switch off registers the tools a4d4cb0 registers`);
-      for (const name of base.keys()) assert.equal(slim(off.get(name)), slim(base.get(name)), `${where}: switch off == baseline for ${name}`);
+      for (const name of base.keys()) {
+        const approved = APPROVED_LATER[name];
+        if (!approved) { assert.equal(slim(off.get(name)), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
+        const [o, b] = [withPathCleared(off.get(name), approved.path), withPathCleared(base.get(name), approved.path)];
+        assert.ok(o.had && b.had, `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
+        assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${approved.path.join(".")} (approved change ${approved.commit})`);
+        assert.notEqual(slim(off.get(name)), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
+      }
     }
     const changed = [...off.keys()].filter((name) => slim(on.get(name)) !== slim(off.get(name)));
     assert.ok(changed.every((name) => Object.values(FOUR).includes(name)), `${where}: only editorial tools may differ, got ${changed.join(", ")}`);
