@@ -105,3 +105,54 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   must(/at least 3 questions/.test(desc("newsroom_editorial_discovery", "candidate_questions").description), "discovery hint missing");
   console.log("PASS rule hints: off is stable, on changes descriptions only");
 }
+
+// ---- 4. strip_plot, stacked_bar_100 and mirrored_bar are wired into the plan path --------------------------
+// Names, enums and ranges of each form's own fields equal schemas/newsroom-viz-spec.schema.json (the descriptions are the tool's own, shorter
+// text); viz.mjs validateVizSpec and lintVizSpec stay the authority on every data rule, the tool schema only has to let the fields through.
+{
+  const { CHART_TYPES } = await import(pathToFileURL(join(ROOT, "runtime/pi/viz.mjs")).href);
+  const { FORM_CHART_TYPES, FORM_FIELDS } = await import("./lib_viz_form_wiring.mjs");
+  const spec = JSON.parse(readFileSync(join(ROOT, "schemas/newsroom-viz-spec.schema.json"), "utf8"));
+  const chain = (await tools({ NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" })).get("newsroom_viz_chain");
+  must(chain, "newsroom_viz_chain is not registered with the chain switches on");
+  const planProps = plan.parameters.properties, chainProps = chain.parameters.properties;
+
+  // chart_type: every value is a real chart type, the three forms are in the tool, the JSON schema and CHART_TYPES
+  const toolTypes = planProps.chart_type.enum;
+  must(new Set(toolTypes).size === toolTypes.length, "the chart_type enum lists a value twice");
+  for (const type of toolTypes) must(CHART_TYPES.includes(type), `chart_type ${type} is not a viz.mjs chart type`);
+  for (const form of FORM_CHART_TYPES) {
+    must(toolTypes.includes(form), `the chart_type enum lacks ${form}`);
+    must(spec.properties.chart_type.enum.includes(form), `${form} is not in the JSON schema chart_type enum`);
+    must(CHART_TYPES.includes(form), `${form} is not in viz.mjs CHART_TYPES`);
+  }
+  must(JSON.stringify(chainProps.chart_type) === JSON.stringify(planProps.chart_type), "newsroom_viz_chain's chart_type differs from newsroom_viz_plan's");
+
+  // fields: present and optional in plan and chain, equal to the JSON schema once descriptions and the TypeBox wrapping are dropped
+  const canon = (v) => (Array.isArray(v) ? (v.every((x) => typeof x !== "object") ? [...v].sort() : v.map(canon)) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+  const asJsonSchema = ({ description, __optional, ...rest }) => {
+    if (Array.isArray(rest.enum) && rest.type === "string") delete rest.type; // the JSON schema lists an enum without a type
+    if (Array.isArray(rest.anyOf)) { // Union(String(minLength 1), Number) is the JSON schema's type ["string","number"] with minLength 1
+      const { anyOf, ...others } = rest;
+      return { ...others, ...Object.assign({}, ...anyOf.map(({ type, ...o }) => o)), type: anyOf.map((x) => x.type) };
+    }
+    return rest;
+  };
+  for (const field of FORM_FIELDS) {
+    must(spec.properties[field], `${field} is not a property of the JSON schema`);
+    for (const [label, props, tool] of [["newsroom_viz_plan", planProps, plan], ["newsroom_viz_chain", chainProps, chain]]) {
+      must(props[field], `${label} lacks the field ${field}`);
+      must(props[field].__optional === true && !tool.parameters.required.includes(field), `${label}: ${field} must be optional`);
+      const [got, want] = [canon(asJsonSchema(props[field])), canon(Object.fromEntries(Object.entries(spec.properties[field]).filter(([k]) => k !== "description")))];
+      must(JSON.stringify(got) === JSON.stringify(want), `${label}: ${field} differs from the JSON schema\n  tool:   ${JSON.stringify(got)}\n  schema: ${JSON.stringify(want)}`);
+    }
+  }
+  // the JSON schema documents nine of the fields with a "<form>:" description: none of those may be left out of the tool
+  const documented = Object.entries(spec.properties).filter(([, v]) => typeof v.description === "string" && FORM_CHART_TYPES.some((form) => v.description.startsWith(`${form}:`))).map(([k]) => k);
+  must(documented.length >= 9, `expected at least 9 form-documented JSON schema properties, found ${documented.length}`);
+  for (const field of documented) must(FORM_FIELDS.includes(field), `the JSON schema documents ${field} for one of the three forms but the tool does not expose it (add it to the tool and to scripts/lib_viz_form_wiring.mjs)`);
+  // category_names names the forms whose category_field the renderer localizes (viz.mjs categoryNamesField); mirrored_bar is not one of them
+  const categoryNames = planProps.category_names.description;
+  must(/strip_plot\/stacked_bar_100/.test(categoryNames) && !/mirrored_bar/.test(categoryNames), "category_names must list strip_plot and stacked_bar_100, not mirrored_bar");
+  console.log(`PASS the plan path wires ${FORM_CHART_TYPES.join(", ")}: chart_type enum, ${FORM_FIELDS.length} optional fields equal to the JSON schema in newsroom_viz_plan and newsroom_viz_chain`);
+}
