@@ -3,9 +3,11 @@
 // computation rows, or in a bounded set derived from them?
 //
 // Pure functions only; nothing here reads a file, the clock or the
-// environment. The result is observational data for a side file
-// (shadow.mjs). It never produces a lint warning or blocker: the false
-// positive rate is unknown until it has been measured on real runs.
+// environment. The shadow use (shadow.mjs) is observational data for a side
+// file and never produces a lint warning or blocker: the false positive rate
+// is unknown until it has been measured on real runs. The one exception is
+// opt-in: with NEWSROOM_HERO_VALUE_GATE=1, infographic.mjs reuses these pure
+// matchers to block a hero_stat whose number is not in its own claim's rows.
 //
 // Rules fixed by the design:
 // - compare at DISPLAY precision: the prose number "12.3" matches a candidate
