@@ -58,6 +58,7 @@
         "multi_line",
         "small_multiples",
         "scatter",
+        "strip_plot",
         "diverging_bar",
         "heatmap",
         "sankey",
@@ -215,6 +216,27 @@
         "line",
         "dot"
       ]
+    },
+    "group_order": {
+      "enum": [
+        "median_desc",
+        "median_asc",
+        "data"
+      ]
+    },
+    "point_layout": {
+      "enum": [
+        "jitter",
+        "beeswarm"
+      ]
+    },
+    "show_median": {
+      "type": "boolean"
+    },
+    "label_extremes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6
     },
     "label_field": {
       "type": "string",
@@ -794,6 +816,24 @@
         "required": [
           "x_field",
           "y_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "strip_plot"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "value_field"
         ]
       }
     },
