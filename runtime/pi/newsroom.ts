@@ -4502,7 +4502,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const mobileSvg = mobilePages ? await readArtifactText(mobileRef, "infographics/") : undefined;
       if (sha256Hex(desktopSvg) !== manifest?.hashes?.desktop_sha256 || (mobilePages && sha256Hex(mobileSvg as string) !== manifest?.hashes?.mobile_sha256)) throw new Error("Infographic SVG bytes do not match manifest hashes");
       const [desktopResult, mobileResult] = await Promise.all([
-        rasterizeArtifactSvg(desktopRef, 1100, signal),
+        rasterizeArtifactSvg(desktopRef, 1440, signal),
         mobilePages ? rasterizeArtifactSvg(mobileRef, 720, signal) : Promise.resolve(undefined as any),
       ]);
       const desktopPng = desktopResult.bytes;
@@ -4527,8 +4527,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         variants: mobilePages ? { desktop: desktopPngRef, mobile: mobilePngRef } : { desktop: desktopPngRef },
         hashes: mobilePages ? { desktop_sha256: desktopHash, mobile_sha256: mobileHash } : { desktop_sha256: desktopHash },
         rasterizer: mobilePages
-          ? { desktop_engine: desktopResult.engine, mobile_engine: mobileResult.engine, desktop_width: 1100, mobile_width: 720 }
-          : { desktop_engine: desktopResult.engine, desktop_width: 1100 },
+          ? { desktop_engine: desktopResult.engine, mobile_engine: mobileResult.engine, desktop_width: 1440, mobile_width: 720 }
+          : { desktop_engine: desktopResult.engine, desktop_width: 1440 },
       });
       return {
         content: mobilePages

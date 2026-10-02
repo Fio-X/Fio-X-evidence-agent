@@ -126,6 +126,45 @@ export async function shadowVizNumbers({ root, spec, planRef, chart, claimRecord
   return { path, counts };
 }
 
+// ---- repeated numbers on one page ------------------------------------------
+
+/** A number repeated more than this many times on one page is reported. */
+export const REPEATED_NUMBER_LIMIT = 2;
+const NUMBER_WITH_UNIT = /(\d[\d,]*(?:\.\d+)?)\s*(%|[亿万千百]?(?:美元|人民币|元)|\p{Script=Han}|[A-Za-z]{1,6})?/gu;
+
+/** A date part, not a statistic: a number followed by 年/月/日/号, or a bare 4-digit integer 1800-2100 with no thousands comma. */
+function isDateNumber(raw, unit) {
+  if (/^[年月日号]$/.test(unit)) return true;
+  return unit === "" && /^\d{4}$/.test(raw) && Number(raw) >= 1800 && Number(raw) <= 2100;
+}
+
+/**
+ * Count each number on a page, normalised to "value + unit" (digits with
+ * thousands commas removed, plus the unit right after them: 24个, 63.2亿美元,
+ * 18%; a chart label with no unit has an empty one). Pure observation: `texts`
+ * is every [field, text] of page text, page text fields only; chart labels are drawn by the renderer from data and are not counted, and dates are skipped.
+ * Returns the values that occur more than `limit` times in all, most frequent
+ * first, as { value, count, by_unit: { unit: n }, fields }, so 24个 in the
+ * lede and a bare 24 on a bar both count toward 24.
+ */
+export function repeatedNumberCounts(texts, limit = REPEATED_NUMBER_LIMIT) {
+  const seen = new Map();
+  for (const [field, text] of texts) {
+    if (typeof text !== "string" || !text) continue;
+    for (const match of text.matchAll(NUMBER_WITH_UNIT)) {
+      const value = match[1].replace(/,/g, "");
+      const unit = match[2] ?? "";
+      if (isDateNumber(match[1], unit)) continue;
+      const entry = seen.get(value) ?? { value, count: 0, by_unit: {}, fields: [] };
+      entry.count += 1;
+      entry.by_unit[unit] = (entry.by_unit[unit] ?? 0) + 1;
+      if (!entry.fields.includes(field)) entry.fields.push(field);
+      seen.set(value, entry);
+    }
+  }
+  return [...seen.values()].filter((entry) => entry.count > limit).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value, "en", { numeric: true }));
+}
+
 /**
  * Infographic lint shadow. Each hero_stat/text/pull_quote module is checked
  * against the rows of its own claims; title and dek against all cited claims.
@@ -173,13 +212,15 @@ export async function shadowInfographicNumbers({ root, spec, planRef, assets, cl
       records.push(...checkField(`${module.type}:${id}.${name}`, text, candidates));
     }
   }
-  const counts = summarizeChecks(records);
+  const pageTexts = [...pageFields, ...fieldKeys.map(([name, text]) => [name, text])];
+  const repeated = repeatedNumberCounts(pageTexts);
+  const counts = { ...summarizeChecks(records), repeated_numbers: repeated.length };
   const computeMs = Math.round((performance.now() - started) * 100) / 100;
   const path = await writeShadowRecord(root, "prose_numbers", {
     surface: "infographic_lint", plan_ref: planRef, fields: [...pageFields, ...fieldKeys],
     visuals: modules.filter((module) => module.type === "visual").map((module) => [module.id, assets?.[String(module.manifest_ref ?? "")]?.manifest?.data_hash ?? null]),
     claims: [...cache.entries()].map(([key, value]) => [key, [...value.states.entries()].map(([claimId, claimStates]) => [claimId, claimStates.map((state) => [state.ref, state.result_hash])])]),
-  }, { surface: "infographic_lint", plan_ref: planRef, compute_ms: computeMs, counts, numbers: records, strict_result_hash: strict });
+  }, { surface: "infographic_lint", plan_ref: planRef, compute_ms: computeMs, counts, numbers: records, strict_result_hash: strict, repeated_numbers: repeated });
   return { path, counts };
 }
 
