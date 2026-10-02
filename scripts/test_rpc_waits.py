@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """External watchdog bounds every regression, including the unfixed baseline."""
-import json, os, signal, subprocess, sys, time, tempfile
+import json, os, re, signal, subprocess, sys, threading, time, tempfile
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 binary=str(Path(sys.argv[1] if len(sys.argv)>1 else root/'target/release/news').resolve())
@@ -45,4 +45,50 @@ if not baseline:
   leaks=sum(canary.encode() in f.read_bytes() for f in artifact.rglob('*') if f.is_file())+int(canary.encode() in p.stdout+p.stderr)
   assert p.returncode!=0 and status=='failed' and leaks==0
   results.append({'mode':'failure_persistence_redaction','returncode':p.returncode,'status':status,'secret_hits':leaks,'mock':True})
+if not baseline:
+ # The first chart is named as soon as a chain's critic passes, while the run goes on. Only the
+ # inline-claim switch (which needs the chart chain and atomic writes) turns the notice on, and
+ # the notice is progress only: exit status, story status, answer and recorded events stay equal.
+ chain_on={'NEWSROOM_SPEED_CHAIN_VIZ':'1','NEWSROOM_SPEED_ATOMIC_ARTIFACT':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'}
+ def chain_run(extra,case='ok',after=0.0,topic='fixed chart'):
+  with tempfile.TemporaryDirectory() as tmp:
+   env={**{k:v for k,v in os.environ.items() if not k.startswith('NEWSROOM_SPEED_')},'PERF_MOCK_MODE':'chain_chart','PERF_MOCK_CHAIN_CASE':case,'PERF_MOCK_AFTER_CHART':str(after),'NEWSROOM_RPC_TOTAL_MS':'8000','NEWSROOM_RPC_IDLE_MS':'5000','NEWSROOM_RPC_FINISH_MS':'3000',**extra}
+   p=subprocess.Popen([binary,'investigate','--pi-bin',str(root/'scripts/perf_mock_pi.py'),'--out',tmp,topic],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+   dog=threading.Timer(20,lambda: os.killpg(p.pid,signal.SIGKILL));dog.start()
+   notices=[];err=[]
+   try:
+    for raw in iter(p.stderr.readline,b''):
+     err.append(raw)
+     if b'[agent] chart_ready ' in raw:
+      path=re.search(rb'desktop=(\S+)',raw).group(1).decode()
+      notices.append({'line':raw.decode(),'path':path,'exists':Path(path).is_file(),'at':time.monotonic()})
+    out=p.stdout.read();p.wait();ended=time.monotonic()
+   finally: dog.cancel()
+   for note in notices: note['lead_s']=ended-note.pop('at')
+   artifact=next(Path(tmp).iterdir())
+   events=[(e.get('type'),e.get('toolName')) for e in map(json.loads,filter(None,(artifact/'events.jsonl').read_text(encoding='utf-8').splitlines()))]
+   return {'returncode':p.returncode,'notices':notices,'runs':b''.join(err).count(b'[agent] startup_ms='),'status':json.loads((artifact/'story.json').read_text())['status'],'answer':(artifact/'answer.md').read_text(encoding='utf-8'),'events':events}
+ no_notice={k:v for k,v in chain_on.items() if k!='NEWSROOM_SPEED_INLINE_CLAIM'}
+ off=chain_run(no_notice,after=2.0);on=chain_run(chain_on,after=2.0)
+ assert off['returncode']!=-9 and off['notices']==[] and len(on['notices'])==1,(off,on)
+ note=on['notices'][0]
+ # The model works for 2 s after the chart; the notice must have come well before that ended.
+ assert note['lead_s']>1.5 and note['exists'] and note['path'].endswith('/visualizations/b.svg') and ' compact=' in note['line'] and note['line'].rstrip().endswith('(critic passed; progress only, the run continues)'),note
+ for key in ('returncode','status','answer','events'): assert on[key]==off[key],(key,on[key],off[key])
+ results.append({'mode':'chart_notice_on_vs_off','notices':[len(off['notices']),len(on['notices'])],'returncode':on['returncode'],'status':on['status'],'mock':True})
+ for name,extra,case,topic,count,tail in [
+  ('without_chain',{'NEWSROOM_SPEED_ATOMIC_ARTIFACT':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'},'ok','fixed chart',0,None),
+  ('without_atomic_writes',{'NEWSROOM_SPEED_CHAIN_VIZ':'1','NEWSROOM_SPEED_INLINE_CLAIM':'1'},'ok','fixed chart',0,None),
+  ('switch_not_exactly_one',{**chain_on,'NEWSROOM_SPEED_INLINE_CLAIM':'true'},'ok','fixed chart',0,None),
+  ('two_charts',chain_on,'two','fixed chart',1,'/b.svg'),
+  ('revision_then_retry',chain_on,'revise','fixed chart',1,'/b.svg'),
+  ('revision_only',chain_on,'revise_only','fixed chart',0,None),
+  ('desktop_ref_outside_visualizations',chain_on,'unsafe_ref','fixed chart',0,None),
+  ('separate_render_and_critic',chain_on,'separate','fixed chart',1,'/e.svg'),
+  ('repair_prompts_name_it_once',chain_on,'ok','complex visual essay chart',1,'/b.svg')]:
+  r=chain_run(extra,case,topic=topic)
+  results.append({'mode':'chart_notice_'+name,'notices':len(r['notices']),'runs':r['runs'],'returncode':r['returncode'],'mock':True})
+  assert r['returncode']!=-9 and len(r['notices'])==count,(name,r)
+  if tail: assert r['notices'][0]['path'].endswith(tail) and r['notices'][0]['exists'],(name,r)
+  if name.startswith('repair'): assert r['runs']>=2,('the repair prompts did not run, so this proves nothing',r)
 print(json.dumps(results,indent=2))

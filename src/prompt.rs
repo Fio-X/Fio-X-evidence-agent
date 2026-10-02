@@ -447,18 +447,44 @@ mod tests {
 
     #[test]
     fn inline_claim_adds_one_paragraph_only_with_the_chart_chain() {
-        let chain = PromptSpeed { chain_viz: true, ..PromptSpeed::default() };
-        let both = PromptSpeed { chain_viz: true, inline_claim: true, ..PromptSpeed::default() };
-        let alone = PromptSpeed { inline_claim: true, ..PromptSpeed::default() };
-        for topic in ["summarize the source", "制作一个信息图", SCMP_LONG_IMAGE_GOAL] {
+        let chain = PromptSpeed {
+            chain_viz: true,
+            ..PromptSpeed::default()
+        };
+        let both = PromptSpeed {
+            chain_viz: true,
+            inline_claim: true,
+            ..PromptSpeed::default()
+        };
+        let alone = PromptSpeed {
+            inline_claim: true,
+            ..PromptSpeed::default()
+        };
+        for topic in [
+            "summarize the source",
+            "制作一个信息图",
+            SCMP_LONG_IMAGE_GOAL,
+        ] {
             for split in [false, true] {
-                let off = investigation_with_options(topic, &[], split, false, PromptSpeed::default());
+                let off =
+                    investigation_with_options(topic, &[], split, false, PromptSpeed::default());
                 let with_chain = investigation_with_options(topic, &[], split, false, chain);
                 let with_both = investigation_with_options(topic, &[], split, false, both);
                 let without_chain = investigation_with_options(topic, &[], split, false, alone);
-                assert_eq!(without_chain, off, "{topic}: inline claim alone changes nothing");
-                assert_eq!(with_both.len(), with_chain.len() + INLINE_CLAIM_PARAGRAPH.len(), "{topic}");
-                assert_eq!(with_both.replacen(INLINE_CLAIM_PARAGRAPH, "", 1), with_chain, "{topic}");
+                assert_eq!(
+                    without_chain, off,
+                    "{topic}: inline claim alone changes nothing"
+                );
+                assert_eq!(
+                    with_both.len(),
+                    with_chain.len() + INLINE_CLAIM_PARAGRAPH.len(),
+                    "{topic}"
+                );
+                assert_eq!(
+                    with_both.replacen(INLINE_CLAIM_PARAGRAPH, "", 1),
+                    with_chain,
+                    "{topic}"
+                );
                 assert!(with_both.contains("`claim_kind`") && !with_chain.contains("`claim_kind`"));
                 assert!(with_both.contains("still recorded with `record_claim`"));
             }
