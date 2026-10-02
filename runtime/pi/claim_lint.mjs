@@ -55,9 +55,51 @@ function render(expr) {
   }
 }
 
+const LIKE_FUNCTIONS = new Set(["~~", "~~*", "!~~", "!~~*", "like_escape", "not_like_escape", "ilike_escape", "not_ilike_escape"]);
+// Integer position / length arguments (every argument after the first).
+const POSITION_FUNCTIONS = new Set(["substr", "substring", "left", "right", "list_extract", "list_slice", "array_extract", "array_slice"]);
+const QUANTILE_FUNCTIONS = new Set(["quantile_cont", "quantile_disc", "quantile", "percentile_cont", "percentile_disc", "approx_quantile", "reservoir_quantile"]);
+
+const isConstant = (c) => c?.class === "CONSTANT" && c.value?.is_null === false;
+const isIntegerConstant = (c) => isConstant(c) && NUMERIC_TYPES.has(c.value.type?.id) && Number.isInteger(constantNumber(c));
+const isProbability = (c) => {
+  if (isConstant(c) && NUMERIC_TYPES.has(c.value.type?.id)) { const n = constantNumber(c); return n > 0 && n < 1; }
+  return c?.class === "FUNCTION" && String(c.function_name).toLowerCase() === "list_value" && (c.children ?? []).length > 0 && c.children.every(isProbability);
+};
+
+// The constants of an expression that are not numbers the query claims: they
+// compare, offset, position or choose a quantile, and never reach the result.
+function exemptChildren(expr) {
+  const out = [];
+  const add = (child, ok = isConstant(child)) => { if (ok) out.push(child); };
+  const kids = expr.children ?? [];
+  const name = String(expr.function_name ?? "").toLowerCase();
+  const type = String(expr.type ?? "");
+  if (type === "COMPARE_BETWEEN") { add(expr.lower); add(expr.upper); }
+  else if (type === "COMPARE_IN" || type === "COMPARE_NOT_IN") kids.slice(1).forEach((c) => add(c));
+  else if (type.startsWith("COMPARE_")) { add(expr.left); add(expr.right); }
+  else if (type === "ARRAY_EXTRACT" || type === "ARRAY_SLICE") kids.slice(1).forEach((c) => add(c, isIntegerConstant(c)));
+  if (expr.class === "WINDOW") {
+    if (name === "lag" || name === "lead") add(expr.offset_expr, isIntegerConstant(expr.offset_expr));
+    if (name === "ntile") add(kids[0], isIntegerConstant(kids[0]));
+    add(expr.start_expr, isIntegerConstant(expr.start_expr));
+    add(expr.end_expr, isIntegerConstant(expr.end_expr));
+  }
+  if (expr.class === "FUNCTION" || expr.class === "WINDOW") {
+    if (REGEX_PATTERN_FUNCTIONS.has(name) || LIKE_FUNCTIONS.has(name)) add(kids[1], kids[1]?.class === "CONSTANT" && kids[1].value?.type?.id === "VARCHAR");
+    if (name === "regexp_extract") add(kids[2], isIntegerConstant(kids[2]));
+    if (ROUNDERS.has(name)) add(kids[1], isIntegerConstant(kids[1]));
+    if (name === "nullif") add(kids[1]);
+    if (POSITION_FUNCTIONS.has(name)) kids.slice(1).forEach((c) => add(c, isIntegerConstant(c)));
+    if (QUANTILE_FUNCTIONS.has(name)) { const at = kids.length === 1 ? 0 : 1; add(kids[at], isProbability(kids[at])); }
+    if ((name === "*" || name === "/") && kids.length === 2) kids.forEach((c, i) => add(c, isPowerOfTen(c) && mentionsData(kids[1 - i])));
+  }
+  return out;
+}
+
 // Constants an expression of a select list holds. A constant is a number the
-// data does not hold, unless it is a unit step: ROUND/TRUNC precision, or a
-// power of ten that scales a value taken from the data.
+// data does not hold, unless it is one of the named steps above. A number typed
+// as a CASE result is tagged in found.branch, to point at count_if.
 function constantsIn(expr, found) {
   if (!isNode(expr)) return;
   if (Array.isArray(expr)) { for (const item of expr) constantsIn(item, found); return; }
@@ -70,20 +112,16 @@ function constantsIn(expr, found) {
     else if (id === "VARCHAR" && /\d/.test(String(v.value))) found.push(expr);
     return;
   }
-  if (expr.class === "FUNCTION") {
-    const kids = expr.children ?? [];
-    const name = String(expr.function_name ?? "").toLowerCase();
-    kids.forEach((child, index) => {
-      if (REGEX_PATTERN_FUNCTIONS.has(name) && index === 1 && child?.class === "CONSTANT" && child.value?.type?.id === "VARCHAR") return;
-      if (name === "regexp_extract" && index === 2 && child?.class === "CONSTANT" && NUMERIC_TYPES.has(child.value?.type?.id) && Number.isInteger(constantNumber(child))) return;
-      if (ROUNDERS.has(name) && index === 1 && child?.class === "CONSTANT" && NUMERIC_TYPES.has(child.value?.type?.id) && Number.isInteger(constantNumber(child))) return;
-      if ((name === "*" || name === "/") && kids.length === 2 && isPowerOfTen(child) && mentionsData(kids[1 - index])) return;
-      constantsIn(child, found);
-    });
-    for (const key of ["filter", "order_bys", "window"]) if (expr[key] !== undefined) constantsIn(expr[key], found);
-    return;
+  const exempt = new Set(exemptChildren(expr));
+  for (const [key, child] of Object.entries(expr)) {
+    if (!isNode(child) || key === "type" || key === "value") continue;
+    const items = Array.isArray(child) ? child : [child];
+    for (const item of items) {
+      if (exempt.has(item)) continue;
+      if ((key === "then_expr" || key === "else_expr") && item?.class === "CONSTANT") found.branch?.add(item);
+      constantsIn(item, found);
+    }
   }
-  for (const [key, child] of Object.entries(expr)) if (isNode(child) && key !== "type" && key !== "value") constantsIn(child, found);
 }
 
 /** Violations in a json_serialize_sql AST, as sentences that name the
@@ -97,8 +135,10 @@ export function lintClaimSqlAst(ast) {
     if (node.type === "SELECT_NODE" && Array.isArray(node.select_list)) {
       for (const item of node.select_list) {
         const found = [];
+        found.branch = new WeakSet();
         constantsIn(item, found);
-        if (found.length) out.push(`the select-list expression ${render(item)}${item.alias ? ` (AS ${item.alias})` : ""} holds the constant ${render(found[0])}; a number in a claim's SQL must come from the data, not be typed into the query`);
+        const hint = found.some((c) => found.branch.has(c)) ? "; to count rows use count_if(condition) or COUNT(*) FILTER (WHERE condition)" : "";
+        if (found.length) out.push(`the select-list expression ${render(item)}${item.alias ? ` (AS ${item.alias})` : ""} holds the constant ${render(found[0])}; a number in a claim's SQL must come from the data, not be typed into the query${hint}`);
       }
     }
     if (node.type === "TABLE_FUNCTION") {
@@ -124,7 +164,9 @@ export function lintClaimTemplate(template) {
   const out = [];
   // A placeholder holds dots of its own: swap it for a marker before splitting.
   const marked = String(template ?? "").replace(/\{\s*([^{}]*?)\s*\}/g, (_, body) => (/^max\./.test(body) ? "\u0001MAX\u0001" : /^min\./.test(body) ? "\u0001MIN\u0001" : "\u0001"));
-  for (const clause of marked.split(/[,.;，。；]/)) {
+  // Phrases that use these words without ranking anything keep their length, so offsets still match.
+  const plain = marked.replace(/\b(?:most\s+recent(?:ly)?|at\s+most|at\s+least|least\s+developed)\b/gi, (m) => " ".repeat(m.length));
+  for (const clause of plain.split(/[,.;，。；]/)) {
     const holders = [...clause.matchAll(/\u0001(MAX|MIN)\u0001/g)].map((m) => ({ at: m.index, end: m.index + m[0].length, kind: m[1] }));
     if (!holders.length) continue;
     const shown = clause.replace(/\u0001(MAX|MIN)\u0001/g, (_, k) => `{${k.toLowerCase()}.…}`).replace(/\u0001/g, "{…}").trim();
