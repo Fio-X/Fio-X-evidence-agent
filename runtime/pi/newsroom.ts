@@ -137,7 +137,72 @@ const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = 
       record_claim: "record_claim needs the computation_ref from its duckdb_query result, so wait for the results, then send all of the independent record_claim calls together in one assistant message.",
     },
   },
+  {
+    env: "NEWSROOM_SPEED_EDITORIAL_HINTS",
+    tools: {
+      newsroom_visual_concepts: "Send all 8-20 concepts in ONE call; fewer than 8 is refused before the tool runs and nothing is saved.",
+    },
+  },
 ];
+
+// NEWSROOM_SPEED_EDITORIAL_HINTS=1: wording only. Field descriptions and one guideline say what the editorial tools
+// need, and the story-graph and concept-set refusals gain a suffix that names the legal next step. No schema
+// constraint, fill, default, or accept/refuse condition changes, and a refused call still writes nothing.
+// Off (anything but exactly "1"): the schema, descriptions, guidelines and refusal texts are untouched.
+function editorialHintsEnabled() {
+  return process.env.NEWSROOM_SPEED_EDITORIAL_HINTS === "1";
+}
+// TypeBox options for a field: with the switch off exactly the options the field always had (or none at all).
+const editorialHint = (description: string, base?: any): any => (editorialHintsEnabled() ? { ...(base ?? {}), description } : base);
+const EDITORIAL_HINT_CLAIM_IDS = "Only claim_ids whose record_claim result read \"VERIFIED by system replay\". A claim recorded without computation_refs never verifies, and citing it refuses the whole graph.";
+const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_concepts (editorial/concepts/...), not the discovery or story-graph path. Run that tool first.";
+const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
+const EDITORIAL_HINT_VERIFIED_LIMIT = 12;
+const EDITORIAL_HINT_CLAIM_TEXT_CHARS = 60;
+
+// The suffix after the unchanged first sentence of the story-graph refusal. It is built only after the unchanged
+// check has decided to refuse, reads claims.jsonl and writes nothing. Every pair that failed the check is listed,
+// and only claims the system verified (isSystemVerifiedClaim, never the model's own status) are offered, each with
+// its stored text, so the replacement is chosen by meaning and not by availability.
+async function storyGraphRefusalHint(nodes: any[], verified: Set<string>) {
+  const unverified = new Map<string, string[]>();
+  let pairs = 0;
+  for (const node of nodes ?? []) for (const claimId of node?.claim_ids ?? []) {
+    const id = String(claimId);
+    if (verified.has(id)) continue;
+    const list = unverified.get(String(node.id)) ?? [];
+    if (!list.includes(id)) { list.push(id); pairs += 1; }
+    unverified.set(String(node.id), list);
+  }
+  const records = [...(await verifiedClaimRecords())];
+  const shown = records.slice(-EDITORIAL_HINT_VERIFIED_LIMIT);
+  const clip = (text: unknown) => {
+    const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+    return JSON.stringify(flat.length > EDITORIAL_HINT_CLAIM_TEXT_CHARS ? `${flat.slice(0, EDITORIAL_HINT_CLAIM_TEXT_CHARS - 3).trimEnd()}...` : flat);
+  };
+  const lines = [
+    `Unverified node/claim pairs (${pairs}): ${[...unverified].map(([node, ids]) => `${node}: ${ids.join(", ")}`).join("; ")}. Nothing was saved; send the whole graph again.`,
+    "Rule: a story node may cite only a claim whose record_claim result read \"VERIFIED by system replay\"; a claim recorded as \"NOT VERIFIED / draft only\" (for example with no computation_refs) cannot be cited.",
+    "Next step, either: (1) run duckdb_query on the data, then record_claim with computation_refs set to that query's artifact path, and cite the new claim_id; or (2) cite an already verified claim that states what the node says.",
+    records.length
+      ? `Verified claims (${records.length > shown.length ? `${shown.length} most recent of ${records.length}` : records.length}):\n${shown.map(([id, claim]) => `  ${id} ${clip(claim.claim)}`).join("\n")}`
+      : "Verified claims: none recorded yet, so take step (1).",
+  ];
+  return `\n${lines.join("\n")}`;
+}
+
+// The concept set that newsroom_semantic_novelty and newsroom_asset_requirements read. The check is readArtifactJson's
+// own; with the switch on only the wrong-folder refusal gets one more line, every other error passes through as it was.
+async function readConceptSetArtifact(conceptRef: string) {
+  try {
+    return await readArtifactJson(conceptRef, "editorial/concepts/");
+  } catch (error: any) {
+    if (editorialHintsEnabled() && String(error?.message ?? "").startsWith("Artifact path must be under editorial/concepts/:")) {
+      throw new Error(`${error.message}\n${EDITORIAL_HINT_CONCEPT_REF_REFUSAL}`);
+    }
+    throw error;
+  }
+}
 
 // NEWSROOM_SPEED_PREFLIGHT=1: derivable references become optional and unmet
 // preconditions are listed together (see preflight.mjs). Off: nothing changes.
@@ -3279,7 +3344,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     kind: StringEnum(["evidence", "claim", "mechanism", "context", "outcome", "uncertainty"] as const),
     summary: Type.String(),
     explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "relationship"] as const),
-    claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
+    claim_ids: Type.Optional(Type.Array(Type.String(), editorialHint(EDITORIAL_HINT_CLAIM_IDS, { maxItems: 20 }))),
     evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     module_hint: Type.Optional(Type.String()),
   });
@@ -3309,7 +3374,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       const verified = new Set(await verifiedClaimIds());
-      for (const node of params.nodes) for (const claimId of node.claim_ids ?? []) if (!verified.has(String(claimId))) throw new Error(`Story node '${node.id}' references unverified claim '${claimId}'`);
+      for (const node of params.nodes) for (const claimId of node.claim_ids ?? []) if (!verified.has(String(claimId))) throw new Error(`Story node '${node.id}' references unverified claim '${claimId}'${editorialHintsEnabled() ? await storyGraphRefusalHint(params.nodes, verified) : ""}`);
       const graph = assessStoryGraph(params);
       const rel = `editorial/story-graphs/${graph.content_hash}.json`;
       await writeArtifactIfAbsent(rel, graph);
@@ -3364,7 +3429,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     description: "Detect repeated reader answers before they consume page area. High-overlap award modules must be removed, demoted, or explicitly justified.",
     promptSnippet: "Make each visual module add a new explanatory dimension",
     parameters: Type.Object({
-      concept_ref: Type.String(),
+      concept_ref: Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF)),
       modules: Type.Array(Type.Object({
         id: Type.String(), reader_question_id: Type.String(), claim_set: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), new_information: Type.String(),
         explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"] as const),
@@ -3372,7 +3437,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }), { minItems: 2, maxItems: 30 }),
     }),
     async execute(_id, params) {
-      await readArtifactJson(params.concept_ref, "editorial/concepts/");
+      await readConceptSetArtifact(params.concept_ref);
       const novelty = scoreSemanticNovelty(params);
       const rel = `editorial/novelty/${novelty.content_hash}.json`;
       await writeArtifactIfAbsent(rel, novelty);
@@ -3392,7 +3457,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Choose a production lane that preserves origin and license metadata; human/vector/GIS assets should use the existing provenance-aware illustration boundary when reader-facing.",
     ],
     parameters: Type.Object({
-      concept_ref: Type.String(), concept_id: Type.String(),
+      concept_ref: Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF)), concept_id: Type.String(),
       requirements: Type.Array(Type.Object({
         id: Type.Optional(Type.String()),
         asset_class: StringEnum(["published_gis", "archival_photo", "verified_diagram", "portrait_or_object_photo", "expert_explanation", "geographic_coordinates", "historical_series", "human_scale_reference", "vector_illustration", "verified_3d"] as const),
@@ -3404,7 +3469,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }), { minItems: 1, maxItems: 20 }),
     }),
     async execute(_id, params) {
-      const concepts = await readArtifactJson(params.concept_ref, "editorial/concepts/");
+      const concepts = await readConceptSetArtifact(params.concept_ref);
       if (!(concepts.finalists ?? []).includes(params.concept_id)) throw new Error(`concept_id '${params.concept_id}' is not a finalist in the supplied concept set`);
       const plan = planEditorialAssets(params);
       const rel = `editorial/assets/${plan.content_hash}.json`;

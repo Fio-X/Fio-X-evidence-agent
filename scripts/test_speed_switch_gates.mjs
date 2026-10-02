@@ -36,7 +36,7 @@ const SWITCHES = [
   { name: "SHADOW_CHECKS", env: "NEWSROOM_SHADOW_CHECKS" },
   { name: "HIDE_LIEFLAT", env: "NEWSROOM_HIDE_LIEFLAT", profile: "visual-story" }, // only acts under the visual-story profile
   { name: "INLINE_CLAIM", env: "NEWSROOM_SPEED_INLINE_CLAIM", pending: true },
-  { name: "EDITORIAL_COMPACT", env: "NEWSROOM_SPEED_EDITORIAL_COMPACT", pending: true },
+  { name: "EDITORIAL_HINTS", env: "NEWSROOM_SPEED_EDITORIAL_HINTS" },
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const CONFIGS = [
