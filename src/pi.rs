@@ -1,12 +1,14 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command as StdCommand;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -59,6 +61,10 @@ pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
 pub const PREFLIGHT_ENV: &str = "NEWSROOM_SPEED_PREFLIGHT";
 /// Layout-only plan edits without re-sending the plan; the runtime reads the same name.
 pub const PLAN_EDIT_ENV: &str = "NEWSROOM_SPEED_PLAN_EDIT";
+/// Chart claims filled and recorded by the runtime from the chart's own SQL rows.
+/// Only exactly "1" counts, and only with the chart chain and atomic writes on;
+/// the runtime reads the same name and applies the same conditions.
+pub const INLINE_CLAIM_ENV: &str = "NEWSROOM_SPEED_INLINE_CLAIM";
 /// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
 pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
@@ -75,15 +81,22 @@ fn atomic_artifact_on() -> bool {
     std::env::var(ATOMIC_ARTIFACT_ENV).ok().as_deref() == Some("1")
 }
 
+// The runtime only accepts exactly "1" for this switch.
+fn inline_claim_on() -> bool {
+    std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
+}
+
 /// The turn-saving switches the parent environment asks for.
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
+    let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
     crate::prompt::PromptSpeed {
         parallel_hints: env_switch(PARALLEL_HINTS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
-        chain_viz: env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on(),
+        chain_viz,
         chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
         preflight: env_switch(PREFLIGHT_ENV),
         plan_edit: env_switch(PLAN_EDIT_ENV),
+        inline_claim: inline_claim_on() && chain_viz,
     }
 }
 
@@ -525,6 +538,170 @@ fn prompt_retry_allowed(event: &Value, prompt_accepted: bool, attempt: u8) -> bo
         && event.get("success").and_then(Value::as_bool) == Some(false)
 }
 
+/// The tools a finished `newsroom_viz_chain` call lists, in order.
+const VIZ_CHAIN_STEPS: [&str; 4] = [
+    "newsroom_viz_plan",
+    "newsroom_viz_lint",
+    "newsroom_viz_render",
+    "newsroom_viz_critic",
+];
+
+/// A rendered chart's files as announced once its critic passed. Every ref is
+/// an artifact-relative path inside `visualizations/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReadyChart {
+    desktop: String,
+    compact: Option<String>,
+    mobile: Option<String>,
+    manifest: String,
+}
+
+impl ReadyChart {
+    /// Reads a render step's typed details. Every ref that is present must stay
+    /// inside `visualizations/`; one that does not leaves the chart unannounced.
+    fn from_render_details(details: &Value) -> Option<Self> {
+        let text = |key: &str| details.get(key).and_then(Value::as_str);
+        let optional = |key: &str| match details.get(key) {
+            None | Some(Value::Null) => Some(None),
+            Some(Value::String(path)) if is_visualization_ref(path) => Some(Some(path.clone())),
+            Some(_) => None,
+        };
+        let (desktop, manifest) = (text("desktopSvgRef")?, text("manifestRef")?);
+        if !is_visualization_ref(desktop) || !is_visualization_ref(manifest) {
+            return None;
+        }
+        Some(Self {
+            desktop: desktop.to_string(),
+            compact: optional("compactSvgRef")?,
+            mobile: optional("mobileSvgRef")?,
+            manifest: manifest.to_string(),
+        })
+    }
+}
+
+/// Tracks rendered charts whose deterministic critic passed, so the first one
+/// can be announced before the model finishes the rest of the run. The notice
+/// is progress output only: it grants no verification, completion or
+/// publication status, never ends the Pi session and changes no completion
+/// check. Only a run with the inline-claim switch on watches.
+#[derive(Default)]
+struct ChartReadyWatch {
+    renders: HashMap<String, ReadyChart>,
+    critic_manifests: HashMap<String, String>,
+    announced: bool,
+}
+
+impl ChartReadyWatch {
+    /// Returns the chart's files the first time a critic passes for a rendered
+    /// chart: a `newsroom_viz_chain` that completed with a passing critic, or a
+    /// separately called `newsroom_viz_critic` for a manifest that an earlier
+    /// `newsroom_viz_render` call produced.
+    fn observe(&mut self, event: &Value) -> Option<ReadyChart> {
+        let tool = event.get("toolName").and_then(Value::as_str)?;
+        let call_id = event.get("toolCallId").and_then(Value::as_str)?;
+        match event.get("type").and_then(Value::as_str)? {
+            "tool_execution_start" if tool == "newsroom_viz_critic" => {
+                let manifest = event.get("args")?.get("manifest_ref")?.as_str()?;
+                self.critic_manifests
+                    .insert(call_id.to_string(), manifest.to_string());
+                None
+            }
+            "tool_execution_end" => {
+                let manifest = self.critic_manifests.remove(call_id);
+                if event.get("isError").and_then(Value::as_bool) != Some(false) {
+                    return None;
+                }
+                let details = event.get("result")?.get("details")?;
+                match tool {
+                    "newsroom_viz_render" => {
+                        let chart = ReadyChart::from_render_details(details)?;
+                        self.renders.insert(chart.manifest.clone(), chart);
+                        None
+                    }
+                    "newsroom_viz_critic" if !self.announced => {
+                        if details.get("passed").and_then(Value::as_bool) != Some(true) {
+                            return None;
+                        }
+                        let chart = self.renders.get(&manifest?)?.clone();
+                        self.announced = true;
+                        Some(chart)
+                    }
+                    VIZ_CHAIN_TOOL if !self.announced => {
+                        let chart = Self::finished_chain_chart(details)?;
+                        self.announced = true;
+                        Some(chart)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The chart a finished chain call rendered, when all four steps ran, the
+    /// chain completed and its critic passed on the manifest that render wrote.
+    /// Read only from the call's own result: anything missing or inconsistent
+    /// yields nothing.
+    fn finished_chain_chart(details: &Value) -> Option<ReadyChart> {
+        if details.get("chain").and_then(Value::as_str) != Some(VIZ_CHAIN_TOOL)
+            || details.get("chainStatus").and_then(Value::as_str) != Some("COMPLETE")
+        {
+            return None;
+        }
+        let steps = details.get("steps")?.as_array()?;
+        let [plan, lint, render, critic] = steps.as_slice() else {
+            return None;
+        };
+        if ![plan, lint, render, critic]
+            .iter()
+            .zip(VIZ_CHAIN_STEPS)
+            .all(|(step, name)| step.get("tool").and_then(Value::as_str) == Some(name))
+        {
+            return None;
+        }
+        if critic.pointer("/details/passed").and_then(Value::as_bool) != Some(true) {
+            return None;
+        }
+        let chart = ReadyChart::from_render_details(render.get("details")?)?;
+        (critic
+            .pointer("/params/manifest_ref")
+            .and_then(Value::as_str)
+            == Some(chart.manifest.as_str()))
+        .then_some(chart)
+    }
+}
+
+/// An artifact-relative path that stays inside `visualizations/`: no absolute
+/// part, no `..`, no control character that could forge a log line.
+fn is_visualization_ref(path: &str) -> bool {
+    path.starts_with("visualizations/")
+        && !path.ends_with('/')
+        && !path.chars().any(char::is_control)
+        && Path::new(path)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
+/// The one-line first-chart notice. It names files and states only that a
+/// critic passed; it never says verified, publishable or complete.
+fn chart_ready_line(elapsed_ms: u128, root: &Path, chart: &ReadyChart) -> String {
+    let mut line = format!(
+        "[agent] chart_ready elapsed_ms={elapsed_ms} desktop={}",
+        root.join(&chart.desktop).display()
+    );
+    for (label, path) in [("compact", &chart.compact), ("mobile", &chart.mobile)] {
+        if let Some(path) = path {
+            line.push_str(&format!(" {label}={}", root.join(path).display()));
+        }
+    }
+    line.push_str(" (critic passed; progress only, the run continues)");
+    line
+}
+
+/// Set once the first-chart notice was printed. A recovery or repair prompt
+/// starts a new watch and a new clock; the first chart stays the only one named.
+static CHART_NOTICE_SENT: AtomicBool = AtomicBool::new(false);
+
 fn assistant_provider_turn_failed(event: &Value) -> bool {
     matches!(
         event.get("type").and_then(Value::as_str),
@@ -761,6 +938,11 @@ impl PiConfig {
         } else {
             cmd.env_remove(PLAN_EDIT_ENV);
         }
+        if self.speed.inline_claim {
+            cmd.env(INLINE_CLAIM_ENV, "1");
+        } else {
+            cmd.env_remove(INLINE_CLAIM_ENV);
+        }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
         }
@@ -964,6 +1146,8 @@ pub async fn run_prompt(
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
+        // Only a run with chart claims filled from rows names its first chart early.
+        let mut chart_watch = config.speed.inline_claim.then(ChartReadyWatch::default);
 
         let mut line = Vec::new();
         loop {
@@ -1032,6 +1216,16 @@ pub async fn run_prompt(
                 }
                 writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
                 file.flush()?;
+            }
+            // Progress only: the notice changes no state, status or completion check.
+            if let Some(chart) = chart_watch.as_mut().and_then(|watch| watch.observe(&event)) {
+                if !CHART_NOTICE_SENT.swap(true, Ordering::Relaxed) {
+                    let root = config.artifact_dir.as_deref().unwrap_or(Path::new(""));
+                    eprintln!(
+                        "{}",
+                        chart_ready_line(started.elapsed().as_millis(), root, &chart)
+                    );
+                }
             }
 
             match (turn_stop.as_deref(), turn_class) {
@@ -1695,6 +1889,317 @@ mod tests {
         assert_eq!(edit_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(PLAN_EDIT_ENV);
         assert!(!speed_switches_from_env().plan_edit);
+    }
+
+    #[test]
+    fn inline_claim_switch_needs_the_chain_and_atomic_writes_and_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == INLINE_CLAIM_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(INLINE_CLAIM_ENV, "1");
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().inline_claim,
+            "needs the chart chain"
+        );
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        assert!(
+            !speed_switches_from_env().inline_claim,
+            "needs atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        assert!(speed_switches_from_env().inline_claim);
+        for not_one in ["true", "0", "", "yes", "1 "] {
+            std::env::set_var(INLINE_CLAIM_ENV, not_one);
+            assert!(!speed_switches_from_env().inline_claim, "{not_one:?}");
+        }
+        std::env::set_var(INLINE_CLAIM_ENV, "1");
+        // The child marker follows the config, never the parent.
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(marker(&config), Some(None));
+        config.speed.inline_claim = true;
+        assert_eq!(marker(&config), Some(Some("1".to_string())));
+        // It does not change the tool list: the chain tool carries the extra parameters.
+        let mut chain = visual_story_config(false, "visual-story");
+        chain.speed.chain_viz = true;
+        let without = chain.tools_arg();
+        chain.speed.inline_claim = true;
+        assert_eq!(chain.tools_arg(), without);
+        std::env::remove_var(INLINE_CLAIM_ENV);
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(!speed_switches_from_env().inline_claim);
+    }
+
+    fn viz_chain_steps(render: Value, critic_manifest: &str, passed: bool) -> Value {
+        json!([
+            {"tool": "newsroom_viz_plan", "params": {}, "details": {"planRef": "visualizations/plans/p.json", "publishable": true}},
+            {"tool": "newsroom_viz_lint", "params": {"plan_ref": "visualizations/plans/p.json"}, "details": {"passed": true}},
+            {"tool": "newsroom_viz_render", "params": {"plan_ref": "visualizations/plans/p.json"}, "details": render},
+            {"tool": "newsroom_viz_critic", "params": {"manifest_ref": critic_manifest}, "details": {"passed": passed}}
+        ])
+    }
+
+    fn viz_chain_end(id: &str, chain_status: &str, steps: Value) -> Value {
+        json!({"type": "tool_execution_end", "toolName": "newsroom_viz_chain", "toolCallId": id, "isError": false,
+            "result": {"details": {"chain": "newsroom_viz_chain", "chainStatus": chain_status, "steps": steps}}})
+    }
+
+    #[test]
+    fn chart_ready_fires_once_for_a_completed_chain_whose_critic_passed() {
+        let render = |desktop: &str, compact: &str| json!({"manifestRef": "visualizations/a.json", "desktopSvgRef": desktop, "compactSvgRef": compact});
+        let good_render = || render("visualizations/a.svg", "visualizations/a.compact.svg");
+        let mut watch = ChartReadyWatch::default();
+        assert_eq!(
+            watch.observe(&json!({"type": "tool_execution_start", "toolName": "newsroom_viz_chain", "toolCallId": "s", "args": {}})),
+            None,
+            "a start event announces nothing"
+        );
+        let refused: Vec<(&str, Value)> = vec![
+            (
+                "a stopped chain, even with every step listed",
+                viz_chain_end(
+                    "c1",
+                    "STOPPED",
+                    viz_chain_steps(good_render(), "visualizations/a.json", true),
+                ),
+            ),
+            (
+                "a chain stopped at a critic revision",
+                viz_chain_end(
+                    "c1b",
+                    "STOPPED",
+                    viz_chain_steps(good_render(), "visualizations/a.json", false),
+                ),
+            ),
+            (
+                "a completed chain whose critic did not pass",
+                viz_chain_end(
+                    "c2",
+                    "COMPLETE",
+                    viz_chain_steps(good_render(), "visualizations/a.json", false),
+                ),
+            ),
+            (
+                "a completed chain with a step missing",
+                viz_chain_end(
+                    "c3",
+                    "COMPLETE",
+                    json!(
+                        viz_chain_steps(good_render(), "visualizations/a.json", true)
+                            .as_array()
+                            .unwrap()[..3]
+                    ),
+                ),
+            ),
+            (
+                "a critic that judged another manifest",
+                viz_chain_end(
+                    "c4",
+                    "COMPLETE",
+                    viz_chain_steps(good_render(), "visualizations/other.json", true),
+                ),
+            ),
+            (
+                "an absolute desktop ref",
+                viz_chain_end(
+                    "c5",
+                    "COMPLETE",
+                    viz_chain_steps(
+                        render("/tmp/a.svg", "visualizations/a.compact.svg"),
+                        "visualizations/a.json",
+                        true,
+                    ),
+                ),
+            ),
+            (
+                "a compact ref that climbs out of visualizations",
+                viz_chain_end(
+                    "c6",
+                    "COMPLETE",
+                    viz_chain_steps(
+                        render("visualizations/a.svg", "visualizations/../a.compact.svg"),
+                        "visualizations/a.json",
+                        true,
+                    ),
+                ),
+            ),
+            (
+                "a render without a manifest",
+                viz_chain_end(
+                    "c7",
+                    "COMPLETE",
+                    viz_chain_steps(
+                        json!({"desktopSvgRef": "visualizations/a.svg"}),
+                        "visualizations/a.json",
+                        true,
+                    ),
+                ),
+            ),
+        ];
+        for (why, event) in &refused {
+            assert_eq!(watch.observe(event), None, "{why}");
+        }
+        let mut errored = viz_chain_end(
+            "c8",
+            "COMPLETE",
+            viz_chain_steps(good_render(), "visualizations/a.json", true),
+        );
+        errored["isError"] = json!(true);
+        assert_eq!(watch.observe(&errored), None, "a call that errored");
+        let mut other_chain = viz_chain_end(
+            "c9",
+            "COMPLETE",
+            viz_chain_steps(good_render(), "visualizations/a.json", true),
+        );
+        other_chain["result"]["details"]["chain"] = json!("newsroom_infographic_chain");
+        assert_eq!(watch.observe(&other_chain), None, "another chain's record");
+        let mut reordered = viz_chain_steps(good_render(), "visualizations/a.json", true);
+        reordered.as_array_mut().unwrap().swap(0, 1);
+        assert_eq!(
+            watch.observe(&viz_chain_end("c10", "COMPLETE", reordered)),
+            None,
+            "steps out of order"
+        );
+        let good = viz_chain_end(
+            "c11",
+            "COMPLETE",
+            viz_chain_steps(good_render(), "visualizations/a.json", true),
+        );
+        assert_eq!(
+            watch.observe(&good),
+            Some(ReadyChart {
+                desktop: "visualizations/a.svg".to_string(),
+                compact: Some("visualizations/a.compact.svg".to_string()),
+                mobile: None,
+                manifest: "visualizations/a.json".to_string(),
+            })
+        );
+        assert_eq!(
+            watch.observe(&viz_chain_end(
+                "c12",
+                "COMPLETE",
+                viz_chain_steps(good_render(), "visualizations/a.json", true)
+            )),
+            None,
+            "announce only once"
+        );
+    }
+
+    #[test]
+    fn chart_ready_fires_for_a_separately_called_critic_of_a_rendered_manifest() {
+        let render = |manifest: &str, desktop: &str| {
+            json!({"type": "tool_execution_end", "toolName": "newsroom_viz_render", "toolCallId": format!("r-{manifest}"), "isError": false,
+                "result": {"details": {"manifestRef": manifest, "desktopSvgRef": desktop, "mobileSvgRef": "visualizations/a.mobile.svg"}}})
+        };
+        let critic_start = |id: &str, manifest: &str| json!({"type": "tool_execution_start", "toolName": "newsroom_viz_critic", "toolCallId": id, "args": {"manifest_ref": manifest}});
+        let critic_end = |id: &str, passed: bool| {
+            json!({"type": "tool_execution_end", "toolName": "newsroom_viz_critic", "toolCallId": id, "isError": false,
+                "result": {"details": {"passed": passed}}})
+        };
+        let mut watch = ChartReadyWatch::default();
+        assert_eq!(
+            watch.observe(&render("visualizations/a.json", "visualizations/a.svg")),
+            None
+        );
+        assert_eq!(
+            watch.observe(&render("visualizations/x.json", "visualizations/../x.svg")),
+            None
+        );
+        watch.observe(&critic_start("c1", "visualizations/a.json"));
+        assert_eq!(watch.observe(&critic_end("c1", false)), None);
+        watch.observe(&critic_start("c2", "visualizations/x.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c2", true)),
+            None,
+            "unsafe render refs are never announced"
+        );
+        watch.observe(&critic_start("c0", "visualizations/never-rendered.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c0", true)),
+            None,
+            "a critic for a manifest no render produced"
+        );
+        watch.observe(&critic_start("c3", "visualizations/a.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c3", true)),
+            Some(ReadyChart {
+                desktop: "visualizations/a.svg".to_string(),
+                compact: None,
+                mobile: Some("visualizations/a.mobile.svg".to_string()),
+                manifest: "visualizations/a.json".to_string(),
+            })
+        );
+        watch.observe(&critic_start("c4", "visualizations/a.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c4", true)),
+            None,
+            "announce only once"
+        );
+    }
+
+    #[test]
+    fn chart_ready_line_names_each_file_and_claims_no_status() {
+        let chart = ReadyChart {
+            desktop: "visualizations/a.svg".to_string(),
+            compact: Some("visualizations/a.compact.svg".to_string()),
+            mobile: None,
+            manifest: "visualizations/a.json".to_string(),
+        };
+        let line = chart_ready_line(1234, Path::new("/runs/r1"), &chart);
+        assert_eq!(
+            line,
+            "[agent] chart_ready elapsed_ms=1234 desktop=/runs/r1/visualizations/a.svg compact=/runs/r1/visualizations/a.compact.svg (critic passed; progress only, the run continues)"
+        );
+        for word in ["verified", "publishable", "complete", "passed qa"] {
+            assert!(!line.to_lowercase().contains(word), "{word}");
+        }
+        let both = ReadyChart {
+            mobile: Some("visualizations/a.mobile.svg".to_string()),
+            ..chart.clone()
+        };
+        let line = chart_ready_line(5, Path::new(""), &both);
+        assert!(line
+            .contains(" compact=visualizations/a.compact.svg mobile=visualizations/a.mobile.svg "));
+        assert!(!chart_ready_line(
+            5,
+            Path::new(""),
+            &ReadyChart {
+                compact: None,
+                ..chart
+            }
+        )
+        .contains("compact="));
+    }
+
+    #[test]
+    fn visualization_refs_stay_inside_the_visualizations_folder() {
+        for ok in ["visualizations/a.svg", "visualizations/sub/a.compact.svg"] {
+            assert!(is_visualization_ref(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "a.svg",
+            "/visualizations/a.svg",
+            "visualizations",
+            "visualizations/",
+            "visualizations/../a.svg",
+            "other/visualizations/a.svg",
+            "Visualizations/a.svg",
+            "visualizations/a\n[agent] forged.svg",
+            "visualizations/a\r.svg",
+            "visualizations/a\u{1b}[0m.svg",
+        ] {
+            assert!(!is_visualization_ref(bad), "{bad:?}");
+        }
     }
 
     #[test]

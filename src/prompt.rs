@@ -47,6 +47,12 @@ pub struct PromptSpeed {
     /// pattern/anchor/sidecars) without re-sending the plan. The edited plan
     /// passes every plan validation again. The tool carries its own guidance.
     pub plan_edit: bool,
+    /// `NEWSROOM_SPEED_INLINE_CLAIM=1` (only with `chain_viz`): a chart's claim
+    /// is passed to the chart tools as a template. The runtime fills the numbers
+    /// from that chart's own SQL rows and records the claim through
+    /// `record_claim`'s gates, so no `record_claim` turn comes first. The prompt
+    /// adds a short paragraph saying so; tool guidance is added by the runtime.
+    pub inline_claim: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
@@ -63,6 +69,8 @@ const NUMBER_REPEAT_GUIDANCE: &str = "\nWithin the page's own text (the dek, her
 const CHAIN_VIZ_PARAGRAPH: &str = "\n\nChart chain: when `newsroom_viz_chain` is in your tool list it is the same chart path (plan, lint, render, critic) run in one call with the same parameters as `newsroom_viz_plan`; use it for each chart and send the chain calls for independent charts together. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
 
 const CHAIN_INFOGRAPHIC_PARAGRAPH: &str = "\n\nPage chain: when `newsroom_infographic_chain` is in your tool list it runs the page plan, lint, render, critic and preview in one call with the same parameters as `newsroom_infographic_plan`; use it for the page. The step tools stay available: if the chain stops, follow its 'Call <tool> separately next' line.\n";
+
+const INLINE_CLAIM_PARAGRAPH: &str = "\n\nChart claims: for a chart's own claim, pass `claim` and `claim_kind` to `newsroom_viz_chain` instead of calling `record_claim` first and passing `claim_id`. `claim` is the claim sentence with every number, years included, written as a placeholder that the runtime fills from that chart's own SQL rows; it then records the claim through the same source, computation and claim-support checks as `record_claim`, binds it to the chart, and writes the chart's takeaway and alt from it. A typed number in `claim` is refused. Pass `claim` or `claim_id`, never both. A claim that no chart carries is still recorded with `record_claim`.\n";
 
 const COMPUTE_BATCH_PARAGRAPH: &str = "\n\nCompute batching: send independent duckdb_query calls together in one turn. A record_claim needs the computation_ref returned by its duckdb_query, so once every result is back, send all of the record_claim calls together in the next turn. Never put two identical SQL statements in one turn, and do not run fetch_url or download_data in the same turn as duckdb_query, because new files change what a computation reads. Repair a failing SQL statement on its own; do not merge the repair with other steps.\n";
 
@@ -91,6 +99,9 @@ pub fn investigation_with_options(
     }
     if speed.chain_viz {
         prompt.push_str(CHAIN_VIZ_PARAGRAPH);
+        if speed.inline_claim {
+            prompt.push_str(INLINE_CLAIM_PARAGRAPH);
+        }
     }
     if speed.chain_infographic {
         prompt.push_str(CHAIN_INFOGRAPHIC_PARAGRAPH);
@@ -436,6 +447,52 @@ mod tests {
         assert!(with_viz.contains("newsroom_viz_chain") && !with_viz.contains("newsroom_infographic_chain"));
         assert!(with_page.contains("newsroom_infographic_chain") && !with_page.contains("newsroom_viz_chain"));
         assert!(off.contains("newsroom_viz_plan") && !off.contains("_chain"));
+    }
+
+    #[test]
+    fn inline_claim_adds_one_paragraph_only_with_the_chart_chain() {
+        let chain = PromptSpeed {
+            chain_viz: true,
+            ..PromptSpeed::default()
+        };
+        let both = PromptSpeed {
+            chain_viz: true,
+            inline_claim: true,
+            ..PromptSpeed::default()
+        };
+        let alone = PromptSpeed {
+            inline_claim: true,
+            ..PromptSpeed::default()
+        };
+        for topic in [
+            "summarize the source",
+            "制作一个信息图",
+            SCMP_LONG_IMAGE_GOAL,
+        ] {
+            for split in [false, true] {
+                let off =
+                    investigation_with_options(topic, &[], split, false, PromptSpeed::default());
+                let with_chain = investigation_with_options(topic, &[], split, false, chain);
+                let with_both = investigation_with_options(topic, &[], split, false, both);
+                let without_chain = investigation_with_options(topic, &[], split, false, alone);
+                assert_eq!(
+                    without_chain, off,
+                    "{topic}: inline claim alone changes nothing"
+                );
+                assert_eq!(
+                    with_both.len(),
+                    with_chain.len() + INLINE_CLAIM_PARAGRAPH.len(),
+                    "{topic}"
+                );
+                assert_eq!(
+                    with_both.replacen(INLINE_CLAIM_PARAGRAPH, "", 1),
+                    with_chain,
+                    "{topic}"
+                );
+                assert!(with_both.contains("`claim_kind`") && !with_chain.contains("`claim_kind`"));
+                assert!(with_both.contains("still recorded with `record_claim`"));
+            }
+        }
     }
 
     #[test]
