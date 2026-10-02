@@ -71,13 +71,15 @@ function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, ve
   const computationRef = `computations/${createHash("sha256").update(JSON.stringify(computation)).digest("hex")}.json`;
   writeFileSync(join(art, computationRef), JSON.stringify(computation));
   // c-outcome and c-trend are record_claim claims (no bindings) whose text states the number; c-inline is an inline claim.
-  const texts = { "c-outcome": "Region B has the largest value, 2 units, and a change of +9 in the first year.", "c-trend": "Region B reached 2 on the value trend." };
+  const texts = { "c-outcome": "Region B has the largest value, 2 units, and a change of +9 in the first year.", "c-trend": "Region B reached 2 on the value trend.", "c-rose": "Region B rose to 2 million.", "c-thou": "Region B holds 1,2 units." };
+  const inlineClaim = (template, text) => ({ claim: text, claim_template: template, claim_bindings: [{ placeholder: "{max.value}", column: "value", row_index: 1, value: 2, text: "2" }], recorded_by: "newsroom_viz_plan" });
+  const inlines = { "c-million": inlineClaim("Output reached {max.value} million tonnes.", "Output reached 2 million tonnes."), "c-times": inlineClaim("It is {max.value} 3 times larger.", "It is 2 3 times larger.") };
   const inlineTemplate = "The top value is {max.value}% in {max.value.region} in {max.value.year}.";
   const inline = { claim: "The top value is 2% in B in 2018.", claim_template: inlineTemplate, claim_bindings: [
     { placeholder: "{max.value}", column: "value", row_index: 1, value: 2, text: "2" },
     { placeholder: "{max.value.region}", column: "region", row_index: 1, value: "B", text: "B" },
     { placeholder: "{max.value.year}", column: "year", row_index: 1, value: 2018, text: "2018" }], recorded_by: "newsroom_viz_plan" };
-  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline"].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-inline" ? inline : {}) }));
+  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline", "c-rose", "c-thou", "c-million", "c-times"].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-inline" ? inline : {}), ...(inlines[claim_id] ?? {}) }));
   writeFileSync(join(art, "claims.jsonl"), `${claims.join("\n")}\n`);
   for (const [id, chart_type, claim_id] of VIZ) {
     writeFileSync(join(art, `visualizations/${id}.svg`), svg);
@@ -149,8 +151,9 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-outcome", emptyAfterPlan = false } = {}) => {
+const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-outcome", emptyAfterPlan = false, dropRows = false } = {}) => {
   const art = freshRun("hero", { verifiedOnly });
+  if (dropRows) { const c = JSON.parse(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n")[3]); rmSync(join(art, c.computation_refs[0])); }
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
@@ -189,6 +192,37 @@ await ok("accepted: unit t on a tonnes measure (the claim's own chart declares i
   must(r.blockers.length === 0, r.blockers.join(" | "));
 });
 await refused("unit t when the claim has no chart declaring it", { value_from: "{max.value}", unit: "t" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-outcome" });
+
+await refused("the claim's computation file is missing: the hero never passes", { value_from: "{max.value}" }, /HERO_PLACEHOLDER_NOT_STATED.*no computation rows/, { dropRows: true });
+
+// ---- units: a scale word after one space, and its limits ----
+const unitOk = (name, claim_id, unit) => ok(`unit allowed: ${name}`, async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", unit }, { claim_id });
+  must(!r.refused && r.stored.unit === unit && r.blockers.length === 0, JSON.stringify(r.refused ?? r.blockers));
+});
+await unitOk("{max.value} million tonnes allows 'million'", "c-million", "million");
+await unitOk("record_claim text 'rose to 2 million' allows 'million'", "c-rose", "million");
+await refused("{max.value} 3 times does not allow '3'", { value_from: "{max.value}", unit: "3" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-times" });
+await refused("a scale word the claim does not show", { value_from: "{max.value}", unit: "billion" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-million" });
+await refused("thousands separator: 234 inside 1,234 is not the number", { value_from: "{max.value}" }, /HERO_PLACEHOLDER_NOT_STATED/, { claim_id: "c-thou" });
+
+// ---- render re-checks every cited claim, including claim_set and annotation claim ids ----
+for (const [name, edit] of [["claim_set", (m) => { m.claim_set = [...m.claim_set, "c-ghost"]; }], ["annotation claim_id", (m) => { m.annotations = [...m.annotations, { id: "ghost-note", target_object_id: "route-a", text: "A note.", claim_id: "c-ghost" }]; }]]) {
+  await ok(`render refuses an unverified id only in a visual module's ${name}`, async () => {
+    const r = await heroRun(false, { value: "2", unit: "" });
+    const spec = JSON.parse(readFileSync(join(r.art, r.planRef), "utf8"));
+    edit(spec.modules.find((m) => m.id === "map"));
+    const { content_hash, ...core } = spec;
+    const key = createHash("sha256").update(JSON.stringify(core)).digest("hex");
+    const planRef = `infographics/plans/${key}.json`;
+    writeFileSync(join(r.art, planRef), JSON.stringify({ ...core, content_hash: key }));
+    const lintRef = `infographics/lints/${"e".repeat(64)}.json`;
+    writeFileSync(join(r.art, lintRef), JSON.stringify({ passed: true, blockers: [], warnings: [], plan_ref: planRef, asset_hashes: {} }));
+    let msg = "";
+    try { await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: planRef, lint_ref: lintRef }); } catch (error) { msg = String(error.message); }
+    must(/not system-verified: c-ghost/.test(msg), `render said: ${msg}`);
+  });
+}
 
 // ---- legitimate cases ----
 await ok("inline claim: max binding shown with %, and a detail placeholder among the bindings", async () => {
@@ -246,9 +280,11 @@ await ok("switch off: tool definitions carry no value_from and equal the gate-on
   const off = await registerFor({ env: {} });
   const on = await registerFor({ env: { NEWSROOM_HERO_VALUE_GATE: "1" } });
   const defs = (tools) => JSON.stringify([...tools.values()].map((t) => [t.name, t.description, t.parameters]));
-  const strip = (tools) => JSON.parse(defs(tools)).map(([n, d, p]) => [n, d, JSON.parse(JSON.stringify(p, (k, v) => (k === "value_from" ? undefined : v)))]);
+  // Every tool's name, description and parameters: on minus value_from must equal off.
+  const strip = (tools) => JSON.stringify([...tools.values()].map((t) => [t.name, t.description, JSON.parse(JSON.stringify(t.parameters, (k, v) => (k === "value_from" ? undefined : v)))]));
   must(!defs(off).includes("value_from"), "value_from is visible with the gate off");
   must(defs(on).includes("value_from"), "value_from missing with the gate on");
+  must(strip(on) === strip(off), "the tool list with value_from stripped differs between gate on and off");
   const keys = (tools) => Object.keys(tools.get("newsroom_infographic_plan").parameters.properties.modules.items.properties).filter((k) => k !== "value_from");
   must(JSON.stringify(keys(on)) === JSON.stringify(keys(off)), "module properties differ beyond value_from");
 });
