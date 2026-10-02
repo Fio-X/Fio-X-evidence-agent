@@ -12,6 +12,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = mkdtempSync(join(tmpdir(), "atomic-artifact-"));
@@ -194,7 +195,7 @@ function fixtureRun(label) {
   for (const d of ["visualizations/plans", "visualizations/lints", "data", "sources"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   writeFileSync(join(art, "data", "africa.csv"), CSV);
-  const sha256 = "a".repeat(64);
+  const sha256 = createHash("sha256").update(CSV).digest("hex");
   writeFileSync(join(art, "data", "africa.meta.json"), JSON.stringify({ file: "africa.csv", sha256 }));
   writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
     claim_id: "claim-fixture", status: "verified", source_refs: ["data/africa.csv"],

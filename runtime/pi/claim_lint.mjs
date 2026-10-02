@@ -1,0 +1,203 @@
+// Opt-in lint for the SQL and the sentence of a claim (NEWSROOM_CLAIM_SQL_LINT=1).
+// The claim sentence is filled from the rows of its SQL, so a number typed into
+// that SQL as a constant would reach the sentence as if the data held it. The
+// lint reads DuckDB's own parse (json_serialize_sql) and only ever refuses.
+import { FILE_READER_FUNCTIONS } from "./computation_rows.mjs";
+
+const NUMERIC_TYPES = new Set(["TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT", "FLOAT", "DOUBLE", "DECIMAL"]);
+const ROUNDERS = new Set(["round", "trunc", "truncate"]);
+// The pattern (2nd) argument of these is a regular expression, not a number the query claims; regexp_replace's replacement (3rd) stays checked.
+const REGEX_PATTERN_FUNCTIONS = new Set(["regexp_extract", "regexp_matches", "regexp_full_match", "regexp_replace", "regexp_split_to_array"]);
+
+const isNode = (value) => value !== null && typeof value === "object";
+
+function constantNumber(expr) {
+  const v = expr.value;
+  if (!isNode(v) || v.is_null !== false) return null;
+  const raw = Number(v.value);
+  if (!Number.isFinite(raw)) return null;
+  const scale = v.type?.id === "DECIMAL" ? Number(v.type?.type_info?.scale ?? 0) : 0;
+  return raw / 10 ** scale;
+}
+
+function isPowerOfTen(expr) {
+  if (expr?.class !== "CONSTANT" || !NUMERIC_TYPES.has(expr.value?.type?.id)) return false;
+  const n = constantNumber(expr);
+  if (n === null || n <= 0) return false;
+  const k = Math.round(Math.log10(n));
+  return Math.abs(k) <= 12 && Math.abs(n - 10 ** k) <= Math.abs(n) * 1e-9;
+}
+
+function mentionsData(expr) {
+  if (!isNode(expr)) return false;
+  if (expr.class === "COLUMN_REF" || expr.class === "STAR") return true;
+  if (expr.class === "SUBQUERY") return true;
+  return Object.values(expr).some((child) => (Array.isArray(child) ? child.some(mentionsData) : mentionsData(child)));
+}
+
+function render(expr) {
+  if (!isNode(expr)) return String(expr);
+  switch (expr.class) {
+    case "CONSTANT": {
+      const v = expr.value;
+      if (v?.is_null) return "NULL";
+      return v?.type?.id === "VARCHAR" ? `'${v.value}'` : String(constantNumber(expr) ?? v?.value);
+    }
+    case "COLUMN_REF": return (expr.column_names ?? []).join(".");
+    case "STAR": return "*";
+    case "FUNCTION": {
+      const kids = (expr.children ?? []).map(render);
+      return expr.is_operator && kids.length === 2 ? `(${kids[0]} ${expr.function_name} ${kids[1]})` : `${expr.function_name}(${kids.join(", ")})`;
+    }
+    case "CAST": return `CAST(${render(expr.child)} AS ${expr.cast_type?.id ?? "?"})`;
+    case "SUBQUERY": return "(subquery)";
+    default: return String(expr.class ?? "expression").toLowerCase();
+  }
+}
+
+const LIKE_FUNCTIONS = new Set(["~~", "~~*", "!~~", "!~~*", "like_escape", "not_like_escape", "ilike_escape", "not_ilike_escape"]);
+// Integer position / length arguments (every argument after the first).
+const POSITION_FUNCTIONS = new Set(["substr", "substring", "left", "right", "list_extract", "list_slice", "array_extract", "array_slice"]);
+const QUANTILE_FUNCTIONS = new Set(["quantile_cont", "quantile_disc", "quantile", "percentile_cont", "percentile_disc", "approx_quantile", "reservoir_quantile"]);
+
+const isConstant = (c) => c?.class === "CONSTANT" && c.value?.is_null === false;
+const isIntegerConstant = (c) => isConstant(c) && NUMERIC_TYPES.has(c.value.type?.id) && Number.isInteger(constantNumber(c));
+const isProbability = (c) => {
+  if (isConstant(c) && NUMERIC_TYPES.has(c.value.type?.id)) { const n = constantNumber(c); return n > 0 && n < 1; }
+  return c?.class === "FUNCTION" && String(c.function_name).toLowerCase() === "list_value" && (c.children ?? []).length > 0 && c.children.every(isProbability);
+};
+
+function dataFreeComparison(expr) {
+  const kids = expr.children ?? [];
+  const type = String(expr.type ?? "");
+  const name = String(expr.function_name ?? "").toLowerCase();
+  let sides = [];
+  if (type === "COMPARE_BETWEEN") sides = [expr.input, expr.lower, expr.upper];
+  else if (type === "COMPARE_IN" || type === "COMPARE_NOT_IN") sides = kids;
+  else if (type.startsWith("COMPARE_")) sides = [expr.left, expr.right];
+  else if (expr.class === "FUNCTION" && LIKE_FUNCTIONS.has(name)) sides = kids.slice(0, 2);
+  return sides.length && !sides.some(mentionsData) ? sides : [];
+}
+
+// The constants of an expression that are not numbers the query claims: they
+// compare, offset, position or choose a quantile, and never reach the result.
+function exemptChildren(expr) {
+  const out = [];
+  const add = (child, ok = isConstant(child)) => { if (ok) out.push(child); };
+  const kids = expr.children ?? [];
+  const name = String(expr.function_name ?? "").toLowerCase();
+  const type = String(expr.type ?? "");
+  // A comparison constant is exempt only when what it is compared with mentions data;
+  // (1 = 1)::INT would otherwise type a count into the result.
+  if (type === "COMPARE_BETWEEN") { if (mentionsData(expr.input)) { add(expr.lower); add(expr.upper); } }
+  else if (type === "COMPARE_IN" || type === "COMPARE_NOT_IN") { if (mentionsData(kids[0])) kids.slice(1).forEach((c) => add(c)); }
+  else if (type.startsWith("COMPARE_")) { add(expr.left, isConstant(expr.left) && mentionsData(expr.right)); add(expr.right, isConstant(expr.right) && mentionsData(expr.left)); }
+  else if (type === "ARRAY_EXTRACT" || type === "ARRAY_SLICE") kids.slice(1).forEach((c) => add(c, isIntegerConstant(c)));
+  if (expr.class === "WINDOW") {
+    if (name === "lag" || name === "lead") add(expr.offset_expr, isIntegerConstant(expr.offset_expr));
+    if (name === "ntile") add(kids[0], isIntegerConstant(kids[0]));
+    add(expr.start_expr, isIntegerConstant(expr.start_expr));
+    add(expr.end_expr, isIntegerConstant(expr.end_expr));
+  }
+  if (expr.class === "FUNCTION" || expr.class === "WINDOW") {
+    if (REGEX_PATTERN_FUNCTIONS.has(name)) add(kids[1], kids[1]?.class === "CONSTANT" && kids[1].value?.type?.id === "VARCHAR");
+    if (LIKE_FUNCTIONS.has(name)) add(kids[1], kids[1]?.class === "CONSTANT" && kids[1].value?.type?.id === "VARCHAR" && mentionsData(kids[0]));
+    if (name === "regexp_extract") add(kids[2], isIntegerConstant(kids[2]));
+    if (ROUNDERS.has(name)) add(kids[1], isIntegerConstant(kids[1]));
+    if (name === "nullif") add(kids[1]);
+    if (POSITION_FUNCTIONS.has(name)) kids.slice(1).forEach((c) => add(c, isIntegerConstant(c)));
+    if (QUANTILE_FUNCTIONS.has(name)) { const at = kids.length === 1 ? 0 : 1; add(kids[at], isProbability(kids[at])); }
+    if ((name === "*" || name === "/") && kids.length === 2) kids.forEach((c, i) => add(c, isPowerOfTen(c) && mentionsData(kids[1 - i])));
+  }
+  return out;
+}
+
+// Constants an expression of a select list holds. A constant is a number the
+// data does not hold, unless it is one of the named steps above. A number typed
+// as a CASE result is tagged in found.branch, to point at count_if.
+function constantsIn(expr, found) {
+  if (!isNode(expr)) return;
+  if (Array.isArray(expr)) { for (const item of expr) constantsIn(item, found); return; }
+  if (expr.class === "SUBQUERY") return; // its own select list is walked as a node
+  if (expr.class === "CONSTANT") {
+    const v = expr.value;
+    if (!isNode(v) || v.is_null !== false) return;
+    const id = v.type?.id;
+    if (NUMERIC_TYPES.has(id)) found.push(expr);
+    else if (id === "VARCHAR" && /\d/.test(String(v.value))) found.push(expr);
+    return;
+  }
+  // A comparison with no data on any side yields a boolean the query typed; its constants are flagged whatever their type.
+  for (const operand of dataFreeComparison(expr)) if (isConstant(operand)) found.push(operand);
+  const exempt = new Set(exemptChildren(expr));
+  for (const [key, child] of Object.entries(expr)) {
+    if (!isNode(child) || key === "type" || key === "value") continue;
+    const items = Array.isArray(child) ? child : [child];
+    for (const item of items) {
+      if (exempt.has(item)) continue;
+      if ((key === "then_expr" || key === "else_expr") && item?.class === "CONSTANT") found.branch?.add(item);
+      constantsIn(item, found);
+    }
+  }
+}
+
+/** Violations in a json_serialize_sql AST, as sentences that name the
+ *  expression. Empty when the SQL passes. */
+export function lintClaimSqlAst(ast) {
+  const out = [];
+  if (!ast || ast.error) return ["the SQL could not be parsed"];
+  const visit = (node) => {
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (!isNode(node)) return;
+    if (node.type === "SELECT_NODE" && Array.isArray(node.select_list)) {
+      for (const item of node.select_list) {
+        const found = [];
+        found.branch = new WeakSet();
+        constantsIn(item, found);
+        const hint = found.some((c) => found.branch.has(c)) ? "; to count rows use count_if(condition) or COUNT(*) FILTER (WHERE condition)" : "";
+        if (found.length) out.push(`the select-list expression ${render(item)}${item.alias ? ` (AS ${item.alias})` : ""} holds the constant ${render(found[0])}; a number in a claim's SQL must come from the data, not be typed into the query${hint}`);
+      }
+    }
+    if (node.type === "TABLE_FUNCTION") {
+      const name = String(node.function?.function_name ?? "").toLowerCase();
+      if (!FILE_READER_FUNCTIONS.has(name)) out.push(`the table function ${name || "?"}() generates rows; only a data file reader (read_csv, read_json, read_parquet ...) may feed a claim`);
+    }
+    if (node.type === "EXPRESSION_LIST") out.push("a VALUES list types rows into the query; the rows of a claim must come from a data file");
+    for (const child of Object.values(node)) visit(child);
+  };
+  visit(ast.statements ?? ast);
+  return out;
+}
+
+const LOW_WORDS = /\b(lowest|least|smallest|fewest)\b|最低|最少|最小/i;
+const HIGH_WORDS = /\b(highest|most|largest|greatest)\b|最高|最多|最大/i;
+
+/** In one clause (split on , . ; and their full-width forms), each direction
+ *  word looks at the nearest max/min placeholder before it and the nearest one
+ *  after it (first, last and @ placeholders are ignored). It is refused only
+ *  when every one of those that exists has the opposite direction: a low word
+ *  needs a min, a high word a max, on at least one side. */
+export function lintClaimTemplate(template) {
+  const out = [];
+  // A placeholder holds dots of its own: swap it for a marker before splitting.
+  const marked = String(template ?? "").replace(/\{\s*([^{}]*?)\s*\}/g, (_, body) => (/^max\./.test(body) ? "\u0001MAX\u0001" : /^min\./.test(body) ? "\u0001MIN\u0001" : "\u0001"));
+  // Phrases that use these words without ranking anything keep their length, so offsets still match.
+  const plain = marked.replace(/\b(?:most\s+recent(?:ly)?|at\s+most|at\s+least|least\s+developed)\b/gi, (m) => " ".repeat(m.length));
+  for (const clause of plain.split(/[,.;，。；]/)) {
+    const holders = [...clause.matchAll(/\u0001(MAX|MIN)\u0001/g)].map((m) => ({ at: m.index, end: m.index + m[0].length, kind: m[1] }));
+    if (!holders.length) continue;
+    const shown = clause.replace(/\u0001(MAX|MIN)\u0001/g, (_, k) => `{${k.toLowerCase()}.…}`).replace(/\u0001/g, "{…}").trim();
+    for (const [words, wanted, opposite, label] of [[LOW_WORDS, "MIN", "MAX", "lowest"], [HIGH_WORDS, "MAX", "MIN", "highest"]]) {
+      for (const word of clause.matchAll(new RegExp(words.source, "gi"))) {
+        const before = [...holders].reverse().find((h) => h.end <= word.index);
+        const after = holders.find((h) => h.at >= word.index + word[0].length);
+        const near = [before, after].filter(Boolean);
+        if (near.length && near.every((h) => h.kind === opposite)) {
+          out.push(`the clause "${shown}" puts a ${opposite.toLowerCase()} placeholder next to "${word[0]}", a word for the ${label} value; use ${wanted.toLowerCase()}, or change the words`);
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
