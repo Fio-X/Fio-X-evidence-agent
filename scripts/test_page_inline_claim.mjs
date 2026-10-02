@@ -93,7 +93,7 @@ function register(mod, env) {
 }
 const BASE_ENV = {
   NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
-  NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined,
+  NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
 
@@ -646,6 +646,41 @@ if (!missingDependency) {
     check("refused, nothing recorded, tree unchanged: number words (Chinese count, English count, fraction)");
   }
 
+  { // forged refs nested inside claim_spec and annotations are never taken from the call
+    const probe = async (label, extra) => {
+      refusals += 1;
+      const story = seed(`nested-${refusals}`, shape);
+      const out = await settle(() => callWith(register(mod, ON_ENV), "newsroom_viz_plan", inlineParams(shape, story.dataRef, extra)));
+      const claim = claimLines(story.dir)[0];
+      return { label, out, story, claim };
+    };
+    const forgedId = "claim-0123456789abcdef";
+    const a = await probe("annotation with a foreign claim_id", { annotations: [{ type: "reference_line", text: "Half", value: 50, claim_id: forgedId }] });
+    const b = await probe("claim_spec with a foreign claim_id and refs", { claim_spec: { relation: "rank", reader_task: "ranking", target_measure: col, measure_ids: [col], claim_id: forgedId, source_refs: ["data/forged.csv"], computation_refs: ["computations/forged.json"], verified: true } });
+    for (const r of [a, b]) {
+      if (r.out.ok) {
+        const spec = specOf(r.story.dir, r.out.value.details.planRef);
+        const ids = [spec.claim_id, spec.claim_spec?.claim_id, ...(spec.annotations ?? []).map((x) => x.claim_id)].filter(Boolean);
+        assert.ok(ids.every((id) => id === r.claim.claim_id), `${r.label}: every claim id in the plan is the one recorded (${ids.join(", ")})`);
+        assert.ok(!JSON.stringify(spec).includes("forged"), `${r.label}: no forged ref reached the plan`);
+      } else {
+        assert.deepEqual(recorded(r.story.dir), [], `${r.label}: refused (${r.out.value.slice(0, 90)}) and nothing recorded`);
+      }
+    }
+    check("nested forged refs: an annotation's or claim_spec's foreign claim_id, source_refs, computation_refs are refused or replaced by the recorded claim, never kept");
+  }
+
+  { // claim SQL lint and template direction on the inline path (NEWSROOM_CLAIM_SQL_LINT=1)
+    const top = `The top reading is {max.${col}}.`; // the fixture's own template pairs max with 'lowest' in one clause, which the direction rule refuses
+    const LINT_ENV = { ...ON_ENV, NEWSROOM_CLAIM_SQL_LINT: "1" };
+    await refused("lint: constant in the plan SQL", (story) => inlineParams(shape, story.dataRef, { claim: top, sql: `SELECT country, year, 50.0 AS ${col}, country AS country_with_year FROM '${story.dataRef}'` }), E("CLAIM_SQL_CONSTANT", "the select-list expression 50 \\(AS "), { env: LINT_ENV });
+    await refused("lint: a number as a string", (story) => inlineParams(shape, story.dataRef, { claim: top, sql: `SELECT country, year, '50' AS ${col}, country AS country_with_year FROM '${story.dataRef}'` }), E("CLAIM_SQL_CONSTANT"), { env: LINT_ENV });
+    await refused("lint: VALUES joined to the data", (story) => inlineParams(shape, story.dataRef, { claim: top, sql: `SELECT d.country, d.year, v.x AS ${col}, d.country AS country_with_year FROM '${story.dataRef}' d, (VALUES (50)) v(x)` }), E("CLAIM_SQL_CONSTANT"), { env: LINT_ENV });
+    await refused("lint: max placeholder beside 'lowest'", withClaim(`The lowest reading is {max.${col}}.`), E("CLAIM_TEMPLATE_DIRECTION", ".*puts a max placeholder next to .*a word for the lowest value"), { env: LINT_ENV });
+    await refused("lint: min placeholder beside 最高", withClaim(`最高的是{min.${col}.country}。`), E("CLAIM_TEMPLATE_DIRECTION", ".*puts a min placeholder next to .*a word for the highest value"), { env: LINT_ENV });
+    check("inline path, NEWSROOM_CLAIM_SQL_LINT=1: typed number, string number, VALUES, max beside 'lowest', min beside 最高 are refused with nothing recorded");
+  }
+
   { // placeholders that name no single row, or no row, or no column
     const T = (detail) => new RegExp(`^Error: CLAIM_TEMPLATE_ERROR: [^\\n]*${detail}`);
     const constantMeasure = (story) => `SELECT country, year, 50.0 AS ${col}, country AS country_with_year FROM '${story.dataRef}'`;
@@ -758,7 +793,7 @@ if (!missingDependency) {
     const [claim] = claimLines(story.dir);
     writeFileSync(dataFile, alteredData);
     const kept = listing(story.dir);
-    await assert.rejects(callWith(tools, "record_claim", { claim: claim.claim, claim_kind: claim.claim_kind, status: "supported", source_refs: claim.source_refs, computation_refs: claim.computation_refs }), /^Error: COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of computations\//, "the recorded computation no longer replays on the altered file");
+    await assert.rejects(callWith(tools, "record_claim", { claim: claim.claim, claim_kind: claim.claim_kind, status: "supported", source_refs: claim.source_refs, computation_refs: claim.computation_refs }), /^Error: INVALID_SOURCE_EVIDENCE: data bytes do not match their record \(file name hash differs from the bytes\): data\//, "the altered file is refused against its content-addressed hash before the computation replays");
     assert.deepEqual(listing(story.dir), kept, "the refused record_claim writes nothing");
     const lintAltered = await callWith(tools, "newsroom_viz_lint", { plan_ref: refs.plan_ref });
     assert.equal(lintAltered.details.passed, false, "the chart's lint is blocked once its data changed");

@@ -26,6 +26,7 @@ import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpec
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
+import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
@@ -40,7 +41,7 @@ import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from ".
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { numberWordIn } from "./number_words.mjs";
-import { deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
+import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const DEFAULT_RESULT_BUDGET_BYTES = 12 * 1024;
@@ -1520,14 +1521,80 @@ async function validateSourceEvidence(refs: string[]) {
     } else if (ref.startsWith("data/")) {
       const info = await stat(full);
       assertDatasetPayload(ref, info.size);
+      await assertDataBytesMatchRecord(root, ref, full);
     }
   }
+}
+
+// A data/ ref is evidence only while its bytes still hash to what its sidecar
+// recorded: the sha256 in the content-addressed file name, the sidecar's
+// sha256 and its byte count must all agree with the file as it is now. A
+// sidecar that is missing or unreadable refuses (fail closed). A derived PDF
+// rows table is checked against its own rows_sha256; its source-chain
+// provenance is still verified where the computation is replayed.
+async function assertDataBytesMatchRecord(root: string, ref: string, full: string) {
+  const refuse = (why: string) => new Error(`INVALID_SOURCE_EVIDENCE: data bytes do not match their record (${why}): ${ref}`);
+  const bytes = await readFile(full);
+  const actual = sha256Hex(bytes);
+  // A derived rows table is named for its source PDF, not for its own bytes:
+  // its own metadata binds the name, the file and the rows hash instead.
+  const derived = DERIVED_ROWS_PATH.exec(ref);
+  if (derived) {
+    let rowsMeta: any = null;
+    try { rowsMeta = JSON.parse(await readFile(resolve(root, ref.replace(/\.json$/, ".meta.json")), "utf8")); } catch {}
+    if (!rowsMeta || typeof rowsMeta !== "object") throw refuse("derived metadata is missing or unreadable");
+    if (rowsMeta.source_sha256 !== derived[1]) throw refuse("derived metadata names another source sha256");
+    if (rowsMeta.rows_file !== ref) throw refuse("derived metadata describes another rows file");
+    if (rowsMeta.rows_sha256 !== actual) throw refuse("derived rows differ from rows_sha256");
+    return;
+  }
+  const stem = (ref.split("/").pop() ?? "").split(".")[0];
+  if (/^[0-9a-f]{64}$/.test(stem) && stem !== actual) throw refuse("file name hash differs from the bytes");
+  let meta: any = null;
+  for (const candidate of [`${ref}.meta.json`, ref.replace(/\.[^./]+$/, ".meta.json")]) {
+    try {
+      meta = JSON.parse(await readFile(resolve(root, candidate), "utf8"));
+      break;
+    } catch {}
+  }
+  if (!meta || typeof meta !== "object") throw refuse("sidecar is missing or unreadable");
+  const recorded = meta.sha256;
+  if (typeof recorded !== "string" || !/^[0-9a-f]{64}$/.test(recorded)) throw refuse("sidecar has no sha256");
+  if (recorded !== actual) throw refuse("sidecar sha256 differs from the bytes");
+  if (meta.bytes !== undefined && meta.bytes !== bytes.byteLength) throw refuse("sidecar byte count differs from the file size");
+  if (typeof meta.file === "string" && meta.file.split("/").pop() !== ref.split("/").pop()) throw refuse("sidecar describes a different file");
+}
+
+// NEWSROOM_CLAIM_SQL_LINT=1 (default off): a claim's SQL may not type a number
+// into its select list or generate rows, and its template may not pair a max
+// placeholder with a word for the lowest value (claim_lint.mjs). Refuse only.
+function claimSqlLintEnabled() {
+  return process.env.NEWSROOM_CLAIM_SQL_LINT === "1";
+}
+
+async function lintClaimSql(sql: string, signal?: AbortSignal) {
+  if (!claimSqlLintEnabled()) return;
+  let ast: any;
+  try {
+    ast = await serializeSqlAst(sql, signal);
+  } catch {
+    throw new Error("CLAIM_SQL_LINT_UNAVAILABLE: the SQL could not be parsed by DuckDB json_serialize_sql, so it cannot be checked for typed numbers");
+  }
+  const violations = lintClaimSqlAst(ast);
+  if (violations.length) throw new Error(`CLAIM_SQL_CONSTANT: ${violations.slice(0, 4).join("; ")}. The number must come from the data.`);
+}
+
+function lintClaimWording(template: string) {
+  if (!claimSqlLintEnabled()) return;
+  const violations = lintClaimTemplate(template);
+  if (violations.length) throw new Error(`CLAIM_TEMPLATE_DIRECTION: ${violations.slice(0, 3).join("; ")}`);
 }
 
 async function replayComputationEvidence(refs: string[], sourceRefs: string[], signal?: AbortSignal) {
   for (const ref of refs) {
     const computation = await readArtifactJson(ref, "computations/");
     const sql = validateReadOnlySql(String(computation?.sql ?? ""));
+    await lintClaimSql(sql, signal);
     const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
     const recordedResultHash = String(computation?.result_hash ?? "");
     if (!inputSnapshotHash || !/^[0-9a-f]{64}$/i.test(recordedResultHash) || !Array.isArray(computation?.rows)) {
@@ -1551,8 +1618,11 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
       throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
     }
     assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs);
-    if (hashRows(await queryDuckDb(sql, signal)) !== recordedResultHash) {
-      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}`);
+    const replayed = await queryDuckDb(sql, signal);
+    if (hashRows(replayed) !== recordedResultHash) {
+      const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
+      const reordered = JSON.stringify(sameRows(replayed)) === JSON.stringify(sameRows(computation.rows));
+      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}${reordered ? "; the same rows came back in another order: add a top-level ORDER BY over every key column so the order is total" : ""}`);
     }
   }
 }
@@ -1573,6 +1643,20 @@ async function serializeSqlAst(sql: string, signal?: AbortSignal) {
   const { stdout, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES * 4, 20_000, true);
   if (code !== 0) throw new Error("SQL could not be analyzed");
   return JSON.parse(stdout.trim());
+}
+
+// True when the statement's own top-level node carries an ORDER BY (read from
+// DuckDB's parse, not from the text). An unparsable statement counts as ordered:
+// the note is advice and never a refusal.
+async function hasTopLevelOrderBy(sql: string, signal?: AbortSignal) {
+  try {
+    const ast = await serializeSqlAst(sql, signal);
+    const node = ast?.statements?.[0]?.node;
+    if (!node) return true;
+    return (node.modifiers ?? []).some((modifier: any) => modifier?.type === "ORDER_MODIFIER");
+  } catch {
+    return true;
+  }
 }
 
 async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
@@ -1704,6 +1788,10 @@ async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
   };
   // Extra audit fields follow the record and never replace one of its fields.
   const record = { ...base, ...Object.fromEntries(Object.entries(input.extra ?? {}).filter(([key]) => !Object.hasOwn(base, key))) };
+  // The replay above can take a while: check the data bytes (and a cancel)
+  // once more right before anything is written.
+  if (signal?.aborted) throw new Error("CLAIM_ABORTED: the call was cancelled; no claim was recorded");
+  await validateSourceEvidence(sourceRefs);
   const path = await appendArtifact("claims.jsonl", record);
   return { path, record, claimId, verification };
 }
@@ -1955,6 +2043,15 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   const declared = new Set(Object.keys(registeredTools.get("newsroom_viz_plan")?.parameters?.properties ?? {}));
   const unknown = Object.keys(plan).filter((key) => !declared.has(key));
   if (unknown.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: ${unknown.slice(0, 8).join(", ")} ${unknown.length === 1 ? "is" : "are"} not a newsroom_viz_plan parameter; verification, publishable, status, passed, hash and artifact fields are written by the runtime and never taken from a call`);
+  // The claim id is the runtime's: an annotation that names one, or a claim_spec
+  // that carries refs of its own, is a forged reference, not a shortcut.
+  if (Array.isArray(plan.annotations) && plan.annotations.some((annotation: any) => annotation && typeof annotation === "object" && String(annotation.claim_id ?? "").trim())) {
+    throw new Error("INLINE_CLAIM_FIELD_NOT_ACCEPTED: an annotation names a claim_id, but this call records its own claim; the runtime binds the annotations to it, so leave claim_id out of the annotations");
+  }
+  if (plan.claim_spec && typeof plan.claim_spec === "object") {
+    const forged = Object.keys(plan.claim_spec).filter((key) => /(^|_)(refs?|verified|verification|status|publishable|hash)(_|$)/i.test(key));
+    if (forged.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: claim_spec.${forged.slice(0, 4).join(", claim_spec.")} cannot be set here; the runtime writes refs, status and verification`);
+  }
   inlineClaimAborted(signal);
   const safeSql = computationSql(String(rawParams.sql ?? ""));
   const snapshot = await evidenceSnapshot();
@@ -1964,6 +2061,9 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound");
   const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
   if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
+  // After the evidence rule, so an existing refusal keeps its reason.
+  lintClaimWording(template);
+  await lintClaimSql(safeSql, signal);
   inlineClaimAborted(signal);
   const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
   inlineClaimAborted(signal);
@@ -2021,6 +2121,7 @@ async function recordInlineClaim(claim: InlineClaim, signal?: AbortSignal) {
   await previous;
   try {
     inlineClaimAborted(signal);
+    await validateSourceEvidence(claim.sourceRefs);
     await writeArtifactIfAbsent(claim.computation.ref, claim.computation.record);
     const existing = (await verifiedClaimRecords()).get(claim.claimId);
     if (existing) {
@@ -2801,6 +2902,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
       const budget = modelResultBudget(params.result_budget);
+      const orderNote = rows.length > 1 && !(await hasTopLevelOrderBy(safeSql, signal));
       let modelResult: any = budget ? {
         row_count: rows.length,
         columns: [...new Set(rows.flatMap((row: any) => Object.keys(row)))],
@@ -2809,6 +2911,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         result_hash: resultHash,
         truncated_for_model: rows.length > budget.maxRows,
       } : { row_count: rows.length, rows, artifact: path };
+      if (orderNote) modelResult = { ...modelResult, order_note: "No top-level ORDER BY: row order is not guaranteed, and a claim's replay compares rows in order. Add ORDER BY over every key column." };
       if (budget) {
         while (Buffer.byteLength(JSON.stringify(modelResult, null, 2), "utf8") > budget.maxBytes && modelResult.preview_rows.length > 0) {
           modelResult = { ...modelResult, preview_rows: modelResult.preview_rows.slice(0, Math.max(0, Math.floor(modelResult.preview_rows.length * 0.75) - 1)) };
