@@ -150,6 +150,7 @@ export function createSourceAccessCircuit(limit = 3) {
       const reason = error?.name === "AbortError" ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : "could not reach a public source";
       return new Error(
         `SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). Do not substitute synthetic data; try a bounded alternative source.`,
+        { cause: error },
       );
     },
     // A successful source proves that the route is usable. Keep the circuit
@@ -160,6 +161,74 @@ export function createSourceAccessCircuit(limit = 3) {
     },
     failureCount(key) {
       return countFor(key);
+    },
+    // Read-only twin of assertAvailable, for callers that must let the stronger
+    // SOURCE_ACCESS_BLOCKED stop instruction win over a softer refusal.
+    isBlocked(key) {
+      return countFor(key) >= boundedLimit;
+    },
+  };
+}
+
+// download_data aborts a request after 30 s. A bare AbortError told the model
+// nothing and four identical retries cost two minutes, so the abort becomes a
+// structured error and an identical retry is refused at once. The request key
+// lives in this process's memory only; it is never written to disk.
+export const DOWNLOAD_TIMEOUT_HINT = "Retrying the same URL rarely helps. Make the request lighter: fewer series or a shorter period; for SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+
+function downloadRequestKey({ method, url, body } = {}) {
+  let href = String(url ?? "");
+  // The fragment never reaches the server, so it does not make a request different.
+  try { const parsed = new URL(href); parsed.hash = ""; href = parsed.href; } catch { /* keep the raw text */ }
+  const payload = body === undefined || body === null ? ""
+    : typeof body === "string" ? body
+    : ArrayBuffer.isView(body) ? Array.from(new Uint8Array(body.buffer, body.byteOffset, body.byteLength)).join(",")
+    : JSON.stringify(body);
+  return `${String(method || "GET").toUpperCase()} ${href}\n${payload}`;
+}
+
+function downloadAbortSurfaced(error) {
+  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+    if (current.name === "AbortError") return true;
+  }
+  return false;
+}
+
+export function createDownloadTimeoutGuard(limitMs = 30_000) {
+  const timedOut = new Map();
+  const limitSeconds = Math.round(limitMs / 1000);
+  const seconds = (ms) => (Math.max(0, Number(ms) || 0) / 1000).toFixed(1);
+  const hostOf = (url) => {
+    try { return new URL(String(url)).hostname.toLowerCase(); } catch { return undefined; }
+  };
+  const structured = (code, message, fields) => Object.assign(new Error(`${code}: ${message} ${DOWNLOAD_TIMEOUT_HINT}`), { code, hint: DOWNLOAD_TIMEOUT_HINT, ...fields });
+  return {
+    hostOf,
+    // Refuses a request that already timed out in this process. Any change to
+    // the URL, method or body is a different key and passes.
+    assertNotRepeat(request) {
+      const earlier = timedOut.get(downloadRequestKey(request));
+      if (earlier === undefined) return;
+      const host = hostOf(request?.url) ?? "unknown host";
+      throw structured(
+        "DOWNLOAD_TIMEOUT_REPEAT",
+        `this exact request to ${host} already timed out after ${seconds(earlier)} s in this session, so it was not sent again.`,
+        { host, elapsed_seconds: Number(seconds(earlier)) },
+      );
+    },
+    // Called when the tool's own timer fired. Returns the error to throw: the
+    // structured DOWNLOAD_TIMEOUT when the failure is the abort surfacing, and
+    // the original error otherwise. SOURCE_ACCESS_BLOCKED is a stop instruction
+    // and passes through unchanged.
+    recordTimeout(request, elapsedMs, error) {
+      if (!downloadAbortSurfaced(error) || /^SOURCE_ACCESS_BLOCKED:/.test(String(error?.message ?? ""))) return error;
+      timedOut.set(downloadRequestKey(request), elapsedMs);
+      const host = hostOf(request?.url) ?? "unknown host";
+      return structured(
+        "DOWNLOAD_TIMEOUT",
+        `${host} did not finish the download in ${seconds(elapsedMs)} s (limit ${limitSeconds} s).`,
+        { host, elapsed_seconds: Number(seconds(elapsedMs)) },
+      );
     },
   };
 }
