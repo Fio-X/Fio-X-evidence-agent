@@ -664,6 +664,30 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
 }
 
 {
+  // Short charts: the canvas follows the content instead of frame()'s 420px
+  // default (which left about 85px of blank paper under three bars), with a
+  // 300px floor so that a single bar does not become a strip. The footer rule
+  // sits just under the last bar, or just under the rounding note.
+  const measure = (svg) => {
+    const v = read(svg);
+    const rule = v.nodes.filter((n) => n.tag === "line" && !n.attrs["data-role"] && Number(n.attrs.x1) === 54 && Number(n.attrs.x2) === v.width - 54).at(-1);
+    return { height: v.height, barsBottom: Math.max(...v.segments.map((s) => s.y + s.h)), ruleY: Number(rule.attrs.y1), note: v.role("stacked-rounding-note")[0] };
+  };
+  const groups = (count, parts) => rowsOf(Array.from({ length: count }, (_, i) => [`第${i + 1}组`, parts]));
+  for (const count of [2, 3, 4, 5, 6, 12]) {
+    const m = measure(renderVizSvg(spec({ sort: "none" }), groups(count, { X: 60, Y: 40 })));
+    assert.ok(m.ruleY - m.barsBottom <= 20, `${count} bars: no blank band under the last bar (${m.ruleY - m.barsBottom}px down to the footer rule)`);
+    if (count <= 5) assert.ok(m.height < 420, `${count} bars: the canvas follows the content (${m.height} < 420)`);
+  }
+  assert.equal(measure(renderVizSvg(spec({ sort: "none" }), groups(1, { X: 60, Y: 40 }))).height, 300, "one bar: the 300px floor");
+  const withNote = measure(renderVizSvg(spec({ sort: "none", decimals: 0 }), groups(3, { X: 33.4, Y: 33.3, Z: 33.3 })));
+  assert.ok(withNote.note, "three bars of 33/33/33: the rounding note is drawn");
+  assert.ok(withNote.note.y > withNote.barsBottom && withNote.ruleY - withNote.note.y <= 20, `the rounding note sits between the last bar and the footer rule (${withNote.barsBottom} < ${withNote.note?.y} < ${withNote.ruleY})`);
+  assert.ok(withNote.height < 420, `three bars with the note: the canvas follows the content (${withNote.height} < 420)`);
+  console.log("stacked_bar_100: short charts keep the canvas their content needs -- PASS");
+}
+
+{
   // Styles: the explicit house style equals the default (guards the DECIMAL_MODE hazard of unit "%"); legacy is clean too.
   const rows = sectorRows();
   assert.equal(renderVizSvg(spec({ ...SECTOR_SPEC, style_id: "house" }), rows), renderVizSvg(spec(SECTOR_SPEC), rows), "style_id house is byte-identical to the default");

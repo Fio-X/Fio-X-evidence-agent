@@ -5555,7 +5555,10 @@ function renderStackedBar100(spec, rows) {
   const noteRel = barsEndRel + 26;
   const bodyHeight = (needNote ? noteRel + 6 : gridEndRel + 6) + 4;
 
-  const f = frame(spec, bodyHeight);
+  // A short chart (a handful of bars) keeps the canvas its content needs
+  // instead of the 420px default, which would leave a blank band under the
+  // bars; 300 is the same floor renderHorizontal's tight layout uses.
+  const f = frame(spec, bodyHeight, 300);
   const o = f.bodyTop + 2;
   const parts = f.parts;
   const ticks = [0, 25, 50, 75, 100];
