@@ -45,7 +45,6 @@ const VIEWBOX = { desktop: [1200, 320], mobile: [390, 260] };
 // be a deliberate edit here too. elements = drawn shapes per viewport.
 const EXPECTED = {
   arcs: { elements: { desktop: 120, mobile: 48 }, accent: { desktop: 3, mobile: 2 } },
-  grid: { elements: { desktop: 60, mobile: 24 }, accent: { desktop: 3, mobile: 2 } },
   concentric: { elements: { desktop: 21, mobile: 7 }, accent: { desktop: 2, mobile: 1 } },
   bands: { elements: { desktop: 50, mobile: 20 }, accent: { desktop: 2, mobile: 2 } },
 };
@@ -263,6 +262,8 @@ refused('per-mille in alt', 4, requestFor('arcs', { alt: 'Decorative geometric c
 refused('unknown motif', 5, requestFor('arcs', { constraints: ['motif=flag'] }));
 refused('uppercase motif', 5, requestFor('arcs', { constraints: ['motif=ARCS'] }));
 refused('spaced motif token', 5, requestFor('arcs', { constraints: ['motif = arcs'] }));
+// grid was removed from the closed set (a lattice of mixed filled shapes can read as a unit chart)
+refused('removed motif: grid', 5, requestFor('arcs', { constraints: ['motif=grid'] }));
 refused('two motifs in one constraint', 5, requestFor('arcs', { constraints: ['motif=arcs; motif=grid'] }));
 refused('missing motif (other constraints)', 5, requestFor('arcs', { constraints: ['No photorealistic reconstruction'] }));
 refused('missing motif (empty constraints)', 5, requestFor('arcs', { constraints: [] }));

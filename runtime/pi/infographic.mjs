@@ -431,6 +431,13 @@ export function validateInfographicSpec(spec) {
   return errors;
 }
 
+// A decorative illustration (a page cover) explains nothing: it is read from the STORED illustration manifest
+// (metadata.decorative === true, written by the adapter and carried through normalize), never from the page plan,
+// and it earns no credit in any page gate, critic score, ordinal or hero choice. It is still fully validated.
+export function isDecorativeIllustration(module, assets = {}) {
+  return module?.type === "illustration" && assets?.[module.asset_ref]?.manifest?.metadata?.decorative === true;
+}
+
 export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = null) {
   const blockers = [];
   const warnings = [];
@@ -448,7 +455,7 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
   const mappedNodeIds = [];
   const resolutionNodeIds = [];
   const mappedDimensions = new Set();
-  const contentModules = (spec.modules ?? []).filter((module) => ["visual", "illustration", "hero_stat", "text"].includes(module.type));
+  const contentModules = (spec.modules ?? []).filter((module) => ["visual", "illustration", "hero_stat", "text"].includes(module.type) && !isDecorativeIllustration(module, assets));
   const visualModules = contentModules.filter((module) => module.type === "visual");
   const illustrationModules = contentModules.filter((module) => module.type === "illustration");
   const visualKinds = new Set();
@@ -768,7 +775,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
   if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     const roles = new Set((spec.modules ?? []).map((m) => m.story_role).filter(Boolean));
     const priorityOne = (spec.modules ?? []).filter((m) => m.priority === 1);
-    const heroVisuals = (spec.modules ?? []).filter((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero");
+    const heroVisuals = (spec.modules ?? []).filter((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero" && !isDecorativeIllustration(m, assets));
     if (spec.quality_target === "award") {
       if (!roles.has("hook")) blockers.push("award-target infographic requires at least one hook module");
       if (!roles.has("evidence")) blockers.push("award-target infographic requires at least one evidence module");
@@ -1187,12 +1194,12 @@ function statsAfterLinkedVisual(modules, scenes = []) {
   return out;
 }
 
-function editorialOrdinalMap(spec) {
+function editorialOrdinalMap(spec, assets = {}) {
   const map = new Map();
   let ordinal = 1;
   for (const module of spec.modules ?? []) {
     // hero_stat draws no ordinal chrome, so it must not consume a number either.
-    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero") continue;
+    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || isDecorativeIllustration(module, assets)) continue;
     map.set(String(module.id), ordinal++);
   }
   return map;
@@ -1519,10 +1526,10 @@ function composeOne(spec, assets, mobile) {
   drawHeader(parts, spec, layout.width, layout.margin, mobile);
   const shiftedBoxes = layout.boxes.map((box) => ({ ...box, y: box.y + startY }));
   for (const scene of layout.scenes ?? []) drawSceneChrome(parts, scene, startY, mobile);
-  const ordinals = editorialOrdinalMap(spec);
+  const ordinals = editorialOrdinalMap(spec, assets);
   shiftedBoxes.forEach((box) => {
     const module = box.module;
-    if (module.type !== "section_header") drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile, spec);
+    if (module.type !== "section_header" && !isDecorativeIllustration(module, assets)) drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile, spec);
     if (module.type === "hero_stat") drawHeroStat(parts, box, module, mobile);
     else if (module.type === "visual") embedVisual(parts, assets[module.manifest_ref], box, module, mobile);
     else if (module.type === "illustration") embedIllustration(parts, assets[module.asset_ref], box, module, mobile);
@@ -1541,6 +1548,7 @@ function composeOne(spec, assets, mobile) {
   const visualKinds = uniq((spec.modules ?? []).flatMap((m) => {
     if (m.type === "visual") return [assets[m.manifest_ref]?.manifest?.chart_type];
     if (m.type === "illustration") {
+      if (isDecorativeIllustration(m, assets)) return [];
       const manifest = assets[m.asset_ref]?.manifest;
       if (manifest?.kind === "rich_illustration") return [`illustration:rich:${manifest?.provenance?.origin ?? "unknown"}`];
       return [manifest?.view ? `illustration:${manifest.view}` : "illustration"];
@@ -1557,6 +1565,7 @@ function composeOne(spec, assets, mobile) {
     layout_strategy: layout.strategy ?? (mobile ? "single_column" : "balanced"),
     candidate_scores: layout.candidate_scores ?? [{ strategy: layout.strategy ?? "balanced", score: 0 }],
     visual_kinds: visualKinds,
+    ...((spec.modules ?? []).some((m) => isDecorativeIllustration(m, assets)) ? { decorative_module_ids: (spec.modules ?? []).filter((m) => isDecorativeIllustration(m, assets)).map((m) => String(m.id)) } : {}),
   };
 }
 
@@ -1613,10 +1622,12 @@ function maxDenseRun(spec, mobile = false) {
 }
 
 function explicitAnchorBox(spec, composed) {
+  const decorative = new Set(composed.decorative_module_ids ?? []);
+  const isVisual = (box) => (box.module?.type === "visual" || box.module?.type === "illustration") && !decorative.has(String(box.id));
   const priorities = new Map((spec.modules ?? []).map((m) => [m.id, Number.isInteger(m.priority) ? m.priority : 3]));
-  return (composed.boxes ?? []).find((box) => (box.module?.type === "visual" || box.module?.type === "illustration") && box.module?.emphasis === "hero")
-    ?? (composed.boxes ?? []).find((box) => (box.module?.type === "visual" || box.module?.type === "illustration") && priorities.get(box.id) === 1)
-    ?? (composed.boxes ?? []).find((box) => box.module?.type === "visual" || box.module?.type === "illustration")
+  return (composed.boxes ?? []).find((box) => isVisual(box) && box.module?.emphasis === "hero")
+    ?? (composed.boxes ?? []).find((box) => isVisual(box) && priorities.get(box.id) === 1)
+    ?? (composed.boxes ?? []).find(isVisual)
     ?? null;
 }
 
@@ -1652,12 +1663,13 @@ function critiqueAwardOne(spec, composed, mobile) {
 
   const modules = moduleSequence(spec, mobile);
   const roles = new Set(modules.map((m) => m.story_role).filter(Boolean));
-  const visualCount = modules.filter((m) => m.type === "visual" || m.type === "illustration").length;
+  const decorativeIds = new Set(composed.decorative_module_ids ?? []);
+  const visualCount = modules.filter((m) => (m.type === "visual" || m.type === "illustration") && !decorativeIds.has(String(m.id))).length;
   const heroStats = modules.filter((m) => m.type === "hero_stat").length;
   const sectionHeaders = modules.filter((m) => m.type === "section_header").length;
   const pullQuotes = modules.filter((m) => m.type === "pull_quote").length;
   const priorityOne = modules.filter((m) => m.priority === 1);
-  const explicitHero = modules.find((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero");
+  const explicitHero = modules.find((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero" && !decorativeIds.has(String(m.id)));
   const anchor = explicitAnchorBox(spec, composed);
   const anchorY = anchor ? anchor.y / Math.max(1, composed.height) : 1;
   const anchorWidth = anchor ? anchor.w / Math.max(1, composed.width) : 0;
