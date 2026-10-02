@@ -30,7 +30,7 @@ import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
@@ -50,6 +50,8 @@ const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
 const MAX_DATASET_BYTES = 25_000_000;
 const sourceAccessCircuit = createSourceAccessCircuit(3);
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const downloadTimeoutGuard = createDownloadTimeoutGuard(DOWNLOAD_TIMEOUT_MS);
 
 // DuckDB returns two useful identifiers for a computation: the content-addressed
 // artifact filename and the deterministic hash of its rows.  Models frequently
@@ -2799,8 +2801,14 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const root = artifactRoot();
       if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
+      // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
+      // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
+      const request = { method: "GET", url: params.url, body: "" };
+      if (!sourceAccessCircuit.isBlocked(downloadTimeoutGuard.hostOf(params.url))) downloadTimeoutGuard.assertNotRepeat(request);
+      const startedAt = Date.now();
+      let timedOut = false;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30_000);
+      const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
       const abortForwarder = () => controller.abort();
       signal?.addEventListener("abort", abortForwarder, { once: true });
       try {
@@ -2866,6 +2874,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           bytes: bytes.byteLength,
           sha256,
         });
+      } catch (error: any) {
+        // Only the tool's own 30 s timer counts: a user cancel keeps its own error.
+        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, error) : error;
       } finally {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abortForwarder);
