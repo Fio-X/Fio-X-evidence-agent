@@ -92,7 +92,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
-import { expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
+import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
@@ -133,7 +133,6 @@ const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record
       newsroom_visual_concepts: "To avoid retyping text the concepts really share, pass shared: an object of defaults (reader_question, editorial_premise, surprise, hero_evidence_refs, supporting_evidence_refs, asset_requirements, media_mix, information_hierarchy, mobile_treatment, risk_flags, reporting_gaps, why_reject). Each concept is {...shared, ...concept}; the concept's value wins and arrays are replaced. concept_id, framing, visual_metaphor, hero_scene and why_memorable must be written in every concept and are refused in shared. The 8..20 concepts, required fields and three framings are checked as before on the expanded set. discovery_ref may be omitted when exactly one CONTINUE discovery exists.",
       newsroom_semantic_novelty: "concept_ref may be omitted when exactly one editorial/concepts artifact exists; the runtime copies it verbatim and never overrides a value you give.",
       newsroom_asset_requirements: "concept_ref may be omitted when exactly one editorial/concepts artifact lists concept_id as a finalist; concept_id is never filled for you.",
-      newsroom_infographic_plan: "Page-top refs you may leave out (with NEWSROOM_SPEED_PREFLIGHT on): story_graph_ref is never derived, but editorial_discovery_ref, visual_concept_ref, novelty_ref, asset_plan_ref, reader_question, visual_thesis and each visual module's critic_ref are copied when exactly one bound artifact exists. A module's claim_set must still match its claim_ids; selected_concept_id is never filled.",
     },
   },
   {
@@ -3881,25 +3880,31 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     },
   });
 
-  const conceptParameters = Type.Object({
-    concept_id: Type.String(),
-    reader_question: optionalWhenCompact(Type.String()),
-    editorial_premise: optionalWhenCompact(Type.String()),
-    surprise: Type.Optional(Type.String()),
-    visual_metaphor: Type.String(),
-    hero_scene: Type.String(),
-    framing: StringEnum(["spatial", "temporal", "mechanism", "comparison", "human_scale", "object_scene", "progressive_reveal"] as const),
-    hero_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
-    supporting_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 20 })),
-    asset_requirements: optionalWhenCompact(Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 })),
-    media_mix: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
-    information_hierarchy: Type.Optional(Type.String()),
-    mobile_treatment: Type.Optional(Type.String()),
-    risk_flags: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
-    reporting_gaps: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
-    why_memorable: Type.String(),
-    why_reject: Type.Optional(Type.String()),
-  });
+  // The concept shape as the full form (switch off) registers it; compact mode relaxes the shareable fields to optional
+  // and then checks every expanded concept against the strict one.
+  const buildConceptParameters = (compact: boolean) => {
+    const optionalWhenCompact = (schema: any) => (compact ? Type.Optional(schema) : schema);
+    return Type.Object({
+      concept_id: Type.String(),
+      reader_question: optionalWhenCompact(Type.String()),
+      editorial_premise: optionalWhenCompact(Type.String()),
+      surprise: Type.Optional(Type.String()),
+      visual_metaphor: Type.String(),
+      hero_scene: Type.String(),
+      framing: StringEnum(["spatial", "temporal", "mechanism", "comparison", "human_scale", "object_scene", "progressive_reveal"] as const),
+      hero_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+      supporting_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 20 })),
+      asset_requirements: optionalWhenCompact(Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 })),
+      media_mix: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+      information_hierarchy: Type.Optional(Type.String()),
+      mobile_treatment: Type.Optional(Type.String()),
+      risk_flags: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
+      reporting_gaps: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
+      why_memorable: Type.String(),
+      why_reject: Type.Optional(Type.String()),
+    });
+  };
+  const conceptParameters = buildConceptParameters(compactSetupEnabled());
 
   registerScopedTool(pi, {
     name: "newsroom_visual_concepts",
@@ -3921,6 +3926,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       if (compactSetupEnabled()) {
         params = await compactSetupRefs("newsroom_visual_concepts", rawParams);
         const concepts = expandSharedConcepts(params.shared, params.concepts);
+        await checkExpandedConcepts(concepts, buildConceptParameters(false), (await import("typebox/compile")).Compile);
         params = { discovery_ref: params.discovery_ref, concepts };
         await appendArtifact("runtime/tool-chain-events.jsonl", { type: "setup_input_form", toolName: "newsroom_visual_concepts", input_form: rawParams.shared === undefined ? "full" : "shared_defaults", _newsroom_recorded_at: new Date().toISOString() });
       }

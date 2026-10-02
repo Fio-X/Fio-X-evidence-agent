@@ -53,3 +53,21 @@ export async function fillSetupRefs(tool, params, io) {
 export function setupRefError(tool, state) {
   return preflightError(tool, Object.entries(state.unresolved).map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`));
 }
+
+// Every expanded concept must satisfy the strict (switch-off) concept schema, so shared values cannot slip past what the full
+// form refuses (types, maxItems, required properties). Uses the same Compile validator Pi applies to tool arguments; it is
+// handed in by newsroom.ts, whose imports Pi resolves (a bare import here is not aliased and fails inside Pi).
+export async function checkExpandedConcepts(concepts, schema, Compile) {
+  const validator = Compile(schema);
+  const issues = [];
+  (Array.isArray(concepts) ? concepts : []).forEach((concept, index) => {
+    if (validator.Check(concept)) return;
+    for (const error of validator.Errors(concept)) {
+      const base = String(error.instancePath ?? "").replace(/^\//, "").replace(/\//g, ".");
+      const props = error.keyword === "required" ? error.params?.requiredProperties : undefined;
+      if (props?.length) for (const prop of props) issues.push(`concepts[${index}].${[base, prop].filter(Boolean).join(".")}: is required`);
+      else issues.push(`concepts[${index}].${base || "(concept)"}: ${error.message}`);
+    }
+  });
+  if (issues.length) throw new Error(`newsroom_visual_concepts: the expanded concepts fail the same schema the full form uses:\n${issues.map((line) => `  - ${line}`).join("\n")}`);
+}
