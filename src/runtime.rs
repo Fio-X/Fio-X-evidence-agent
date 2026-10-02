@@ -19,6 +19,7 @@ const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
 const PROVENANCE_RUNTIME: &str = include_str!("../runtime/pi/provenance.mjs");
 const PDF_EXTRACT_RUNTIME: &str = include_str!("../runtime/pi/pdf_extract.mjs");
 const EVIDENCE_GATE_RUNTIME: &str = include_str!("../runtime/pi/evidence_gate.mjs");
+const CLAIM_LINT_RUNTIME: &str = include_str!("../runtime/pi/claim_lint.mjs");
 const INFOGRAPHIC_RUNTIME: &str = include_str!("../runtime/pi/infographic.mjs");
 const EXPLANATORY_RUNTIME: &str = include_str!("../runtime/pi/explanatory.mjs");
 const ILLUSTRATION_RUNTIME: &str = include_str!("../runtime/pi/illustration.mjs");
@@ -126,6 +127,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let provenance_path = runtime_dir.join("provenance.mjs");
     let pdf_extract_path = runtime_dir.join("pdf_extract.mjs");
     let evidence_gate_path = runtime_dir.join("evidence_gate.mjs");
+    let claim_lint_path = runtime_dir.join("claim_lint.mjs");
     let infographic_path = runtime_dir.join("infographic.mjs");
     let explanatory_path = runtime_dir.join("explanatory.mjs");
     let illustration_path = runtime_dir.join("illustration.mjs");
@@ -212,6 +214,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&provenance_path, PROVENANCE_RUNTIME)?;
     write_if_changed(&pdf_extract_path, PDF_EXTRACT_RUNTIME)?;
     write_if_changed(&evidence_gate_path, EVIDENCE_GATE_RUNTIME)?;
+    write_if_changed(&claim_lint_path, CLAIM_LINT_RUNTIME)?;
     write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)?;
     write_if_changed(&explanatory_path, EXPLANATORY_RUNTIME)?;
     write_if_changed(&illustration_path, ILLUSTRATION_RUNTIME)?;
