@@ -54,7 +54,7 @@ const verification = { authority: "system", rule_id: "verification.source+extrac
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" fill="#fafafa"/><path d="M5 30L95 30" stroke="#111"/><circle cx="75" cy="30" r="5"/></svg>';
 const VIZ = [["map", "geo_flow_map", "c-map"], ["sankey", "sankey", "c-flow"], ["trend", "line", "c-trend"]];
 // verbatim from test_plan_edit_runtime.mjs: a full artifact root with verified claims, a computation, charts and editorial files
-function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {} } = {}) {
+function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, verifiedOnly = null } = {}) {
   const art = join(mkdtempSync(join(tmpdir(), `planedit-${label}-`)), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
@@ -67,21 +67,32 @@ function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {} } =
   const csvSha = createHash("sha256").update(csv).digest("hex");
   writeFileSync(join(art, "data", "x.csv"), csv);
   writeFileSync(join(art, "data", "x.meta.json"), JSON.stringify({ file: "x.csv", sha256: csvSha }));
-  const computation = { schema_version: "0.7.0", sql: "SELECT region, value FROM 'data/x.csv' ORDER BY region", input_snapshot_hash: csvSha, input_fingerprints: [`data:x.csv:${csvSha}`], read_inputs: [{ path: "data/x.csv", sha256: csvSha }], input_binding: "source_bound", result_hash: csvSha, rows: [{ region: "A", value: 1 }, { region: "B", value: 2 }] };
+  const computation = { schema_version: "0.7.0", sql: "SELECT region, value FROM 'data/x.csv' ORDER BY region", input_snapshot_hash: csvSha, input_fingerprints: [`data:x.csv:${csvSha}`], read_inputs: [{ path: "data/x.csv", sha256: csvSha }], input_binding: "source_bound", result_hash: csvSha, rows: [{ region: "A", value: 1, delta: 9, year: 2017 }, { region: "B", value: 2, delta: -9, year: 2018 }] };
   const computationRef = `computations/${createHash("sha256").update(JSON.stringify(computation)).digest("hex")}.json`;
   writeFileSync(join(art, computationRef), JSON.stringify(computation));
-  const claims = ["c-map", "c-flow", "c-trend", "c-outcome"].map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification }));
+  // c-outcome and c-trend are record_claim claims (no bindings) whose text states the number; c-inline is an inline claim.
+  const texts = { "c-outcome": "Region B has the largest value, 2 units, and a change of +9 in the first year.", "c-trend": "Region B reached 2 on the value trend.", "c-rose": "Region B rose to 2 million.", "c-thou": "Region B holds 1,2 units." };
+  const inlineClaim = (template, text) => ({ claim: text, claim_template: template, claim_bindings: [{ placeholder: "{max.value}", column: "value", row_index: 1, value: 2, text: "2" }], recorded_by: "newsroom_viz_plan" });
+  const inlines = { "c-million": inlineClaim("Output reached {max.value} million tonnes.", "Output reached 2 million tonnes."), "c-times": inlineClaim("It is {max.value} 3 times larger.", "It is 2 3 times larger.") };
+  const inlineTemplate = "The top value is {max.value}% in {max.value.region} in {max.value.year}.";
+  const inline = { claim: "The top value is 2% in B in 2018.", claim_template: inlineTemplate, claim_bindings: [
+    { placeholder: "{max.value}", column: "value", row_index: 1, value: 2, text: "2" },
+    { placeholder: "{max.value.region}", column: "region", row_index: 1, value: "B", text: "B" },
+    { placeholder: "{max.value.year}", column: "year", row_index: 1, value: 2018, text: "2018" }], recorded_by: "newsroom_viz_plan" };
+  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline", "c-rose", "c-thou", "c-million", "c-times"].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-inline" ? inline : {}), ...(inlines[claim_id] ?? {}) }));
   writeFileSync(join(art, "claims.jsonl"), `${claims.join("\n")}\n`);
   for (const [id, chart_type, claim_id] of VIZ) {
     writeFileSync(join(art, `visualizations/${id}.svg`), svg);
     writeFileSync(join(art, `visualizations/${id}.mobile.svg`), svg);
     writeFileSync(join(art, `visualizations/${id}.json`), JSON.stringify({
-      chart_type, claim_id: manifestClaim[id] ?? claim_id, computation_ref: computationRef, source_note: "Gaskin and Abel model estimates, 1990-2023",
+      chart_type, claim_id: manifestClaim[id] ?? claim_id, computation_ref: computationRef, ...(id === "trend" ? { plan_ref: "visualizations/plans/trend.json" } : {}), source_note: "Gaskin and Abel model estimates, 1990-2023",
       verification_mode: "verified", artifact_status: draft[id] ? "DRAFT" : "VERIFIED", publishable: draft[id] ? false : true,
       variants: { desktop: `visualizations/${id}.svg`, mobile: `visualizations/${id}.mobile.svg` },
     }));
     writeFileSync(join(art, `visualizations/critics/${id}.json`), JSON.stringify({ passed: criticPassed[id] ?? true, score: 90, manifest_ref: `visualizations/${id}.json` }));
   }
+  mkdirSync(join(art, "visualizations/plans"), { recursive: true });
+  writeFileSync(join(art, "visualizations/plans/trend.json"), JSON.stringify({ measure_semantics: [{ id: "m-value", field: "value", phenomenon: "volume", unit: "t", measure_kind: "mass", temporal_basis: { type: "period" } }] }));
   const graph = assessStoryGraph({
     story_id: "migration", reader_question: readerQuestion, visual_thesis: visualThesis,
     nodes: [
@@ -139,42 +150,142 @@ function pagePlan({ withQuestion = false, moduleClaims = {}, readerQuestionOverr
 const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom_infographic_plan").parameters.properties); return Object.fromEntries([...keys.filter((k) => k in plan), ...Object.keys(plan).filter((k) => !keys.includes(k))].map((k) => [k, plan[k]])); };
 
 const results = [];
-const heroBlockers = async (gate, hero, { dropRows = false } = {}) => {
-  const art = freshRun("hero");
-  const plan = pagePlan({ withQuestion: true });
-  plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", detail: "From the recorded computation", claim_id: "c-outcome", story_node_ids: ["n-change"], story_role: "evidence", ...hero });
-  plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
+// Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
+const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-outcome", emptyAfterPlan = false, dropRows = false } = {}) => {
+  const art = freshRun("hero", { verifiedOnly });
   if (dropRows) { const c = JSON.parse(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n")[3]); rmSync(join(art, c.computation_refs[0])); }
-  const tools = await registerFor({ env: gate ? { NEWSROOM_HERO_VALUE_GATE: "1" } : {} });
-  const p = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan));
-  const l = await tools.get("newsroom_infographic_lint").execute("l", { plan_ref: refOf(p, "planRef") });
-  const claim = JSON.parse(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n")[3]);
-  return { blockers: (l.details.blockers ?? []).filter((b) => b.startsWith("hero_stat 'hero'")), claim, art };
+  const plan = pagePlan({ withQuestion: true });
+  plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
+  plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
+  const tools = await registerFor({ env: gate ? { NEWSROOM_HERO_VALUE_GATE: "1", NEWSROOM_MOBILE_PAGES: "0" } : {} });
+  let planned;
+  try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
+  const planRef = refOf(planned, "planRef");
+  const stored = JSON.parse(readFileSync(join(art, planRef), "utf8")).modules.find((m) => m.id === "hero");
+  if (emptyAfterPlan) writeFileSync(join(art, "claims.jsonl"), ""); // the verified set is empty from here on
+  const l = await tools.get("newsroom_infographic_lint").execute("l", { plan_ref: planRef });
+  return { planRef, stored, lint: l, blockers: (l.details.blockers ?? []).filter((b) => b.includes("'hero'")), art, tools };
 };
 const ok = async (name, f) => { await f(); results.push(name); console.log(`  ok  ${name}`); };
 const refOf = (res, name) => { must(res?.details?.[name], `no ${name} in the result`); return res.details[name]; };
+const refused = async (name, hero, re, opts) => ok(`refused: ${name}`, async () => {
+  const r = await heroRun(true, hero, opts);
+  must(r.refused && re.test(r.refused), `expected a refusal matching ${re}, got ${JSON.stringify(r.refused ?? r.blockers)}`);
+});
 
-await ok("(c) the claim's computation ref is computations/<hash>.json and resolves: a correct value finds its rows", async () => {
-  const { blockers, claim, art } = await heroBlockers(true, { value: "2", unit: "" });
-  must(claim.status === "verified" && claim.computation_refs.length === 1 && /^computations\/[0-9a-f]{64}\.json$/.test(claim.computation_refs[0]), `fixture claim refs: ${JSON.stringify(claim.computation_refs)}`);
-  must(existsSync(join(art, claim.computation_refs[0])), "the referenced computation file does not exist");
-  must(!blockers.some((b) => /no computation rows/.test(b)), `the gate could not read the claim's rows (it would block every hero_stat): ${blockers.join(" | ")}`);
-  must(blockers.length === 0, `a correct hero value was blocked: ${blockers.join(" | ")}`);
+// ---- Codex counterexamples, gate on, one each ----
+await refused("another column (a column the claim does not state)", { value_from: "{max.delta}" }, /HERO_PLACEHOLDER_NOT_STATED.*does not state/);
+await refused("another row (first row's value)", { value_from: "{first.value}" }, /HERO_PLACEHOLDER_NOT_STATED/);
+await refused("a year cell", { value_from: "{max.value.year}" }, /HERO_PLACEHOLDER_NOT_STATED/);
+await refused("-9 where the claim says +9", { value_from: "{min.delta}" }, /HERO_PLACEHOLDER_NOT_STATED/);
+await refused("a typed value, with value_from", { value_from: "{max.value}", value: "9" }, /HERO_VALUE_TYPED.*value_from \{max\.value\}/);
+await refused("a typed value, without value_from", { value: "9" }, /HERO_VALUE_FROM_REQUIRED.*do not type the number/);
+await refused("a typed '9 (77)'", { value: "9 (77)" }, /HERO_VALUE_FROM_REQUIRED/);
+await refused("2099 typed in the detail", { value_from: "{max.value}", detail: "Forecast for 2099" }, /HERO_TYPED_NUMBER.*detail/);
+await refused("unit 万 the claim does not show", { value_from: "{max.value}", unit: "万" }, /HERO_UNIT_NOT_ALLOWED/);
+await refused("unit kg on a measure with no unit", { value_from: "{max.value}", unit: "kg" }, /HERO_UNIT_NOT_ALLOWED.*allowed: empty/);
+await refused("a claim that is not verified", { value_from: "{max.value}" }, /HERO_CLAIM_NOT_VERIFIED/, { claim_id: "c-nope" });
+await ok("accepted: unit t on a tonnes measure (the claim's own chart declares it)", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", unit: "t" }, { claim_id: "c-trend" });
+  must(!r.refused, r.refused);
+  must(r.stored.value === "2" && r.stored.unit === "t" && r.stored.value_from === "{max.value}", JSON.stringify(r.stored));
+  must(r.blockers.length === 0, r.blockers.join(" | "));
 });
-await ok("(b) a forged value is blocked with the exact reason", async () => {
-  const { blockers } = await heroBlockers(true, { value: "9", unit: "" });
-  must(blockers.length === 1 && blockers[0] === "hero_stat 'hero' value number '9' is not in the rows of claim 'c-outcome'", `blockers: ${JSON.stringify(blockers)}`);
+await refused("unit t when the claim has no chart declaring it", { value_from: "{max.value}", unit: "t" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-outcome" });
+
+await refused("the claim's computation file is missing: the hero never passes", { value_from: "{max.value}" }, /HERO_PLACEHOLDER_NOT_STATED.*no computation rows/, { dropRows: true });
+
+// ---- units: a scale word after one space, and its limits ----
+const unitOk = (name, claim_id, unit) => ok(`unit allowed: ${name}`, async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", unit }, { claim_id });
+  must(!r.refused && r.stored.unit === unit && r.blockers.length === 0, JSON.stringify(r.refused ?? r.blockers));
 });
-await ok("(b) a forged number in the detail is blocked", async () => {
-  const { blockers } = await heroBlockers(true, { value: "2", unit: "", detail: "Up 77 on last year" });
-  must(blockers.length === 1 && /detail number '77' is not in the rows of claim 'c-outcome'/.test(blockers[0]), `blockers: ${JSON.stringify(blockers)}`);
+await unitOk("{max.value} million tonnes allows 'million'", "c-million", "million");
+await unitOk("record_claim text 'rose to 2 million' allows 'million'", "c-rose", "million");
+await refused("{max.value} 3 times does not allow '3'", { value_from: "{max.value}", unit: "3" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-times" });
+await refused("a scale word the claim does not show", { value_from: "{max.value}", unit: "billion" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-million" });
+await refused("thousands separator: 234 inside 1,234 is not the number", { value_from: "{max.value}" }, /HERO_PLACEHOLDER_NOT_STATED/, { claim_id: "c-thou" });
+
+// ---- render re-checks every cited claim, including claim_set and annotation claim ids ----
+for (const [name, edit] of [["claim_set", (m) => { m.claim_set = [...m.claim_set, "c-ghost"]; }], ["annotation claim_id", (m) => { m.annotations = [...m.annotations, { id: "ghost-note", target_object_id: "route-a", text: "A note.", claim_id: "c-ghost" }]; }]]) {
+  await ok(`render refuses an unverified id only in a visual module's ${name}`, async () => {
+    const r = await heroRun(false, { value: "2", unit: "" });
+    const spec = JSON.parse(readFileSync(join(r.art, r.planRef), "utf8"));
+    edit(spec.modules.find((m) => m.id === "map"));
+    const { content_hash, ...core } = spec;
+    const key = createHash("sha256").update(JSON.stringify(core)).digest("hex");
+    const planRef = `infographics/plans/${key}.json`;
+    writeFileSync(join(r.art, planRef), JSON.stringify({ ...core, content_hash: key }));
+    const lintRef = `infographics/lints/${"e".repeat(64)}.json`;
+    writeFileSync(join(r.art, lintRef), JSON.stringify({ passed: true, blockers: [], warnings: [], plan_ref: planRef, asset_hashes: {} }));
+    let msg = "";
+    try { await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: planRef, lint_ref: lintRef }); } catch (error) { msg = String(error.message); }
+    must(/not system-verified: c-ghost/.test(msg), `render said: ${msg}`);
+  });
+}
+
+// ---- legitimate cases ----
+await ok("inline claim: max binding shown with %, and a detail placeholder among the bindings", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", unit: "%", detail: "Reached in {max.value.year}" }, { claim_id: "c-inline" });
+  must(!r.refused, r.refused);
+  must(r.stored.value === "2" && r.stored.unit === "%" && r.stored.detail === "Reached in 2018" && r.stored.detail_template === "Reached in {max.value.year}", JSON.stringify(r.stored));
+  must(r.blockers.length === 0, r.blockers.join(" | "));
 });
-await ok("the claim's computation file missing: the value is blocked (fails closed, never passes)", async () => {
-  const { blockers } = await heroBlockers(true, { value: "2", unit: "" }, { dropRows: true });
-  must(blockers.some((b) => /has no computation rows to check its value against/.test(b)), `blockers: ${JSON.stringify(blockers)}`);
+await refused("inline claim: a placeholder that is not among its bindings", { value_from: "{first.value}" }, /HERO_PLACEHOLDER_UNBOUND.*\{max\.value\} \{max\.value\.region\} \{max\.value\.year\}/, { claim_id: "c-inline" });
+await refused("inline claim: a detail placeholder not among its bindings", { value_from: "{max.value}", detail: "Beyond {first.value.year}" }, /HERO_PLACEHOLDER_UNBOUND/, { claim_id: "c-inline" });
+await ok("record_claim claim whose text states the number", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", detail: "Rows say {max.value.region}" });
+  must(!r.refused, r.refused);
+  must(r.stored.value === "2" && r.stored.detail === "Rows say B", JSON.stringify(r.stored));
+  must(r.blockers.length === 0, r.blockers.join(" | "));
 });
-await ok("gate off: the same forged value raises no hero blocker (the gate is what blocks it)", async () => {
-  const { blockers } = await heroBlockers(false, { value: "9", unit: "" });
-  must(blockers.length === 0, `blockers with the gate off: ${JSON.stringify(blockers)}`);
+await ok("a stored plan edited after the fill is caught by lint", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", unit: "" }, { claim_id: "c-inline" });
+  const spec = JSON.parse(readFileSync(join(r.art, r.planRef), "utf8"));
+  spec.modules.find((m) => m.id === "hero").value = "9";
+  const { content_hash, ...core } = spec;
+  const key = createHash("sha256").update(JSON.stringify(core)).digest("hex");
+  writeFileSync(join(r.art, `infographics/plans/${key}.json`), JSON.stringify({ ...core, content_hash: key }));
+  const l = await r.tools.get("newsroom_infographic_lint").execute("l2", { plan_ref: `infographics/plans/${key}.json` });
+  must((l.details.blockers ?? []).some((b) => /HERO_(EDITED_AFTER_FILL|VALUE_TYPED)/.test(b)), JSON.stringify(l.details.blockers));
+});
+
+// ---- empty verified set (default on, gate off) ----
+await ok("no claim verified: a plan citing a claim is refused at lint and at render", async () => {
+  const r = await heroRun(false, { value: "2", unit: "" }, { emptyAfterPlan: true });
+  must(!r.refused, r.refused);
+  const l = r.lint;
+  must(l.details.passed === false && l.details.blockers.some((b) => /hero_stat 'hero' references unverified claim 'c-outcome'/.test(b)), JSON.stringify(l.details.blockers));
+  // render re-reads the verified set and does not trust a stored lint: forge a passing one
+  const lintKey = "f".repeat(64);
+  writeFileSync(join(r.art, `infographics/lints/${lintKey}.json`), JSON.stringify({ passed: true, blockers: [], warnings: [], plan_ref: r.planRef, asset_hashes: {} }));
+  let msg = "";
+  try { await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: r.planRef, lint_ref: `infographics/lints/${lintKey}.json` }); } catch (error) { msg = String(error.message); }
+  must(/not system-verified/.test(msg), `render said: ${msg}`);
+});
+await ok("no claim verified: a plan that cites no claim still passes the claim checks", async () => {
+  const { lintInfographicSpec } = await import(join(ROOT, "runtime/pi/infographic.mjs"));
+  const r = await heroRun(false, { value: "2", unit: "" });
+  const spec = JSON.parse(readFileSync(join(r.art, r.planRef), "utf8"));
+  spec.modules = spec.modules.filter((m) => m.type !== "hero_stat").map(({ claim_id, claim_ids, claim_set, annotations, ...m }) => m);
+  const blockers = lintInfographicSpec(spec, {}, { verified_claim_ids: [], mobile_pages: false }).blockers;
+  must(!blockers.some((b) => /unverified claim/.test(b)), JSON.stringify(blockers.filter((b) => /unverified claim/.test(b))));
+});
+await ok("gate off: a typed hero value passes as before (no hero blocker)", async () => {
+  const r = await heroRun(false, { value: "9", unit: "" });
+  must(!r.refused && r.blockers.length === 0, JSON.stringify(r.refused ?? r.blockers));
+});
+await ok("switch off: tool definitions carry no value_from and equal the gate-on ones minus it", async () => {
+  freshRun("defs");
+  const off = await registerFor({ env: {} });
+  const on = await registerFor({ env: { NEWSROOM_HERO_VALUE_GATE: "1" } });
+  const defs = (tools) => JSON.stringify([...tools.values()].map((t) => [t.name, t.description, t.parameters]));
+  // Every tool's name, description and parameters: on minus value_from must equal off.
+  const strip = (tools) => JSON.stringify([...tools.values()].map((t) => [t.name, t.description, JSON.parse(JSON.stringify(t.parameters, (k, v) => (k === "value_from" ? undefined : v)))]));
+  must(!defs(off).includes("value_from"), "value_from is visible with the gate off");
+  must(defs(on).includes("value_from"), "value_from missing with the gate on");
+  must(strip(on) === strip(off), "the tool list with value_from stripped differs between gate on and off");
+  const keys = (tools) => Object.keys(tools.get("newsroom_infographic_plan").parameters.properties.modules.items.properties).filter((k) => k !== "value_from");
+  must(JSON.stringify(keys(on)) === JSON.stringify(keys(off)), "module properties differ beyond value_from");
 });
 console.log(`hero value gate, tool path: ${results.length} checks -- PASS`);
