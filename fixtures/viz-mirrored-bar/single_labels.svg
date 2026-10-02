@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 495" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">各年龄段占比（示例数据）</title>
+<desc id="viz-desc">A back-to-back bar chart of the share of each age band for two sides in two periods, fixture data.</desc>
+<rect width="1040" height="495" fill="#FFFFFF"/>
+<text x="54" y="38" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1A1A1A">各年龄段占比（示例数据）</text>
+<text x="54" y="74" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666">示例数据，单位：%</text>
+<text data-role="series-name" x="282.29" y="123" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">甲组</text>
+<text data-role="series-name" x="757.71" y="123" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">乙组</text>
+<line data-role="grid-line" x1="488" y1="135" x2="488" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="552" y1="135" x2="552" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="419.43" y1="135" x2="419.43" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="620.57" y1="135" x2="620.57" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="350.86" y1="135" x2="350.86" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="689.14" y1="135" x2="689.14" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="282.29" y1="135" x2="282.29" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="757.71" y1="135" x2="757.71" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="213.71" y1="135" x2="213.71" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="826.29" y1="135" x2="826.29" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="145.14" y1="135" x2="145.14" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="894.86" y1="135" x2="894.86" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="76.57" y1="135" x2="76.57" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="963.43" y1="135" x2="963.43" y2="391" stroke="#E5E5E5" stroke-width="1"/>
+<rect data-role="data-bar" x="299.43" y="360" width="188.57" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="360" width="174.86" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="275.43" y="328" width="212.57" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="328" width="198.86" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="237.71" y="296" width="250.29" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="296" width="236.57" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="200" y="264" width="288" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="264" width="277.71" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="193.14" y="232" width="294.86" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="232" width="284.57" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="230.86" y="200" width="257.14" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="200" width="260.57" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="278.86" y="168" width="209.14" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="168" width="222.86" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="244.57" y="136" width="243.43" height="30" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="136" width="384" height="30" fill="#BDBDBD"/>
+<text data-role="bar-value-label" x="294.43" y="379" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">5.5</text>
+<text data-role="bar-value-label" x="731.86" y="379" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">5.1</text>
+<text data-role="bar-value-label" x="270.43" y="347" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">6.2</text>
+<text data-role="bar-value-label" x="755.86" y="347" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">5.8</text>
+<text data-role="bar-value-label" x="232.71" y="315" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">7.3</text>
+<text data-role="bar-value-label" x="793.57" y="315" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">6.9</text>
+<text data-role="bar-value-label" x="195" y="283" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">8.4</text>
+<text data-role="bar-value-label" x="834.71" y="283" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">8.1</text>
+<text data-role="bar-value-label" x="188.14" y="251" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">8.6</text>
+<text data-role="bar-value-label" x="841.57" y="251" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">8.3</text>
+<text data-role="bar-value-label" x="225.86" y="219" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">7.5</text>
+<text data-role="bar-value-label" x="817.57" y="219" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">7.6</text>
+<text data-role="bar-value-label" x="273.86" y="187" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">6.1</text>
+<text data-role="bar-value-label" x="779.86" y="187" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">6.5</text>
+<text data-role="bar-value-label" x="239.57" y="155" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">7.1%</text>
+<text data-role="bar-value-label" x="941" y="155" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">11.2%</text>
+<text data-role="category-label" x="520" y="379" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">0-9</text>
+<text data-role="category-label" x="520" y="347" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">10-19</text>
+<text data-role="category-label" x="520" y="315" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">20-29</text>
+<text data-role="category-label" x="520" y="283" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">30-39</text>
+<text data-role="category-label" x="520" y="251" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">40-49</text>
+<text data-role="category-label" x="520" y="219" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">50-59</text>
+<text data-role="category-label" x="520" y="187" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">60-69</text>
+<text data-role="category-label" x="520" y="155" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">70+</text>
+<text data-role="axis-tick-label" x="488" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" x="552" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" x="419.43" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2</text>
+<text data-role="axis-tick-label" x="620.57" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2</text>
+<text data-role="axis-tick-label" x="350.86" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">4</text>
+<text data-role="axis-tick-label" x="689.14" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">4</text>
+<text data-role="axis-tick-label" x="282.29" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">6</text>
+<text data-role="axis-tick-label" x="757.71" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">6</text>
+<text data-role="axis-tick-label" x="213.71" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">8</text>
+<text data-role="axis-tick-label" x="826.29" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">8</text>
+<text data-role="axis-tick-label" x="145.14" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">10</text>
+<text data-role="axis-tick-label" x="894.86" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">10</text>
+<text data-role="axis-tick-label" x="76.57" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">12%</text>
+<text data-role="axis-tick-label" x="963.43" y="409" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">12%</text>
+<line x1="54" y1="424" x2="986" y2="424" stroke="#E5E5E5" stroke-width="1"/>
+<text x="54" y="443" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">数据来源：示例数据</text>
+</svg>
