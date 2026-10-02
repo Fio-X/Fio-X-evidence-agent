@@ -3097,6 +3097,20 @@ function renderHorizontal(spec, rows, mode) {
   return f.parts.join("\n") + "\n";
 }
 
+// Value labels for one dumbbell row, in the standard order: the lower value's
+// label sits beyond the lower end of the span and the higher value's beyond the
+// higher end, so the two labels always point away from each other. A reversed
+// pair (start above end) used to print each label on the inside of the span,
+// where close values stacked "18%" over "17%". Identical displayed values get
+// one label (beyond the right-hand dot) instead of the same text on both sides.
+function dumbbellValueLabels(x1, x2, a, b, startText, endText, pad) {
+  const start = { value: a, edge: x1, text: startText, fill: PALETTE.muted };
+  const end = { value: b, edge: x2, text: endText, fill: PALETTE.ink };
+  if (a === b || startText === endText) return [{ ...end, x: Math.max(x1, x2) + pad, anchor: "start" }];
+  const [low, high] = a < b ? [start, end] : [end, start];
+  return [{ ...low, x: low.edge - pad, anchor: "end" }, { ...high, x: high.edge + pad, anchor: "start" }];
+}
+
 function renderDumbbell(spec, rows) {
   const sorted = [...rows];
   const refLines = referenceLineAnnotations(spec);
@@ -3122,8 +3136,7 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
+    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -3843,8 +3856,7 @@ function renderMobileDumbbell(spec, rows) {
     f.parts.push(`<text x="165" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category) > 20 ? sliceUnits(category, 19) + "…" : category)}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="4.8" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="4.8" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmtSpec(spec, b, spec.unit))}</text>`);
+    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 6).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout, maxChars: 30 }));
   });
   drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
