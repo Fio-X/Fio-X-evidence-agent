@@ -127,18 +127,26 @@ const EXPECTED_DESCRIPTIONS = {
 // only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
 // property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
 const DIMENSION_ENUM_PATH = ["properties", "modules", "items", "properties", "explanatory_dimension", "enum"];
+// `added` lists paths that did not exist in the baseline at all (a description the field never had).
 const APPROVED_LATER = {
   newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"] },
   // One explanatory_dimension vocabulary (fast-fail-1003 item 3): these two take every story-graph value. +25 B and +15 B.
   newsroom_semantic_novelty: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
-  newsroom_infographic_plan: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
+  newsroom_infographic_plan: {
+    commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH,
+    // quantity_kind gets one guidance clause (fast-fail-1003 item 4): +130 B (113 B of text). The enum next to it stays pinned.
+    added: [{ commit: "fast-fail-1003 item 4", path: ["properties", "modules", "items", "properties", "quantitative_encoding", "properties", "quantity_kind", "description"] }],
+  },
 };
-const withPathCleared = (tool, path) => {
+const withPathsCleared = (tool, paths) => {
   const parameters = JSON.parse(JSON.stringify(tool.parameters));
-  let node = parameters;
-  for (const key of path.slice(0, -1)) node = node?.[key];
-  const had = node && path[path.length - 1] in node;
-  if (had) node[path[path.length - 1]] = null;
+  const had = paths.map((path) => {
+    let node = parameters;
+    for (const key of path.slice(0, -1)) node = node?.[key];
+    const present = Boolean(node) && path[path.length - 1] in node;
+    if (node) node[path[path.length - 1]] = null; // cleared whether or not it was there, so an added path compares equal
+    return present;
+  });
   return { had, slim: slim({ ...tool, parameters }) };
 };
 function checkDefinitions(mod, { quiet = false } = {}) {
@@ -156,9 +164,12 @@ function checkDefinitions(mod, { quiet = false } = {}) {
       for (const name of base.keys()) {
         const approved = APPROVED_LATER[name];
         if (!approved) { assert.equal(slim(off.get(name)), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
-        const [o, b] = [withPathCleared(off.get(name), approved.path), withPathCleared(base.get(name), approved.path)];
-        assert.ok(o.had && b.had, `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
-        assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${approved.path.join(".")} (approved change ${approved.commit})`);
+        const added = approved.added ?? [];
+        const paths = [approved.path, ...added.map((a) => a.path)];
+        const [o, b] = [withPathsCleared(off.get(name), paths), withPathsCleared(base.get(name), paths)];
+        assert.ok(o.had[0] && b.had[0], `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
+        for (const [i, a] of added.entries()) assert.ok(o.had[i + 1] && !b.had[i + 1], `${where}: ${name} has ${a.path.join(".")} now and did not in the baseline (approved change ${a.commit}); drop the entry if it is reverted`);
+        assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${paths.map((path) => path.join(".")).join(" and ")} (approved changes ${[approved, ...added].map((a) => a.commit).join(", ")})`);
         assert.notEqual(slim(off.get(name)), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
       }
     }
