@@ -156,4 +156,24 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   const categoryNames = planProps.category_names.description;
   must(/strip_plot\/stacked_bar_100/.test(categoryNames) && !/mirrored_bar/.test(categoryNames), "category_names must list strip_plot and stacked_bar_100, not mirrored_bar");
   console.log(`PASS the plan path wires ${FORM_CHART_TYPES.join(", ")}: chart_type enum, ${FORM_FIELDS.length} optional fields equal to the JSON schema in newsroom_viz_plan and newsroom_viz_chain`);
+
+  // guidance (default on): exactly one sentence per form, naming the required fields and quoting viz.mjs's own limits, so a changed
+  // limit fails here instead of leaving a stale hint
+  const vizSource = readFileSync(join(ROOT, "runtime/pi/viz.mjs"), "utf8");
+  const limit = (pattern, what) => { const m = vizSource.match(pattern); must(m, `viz.mjs no longer defines ${what}`); return m[1]; };
+  const GUIDANCE = {
+    strip_plot: { fields: ["category_field", "value_field", "label_field", "label_extremes"], limits: [limit(/const STRIP_MAX_GROUPS = (\d+);/, "STRIP_MAX_GROUPS"), limit(/const STRIP_MAX_POINTS = (\d+);/, "STRIP_MAX_POINTS")] },
+    stacked_bar_100: { fields: ["unit='%'", "category_field", "series_field", "value_field", "highlight_segment", "sort='desc'"], limits: [limit(/const STACKED_MAX_BARS = (\d+);/, "STACKED_MAX_BARS"), limit(/const STACKED_MAX_SEGMENTS = (\d+);/, "STACKED_MAX_SEGMENTS"), `+/- ${limit(/const STACKED_SUM_TOLERANCE = (\d+);/, "STACKED_SUM_TOLERANCE")}`] },
+    mirrored_bar: { fields: ["category_field", "series_field", "value_field", "period_field"], limits: [limit(/mirrored_bar has \$\{categories\.length\} categories; maximum is (\d+)/, "the mirrored_bar category cap"), "exactly 2", "at most 2"] },
+  };
+  const guidelines = plan.promptGuidelines;
+  must(guidelines.filter((line) => /^Use chart_type='(strip_plot|stacked_bar_100|mirrored_bar)'/.test(line)).length === FORM_CHART_TYPES.length, "newsroom_viz_plan must carry exactly one 'Use chart_type=...' guideline per new form");
+  for (const form of FORM_CHART_TYPES) {
+    const line = guidelines.filter((g) => g.startsWith(`Use chart_type='${form}'`));
+    must(line.length === 1, `newsroom_viz_plan must carry exactly one guideline for ${form}, found ${line.length}`);
+    must(!/\. [A-Z]/.test(line[0]) && line[0].endsWith("."), `the ${form} guideline must be a single sentence`);
+    for (const word of [...GUIDANCE[form].fields, ...GUIDANCE[form].limits]) must(line[0].includes(word), `the ${form} guideline must mention ${word}`);
+    for (const field of GUIDANCE[form].fields.filter((f) => /^[a-z_]+$/.test(f))) must(field in planProps || field === "unit", `the ${form} guideline names ${field}, which the tool does not take`);
+  }
+  console.log("PASS one single-sentence guideline per new form, with its required fields and viz.mjs's limits");
 }
