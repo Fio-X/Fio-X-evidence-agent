@@ -14,7 +14,7 @@ const MAX_SCAN = 200;
 
 const message = (error) => String(error?.message ?? error).split("\n")[0];
 
-async function candidates(io, dir, accept) {
+export async function candidates(io, dir, accept) {
   let refs;
   try { refs = await io.list(dir); } catch { return { found: [], truncated: false }; }
   const truncated = refs.length > MAX_SCAN;
@@ -29,7 +29,7 @@ async function candidates(io, dir, accept) {
 
 // One candidate fills the field; none or several leave it for the model, with
 // the reason kept for the error message.
-function settle(state, field, result, none) {
+export function settle(state, field, result, none) {
   if (result.truncated) state.unresolved[field] = `more than ${MAX_SCAN} artifacts to scan; supply it explicitly`;
   else if (result.found.length === 1) { state.params[field] = result.found[0]; state.filled.push(field); }
   else if (!result.found.length) state.unresolved[field] = none;
