@@ -74,3 +74,34 @@ for (const bad of [{ measure_kind: "year" }, { temporal_basis: { type: "point" }
   must(refused, `normalizer accepted ${JSON.stringify(bad)}`);
 }
 console.log("PASS newsroom_viz_plan registers the full measure_semantics schema (required fields, both enums)");
+
+// ---- 3. rule hints: off = byte-identical tool definitions, on = descriptions only ------------
+{
+  const git = (args) => spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
+  const ref = process.env.RULE_HINTS_BASE_REF; // optional: compare the switch-off definitions against a baseline commit
+  const dump = async (env) => JSON.stringify([...(await tools(env)).values()].map((t) => ({ name: t.name, description: t.description, promptGuidelines: t.promptGuidelines, parameters: t.parameters })));
+  const off1 = await dump({}), off2 = await dump({ NEWSROOM_SPEED_RULE_HINTS: "0" });
+  must(off1 === off2, "switch off (unset vs 0) changed the tool definitions");
+  if (ref) {
+    const base = git(["show", `${ref}:runtime/pi/newsroom.ts`]);
+    must(base.status === 0, `cannot read newsroom.ts at ${ref}`);
+    writeFileSync(COPY, stripTypeScriptTypes(base.stdout, { mode: "strip" }));
+    const baseline = await dump({});
+    writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(tree, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
+    must(baseline === off1, `switch off differs from the definitions at ${ref}`);
+    console.log(`PASS switch off is byte-identical to ${ref}`);
+  }
+  const strip = (v) => JSON.parse(JSON.stringify(v, (k, x) => (k === "description" ? undefined : x)));
+  const on = await tools({ NEWSROOM_SPEED_RULE_HINTS: "1" });
+  const offT = await tools({});
+  for (const [name, t] of offT) {
+    must(JSON.stringify(strip(t.parameters)) === JSON.stringify(strip(on.get(name).parameters)), `${name}: switch on changed more than descriptions`);
+  }
+  const desc = (name, ...path) => path.reduce((o, k) => o?.[k], on.get(name).parameters.properties);
+  const vp = "newsroom_viz_plan";
+  must(/240 rows/.test(desc(vp, "sql").description), "sql hint missing");
+  must(/Required by chart_type/.test(desc(vp, "value_field").description), "value_field hint missing");
+  must(/editorial grammar/.test(desc(vp, "claim_spec", "properties", "relation").description), "relation hint missing");
+  must(/at least 3 questions/.test(desc("newsroom_editorial_discovery", "candidate_questions").description), "discovery hint missing");
+  console.log("PASS rule hints: off is stable, on changes descriptions only");
+}
