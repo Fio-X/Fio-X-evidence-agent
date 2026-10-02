@@ -166,6 +166,17 @@ function editorialHintsEnabled() {
 }
 // TypeBox options for a field: with the switch off exactly the options the field always had (or none at all).
 const editorialHint = (description: string, base?: any): any => (editorialHintsEnabled() ? { ...(base ?? {}), description } : base);
+// NEWSROOM_SPEED_RULE_HINTS=1: wording only. Descriptions on the viz-plan, discovery and story-graph fields state rules
+// that the validators already enforce (row cap, required fields, source evidence, editorial grammar, question count,
+// channel ownership). No minItems, enum, fill or accept/refuse condition changes. Off (anything but exactly "1"):
+// the registered tool definitions are byte-identical to what they were without this switch.
+const ruleHintsEnabled = () => process.env.NEWSROOM_SPEED_RULE_HINTS === "1";
+const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(base ?? {}), description: [base?.description, text].filter(Boolean).join(" ") } : base);
+const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows, so aggregate in SQL first.";
+const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";
+const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
+const RULE_HINT_QUESTIONS = "Send at least 3 questions, and fill at least one of surprises, mechanisms or spatial_dimensions; otherwise the decision is REVISE.";
+const RULE_HINT_CHANNELS = "Each channel may be owned by one field only.";
 const EDITORIAL_HINT_CLAIM_IDS = "Only claim_ids whose record_claim result read \"VERIFIED by system replay\". A claim recorded without computation_refs never verifies, and citing it refuses the whole graph.";
 const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_concepts (editorial/concepts/...), not the discovery or story-graph path. Run that tool first.";
 const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
@@ -2965,7 +2976,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       source_note: Type.String(),
       note: Type.Optional(Type.String()),
       claim_id: Type.Optional(Type.String({ description: "Verified claim_id previously returned by record_claim; required in verified mode and omitted for draft mode" })),
-      sql: Type.String({ description: "Read-only SQL whose rows directly encode the visual" }),
+      sql: Type.String(ruleHint(RULE_HINT_SQL, { description: "Read-only SQL whose rows directly encode the visual" })),
       unit: Type.String({ description: "Quantitative unit, such as %, TWh, MtCO2, index points, or USD" }),
       measure_semantics: Type.Optional(Type.Array(Type.Object({
         id: Type.String(),
@@ -2992,7 +3003,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       }), { minItems: 1, maxItems: 24, description: "Per-field measure declarations. A count or calendar-year value_field is spelled as a plain integer." })),
       claim_spec: Type.Optional(Type.Object({
         claim_id: Type.Optional(Type.String({ description: "Optional in draft mode; required for a verified claim-bound plan" })),
-        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const),
+        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const, ruleHint(RULE_HINT_RELATION)),
         reader_task: Type.String({ description: "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." }),
         target_measure: Type.Optional(Type.String()),
         baseline_measure: Type.Optional(Type.String()),
@@ -3047,7 +3058,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       aggregation_policy: Type.Optional(StringEnum(["none", "top_n"] as const)),
       top_n: Type.Optional(Type.Integer({ minimum: 1, maximum: 80 })),
       edge_label_field: Type.Optional(Type.String()),
-      value_field: Type.Optional(Type.String()),
+      value_field: Type.Optional(Type.String(ruleHint(RULE_HINT_VALUE_FIELD))),
       start_field: Type.Optional(Type.String()),
       end_field: Type.Optional(Type.String()),
       start_label: Type.Optional(Type.String()),
@@ -3796,7 +3807,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     ],
     parameters: Type.Object({
       reader_problem: Type.String(),
-      candidate_questions: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
+      candidate_questions: Type.Array(Type.String(), ruleHint(RULE_HINT_QUESTIONS, { minItems: 1, maxItems: 12 })),
       surprises: Type.Array(Type.String(), { maxItems: 12 }),
       counterintuitive_findings: Type.Array(Type.String(), { maxItems: 12 }),
       human_scale_refs: Type.Array(Type.String(), { maxItems: 12 }),
@@ -4057,7 +4068,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     visual_channels: Type.Optional(Type.Array(Type.Object({
       channel: StringEnum(["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const),
       field: Type.String(), role: StringEnum(["quantitative", "categorical", "identity", "emphasis", "uncertainty"] as const),
-    }), { maxItems: 12 })),
+    }), ruleHint(RULE_HINT_CHANNELS, { maxItems: 12 }))),
     quantitative_encoding: Type.Optional(Type.Object({
       quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const),
       mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width", "color"] as const),
