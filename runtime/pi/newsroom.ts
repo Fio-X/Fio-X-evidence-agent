@@ -108,11 +108,14 @@ function lieflatHidden() {
   return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
 }
 
+const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Pass claim or claim_id, never both.";
+const INLINE_CLAIM_RECORD_GUIDELINE = "A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain or newsroom_viz_plan, which records it from that chart's own SQL rows. Use record_claim for claims no chart carries.";
+
 // Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
 // promptGuidelines only when its switch is exactly "1" in the Pi child
 // environment (the Rust side sets it from the parent's opt-in, and resets it
 // otherwise); with the switch off the tool definition is untouched.
-const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = [
+const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record<string, string> }> = [
   {
     env: "NEWSROOM_SPEED_PREFLIGHT",
     tools: {
@@ -128,6 +131,15 @@ const SPEED_GUIDELINES: Array<{ env: string; tools: Record<string, string> }> = 
       newsroom_update_plan: "newsroom_update_plan does not need a turn of its own: send it in the same assistant message as the first independent research calls.",
       fetch_url: "When several candidate pages do not depend on each other, call fetch_url for all of them in the same assistant message instead of one per turn.",
       download_data: "When several candidate data files do not depend on each other, call download_data for all of them in the same assistant message instead of one per turn.",
+    },
+  },
+  {
+    // Only where the chain and atomic writes are also on (inlineClaimEnabled).
+    env: "NEWSROOM_SPEED_INLINE_CLAIM",
+    when: () => inlineClaimEnabled(),
+    tools: {
+      newsroom_viz_plan: INLINE_CLAIM_GUIDELINE,
+      record_claim: INLINE_CLAIM_RECORD_GUIDELINE,
     },
   },
   {
@@ -187,7 +199,7 @@ const preflightIo = {
 };
 
 function withSpeedGuidelines(tool: any) {
-  const extra = SPEED_GUIDELINES.filter((entry) => process.env[entry.env] === "1" && entry.tools[String(tool?.name ?? "")]).map((entry) => entry.tools[String(tool.name)]);
+  const extra = SPEED_GUIDELINES.filter((entry) => process.env[entry.env] === "1" && (entry.when?.() ?? true) && entry.tools[String(tool?.name ?? "")]).map((entry) => entry.tools[String(tool.name)]);
   if (!extra.length) return tool;
   return { ...tool, promptGuidelines: [...(tool.promptGuidelines ?? []), ...extra] };
 }
@@ -1530,6 +1542,436 @@ async function listArtifactFiles(root: string, child: string) {
   return entries;
 }
 
+// ---------------------------------------------------------------------------
+// Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1, with the chain and atomic writes).
+//
+// A chart's claim is passed to newsroom_viz_plan (and so to newsroom_viz_chain)
+// as a template: the sentence with every number, years included, written as a
+// placeholder. The runtime runs the plan's own SQL, fills the placeholders from
+// those rows, records the filled claim through the same gates record_claim
+// uses (source validation, deterministic replay, the claim-support rule), and
+// binds the claim_id to the chart. Placeholders only select values of rows:
+// nothing is guessed, computed or repaired, the model cannot grant
+// verification, and every refusal happens before anything is recorded.
+// Off: nothing below is reached and the tools are exactly as before.
+// ---------------------------------------------------------------------------
+const CLAIM_KINDS = ["descriptive", "quantitative", "comparative", "causal", "mechanistic", "predictive", "uncertainty"] as const;
+
+function inlineClaimEnabled() {
+  if (process.env.NEWSROOM_SPEED_INLINE_CLAIM !== "1" || process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1" || !atomicArtifactWritesEnabled()) return false;
+  // The runtime writes the chart's computation and records its claim, which duckdb_query
+  // and record_claim do outside this tool. A phase or profile that hides either of them
+  // must not be bypassed here, so the inline claim exists only where both are enabled.
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  return ["newsroom_viz_plan", "duckdb_query", "record_claim"].every((tool) => toolEnabled(tool, { phase, profile }));
+}
+
+/** record_claim and the inline claim record claims through this one path:
+ *  source validation, deterministic replay and the claim-support rule decide
+ *  verification; the requested status never does. */
+type ClaimInput = { claim: string; claim_kind: string; status: string; source_refs: string[]; computation_refs: string[]; caveat?: string; extra?: Record<string, unknown> };
+
+function claimIdFor(claim: string, sourceRefs: string[], computationRefs: string[]) {
+  return `claim-${stableId(JSON.stringify({ claim, sourceRefs, computationRefs }))}`;
+}
+
+async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
+  assertEvidenceBackedStatus(input.status, input.source_refs, input.computation_refs);
+  const sourceRefs = await normalizeArtifactRefs(input.source_refs, "source");
+  await validateSourceEvidence(sourceRefs);
+  const computationRefs = await normalizeArtifactRefs(input.computation_refs, "computation");
+  if (input.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
+  const claimSupport = evaluateClaimSupport({ requested_status: input.status, claim_kind: input.claim_kind, claim: input.claim });
+  const verification = deriveClaimVerification({
+    source_resolved: sourceRefs.length > 0,
+    extraction_passed: sourceRefs.length > 0,
+    computation_replayed: computationRefs.length > 0 && input.status === "supported",
+    claim_supported: claimSupport.passed,
+  });
+  const claimId = claimIdFor(input.claim, sourceRefs, computationRefs);
+  const base = {
+    schema_version: "0.8.0",
+    claim_id: claimId,
+    recorded_at: new Date().toISOString(),
+    claim: input.claim,
+    claim_kind: input.claim_kind,
+    requested_status: input.status,
+    status: verification.publishable ? "verified" : input.status,
+    verification,
+    claim_support: claimSupport,
+    source_refs: sourceRefs,
+    computation_refs: computationRefs,
+    caveat: input.caveat ?? null,
+  };
+  // Extra audit fields follow the record and never replace one of its fields.
+  const record = { ...base, ...Object.fromEntries(Object.entries(input.extra ?? {}).filter(([key]) => !Object.hasOwn(base, key))) };
+  const path = await appendArtifact("claims.jsonl", record);
+  return { path, record, claimId, verification };
+}
+
+const CLAIM_TEMPLATE_GRAMMAR = "{first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other} or {col@key=value}, with an optional |N inside the braces for N decimals (0-4), as in {max.col|1}";
+const CLAIM_TEMPLATE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CLAIM_TEMPLATE_STRING_MAX_CHARS = 80;
+
+type ClaimBinding = { placeholder: string; column: string; row_index: number; value: unknown; text: string };
+
+function claimTemplateError(message: string) {
+  return new Error(`CLAIM_TEMPLATE_ERROR: ${message}`);
+}
+
+// Numeric extremes compare JSON numbers and numeric literals DuckDB prints as
+// strings (for example HUGEINT); anything else is not a number.
+function claimTemplateNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(value.trim())) return Number(value);
+  return null;
+}
+
+function formatClaimValue(placeholder: string, value: unknown, rowIndex: number, decimals: number | null) {
+  if (value === null || value === undefined) throw claimTemplateError(`${placeholder} selects a null value (row ${rowIndex})`);
+  if (decimals !== null) {
+    const numeric = claimTemplateNumber(value);
+    if (numeric === null) throw claimTemplateError(`${placeholder}: the |N suffix applies only to numbers, and the selected value is ${JSON.stringify(value).slice(0, 40)}`);
+    return numeric.toFixed(decimals);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw claimTemplateError(`${placeholder} selects a non-finite number (row ${rowIndex})`);
+    if (Number.isInteger(value)) return String(value);
+    if (Math.abs(value) >= 1) return value.toFixed(1);
+    // Two significant digits without trailing zeros, as in 0.7 or -0.05.
+    const short = String(Number(value.toPrecision(2)));
+    return /e/i.test(short) ? value.toPrecision(2) : short;
+  }
+  if (typeof value === "string") return [...value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim()].slice(0, CLAIM_TEMPLATE_STRING_MAX_CHARS).join("");
+  if (typeof value === "boolean") return String(value);
+  throw claimTemplateError(`${placeholder} selects a value that is not a single number or text (row ${rowIndex})`);
+}
+
+function resolveClaimPlaceholder(placeholder: string, body: string, rows: Record<string, unknown>[], columns: string[], measures: string[]): ClaimBinding {
+  let selector = body.trim();
+  let decimals: number | null = null;
+  const format = selector.match(/^(.*)\|([^|]*)$/);
+  if (format) {
+    if (!/^[0-4]$/.test(format[2].trim())) throw claimTemplateError(`${placeholder}: the |N suffix takes 0 to 4 decimals`);
+    selector = format[1].trim();
+    decimals = Number(format[2].trim());
+  }
+  const column = (name: string) => {
+    if (!CLAIM_TEMPLATE_IDENTIFIER.test(name)) throw claimTemplateError(`${placeholder}: '${name}' is not a simple column name; alias the column in the SQL (AS name, using letters, digits and _)`);
+    if (!columns.includes(name)) throw claimTemplateError(`${placeholder}: the SQL result has no column '${name}'; result columns: ${columns.join(", ")}. Alias columns in the SQL to simple names (letters, digits and _)`);
+    return name;
+  };
+  const bind = (name: string, rowIndex: number): ClaimBinding => {
+    const value = rows[rowIndex]?.[name];
+    return { placeholder, column: name, row_index: rowIndex, value, text: formatClaimValue(placeholder, value, rowIndex, decimals) };
+  };
+  const lookup = selector.match(/^([^@=]*)@([^@=]*)=(.*)$/);
+  if (lookup) {
+    const valueColumn = column(lookup[1].trim());
+    const keyColumn = column(lookup[2].trim());
+    const wanted = lookup[3].trim();
+    if (!wanted) throw claimTemplateError(`${placeholder}: name the ${keyColumn} value after =`);
+    const matches = rows.flatMap((row, index) => (row?.[keyColumn] !== null && row?.[keyColumn] !== undefined && String(row[keyColumn]) === wanted ? [index] : []));
+    if (matches.length > 1) throw claimTemplateError(`${placeholder}: ${matches.length} result rows have ${keyColumn} = ${wanted} (row_index ${matches.slice(0, 6).join(", ")}${matches.length > 6 ? ", ..." : ""}), so the lookup names no single row; select by a column whose values are unique in this SQL result`);
+    if (!matches.length) {
+      // {year@rate=max} reads as the year of the highest rate.
+      const extreme = wanted.match(/^(max|min)(\.[A-Za-z_][A-Za-z0-9_]*)?$/i);
+      if (extreme) {
+        const side = extreme[1].toLowerCase();
+        throw claimTemplateError(`${placeholder}: for the ${valueColumn} of the row with the ${side === "max" ? "highest" : "lowest"} ${keyColumn}, write {${side}.${keyColumn}.${valueColumn}}`);
+      }
+      const values = [...new Set(rows.map((row) => row?.[keyColumn]).filter((value) => value !== null && value !== undefined).map(String))];
+      throw claimTemplateError(`${placeholder}: no result row has ${keyColumn} = ${wanted}; ${keyColumn} values: ${values.slice(0, 12).join(", ")}${values.length > 12 ? ", ..." : ""}`);
+    }
+    return bind(valueColumn, matches[0]);
+  }
+  const parts = selector.split(".").map((part) => part.trim());
+  if ((parts[0] === "first" || parts[0] === "last") && parts.length === 2) {
+    return bind(column(parts[1]), parts[0] === "first" ? 0 : rows.length - 1);
+  }
+  if ((parts[0] === "max" || parts[0] === "min") && (parts.length === 2 || parts.length === 3)) {
+    const measure = column(parts[1]);
+    // An extreme ranks one of the plan's measures: {max.year} would be the
+    // latest year, not the year of the highest value.
+    if (measures.length && !measures.includes(measure)) {
+      const ranked = measures[0];
+      throw claimTemplateError(`${placeholder}: max and min rank a measure column of this plan (${measures.join(", ")}), and ${measure} is not one. For the ${measure} of the row with the ${parts[0] === "max" ? "highest" : "lowest"} ${ranked}, write {${parts[0]}.${ranked}.${measure}}; for the first or last row, {first.${measure}} or {last.${measure}}`);
+    }
+    const selected = parts.length === 3 ? column(parts[2]) : measure;
+    let best: number | null = null;
+    let tied: number[] = [];
+    rows.forEach((row, rowIndex) => {
+      const value = row?.[measure];
+      if (value === null || value === undefined) return;
+      const numeric = claimTemplateNumber(value);
+      if (numeric === null) throw claimTemplateError(`${placeholder}: column '${measure}' holds a non-numeric value (${JSON.stringify(value).slice(0, 40)}), so it has no ${parts[0]}`);
+      if (best === null || (parts[0] === "max" ? numeric > best : numeric < best)) {
+        best = numeric;
+        tied = [rowIndex];
+      } else if (numeric === best) {
+        tied.push(rowIndex);
+      }
+    });
+    if (!tied.length) throw claimTemplateError(`${placeholder}: column '${measure}' holds only null values`);
+    // Ties change nothing for the extreme value itself, but another column of
+    // "the" extreme row is ambiguous when several rows share it.
+    if (selected !== measure && tied.length > 1) throw claimTemplateError(`${placeholder}: ${tied.length} rows tie for the ${parts[0] === "max" ? "highest" : "lowest"} ${measure} (row_index ${tied.slice(0, 6).join(", ")}${tied.length > 6 ? ", ..." : ""}), so ${selected} of "the" ${parts[0]} row is ambiguous; use {${parts[0]}.${measure}} for the value, or {${selected}@key=value} with a unique key`);
+    return bind(selected, tied[0]);
+  }
+  // A bare column names no row.
+  if (parts.length === 1 && columns.includes(parts[0])) {
+    const name = parts[0];
+    const suffix = decimals === null ? "" : `|${decimals}`;
+    const ranked = !measures.length || measures.includes(name) ? null : measures[0];
+    const extremes = ranked ? `{max.${ranked}.${name}${suffix}}, {min.${ranked}.${name}${suffix}}` : `{max.${name}${suffix}}, {min.${name}${suffix}}`;
+    throw claimTemplateError(`${placeholder} names a column but not a row: write {first.${name}${suffix}}, {last.${name}${suffix}}, ${extremes} or {${name}@key=value${suffix}}`);
+  }
+  throw claimTemplateError(`${placeholder} is not a placeholder; use ${CLAIM_TEMPLATE_GRAMMAR}`);
+}
+
+// A number typed into the template is a number no row backs, so every number,
+// years included, is a placeholder. A digit run inside an uppercase-led Latin
+// name of at most two digits (G7, G20, CO2, H5N1) is a name, not a quantity.
+function literalNumberIn(template: string) {
+  const literal = template.replace(/\{[^{}]*\}/g, "\u0000");
+  for (const match of literal.matchAll(/\p{Nd}+/gu)) {
+    const run = match[0];
+    const at = match.index ?? 0;
+    if (/^[0-9]+$/.test(run)) {
+      let start = at;
+      while (start > 0 && /[A-Za-z0-9]/.test(literal[start - 1])) start -= 1;
+      let end = at + run.length;
+      while (end < literal.length && /[A-Za-z0-9]/.test(literal[end])) end += 1;
+      const word = literal.slice(start, end);
+      if (/^[A-Z]/.test(word) && (word.match(/[0-9]/g) ?? []).length <= 2) continue;
+    }
+    return [...literal.slice(Math.max(0, at - 12), at + run.length + 12)].join("").replace(/\u0000/g, "{...}");
+  }
+  return null;
+}
+
+/** Fill a claim template from SQL result rows. Every placeholder selects one
+ *  value of one row; the bindings record which, for audit. `measures` are the
+ *  plan's value columns: when any is in the result, max and min rank only
+ *  those. Typed digits, ambiguous rows and missing columns are refused. */
+export function fillClaimTemplate(template: string, rows: Record<string, unknown>[], measures: string[] = []) {
+  if (typeof template !== "string" || !template.trim()) throw claimTemplateError("the claim is empty");
+  if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) throw claimTemplateError(`the claim has an unmatched { or }; placeholders look like ${CLAIM_TEMPLATE_GRAMMAR}`);
+  const typed = literalNumberIn(template);
+  if (typed !== null) throw claimTemplateError(`the claim has a typed number (near "${typed}"); every number, years included, must be a placeholder so that no number is transcribed. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}`);
+  if (!Array.isArray(rows) || rows.length === 0) throw claimTemplateError("the plan SQL returned no rows, so no placeholder can be filled");
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))];
+  const ranked = measures.filter((name) => columns.includes(name));
+  const bindings: ClaimBinding[] = [];
+  const text = template.replace(/\{([^{}]*)\}/g, (placeholder: string, body: string) => {
+    const binding = resolveClaimPlaceholder(placeholder, body, rows, columns, ranked);
+    bindings.push(binding);
+    return binding.text;
+  });
+  return { text, bindings };
+}
+
+function inlineNoteText(value: unknown) {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** The default source note of an inline-claim plan: the host each downloaded
+ *  file the SQL reads came from and the series label recorded with it when it
+ *  was downloaded (untrusted source metadata), or the name of a file the user
+ *  supplied. Null when no data file has an origin record. */
+export async function inlineSourceNote(sourceRefs: string[]) {
+  const root = artifactRoot();
+  const dataRefs = sourceRefs.filter((ref) => ref.startsWith("data/"));
+  if (!root || !dataRefs.length) return null;
+  const originsDir = join(root, "data", "origins");
+  let names: string[];
+  try {
+    names = (await readdir(originsDir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
+  } catch {
+    return null;
+  }
+  const origins: any[] = [];
+  for (const name of names) {
+    try { origins.push(JSON.parse(await readFile(join(originsDir, name), "utf8"))); } catch {}
+  }
+  // A note names the series; a label's description (after " — ") and unit
+  // stay in the origin record.
+  const labelOf = (origin: any) => [origin?.source_label, origin?.series_title].map((value) => inlineNoteText(value).replace(/\s*\[unit:[^\]]*\]$/, "").split(" — ")[0].trim()).find(Boolean) ?? "";
+  const notes: string[] = [];
+  for (const ref of dataRefs) {
+    const matching = origins.filter((item) => item?.file === ref);
+    const origin = matching.find((item) => labelOf(item)) ?? matching[0];
+    if (!origin) continue;
+    let host = "";
+    try { host = new URL(String(origin.final_url ?? origin.requested_url ?? "")).hostname.toLowerCase().replace(/^www\./, ""); } catch {}
+    const label = labelOf(origin);
+    // A user-supplied file has no download URL or series label.
+    const supplied = origin.origin === "local_file" ? inlineNoteText(origin.original_filename) : "";
+    const note = host && label ? `${host}: ${label}` : host || label || (supplied && `User-supplied file ${supplied}`);
+    if (note && !notes.includes(note)) notes.push(note);
+  }
+  return notes.length ? [...notes.join("; ")].slice(0, 160).join("") : null;
+}
+
+/** The plan's value columns, which the claim's max and min may rank. */
+function inlineClaimMeasures(params: any) {
+  const fields = [params.value_field, params.start_field, params.end_field, params.size_field, ...(params.chart_type === "scatter" ? [params.x_field, params.y_field] : []), ...(Array.isArray(params.measure_semantics) ? params.measure_semantics.map((measure: any) => measure?.field) : [])];
+  return [...new Set(fields.filter((field): field is string => typeof field === "string" && field.trim() !== "").map((field) => field.trim()))];
+}
+
+function inlineAltText(title: unknown, claimText: string) {
+  const lead = String(title ?? "").trim();
+  const text = !lead ? claimText : `${lead}${/[.!?。！？]$/u.test(lead) ? "" : "."} ${claimText}`;
+  return [...text].slice(0, 400).join("");
+}
+
+type InlineClaim = { claimId: string; text: string; template: string; bindings: ClaimBinding[]; kind: string; caveat?: string; sourceRefs: string[]; computationRefs: string[]; computation: { ref: string; record: unknown } };
+
+function inlineClaimAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new Error("INLINE_CLAIM_ABORTED: the call was cancelled; no claim and no visualization plan were recorded");
+}
+
+/** Runs the plan SQL with duckdb_query's evidence rule, builds its computation
+ *  record, fills the claim and binds its future claim_id to the plan. Returns
+ *  null when the call carries no claim. Every refusal is thrown here, before
+ *  anything but the idempotent query-row cache is written. */
+async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
+  const { claim: template, claim_kind: claimKind, claim_caveat: caveat, ...plan } = rawParams;
+  if (template === undefined) {
+    for (const field of ["claim_kind", "claim_caveat"]) {
+      if (rawParams[field] !== undefined) throw new Error(`INLINE_CLAIM_REQUIRED: ${field} applies only together with claim`);
+    }
+    return null;
+  }
+  if (rawParams.claim_id !== undefined) throw new Error("INLINE_CLAIM_EXCLUSIVE: pass claim to record the claim in this call, or claim_id for a claim already recorded with record_claim, not both");
+  if (typeof template !== "string" || !template.trim()) throw new Error("INLINE_CLAIM_REQUIRED: claim must be a non-empty sentence");
+  if (claimKind === undefined || claimKind === null || claimKind === "") throw new Error(`INLINE_CLAIM_KIND_REQUIRED: claim_kind is required with claim (one of ${CLAIM_KINDS.join(", ")})`);
+  if (!(CLAIM_KINDS as readonly string[]).includes(String(claimKind))) throw new Error(`INLINE_CLAIM_KIND_INVALID: claim_kind must be one of ${CLAIM_KINDS.join(", ")}`);
+  if (caveat !== undefined && typeof caveat !== "string") throw new Error("INLINE_CLAIM_CAVEAT_INVALID: claim_caveat must be text");
+  // The recorded claim and the plan state come only from the runtime: a field
+  // the tool does not declare (verification, publishable, status, passed, a
+  // hash, an artifact field) is refused, never taken from the call.
+  const declared = new Set(Object.keys(registeredTools.get("newsroom_viz_plan")?.parameters?.properties ?? {}));
+  const unknown = Object.keys(plan).filter((key) => !declared.has(key));
+  if (unknown.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: ${unknown.slice(0, 8).join(", ")} ${unknown.length === 1 ? "is" : "are"} not a newsroom_viz_plan parameter; verification, publishable, status, passed, hash and artifact fields are written by the runtime and never taken from a call`);
+  inlineClaimAborted(signal);
+  const safeSql = computationSql(String(rawParams.sql ?? ""));
+  const snapshot = await evidenceSnapshot();
+  const derived = await deriveInputsForSql(safeSql, signal);
+  // A cancelled input derivation looks like an unresolved one: say cancelled.
+  inlineClaimAborted(signal);
+  assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound");
+  const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
+  if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
+  inlineClaimAborted(signal);
+  const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
+  inlineClaimAborted(signal);
+  const resultHash = hashRows(rows);
+  const computationRef = computationRelativePath(safeSql, snapshot.hash, resultHash);
+  const record = buildComputationRecord({ sql: safeSql, inputSnapshot: snapshot, derivedInputs: derived, resultHash, rows });
+  const filled = fillClaimTemplate(template, rows, inlineClaimMeasures(rawParams));
+  // Everything record_claim would refuse for these inputs is refused now, so a
+  // refused claim leaves no claim line and no plan.
+  const sourceRefs = await normalizeArtifactRefs(effective, "source");
+  await validateSourceEvidence(sourceRefs);
+  const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: filled.text });
+  if (!support.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${support.reasons.join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
+  let sourceNote: string | null = null;
+  if (plan.source_note === undefined) {
+    sourceNote = await inlineSourceNote(sourceRefs);
+    if (!sourceNote) throw new Error("INLINE_CLAIM_SOURCE_NOTE_REQUIRED: source_note is required here because no publisher host or series label is recorded for the data the SQL reads");
+  }
+  const claim: InlineClaim = {
+    claimId: claimIdFor(filled.text, sourceRefs, [computationRef]),
+    text: filled.text,
+    template,
+    bindings: filled.bindings,
+    kind: String(claimKind),
+    ...(caveat === undefined ? {} : { caveat }),
+    sourceRefs,
+    computationRefs: [computationRef],
+    computation: { ref: computationRef, record },
+  };
+  const bound: any = { ...plan, claim_id: claim.claimId };
+  if (bound.claim_spec && typeof bound.claim_spec === "object" && !Array.isArray(bound.claim_spec)) bound.claim_spec = { ...bound.claim_spec, claim_id: claim.claimId };
+  if (Array.isArray(bound.annotations)) {
+    bound.annotations = bound.annotations.map((annotation: any) => annotation && typeof annotation === "object" && !String(annotation.claim_id ?? "").trim() ? { ...annotation, claim_id: claim.claimId } : annotation);
+  }
+  // The chart's takeaway and alt state the filled claim, so the model types
+  // none of their numbers; values the call passed are replaced.
+  bound.takeaway = claim.text;
+  bound.alt = inlineAltText(plan.title, claim.text);
+  if (sourceNote) bound.source_note = sourceNote;
+  return { params: bound, claim };
+}
+
+// Parallel calls of one assistant message may carry the same claim: recording
+// is one at a time, so the second finds the first verified and reuses it.
+let inlineClaimQueue: Promise<void> = Promise.resolve();
+
+/** After every plan check passes: writes the plan query's computation record
+ *  (the same record and address duckdb_query writes), then records the claim
+ *  unless the identical claim is already system-verified (a retry after a lint
+ *  or critic REVISE), and fails the plan when the runtime does not verify it. */
+async function recordInlineClaim(claim: InlineClaim, signal?: AbortSignal) {
+  const previous = inlineClaimQueue;
+  let release: () => void = () => {};
+  inlineClaimQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    inlineClaimAborted(signal);
+    await writeArtifactIfAbsent(claim.computation.ref, claim.computation.record);
+    const existing = (await verifiedClaimRecords()).get(claim.claimId);
+    if (existing) {
+      if (existing.claim_kind !== claim.kind || (existing.caveat ?? null) !== (claim.caveat ?? null)) {
+        throw new Error(`INLINE_CLAIM_REUSE_MISMATCH: this claim (${claim.claimId}) is already recorded and verified with a different claim_kind or caveat; repeat the same claim_kind and claim_caveat, or change the claim wording. No visualization plan was recorded.`);
+      }
+      return { reused: true };
+    }
+    inlineClaimAborted(signal);
+    const recorded = await recordClaimArtifact({
+      claim: claim.text,
+      claim_kind: claim.kind,
+      status: "supported",
+      source_refs: claim.sourceRefs,
+      computation_refs: claim.computationRefs,
+      ...(claim.caveat === undefined ? {} : { caveat: claim.caveat }),
+      extra: { claim_template: claim.template, claim_bindings: claim.bindings, recorded_by: "newsroom_viz_plan" },
+    }, signal);
+    if (recorded.claimId !== claim.claimId) throw new Error(`INLINE_CLAIM_ID_MISMATCH: recorded ${recorded.claimId}, prepared ${claim.claimId}. No visualization plan was recorded.`);
+    if (!recorded.verification.publishable) {
+      const reasons = Array.isArray(recorded.record.claim_support?.reasons) ? recorded.record.claim_support.reasons : [];
+      const gates = ["source_resolved", "extraction_passed", "computation_replayed", "claim_supported"].filter((gate) => (recorded.verification as any)[gate] !== true);
+      throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime recorded the claim (${claim.claimId}) but did not verify it; claim_support reasons: ${reasons.join(", ") || "none"}; failed gates: ${gates.join(", ") || "none"}. No visualization plan was recorded.`);
+    }
+    return { reused: false };
+  } finally {
+    release();
+  }
+}
+
+
+/** The newsroom_viz_plan surface with the inline claim: takeaway, alt and
+ *  source_note become optional (the runtime writes them from the claim) and
+ *  claim, claim_kind and claim_caveat are added. Off: the shared schema. */
+function withInlineClaimSchema(shared: any) {
+  if (!inlineClaimEnabled()) return shared;
+  const entries: Array<[string, any]> = [];
+  for (const [key, schema] of Object.entries(shared.properties ?? {}) as Array<[string, any]>) {
+    if (key === "takeaway") entries.push([key, Type.Optional(Type.String({ description: "One-sentence intended reader takeaway; required unless the call carries claim, from which the runtime writes it (a value passed with claim is replaced)" }))]);
+    else if (key === "alt") entries.push([key, Type.Optional(Type.String({ description: "Standalone accessible description of the visual and its main takeaway; required unless the call carries claim, from which the runtime writes it as the title followed by the claim (a value passed with claim is replaced)" }))]);
+    else if (key === "source_note") entries.push([key, Type.Optional(Type.String({ description: "Source attribution; with claim it defaults to the host and series label recorded when the data file was downloaded, or the name of a user-supplied file" }))]);
+    else entries.push([key, schema]);
+    if (key === "claim_id") {
+      entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.` }))]);
+      entries.push(["claim_kind", Type.Optional(StringEnum(CLAIM_KINDS, { description: "Required with claim; same meaning as record_claim claim_kind" }))]);
+      entries.push(["claim_caveat", Type.Optional(Type.String({ description: "Caveat recorded with the claim: a provisional latest year, definition changes the data flags, the series' method, or reference periods that differ between rows; no other data values, trends or causes" }))]);
+    }
+  }
+  return Type.Object(Object.fromEntries(entries));
+}
+
 // The chain tool exists only when its switch is exactly "1" in the Pi child
 // environment and the chain's first tool is enabled for this phase/profile.
 function registerVizChain(pi: ExtensionAPI) {
@@ -1546,11 +1988,12 @@ function registerVizChain(pi: ExtensionAPI) {
   pi.registerTool({
     name,
     label: "Plan, lint, render and critique a newsroom visualization",
-    description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it.",
+    description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it." + (inlineClaimEnabled() ? " With claim and claim_kind instead of claim_id, the plan step first records the claim filled from this chart's own SQL rows (see claim) and binds it to the chart; a retry with the same claim reuses it." : ""),
     promptSnippet: "Plan, lint, render and critique a visualization in one call",
     promptGuidelines: [
       "Prefer this over calling newsroom_viz_plan, newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic one by one; send the chain calls for independent charts in the same assistant message.",
       "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+      ...(inlineClaimEnabled() ? ["For a chart's claim pass claim and claim_kind (see claim) instead of claim_id: the plan step records it from this chart's own SQL rows, so no record_claim turn comes first and charts that carry their own claim can be sent in the same assistant message."] : []),
     ],
     parameters: Type.Object({
       ...(planTool.parameters?.properties ?? {}),
@@ -2418,7 +2861,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       "Never translate a place name yourself. If a chart's category_field, facet_field, or series_field holds World Bank English country/region names or ISO3 codes and the chart's language is 'zh', set category_names='worldbank' or 'iso3' so the renderer shows the vendored, provenance-recorded localized name instead; lint blocks any value that table cannot resolve.",
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
-    parameters: Type.Object({
+    parameters: withInlineClaimSchema(Type.Object({
       reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const),
       delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const)),
       story_graph_ref: Type.Optional(Type.String()),
@@ -2552,8 +2995,14 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       y_scale: Type.Optional(StringEnum(["linear", "log"] as const)),
       x_label: Type.Optional(Type.String()),
       y_label: Type.Optional(Type.String()),
-    }),
-    async execute(_id, params) {
+    })),
+    async execute(_id, rawParams, signal) {
+      // Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1): the plan SQL runs and the
+      // claim is filled and bound to the plan before the checks below; it is
+      // recorded only after all of them pass. Off: params is rawParams.
+      const inline = inlineClaimEnabled() ? await prepareInlineClaim(rawParams, signal) : null;
+      if (inlineClaimEnabled() && !inline && !String(rawParams.takeaway ?? "").trim()) throw new Error("INLINE_CLAIM_TAKEAWAY_REQUIRED: takeaway is required unless the call carries claim, from which the runtime writes it");
+      const params = inline ? inline.params : rawParams;
       validateReadOnlySql(params.sql);
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
@@ -2595,8 +3044,16 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       assertEditorialGrammar(semanticGate, params.chart_type);
       const errors = validateVizSpec(normalizedParams);
       if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
-      const claimRecords = await verifiedClaimRecords();
-      const verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
+      let verifiedClaim: any = null;
+      let claimText = "";
+      if (inline) {
+        const recorded = await recordInlineClaim(inline.claim, signal);
+        verifiedClaim = requireVerifiedClaim(await verifiedClaimRecords(), inline.claim.claimId);
+        claimText = `Claim recorded: VERIFIED by system replay${recorded.reused ? " (this identical claim was already recorded and verified; no new claim line)" : ""}\nclaim_id: ${inline.claim.claimId}\nClaim: ${inline.claim.text}\nChart text: takeaway and alt were written from this claim.\n`;
+      } else {
+        const claimRecords = await verifiedClaimRecords();
+        verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
+      }
       const specCore = {
         schema_version: ["cartographic_flow_map", "trajectory_profile"].includes(params.chart_type) ? "1.1.0" : "0.9.0",
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
@@ -2622,7 +3079,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const rel = `visualizations/plans/${key}.json`;
       await writeArtifactIfAbsent(rel, spec);
       const statusText = verificationMode === "verified" ? "VERIFIED / publishable after all QA gates" : "DRAFT / exploratory only, not publishable";
-      return textResult(`Visualization plan recorded.\nPlan: ${rel}\nVerification: ${statusText}\nNext: call newsroom_viz_lint with this plan_ref before rendering.`, { planRef: rel, chartType: params.chart_type, verificationMode, publishable: verificationMode === "verified" });
+      return textResult(`${claimText}Visualization plan recorded.\nPlan: ${rel}\nVerification: ${statusText}\nNext: call newsroom_viz_lint with this plan_ref before rendering.`, { planRef: rel, chartType: params.chart_type, verificationMode, publishable: verificationMode === "verified", ...(inline ? { claim: { claimId: inline.claim.claimId, text: inline.claim.text } } : {}) });
     },
   });
 
@@ -4799,34 +5256,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       caveat: Type.Optional(Type.String()),
     }),
     async execute(_id, params, signal) {
-      assertEvidenceBackedStatus(params.status, params.source_refs, params.computation_refs);
-      const sourceRefs = await normalizeArtifactRefs(params.source_refs, "source");
-      await validateSourceEvidence(sourceRefs);
-      const computationRefs = await normalizeArtifactRefs(params.computation_refs, "computation");
-      if (params.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
-      const claimSupport = evaluateClaimSupport({ requested_status: params.status, claim_kind: params.claim_kind, claim: params.claim });
-      const verification = deriveClaimVerification({
-        source_resolved: sourceRefs.length > 0,
-        extraction_passed: sourceRefs.length > 0,
-        computation_replayed: computationRefs.length > 0 && params.status === "supported",
-        claim_supported: claimSupport.passed,
-      });
-      const claimId = `claim-${stableId(JSON.stringify({ claim: params.claim, sourceRefs, computationRefs }))}`;
-      const record = {
-        schema_version: "0.8.0",
-        claim_id: claimId,
-        recorded_at: new Date().toISOString(),
+      const { path, record, claimId, verification } = await recordClaimArtifact({
         claim: params.claim,
         claim_kind: params.claim_kind,
-        requested_status: params.status,
-        status: verification.publishable ? "verified" : params.status,
-        verification,
-        claim_support: claimSupport,
-        source_refs: sourceRefs,
-        computation_refs: computationRefs,
-        caveat: params.caveat ?? null,
-      };
-      const path = await appendArtifact("claims.jsonl", record);
+        status: params.status,
+        source_refs: params.source_refs,
+        computation_refs: params.computation_refs,
+        caveat: params.caveat,
+      }, signal);
       return textResult(`Claim recorded${path ? ` in ${path}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
     },
   });

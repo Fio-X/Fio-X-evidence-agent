@@ -239,7 +239,8 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined };
+// NEWSROOM_SPEED_INLINE_CLAIM is pinned off: it changes newsroom_viz_plan and record_claim when the chain is on, and has its own test (test_page_inline_claim.mjs).
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined };
 
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
 const basemap = getBasemap("naturalearth_admin0_50m");
