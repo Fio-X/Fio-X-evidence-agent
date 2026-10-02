@@ -1083,7 +1083,7 @@ function resolveChartDecimals(spec, values) {
   return autoValueDecimals(values);
 }
 
-export function fmt(value, unit = "", decimals = null) {
+export function fmt(value, unit = "", decimals = null, lang = "en") {
   if (!Number.isFinite(value)) return "";
   // House style only: a percent value always prints one decimal (83.0%,
   // not 83%) so every value label in a chart shares the same decimal
@@ -1111,6 +1111,14 @@ export function fmt(value, unit = "", decimals = null) {
       const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
       text = (value < 0 ? "-" : "") + grouped + (fracPart !== undefined ? `.${fracPart}` : "");
     }
+  }
+  else if (lang === "zh" && abs >= 1_000) {
+    // zh readers count in 万 and 亿, not k/m/bn: same one-decimal-below-10 rule per unit;
+    // 1,000-9,999 is the plain integer. Only a zh caller (fmtSpec, tick sites) passes lang.
+    if (abs >= 1_000_000_000_000) text = `${(value / 1_000_000_000_000).toFixed(abs >= 10_000_000_000_000 ? 0 : 1)}万亿`;
+    else if (abs >= 100_000_000) text = `${(value / 100_000_000).toFixed(abs >= 1_000_000_000 ? 0 : 1)}亿`;
+    else if (abs >= 10_000) text = `${(value / 10_000).toFixed(abs >= 100_000 ? 0 : 1)}万`;
+    else text = value.toFixed(0);
   }
   else if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1)}bn`;
   else if (abs >= 1_000_000) text = `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
@@ -1235,7 +1243,7 @@ export function fmtSpec(spec, value, unit = spec?.unit, decimals = null) {
     const num = treemapZhOkuFromBillions(value);
     return unit ? `${num}亿美元` : num;
   }
-  return fmt(value, unit, decimals);
+  return fmt(value, unit, decimals, vizLang(spec));
 }
 
 export function tickLabelSpec(spec, value, unit = "") {
@@ -1243,7 +1251,7 @@ export function tickLabelSpec(spec, value, unit = "") {
   const kind = specValueKind(spec);
   if (kind && Number.isInteger(value)) return fmtSpec(spec, value, unit);
   if (zhBillionsActive(spec, unit)) return fmtSpec(spec, value, unit);
-  return tickLabel(value, unit);
+  return tickLabel(value, unit, vizLang(spec));
 }
 
 // JSON number parsing is not bit-for-bit identical across V8, serde_json and
@@ -2715,7 +2723,8 @@ export function logTickValues(logDomain) {
 // precision; a tick label reads better without the trailing ".0" ("2k", but
 // "2.5k" keeps its digit). Use only at tick sites - fmt() itself is
 // unchanged so data/value labels keep their precision.
-export function tickLabel(value, unit = "") {
+export function tickLabel(value, unit = "", lang = "en") {
+  if (lang === "zh") return fmt(value, unit, null, "zh").replace(/\.0(万亿|亿|万)/, "$1");
   return fmt(value, unit).replace(/\.0(k|m|bn)\b/, "$1");
 }
 
@@ -3644,7 +3653,7 @@ function renderScatter(spec, rows) {
     f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.y_unit ?? spec.unit))}</text>`);
   });
   xInfo.ticks.forEach((tick) => {
-    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? ""))}</text>`);
+    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? "", vizLang(spec)))}</text>`);
   });
   if (spec.x_label) f.parts.push(`<text x="${(left + right) / 2}" y="${bottom + 50}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   if (spec.y_label) f.parts.push(`<text x="18" y="${(top + bottom) / 2}" transform="rotate(-90 18 ${(top + bottom) / 2})" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.y_label)}</text>`);
@@ -4074,7 +4083,7 @@ function renderMobileSmallMultiples(spec, rows) {
 function renderMobileScatter(spec, rows) {
   const f=mobileFrame(spec,420),left=72,right=594,top=f.bodyTop+12,bottom=f.bodyBottom-64,xs=rows.map((r)=>n(r[spec.x_field])).filter((v)=>v!==null),ys=rows.map((r)=>n(r[spec.y_field])).filter((v)=>v!==null),xInfo=makeScale(xs,left,right,spec.x_scale??"linear"),yRaw=spec.y_scale==="log"?ys.map(Math.log10):ys,yDomainRaw=extent(yRaw,false),yLinear=verticalScale(yDomainRaw,top,bottom),yScale=(value)=>yLinear(spec.y_scale==="log"?Math.log10(value):value),yTicks=spec.y_scale==="log"?logTickValues(yDomainRaw):tickValues(yDomainRaw,4);
   yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.y_unit??spec.unit))}</text>`);});
-  xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??""))}</text>`);});
+  xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??"",vizLang(spec)))}</text>`);});
   if(spec.x_label)f.parts.push(`<text x="${(left+right)/2}" y="${bottom+47}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",placedLabel=f.annotationLayout.place(px,py,label,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10){const leaderEnd=leaderEndShortOfLabel(px,py,placedLabel);f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);}f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
   if(spec.x_scale==="log")f.parts.push(`<text x="${right}" y="${bottom+47}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${VIZ_STRINGS[vizLang(spec)].logScale}</text>`);
@@ -4641,7 +4650,7 @@ function renderTrajectoryProfile(spec,rows,mobile=false){
   const xMin=Math.min(0,...xs),xMax=Math.max(...xs),xDomain=xMax>xMin?[xMin,xMax]:[xMin,xMin+1],xScale=horizontalScale(xDomain,left,right),altDomain=[0,Math.max(1,...alts)*1.06],speedDomain=[0,Math.max(1,...speeds)*1.08],altY=verticalScale(altDomain,top,top+panelH),speedTop=top+panelH+gap,speedY=verticalScale(speedDomain,speedTop,speedTop+panelH);
   const transitions=[];for(let i=1;i<sorted.length;i++)if(String(sorted[i][spec.segment_field])!==String(sorted[i-1][spec.segment_field]))transitions.push({a:sorted[i-1],b:sorted[i]});
   for(const tr of transitions){const x1=xScale(n(tr.a[spec.x_field])),x2=xScale(n(tr.b[spec.x_field])),w=Math.max(2,x2-x1),mins=(n(tr.b[spec.x_field])-n(tr.a[spec.x_field]));f.parts.push(`<rect data-role="trajectory-gap" x="${x1.toFixed(1)}" y="${top}" width="${w.toFixed(1)}" height="${(bottom-top).toFixed(1)}" fill="#f3eee9" fill-opacity=".78"/><text data-role="trajectory-gap-label" x="${((x1+x2)/2).toFixed(1)}" y="${(top+13).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.muted}">${esc(`${Math.round(mins)} min source gap`)}</text>`);}
-  function panel(label,domain,yScale,y0,field,color,unit){for(const tick of tickValues(domain,4)){const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/><text x="${left-10}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(tickLabel(tick,unit))}</text>`);}f.parts.push(`<text x="${left}" y="${y0-8}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);const groups=[];for(const row of sorted){let g=groups.at(-1);if(!g||String(g.segment)!==String(row[spec.segment_field])){g={segment:row[spec.segment_field],rows:[]};groups.push(g);}if(n(row[field])!==null)g.rows.push(row);}for(const g of groups){if(g.rows.length<2)continue;const coords=g.rows.map(r=>`${xScale(n(r[spec.x_field])).toFixed(1)},${yScale(n(r[field])).toFixed(1)}`).join(' ');f.parts.push(`<polyline data-role="trajectory-profile-line" fill="none" stroke="${color}" stroke-width="${mobile?2.2:2.7}" points="${coords}"/>`);g.rows.forEach(r=>f.parts.push(`<circle cx="${xScale(n(r[spec.x_field])).toFixed(1)}" cy="${yScale(n(r[field])).toFixed(1)}" r="${mobile?2:2.4}" fill="${color}"/>`));}const last=sorted.filter(r=>n(r[field])!==null).at(-1);if(last)f.parts.push(`<text data-role="direct-label" x="${(xScale(n(last[spec.x_field]))-5).toFixed(1)}" y="${(yScale(n(last[field]))-8).toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${textSafeColor(color)}">${esc(fmt(n(last[field]),unit))}</text>`);}
+  function panel(label,domain,yScale,y0,field,color,unit){for(const tick of tickValues(domain,4)){const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/><text x="${left-10}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(tickLabel(tick,unit,vizLang(spec)))}</text>`);}f.parts.push(`<text x="${left}" y="${y0-8}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);const groups=[];for(const row of sorted){let g=groups.at(-1);if(!g||String(g.segment)!==String(row[spec.segment_field])){g={segment:row[spec.segment_field],rows:[]};groups.push(g);}if(n(row[field])!==null)g.rows.push(row);}for(const g of groups){if(g.rows.length<2)continue;const coords=g.rows.map(r=>`${xScale(n(r[spec.x_field])).toFixed(1)},${yScale(n(r[field])).toFixed(1)}`).join(' ');f.parts.push(`<polyline data-role="trajectory-profile-line" fill="none" stroke="${color}" stroke-width="${mobile?2.2:2.7}" points="${coords}"/>`);g.rows.forEach(r=>f.parts.push(`<circle cx="${xScale(n(r[spec.x_field])).toFixed(1)}" cy="${yScale(n(r[field])).toFixed(1)}" r="${mobile?2:2.4}" fill="${color}"/>`));}const last=sorted.filter(r=>n(r[field])!==null).at(-1);if(last)f.parts.push(`<text data-role="direct-label" x="${(xScale(n(last[spec.x_field]))-5).toFixed(1)}" y="${(yScale(n(last[field]))-8).toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${textSafeColor(color)}">${esc(fmt(n(last[field]),unit))}</text>`);}
   {const ps=f.parts.length;panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');tagPanelTexts(f.parts,ps,[0,top-30,right+30,top+panelH+16]);}{const ps=f.parts.length;panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');tagPanelTexts(f.parts,ps,[0,speedTop-30,right+30,speedTop+panelH+16]);}
   for(const tick of tickValues(xDomain,4)){const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${speedTop+panelH}" x2="${x}" y2="${speedTop+panelH+4}" stroke="${PALETTE.muted}"/><text x="${x}" y="${speedTop+panelH+20}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(`${Math.round(tick)} min`)}</text>`);}f.parts.push(`<text x="${(left+right)/2}" y="${speedTop+panelH+37}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">elapsed time since observed coverage begins</text>`);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
