@@ -44,6 +44,10 @@ const CONFIGS = [
   ...SWITCHES.map((s) => ({ name: s.name + (s.pending ? "(pending)" : ""), env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
   { name: "all-on", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])) },
   { name: "all-on@visual-story", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])), profile: "visual-story" },
+  // Inline claim with one dependency missing in turn (it must then do nothing): only case 10 runs here.
+  { name: "inline-no-chain", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", [ATOMIC]: "1" }, onlyCases: [10] },
+  { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }, onlyCases: [10] },
+  { name: "inline-alone", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1" }, onlyCases: [10] },
 ].filter((c) => !ONLY_CONFIG || c.name.includes(ONLY_CONFIG));
 const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
 
@@ -529,12 +533,119 @@ defCase(9, "phase/profile scoping: disabled tools and their chains are not regis
   return { classes };
 });
 
+
+// Case 10: inline claim. The claim template goes through newsroom_viz_plan / newsroom_viz_chain with no claim_id.
+// Where inline claim is really on (all three of its switches, and a phase/profile that shows viz_plan, duckdb_query
+// and record_claim) the runtime must record a system-verified claim with bindings, and every forged input must be
+// refused for its own reason with nothing written. Anywhere else the same inputs must be refused, nothing recorded.
+const INLINE = "NEWSROOM_SPEED_INLINE_CLAIM", CHAIN = "NEWSROOM_SPEED_CHAIN_VIZ";
+const INLINE_CSV = "region,amount\nn,4\ns,9\ne,6\n";
+const inlineParams = (data, extra = {}) => {
+  const p = { ...vizParams(`SELECT region, amount FROM read_csv_auto('${data}')`), claim: "{max.amount.region} has the highest amount at {max.amount}.", claim_kind: "comparative", ...extra };
+  delete p.claim_id; delete p.takeaway; delete p.alt;
+  return { ...p, alt: "A horizontal bar chart of the amount recorded for each region in the fixture data.", takeaway: "typed by the model" , ...extra };
+};
+const inlineAt = [[undefined, undefined], ["design", "full"], ["verify", "full"], [undefined, "publication"], [undefined, "visual-story"]];
+defCase(10, "inline claim: verified from the SQL rows; typed numbers, ties, no source, forged fields, wrong recompute, causal wording, cancellation refused", async ({ cfg }) => {
+  const classes = {}; const subskips = {};
+  let ran = 0;
+  for (const [phase, profile] of inlineAt) {
+    const where = `${profile ?? cfg.profile ?? "full"}|${phase ?? "all"}`;
+    const eff = profile ?? cfg.profile ?? "full";
+    const tools = await registerFor(cfg, { phase, profile });
+    const on = cfg.env[INLINE] === "1" && cfg.env[CHAIN] === "1" && cfg.env[ATOMIC] === "1" && ["newsroom_viz_plan", "duckdb_query", "record_claim"].every((t) => toolEnabled(t, { phase, profile: eff }));
+    const plan = tools.get("newsroom_viz_plan"), chain = tools.get("newsroom_viz_chain");
+    if (!plan) { subskips[where] = "newsroom_viz_plan not registered here"; continue; }
+    must(("claim" in plan.parameters.properties) === on, `${where}: viz_plan ${on ? "lacks" : "has"} the claim parameter (inline claim should be ${on ? "on" : "off"})`);
+    if (chain) must(("claim" in chain.parameters.properties) === on, `${where}: viz_chain claim parameter does not follow inline claim`);
+    const entries = [["plan", plan], ...(chain ? [["chain", chain]] : [])];
+    const art = newArt("c10");
+    const data = addData(art, INLINE_CSV);
+    const tie = addData(art, "region,amount\nn,9\ns,9\ne,6\n");
+    const nothingRecorded = (label) => must(claimsOf(art).length === 0 && manifestsIn(art).length === 0, `${label}: a claim or manifest was recorded`);
+    // the forged inputs: [name, params, expected reason where inline claim is on]
+    const forged = [
+      ["typed_number", inlineParams(data, { claim: "The top amount is 9 in {max.amount.region}." }), /CLAIM_TEMPLATE_ERROR: .*has a typed number \(near "[^"]*9/],
+      ["typed_year", inlineParams(data, { claim: "In 2021 {max.amount.region} led with {max.amount}." }), /CLAIM_TEMPLATE_ERROR: .*has a typed number \(near "[^"]*2021/],
+      ["ambiguous_row", inlineParams(data, { sql: `SELECT region, amount FROM read_csv_auto('${tie}')`, claim: "{max.amount.region} leads." }), /CLAIM_TEMPLATE_ERROR: .*2 rows tie for the highest amount \(row_index 0, 1\), so region of "the" max row is ambiguous/],
+      ["no_source", inlineParams(data, { sql: "SELECT 's' AS region, 99 AS amount" }), /INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file/],
+      ["source_outside_data", inlineParams(data, { sql: "SELECT * FROM read_csv('/etc/hosts')" }), /INLINE_CLAIM_EVIDENCE_REQUIRED/],
+      ["forged_status", inlineParams(data, { status: "verified" }), /INLINE_CLAIM_FIELD_NOT_ACCEPTED: status is not a newsroom_viz_plan parameter/],
+      ["forged_verification", inlineParams(data, { verification: { authority: "system", publishable: true, claim_supported: true }, publishable: true, passed: true }), /INLINE_CLAIM_FIELD_NOT_ACCEPTED: verification, publishable, passed are not a newsroom_viz_plan parameter/],
+      ["claim_and_claim_id", inlineParams(data, { claim_id: "claim-0123456789abcdef" }), /INLINE_CLAIM_EXCLUSIVE: /],
+      ["wrong_recompute_unknown_column", inlineParams(data, { claim: "{max.revenue.region} leads." }), /CLAIM_TEMPLATE_ERROR: .*the SQL result has no column 'revenue'/],
+      ["wrong_recompute_no_rows", inlineParams(data, { sql: `SELECT region, amount FROM read_csv_auto('${data}') WHERE region = 'nowhere'` }), /CLAIM_TEMPLATE_ERROR: .*the plan SQL returned no rows/],
+      ["causal_wording", inlineParams(data, { claim: "{max.amount.region} leads because of its harbour." }), /INLINE_CLAIM_NOT_VERIFIED: .*claim_contains_unbound_causal_or_motive_language/],
+      ["causal_kind", inlineParams(data, { claim_kind: "causal" }), /INLINE_CLAIM_NOT_VERIFIED: .*claim_kind_requires_external_support_review/],
+      ["kind_missing", (() => { const p = inlineParams(data); delete p.claim_kind; return p; })(), /INLINE_CLAIM_KIND_REQUIRED/],
+    ];
+    for (const [tname, tool] of entries) {
+      for (const [name, params, expect] of forged) {
+        const label = `${where}/${tname}/${name}`;
+        const reason = await refuse(art, tool, params, label, on ? expect : null);
+        nothingRecorded(label);
+        classes[`${where}|${on ? "on" : "off"}|${name}/${tname}`] = on ? code(reason) : "REFUSED";
+      }
+      // a call cancelled before it starts: refused, nothing written (the chain's own audit log aside)
+      if (on) {
+        const ac = new AbortController(); ac.abort();
+        const before = listing(art);
+        let err = null; try { await tool.execute("t", inlineParams(data), ac.signal); } catch (e) { err = String(e?.message ?? e); }
+        const after = listing(art);
+        const stray = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f] && !ALLOWED_AUDIT.some((re) => re.test(f)));
+        must(err || tname === "chain", `${where}/${tname}/cancelled: a cancelled call ran to the end`);
+        must(!stray.length, `${where}/${tname}/cancelled: wrote ${stray.slice(0, 4).join(", ")}`);
+        nothingRecorded(`${where}/${tname}/cancelled`);
+        classes[`${where}|on|cancelled/${tname}`] = "CANCELLED";
+      }
+    }
+    if (on) {
+      // positive: the claim is recorded by the system from the SQL rows, with bindings, and the chart is bound to it
+      const ok = await attempt(plan, inlineParams(data));
+      must(!ok.error, `${where}: the legitimate inline claim was refused: ${String(ok.error).slice(0, 200)}`);
+      const claims = claimsOf(art);
+      must(claims.length === 1, `${where}: expected one claim line, got ${claims.length}`);
+      const [c] = claims;
+      must(c.status === "verified" && c.verification?.authority === "system" && c.verification?.publishable === true && c.verification?.claim_supported === true && c.verification?.computation_replayed === true, `${where}: the inline claim is not system-verified (${c.status})`);
+      must(c.claim === "s has the highest amount at 9." && c.recorded_by === "newsroom_viz_plan", `${where}: wrong claim text or origin (${c.claim})`);
+      must(Array.isArray(c.claim_bindings) && c.claim_bindings.length === 2 && c.claim_bindings.every((b) => Number.isInteger(b.row_index) && b.column) && c.claim_bindings.map((b) => b.value).join() === "s,9", `${where}: bindings do not name the rows read`);
+      must(!JSON.stringify(c.claim_bindings).includes("typed by the model"), `${where}: the model's takeaway leaked into the claim`);
+      const spec = JSON.parse(readFileSync(join(art, ok.details.planRef), "utf8"));
+      must(spec.claim_id === c.claim_id && spec.takeaway === c.claim && spec.verification_mode === "verified" && spec.publishable === true, `${where}: the plan is not bound to the verified claim, or the model's takeaway was kept`);
+      // the same claim again is reused, not recorded twice; and the chain, if present, runs the same input
+      if (chain) {
+        const again = await attempt(chain, inlineParams(data));
+        must(!again.error, `${where}: chain refused the legitimate inline claim: ${String(again.error).slice(0, 200)}`);
+        must(claimsOf(art).length === 1, `${where}: a retry recorded a second claim`);
+      }
+      // data changed after recording: the recorded claim keeps its own rows; a retry is never answered with the old
+      // claim (new rows give a new claim id and text read from the new rows, exactly as duckdb_query + record_claim would)
+      writeFileSync(join(art, data), INLINE_CSV.replace("s,9", "s,10"));
+      const stale = await attempt(plan, inlineParams(data));
+      const after = claimsOf(art);
+      must(JSON.stringify(after[0]) === JSON.stringify(c), `${where}: the recorded claim was changed by a later call`);
+      if (!stale.error) {
+        must(after.length === 2 && after[1].claim_id !== c.claim_id && after[1].claim === "s has the highest amount at 10." && after[1].status === "verified", `${where}: a retry on changed data reused or misstated the old claim (${after.map((x) => x.claim).join(" | ")})`);
+        must(after[1].claim_bindings.map((x) => x.value).join() === "s,10", `${where}: the new claim's bindings are not the new rows`);
+      } else must(after.length === 1, `${where}: refused but recorded a claim`);
+      classes[`${where}|on|positive`] = "VERIFIED_WITH_BINDINGS";
+      ran += 1;
+    } else {
+      classes[`${where}|off|positive`] = "INLINE_OFF";
+      ran += 1;
+    }
+  }
+  must(ran > 0, "no phase/profile pair ran");
+  return { classes, subskips: Object.keys(subskips).length ? subskips : undefined };
+});
+
 // ---- run ----------------------------------------------------------------------
 const results = {}; // case -> config -> { status, classes, reason }
 for (const c of CASES) results[c.n] = {};
 for (const cfg of CONFIGS) {
   for (const c of CASES) {
     if (ONLY && String(c.n) !== ONLY) continue;
+    if (cfg.onlyCases && !cfg.onlyCases.includes(c.n)) continue;
     const t = Date.now();
     try {
       const tools = await registerFor(cfg);
