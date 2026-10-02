@@ -61,7 +61,7 @@ export const INPUT_BINDING_LITERAL_ONLY = "literal_only";
 export const INPUT_BINDING_UNRESOLVED = "unresolved";
 export const INPUT_BINDINGS = [INPUT_BINDING_SOURCE_BOUND, INPUT_BINDING_LITERAL_ONLY, INPUT_BINDING_UNRESOLVED];
 
-const FILE_READER_FUNCTIONS = new Set([
+export const FILE_READER_FUNCTIONS = new Set([
   "read_csv", "read_csv_auto", "read_json", "read_json_auto", "read_ndjson", "read_ndjson_auto",
   "read_json_objects", "read_json_objects_auto", "read_ndjson_objects", "read_parquet", "parquet_scan",
   "read_text", "read_blob", "parquet_metadata", "parquet_schema", "parquet_file_metadata",

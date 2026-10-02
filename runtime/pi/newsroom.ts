@@ -26,6 +26,7 @@ import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpec
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
+import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
@@ -1530,10 +1531,36 @@ async function assertDataBytesMatchRecord(root: string, ref: string, full: strin
   if (typeof meta.file === "string" && meta.file.split("/").pop() !== ref.split("/").pop()) throw refuse("sidecar describes a different file");
 }
 
+// NEWSROOM_CLAIM_SQL_LINT=1 (default off): a claim's SQL may not type a number
+// into its select list or generate rows, and its template may not pair a max
+// placeholder with a word for the lowest value (claim_lint.mjs). Refuse only.
+function claimSqlLintEnabled() {
+  return process.env.NEWSROOM_CLAIM_SQL_LINT === "1";
+}
+
+async function lintClaimSql(sql: string, signal?: AbortSignal) {
+  if (!claimSqlLintEnabled()) return;
+  let ast: any;
+  try {
+    ast = await serializeSqlAst(sql, signal);
+  } catch {
+    throw new Error("CLAIM_SQL_LINT_UNAVAILABLE: the SQL could not be parsed by DuckDB json_serialize_sql, so it cannot be checked for typed numbers");
+  }
+  const violations = lintClaimSqlAst(ast);
+  if (violations.length) throw new Error(`CLAIM_SQL_CONSTANT: ${violations.slice(0, 4).join("; ")}. The number must come from the data.`);
+}
+
+function lintClaimWording(template: string) {
+  if (!claimSqlLintEnabled()) return;
+  const violations = lintClaimTemplate(template);
+  if (violations.length) throw new Error(`CLAIM_TEMPLATE_DIRECTION: ${violations.slice(0, 3).join("; ")}`);
+}
+
 async function replayComputationEvidence(refs: string[], sourceRefs: string[], signal?: AbortSignal) {
   for (const ref of refs) {
     const computation = await readArtifactJson(ref, "computations/");
     const sql = validateReadOnlySql(String(computation?.sql ?? ""));
+    await lintClaimSql(sql, signal);
     const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
     const recordedResultHash = String(computation?.result_hash ?? "");
     if (!inputSnapshotHash || !/^[0-9a-f]{64}$/i.test(recordedResultHash) || !Array.isArray(computation?.rows)) {
@@ -1972,6 +1999,9 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound");
   const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
   if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
+  // After the evidence rule, so an existing refusal keeps its reason.
+  lintClaimWording(template);
+  await lintClaimSql(safeSql, signal);
   inlineClaimAborted(signal);
   const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
   inlineClaimAborted(signal);
