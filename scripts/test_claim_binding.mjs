@@ -129,6 +129,7 @@ const FIELDS_OF = {
   stacked_bar_100: ["value_field"],
   cartographic_flow_map: ["value_field"], parallel_sets: ["value_field"], chord: ["value_field"], sankey: ["value_field"], alluvial: ["value_field"],
   line: ["value_field"], multi_line: ["value_field"], small_multiples: ["value_field"], streamgraph: ["value_field"], heatmap: ["value_field", "y_field"],
+  mirrored_bar: ["value_field"],
   dumbbell: ["start_field", "end_field"], slope: ["start_field", "end_field"], scatter: ["x_field", "y_field"],
   strip_plot: ["value_field"],
   geo_flow_map: ["value_field", "source_lat_field", "source_lon_field", "target_lat_field", "target_lon_field"],

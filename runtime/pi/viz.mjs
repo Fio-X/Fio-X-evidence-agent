@@ -11,6 +11,7 @@ export const CHART_TYPES = [
   "horizontal_bar",
   "dot",
   "dumbbell",
+  "mirrored_bar",
   "slope",
   "line",
   "multi_line",
@@ -1409,6 +1410,7 @@ function requiredFields(spec) {
     horizontal_bar: ["category_field", "value_field"],
     dot: ["category_field", "value_field"],
     dumbbell: ["category_field", "start_field", "end_field"],
+    mirrored_bar: ["category_field", "series_field", "value_field"],
     slope: ["category_field", "start_field", "end_field"],
     line: ["x_field", "value_field"],
     multi_line: ["x_field", "value_field", "series_field"],
@@ -1567,6 +1569,19 @@ export function validateVizSpec(spec) {
       if (spec[key] !== undefined && (typeof spec[key] !== "string" || !spec[key].trim())) errors.push(`stacked_bar_100 ${key} must be a non-empty segment name when provided`);
     }
     if (spec.segment_values !== undefined && !STACKED_SEGMENT_VALUES.includes(spec.segment_values)) errors.push(`stacked_bar_100 segment_values must be one of ${STACKED_SEGMENT_VALUES.join(", ")}`);
+  }
+  if (spec.chart_type === "mirrored_bar") {
+    // Optional mirrored_bar fields: reject malformed shapes here so the
+    // renderer and lintVizSpec can rely on the documented values. Whether a
+    // left_series / current_period value exists in the rows is a data check
+    // and lives in lintVizSpec.
+    if (spec.first_row !== undefined && !["bottom", "top"].includes(spec.first_row)) errors.push("mirrored_bar first_row must be 'bottom' or 'top'");
+    if (spec.compare_layout !== undefined && !["overlay", "side_by_side"].includes(spec.compare_layout)) errors.push("mirrored_bar compare_layout must be 'overlay' or 'side_by_side'");
+    for (const field of ["left_series", "current_period", "period_field"]) {
+      const value = spec[field];
+      if (value !== undefined && (value === null || typeof value === "object" || !String(value).trim())) errors.push(`mirrored_bar ${field} must be a non-empty string when provided`);
+    }
+    if (spec.direct_labels !== undefined && typeof spec.direct_labels !== "boolean") errors.push("mirrored_bar direct_labels must be true or false");
   }
   for (const field of requiredFields(spec)) {
     if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") errors.push(`Missing required field '${field}'`);
@@ -1959,12 +1974,50 @@ export function lintVizSpec(spec, rows, context = {}) {
       if (gaps.length) warnings.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' is missing from ${item.missing} bar(s)`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; a missing segment is drawn as 0`);
     }
   }
+  if (spec.chart_type === "mirrored_bar" && Array.isArray(rows) && rows.length > 0) {
+    // Two sides, one bar per (category, series, period): the drawing has no
+    // way to show two values in one slot, so a duplicate row is a data error
+    // rather than something to sum or pick from. Non-numeric, missing and
+    // non-finite values are already blocked by the shared numericCount check
+    // above; this adds the floor (a bar cannot be negative) and the shape
+    // limits that keep the pyramid legible.
+    const periodField = spec.period_field ? String(spec.period_field) : "";
+    const periodPresent = Boolean(periodField) && fieldExists(rows, periodField);
+    if (periodField && !periodPresent) blockers.push(`Field '${periodField}' is absent from query output`);
+    if (fieldExists(rows, spec.category_field) && fieldExists(rows, spec.series_field)) {
+      const categories = unique(rows.map((row) => row[spec.category_field]));
+      const sides = unique(rows.map((row) => row[spec.series_field]));
+      const periods = periodPresent ? unique(rows.map((row) => row[periodField])) : [];
+      if (categories.length > 25) blockers.push(`mirrored_bar has ${categories.length} categories; maximum is 25 - merge bands in SQL`);
+      else if (categories.length > 20) warnings.push(`mirrored_bar has ${categories.length} categories; above 20 the rows get thin and only every second label is shown - consider merging bands`);
+      if (sides.length !== 2) blockers.push(`mirrored_bar series_field '${spec.series_field}' must have exactly 2 distinct values (one per side); found ${sides.length}`);
+      if (periods.length > 2) blockers.push(`mirrored_bar period_field '${periodField}' has ${periods.length} distinct values; maximum is 2 (current and one comparison period)`);
+      const cell = (row) => JSON.stringify([String(row[spec.category_field]), String(row[spec.series_field]), periodPresent ? String(row[periodField]) : ""]);
+      const seen = new Set();
+      let duplicates = 0;
+      for (const row of rows) {
+        const key = cell(row);
+        if (seen.has(key)) duplicates += 1;
+        seen.add(key);
+      }
+      if (duplicates) blockers.push(`mirrored_bar has ${duplicates} duplicate (category, series, period) row(s); each bar needs exactly one row`);
+      if (fieldExists(rows, spec.value_field) && rows.some((row) => { const value = n(row[spec.value_field]); return value !== null && value < 0; })) {
+        blockers.push(`mirrored_bar value_field '${spec.value_field}' must be >= 0; each side draws a magnitude from its own centre line`);
+      }
+      if (spec.left_series !== undefined && !sides.includes(String(spec.left_series))) blockers.push(`mirrored_bar left_series '${spec.left_series}' is not a value of '${spec.series_field}'`);
+      if (spec.current_period !== undefined && !periods.includes(String(spec.current_period))) {
+        blockers.push(periodPresent ? `mirrored_bar current_period '${spec.current_period}' is not a value of '${periodField}'` : "mirrored_bar current_period needs a period_field present in the query output");
+      }
+      const expected = categories.length * sides.length * Math.max(periods.length, 1);
+      if (seen.size < expected) warnings.push(`mirrored_bar is missing ${expected - seen.size} (category, series, period) combination(s); those bars stay empty`);
+    }
+  }
 
   const taskFit = {
     ranking: new Set(["horizontal_bar", "dot", "diverging_bar"]),
-    comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix"]),
+    comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix", "mirrored_bar"]),
     change: new Set(["line", "multi_line", "slope", "small_multiples", "streamgraph"]),
-    distribution: new Set(["dot", "scatter", "heatmap", "strip_plot"]),
+    distribution: new Set(["dot", "scatter", "heatmap", "strip_plot", "mirrored_bar"]),
     correlation: new Set(["scatter"]),
     part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap", "stacked_bar_100"]),
     spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
@@ -3272,6 +3325,302 @@ function renderDumbbell(spec, rows) {
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// mirrored_bar: two sides back to back, e.g. a population pyramid.
+//
+// Ordered categories run up a centre gutter that also holds their labels. The
+// first series' bars grow left from the gutter's left edge and the second
+// series' bars grow right from its right edge, both on ONE symmetric axis, so
+// two bars of equal length are two equal values. The spec chooses which series
+// goes left (left_series) and where the first category sits (first_row); the
+// renderer assumes nothing about the topic. An optional second period
+// (period_field) is drawn either as an outline over the same rows
+// (compare_layout "overlay", the default) or as a second pyramid beside the
+// first on the same axis maximum ("side_by_side"). Every printed number is a
+// value_field value formatted by fmtSpec, or an axis tick: nothing is summed,
+// differenced or rescaled.
+// ---------------------------------------------------------------------------
+const MIRRORED_ROW_GAP = 2; // px between neighbouring rows (house rule: 1-2px)
+
+// Width of a text in px, for fitting only (the gutter, the series names, the
+// room a value label needs). Per-glyph classes charged at least what render
+// QA's own advance table charges that class, in either weight, times QA's
+// 1.05 margin: narrow letters and punctuation, capitals (and &), the wide m w
+// M W @ % and dashes, one em for CJK, and a full em for any other character
+// outside the ASCII range (QA's fallback for a glyph its table lacks). A
+// layout fitted to this never trips the text-outside-viewbox or
+// text-crosses-mark checks on its own labels, whatever the label's letters.
+const MIRRORED_NARROW_GLYPHS = new Set(Array.from("ijlI.,:;'|! "));
+const MIRRORED_WIDE_GLYPHS = new Set(Array.from("mwMW@%\u2026\u2014\u2192"));
+const MIRRORED_MEASURED_SYMBOLS = new Set(Array.from("\u00B7\u00A3\u20AC\u00A5\u201C\u201D\u2018\u2019\u2013\u00B0\u00B1\u00D7\u00F7\u2022"));
+function mirroredTextPx(text, fontSize = 12) {
+  let em = 0;
+  for (const ch of Array.from(String(text ?? ""))) {
+    if (isWideChar(ch)) em += 1;
+    else if (MIRRORED_NARROW_GLYPHS.has(ch)) em += 0.3;
+    else if (MIRRORED_WIDE_GLYPHS.has(ch)) em += 1.02;
+    else if (ch > "~" && !MIRRORED_MEASURED_SYMBOLS.has(ch)) em += 1.02;
+    else if ((ch >= "A" && ch <= "Z") || ch === "&") em += 0.78;
+    else em += 0.62;
+  }
+  return Math.ceil(em * fontSize * 1.05);
+}
+
+// The text itself if it fits capPx, else its longest prefix that fits with an
+// ellipsis appended (at least one character is always kept).
+function mirroredFit(text, fontSize, capPx) {
+  const chars = Array.from(String(text ?? ""));
+  if (mirroredTextPx(text, fontSize) <= capPx) return String(text ?? "");
+  let keep = chars.length - 1;
+  while (keep > 1 && mirroredTextPx(`${chars.slice(0, keep).join("")}\u2026`, fontSize) > capPx) keep -= 1;
+  return `${chars.slice(0, Math.max(keep, 1)).join("")}\u2026`;
+}
+
+// Rows -> the pieces the drawing needs. Category order is row order (first
+// appearance). Lint requires exactly 2 series, at most 2 periods and a
+// left_series / current_period that exist; a spec that skipped lint still
+// renders instead of throwing (extra series are ignored, a missing right side
+// stays empty).
+function mirroredModel(spec, rows) {
+  const periodField = spec.period_field ? String(spec.period_field) : "";
+  const categories = unique(rows.map((row) => row[spec.category_field]));
+  const seriesValues = unique(rows.map((row) => row[spec.series_field]));
+  const leftSeries = spec.left_series !== undefined && seriesValues.includes(String(spec.left_series)) ? String(spec.left_series) : (seriesValues[0] ?? "");
+  const rightSeries = seriesValues.find((series) => series !== leftSeries) ?? null;
+  const periodValues = periodField ? unique(rows.map((row) => row[periodField])) : [];
+  const numericPeriods = periodValues.length > 0 && periodValues.every((period) => period.trim() !== "" && Number.isFinite(Number(period)));
+  const periods = [...periodValues].sort((a, b) => (numericPeriods ? Number(a) - Number(b) : a < b ? -1 : a > b ? 1 : 0));
+  const current = periods.length ? (spec.current_period !== undefined && periods.includes(String(spec.current_period)) ? String(spec.current_period) : periods.at(-1)) : "";
+  const other = periods.find((period) => period !== current) ?? null;
+  const cells = new Map();
+  for (const row of rows) {
+    const value = n(row[spec.value_field]);
+    if (value === null) continue;
+    const key = JSON.stringify([String(row[spec.category_field]), String(row[spec.series_field]), periodField ? String(row[periodField]) : ""]);
+    if (!cells.has(key)) cells.set(key, value);
+  }
+  const valueAt = (category, series, period) => (series === null || period === null ? null : (cells.get(JSON.stringify([category, series, period])) ?? null));
+  let maxValue = 0;
+  for (const category of categories) {
+    for (const series of [leftSeries, rightSeries]) {
+      for (const period of [current, other]) {
+        const value = valueAt(category, series, period);
+        if (value !== null && value > maxValue) maxValue = value;
+      }
+    }
+  }
+  return { categories, leftSeries, rightSeries, periods, current, other, valueAt, maxValue };
+}
+
+// One half's axis, mirrored onto the other: ticks 0, step, 2*step ... up to
+// the nice ceiling of the largest value (over both sides and both periods).
+// The step is a 1/2/5 x 10^k number aiming at 4 intervals, then thinned (at
+// the limit down to just 0 and the maximum) while two neighbouring tick labels
+// would crowd: ticks are evenly spaced, so each pair needs the average of its
+// two label widths plus 14px between centres, and never less than 30px.
+// labelWidths(ticks) is the width in px of every label of a candidate tick list.
+function mirroredAxis(maxValue, halfLen, labelWidths) {
+  const peak = maxValue > 0 ? maxValue : 1;
+  const build = (step) => {
+    const count = Math.max(1, Math.ceil(peak / step - 1e-9));
+    return Array.from({ length: count + 1 }, (_, i) => Number((i * step).toPrecision(12)));
+  };
+  const crowded = (list) => {
+    if (!Number.isFinite(halfLen)) return false;
+    const spacing = halfLen / (list.length - 1);
+    const widths = labelWidths(list);
+    return widths.some((width, i) => i + 1 < widths.length && spacing < Math.max(30, (width + widths[i + 1]) / 2 + 14));
+  };
+  let step = niceAxisStep(peak / 4);
+  let ticks = build(step);
+  for (let guard = 0; guard < 16 && ticks.length > 2 && crowded(ticks); guard++) {
+    step = niceAxisStep(step * 1.6);
+    ticks = build(step);
+  }
+  return { max: ticks.at(-1), ticks };
+}
+
+function renderMirroredBar(spec, rows) {
+  const m = mirroredModel(spec, rows);
+  const total = m.categories.length;
+  const highlights = new Set((spec.highlight_values ?? []).map(String));
+  const sideBySide = spec.compare_layout === "side_by_side" && m.other !== null;
+  const overlay = !sideBySide && m.other !== null;
+  // side_by_side: the earlier period (sorted order) on the left.
+  const panelPeriods = sideBySide ? [m.current, m.other].sort((a, b) => m.periods.indexOf(a) - m.periods.indexOf(b)) : [m.current];
+  const sideSeries = [m.leftSeries, m.rightSeries];
+  const rowFromTop = (i) => (spec.first_row === "top" ? i : total - 1 - i);
+  const px = (value) => String(Math.round(value * 100) / 100);
+  const textPx = (text) => mirroredTextPx(text, 12);
+  const OUTLINE = `stroke="${PALETTE.ink}" stroke-opacity="0.8" stroke-width="1.5"`;
+
+  // Value labels: direct_labels prints each bar's own value at its end, for
+  // every row when there are 12 or fewer, else only for highlight_values rows.
+  // Overlay prints the current period only (the outline is context); in
+  // side_by_side each panel prints its own period.
+  const labelled = (category) => spec.direct_labels === true && (total <= 12 || highlights.has(category));
+  const printed = [];
+  for (const period of panelPeriods) {
+    for (const category of m.categories) {
+      if (!labelled(category)) continue;
+      for (const series of sideSeries) {
+        const value = m.valueAt(category, series, period);
+        if (value !== null) printed.push(value);
+      }
+    }
+  }
+  const decimals = resolveChartDecimals(spec, printed);
+  // House style states the unit once per half, on its top-most printed label.
+  const unitHolders = new Set();
+  panelPeriods.forEach((period, pk) => sideSeries.forEach((series, sk) => {
+    for (let d = 0; d < total; d++) {
+      const i = spec.first_row === "top" ? d : total - 1 - d;
+      if (labelled(m.categories[i]) && m.valueAt(m.categories[i], series, period) !== null) { unitHolders.add(`${pk}:${sk}:${i}`); break; }
+    }
+  }));
+  const labelUnit = (pk, sk, i) => (!HOUSE_STYLE_ACTIVE || unitHolders.has(`${pk}:${sk}:${i}`) ? spec.unit : "");
+
+  // Vertical layout: [panel titles | period key] row, series names, rows, ticks.
+  const pitch = Math.max(17, Math.min(32, Math.round(440 / Math.max(total, 1))));
+  const headRow = overlay || sideBySide;
+  const headerH = (headRow ? 24 : 0) + 28;
+  const f = frame(spec, headerH + total * pitch + 32);
+  const rowY = f.bodyTop + 16;
+  const namesY = rowY + (headRow ? 24 : 0);
+  const plotTop = namesY + 12;
+  const plotBottom = plotTop + total * pitch;
+  const tickY = plotBottom + 18;
+
+  // Horizontal layout: one pyramid, or two with a gap. The centre gutter fits
+  // the widest label that is shown; each half then spans the room between the
+  // gutter and the panel edge, less half the outermost tick label. A value
+  // label sits just past its bar, so the scale is shortened only as far as
+  // needed to keep the labels of the bars that carry one inside the panel.
+  const panelGap = 36;
+  const panelW = sideBySide ? (f.width - 108 - panelGap) / 2 : f.width - 108;
+  const categoryText = m.categories.map(String);
+  const gutterShown = (i) => total <= 12 || i % 2 === 0 || i === total - 1;
+  const widestCategory = Math.max(0, ...categoryText.map((text, i) => (gutterShown(i) ? textPx(text) : 0)));
+  // [value the label sits beyond, its width, its width without the unit]
+  const labelBars = [];
+  panelPeriods.forEach((period, pk) => {
+    m.categories.forEach((category, i) => {
+      if (!labelled(category)) return;
+      sideSeries.forEach((series, sk) => {
+        const value = m.valueAt(category, series, period);
+        if (value === null) return;
+        const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
+        labelBars.push([Math.max(value, otherValue ?? 0), textPx(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals)), textPx(fmtSpec(spec, value, "", decimals))]);
+      });
+    });
+  });
+  const tickLabelWidths = (ticks) => ticks.map((tick, ti) => textPx(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, ticks.length))));
+  const fullTicks = mirroredAxis(m.maxValue, Infinity, () => []).ticks; // before any thinning
+  // Room a half needs past its axis end: the widest tick label is centred on it.
+  const tickRoom = Math.ceil((Math.max(...tickLabelWidths(fullTicks)) + 8) / 2);
+  // The gutter may take whatever leaves each half 80px plus that room. The room
+  // is measured without the unit, so a long unit shortens bars (below), never
+  // the category labels.
+  const tickRoomBare = Math.ceil((Math.max(...fullTicks.map((tick) => textPx(tickLabelSpec(spec, tick, "")))) + 8) / 2);
+  const labelRoomBare = labelBars.length ? Math.max(...labelBars.map(([, , bare]) => bare)) + 9 : 0;
+  // The two "0" labels sit on the gutter's two edges; where the style puts the
+  // unit on every tick (legacy) the gutter must hold both side by side.
+  const zeroLabelPx = textPx(tickLabelSpec(spec, 0, axisTickUnit(spec.unit, 0, fullTicks.length)));
+  let gutterW = Math.max(56, widestCategory + 24, zeroLabelPx + 8);
+  let gutterText = categoryText;
+  const gutterCap = Math.max(56, panelW - 2 * (80 + Math.max(labelRoomBare, tickRoomBare)));
+  if (gutterW > gutterCap) {
+    // Only a label too long for any sensible gutter is shortened (with an ellipsis).
+    gutterW = gutterCap;
+    gutterText = categoryText.map((text) => mirroredFit(text, 12, gutterW - 24));
+  }
+  const halfFull = (panelW - gutterW) / 2;
+  const fitAxis = (halfLen) => {
+    const fitted = mirroredAxis(m.maxValue, halfLen, tickLabelWidths);
+    let scale = halfLen / fitted.max;
+    for (const [value, width] of labelBars) if (value > 0) scale = Math.min(scale, (halfFull - 9 - width) / value);
+    // A label too wide to sit beside even a short bar must not flip or erase
+    // the bars: the longest one keeps at least 40px (render QA then reports
+    // the label that no longer fits).
+    return { axis: fitted, k: Math.max(scale, 40 / fitted.max) };
+  };
+  let fit = fitAxis(Math.max(40, halfFull - tickRoom));
+  fit = fitAxis(fit.axis.max * fit.k); // shortened by a label: re-thin the ticks for the shorter axis
+  const { axis, k } = fit;
+  const halfLen = axis.max * k;
+  // A series name is centred over its half: it may reach toward the other name
+  // (up to 8px short of it) and out to its panel's edge, no further.
+  const nameCap = Math.min(halfLen + gutterW - 16, 2 * halfFull - halfLen);
+
+  // Layers are collected, then painted: gridlines under bars, outlines over
+  // bars, text last (text never sits on a bar: labels go beyond the bar ends).
+  const heads = [], grid = [], bars = [], outlines = [], valueTexts = [], gutterLabels = [], tickLabels = [];
+  panelPeriods.forEach((period, pk) => {
+    const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
+    const gl = cx - gutterW / 2, gr = cx + gutterW / 2;
+    if (sideBySide) heads.push(`<text data-role="panel-title" x="${px(cx)}" y="${px(rowY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="15" font-weight="700" fill="${PALETTE.ink}">${esc(mirroredFit(period, 15, panelW - 16))}</text>`);
+    sideSeries.forEach((series, sk) => {
+      if (series === null) return;
+      const mid = sk === 0 ? gl - halfLen / 2 : gr + halfLen / 2;
+      heads.push(`<text data-role="series-name" x="${px(mid)}" y="${px(namesY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="13" font-weight="700" fill="${PALETTE.ink}">${esc(mirroredFit(series, 13, nameCap))}</text>`);
+    });
+    axis.ticks.forEach((tick, ti) => {
+      for (const sk of [0, 1]) {
+        const x = sk === 0 ? gl - tick * k : gr + tick * k;
+        grid.push(`<line data-role="grid-line" x1="${px(x)}" y1="${px(plotTop)}" x2="${px(x)}" y2="${px(plotBottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, axis.ticks.length)))}</text>`);
+      }
+    });
+    m.categories.forEach((category, i) => {
+      const highlighted = highlights.has(category);
+      const rowTop = plotTop + rowFromTop(i) * pitch;
+      const barY = rowTop + MIRRORED_ROW_GAP / 2, barH = pitch - MIRRORED_ROW_GAP;
+      const baseline = rowTop + pitch / 2 + 4;
+      if (gutterShown(i)) gutterLabels.push(`<text data-role="category-label" x="${px(cx)}" y="${px(baseline)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="${highlighted ? 700 : 400}" fill="${PALETTE.ink}">${esc(gutterText[i])}</text>`);
+      sideSeries.forEach((series, sk) => {
+        const value = m.valueAt(category, series, period);
+        const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
+        const length = value === null ? 0 : value * k;
+        const otherLength = otherValue === null || otherValue <= 0 ? 0 : Math.max(2, otherValue * k);
+        const fill = highlighted ? PALETTE.accent : sk === 0 ? PALETTE.accent2 : PALETTE.series3;
+        if (length > 0) {
+          const w = Math.max(1, length);
+          bars.push(`<rect data-role="data-bar" x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
+        }
+        // The other period: a stroke with no fill, inset so its outer edge
+        // lands on the value and neighbouring rows' strokes keep a gap.
+        if (otherLength > 0) {
+          outlines.push(`<rect data-role="data-bar-outline" x="${px(sk === 0 ? gl - otherLength + 0.75 : gr + 0.75)}" y="${px(barY + 0.75)}" width="${px(otherLength - 1.5)}" height="${px(barH - 1.5)}" fill="none" ${OUTLINE}/>`);
+        }
+        if (value !== null && labelled(category)) {
+          const reach = Math.max(length, otherLength);
+          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals))}</text>`);
+        }
+      });
+    });
+  });
+
+  // Period key (overlay only): a filled swatch and an outline swatch, each
+  // with its period value from the rows.
+  if (overlay) {
+    // Each period value gets at most half the room left by the two swatches,
+    // so even an absurdly long period label stays on the page.
+    const keyCap = Math.floor((f.width - 108 - 66) / 2);
+    const keyCurrent = mirroredFit(m.current, 12, keyCap), keyOther = mirroredFit(m.other, 12, keyCap);
+    const w1 = textPx(keyCurrent), w2 = textPx(keyOther);
+    let x = f.width / 2 - (14 + 5 + w1 + 28 + 14 + 5 + w2) / 2;
+    heads.push(`<rect data-role="legend-swatch" x="${px(x)}" y="${px(rowY - 9)}" width="14" height="10" fill="${PALETTE.context}"/>`);
+    heads.push(`<text data-role="period-key-label" x="${px(x + 19)}" y="${px(rowY)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(keyCurrent)}</text>`);
+    x += 19 + w1 + 28;
+    heads.push(`<rect data-role="legend-swatch" x="${px(x)}" y="${px(rowY - 9)}" width="14" height="10" fill="none" ${OUTLINE}/>`);
+    heads.push(`<text data-role="period-key-label" x="${px(x + 19)}" y="${px(rowY)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(keyOther)}</text>`);
+  }
+  f.parts.push(...heads, ...grid, ...bars, ...outlines, ...valueTexts, ...gutterLabels, ...tickLabels);
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
 }
 
 // End-label height (12px font, single line, house-style-approved ascent/
@@ -8659,6 +9008,7 @@ export function renderVizMobileSvg(spec, rows) {
     case "dot": return renderMobileHorizontal(spec,rows,"dot");
     case "diverging_bar": return renderMobileHorizontal(spec,rows,"bar");
     case "dumbbell": return renderMobileDumbbell(spec,rows);
+    case "mirrored_bar": return renderMirroredBar(spec,rows);
     case "slope": return renderMobileSlope(spec,rows);
     case "line": return renderMobileLine(spec,rows,false);
     case "multi_line": return renderMobileLine(spec,rows,true);
@@ -8730,6 +9080,7 @@ export function renderVizSvg(spec, rows) {
     case "dot": return renderHorizontal(spec, rows, "dot");
     case "diverging_bar": return renderHorizontal(spec, rows, "bar");
     case "dumbbell": return renderDumbbell(spec, rows);
+    case "mirrored_bar": return renderMirroredBar(spec, rows);
     case "slope": return renderSlope(spec, rows);
     case "line": return renderLine(spec, rows, false);
     case "multi_line": return renderLine(spec, rows, true);

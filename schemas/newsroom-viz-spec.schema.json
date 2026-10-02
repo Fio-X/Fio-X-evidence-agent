@@ -53,6 +53,7 @@
         "horizontal_bar",
         "dot",
         "dumbbell",
+        "mirrored_bar",
         "slope",
         "line",
         "multi_line",
@@ -203,6 +204,41 @@
     "end_label": {
       "type": "string",
       "maxLength": 100
+    },
+    "left_series": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "minLength": 1,
+      "description": "mirrored_bar: the series_field value drawn on the left half. Defaults to the first series in row order."
+    },
+    "first_row": {
+      "enum": [
+        "bottom",
+        "top"
+      ],
+      "description": "mirrored_bar: where the first category in row order is drawn. Defaults to bottom."
+    },
+    "period_field": {
+      "type": "string",
+      "minLength": 1,
+      "description": "mirrored_bar: optional field holding at most 2 distinct periods to compare."
+    },
+    "current_period": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "minLength": 1,
+      "description": "mirrored_bar: the period drawn filled. Defaults to the later period in sorted order."
+    },
+    "compare_layout": {
+      "enum": [
+        "overlay",
+        "side_by_side"
+      ],
+      "description": "mirrored_bar: how a second period is drawn, as an outline over the same rows (overlay, default) or as a second pyramid beside the first sharing one axis maximum (side_by_side)."
     },
     "series_field": {
       "type": "string",
@@ -770,6 +806,25 @@
           "category_field",
           "start_field",
           "end_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "mirrored_bar"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "series_field",
+          "value_field"
         ]
       }
     },
