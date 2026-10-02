@@ -844,7 +844,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
       if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
-      if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
+      if (asset.manifest?.claim_id && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
       {
         // Every verified claim hung on this visual (manifest claim, module
         // claim_id/claim_ids/claim_set, module annotations) must belong to the
@@ -907,20 +907,20 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       }
       for (const claimId of module.claim_ids ?? []) {
         claimCount += 1;
-        if (verified.size && !verified.has(String(claimId))) blockers.push(`illustration '${module.id}' references unverified claim '${claimId}'`);
+        if (!verified.has(String(claimId))) blockers.push(`illustration '${module.id}' references unverified claim '${claimId}'`);
       }
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
     }
     if (module.type === "hero_stat") {
       claimCount += 1;
-      if (verified.size && !verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
+      if (!verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
       if (context.hero_value_gate === true) blockers.push(...heroValueBlockers(module, verified, context.hero_claim_rows));
       if (String(module.label ?? "").length > 120) warnings.push(`hero_stat '${module.id}' label is long for magazine display`);
     }
     if (module.type === "text") {
       for (const claimId of module.claim_ids ?? []) {
         claimCount += 1;
-        if (verified.size && !verified.has(String(claimId))) blockers.push(`text module '${module.id}' references unverified claim '${claimId}'`);
+        if (!verified.has(String(claimId))) blockers.push(`text module '${module.id}' references unverified claim '${claimId}'`);
       }
       if (String(module.body ?? "").length > 900) warnings.push(`text module '${module.id}' exceeds the preferred 900-character magazine budget`);
       if (module.source_quote) {
@@ -938,7 +938,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (String(module.text ?? "").length > 280) warnings.push(`pull_quote '${module.id}' is too long for a pull quote`);
       for (const claimId of module.claim_ids ?? []) {
         claimCount += 1;
-        if (verified.size && !verified.has(String(claimId))) blockers.push(`pull_quote '${module.id}' references unverified claim '${claimId}'`);
+        if (!verified.has(String(claimId))) blockers.push(`pull_quote '${module.id}' references unverified claim '${claimId}'`);
       }
     }
   }

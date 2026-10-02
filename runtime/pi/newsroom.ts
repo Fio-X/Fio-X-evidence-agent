@@ -4324,6 +4324,13 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       if (lint.plan_ref !== params.plan_ref) throw new Error("Infographic lint does not belong to the supplied plan");
       if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
+      {
+        // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
+        const verifiedNow = new Set(await verifiedClaimIds());
+        const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? [])]).filter(Boolean).map(String))];
+        const unverified = cited.filter((id) => !verifiedNow.has(id));
+        if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
+      }
       const assets = await loadInfographicAssets(spec, mobilePages);
       for (const [ref, asset] of Object.entries(assets) as any) {
         const expected = lint.asset_hashes?.[ref];

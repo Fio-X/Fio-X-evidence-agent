@@ -2166,6 +2166,16 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
             );
         }
 
+        // Every claim the page cites must be system-verified; an empty verified set cites nothing.
+        if let Some(claim_ids) = manifest.get("claim_ids").and_then(Value::as_array) {
+            for claim_id in claim_ids {
+                let claim_id = claim_id.as_str().unwrap_or("");
+                report.check(
+                    verified_claims.contains(claim_id),
+                    format!("infographic {manifest_ref} claim_id is not verified: {claim_id}"),
+                );
+            }
+        }
         verify_infographic_illustrations(root, &manifest_ref, &manifest, &verified_claims, report)?;
         verify_infographic_critics(root, &manifest_ref, name, &manifest, report)?;
         verify_infographic_source_quotes(root, name, plan_ref, plan_is_zh, desktop_ref, report)?;
@@ -6676,6 +6686,34 @@ mod tests {
         fs::remove_file(temp.path().join("infographics/critics/x.json")).unwrap();
         let errors = infographic_errors(temp.path());
         assert_error(&errors, "has no critic artifact");
+    }
+
+    fn set_infographic_claim_ids(root: &Path, claim_ids: &[&str]) {
+        let manifest_path = root.join("infographics/x.json");
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest["claim_ids"] = serde_json::json!(claim_ids);
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn infographic_citing_an_unverified_claim_fails() {
+        // The fixture has no verified claim at all, so any cited claim id is unverified.
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &["c-not-verified"]);
+        let errors = infographic_errors(temp.path());
+        assert_error(
+            &errors,
+            "infographic infographics/x.json claim_id is not verified: c-not-verified",
+        );
+    }
+
+    #[test]
+    fn infographic_citing_no_claim_has_no_claim_error() {
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &[]);
+        let errors = infographic_errors(temp.path());
+        assert!(!errors.iter().any(|e| e.contains("claim_id is not verified")), "{errors:?}");
     }
 
     #[test]
