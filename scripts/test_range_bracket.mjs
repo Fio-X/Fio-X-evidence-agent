@@ -324,7 +324,8 @@ console.log("range_bracket: PASS");
   const geoRows = rowsOf("geo", ["DE", "FR", "IT", "EL", "UK"]);
   {
     const l = lintVizSpec(zhSpec({ category_field: "geo" }), geoRows, {});
-    assert.deepEqual(nameBlockers(l), [`zh chart's 'geo' values match ISO 3166-1 alpha-2 codes (best mode 'iso2': 5 of 5 distinct values, e.g. 'DE', 'FR', 'IT') and none contains CJK characters, so readers would see raw codes; select the ISO2 code column as the name field and set category_names='iso2'; ${SQL_FILTER}${NOT_NAMES_TAIL}`]);
+    // geo (Eurostat's column) carries the economy signal, so the blocker has no "not economies" hedge.
+    assert.deepEqual(nameBlockers(l), [`zh chart's 'geo' values match ISO 3166-1 alpha-2 codes (best mode 'iso2': 5 of 5 distinct values, e.g. 'DE', 'FR', 'IT') and none contains CJK characters, so readers would see raw codes; select the ISO2 code column as the name field and set category_names='iso2'; ${SQL_FILTER}`]);
     // Even a column called iso2 or country is not auto-resolved to iso2: the blocker asks for the declaration.
     for (const field of ["iso2", "country"]) {
       const named = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, ["DE", "FR", "IT"]), {});
@@ -485,7 +486,7 @@ console.log("range_bracket: PASS");
     assert.deepEqual(warningsFor({ title: "各地区排名" }, hk), [], "a title that never says 国家 is not touched");
     assert.deepEqual(lintVizSpec(spec({ title: "Country ranking", category_names: "iso3", category_field: "iso" }), rowsOf("iso", hk), {}).warnings.filter((w) => w.startsWith("zh chart lists")), [], "English pages are not checked");
     // The warning follows the resolved names whichever mode produced them.
-    assert.equal(warningsFor({ title: "国家排名", category_names: "iso2" }, ["US", "HK", "TW"]).length, 1);
+    assert.equal(warningsFor({ title: "国家排名", category_names: "iso2" }, ["US", "HK", "TW"], "iso2").length, 1);
     assert.equal(warningsFor({ title: "国家排名", category_names: "worldbank", category_field: "country" }, ["United States", "Hong Kong SAR, China"], "country").length, 1);
     assert.deepEqual(warningsFor({ title: "国家排名", category_names: "iso4217", category_field: "currency" }, ["TRY", "HKD"], "currency"), [], "a currency list is not a list of economies");
     // It is a warning, never a blocker.
@@ -649,6 +650,120 @@ console.log("zh name-field lint: PASS");
 }
 
 console.log("aggregate rows fail closed: PASS");
+
+// ---------------------------------------------------------------------
+// iso2 needs a country-code column (zh-naming-policy-1003 rule 9). Two letters also name US states and country subdivisions:
+// CA, GA, IN and PA are Canada, Gabon, India and Panama as ISO 3166-1 alpha-2 codes and California, Georgia, Indiana and
+// Pennsylvania as state codes, and a subset in which every code matches would print the wrong country. So iso2 is suggested,
+// and accepted when declared, only for a column whose name says it holds countries (country, economy, iso2 or geo, which is
+// Eurostat's column); a match count alone proves nothing.
+// ---------------------------------------------------------------------
+{
+  const zhSpec = (overrides = {}) => spec({ language: "zh", title: "可再生能源占比最高的经济体", ...overrides });
+  const rowsOf = (field, values) => values.map((value, i) => ({ [field]: value, pct: 90 - i }));
+  const texts = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const nameBlockers = (l) => l.blockers.filter((b) => b.startsWith("zh chart's") || b.startsWith("category_names"));
+  const iso2Blockers = (l) => l.blockers.filter((b) => b.startsWith("category_names='iso2' on "));
+  const suggestions = (l) => l.blockers.filter((b) => b.includes("(best mode 'iso2'"));
+  const STATE_CODES = ["CA", "GA", "IN", "PA", "TX", "NY"];
+  const ADVISORY = (field) => `zh chart's '${field}' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text`;
+  const iso2Message = (fields) => {
+    const many = fields.length > 1;
+    return `category_names='iso2' on ${fields.map((f) => `'${f}'`).join(" and ")}: two-letter codes are also US states, provinces and other subdivisions, so the column name must say these are countries; rename ${many ? "the columns" : "the column"} in SQL so ${many ? "each name carries" : "the name carries"} country, economy, iso2 or geo (for example 'country_iso2'), or use an ISO3 code column with category_names='iso3'`;
+  };
+
+  // --- The lint's suggestion: a list of US state codes gets no iso2 suggestion, whole or as the subset that is countries too ---
+  for (const values of [STATE_CODES, ["CA", "GA", "IN", "PA"]]) {
+    for (const field of ["state", "code", "region", "abbr", "iso"]) {
+      const l = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, values), {});
+      assert.deepEqual(suggestions(l), [], `${field} ${values.join(",")}`);
+      assert.deepEqual(nameBlockers(l), [], `${field} ${values.join(",")}`);
+      assert.equal(l.category_names_resolution, undefined, field);
+      assert.ok(l.warnings.includes(ADVISORY(field)), `${field}: the older advisory stays: ${JSON.stringify(l.warnings)}`);
+    }
+  }
+  // The same codes in a column that says country keep being suggested as iso2: the field name is the evidence.
+  for (const field of ["country", "geo", "iso2", "country_code", "countryCode", "nation", "economy", "国家"]) {
+    const l = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, ["CA", "GA", "IN", "PA"]), {});
+    assert.equal(suggestions(l).length, 1, field);
+    assert.ok(suggestions(l)[0].includes("(best mode 'iso2': 4 of 4 distinct values, e.g. 'CA', 'GA', 'IN')"), suggestions(l)[0]);
+    assert.ok(!suggestions(l)[0].includes("label them in Chinese instead"), `${field}: a signalled column has no hedge`);
+    assert.equal(l.category_names_resolution, undefined, `${field}: iso2 is never auto-resolved`);
+  }
+  // Other modes are untouched: an unsignalled ISO3 or World Bank name column is still suggested.
+  assert.equal(nameBlockers(lintVizSpec(zhSpec({ category_field: "code" }), rowsOf("code", ["USA", "CHN", "DEU"]), {})).length, 1);
+  assert.equal(nameBlockers(lintVizSpec(zhSpec({ category_field: "label" }), rowsOf("label", ["United States", "China", "Germany"]), {})).length, 1);
+
+  // --- A declared iso2 is blocked unless the column name says countries, whether or not every code matches ---
+  for (const field of ["state", "code", "iso", "region", "abbr"]) {
+    const l = lintVizSpec(zhSpec({ category_field: field, category_names: "iso2" }), rowsOf(field, ["CA", "GA", "IN", "PA"]), {});
+    assert.deepEqual(iso2Blockers(l), [iso2Message([field])], field);
+    assert.deepEqual(nameBlockers(l), [iso2Message([field])], `${field}: the codes themselves resolve; only the column name is refused`);
+  }
+  {
+    // Codes that do not resolve are named as before, beside the new blocker.
+    const l = lintVizSpec(zhSpec({ category_field: "state", category_names: "iso2" }), rowsOf("state", STATE_CODES), {});
+    assert.equal(nameBlockers(l).length, 2);
+    assert.ok(nameBlockers(l)[0].startsWith("category_names='iso2' cannot resolve 2 value(s) in 'state' (e.g. 'TX', 'NY')"), nameBlockers(l)[0]);
+    assert.equal(nameBlockers(l)[1], iso2Message(["state"]));
+    // An English page is checked the same way: the codes would be read as the wrong countries there too.
+    const en = lintVizSpec(spec({ title: "Ranking", category_field: "state", category_names: "iso2" }), rowsOf("state", ["CA", "GA"]), {});
+    assert.deepEqual(iso2Blockers(en), [iso2Message(["state"])]);
+  }
+
+  // --- A column that says country resolves, EL and UK included, and renders like GR and GB ---
+  for (const field of ["geo", "iso2", "country", "country_code", "countryCode", "nation", "economy", "国家"]) {
+    const l = lintVizSpec(zhSpec({ category_field: field, category_names: "iso2" }), rowsOf(field, ["DE", "FR", "EL", "UK"]), {});
+    assert.deepEqual(iso2Blockers(l), [], field);
+    assert.deepEqual(nameBlockers(l), [], field);
+  }
+  {
+    const declared = zhSpec({ category_field: "geo", category_names: "iso2" });
+    const shown = texts(renderVizSvg(declared, rowsOf("geo", ["DE", "FR", "EL", "UK"])));
+    for (const zh of ["德国", "法国", "希腊", "英国"]) assert.ok(shown.includes(zh), `${zh} in ${JSON.stringify(shown)}`);
+    assert.ok(!shown.some((t) => /^(DE|FR|EL|UK)$/.test(t)), "no raw ISO2 code may reach a zh page");
+  }
+
+  // --- Every name field of the chart is checked: flows name their nodes in two columns, scatter in label_field, a map in category_field ---
+  {
+    const flow = (overrides = {}) => zhSpec({ chart_type: "sankey", reader_task: "flow", title: "资金流向", category_field: undefined, source_field: "from", target_field: "to", value_field: "v", category_names: "iso2", ...overrides });
+    const flowRows = (from, to) => [{ [from]: "origin:DE", [to]: "destination:FR", v: 3 }, { [from]: "origin:FR", [to]: "destination:IT", v: 2 }];
+    assert.deepEqual(iso2Blockers(lintVizSpec(flow(), flowRows("from", "to"), {})), [iso2Message(["from", "to"])]);
+    const named = flow({ source_field: "origin_country", target_field: "destination_country" });
+    assert.deepEqual(iso2Blockers(lintVizSpec(named, flowRows("origin_country", "destination_country"), {})), []);
+    const half = flow({ source_field: "origin_country", target_field: "to" });
+    assert.deepEqual(iso2Blockers(lintVizSpec(half, flowRows("origin_country", "to"), {})), [iso2Message(["to"])], "only the column that does not say country is named");
+    assert.deepEqual(iso2Blockers(lintVizSpec(flow({ chart_type: "alluvial" }), flowRows("from", "to"), {})), [iso2Message(["from", "to"])]);
+
+    const scatter = (overrides = {}) => zhSpec({ chart_type: "scatter", reader_task: "correlation", x_field: "x", y_field: "y", category_field: undefined, value_field: undefined, category_names: "iso2", ...overrides });
+    const points = (field) => ["DE", "FR", "IT"].map((value, i) => ({ [field]: value, x: i + 1, y: (i + 1) * 2 }));
+    assert.deepEqual(iso2Blockers(lintVizSpec(scatter({ label_field: "code" }), points("code"), {})), [iso2Message(["code"])]);
+    assert.deepEqual(iso2Blockers(lintVizSpec(scatter({ label_field: "geo" }), points("geo"), {})), []);
+
+    const map = (field) => lintVizSpec(zhSpec({ chart_type: "choropleth", category_field: field, category_names: "iso2" }), rowsOf(field, ["DE", "FR", "IT"]), {});
+    assert.deepEqual(iso2Blockers(map("state")), [iso2Message(["state"])]);
+    assert.deepEqual(iso2Blockers(map("country")), []);
+  }
+
+  // --- Other declared modes need no such signal: only two-letter codes are ambiguous this way ---
+  {
+    assert.deepEqual(nameBlockers(lintVizSpec(zhSpec({ category_field: "code", category_names: "iso3" }), rowsOf("code", ["USA", "CHN"]), {})), []);
+    assert.deepEqual(nameBlockers(lintVizSpec(zhSpec({ category_field: "label", category_names: "worldbank" }), rowsOf("label", ["United States", "China"]), {})), []);
+    assert.deepEqual(nameBlockers(lintVizSpec(zhSpec({ category_field: "code", category_names: "iso4217" }), rowsOf("code", ["USD", "EUR"]), {})), []);
+  }
+
+  // --- geo and iso2 are economy tokens, so a column of that name auto-resolves in the modes that may be inferred ---
+  {
+    const geoIso3 = lintVizSpec(zhSpec({ category_field: "geo" }), rowsOf("geo", ["USA", "CHN", "DEU"]), {});
+    assert.deepEqual(geoIso3.category_names_resolution, { field: "geo", mode: "iso3", source: "auto", values: 3 });
+    const geoNames = lintVizSpec(zhSpec({ category_field: "geo" }), rowsOf("geo", ["United States", "China", "Germany"]), {});
+    assert.deepEqual(geoNames.category_names_resolution, { field: "geo", mode: "worldbank", source: "auto", values: 3 });
+    // ISO2 codes in that same column are still never inferred.
+    assert.equal(lintVizSpec(zhSpec({ category_field: "geo" }), rowsOf("geo", ["DE", "FR", "IT"]), {}).category_names_resolution, undefined);
+  }
+}
+
+console.log("iso2 needs a country-code column: PASS");
 
 // ---------------------------------------------------------------------
 // chartNameDisplay (zh-naming-policy-1003): the lookup newsroom.ts's inline claim fill uses to write a place or currency

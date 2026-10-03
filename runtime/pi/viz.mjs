@@ -1803,7 +1803,8 @@ export function lintVizSpec(spec, rows, context = {}) {
     } else if (spec.chart_type === "choropleth" && !ECONOMY_NAME_MODES.includes(spec.category_names)) {
       // lintChoroplethSpec below owns this blocker (a currency code is not a map feature).
     } else {
-      for (const field of nameFields.filter((candidate) => fieldExists(rows, candidate))) {
+      const presentNameFields = nameFields.filter((candidate) => fieldExists(rows, candidate));
+      for (const field of presentNameFields) {
         const unmapped = unmappedEconomyNameValues(nameFieldValues(spec, rows, field), spec.category_names);
         if (unmapped.length) {
           const shown = unmapped.slice(0, 5).map((value) => `'${value}'`).join(", ");
@@ -1811,13 +1812,17 @@ export function lintVizSpec(spec, rows, context = {}) {
         }
       }
       if (AGGREGATE_MIX_BLOCKED_CHART_TYPES.has(spec.chart_type)) {
-        for (const field of nameFields.filter((candidate) => fieldExists(rows, candidate))) {
+        for (const field of presentNameFields) {
           const mix = aggregateMixInNameField(spec, rows, field);
           if (mix) blockers.push(aggregateMixBlocker(spec, field, mix));
         }
       }
+      if (spec.category_names === "iso2") {
+        const unsignalled = presentNameFields.filter((field) => !fieldNameSignalsEconomy(field));
+        if (unsignalled.length) blockers.push(iso2NeedsCountryColumnBlocker(unsignalled));
+      }
       if (vizLang(spec) === "zh") {
-        const regions = specialRegionsInNameFields(spec, rows, nameFields.filter((candidate) => fieldExists(rows, candidate)));
+        const regions = specialRegionsInNameFields(spec, rows, presentNameFields);
         const offending = [["title", spec.title], ["subtitle", spec.subtitle]].filter(([, text]) => saysCountryWithoutRegions(text)).map(([label]) => label);
         if (regions.length && offending.length) {
           const listed = regions.map((region) => `${region.zh} (${region.iso3})`).join(", ");
@@ -2672,8 +2677,12 @@ function nameFieldValues(spec, rows, field) {
 // after splitting on non-alphanumerics and camelCase boundaries) - or, for
 // ISO 4217 currency codes, a generic currency token. iso2 is never inferred:
 // two-letter values (US state codes, country-subdivision codes ...) are too
-// ambiguous, so it stays explicit-only.
-const ECONOMY_FIELD_TOKENS = new Set(["country", "countries", "economy", "economies", "nation", "nations", "iso3", "iso3c", "国家", "经济体", "国别"]);
+// ambiguous, so it stays explicit-only - and even declared (or suggested by the
+// zh blocker) it needs the same field-name signal: CA, GA, IN and PA are Canada,
+// Gabon, India and Panama as ISO 3166-1 alpha-2 codes and California, Georgia,
+// Indiana and Pennsylvania as state codes, so only a column whose name says
+// country, economy, iso2 or geo (Eurostat's column) may be read as countries.
+const ECONOMY_FIELD_TOKENS = new Set(["country", "countries", "economy", "economies", "nation", "nations", "geo", "iso2", "iso3", "iso3c", "国家", "经济体", "国别"]);
 const CURRENCY_FIELD_TOKENS = new Set(["currency", "currencies", "cur", "ccy", "货币", "币种"]);
 const AUTO_ECONOMY_NAME_MODES = Object.freeze(["worldbank", "iso3"]);
 
@@ -2770,10 +2779,12 @@ export function chartNameDisplay(spec, rows) {
 // strings. Every mode is tried (exact World Bank English names, ISO3, ISO2,
 // ISO 4217); the one matching the most values wins, a tie goes to the mode
 // whose token family the field name carries (currency tokens -> iso4217,
-// economy tokens -> the economy modes), then to the fixed mode order. A
-// two-letter value can only match iso2; a three-letter value can be an ISO3
-// code or a currency code (BTN, MKD and SLE are both), which is exactly what
-// the match-count comparison and the signal tie-break settle.
+// economy tokens -> the economy modes), then to the fixed mode order. iso2 is a
+// candidate only for a field whose name carries an economy token (two letters
+// match too many state and subdivision codes to read a bare column as
+// countries). A two-letter value can only match iso2; a three-letter value can
+// be an ISO3 code or a currency code (BTN, MKD and SLE are both), which is
+// exactly what the match-count comparison and the signal tie-break settle.
 const ZH_NAME_MODE_TEXT = {
   worldbank: { match: "exact World Bank English names", readers: "English names", column: "ISO3 code column", target: "iso3", alt: " (category_names='worldbank' also resolves these exact names)" },
   iso3: { match: "ISO3 codes", readers: "raw codes", column: "ISO3 code column", target: "iso3", alt: "" },
@@ -2788,7 +2799,7 @@ function recognizableNameColumn(values, fields) {
     order,
     matched: values.length - unmappedEconomyNameValues(values, mode).length,
     signalled: fields.some((field) => fieldNameSignalsMode(field, mode)),
-  }));
+  })).filter((candidate) => candidate.mode !== "iso2" || candidate.signalled);
   candidates.sort((a, b) => b.matched - a.matched || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
   const best = candidates[0];
   return best.matched >= 2 && best.matched * 2 >= values.length ? best : null;
@@ -2802,6 +2813,14 @@ function zhNameFieldBlocker(fields, values, best) {
   const plural = fields.length > 1 ? "s" : "";
   const notNames = best.signalled ? "" : "; if these values are not economies or currencies, label them in Chinese instead";
   return `zh chart's ${fieldText} values match ${text.match} (best mode '${best.mode}': ${best.matched} of ${values.length} distinct values, e.g. ${shown}) and none contains CJK characters, so readers would see ${text.readers}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
+}
+
+// category_names='iso2' on a column whose name does not say it holds countries
+// (see the token comment above): two letters also name states and subdivisions.
+function iso2NeedsCountryColumnBlocker(fields) {
+  const fieldText = fields.map((field) => `'${field}'`).join(" and ");
+  const plural = fields.length > 1;
+  return `category_names='iso2' on ${fieldText}: two-letter codes are also US states, provinces and other subdivisions, so the column name must say these are countries; rename ${plural ? "the columns" : "the column"} in SQL so ${plural ? "each name carries" : "the name carries"} country, economy, iso2 or geo (for example 'country_iso2'), or use an ISO3 code column with category_names='iso3'`;
 }
 
 // Policy rule 4 (zh-naming-policy-1003): a list that includes Hong Kong, Macao
