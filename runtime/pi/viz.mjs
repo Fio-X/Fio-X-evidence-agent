@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { checkSvgGeometry } from "./render_qa_geometry.mjs";
+import { ASCENT_RATIO, DESCENT_RATIO, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
@@ -3676,6 +3676,41 @@ function tagPanelTexts(parts, startIdx, box) {
   }
 }
 
+// Index-panel labels (end value, 「基期 = 100」) go only where render QA's own estimate finds no data mark: the first
+// candidate whose estimated box (padded 2 px) clears every polyline segment and point circle of the panel, the panel
+// edges and the panel's other texts wins; no clear spot means no label, never one drawn over a mark.
+function indexLabelBox(x, y, text, anchor, bold) {
+  const w = estimateTextWidth(text, 12, bold), x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+  return { x: x0 - 2, y: y - 12 * ASCENT_RATIO - 2, w: w + 4, h: 12 * (ASCENT_RATIO + DESCENT_RATIO) + 4 };
+}
+function indexBoxClear(box, marks, bounds, others) {
+  if (box.x < bounds[0] || box.x + box.w > bounds[2] || box.y < bounds[1] || box.y + box.h > bounds[3]) return false;
+  if (others.some((o) => box.x < o.x + o.w && box.x + box.w > o.x && box.y < o.y + o.h && box.y + box.h > o.y)) return false;
+  for (const c of marks.circles) {
+    const nx = Math.min(Math.max(c.x, box.x), box.x + box.w), ny = Math.min(Math.max(c.y, box.y), box.y + box.h);
+    if ((c.x - nx) ** 2 + (c.y - ny) ** 2 <= (c.r + 1) ** 2) return false;
+  }
+  for (const [a, b] of marks.segments) {
+    let t0 = 0, t1 = 1;
+    const dx = b.x - a.x, dy = b.y - a.y, p = [-dx, dx, -dy, dy], q = [a.x - box.x, box.x + box.w - a.x, a.y - box.y, box.y + box.h - a.y];
+    let hit = true;
+    for (let k = 0; k < 4 && hit; k++) {
+      if (p[k] === 0) { if (q[k] < 0) hit = false; continue; }
+      const r = q[k] / p[k];
+      if (p[k] < 0) { if (r > t1) hit = false; else if (r > t0) t0 = r; } else if (r < t0) hit = false; else if (r < t1) t1 = r;
+    }
+    if (hit) return false;
+  }
+  return true;
+}
+function placeIndexLabel(candidates, text, anchor, bold, marks, bounds, others) {
+  for (const c of candidates) {
+    const box = indexLabelBox(c.x, c.y, text, anchor, bold);
+    if (indexBoxClear(box, marks, bounds, others)) return { x: c.x, y: c.y, box };
+  }
+  return null;
+}
+
 function renderSmallMultiples(spec, rows) {
   const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
   // Rebased index panels (opt-in spec.index_base, e.g. 100): 7+ panels go 3-4
@@ -3760,6 +3795,7 @@ function renderSmallMultiples(spec, rows) {
     if (!out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
     return out.sort((a, b) => a - b);
   })();
+  let indexBaseNamed = false;
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
     const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
@@ -3778,8 +3814,6 @@ function renderSmallMultiples(spec, rows) {
     if (indexBase !== null) {
       const by = yScale(indexBase);
       f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
-      // the base is named once, in the first panel; every panel still draws the line
-      if (fi === 0) f.parts.push(`<text data-role="index-base-label" x="${x0 + 4}" y="${by - 5}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0)))}</text>`);
       if (col === 0) {
         idxTicks.forEach((tick) => {
           f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
@@ -3796,10 +3830,35 @@ function renderSmallMultiples(spec, rows) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.2" fill="${PALETTE.accent2}"/>`);
       pointAnnotations(spec, r).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: "right", layout: f.annotationLayout }));
     });
-    if (indexBase !== null && sorted.length) {
-      const last = sorted[sorted.length - 1];
-      const lv = n(last[spec.value_field]);
-      if (lv !== null) f.parts.push(`<text data-role="index-end-value" x="${x0 + panelW}" y="${yScale(lv) + (lv >= indexBase ? -9 : 17)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, lv, "", 1))}</text>`);
+    if (indexBase !== null) {
+      const pts = sorted.map((r) => ({ x: xScale(r[spec.x_field]), y: yScale(n(r[spec.value_field])) }));
+      const marks = { circles: pts.map((p) => ({ x: p.x, y: p.y, r: 4.2 })), segments: xs.length > 1 ? pts.slice(1).map((p, i) => [pts[i], p]) : [] };
+      const bounds = [x0, y0, x0 + panelW, y0 + panelH + 4];
+      const others = [indexLabelBox(x0, y0 + 14, resolveEconomyDisplayName(facet, spec.category_names, vizLang(spec)), "start", true)];
+      if (xs.length > 1) others.push(indexLabelBox(x0, y0 + panelH, String(xs[0]), "start", false), indexLabelBox(x0 + panelW, y0 + panelH, String(xs[xs.length - 1]), "end", false));
+      const lv = sorted.length ? n(sorted[sorted.length - 1][spec.value_field]) : null;
+      if (lv !== null) {
+        const ey = yScale(lv), above = lv >= indexBase;
+        const text = fmtSpec(spec, lv, "", 1), ex = x0 + panelW;
+        const cands = [];
+        for (const dy of above ? [-9, 17, -23, 31] : [17, -9, 31, -23]) for (const dx of [0, -14, -28, -42]) cands.push({ x: ex + dx, y: ey + dy });
+        const spot = placeIndexLabel(cands, text, "end", true, marks, bounds, others);
+        if (spot) {
+          others.push(spot.box);
+          f.parts.push(`<text data-role="index-end-value" x="${spot.x}" y="${spot.y}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(text)}</text>`);
+        }
+      }
+      // the base is named once, in the first panel where a clear spot exists; every panel still draws the line
+      if (!indexBaseNamed) {
+        const by = yScale(indexBase), text = VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0));
+        const cands = [];
+        for (const fx of [0, 0.25, 0.5, 0.75]) for (const dy of [-5, 13, -19, 27]) cands.push({ x: x0 + 4 + fx * panelW, y: by + dy });
+        const spot = placeIndexLabel(cands, text, "start", false, marks, bounds, others);
+        if (spot) {
+          indexBaseNamed = true;
+          f.parts.push(`<text data-role="index-base-label" x="${spot.x}" y="${spot.y}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+        }
+      }
     }
     if (xs.length > 1) {
       f.parts.push(`<text x="${x0}" y="${y0 + panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);

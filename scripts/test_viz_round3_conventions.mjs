@@ -16,6 +16,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 import { renderVizSvg, zhScaleText, fmtSpec, chartValueFormatter } from "../runtime/pi/viz.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID, classBreaks, lintChoroplethSpec } from "../runtime/pi/choropleth.mjs";
@@ -149,6 +150,21 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
   assert.equal(tickXs.size, 1, "tick labels only on the first column");
   const seven = renderVizSvg(spec, rows.filter((r) => Number(r.f.slice(2)) <= 7));
   assert.equal(new Set(tags(seven, /<line data-role="index-base-line"[^>]*>/g).map((l) => attr(l, "x1"))).size, 3, "3 columns for 7 panels");
+  // render QA must be clean on a series-shaped fixture too (16 points, ends near the base): the end values and the base
+  // label are placed clear of every polyline and point, or left out - never drawn over a mark
+  {
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const rowsH = [];
+    for (let k = 0; k < 12; k++) { let v = 100; for (let i = 0; i < 16; i++) { v += (rnd() - 0.5) * 6 + (k % 3 === 0 ? 0.2 : -0.1); rowsH.push({ f: `地区${k + 1}`, x: 2009 + i, v }); } }
+    const svgH = renderVizSvg(spec, rowsH);
+    const failures = checkSvgGeometry(svgH).failures;
+    const byRule = (r) => failures.filter((x) => x.rule === r).length;
+    assert.equal(byRule("text_crosses_data_mark"), 0, `index panels: text over a data mark: ${failures.map((x) => x.message).join(" | ")}`);
+    assert.equal(byRule("text_overlap"), 0, "index panels: overlapping text");
+    assert.equal(failures.length, 0, `index panels: render QA geometry clean: ${failures.map((x) => x.rule)}`);
+    assert.ok(roleTexts(svgH, "index-base-label").length <= 1, "the base is named at most once");
+  }
   const { index_base, ...plain } = spec;
   assert.ok(!renderVizSvg(plain, rows).includes('data-role="index-base-line"'), "no index_base: ordinary small multiples");
 }
