@@ -196,9 +196,10 @@ const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_con
 const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
 const EDITORIAL_HINT_VERIFIED_LIMIT = 12;
 const EDITORIAL_HINT_CLAIM_TEXT_CHARS = 60;
-// Always on, not a speed switch: wording only. The words a model reaches for that are not in the quantity_kind enum
-// (level, rate, change, index), mapped onto it. The enum and the validators that read it are unchanged. At most 160 bytes.
-const QUANTITY_KIND_HINT = "For a measured level or rate use rate or other; for a change in a stock use stock_change; for an index use index.";
+// Always on, not a speed switch: wording only. A level of a stock (people, money) is a stock, so it meets the stock
+// checks in editorial_validators.mjs; stock_change, count, rate, share and index follow; only the rest is other.
+// The enum and the validators that read it are unchanged. At most 160 bytes.
+const QUANTITY_KIND_HINT = "Level of a stock (people, money): stock; its change: stock_change; items or events: count; ratio: rate; part of whole: share; true index: index; else other.";
 
 // The suffix after the unchanged first sentence of the story-graph refusal. It is built only after the unchanged
 // check has decided to refuse, reads claims.jsonl and writes nothing. Every pair that failed the check is listed,
@@ -1169,7 +1170,9 @@ async function assertPublicUrl(url: URL) {
   assertResolvedAddressesSafe(addresses, url.protocol);
 }
 
-async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>) {
+// deferSuccess: the caller reads the body itself and records the success once the body is complete, so a body that
+// never finishes counts against the host like a header that never arrives.
+async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>, options: { deferSuccess?: boolean } = {}) {
   let current: URL | undefined;
   try {
     current = new URL(urlText);
@@ -1182,7 +1185,7 @@ async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<s
           await response.body?.cancel();
           throw new Error(`HTTP ${response.status}`);
         }
-        sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
+        if (!options.deferSuccess) sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
         return response;
       }
       const location = response.headers.get("location");
@@ -2814,19 +2817,25 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
       // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
       const request = { method: "GET", url: params.url, body: "" };
-      if (!sourceAccessCircuit.isBlocked(downloadTimeoutGuard.hostOf(params.url))) downloadTimeoutGuard.assertNotRepeat(request);
+      const requestHost = downloadTimeoutGuard.hostOf(params.url);
+      // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
+      // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
+      if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
       const startedAt = Date.now();
       let timedOut = false;
+      let bodyPhase = false;
       const controller = new AbortController();
       const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
       const abortForwarder = () => controller.abort();
       signal?.addEventListener("abort", abortForwarder, { once: true });
       try {
-        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" });
+        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
+        bodyPhase = true;
         if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
         const declaredLength = Number(response.headers.get("content-length") || 0);
         if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
         const { bytes } = await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false });
+        sourceAccessCircuit.recordSuccess(downloadTimeoutGuard.hostOf(response.url) ?? requestHost);
 
         const pathName = new URL(response.url).pathname;
         const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
@@ -2885,8 +2894,12 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           sha256,
         });
       } catch (error: any) {
-        // Only the tool's own 30 s timer counts: a user cancel keeps its own error.
-        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, error) : error;
+        // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
+        // counted against the host inside safeFetch; a timeout while the body is read is counted here.
+        // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
+        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(requestHost);
+        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, requestHost) : error;
+        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
       } finally {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abortForwarder);

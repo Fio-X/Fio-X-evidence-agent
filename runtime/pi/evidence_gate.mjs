@@ -128,6 +128,15 @@ export function evidenceRefFromFingerprint(fingerprint) {
   return null;
 }
 
+// True when the error, or an error it wraps, is an AbortError. Only the circuit calls this, on the raw error, and
+// keeps nothing but the boolean.
+function abortInChain(error) {
+  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+    if (current.name === "AbortError") return true;
+  }
+  return false;
+}
+
 export function createSourceAccessCircuit(limit = 3) {
   const failuresByKey = new Map();
   const boundedLimit = Math.max(1, Number.isFinite(Number(limit)) ? Math.trunc(Number(limit)) : 3);
@@ -147,10 +156,13 @@ export function createSourceAccessCircuit(limit = 3) {
       if (failures >= boundedLimit) return blocked(normalizedKey);
       const message = String(error?.message ?? error ?? "");
       const http = message.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
-      const reason = error?.name === "AbortError" ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : "could not reach a public source";
-      return new Error(
-        `SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). Do not substitute synthetic data; try a bounded alternative source.`,
-        { cause: error },
+      const aborted = abortInChain(error);
+      const reason = aborted ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : "could not reach a public source";
+      // The raw error can carry the request URL or provider diagnostics, so it is not attached as `cause`. The only
+      // thing a caller needs from it is whether the request was aborted, and that travels as a boolean.
+      return Object.assign(
+        new Error(`SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). Do not substitute synthetic data; try a bounded alternative source.`),
+        aborted ? { request_aborted: true } : {},
       );
     },
     // A successful source proves that the route is usable. Keep the circuit
@@ -172,30 +184,39 @@ export function createSourceAccessCircuit(limit = 3) {
 
 // download_data aborts a request after 30 s. A bare AbortError told the model
 // nothing and four identical retries cost two minutes, so the abort becomes a
-// structured error and an identical retry is refused at once. The request key
-// lives in this process's memory only; it is never written to disk.
-export const DOWNLOAD_TIMEOUT_HINT = "Retrying the same URL rarely helps. Make the request lighter: fewer series or a shorter period; for SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+// structured error. One identical retry is allowed (a slow server is sometimes
+// fast the second time); after the second timeout of the same request the key is
+// refused. Counts live in this process's memory only and are never written to
+// disk: one CLI run is the reset boundary.
+export const DOWNLOAD_TIMEOUT_HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. For SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+export const DOWNLOAD_TIMEOUTS_ALLOWED = 2;
 
-function downloadRequestKey({ method, url, body } = {}) {
-  let href = String(url ?? "");
-  // The fragment never reaches the server, so it does not make a request different.
-  try { const parsed = new URL(href); parsed.hash = ""; href = parsed.href; } catch { /* keep the raw text */ }
+// The key of a request: method, scheme, host and path, the query parameters sorted by name then value (repeated
+// names kept), and the body. URL parsing lowercases scheme and host and drops a default port; the fragment never
+// reaches the server and is dropped.
+export function downloadRequestKey({ method, url, body } = {}) {
+  let target = String(url ?? "");
+  try {
+    const parsed = new URL(target);
+    const pairs = [...parsed.searchParams.entries()].sort(([an, av], [bn, bv]) => (an < bn ? -1 : an > bn ? 1 : av < bv ? -1 : av > bv ? 1 : 0));
+    const query = pairs.map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join("&");
+    target = `${parsed.protocol}//${parsed.host}${parsed.pathname}${query ? `?${query}` : ""}`;
+  } catch { /* keep the raw text */ }
   const payload = body === undefined || body === null ? ""
     : typeof body === "string" ? body
     : ArrayBuffer.isView(body) ? Array.from(new Uint8Array(body.buffer, body.byteOffset, body.byteLength)).join(",")
     : JSON.stringify(body);
-  return `${String(method || "GET").toUpperCase()} ${href}\n${payload}`;
+  return `${String(method || "GET").toUpperCase()} ${target}\n${payload}`;
 }
 
+// The circuit's error carries a boolean instead of its cause; a bare AbortError (thrown while the body is read)
+// carries its name.
 function downloadAbortSurfaced(error) {
-  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
-    if (current.name === "AbortError") return true;
-  }
-  return false;
+  return error?.name === "AbortError" || error?.request_aborted === true;
 }
 
 export function createDownloadTimeoutGuard(limitMs = 30_000) {
-  const timedOut = new Map();
+  const timedOut = new Map(); // key -> { count, elapsedMs of the latest timeout }
   const limitSeconds = Math.round(limitMs / 1000);
   const seconds = (ms) => (Math.max(0, Number(ms) || 0) / 1000).toFixed(1);
   const hostOf = (url) => {
@@ -204,16 +225,17 @@ export function createDownloadTimeoutGuard(limitMs = 30_000) {
   const structured = (code, message, fields) => Object.assign(new Error(`${code}: ${message} ${DOWNLOAD_TIMEOUT_HINT}`), { code, hint: DOWNLOAD_TIMEOUT_HINT, ...fields });
   return {
     hostOf,
-    // Refuses a request that already timed out in this process. Any change to
-    // the URL, method or body is a different key and passes.
+    // Refuses a request that timed out twice in this process. The first timeout
+    // allows one identical retry. Any change to the URL (other than query order
+    // or a fragment), method or body is a different key and passes.
     assertNotRepeat(request) {
       const earlier = timedOut.get(downloadRequestKey(request));
-      if (earlier === undefined) return;
+      if (!earlier || earlier.count < DOWNLOAD_TIMEOUTS_ALLOWED) return;
       const host = hostOf(request?.url) ?? "unknown host";
       throw structured(
         "DOWNLOAD_TIMEOUT_REPEAT",
-        `this exact request to ${host} already timed out after ${seconds(earlier)} s in this session, so it was not sent again.`,
-        { host, elapsed_seconds: Number(seconds(earlier)) },
+        `this exact request to ${host} timed out ${earlier.count} times (the last after ${seconds(earlier.elapsedMs)} s), so it is refused for the rest of this run and was not sent again; the count starts over with the next CLI run.`,
+        { host, elapsed_seconds: Number(seconds(earlier.elapsedMs)) },
       );
     },
     // Called when the tool's own timer fired. Returns the error to throw: the
@@ -222,7 +244,8 @@ export function createDownloadTimeoutGuard(limitMs = 30_000) {
     // and passes through unchanged.
     recordTimeout(request, elapsedMs, error) {
       if (!downloadAbortSurfaced(error) || /^SOURCE_ACCESS_BLOCKED:/.test(String(error?.message ?? ""))) return error;
-      timedOut.set(downloadRequestKey(request), elapsedMs);
+      const key = downloadRequestKey(request);
+      timedOut.set(key, { count: (timedOut.get(key)?.count ?? 0) + 1, elapsedMs });
       const host = hostOf(request?.url) ?? "unknown host";
       return structured(
         "DOWNLOAD_TIMEOUT",
