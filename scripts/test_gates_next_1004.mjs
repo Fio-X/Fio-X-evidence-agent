@@ -10,6 +10,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { chartSvgText, checkReaderText } from "../runtime/pi/infographic.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
 const INVIS = [["zwsp", "\u200b", "亿美元"], ["wj", "\u2060", "亿美元"], ["shy", "\u00ad", "亿美元"], ["bom", "\ufeff", "亿美元"], ["mvs", "\u180e", "亿美元"], ["nel", "\u0085", "亿美元"],
@@ -293,6 +294,30 @@ for (const field of ["label", "detail"]) {
 await ok("K41 control: the value alone with a changed region still passes", async () => {
   const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound", mutateRows: regionChanged });
   must(!r.refused, JSON.stringify(r.refused));
+});
+
+// ---- K40: reader text follows xlink:title, aria-labelledby and aria-describedby ----
+const blocked = (svg) => checkReaderText(chartSvgText(svg)).blockers.map((b) => b.term);
+await ok("K40 xlink:title on a link is read and caught", async () => {
+  must(JSON.stringify(blocked('<svg><a xlink:title="未经闸门"><rect/></a></svg>')) === '["未经闸门"]', JSON.stringify(blocked('<svg><a xlink:title="未经闸门"><rect/></a></svg>')));
+});
+await ok("K40 aria-labelledby to a metadata and a g is read and caught", async () => {
+  const svg = '<svg><rect aria-labelledby="a b"/><metadata id="a">ordinary note</metadata><g id="b"><g><rect/></g>数据行绑定 <text>x</text></g></svg>';
+  must(JSON.stringify(blocked(svg)) === '["行绑定"]', JSON.stringify(blocked(svg)) + " | " + chartSvgText(svg));
+  const meta = '<svg><rect aria-labelledby="a b"/><metadata id="a">未经闸门</metadata><g id="b">fine</g></svg>';
+  must(JSON.stringify(blocked(meta)) === '["未经闸门"]', JSON.stringify(blocked(meta)));
+});
+await ok("K40 aria-describedby is read and caught", async () => {
+  const svg = '<svg><circle aria-describedby="d"/><g id="d"><desc>fine</desc>结论未绑定</g></svg>';
+  must(JSON.stringify(blocked(svg)) === '["未绑定"]', JSON.stringify(blocked(svg)) + " | " + chartSvgText(svg));
+});
+await ok("K40 a missing id adds nothing and does not throw", async () => {
+  const svg = '<svg><rect aria-labelledby="nope also-missing" aria-describedby="gone"/><text>Region B</text></svg>';
+  must(chartSvgText(svg) === "Region B" && blocked(svg).length === 0, chartSvgText(svg));
+});
+await ok("K40 ordinary text stays clean", async () => {
+  const svg = '<svg><a xlink:title="Region B, 2 units"><rect aria-labelledby="t"/></a><g id="t"><text>Largest value</text></g></svg>';
+  must(blocked(svg).length === 0 && /Region B, 2 units/.test(chartSvgText(svg)), chartSvgText(svg));
 });
 
 // @@NEXT@@

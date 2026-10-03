@@ -813,8 +813,25 @@ const decodeSvgEntities = (text) => text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z
   return SVG_ENTITIES[name.toLowerCase()] ?? whole;
 });
 
+/** The inner markup of the element whose id is `id` (any tag; nested same-name tags are balanced), or "" when there is none. */
+function svgElementContentById(svg, id) {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const open = new RegExp(`<([A-Za-z][\\w:.-]*)\\b[^>]*?\\sid\\s*=\\s*(?:"${escaped}"|'${escaped}')[^>]*>`, "i").exec(svg);
+  if (!open || /\/\s*>$/.test(open[0])) return "";
+  const name = open[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tags = new RegExp(`<(/?)${name}\\b[^>]*>`, "gi");
+  tags.lastIndex = open.index + open[0].length;
+  let depth = 1;
+  for (let tag = tags.exec(svg); tag; tag = tags.exec(svg)) {
+    if (tag[1]) depth -= 1;
+    else if (!/\/\s*>$/.test(tag[0])) depth += 1;
+    if (depth === 0) return svg.slice(open.index + open[0].length, tag.index);
+  }
+  return "";
+}
+
 /** The reader-visible text of one SVG string: the contents of its text, tspan, title and desc elements, entities decoded,
- *  one line per element. Nothing is read from attributes or from other elements. */
+ *  one line per element, plus the attribute and referenced-element text listed below. */
 export function chartSvgText(svg) {
   if (typeof svg !== "string" || !svg) return "";
   const lines = [];
@@ -827,7 +844,15 @@ export function chartSvgText(svg) {
   const rest = svg.replace(outer, (_, __, inner) => { take(inner); return " "; });
   for (const match of rest.matchAll(/<tspan\b[^>]*>([\s\S]*?)<\/tspan\s*>/gi)) take(match[1]);
   // Text read out by assistive technology is reader text too: aria-label, aria-description, aria-roledescription.
-  for (const match of svg.matchAll(/\saria-(?:label|description|roledescription)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) take(match[1] ?? match[2] ?? "");
+  // xlink:title is a tooltip on a link: reader text too.
+  for (const match of svg.matchAll(/\s(?:aria-(?:label|description|roledescription)|xlink:title)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) take(match[1] ?? match[2] ?? "");
+  // aria-labelledby / aria-describedby name other elements by id: the whole text content of each, whatever its tag.
+  for (const match of svg.matchAll(/\saria-(?:labelledby|describedby)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    for (const id of (match[1] ?? match[2] ?? "").split(/\s+/).filter(Boolean)) {
+      const content = svgElementContentById(svg, id);
+      if (content) take(content);
+    }
+  }
   return lines.join("\n");
 }
 
