@@ -795,10 +795,11 @@ export function pageTopWarning(spec, assets = {}) {
 //   assets    the source_note of every visual and illustration manifest, and an illustration manifest's credit and
 //             provenance disclosure (the page prints them in its source list and caption)
 //   charts    module:<id>:chart_text (not copy): the text, tspan, title and desc contents of each visual's desktop SVG,
-//             entities decoded (chartSvgText)
+//             entities decoded, plus aria-label / aria-description / aria-roledescription values (chartSvgText); also
+//             module:<id>:chart_text.mobile / .compact (the lines those variants add) and module:<id>:illustration_text[.mobile]
+//             for an illustration's SVG
 // "copy" fields are running copy: they are also read for unsupported quantifiers and vague times.
-// Still not read: the compact and mobile SVG variants of a visual, an illustration's SVG text, and the raw text of a
-// source_quote.quote (see below).
+// Still not read: the raw text of a source_quote.quote (see below).
 // Deliberately not read: planning fields no composer draws (intent, primary_message, reader_question,
 // visual_thesis, new_information, story_role, annotations, ids and refs), source_quote.quote (verbatim words of the
 // source) and label_template / detail_template (templates by design; the filled label and detail are read).
@@ -825,7 +826,14 @@ export function chartSvgText(svg) {
   const outer = /<(text|title|desc)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
   const rest = svg.replace(outer, (_, __, inner) => { take(inner); return " "; });
   for (const match of rest.matchAll(/<tspan\b[^>]*>([\s\S]*?)<\/tspan\s*>/gi)) take(match[1]);
+  // Text read out by assistive technology is reader text too: aria-label, aria-description, aria-roledescription.
+  for (const match of svg.matchAll(/\saria-(?:label|description|roledescription)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) take(match[1] ?? match[2] ?? "");
   return lines.join("\n");
+}
+
+/** The lines of `svg` that `seen` (the lines already read from another variant) does not have. */
+function newSvgLines(svg, seen) {
+  return chartSvgText(svg).split("\n").filter((line) => line && !seen.has(line)).join("\n");
 }
 
 export function readerTextEntries(spec, assets = {}) {
@@ -848,7 +856,16 @@ export function readerTextEntries(spec, assets = {}) {
     for (const key of READER_COPY_KEYS) add(`module:${id}:${key}`, module[key], true);
     for (const key of READER_OTHER_KEYS) add(`module:${id}:${key}`, module[key], false);
     add(`module:${id}:source_quote.translation`, module.source_quote?.translation, false);
-    if (module.type === "visual") add(`module:${id}:chart_text`, chartSvgText(assets?.[module.manifest_ref]?.desktopSvg), false);
+    // Every SVG variant the page can embed is read: desktop, mobile and compact charts, and an illustration's own text. A
+    // variant adds only the lines the desktop text does not already have.
+    const svgAsset = module.type === "visual" ? assets?.[module.manifest_ref] : module.type === "illustration" ? assets?.[module.asset_ref] : null;
+    if (svgAsset) {
+      const desktopText = chartSvgText(svgAsset.desktopSvg);
+      const seen = new Set(desktopText.split("\n"));
+      const prefix = module.type === "visual" ? "chart_text" : "illustration_text";
+      add(`module:${id}:${prefix}`, desktopText, false);
+      for (const [variant, svg] of [["mobile", svgAsset.mobileSvg], ["compact", svgAsset.compactSvg]]) add(`module:${id}:${prefix}.${variant}`, newSvgLines(svg, seen), false);
+    }
     const manifest = module.type === "visual" ? assets?.[module.manifest_ref]?.manifest : module.type === "illustration" ? assets?.[module.asset_ref]?.manifest : null;
     if (manifest && typeof manifest === "object") {
       add(`module:${id}:manifest.source_note`, manifest.source_note, false);

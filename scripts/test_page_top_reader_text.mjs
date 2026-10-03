@@ -261,7 +261,30 @@ for (const [inner, term] of [['<text x="1" y="1">数据行绑定</text>', '行�
 }
 eq(chartLint('<text>水库闸门</text>').warnings.filter((warning) => warning.includes('module:bar:chart_text')).length, 1, 'an ordinary word in chart text warns');
 eq(chartBlockers(chartLint('<text>水库闸门</text>')), [], '... and does not block');
-eq(chartBlockers(chartLint('<rect data-note="未经闸门" aria-label="value_from"/>')), [], 'attributes are not reader text');
+eq(chartBlockers(chartLint('<rect data-note="未经闸门" class="value_from"/>')), [], 'other attributes are not reader text');
+eq(chartBlockers(chartLint('<rect aria-label="value_from"/>')).length, 1, 'aria-label is read out to readers: it blocks like text');
+eq(chartBlockers(chartLint(`<g aria-description='未经闸门'/>`)).length, 1, 'aria-description blocks too');
+eq(chartSvgText('<svg><rect aria-label="A &amp; B"/></svg>'), 'A & B', 'chartSvgText: aria-label value, entities decoded');
+// every SVG variant the page can embed is read, and an illustration's own text
+for (const key of ['mobileSvg', 'compactSvg']) {
+  const withCompact = key === 'compactSvg' ? { ...assets, 'visualizations/bar.json': { ...assets['visualizations/bar.json'], compactSvg: assets['visualizations/bar.json'].desktopSvg } } : assets;
+  const patched = { ...withCompact, 'visualizations/bar.json': { ...withCompact['visualizations/bar.json'], [key]: withCompact['visualizations/bar.json'][key].replace(/<\/svg>\s*$/, '<text>数据行绑定</text></svg>') } };
+  const lint = lintInfographicSpec(page(['hero', 'bar', 'text']), patched, context);
+  const field = `module:bar:chart_text.${key.replace('Svg', '')}`;
+  eq(lint.blockers.filter((blocker) => blocker.includes(field)).length, 1, `a process word only in the ${key} blocks (${field})`);
+  yes(lint.passed === false, `the page fails for ${key}`);
+}
+{
+  const cleanMobile = lintInfographicSpec(page(['hero', 'bar', 'text']), assets, context);
+  eq(cleanMobile.blockers.filter((blocker) => blocker.includes('chart_text.')), [], 'the real mobile variant adds no process word');
+}
+for (const key of ['desktopSvg', 'mobileSvg']) {
+  const sceneModule = tableSpec.modules.find((module) => module.type === 'illustration');
+  const ref = sceneModule.asset_ref;
+  const patched = { ...tableAssets, [ref]: { ...tableAssets[ref], [key]: tableAssets[ref][key].replace(/<\/svg>\s*$/, '<text>未经闸门</text></svg>') } };
+  const found = readerTextEntries(tableSpec, patched).filter((entry) => entry.field.startsWith(`module:${sceneModule.id}:illustration_text`) && entry.text.includes('未经闸门'));
+  eq(found.length, 1, `an illustration's ${key} text is read`);
+}
 eq(chartBlockers(chartLint('<script>未经闸门</script><style>.x{}</style>')), [], 'other elements are not reader text');
 eq(chartSvgText('<svg><text>A &amp; B</text><text>  second   line </text></svg>').split('\n'), ['A & B', 'second line'], 'chartSvgText: entities decoded, one line per element, spaces collapsed');
 eq(chartSvgText('<svg><text><tspan>a</tspan><tspan>b</tspan></text><title>t</title><desc>d</desc></svg>').split('\n').sort(), ['ab', 'd', 't'], 'chartSvgText: tspan, title and desc');
