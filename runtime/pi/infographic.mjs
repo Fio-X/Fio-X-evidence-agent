@@ -880,16 +880,15 @@ export function readerTextEntries(spec, assets = {}) {
 
 // Blockers: pipeline phrases - words only the pipeline's own notes use. A reader never needs one. Bare 闸门, 未绑定 and
 // 缺口修复 are ordinary words (a reservoir gate, an unbound account, a funding gap repair), so they only warn below.
-//   process_term      1. 未经闸门; 行绑定 (row binding), except as the tail of 进行绑定 / 银行绑定; 闸门 directly followed by a gate
-//                        verb of two characters (核验 核实 核对 核查 校验 校对 校核 检查 拦截 放行 通过 判定: 闸门检修 and 闸门核心 are not).
+//   process_term      1. 未经闸门; 行绑定 (row binding), except as the tail of 进行绑定 / 银行绑定; 闸门 directly followed by 核, 检, 校, 拦,
+//                        放行, 通过 or 判定, except 闸门检修 (an ordinary word: the maintenance of a reservoir gate).
 //                     2. subject rule: a pipeline subject (数值 数字 数据 结论 声明 占位符 字段) and a process word (闸门 未绑定 绑定
 //                        缺口修复) in one clause, in either order, with at most 4 characters between them and none of 。；;，,！!？?、
 //                        or a line break among them (数值未绑定, 这个数字没有通过闸门, 该数据行绑定失败, 结论绑定失败).
 //   field_name        value_from, claim_id(s), story_node(s) / story_node_id(s): whole field names only.
 //   placeholder_word  TODO, FIXME, TBD, placeholder(s), lorem - any case, whole words only.
 //   template_braces   any {...} with something inside, such as an unfilled {max.value}.
-const GATE_VERBS = "核验|核实|核对|核查|校验|校对|校核|检查|拦截|放行|通过|判定";
-const PROCESS_PHRASE_RE = new RegExp(`未经闸门|闸门(?=${GATE_VERBS})|(?<![进银])行绑定`, "gu");
+const PROCESS_PHRASE_RE = /未经闸门|闸门(?=核|检|校|拦|放行|通过|判定)(?!检修)|(?<![进银])行绑定/gu;
 const PROCESS_SUBJECT_RE = /数值|数字|数据|结论|声明|占位符|字段/gu;
 const PROCESS_WORD_RE = /缺口修复|未绑定|闸门|绑定/gu;
 const CLAUSE_BREAK_RE = /[。；;，,！!？?、\n\r]/u;

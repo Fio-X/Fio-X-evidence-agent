@@ -134,6 +134,16 @@ const blockerCases = [
   ['结论绑定失败', 'process_term', ['绑定']],
   ['数据闸门核验', 'process_term', ['闸门']],
   ['字段绑定失败', 'process_term', ['绑定']],
+  ['闸门检验', 'process_term', ['闸门']],
+  ['闸门检测', 'process_term', ['闸门']],
+  ['闸门拦下', 'process_term', ['闸门']],
+  ['闸门拦住', 'process_term', ['闸门']],
+  ['闸门校正', 'process_term', ['闸门']],
+  ['闸门核准', 'process_term', ['闸门']],
+  ['闸门核算', 'process_term', ['闸门']],
+  ['闸门检查', 'process_term', ['闸门']],
+  ['闸门核验', 'process_term', ['闸门']],
+  ['闸门核心部件', 'process_term', ['闸门']],
   ['see value_from for the number', 'field_name', ['value_from']],
   ['Value_From is shown', 'field_name', ['Value_From']],
   ['the claim_id is claim-1', 'field_name', ['claim_id']],
@@ -181,7 +191,7 @@ for (const [text, term] of warnCases) {
   yes(result.warnings[0].rule === 'review_term' && result.warnings[0].message.startsWith('reader_text_review_term: page text uses "'), `warning shape for ${JSON.stringify(text)}`);
 }
 // ordinary words that look like process words: a warning, never a blocker
-for (const [text, term] of [['水库闸门已经关闭', '闸门'], ['账户未绑定', '未绑定'], ['资金缺口修复方案', '缺口修复'], ['闸门', '闸门'], ['水库闸门检修', '闸门'], ['闸门核心部件', '闸门'], ['船只通过闸门', '闸门'], ['数据显示，船只通过闸门', '闸门'], ['银行卡未绑定', '未绑定'], ['堤坝缺口修复', '缺口修复'], ['数据显示，账户未绑定', '未绑定']]) {
+for (const [text, term] of [['水库闸门已经关闭', '闸门'], ['账户未绑定', '未绑定'], ['资金缺口修复方案', '缺口修复'], ['闸门', '闸门'], ['水库闸门检修', '闸门'], ['船只通过闸门', '闸门'], ['数据显示，船只通过闸门', '闸门'], ['银行卡未绑定', '未绑定'], ['堤坝缺口修复', '缺口修复'], ['数据显示，账户未绑定', '未绑定']]) {
   const result = checkReaderText(text);
   eq(result.blockers, [], `an ordinary word never blocks: ${JSON.stringify(text)}`);
   eq(hits(result, 'warnings'), [term], `an ordinary word warns: ${JSON.stringify(text)}`);
