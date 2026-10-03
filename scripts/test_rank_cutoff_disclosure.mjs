@@ -39,7 +39,12 @@ assert.ok(text(svgOf({ ...base, language: "en" }, fifteen)).includes(sq("Showing
 // a missing end is outside the ranking: drawn as dropping out / entering when the other end is within the cut, else left out
 {
   const rows = [{ c: "甲", a: 3, b: null }, { c: "乙", a: undefined, b: 2 }, { c: "丙", a: "", b: "" }, { c: "丁", a: 1, b: 1 }];
-  assert.deepEqual(lintCodes(base, rows), [], "a missing end is allowed");
+  // The rank rule accepts a missing end, but the generic numeric check still refuses these rows (as it did at the base head), so
+  // production lint blocks them. Until a lint exemption is decided, only a direct render reaches the "outside the ranking" path.
+  assert.deepEqual(lintCodes(base, rows), [], "no RANK_ code for a missing end");
+  assert.deepEqual(lintVizSpec(base, rows, {}).blockers.slice().sort(),
+    [...lintVizSpec(base, fifteen, {}).blockers, "Field 'a' contains non-numeric or missing values", "Field 'b' contains non-numeric or missing values"].sort(),
+    "the full blocker list: the fixture's own blockers plus the generic missing-value blocker for each field with a missing value");
   const svg = svgOf(base, rows);
   assert.ok(text(svg).includes(sq("只显示任一期进入前 10 名的 3 项；另有 1 项两期都不在前 10 名，未画出。")), "missing ends: 3 shown, 1 hidden");
   assert.equal([...svg.matchAll(/data-role="rank-leave"/g)].length, 1, "甲 drops out");
@@ -55,6 +60,11 @@ for (const [bad, field] of [[3.5, "a"], [0, "b"], [-2, "a"], ["abc", "b"], [10.0
   assert.ok(found[0].includes(sq("项E")) && found[0].includes(`${field}=${bad}`), `the row is named: ${found[0]}`);
 }
 assert.deepEqual(lintCodes(base, fifteen), [], "integer ranks pass");
+// render refuses the same ranks, whatever lint did: one case each, nothing rounded or dropped
+for (const bad of [0, -1, 3.5, "3.5"]) {
+  const rows = fifteen.map((r, i) => (i === 4 ? { ...r, a: bad } : r));
+  assert.throws(() => svgOf(base, rows), (e) => /^RANK_NOT_INTEGER/.test(e.message) && e.message.includes("项E") && e.message.includes(`a=${bad}`), `render refuses rank ${JSON.stringify(bad)}`);
+}
 // applicability: slope only
 for (const chart_type of ["horizontal_bar", "dumbbell", "line"]) {
   const found = validateVizSpec({ ...base, chart_type }).filter((e) => e.startsWith("RANK_CUTOFF_NOT_APPLICABLE"));
