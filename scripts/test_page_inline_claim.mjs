@@ -6,16 +6,18 @@
 //
 //  1. fillClaimTemplate over data shapes (time series, ranking, share, count,
 //     by-country values) and its refusals (no rows, ambiguous rows, missing
-//     column, typed digits).
+//     column, typed digits); on a zh chart a place or currency name is the
+//     name the chart prints, with the raw value kept in the binding.
 //  2. Source note and alt helpers.
 //  3. Switch off: tool surface, descriptions and schemas equal the page line's
 //     a4d4cb0 (from git; skipped when history is unavailable); record_claim's
 //     output and record are unchanged with the switch off and on.
-//  4. Inline flows on three data shapes: one verified claim with its template
-//     and bindings, the chart bound to it, takeaway and alt written from it,
-//     the chain completes; retry reuses the claim; parallel identical claims
-//     record once.
-//  5. Refusals record nothing and refuse the way the original entry point does.
+//  4. Inline flows on five data shapes (three English, two zh whose names the
+//     runtime localizes): one verified claim with its template and bindings,
+//     the chart bound to it, takeaway and alt written from it, the chain
+//     completes; retry reuses the claim; parallel identical claims record once.
+//  5. Refusals record nothing and refuse the way the original entry point does;
+//     a localized name never lets a claim through that its raw value would not.
 //  6. Downstream: story graph, page plan and page lint accept a chain-recorded
 //     claim_id exactly as they accept one from record_claim, and still refuse
 //     unverified ones.
@@ -30,6 +32,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "a4d4cb0";
@@ -65,10 +68,12 @@ export const Type = {
 `;
 // A type-stripped copy of runtime/pi/newsroom.ts from a checkout of `source`
 // (this tree, or the baseline's archive) with stand-ins for the two packages.
-async function loadTree(label, source = ROOT, patchRegistry = null) {
+// `patchTree(dir)` may change the copy (never the checkout) before it is loaded.
+async function loadTree(label, source = ROOT, patchRegistry = null, patchTree = null) {
   const dir = mkdtempSync(join(scratch, `tree-${label}-`));
   cpSync(join(source, "runtime"), join(dir, "runtime"), { recursive: true });
   cpSync(join(source, "config"), join(dir, "config"), { recursive: true });
+  if (patchTree) patchTree(dir);
   stub(dir, "typebox", TYPEBOX);
   stub(dir, "@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
   const pi = join(dir, "runtime", "pi");
@@ -98,8 +103,9 @@ const BASE_ENV = {
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
 
 const { mod, dir: treeDir } = await loadTree("current");
-void treeDir;
 const { fillClaimTemplate, inlineSourceNote } = mod;
+// The same module instance newsroom.ts imports, so the lookup the fill gets is the one the chart uses.
+const { chartNameDisplay } = await import(join(treeDir, "runtime/pi/viz.mjs"));
 
 // ---- 1. The template filler over data shapes --------------------------------
 const rejects = (template, pattern, rows, measures = []) => assert.throws(() => fillClaimTemplate(template, rows, measures), (error) => {
@@ -206,6 +212,64 @@ const rejects = (template, pattern, rows, measures = []) => assert.throws(() => 
   rejects("{rate@year=2020}", /2 result rows have year = 2020 \(row_index 0, 1\), so the lookup names no single row/, [{ year: 2020, rate: 1 }, { year: 2020, rate: 2 }]);
   check("filler: time series, ranking, share, count and by-country shapes; no rows, ties, duplicate keys and missing columns are refused");
 }
+{ // A zh chart prints a place or currency name as its localized name and its claim says the same name: chartNameDisplay is the
+  // chart's own lookup. The binding keeps the raw cell (value) and the raw text beside the name; numbers, other columns, values
+  // the table does not know and every English chart are filled exactly as before.
+  const zhPlan = (over = {}) => ({ language: "zh", reader_task: "ranking", chart_type: "horizontal_bar", title: "各经济体可再生能源占比", category_field: "code", value_field: "share", category_names: "iso3", ...over });
+  const rows = [
+    { code: "KEN", year: 2022, share: 88.2, other: "KEN" },
+    { code: " USA ", year: 2021, share: 50.5, other: "USA" },
+    { code: "HKG", year: 2022, share: 11.3, other: "HKG" },
+  ];
+  const lookup = chartNameDisplay(zhPlan(), rows);
+  assert.equal(lookup?.mode, "iso3");
+  const fill = (template, rowset = rows, names = lookup, measures = ["share"]) => fillClaimTemplate(template, rowset, measures, names);
+  const FIVE = ["placeholder", "column", "row_index", "value", "text"];
+  const SEVEN = [...FIVE, "raw_text", "category_names"];
+  const keysOf = (filled) => filled.bindings.map((binding) => Object.keys(binding).join());
+  // Every selector form prints the name and keeps the raw cell, as the database returned it, beside it.
+  assert.equal(fill("{first.code}、{last.code}、{max.share.code}、{min.share.code}").text, "肯尼亚、中国香港、肯尼亚、中国香港");
+  assert.deepEqual(fill("{max.share.code}").bindings, [{ placeholder: "{max.share.code}", column: "code", row_index: 0, value: "KEN", text: "肯尼亚", raw_text: "KEN", category_names: "iso3" }]);
+  assert.deepEqual(fill("{code@share=50.5}").bindings, [{ placeholder: "{code@share=50.5}", column: "code", row_index: 1, value: " USA ", text: "美国", raw_text: "USA", category_names: "iso3" }], "a padded cell is still the raw value; raw_text is the formatted one");
+  assert.deepEqual(fill("{first.code}、{code@share=50.5}").bindings.map((binding) => Object.keys(binding)), [SEVEN, SEVEN]);
+  // Numbers, years, columns that are not the chart's name field and lookups by raw key are filled as before: five keys, no raw_text.
+  const plain = fill("{max.share}%（{max.share.year}）{share@code=KEN}、{max.share.other}");
+  assert.equal(plain.text, "88.2%（2022）88.2、KEN");
+  assert.deepEqual(plain.bindings.map((binding) => Object.keys(binding)), Array(4).fill(FIVE));
+  assert.throws(() => fill("{share@code=肯尼亚}"), /no result row has code = 肯尼亚; code values: KEN, /, "the localized name is not a lookup key; the raw value is");
+  assert.throws(() => fill("{first.code|1}"), /the \|N suffix applies only to numbers/, "a name column still takes no |N");
+  // |N formats a number, so it never takes a name, even where a lookup would know one for a cell that is numeric text.
+  const numeric = fillClaimTemplate("{first.code|1} / {first.code}", [{ code: "840" }], [], { mode: "iso3", display: () => "美国" });
+  assert.deepEqual(numeric.bindings.map((binding) => [binding.text, Object.keys(binding).length]), [["840.0", 5], ["美国", 7]]);
+  // A value the table does not know, or one that is not text, is printed as it is (the chart prints it as it is).
+  const odd = [{ code: "Atlantis", share: 3 }, { code: "usa", share: 2 }, { code: 840, share: 1 }];
+  const oddFill = fill("{first.code}/{code@share=2}/{last.code}", odd, chartNameDisplay(zhPlan(), odd));
+  assert.equal(oddFill.text, "Atlantis/usa/840");
+  assert.deepEqual(oddFill.bindings.map((binding) => binding.value), ["Atlantis", "usa", 840]);
+  assert.deepEqual(oddFill.bindings.map((binding) => Object.keys(binding)), Array(3).fill(FIVE));
+  // Auto-resolved names, no category_names declared: an ISO 4217 currency field and a World Bank country field.
+  const fx = [{ currency: "TRY", rate: 36.5 }, { currency: "GBP", rate: 0.8 }, { currency: "JPY", rate: 160.2 }];
+  const fxNames = chartNameDisplay(zhPlan({ category_field: "currency", value_field: "rate", category_names: undefined }), fx);
+  assert.equal(fxNames?.mode, "iso4217");
+  const fxFill = fill("欧元兑{max.rate.currency}最高，兑{min.rate.currency}最低，{first.currency}", fx, fxNames, ["rate"]);
+  assert.equal(fxFill.text, "欧元兑日元最高，兑英镑最低，土耳其里拉");
+  assert.deepEqual(fxFill.bindings.map((binding) => [binding.value, binding.text, binding.raw_text, binding.category_names]), [["JPY", "日元", "JPY", "iso4217"], ["GBP", "英镑", "GBP", "iso4217"], ["TRY", "土耳其里拉", "TRY", "iso4217"]]);
+  const wb = [{ country: "United States", v: 3 }, { country: "Hong Kong SAR, China", v: 2 }, { country: "Chad", v: 1 }];
+  const wbNames = chartNameDisplay(zhPlan({ category_field: "country", value_field: "v", category_names: undefined }), wb);
+  assert.equal(wbNames?.mode, "worldbank");
+  const wbFill = fill("{max.v.country}、{country@v=2}、{min.v.country}", wb, wbNames, ["v"]);
+  assert.equal(wbFill.text, "美国、中国香港、乍得");
+  assert.deepEqual(wbFill.bindings.map((binding) => [binding.value, binding.raw_text, binding.category_names]), [["United States", "United States", "worldbank"], ["Hong Kong SAR, China", "Hong Kong SAR, China", "worldbank"], ["Chad", "Chad", "worldbank"]]);
+  // An English chart localizes nothing; no lookup and a null lookup fill the same; a template with no name is filled alike either way.
+  assert.equal(chartNameDisplay(zhPlan({ language: "en" }), rows), null);
+  const english = fillClaimTemplate("{max.share.code} leads at {max.share}%.", rows, ["share"]);
+  assert.equal(english.text, "KEN leads at 88.2%.");
+  assert.deepEqual(english, fillClaimTemplate("{max.share.code} leads at {max.share}%.", rows, ["share"], null));
+  assert.deepEqual(keysOf(english), Array(2).fill(FIVE.join()));
+  const numbersOnly = "{max.share}%（{max.share.year}年）至{min.share}%";
+  assert.deepEqual(fill(numbersOnly), fillClaimTemplate(numbersOnly, rows, ["share"]));
+  check("filler on a zh chart: name placeholders print the chart's own localized name (iso3, auto iso4217, auto World Bank) with the raw cell and text kept in the binding; numbers, other columns, unknown or non-text values, lookups by raw key and English charts are filled as before; |N on a name is still refused");
+}
 
 // ---- Investigation fixtures -------------------------------------------------
 const renewable = readFileSync(join(ROOT, "fixtures/world-bank-renewable-latest.csv"));
@@ -266,7 +330,13 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
 // The one intended difference from the page line: viz_plan's and viz_chain's measure_semantics is the full schema again (the page line
 // registers a weaker duplicate). Mask only that property here; test_viz_plan_schema.mjs asserts the full schema itself.
 const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsroom_viz_chain"].includes(name) && parameters?.properties?.measure_semantics ? { ...parameters, properties: { ...parameters.properties, measure_semantics: "masked" } } : parameters);
-const surface = (tools) => [...tools.entries()].map(([name, t]) => [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) })]);
+// The other declared difference from the page line: the category_names enum and wording on newsroom_viz_plan and
+// newsroom_viz_chain, and two viz_plan guideline sentences (zh-names-1003). `current: true` puts the old wording back with
+// revertNameLocalization, which refuses a surface that lacks exactly those edits; everything else is still compared byte for byte.
+const surface = (tools, { current = false } = {}) => [...tools.entries()].map(([name, tool]) => {
+  const t = current ? revertNameLocalization(tool) : tool;
+  return [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) })];
+});
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
 if (!baseline) console.log(`git history for ${BASELINE} is unavailable; skipping the comparison with the page line`);
@@ -275,7 +345,7 @@ const PHASES = [undefined, "design", "verify", "verify,design"];
 if (baseline) {
   let compared = 0;
   const same = (label, env, current = mod) => {
-    const [a, b] = [surface(register(baseline, env)), surface(register(current, env))];
+    const [a, b] = [surface(register(baseline, env)), surface(register(current, env), { current: true })];
     assert.deepEqual(b.map(([n]) => n), a.map(([n]) => n), `${label}: tool list`);
     for (const [i, [name, json]] of a.entries()) assert.equal(b[i][1], json, `${label}: ${name} definition changed`);
     compared += a.length;
@@ -294,6 +364,17 @@ if (baseline) {
   // A phase or profile that hides record_claim or duckdb_query is not bypassed.
   for (const [profile, phase] of [["full", "design"], ["full", "verify"], ["publication", undefined], ["full", "design,publish"]]) same(`${profile}/${phase}: record_claim or duckdb_query hidden`, { ...BASE_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase, NEWSROOM_SPEED_INLINE_CLAIM: "1" });
   check(`switch off or unavailable: ${compared} tool definitions (list, label, description, guidelines, schema) equal ${BASELINE} across ${PROFILES.length} profiles x ${PHASES.length} phases`);
+  {
+    // The declared name-localization edits are real (the current surface differs from the page line's) and the revert is
+    // strict (it refuses a surface that does not carry them), so neither a reverted change nor a spread one passes quietly.
+    const [old, now] = [register(baseline, { ...BASE_ENV }), register(mod, { ...BASE_ENV })];
+    for (const name of ["newsroom_viz_plan", "newsroom_viz_chain"]) {
+      assert.notEqual(JSON.stringify(now.get(name).parameters), JSON.stringify(old.get(name).parameters), `${name}: the category_names edit is present in the current surface`);
+      assert.throws(() => revertNameLocalization(old.get(name)), /name localization: .* carries the declared edit/, `${name}: a surface without the edits is refused`);
+    }
+    assert.notDeepEqual(now.get("newsroom_viz_plan").promptGuidelines, old.get("newsroom_viz_plan").promptGuidelines, "the two viz_plan guideline edits are present");
+    check("name localization: the declared category_names edits are present on viz_plan and viz_chain, and reverting a surface that lacks them is refused");
+  }
 
   // On: exactly newsroom_viz_plan, record_claim (one guideline) and newsroom_viz_chain differ.
   for (const profile of ["full", "investigate", "competition", "visual", "visual-story"]) {
@@ -303,7 +384,7 @@ if (baseline) {
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
       const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, after.get(name).promptGuidelines, after.get(name).parameters]) !== JSON.stringify([before.get(name).description, before.get(name).promptGuidelines, before.get(name).parameters]));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);
-      const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), after.get("newsroom_viz_plan"), before.get("record_claim"), after.get("record_claim"), after.get("newsroom_viz_chain")];
+      const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), revertNameLocalization(after.get("newsroom_viz_plan")), before.get("record_claim"), after.get("record_claim"), revertNameLocalization(after.get("newsroom_viz_chain"))];
       // record_claim: same description and schema, one more guideline.
       assert.equal(rc1.description, rc0.description);
       assert.deepEqual(rc1.parameters, rc0.parameters);
@@ -320,6 +401,7 @@ if (baseline) {
       assert.match(plan1.parameters.properties.claim.description, /\{max\.col\.other\}/);
       assert.deepEqual(plan1.promptGuidelines.slice(0, plan0.promptGuidelines.length), plan0.promptGuidelines);
       assert.match(plan1.promptGuidelines.at(-1), /^To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id/);
+      assert.match(plan1.promptGuidelines.at(-1), /Write a place or currency name in a claim as a placeholder on the chart's name column \(for example \{max\.value\.country\}\); on a zh chart the runtime prints its localized name, so never type one\. Pass claim or claim_id, never both\.$/);
       // The chain takes the plan's parameters, so it takes the claim too.
       assert.deepEqual(Object.keys(chain1.parameters.properties), [...keys1, "computation_ref"]);
       assert.deepEqual(chain1.parameters.required, plan1.parameters.required);
@@ -329,7 +411,7 @@ if (baseline) {
   check("switch on: only newsroom_viz_plan (claim, claim_kind, claim_caveat; takeaway, alt, source_note optional), record_claim (one guideline) and newsroom_viz_chain change");
 }
 
-// ---- 4. Inline flows over three data shapes ----------------------------------
+// ---- 4. Inline flows over five data shapes ----------------------------------
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
 const basemap = getBasemap("naturalearth_admin0_50m");
 const missingDependency = spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT" ? "duckdb binary not found" : null;
@@ -390,6 +472,39 @@ const SHAPES = {
       highlight_values: [], annotations: [], source_note: "Source: fixture",
     },
   },
+  // Two zh charts whose name field the runtime localizes: the claim says the names the chart prints, the binding keeps the raw codes.
+  "zh economies": {
+    csv: Buffer.from(["code,year,share", "HKG,2022,11.3", "KEN,2022,88.2", "CHN,2022,30.1", "BRA,2021,52.4", "NOR,2022,74.8"].join("\n") + "\n"), name: "economies.csv",
+    origin: null,
+    sql: (ref) => `SELECT code, year, share FROM '${ref}' ORDER BY share DESC, code`,
+    kind: "comparative",
+    template: "{max.share.code}的可再生能源占比最高，为{max.share}%（{max.share.year}年数据），{min.share.code}最低，为{min.share}%（{min.share.year}年数据）。",
+    text: "肯尼亚的可再生能源占比最高，为88.2%（2022年数据），中国香港最低，为11.3%（2022年数据）。",
+    sourceNote: "来源：测试数据",
+    shown: ["肯尼亚", "挪威", "巴西", "中国", "中国香港"], raw: ["KEN", "NOR", "BRA", "CHN", "HKG"],
+    plan: {
+      language: "zh", reader_task: "ranking", chart_type: "horizontal_bar", complexity_budget: "low", title: "各经济体可再生能源占比", unit: "%", category_field: "code", value_field: "share", category_names: "iso3", sort: "desc",
+      measure_semantics: [{ id: "renewable_pct", field: "share", phenomenon: "可再生能源占比", unit: "%", measure_kind: "share", temporal_basis: { type: "point_in_time" }, observation_status: "observed" }],
+      claim_spec: { relation: "rank", reader_task: "ranking", target_measure: "renewable_pct", measure_ids: ["renewable_pct"] },
+      source_note: "来源：测试数据",
+    },
+  },
+  "zh currencies": {
+    csv: Buffer.from(["currency,rate", "TRY,36.5", "GBP,0.8", "JPY,160.2", "CHF,0.9", "USD,1.1"].join("\n") + "\n"), name: "fx.csv",
+    origin: null,
+    sql: (ref) => `SELECT currency, rate FROM '${ref}' ORDER BY rate DESC, currency`,
+    kind: "comparative",
+    template: "欧元兑{max.rate.currency}的汇率最高，为{max.rate|1}，兑{min.rate.currency}最低，为{min.rate|1}。",
+    text: "欧元兑日元的汇率最高，为160.2，兑英镑最低，为0.8。",
+    sourceNote: "来源：测试数据",
+    shown: ["日元", "土耳其里拉", "美元", "瑞士法郎", "英镑"], raw: ["JPY", "TRY", "USD", "CHF", "GBP"],
+    plan: {
+      language: "zh", reader_task: "ranking", chart_type: "horizontal_bar", complexity_budget: "low", title: "欧元兑各货币汇率", unit: "每欧元兑换量", category_field: "currency", value_field: "rate", sort: "desc",
+      measure_semantics: [{ id: "fx_rate", field: "rate", phenomenon: "欧元兑各货币汇率", unit: "每欧元兑换量", measure_kind: "price", temporal_basis: { type: "point_in_time" }, observation_status: "observed" }],
+      claim_spec: { relation: "rank", reader_task: "ranking", target_measure: "fx_rate", measure_ids: ["fx_rate"] },
+      source_note: "来源：测试数据",
+    },
+  },
 };
 const planOf = (shape, dataRef, extra = {}) => ({ ...shape.plan, sql: shape.sql(dataRef), ...extra });
 const inlineParams = (shape, dataRef, extra = {}) => planOf(shape, dataRef, { claim: shape.template, claim_kind: shape.kind, ...extra });
@@ -404,11 +519,16 @@ const ORACLE = {
   ranking: (rows) => { const by = (f) => rows.reduce((a, b) => (f(b, a) ? b : a)); const hi = by((b, a) => b.renewable_energy_consumption_pct > a.renewable_energy_consumption_pct), lo = by((b, a) => b.renewable_energy_consumption_pct < a.renewable_energy_consumption_pct); return [hi.country, hi.renewable_energy_consumption_pct, hi.year, lo.country, lo.renewable_energy_consumption_pct, lo.year]; },
   "time series": (rows) => { const hi = rows.reduce((a, b) => (b.anomaly_c > a.anomaly_c ? b : a)); return [rows[0].anomaly_c, rows[0].year, rows.at(-1).anomaly_c, rows.at(-1).year, hi.anomaly_c, hi.year]; },
   "by-country values": (rows) => { const mapped = rows.filter((r) => r.country !== "Atlantis"); const hi = mapped.reduce((a, b) => (b.share > a.share ? b : a)), lo = mapped.reduce((a, b) => (b.share < a.share ? b : a)); return [lo.share, lo.country, lo.year, hi.share, hi.country, hi.year]; },
+  "zh economies": (rows) => { const hi = rows.reduce((a, b) => (b.share > a.share ? b : a)), lo = rows.reduce((a, b) => (b.share < a.share ? b : a)); return [hi.code, hi.share, hi.year, lo.code, lo.share, lo.year]; },
+  "zh currencies": (rows) => { const hi = rows.reduce((a, b) => (b.rate > a.rate ? b : a)), lo = rows.reduce((a, b) => (b.rate < a.rate ? b : a)); return [hi.currency, hi.rate, lo.currency, lo.rate]; },
 };
 const BINDINGS = {
   ranking: [["country", 0, "Congo, Dem. Rep.", "Congo, Dem. Rep."], ["renewable_energy_consumption_pct", 0, 96.3, "96.3"], ["year", 0, 2021, "2021"], ["country", 10, "Mauritania", "Mauritania"], ["renewable_energy_consumption_pct", 10, 19.6, "19.6"], ["year", 10, 2022, "2022"]],
   "time series": [["anomaly_c", 0, 0.26, "0.26"], ["year", 0, 1980, "1980"], ["anomaly_c", 45, 1.19, "1.19"], ["year", 45, 2025, "2025"], ["anomaly_c", 44, 1.29, "1.29"], ["year", 44, 2024, "2024"]],
   "by-country values": [["share", 1, 66.6, "66.6"], ["country", 1, "Guinea", "Guinea"], ["year", 1, 2022, "2022"], ["share", 2, 92.8, "92.8"], ["country", 2, "Liberia", "Liberia"], ["year", 2, 2022, "2022"]],
+  // [column, row, raw value, text shown] and, for a localized name, [raw text, table mode] after them.
+  "zh economies": [["code", 0, "KEN", "肯尼亚", "KEN", "iso3"], ["share", 0, 88.2, "88.2"], ["year", 0, 2022, "2022"], ["code", 4, "HKG", "中国香港", "HKG", "iso3"], ["share", 4, 11.3, "11.3"], ["year", 4, 2022, "2022"]],
+  "zh currencies": [["currency", 0, "JPY", "日元", "JPY", "iso4217"], ["rate", 0, 160.2, "160.2"], ["currency", 4, "GBP", "英镑", "GBP", "iso4217"], ["rate", 4, 0.8, "0.8"]],
 };
 const slug = (label) => label.replace(/\W+/g, "-");
 const seed = (label, shape) => {
@@ -451,7 +571,8 @@ if (!missingDependency) {
     assert.equal(claim.computation_refs.length, 1);
     assert.equal(claim.claim_template, shape.template);
     assert.equal(claim.recorded_by, "newsroom_viz_plan");
-    assert.deepEqual(claim.claim_bindings.map((b) => [b.column, b.row_index, b.value, b.text]), BINDINGS[label], `${label}: bindings`);
+    assert.deepEqual(claim.claim_bindings.map((b) => [b.column, b.row_index, b.value, b.text, ...(b.raw_text === undefined ? [] : [b.raw_text, b.category_names])]), BINDINGS[label], `${label}: bindings`);
+    for (const b of claim.claim_bindings) assert.deepEqual(Object.keys(b), ["placeholder", "column", "row_index", "value", "text", ...(b.raw_text === undefined ? [] : ["raw_text", "category_names"])], `${label}: ${b.placeholder} keys`);
     assert.deepEqual(claim.claim_bindings.map((b) => b.value), ORACLE[label](csvRows(shape.csv)), `${label}: every bound value is the CSV's own`);
     const computation = JSON.parse(readFileSync(join(story.dir, claim.computation_refs[0]), "utf8"));
     for (const b of claim.claim_bindings) assert.equal(computation.rows[b.row_index][b.column], b.value, `${label}: ${b.column}[${b.row_index}] is the SQL row's value`);
@@ -474,6 +595,14 @@ if (!missingDependency) {
       const svg = readFileSync(join(story.dir, ref), "utf8");
       assert.equal(svg.match(/<desc id="viz-desc(?:-mobile)?">([^<]*)<\/desc>/)?.[1]?.replaceAll("&amp;", "&"), spec.alt, `${label}: ${ref} describes the claim`);
       assert.doesNotMatch(svg, /\{(first|last|max|min)\./, `${label}: ${ref} shows no placeholder`);
+      if (shape.shown) {
+        // The chart prints the names its claim says: every row's localized name is a text node, no raw code is, and each name
+        // the claim shows in place of a raw value is one of the chart's own text nodes.
+        const texts = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+        for (const name of shape.shown) assert.ok(texts.includes(name), `${label}: ${ref} prints ${name}`);
+        for (const code of shape.raw) assert.ok(!texts.some((text) => new RegExp(`\\b${code}\\b`).test(text)), `${label}: ${ref} prints no raw ${code}`);
+        for (const b of claim.claim_bindings) if (b.raw_text !== undefined) assert.ok(texts.includes(b.text), `${label}: the claim's ${b.text} is a name the chart prints`);
+      }
     }
     flows[label] = { story, claim, out, spec, tools };
     // The same decision made the classic way: same claim_id, same artifacts, same ledger line.
@@ -491,7 +620,7 @@ if (!missingDependency) {
     assert.deepEqual(claimLines(off.story.dir).map(withoutTime), claimLines(classic.story.dir).map(withoutTime));
     assert.deepEqual(off.out.content.map((block) => block.text), classic.out.content.map((block) => block.text), `${label}: the classic chain output is unchanged by the switch`);
   }
-  check("inline flows (ranking, time series, by-country values): one verified claim with template and row bindings, chart bound and written from it, chain COMPLETE; artifacts and ledger line equal the classic duckdb_query + record_claim flow's; classic flow unchanged by the switch");
+  check("inline flows (ranking, time series, by-country values, and two zh charts whose names the runtime localizes): one verified claim with template and row bindings (raw code and shown name for a localized name), chart bound and written from it and printing the claim's names, chain COMPLETE; artifacts and ledger line equal the classic duckdb_query + record_claim flow's; classic flow unchanged by the switch");
   void flows;
 }
 
@@ -965,6 +1094,46 @@ if (!missingDependency) {
     }
     assert.deepEqual(outcomes.on, outcomes.off, "on the classic path the switch changes none of it");
     check("wrong unit (two measures, one claim) refused with the classic message and nothing recorded; stale computation_ref stops at lint like the classic flow; unknown or unverified claim_id and injected verification fields behave the same with the switch on and off");
+  }
+
+  { // A localized name is how a raw value is shown, never a different claim: the claim-support rule reads the text the claim shows
+    // AND the text with the raw values, so a name swap neither lets a refused claim through nor refuses one the raw text allows.
+    // No code in the shipped table reads as a refused word and no name contains one, so a copy of the tree gets two stand-ins:
+    // the alias WAR (for USA, shown as 美国) and a made-up economy ZZA shown as 冲突岛. The checkout's table is never changed.
+    const patchNames = (dir) => {
+      const file = join(dir, "runtime/pi/assets/economy-names.json");
+      const asset = JSON.parse(readFileSync(file, "utf8"));
+      asset.economies.push({ iso3: "ZZA", iso2: "QZ", wb_name: "Zedland", zh: "冲突岛", zh_source: "cldr" });
+      asset.aliases.push({ mode: "iso3", alias: "WAR", target: "USA", source: "test only: a code whose raw text the claim-support rule refuses" });
+      writeFileSync(file, `${JSON.stringify(asset, null, 2)}\n`);
+    };
+    const { mod: patched, dir: patchedDir } = await loadTree("patched-names", ROOT, null, patchNames);
+    const { economyEntryFor: standIn } = await import(join(patchedDir, "runtime/pi/economy_names.mjs"));
+    const { economyEntryFor: shipped } = await import(join(treeDir, "runtime/pi/economy_names.mjs"));
+    const { evaluateClaimSupport } = await import(join(treeDir, "runtime/pi/evidence_gate.mjs"));
+    assert.deepEqual([standIn("WAR", "iso3")?.zh, standIn("ZZA", "iso3")?.zh], ["美国", "冲突岛"], "the stand-ins exist in the patched copy");
+    assert.deepEqual([shipped("WAR", "iso3"), shipped("ZZA", "iso3")], [null, null], "and not in the checkout's table");
+    const verdict = (text) => evaluateClaimSupport({ requested_status: "supported", claim_kind: "comparative", claim: text }).passed;
+    assert.deepEqual([verdict("美国的可再生能源占比最高，为90%。"), verdict("WAR的可再生能源占比最高，为90%。")], [true, false], "WAR: the shown text passes the rule, the raw one does not");
+    assert.deepEqual([verdict("ZZA的可再生能源占比最高，为90%。"), verdict("冲突岛的可再生能源占比最高，为90%。")], [true, false], "ZZA: the raw text passes the rule, the shown one does not");
+    const zh = SHAPES["zh economies"];
+    const codes = (rows) => ({ ...zh, csv: Buffer.from(["code,year,share", ...rows].join("\n") + "\n"), name: "codes.csv" });
+    const [warShape, zzaShape] = [codes(["WAR,2022,90.0", "KEN,2022,10.0"]), codes(["ZZA,2022,90.0", "KEN,2022,10.0"])];
+    const top = "{max.share.code}的可再生能源占比最高，为{max.share}%。";
+    const bottom = "{min.share.code}的可再生能源占比最低，为{min.share}%。";
+    const REFUSED = E("INLINE_CLAIM_NOT_VERIFIED", "the runtime would not verify this claim; claim_support reasons: claim_contains_unbound_causal_or_motive_language\\. No claim and no visualization plan were recorded");
+    await refused("raw value refused, shown name allowed (WAR shown as 美国)", withClaim(top), REFUSED, { s: warShape, tree: patched });
+    await refused("shown name refused, raw value allowed (ZZA shown as 冲突岛)", withClaim(top), REFUSED, { s: zzaShape, tree: patched });
+    // The same data and tree with the other row selected: the refusals are about the row the claim names, nothing else.
+    for (const [label, shape] of [["WAR", warShape], ["ZZA", zzaShape]]) {
+      const story = seed(`names-control-${label}`, shape);
+      const out = await runChain(register(patched, ON_ENV), inlineParams(shape, story.dataRef, { claim: bottom }), `names-${label}`);
+      assert.equal(out.details.chainStatus, "COMPLETE", `${label}: ${out.details.stopCode} ${out.details.stopMessage}`);
+      const [claim] = claimLines(story.dir);
+      assert.equal(claim.claim, "肯尼亚的可再生能源占比最低，为10%。");
+      assert.deepEqual(claim.claim_bindings.map((b) => [b.value, b.text, b.raw_text, b.category_names]), [["KEN", "肯尼亚", "KEN", "iso3"], [10, "10", undefined, undefined]]);
+    }
+    check("a localized name never changes what the claim-support rule decides: a claim whose raw value trips it is refused though the shown name passes, and the reverse, each with nothing recorded; the other row of the same data completes");
   }
 }
 

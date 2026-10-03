@@ -2,7 +2,12 @@
 //
 //   switch OFF  : tool definitions, model-visible text, `details` and every
 //                 artifact byte equal the baseline 327de35 (before the claim
-//                 binding and the shadow code), for charts the binding accepts;
+//                 binding and the shadow code), for charts the binding accepts.
+//                 One declared difference in the tool definitions: the wording
+//                 and enum of category_names and two newsroom_viz_plan
+//                 guidelines (zh-names-1003), put back by
+//                 revertNameLocalization, which refuses a surface that does not
+//                 carry exactly those edits;
 //   switch ON   : model-visible text and artifact bytes are still identical,
 //                 `details` differs only by `shadow: { path, counts }`, lint
 //                 warnings and blockers are unchanged, and the only new files
@@ -15,6 +20,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
+import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
 
 const BASELINE = "327de35";
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
@@ -31,7 +37,13 @@ function walk(dir, root = dir, out = new Map()) {
 async function scenario({ baselineRev, shadow }) {
   const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
   try {
-    const defs = JSON.stringify([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => ({ ...tool, execute: undefined })));
+    const sortedTools = [...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => tool);
+    const stringify = (tools) => JSON.stringify(tools.map((tool) => ({ ...tool, execute: undefined })));
+    const defs = stringify(sortedTools);
+    // The baseline runtime is the old wording already; only the current runtime has the edits to put back. This harness
+    // stubs the schema builders, so the enum values and the field descriptions are not in the definitions: only the
+    // newsroom_viz_plan guideline edits are (and must be) present.
+    const defsBeforeNameLocalization = baselineRev ? defs : stringify(sortedTools.map((tool) => revertNameLocalization(tool, { descriptions: false, enumValues: false })));
     const csv = ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n";
     const fileA = h.addData("A", csv);
     const qa = await h.query(`SELECT date, event FROM read_csv_auto('${fileA}')`);
@@ -64,7 +76,7 @@ async function scenario({ baselineRev, shadow }) {
     }));
     await call("newsroom_infographic_lint", { plan_ref: igRef });
     const files = walk(h.art);
-    return { defs, calls, files, claimId: claim.claim_id };
+    return { defs, defsBeforeNameLocalization, calls, files, claimId: claim.claim_id };
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
@@ -79,7 +91,7 @@ const withoutShadowDetails = (call) => ({ ...call, details: call.details && type
 const comparable = (files) => new Map([...files].filter(([path]) => path !== "claims.jsonl" && !path.startsWith("shadow/")));
 
 // OFF == baseline, byte for byte.
-assert.equal(off.defs, base.defs, "tool definitions identical to the baseline with the switch off");
+assert.equal(off.defsBeforeNameLocalization, base.defs, "tool definitions identical to the baseline with the switch off, apart from the declared name-localization edits");
 assert.equal(off.claimId, base.claimId);
 assert.deepEqual(off.calls, base.calls, "model-visible text and details identical to the baseline with the switch off");
 assert.deepEqual([...comparable(off.files).keys()], [...comparable(base.files).keys()], "same artifact file set as the baseline");
