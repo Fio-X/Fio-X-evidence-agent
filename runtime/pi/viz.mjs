@@ -6225,7 +6225,7 @@ const STACKED_MAX_BARS = 25;
 const STACKED_WARN_BARS = 20;
 const STACKED_MAX_SEGMENTS = 5;
 const STACKED_SUM_TOLERANCE = 1;
-const STACKED_SEGMENT_VALUES = ["in_bar", "highlight_column"];
+const STACKED_SEGMENT_VALUES = ["in_bar", "highlight_column"]; // segment_values: "highlight_column" is the default, "in_bar" the opt-in
 const STACKED_LABEL_PAD = 4; // px between an in-bar label and each edge of its segment
 const STACKED_FALLBACK_ADVANCE = 1.02; // render QA's width for a glyph outside its tables (not exported there)
 
@@ -6367,10 +6367,10 @@ function renderStackedBar100(spec, rows) {
   const decimals = stackedDecimals(spec, model);
   const valueText = (value) => fmtSpec(spec, value, "", decimals);
   const fills = stackedFills(order, highlight);
-  // segment_values "highlight_column": no value inside the bars; only the
-  // highlight segment's value is printed, right-aligned in a column just past
-  // the 100% end.
-  const columnMode = spec.segment_values === "highlight_column" && highlight !== null && order.includes(highlight);
+  // segment_values "highlight_column" (the default; "in_bar" is the opt-in): no
+  // value inside the bars; only the highlight segment's value is printed,
+  // right-aligned in a column just past the 100% end.
+  const columnMode = spec.segment_values !== "in_bar" && highlight !== null && order.includes(highlight);
   const accentText = textSafeColor(PALETTE.accent);
 
   const left0 = 54, right0 = LAYOUT_W - 54;

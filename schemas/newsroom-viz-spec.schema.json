@@ -418,7 +418,7 @@
         "in_bar",
         "highlight_column"
       ],
-      "description": "stacked_bar_100: where values are printed. in_bar (default) prints each value inside its segment wherever the label fits. highlight_column prints no value inside the bars and prints only the highlight segment's value in a column just right of the 100% end."
+      "description": "stacked_bar_100: where values are printed. highlight_column (default) prints no value inside the bars and prints only the highlight segment's value in a column just right of the 100% end. in_bar prints each value inside its segment wherever the label fits."
     },
     "x_scale": {
       "enum": [

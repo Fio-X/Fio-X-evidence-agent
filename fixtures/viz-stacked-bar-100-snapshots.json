@@ -10,5 +10,9 @@
   "25 bars, no decimals, rounding note": {
     "sha256": "5d4a2f9d470420c7bb811295dd39b564c674773cbd473197616ef0d9cbaa852a",
     "bytes": 39344
+  },
+  "25 bars, no decimals, default layout (no note)": {
+    "sha256": "f503ee2e7a5d31977ecdbae9854efd5e1a97452b0eaf2629ecec3894489b32e9",
+    "bytes": 28986
   }
 }

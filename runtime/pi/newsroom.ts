@@ -3357,7 +3357,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       segment_order: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 5, uniqueItems: true, description: "stacked_bar_100: series_field values left to right" })),
       sort_segment: Type.Optional(Type.String({ minLength: 1, description: "stacked_bar_100: segment whose value orders the bars (direction from sort)" })),
       highlight_segment: Type.Optional(Type.String({ minLength: 1, description: "stacked_bar_100: segment drawn in the accent colour, the rest grey" })),
-      segment_values: Type.Optional(StringEnum(["in_bar", "highlight_column"] as const, { description: "stacked_bar_100: values inside the bars (default) or only the highlight segment's value in a column" })),
+      segment_values: Type.Optional(StringEnum(["in_bar", "highlight_column"] as const, { description: "stacked_bar_100: only the highlight segment's value, in a right column (highlight_column, default), or every value inside the bars (in_bar)" })),
       decimals: Type.Optional(Type.Integer({ minimum: 0, maximum: 3, description: "Decimal count for value labels; stacked_bar_100 takes 0 or 1" })),
       first_row: Type.Optional(StringEnum(["bottom", "top"] as const, { description: "mirrored_bar: where the first category is drawn (default bottom)" })),
       compare_layout: Type.Optional(StringEnum(["overlay", "side_by_side"] as const, { description: "mirrored_bar: second period as an outline (overlay, default) or a second pyramid" })),
