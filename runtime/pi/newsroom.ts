@@ -908,37 +908,31 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
   return { rejectedManifestRef, rejectedQaReportRef, rejectionRef };
 }
 
-async function verifiedClaimIds() {
+// The latest record per claim_id decides: a claim counts as verified only while its last record in
+// claims.jsonl is system-verified (a later non-verified record revokes it). Order is first appearance.
+async function latestClaimRecords(): Promise<Map<string, any>> {
   const root = artifactRoot();
-  if (!root) return [];
-  try {
-    const text = await readFile(join(root, "claims.jsonl"), "utf8");
-    return text.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-      try {
-        const claim = JSON.parse(line);
-        return isSystemVerifiedClaim(claim) && claim.claim_id ? [String(claim.claim_id)] : [];
-      } catch {
-        return [];
-      }
-    });
-  } catch {
-    return [];
-  }
-}
-
-async function verifiedClaimRecords() {
-  const root = artifactRoot();
-  const out = new Map<string, any>();
-  if (!root) return out;
+  const latest = new Map<string, any>();
+  if (!root) return latest;
   try {
     const text = await readFile(join(root, "claims.jsonl"), "utf8");
     for (const line of text.split(/\r?\n/).filter(Boolean)) {
       try {
         const claim = JSON.parse(line);
-        if (isSystemVerifiedClaim(claim) && claim.claim_id) out.set(String(claim.claim_id), claim);
+        if (claim?.claim_id) latest.set(String(claim.claim_id), claim);
       } catch {}
     }
   } catch {}
+  return latest;
+}
+
+export async function verifiedClaimIds() {
+  return [...(await latestClaimRecords())].filter(([, claim]) => isSystemVerifiedClaim(claim)).map(([id]) => id);
+}
+
+export async function verifiedClaimRecords() {
+  const out = new Map<string, any>();
+  for (const [id, claim] of await latestClaimRecords()) if (isSystemVerifiedClaim(claim)) out.set(id, claim);
   return out;
 }
 
