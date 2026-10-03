@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
-import { PAGE_TOP_GUIDANCE, checkReaderText, checkReaderWording, lintInfographicSpec, pageTopWarning, readerTextEntries } from '../runtime/pi/infographic.mjs';
+import { PAGE_TOP_GUIDANCE, checkReaderText, checkReaderWording, chartSvgText, lintInfographicSpec, pageTopWarning, readerTextEntries } from '../runtime/pi/infographic.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 let n = 0;
@@ -111,11 +111,22 @@ eq(pageTopWarning(page(['cover', 'text', 'bar']), {}), null, 'without the stored
 const hits = (result, kind = 'blockers') => result[kind].map((hit) => hit.term);
 const blockerCases = [
   // the exact round-2 note, and each term of the work order on its own
-  ['数值未经闸门行绑定（缺口修复中）', 'process_term', ['未经闸门', '行绑定', '缺口修复']],
-  ['这个数字没有通过闸门', 'process_term', ['闸门']],
-  ['缺口修复尚未完成', 'process_term', ['缺口修复']],
-  ['数值未绑定', 'process_term', ['未绑定']],
+  ['数值未经闸门行绑定', 'process_term', ['未经闸门', '行绑定']],
+  ['未经闸门核实', 'process_term', ['未经闸门']],
+  ['闸门核验', 'process_term', ['闸门']],
+  ['闸门检查', 'process_term', ['闸门']],
+  ['闸门校对', 'process_term', ['闸门']],
+  ['闸门拦截', 'process_term', ['闸门']],
+  ['闸门放行', 'process_term', ['闸门']],
+  ['这个数字没有通过闸门判定', 'process_term', ['闸门']],
+  ['闸门通过', 'process_term', ['闸门']],
+  ['数据未绑定', 'process_term', ['未绑定']],
+  ['结论未绑定', 'process_term', ['未绑定']],
+  ['声明未绑定', 'process_term', ['未绑定']],
+  ['数字未绑定', 'process_term', ['未绑定']],
+  ['占位符未绑定', 'process_term', ['未绑定']],
   ['该数据行绑定失败', 'process_term', ['行绑定']],
+  ['数据行绑定', 'process_term', ['行绑定']],
   ['see value_from for the number', 'field_name', ['value_from']],
   ['Value_From is shown', 'field_name', ['Value_From']],
   ['the claim_id is claim-1', 'field_name', ['claim_id']],
@@ -162,20 +173,30 @@ for (const [text, term] of warnCases) {
   eq(result.blockers, [], `a review word never blocks: ${JSON.stringify(text)}`);
   yes(result.warnings[0].rule === 'review_term' && result.warnings[0].message.startsWith('reader_text_review_term: page text uses "'), `warning shape for ${JSON.stringify(text)}`);
 }
+// ordinary words that look like process words: a warning, never a blocker
+for (const [text, term] of [['水库闸门已经关闭', '闸门'], ['账户未绑定', '未绑定'], ['资金缺口修复方案', '缺口修复'], ['数值未绑定', '未绑定'], ['闸门', '闸门']]) {
+  const result = checkReaderText(text);
+  eq(result.blockers, [], `an ordinary word never blocks: ${JSON.stringify(text)}`);
+  eq(hits(result, 'warnings'), [term], `an ordinary word warns: ${JSON.stringify(text)}`);
+  yes(result.warnings[0].rule === 'process_word' && result.warnings[0].message.startsWith('reader_text_process_word: page text uses "'), `process_word shape for ${JSON.stringify(text)}`);
+}
+// a pipeline phrase blocks and does not also warn for its own bare word
+eq(hits(checkReaderText('未经闸门核实，结论未绑定'), 'warnings'), [], 'a blocked phrase adds no second warning for its bare word');
+eq(hits(checkReaderText('未经闸门核实，水库闸门，缺口修复'), 'warnings'), ['闸门', '缺口修复'], 'a bare word beside a blocked phrase still warns');
 // input forms
-eq(checkReaderText(['clean', '闸门']).blockers.map((hit) => hit.field), ['text[1]'], 'an array of strings names the entry');
-eq(checkReaderText([{ field: 'module:x:body', text: '闸门' }, { field: 'dek', text: 'fine' }, { field: 'bad', text: 7 }, null, '']).blockers.map((hit) => hit.field), ['module:x:body'], '{field,text} entries keep their field; other items are skipped');
+eq(checkReaderText(['clean', '未经闸门']).blockers.map((hit) => hit.field), ['text[1]'], 'an array of strings names the entry');
+eq(checkReaderText([{ field: 'module:x:body', text: '未经闸门' }, { field: 'dek', text: 'fine' }, { field: 'bad', text: 7 }, null, '']).blockers.map((hit) => hit.field), ['module:x:body'], '{field,text} entries keep their field; other items are skipped');
 for (const empty of [undefined, null, '', '   ', [], {}, 7]) eq(checkReaderText(empty), { blockers: [], warnings: [] }, `empty input: ${JSON.stringify(empty)}`);
-eq(hits(checkReaderText('闸门 闸门 闸门')), ['闸门'], 'one finding per term and field, not one per occurrence');
-yes(checkReaderText('x'.repeat(200) + '闸门' + 'y'.repeat(200)).blockers[0].excerpt.length < 60, 'the excerpt is a short window around the term');
+eq(hits(checkReaderText('未经闸门 未经闸门 未经闸门')), ['未经闸门'], 'one finding per term and field, not one per occurrence');
+yes(checkReaderText('x'.repeat(200) + '未经闸门' + 'y'.repeat(200)).blockers[0].excerpt.length < 60, 'the excerpt is a short window around the term');
 
-// fields: every reader-facing string of the spec, and nothing else. Each string below carries the process term 闸门. The
+// fields: every reader-facing string of the spec, and nothing else. Each string below carries the process term 未经闸门. The
 // planning fields no composer draws, the verbatim source quote and the templates carry it too (their text starts with
 // UNREAD) and must stay unread.
-const X = '闸门';
+const X = '未经闸门';
 const tableAssets = {
   ...assets,
-  'visualizations/bar.json': { ...assets['visualizations/bar.json'], manifest: { ...assets['visualizations/bar.json'].manifest, source_note: `bar source note ${X}` } },
+  'visualizations/bar.json': { ...assets['visualizations/bar.json'], desktopSvg: assets['visualizations/bar.json'].desktopSvg.replace(/<\/svg>\s*$/, `<text x="1" y="1">chart text ${X}</text></svg>`), manifest: { ...assets['visualizations/bar.json'].manifest, source_note: `bar source note ${X}` } },
   'illustrations/scene.json': illustration(false, { source_note: `scene source note ${X}`, credit: `scene manifest credit ${X}`, provenance: { disclosure: `scene disclosure ${X}` } }),
 };
 const tableSpec = {
@@ -198,7 +219,7 @@ const expectedFields = [
   ['scene:s1:eyebrow', !COPY], ['scene:s1:title', COPY], ['scene:s1:dek', COPY],
   ['module:head:heading', COPY], ['module:head:deck', COPY], ['module:head:eyebrow', !COPY],
   ['module:hero:label', COPY], ['module:hero:detail', COPY], ['module:hero:label_short', !COPY], ['module:hero:value', !COPY], ['module:hero:unit', !COPY],
-  ['module:bar:label', COPY], ['module:bar:subject_caption', COPY], ['module:bar:alt', !COPY], ['module:bar:manifest.source_note', !COPY],
+  ['module:bar:label', COPY], ['module:bar:subject_caption', COPY], ['module:bar:alt', !COPY], ['module:bar:manifest.source_note', !COPY], ['module:bar:chart_text', !COPY],
   ['module:text:label', COPY], ['module:text:heading', COPY], ['module:text:body', COPY],
   ['module:sq:source_quote.translation', !COPY],
   ['module:quote:text', COPY], ['module:quote:attribution', !COPY],
@@ -208,7 +229,7 @@ const entries = readerTextEntries(tableSpec, tableAssets);
 eq(entries.map((entry) => [entry.field, entry.copy]).sort(), [...expectedFields].sort(), 'the fields read, and which of them are running copy');
 yes(!entries.some((entry) => entry.text.includes('UNREAD')), 'planning fields, ids, annotations, source_quote.quote and templates are not reader text');
 const lintFields = lintInfographicSpec(tableSpec, tableAssets, context);
-const flagged = lintFields.blockers.map((blocker) => blocker.match(/^reader_text_process_term: (.+?) shows "闸门"/)?.[1]).filter(Boolean);
+const flagged = lintFields.blockers.map((blocker) => blocker.match(/^reader_text_process_term: (.+?) shows "未经闸门"/)?.[1]).filter(Boolean);
 eq([...flagged].sort(), expectedFields.map(([field]) => field).sort(), 'the lint reports the process term once in every field read, and in no other');
 yes(lintFields.passed === false, 'a process term blocks the page');
 
@@ -220,12 +241,31 @@ eq(heroLabel({ label: '2024年阿根廷年通胀率', label_template: '{max.rate
 eq(heroLabel({ detail: '{max.value}' }).map((blocker) => blocker.split(' shows ')[0]), ['reader_text_template_braces: module:hero:detail'], 'an unfilled placeholder in the detail blocks');
 // a blocker is a blocker in every mode of the lint: the round-2 note, as the readers saw it
 const note = lintInfographicSpec(page(['hero', 'bar', { ...M.text, body: '数值未经闸门行绑定（缺口修复中）' }]), assets, context);
-eq(note.blockers.map((blocker) => blocker.match(/shows "([^"]+)"/)[1]), ['未经闸门', '行绑定', '缺口修复'], 'the round-2 process note is blocked, term by term');
+eq(note.blockers.map((blocker) => blocker.match(/shows "([^"]+)"/)[1]), ['未经闸门', '行绑定'], 'the round-2 process note is blocked by its pipeline phrases');
+eq(note.warnings.filter((warning) => warning.startsWith('reader_text_process_word:')).map((warning) => warning.match(/uses "([^"]+)"/)[1]), ['缺口修复'], '... and its bare 缺口修复 only warns');
 yes(note.passed === false, 'the round-2 process note fails lint');
 // a story word that is only a review word is a warning, not a blocker
 const reviewWord = lintInfographicSpec(page(['hero', 'bar', { ...M.text, body: 'The climate 模拟 suggests warming, and the film runtime is two hours.' }]), assets, context);
 eq(reviewWord.blockers, [], 'review words do not block');
 eq(reviewWord.warnings.filter((warning) => warning.startsWith('reader_text_review_term:')).map((warning) => warning.match(/uses "([^"]+)"/)[1]), ['模拟', 'runtime'], 'review words warn');
+
+// the text inside a chart is reader text too: text, tspan, title and desc of each visual's desktop SVG, entities decoded
+const svgWith = (inner) => ({ ...assets, 'visualizations/bar.json': { ...assets['visualizations/bar.json'], desktopSvg: assets['visualizations/bar.json'].desktopSvg.replace(/<\/svg>\s*$/, `${inner}</svg>`) } });
+const chartLint = (inner) => lintInfographicSpec(page(['hero', 'bar', 'text']), svgWith(inner), context);
+const chartBlockers = (lint) => lint.blockers.filter((blocker) => blocker.includes('module:bar:chart_text'));
+eq(chartBlockers(chartLint('')), [], 'the real chart carries no process word');
+for (const [inner, term] of [['<text x="1" y="1">数据行绑定</text>', '行绑定'], ['<text><tspan>未经闸门</tspan></text>', '未经闸门'], ['<title>结论未绑定</title>', '未绑定'], ['<desc>闸门核验</desc>', '闸门'], ['<text>value_from</text>', 'value_from'], ['<text>{max.value}</text>', '{max.value}'], ['<text>&#x672A;&#x7ECF;&#x95F8;&#x95E8;</text>', '未经闸门'], ['<text>&lt;claim_id&gt;</text>', 'claim_id']]) {
+  const lint = chartLint(inner);
+  eq(chartBlockers(lint).map((blocker) => blocker.match(/shows "([^"]+)"/)[1]), [term], `a process word in chart SVG text blocks: ${inner}`);
+  yes(lint.passed === false, `the page fails: ${inner}`);
+}
+eq(chartLint('<text>水库闸门</text>').warnings.filter((warning) => warning.includes('module:bar:chart_text')).length, 1, 'an ordinary word in chart text warns');
+eq(chartBlockers(chartLint('<text>水库闸门</text>')), [], '... and does not block');
+eq(chartBlockers(chartLint('<rect data-note="未经闸门" aria-label="value_from"/>')), [], 'attributes are not reader text');
+eq(chartBlockers(chartLint('<script>未经闸门</script><style>.x{}</style>')), [], 'other elements are not reader text');
+eq(chartSvgText('<svg><text>A &amp; B</text><text>  second   line </text></svg>').split('\n'), ['A & B', 'second line'], 'chartSvgText: entities decoded, one line per element, spaces collapsed');
+eq(chartSvgText('<svg><text><tspan>a</tspan><tspan>b</tspan></text><title>t</title><desc>d</desc></svg>').split('\n').sort(), ['ab', 'd', 't'], 'chartSvgText: tspan, title and desc');
+eq(readerTextEntries(page(['hero', 'bar']), { ...assets, 'visualizations/bar.json': { ...assets['visualizations/bar.json'], desktopSvg: undefined } }).filter((entry) => entry.field === 'module:bar:chart_text'), [], 'a visual without a desktop SVG adds no chart entry');
 
 // ---- C. quantifiers and vague times -------------------------------------------------------------------------------
 const wording = (text, claimTexts = [], field = 'module:text:body') => checkReaderWording([{ field, text, copy: true }], { claim_texts: claimTexts }).warnings.map((warning) => `${warning.rule}:${warning.term}`);
@@ -350,7 +390,8 @@ function miniRoot() {
   for (const dir of ['infographics/plans', 'infographics/lints', 'computations']) mkdirSync(join(art, dir), { recursive: true });
   cpSync(join(ROOT, 'config'), join(art, 'config'), { recursive: true });
   const claims = [
-    { claim_id: 'c-a', status: 'verified', claim: '12个国家的通胀率上升，12个国家下降。', verification },
+    // c-a carries system bindings: a hero can only use a bound claim, and these tests are about the typed value, not the binding.
+    { claim_id: 'c-a', status: 'verified', claim: '12个国家的通胀率上升，12个国家下降。', claim_template: '{max.n}个国家的通胀率上升，{max.n}个国家下降。', claim_bindings: [{ placeholder: '{max.n}', column: 'n', row_index: 0, value: 12, text: '12' }], recorded_by: 'newsroom_viz_plan', verification },
     { claim_id: 'c-b', status: 'verified', claim: '其中多数国家的通胀率在2024年下降。', verification },
   ];
   writeFileSync(join(art, 'claims.jsonl'), `${claims.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
@@ -398,7 +439,7 @@ for (const [label, env, details] of [['default', {}, gateOn], ['=0', GATE_OFF, g
   const top = await lintTool(env, 'proseFirst');
   eq(top.warnings.filter((warning) => warning.startsWith(`${TOP}: the first content module 't1' is a text module.`)).length, 1, `${label}: the page-top warning reaches the real tool`);
   const flaggedNote = await lintTool(env, 'note');
-  eq(flaggedNote.blockers.filter((blocker) => blocker.startsWith('reader_text_')).map((blocker) => blocker.match(/shows "([^"]+)"/)[1]), ['未经闸门', '行绑定', '缺口修复'], `${label}: the process note is blocked by the real tool`);
+  eq(flaggedNote.blockers.filter((blocker) => blocker.startsWith('reader_text_')).map((blocker) => blocker.match(/shows "([^"]+)"/)[1]), ['未经闸门', '行绑定'], `${label}: the process note is blocked by the real tool`);
   yes(flaggedNote.passed === false, `${label}: the process note fails the real lint`);
 }
 eq((await lintTool(GATE_OFF, 'proseFirst')).passed, true, '=0: a page that opens with prose still passes: the page-top check only warns');

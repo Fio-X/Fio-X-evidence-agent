@@ -794,12 +794,39 @@ export function pageTopWarning(spec, assets = {}) {
 //             attribution, credit, alt; source_quote.translation
 //   assets    the source_note of every visual and illustration manifest, and an illustration manifest's credit and
 //             provenance disclosure (the page prints them in its source list and caption)
+//   charts    module:<id>:chart_text (not copy): the text, tspan, title and desc contents of each visual's desktop SVG,
+//             entities decoded (chartSvgText)
 // "copy" fields are running copy: they are also read for unsupported quantifiers and vague times.
+// Still not read: the compact and mobile SVG variants of a visual, an illustration's SVG text, and the raw text of a
+// source_quote.quote (see below).
 // Deliberately not read: planning fields no composer draws (intent, primary_message, reader_question,
 // visual_thesis, new_information, story_role, annotations, ids and refs), source_quote.quote (verbatim words of the
 // source) and label_template / detail_template (templates by design; the filled label and detail are read).
 const READER_COPY_KEYS = ["label", "heading", "deck", "body", "text", "detail", "subject_caption"];
 const READER_OTHER_KEYS = ["label_short", "eyebrow", "value", "unit", "attribution", "credit", "alt"];
+
+const SVG_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decodeSvgEntities = (text) => text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (whole, dec, hex, name) => {
+  const code = dec !== undefined ? Number(dec) : hex !== undefined ? parseInt(hex, 16) : null;
+  if (code !== null) return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  return SVG_ENTITIES[name.toLowerCase()] ?? whole;
+});
+
+/** The reader-visible text of one SVG string: the contents of its text, tspan, title and desc elements, entities decoded,
+ *  one line per element. Nothing is read from attributes or from other elements. */
+export function chartSvgText(svg) {
+  if (typeof svg !== "string" || !svg) return "";
+  const lines = [];
+  const take = (inner) => {
+    const line = decodeSvgEntities(inner.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, body) => body.replace(/&/g, "&amp;").replace(/</g, "&lt;")).replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
+    if (line) lines.push(line);
+  };
+  // text, title and desc first (a text element's tspans come with it), then any tspan outside those.
+  const outer = /<(text|title|desc)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+  const rest = svg.replace(outer, (_, __, inner) => { take(inner); return " "; });
+  for (const match of rest.matchAll(/<tspan\b[^>]*>([\s\S]*?)<\/tspan\s*>/gi)) take(match[1]);
+  return lines.join("\n");
+}
 
 export function readerTextEntries(spec, assets = {}) {
   const out = [];
@@ -821,6 +848,7 @@ export function readerTextEntries(spec, assets = {}) {
     for (const key of READER_COPY_KEYS) add(`module:${id}:${key}`, module[key], true);
     for (const key of READER_OTHER_KEYS) add(`module:${id}:${key}`, module[key], false);
     add(`module:${id}:source_quote.translation`, module.source_quote?.translation, false);
+    if (module.type === "visual") add(`module:${id}:chart_text`, chartSvgText(assets?.[module.manifest_ref]?.desktopSvg), false);
     const manifest = module.type === "visual" ? assets?.[module.manifest_ref]?.manifest : module.type === "illustration" ? assets?.[module.asset_ref]?.manifest : null;
     if (manifest && typeof manifest === "object") {
       add(`module:${id}:manifest.source_note`, manifest.source_note, false);
@@ -833,25 +861,27 @@ export function readerTextEntries(spec, assets = {}) {
   return out;
 }
 
-// Blockers: unambiguous process terms - words only the pipeline's own notes use. A reader never needs one.
-//   process_term      闸门 (gate), 缺口修复 (gap repair), 未经闸门, 行绑定 (row binding), 未绑定 (unbound). 行绑定 is
-//                     matched except as the tail of 进行绑定 / 银行绑定, which are ordinary words.
+// Blockers: pipeline phrases - words only the pipeline's own notes use. A reader never needs one. Bare 闸门, 未绑定 and
+// 缺口修复 are ordinary words (a reservoir gate, an unbound account, a funding gap repair), so they only warn below.
+//   process_term      未经闸门; 闸门 directly followed by 核, 检, 校, 拦, 放行, 通过 or 判定; 行绑定 (row binding), except as the
+//                     tail of 进行绑定 / 银行绑定; 未绑定 directly after 数据, 结论, 声明, 数字 or 占位符.
 //   field_name        value_from, claim_id(s), story_node(s) / story_node_id(s): whole field names only.
 //   placeholder_word  TODO, FIXME, TBD, placeholder(s), lorem - any case, whole words only.
 //   template_braces   any {...} with something inside, such as an unfilled {max.value}.
-// A story that really is about a sluice gate (闸门) or a funding gap repair (缺口修复) has to reword; the cost of a
-// process note on a published page is worse than that reword.
 const READER_BLOCKER_RULES = [
-  { id: "process_term", re: /未经闸门|闸门|缺口修复|(?<![进银])行绑定|未绑定/gu },
+  { id: "process_term", re: /未经闸门|闸门(?=核|检|校|拦|放行|通过|判定)|(?<![进银])行绑定|(?<=数据|结论|声明|数字|占位符)未绑定/gu },
   { id: "field_name", re: /(?<![A-Za-z0-9_])(?:value_from|claim_ids?|story_node(?:_ids?|s)?)(?![A-Za-z0-9_])/giu },
   { id: "placeholder_word", re: /(?<![A-Za-z])(?:todo|fixme|tbd|placeholders?|lorem)(?![A-Za-z])/giu },
   { id: "template_braces", re: /\{[^{}]*[^{}\s][^{}]*\}/gu },
 ];
 
-// Warnings: broader words that are sometimes the story's own (a 模拟 model, a 测试 score, a movie's runtime).
-//   模拟 测试 校验 运行时 (not 运行时间/长/刻/段) and the whole words runtime, lint, mock, prompt (with plural / -ed).
+// Warnings: broader words that are sometimes the story's own (a 模拟 model, a 测试 score, a movie's runtime), and the
+// bare process words above that a pipeline phrase did not already block.
+//   process_word      闸门 (not 未经闸门 and not before 核/检/校/拦/放行/通过/判定), 未绑定 (not after 数据/结论/声明/数字/占位符), 缺口修复.
+//   review_term       模拟 测试 校验 运行时 (not 运行时间/长/刻/段) and the whole words runtime, lint, mock, prompt (with plural / -ed).
 // Not caught, by design: 气候模型 (model), 门槛 (threshold), 测量 (measurement), 检测, 运行时间 (running time).
 const READER_WARNING_RULES = [
+  { id: "process_word", re: /(?<!未经)闸门(?!核|检|校|拦|放行|通过|判定)|(?<!数据|结论|声明|数字|占位符)未绑定|缺口修复/gu },
   { id: "review_term", re: /模拟|测试|校验|运行时(?![间长刻段])|(?<![A-Za-z])(?:runtime|lint(?:s|ing)?|mock(?:s|ed)?|prompts?)(?![A-Za-z])/giu },
 ];
 
