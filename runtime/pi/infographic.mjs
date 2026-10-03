@@ -880,13 +880,40 @@ export function readerTextEntries(spec, assets = {}) {
 
 // Blockers: pipeline phrases - words only the pipeline's own notes use. A reader never needs one. Bare 闸门, 未绑定 and
 // 缺口修复 are ordinary words (a reservoir gate, an unbound account, a funding gap repair), so they only warn below.
-//   process_term      未经闸门; 闸门 directly followed by 核, 检, 校, 拦, 放行, 通过 or 判定; 行绑定 (row binding), except as the
-//                     tail of 进行绑定 / 银行绑定; 未绑定 directly after 数据, 结论, 声明, 数字 or 占位符.
+//   process_term      1. 未经闸门; 行绑定 (row binding), except as the tail of 进行绑定 / 银行绑定; 闸门 directly followed by a gate
+//                        verb of two characters (核验 核实 核对 核查 校验 校对 校核 检查 拦截 放行 通过 判定: 闸门检修 and 闸门核心 are not).
+//                     2. subject rule: a pipeline subject (数值 数字 数据 结论 声明 占位符 字段) and a process word (闸门 未绑定 绑定
+//                        缺口修复) in one clause, in either order, with at most 4 characters between them and none of 。；;，,！!？?、
+//                        or a line break among them (数值未绑定, 这个数字没有通过闸门, 该数据行绑定失败, 结论绑定失败).
 //   field_name        value_from, claim_id(s), story_node(s) / story_node_id(s): whole field names only.
 //   placeholder_word  TODO, FIXME, TBD, placeholder(s), lorem - any case, whole words only.
 //   template_braces   any {...} with something inside, such as an unfilled {max.value}.
+const GATE_VERBS = "核验|核实|核对|核查|校验|校对|校核|检查|拦截|放行|通过|判定";
+const PROCESS_PHRASE_RE = new RegExp(`未经闸门|闸门(?=${GATE_VERBS})|(?<![进银])行绑定`, "gu");
+const PROCESS_SUBJECT_RE = /数值|数字|数据|结论|声明|占位符|字段/gu;
+const PROCESS_WORD_RE = /缺口修复|未绑定|闸门|绑定/gu;
+const CLAUSE_BREAK_RE = /[。；;，,！!？?、\n\r]/u;
+const SUBJECT_GAP = 4;
+
+/** The pipeline phrases blocked in one text: [{ term, index }] in text order. The subject rule never reports a word that a phrase
+ *  of rule 1 already covers. */
+function processTermHits(text) {
+  const phrases = [...text.matchAll(PROCESS_PHRASE_RE)].map((match) => ({ term: match[0], index: match.index }));
+  const covered = (index, length) => phrases.some((hit) => index < hit.index + hit.term.length && hit.index < index + length);
+  const subjects = [...text.matchAll(PROCESS_SUBJECT_RE)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
+  const clause = (from, to) => to - from <= SUBJECT_GAP && !CLAUSE_BREAK_RE.test(text.slice(from, to));
+  const bound = [];
+  for (const match of text.matchAll(PROCESS_WORD_RE)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (covered(start, match[0].length)) continue;
+    if (subjects.some((subject) => (subject.end <= start && clause(subject.end, start)) || (subject.start >= end && clause(end, subject.start)))) bound.push({ term: match[0], index: start });
+  }
+  return [...phrases, ...bound].sort((x, y) => x.index - y.index);
+}
+
 const READER_BLOCKER_RULES = [
-  { id: "process_term", re: /未经闸门|闸门(?=核|检|校|拦|放行|通过|判定)|(?<![进银])行绑定|(?<=数据|结论|声明|数字|占位符)未绑定/gu },
+  { id: "process_term", find: processTermHits },
   { id: "field_name", re: /(?<![A-Za-z0-9_])(?:value_from|claim_ids?|story_node(?:_ids?|s)?)(?![A-Za-z0-9_])/giu },
   { id: "placeholder_word", re: /(?<![A-Za-z])(?:todo|fixme|tbd|placeholders?|lorem)(?![A-Za-z])/giu },
   { id: "template_braces", re: /\{[^{}]*[^{}\s][^{}]*\}/gu },
@@ -894,11 +921,17 @@ const READER_BLOCKER_RULES = [
 
 // Warnings: broader words that are sometimes the story's own (a 模拟 model, a 测试 score, a movie's runtime), and the
 // bare process words above that a pipeline phrase did not already block.
-//   process_word      闸门 (not 未经闸门 and not before 核/检/校/拦/放行/通过/判定), 未绑定 (not after 数据/结论/声明/数字/占位符), 缺口修复.
+//   process_word      闸门, 未绑定 and 缺口修复 where the blocker rules above did not take them (a reservoir gate, an unbound account).
 //   review_term       模拟 测试 校验 运行时 (not 运行时间/长/刻/段) and the whole words runtime, lint, mock, prompt (with plural / -ed).
 // Not caught, by design: 气候模型 (model), 门槛 (threshold), 测量 (measurement), 检测, 运行时间 (running time).
+function bareProcessWordHits(text) {
+  const blocked = processTermHits(text);
+  return [...text.matchAll(/缺口修复|未绑定|闸门/gu)]
+    .filter((match) => !blocked.some((hit) => match.index < hit.index + hit.term.length && hit.index < match.index + match[0].length))
+    .map((match) => ({ term: match[0], index: match.index }));
+}
 const READER_WARNING_RULES = [
-  { id: "process_word", re: /(?<!未经)闸门(?!核|检|校|拦|放行|通过|判定)|(?<!数据|结论|声明|数字|占位符)未绑定|缺口修复/gu },
+  { id: "process_word", find: bareProcessWordHits },
   { id: "review_term", re: /模拟|测试|校验|运行时(?![间长刻段])|(?<![A-Za-z])(?:runtime|lint(?:s|ing)?|mock(?:s|ed)?|prompts?)(?![A-Za-z])/giu },
 ];
 
@@ -913,12 +946,12 @@ function scanReaderText(entries, rules) {
   for (const { field, text } of entries) {
     const seen = new Set();
     for (const rule of rules) {
-      for (const match of text.matchAll(rule.re)) {
-        const term = match[0];
+      const found = rule.find ? rule.find(text) : [...text.matchAll(rule.re)].map((match) => ({ term: match[0], index: match.index }));
+      for (const { term, index } of found) {
         const key = `${rule.id}:${term.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ rule: rule.id, term, field, excerpt: readerExcerpt(text, match.index, term.length) });
+        out.push({ rule: rule.id, term, field, excerpt: readerExcerpt(text, index, term.length) });
       }
     }
   }

@@ -127,6 +127,13 @@ const blockerCases = [
   ['占位符未绑定', 'process_term', ['未绑定']],
   ['该数据行绑定失败', 'process_term', ['行绑定']],
   ['数据行绑定', 'process_term', ['行绑定']],
+  // C4: the c449d94 pipeline phrases come back as blockers, and the subject rule catches them in either order
+  ['这个数字没有通过闸门', 'process_term', ['闸门']],
+  ['数值未绑定', 'process_term', ['未绑定']],
+  ['未绑定的数值', 'process_term', ['未绑定']],
+  ['结论绑定失败', 'process_term', ['绑定']],
+  ['数据闸门核验', 'process_term', ['闸门']],
+  ['字段绑定失败', 'process_term', ['绑定']],
   ['see value_from for the number', 'field_name', ['value_from']],
   ['Value_From is shown', 'field_name', ['Value_From']],
   ['the claim_id is claim-1', 'field_name', ['claim_id']],
@@ -174,7 +181,7 @@ for (const [text, term] of warnCases) {
   yes(result.warnings[0].rule === 'review_term' && result.warnings[0].message.startsWith('reader_text_review_term: page text uses "'), `warning shape for ${JSON.stringify(text)}`);
 }
 // ordinary words that look like process words: a warning, never a blocker
-for (const [text, term] of [['水库闸门已经关闭', '闸门'], ['账户未绑定', '未绑定'], ['资金缺口修复方案', '缺口修复'], ['数值未绑定', '未绑定'], ['闸门', '闸门']]) {
+for (const [text, term] of [['水库闸门已经关闭', '闸门'], ['账户未绑定', '未绑定'], ['资金缺口修复方案', '缺口修复'], ['闸门', '闸门'], ['水库闸门检修', '闸门'], ['闸门核心部件', '闸门'], ['船只通过闸门', '闸门'], ['数据显示，船只通过闸门', '闸门'], ['银行卡未绑定', '未绑定'], ['堤坝缺口修复', '缺口修复'], ['数据显示，账户未绑定', '未绑定']]) {
   const result = checkReaderText(text);
   eq(result.blockers, [], `an ordinary word never blocks: ${JSON.stringify(text)}`);
   eq(hits(result, 'warnings'), [term], `an ordinary word warns: ${JSON.stringify(text)}`);
