@@ -162,6 +162,7 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   const DEFAULT_LAYOUTS = {
     point_layout: { value: "beeswarm", optIn: "jitter" }, // strip_plot
     segment_values: { value: "highlight_column", optIn: "in_bar" }, // stacked_bar_100
+    compare_layout: { value: "overlay", optIn: "side_by_side" }, // mirrored_bar
   };
   for (const [field, { value, optIn }] of Object.entries(DEFAULT_LAYOUTS)) {
     for (const [label, props] of [["newsroom_viz_plan", planProps], ["newsroom_viz_chain", chainProps]]) {

@@ -536,6 +536,49 @@ check("overlay: a one-line key with a filled and an outline swatch and the perio
   assert.deepEqual(role(renderVizSvg({ ...withPeriods, current_period: 2010 }, typical), "text", "period-key-label").map((t) => t.text), ["2010", "2020"]);
 });
 
+check("default layout: overlay, the earlier period hollow and the later filled; side_by_side is the opt-in", () => {
+  // The default spec (what a plan that chooses nothing sends) names neither compare_layout nor current_period.
+  assert.ok(!("compare_layout" in withPeriods) && !("current_period" in withPeriods), "the default spec leaves both fields out");
+  const value = (rows, period, band, side) => rows.find((r) => r.period === period && r.band === band && r.side === side).share;
+  const dflt = renderVizSvg(withPeriods, typical);
+  // No compare_layout is overlay and no current_period is the latest period: the same bytes as saying so.
+  assert.equal(dflt, renderVizSvg({ ...withPeriods, compare_layout: "overlay" }, typical), "no compare_layout is overlay, byte for byte");
+  assert.equal(dflt, renderVizSvg({ ...withPeriods, current_period: 2020 }, typical), "no current_period is the later period, byte for byte");
+  assert.equal(dflt, renderVizSvg({ ...withPeriods, compare_layout: "overlay", current_period: "2020" }, typical), "...and the period named as text is the same period");
+  assert.notEqual(dflt, renderVizSvg({ ...withPeriods, compare_layout: "side_by_side" }, typical), "side_by_side is a different drawing");
+  assert.notEqual(dflt, renderVizSvg({ ...withPeriods, current_period: 2010 }, typical), "naming the earlier period as current flips which one is filled");
+  // One pyramid: the later period (2020) filled, the earlier period (2010) a hollow outline drawn over it.
+  const g = analyse(dflt);
+  assert.equal(g.bars.length, 36, "one filled bar per row and side");
+  assert.equal(g.outlines.length, 36, "one hollow outline per row and side");
+  assert.ok(g.bars.every((b) => b.fill !== "none" && !b.stroke), "the bars are filled and have no stroke");
+  assert.ok(g.outlines.every((o) => o.fill === "none" && o.stroke === P.ink), "the outlines are hollow with an ink stroke");
+  assert.equal(role(dflt, "text", "panel-title").length, 0, "one pyramid: no panel titles");
+  BANDS_18.forEach((band, i) => {
+    const slot = 17 - i; // the first category is at the bottom by default
+    const rowY = g.ys[slot];
+    assert.ok(near(g.valueAt(slot, "left"), value(typical, 2020, band, "Side A"), 0.02), `${band}: the filled left bar is the later period`);
+    assert.ok(near(g.valueAt(slot, "right"), value(typical, 2020, band, "Side B"), 0.02), `${band}: the filled right bar is the later period`);
+    const left = g.outlines.find((o) => o.x + o.w <= g.gl + 1 && o.y > rowY - 1.01 && o.y < rowY + 1.01);
+    const right = g.outlines.find((o) => o.x >= g.gr - 1 && o.y > rowY - 1.01 && o.y < rowY + 1.01);
+    assert.ok(near(g.gl - (left.x - 0.75), value(typical, 2010, band, "Side A") * g.k, 0.05), `${band}: the left outline is the earlier period`);
+    assert.ok(near(right.x + right.w + 0.75 - g.gr, value(typical, 2010, band, "Side B") * g.k, 0.05), `${band}: the right outline is the earlier period`);
+  });
+  const swatches = role(dflt, "rect", "legend-swatch");
+  assert.ok(swatches[0].fill !== "none" && swatches[1].fill === "none", "the key shows the filled swatch (later period) first and the hollow one second");
+  assert.deepEqual(role(dflt, "text", "period-key-label").map((t) => t.text), ["2020", "2010"], "...named 2020 then 2010");
+  // The latest period is the latest in period order, not the last row: numbers sort by value (9 before 10, though
+  // "9" sorts after "10" as text) and the order of the rows decides nothing.
+  const nines = buildRows({ bands: ["a", "b", "c"], periods: ["9", "10"] });
+  for (const rows of [nines, [...nines].reverse()]) {
+    assert.deepEqual(role(renderVizSvg(withPeriods, rows), "text", "period-key-label").map((t) => t.text), ["10", "9"], "the later period (10) is the filled one");
+  }
+  // side_by_side is the opt-in: no outlines, one titled pyramid per period, the earlier on the left.
+  const sbs = renderVizSvg({ ...withPeriods, compare_layout: "side_by_side" }, typical);
+  assert.equal(role(sbs, "rect", "data-bar-outline").length, 0, "side_by_side draws no outlines");
+  assert.deepEqual(role(sbs, "text", "panel-title").map((t) => t.text), ["2010", "2020"], "...but one titled pyramid per period");
+});
+
 check("side_by_side: two pyramids titled with their periods, one axis maximum, no outlines", () => {
   const spec = { ...withPeriods, compare_layout: "side_by_side" };
   const svg = renderVizSvg(spec, typical);
