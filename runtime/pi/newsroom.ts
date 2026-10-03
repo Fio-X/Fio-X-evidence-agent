@@ -2824,6 +2824,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const startedAt = Date.now();
       let timedOut = false;
       let bodyPhase = false;
+      // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
+      let answeredHost = requestHost;
       const controller = new AbortController();
       const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
       const abortForwarder = () => controller.abort();
@@ -2831,11 +2833,12 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       try {
         const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
         bodyPhase = true;
+        answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
         if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
         const declaredLength = Number(response.headers.get("content-length") || 0);
         if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
         const { bytes } = await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false });
-        sourceAccessCircuit.recordSuccess(downloadTimeoutGuard.hostOf(response.url) ?? requestHost);
+        sourceAccessCircuit.recordSuccess(answeredHost);
 
         const pathName = new URL(response.url).pathname;
         const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
@@ -2897,8 +2900,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
         // counted against the host inside safeFetch; a timeout while the body is read is counted here.
         // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
-        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(requestHost);
-        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, requestHost) : error;
+        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
+        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
         throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
       } finally {
         clearTimeout(timeout);
