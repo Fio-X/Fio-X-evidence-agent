@@ -1540,6 +1540,10 @@ export function validateVizSpec(spec) {
   if (spec.decimals !== undefined && (!Number.isInteger(spec.decimals) || spec.decimals < 0 || spec.decimals > 3)) errors.push("decimals must be an integer between 0 and 3");
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
+  if (spec.index_base !== undefined) {
+    if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
+    else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
+  }
   if (spec.chart_type === "parallel_sets") {
     if (!Array.isArray(spec.dimension_fields) || spec.dimension_fields.length < 2 || spec.dimension_fields.length > 5) errors.push("parallel_sets requires dimension_fields with 2 to 5 field names");
     else if (spec.dimension_fields.some((field) => !String(field ?? "").trim())) errors.push("parallel_sets dimension_fields must be non-empty strings");
@@ -1932,6 +1936,10 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (!spec.panel_mark || !["line", "dot"].includes(spec.panel_mark)) {
       blockers.push("small_multiples requires panel_mark='line' or panel_mark='dot'");
     }
+    if (spec.index_base !== undefined && spec.panel_mark === "line" && Number.isFinite(spec.index_base) && spec.index_base > 0 && Array.isArray(rows) && rows.length) {
+      const period = indexBasePeriod(spec, rows);
+      if (period.missing) blockers.push(`INDEX_BASE_NOT_IN_DATA: no x value equals index_base ${spec.index_base} in every panel (panels without it: ${period.missing.join(", ")}); rebase in SQL so each series equals ${spec.index_base} at the base period, or drop index_base`);
+    }
   }
 
   if (spec.chart_type === "waffle") {
@@ -2304,11 +2312,11 @@ export function vizLang(spec) {
 // logScale and group are standalone chrome words.
 const VIZ_STRINGS = {
   en: {
-    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (b) => `base = ${b}`, rankOutside: (r) => `#${r}`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
+    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `#${r}`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
   },
   zh: {
-    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (b) => `\u57FA\u671F = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
+    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
   },
 };
@@ -3761,7 +3769,34 @@ function placeIndexLabel(candidates, text, anchor, bold, marks, bounds, others) 
   return null;
 }
 
-function renderSmallMultiples(spec, rows) {
+// The base period of a rebased index: the one x value at which every panel's value equals index_base (relative
+// tolerance 1e-9). Returns { x } (first such x in axis order) or { missing: [panels...] }, naming the panels that
+// do not hold the base period the most panels share (every panel when no panel holds the base at all).
+const INDEX_BASE_TOLERANCE = 1e-9;
+export function indexBasePeriod(spec, rows) {
+  const base = n(spec.index_base);
+  const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
+  const holders = new Map();
+  for (const facet of facets) {
+    for (const r of rows) {
+      if (String(r[spec.facet_field]) !== facet) continue;
+      const v = n(r[spec.value_field]);
+      if (v === null || Math.abs(v - base) > INDEX_BASE_TOLERANCE * Math.abs(base)) continue;
+      const key = String(r[spec.x_field]);
+      if (!holders.has(key)) holders.set(key, new Set());
+      holders.get(key).add(facet);
+    }
+  }
+  const common = [...holders.entries()].filter(([, set]) => set.size === facets.length).map(([key]) => key);
+  if (common.length) {
+    const order = sortX(unique(rows.map((r) => r[spec.x_field])));
+    return { x: order.find((v) => common.includes(String(v))) };
+  }
+  const best = [...holders.values()].reduce((m, set) => (set.size > m.size ? set : m), new Set());
+  return { missing: facets.filter((facet) => !best.has(facet)) };
+}
+
+function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
   // Rebased index panels (opt-in spec.index_base, e.g. 100): 7+ panels go 3-4
   // columns wide, every panel gets a labelled base line and an end value, and
@@ -3769,6 +3804,15 @@ function renderSmallMultiples(spec, rows) {
   const indexBase = spec.panel_mark !== "dot" && n(spec.index_base) !== null && n(spec.index_base) > 0 ? n(spec.index_base) : null;
   const cols = facets.length === 1 ? 1 : indexBase !== null && facets.length >= 7 ? (facets.length >= 10 ? 4 : 3) : 2;
   const gapX = 34, gapY = 44;
+  // a rebased index names its base period, never a bare "base": <x> = <base>, e.g. 2023-01 = 100
+  let baseText = "";
+  if (indexBase !== null) {
+    const period = indexBasePeriod(spec, rows);
+    if (period.missing) throw new Error(`INDEX_BASE_NOT_IN_DATA: no x value holds index_base ${indexBase} in every panel (panels without it: ${period.missing.join(", ")})`);
+    baseText = VIZ_STRINGS[vizLang(spec)].indexBase(String(period.x), fmtSpec(spec, indexBase, "", 0));
+  }
+  // when no panel has a clear spot for the label it goes on its own row above the first row of panels
+  const rowShift = labelRow ? 18 : 0;
 
   if (spec.panel_mark === "dot") {
     const groups = facets.map((facet) => rows.filter((r) => String(r[spec.facet_field]) === facet));
@@ -3832,7 +3876,7 @@ function renderSmallMultiples(spec, rows) {
   const idxLeft = indexBase !== null ? 54 + 40 : 70;
   const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
   const rowsN = Math.ceil(facets.length / cols);
-  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20);
+  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20 + rowShift);
   const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
   // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
@@ -3848,7 +3892,7 @@ function renderSmallMultiples(spec, rows) {
   let indexBaseNamed = false;
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowShift + rowN * (panelH + gapY);
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -3899,8 +3943,8 @@ function renderSmallMultiples(spec, rows) {
         }
       }
       // the base is named once, in the first panel where a clear spot exists; every panel still draws the line
-      if (!indexBaseNamed) {
-        const by = yScale(indexBase), text = VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0));
+      if (!indexBaseNamed && !labelRow) {
+        const by = yScale(indexBase), text = baseText;
         const cands = [];
         for (const fx of [0, 0.25, 0.5, 0.75]) for (const dy of [-5, 13, -19, 27]) cands.push({ x: x0 + 4 + fx * panelW, y: by + dy });
         const spot = placeIndexLabel(cands, text, "start", false, marks, bounds, others);
@@ -3923,6 +3967,10 @@ function renderSmallMultiples(spec, rows) {
     });
     tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
   });
+  if (indexBase !== null && !indexBaseNamed) {
+    if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
+    f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
