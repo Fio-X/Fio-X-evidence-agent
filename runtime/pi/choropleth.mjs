@@ -103,9 +103,18 @@ export function joinChoroplethRows(rows, spec) {
  * (two rows resolving to the same iso3, which would colour/label the same
  * feature(s) twice with conflicting values).
  */
-/** True for the opt-in whole-world mode (`map_extent: "world"`). */
+/**
+ * World mode is behind NEWSROOM_MAP_WORLD, off by default; only the exact string "1" turns it on. Known open issues
+ * while it is on: the LIMIT-regex completeness check, the value_labels exemption of color_only_quantity, and the
+ * publication verifiers (verify_artifact.py, verify.rs) that still require a label on every region.
+ */
+export function mapWorldEnabled() {
+  return process.env.NEWSROOM_MAP_WORLD === "1";
+}
+
+/** True for the opt-in whole-world mode (`map_extent: "world"`, only with NEWSROOM_MAP_WORLD=1). */
 export function isWorldExtent(spec) {
-  return spec?.map_extent === "world";
+  return mapWorldEnabled() && spec?.map_extent === "world";
 }
 
 /** World mode draws at most this many text labels on the map. */

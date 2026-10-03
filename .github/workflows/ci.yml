@@ -89,6 +89,14 @@ jobs:
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs
+          node scripts/test_shared_scale_never_hides.mjs
+          node scripts/test_zh_number_scale.mjs
+          node scripts/test_viz_round3_conventions.mjs
+          node scripts/test_index_base_period.mjs
+          node scripts/test_rank_cutoff_disclosure.mjs
+          node scripts/test_viz_plan_schema.mjs
+          node scripts/test_map_world_switch.mjs
+          NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           python3 scripts/test_migration_flow_fixture.py
           python3 scripts/test_migration_story_ir.py
           node scripts/test_migration_story_ir.mjs

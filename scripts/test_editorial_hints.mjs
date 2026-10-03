@@ -127,7 +127,7 @@ const EXPECTED_DESCRIPTIONS = {
 // only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
 // property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
 const APPROVED_LATER = {
-  newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"], ["properties", "map_extent"]], addedWhy: "round-3 opt-in chart fields and the opt-in world choropleth mode" },
+  newsroom_viz_plan: { commit: "b38a345", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"]], addedWhy: "round-3 opt-in chart fields (the world choropleth field map_extent is behind NEWSROOM_MAP_WORLD, off by default, and absent here)" },
 };
 // Properties an approved later change added: they must be absent from the baseline and present in the switch-off
 // definition, and are then removed from the switch-off copy before the comparison with a4d4cb0.

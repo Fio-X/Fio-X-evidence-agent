@@ -9,6 +9,7 @@ import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
+import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
@@ -3318,7 +3319,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       extent_padding_ratio: Type.Optional(Type.Number({ minimum: 0, maximum: 0.35 })),
       reference_path: Type.Optional(StringEnum(["none", "great_circle"] as const)),
       locator_inset: Type.Optional(Type.Boolean()),
-      map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })),
+      // world mode is model-visible only with NEWSROOM_MAP_WORLD=1 (off by default)
+      ...(mapWorldEnabled() ? { map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })) } : {}),
       inset: Type.Optional(Type.Object({
         iso3: Type.Optional(Type.Array(Type.String())),
         auto: Type.Optional(Type.Boolean()),
