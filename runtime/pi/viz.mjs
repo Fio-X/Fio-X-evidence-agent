@@ -1810,6 +1810,12 @@ export function lintVizSpec(spec, rows, context = {}) {
           blockers.push(`category_names='${spec.category_names}' cannot resolve ${unmapped.length} value(s) in '${field}' (e.g. ${shown}); use ${UNMAPPED_NAME_GUIDANCE[spec.category_names] ?? UNMAPPED_NAME_GUIDANCE.worldbank} instead of translating it yourself`);
         }
       }
+      if (AGGREGATE_MIX_BLOCKED_CHART_TYPES.has(spec.chart_type)) {
+        for (const field of nameFields.filter((candidate) => fieldExists(rows, candidate))) {
+          const mix = aggregateMixInNameField(spec, rows, field);
+          if (mix) blockers.push(aggregateMixBlocker(spec, field, mix));
+        }
+      }
       if (vizLang(spec) === "zh") {
         const regions = specialRegionsInNameFields(spec, rows, nameFields.filter((candidate) => fieldExists(rows, candidate)));
         const offending = [["title", spec.title], ["subtitle", spec.subtitle]].filter(([, text]) => saysCountryWithoutRegions(text)).map(([label]) => label);
@@ -2574,6 +2580,27 @@ const UNMAPPED_NAME_GUIDANCE = {
   iso4217: "the exact ISO 4217 currency code",
 };
 
+// Zh-naming-policy rule 7: the chart types whose marks are peers of one another
+// (a ranking, a comparison, a share, a labelled point), so an aggregate row (the
+// World, a region, an income group) among economies would be ranked, compared or
+// drawn as if it were one. lintVizSpec blocks a name field that resolves to a
+// mix of aggregates and economies on exactly these types, keyed on the entry's
+// kind and never on a code prefix (OWID_KOS is Kosovo). One chart type per line,
+// so a later form is a one-line add. multi_line, small_multiples, sankey and
+// alluvial are left out on purpose: a World series, panel or node is a
+// reference there. choropleth is left out because lintChoroplethSpec already
+// blocks every aggregate by kind.
+const AGGREGATE_MIX_BLOCKED_CHART_TYPES = new Set([
+  "horizontal_bar",
+  "dot",
+  "dumbbell",
+  "slope",
+  "diverging_bar",
+  "waffle",
+  "treemap",
+  "scatter",
+]);
+
 // E: the viz-spec field category_names localizes, keyed by chart_type -
 // category_field for the five ranking/comparison forms and waffle, facet_field for
 // small_multiples (each panel's title is a name), series_field for
@@ -2797,6 +2824,31 @@ function specialRegionsInNameFields(spec, rows, fields) {
 function saysCountryWithoutRegions(text) {
   const value = String(text ?? "");
   return value.includes("国家") && !value.includes("和地区") && !value.includes("经济体");
+}
+
+// Policy rule 7: the distinct raw values of one name field that the economy
+// tables resolve to an aggregate, when the same field also resolves to at least
+// one economy or territory (null otherwise: an all-aggregate field is a chart
+// ABOUT aggregates, and values the table cannot resolve are the unmapped-value
+// blocker's business). It reads the entry's kind, so a code prefix never
+// decides anything.
+function aggregateMixInNameField(spec, rows, field) {
+  if (!ECONOMY_NAME_MODES.includes(spec.category_names)) return null;
+  const aggregates = [];
+  let economies = 0;
+  for (const value of unique(nameFieldValues(spec, rows, field).map((raw) => String(raw ?? "").trim()))) {
+    const entry = economyEntryFor(value, spec.category_names);
+    if (!entry) continue;
+    if (entry.kind === "aggregate") aggregates.push(value);
+    else economies += 1;
+  }
+  return aggregates.length && economies ? { aggregates, economies } : null;
+}
+
+function aggregateMixBlocker(spec, field, mix) {
+  const shown = mix.aggregates.slice(0, 5).map((value) => `'${value}'`).join(", ");
+  const more = mix.aggregates.length > 5 ? ` and ${mix.aggregates.length - 5} more` : "";
+  return `'${field}' on chart_type '${spec.chart_type}' mixes ${mix.aggregates.length} aggregate row(s) (${shown}${more}) with economies; an aggregate such as the World, a region or an income group is not a peer of a country, so it would be ranked, compared or drawn as one. Filter the aggregate rows out in SQL (World Bank 'region' = 'Aggregates'; Our World in Data aggregate codes start with 'OWID_' except OWID_KOS (Kosovo), or have an empty code); to compare with the world, put its value in the subtitle or a reference annotation instead; the renderer never drops rows for you`;
 }
 
 // The value-axis domain a reference_line must fall inside, mirroring each
