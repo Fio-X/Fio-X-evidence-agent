@@ -54,5 +54,53 @@
   "choropleth": {
     "desktop": "724e5e5247bbdfde87d4ec91ca900610eaf8c3a1ccbfa51ac59099a9a2b18c7c",
     "mobile": "91d6f4d6227d475e82e9699da8d8cc23ad541ca59082fa6e6eabfc77af876448"
+  },
+  "horizontal_bar_zh_country_field_partial_match": {
+    "desktop": "ee7ead8d99db7392cb8723b5392683b9787ad10ac2d509c8e0469ce3cbf770f6",
+    "mobile": "f2c6aa08c094328fe15b1bd5739f0aa2883f9faceef8a50aa761b921472d6a8f"
+  },
+  "horizontal_bar_zh_iso3_codes_unsignalled_field": {
+    "desktop": "c0ed71d4e6cb0b1eadb008bb2be56060e038cda47fbea78fdde8f1db250155f4",
+    "mobile": "f26329567fe753e218e5506f8ff1652955d64e5d32f8516fb7ae7d3e02271a9a"
+  },
+  "horizontal_bar_zh_currency_codes_unsignalled_field": {
+    "desktop": "8ebba8aa09782026f878c9681b23a8044812c06869a7ab1c8027dcab8213dcf3",
+    "mobile": "6ad9b02b01724b91d93feff492d1d462cd36b51d272bfb597f8cb654f5739200"
+  },
+  "horizontal_bar_zh_iso2_codes_country_field": {
+    "desktop": "15cc52d17d88508dd4c034b1736de5799b71d979a867bec870ad292834b004fc",
+    "mobile": "20f5e5d9671ba7c22c5b80b90dbfee29d7b244b97881a49608bfd1471a6a70cc"
+  },
+  "horizontal_bar_zh_currency_field_partial_match": {
+    "desktop": "e019ce3ddf5efb798f618f9b915e07285e642414ae9fb68badf3cd03619ada61",
+    "mobile": "4d8e9fe486b6c5b393baac885c4cc131bb4e2e22e78ac076e1849e4a91e61539"
+  },
+  "horizontal_bar_en_plain_names": {
+    "desktop": "42f33c9c2516b6330b04bb40c5c2e2bc858a33011f0395a3fbf4bc8f95cba8c0",
+    "mobile": "d4c79bb1a9488270cd9ab670cfd801b4496f731d4df77a6b2aef10b8f6f64c14"
+  },
+  "horizontal_bar_en_worldbank_names_auto": {
+    "desktop": "6be045bf007a4144932f97e7711f780a34ed2eed9a911a2493f9741526ae5a2d",
+    "mobile": "543f901d343d61f45397818e2c023513215fb684a7fa0ee69cae528f08d62d1b"
+  },
+  "horizontal_bar_en_worldbank_names_declared": {
+    "desktop": "7d9a238ec86febc7eff2766e7674b45f453783b6c4dec8b61cd476a3cc90a3d7",
+    "mobile": "d507e2dc9d78d54e26a65d69867afcd19e036015a96c767daf31220552f96e6d"
+  },
+  "scatter_zh_iso3_label_field": {
+    "desktop": "7d8c666070c26c1030ee1c25282285dce6e86bb56ca2a3d2cd0d2e68506dd9b1",
+    "mobile": "c1d39cd4c1cbc9697edcf38e49610763e11d6a245f2848ab8090b0c1139046c2"
+  },
+  "scatter_zh_country_label_field_partial_match": {
+    "desktop": "1f7716bac2238895df7fb2a4bf0fec780fb97b21d70297e0f493d990410f28b9",
+    "mobile": "b7a1b89e950e0dac20211a76c7dbd12889ea68cdd8cd6b531a1d2c56bc3cef0a"
+  },
+  "multi_line_zh_country_series_partial_match": {
+    "desktop": "42d4951d4a16185e3823bb4de11ffe5aed2aa268a0b45f9a2c2e1c3119de2f1c",
+    "mobile": "b04040c4bcf0f7d8bbf38b495c2e149e6ef1c82b9658d62dff21a41c3503b447"
+  },
+  "sankey_zh_iso3_source_field_explicit_only": {
+    "desktop": "1541e4510d5130ec5263caec0a1d94a77342607fa6b5b701f920c9565acad121",
+    "mobile": "21e5f8fc72f0226764d33480b8a6c53f89df3d43a3b9012a876f32ba4c39b3c1"
   }
 }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
-import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
+import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
 import { checkSvgGeometry } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
@@ -1439,7 +1439,7 @@ export function validateVizSpec(spec) {
   if (!spec || typeof spec !== "object") return ["Visualization spec must be an object"];
   if (spec.verification_mode !== undefined && !["verified", "draft"].includes(spec.verification_mode)) errors.push("verification_mode must be 'verified' or 'draft'");
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
-  if (spec.category_names !== undefined && !ECONOMY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${ECONOMY_NAME_MODES.join(", ")}`);
+  if (spec.category_names !== undefined && !CATEGORY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${CATEGORY_NAME_MODES.join(", ")}`);
   if (!CHART_TYPES.includes(spec.chart_type)) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
   if (!READER_TASKS.includes(spec.reader_task)) errors.push(`Unsupported reader_task '${spec.reader_task}'`);
   if (spec.visual_family !== undefined && !VISUAL_FAMILIES.includes(spec.visual_family)) errors.push(`Unsupported visual_family '${spec.visual_family}'`);
@@ -1794,23 +1794,42 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (spec.subtitle && !hasCjk(spec.subtitle)) blockers.push("zh chart subtitle contains no CJK characters");
   }
 
+  const nameFields = categoryNameFields(spec);
   if (spec.category_names !== undefined) {
-    const field = categoryNamesField(spec);
-    if (!field) {
-      blockers.push(`category_names is not supported on chart_type '${spec.chart_type}'`);
-    } else if (fieldExists(rows, field)) {
-      const unmapped = unmappedEconomyNameValues(rows.map((row) => row[field]), spec.category_names);
-      if (unmapped.length) {
-        const shown = unmapped.slice(0, 5).map((value) => `'${value}'`).join(", ");
-        const guidance = spec.category_names === "iso3" ? "the exact ISO3 economy/aggregate code" : "the exact World Bank English name";
-        blockers.push(`category_names='${spec.category_names}' cannot resolve ${unmapped.length} value(s) in '${field}' (e.g. ${shown}); use ${guidance} instead of translating it yourself`);
+    if (!nameFields?.length) {
+      blockers.push(spec.chart_type === "scatter"
+        ? "category_names on chart_type 'scatter' needs label_field (the column whose values are the point names)"
+        : `category_names is not supported on chart_type '${spec.chart_type}'`);
+    } else if (spec.chart_type === "choropleth" && !ECONOMY_NAME_MODES.includes(spec.category_names)) {
+      // lintChoroplethSpec below owns this blocker (a currency code is not a map feature).
+    } else {
+      for (const field of nameFields.filter((candidate) => fieldExists(rows, candidate))) {
+        const unmapped = unmappedEconomyNameValues(nameFieldValues(spec, rows, field), spec.category_names);
+        if (unmapped.length) {
+          const shown = unmapped.slice(0, 5).map((value) => `'${value}'`).join(", ");
+          blockers.push(`category_names='${spec.category_names}' cannot resolve ${unmapped.length} value(s) in '${field}' (e.g. ${shown}); use ${UNMAPPED_NAME_GUIDANCE[spec.category_names] ?? UNMAPPED_NAME_GUIDANCE.worldbank} instead of translating it yourself`);
+        }
+      }
+      if (vizLang(spec) === "zh") {
+        const regions = specialRegionsInNameFields(spec, rows, nameFields.filter((candidate) => fieldExists(rows, candidate)));
+        const offending = [["title", spec.title], ["subtitle", spec.subtitle]].filter(([, text]) => saysCountryWithoutRegions(text)).map(([label]) => label);
+        if (regions.length && offending.length) {
+          const listed = regions.map((region) => `${region.zh} (${region.iso3})`).join(", ");
+          warnings.push(`zh chart lists ${listed}, but its ${offending.join(" and ")} ${offending.length > 1 ? "say" : "says"} 国家 without 和地区; write 国家和地区 (or 经济体) instead of a bare 国家 (zh naming policy rule 4)`);
+        }
       }
     }
-  } else if (vizLang(spec) === "zh") {
-    const field = categoryNamesField(spec);
-    if (field && fieldExists(rows, field)) {
-      const values = unique(rows.map((row) => row[field]));
-      if (values.length && values.every((value) => !hasCjk(value))) warnings.push(`zh chart's '${field}' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text`);
+  } else if (vizLang(spec) === "zh" && nameFields?.length) {
+    const fields = nameFields.filter((candidate) => fieldExists(rows, candidate));
+    const raw = fields.flatMap((field) => nameFieldValues(spec, rows, field));
+    if (fields.length && raw.length && raw.every((value) => !hasCjk(value))) {
+      const values = [...new Set(raw.map((value) => String(value ?? "").trim()).filter(Boolean))];
+      const best = spec.chart_type === "choropleth" ? null : recognizableNameColumn(values, fields);
+      if (best) {
+        blockers.push(zhNameFieldBlocker(fields, values, best));
+      } else {
+        warnings.push(`zh chart's '${fields.join("' and '")}' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text`);
+      }
     }
   }
 
@@ -2546,19 +2565,67 @@ const REFERENCE_LINE_CHART_TYPES = new Set(["horizontal_bar", "dot", "dumbbell",
 // renderHorizontal's own defensive guard.
 const RANGE_BRACKET_CHART_TYPES = new Set(["horizontal_bar", "dot"]);
 
+// What the unmapped-value blocker tells the author to use, per mode. The
+// worldbank sentence is pinned byte-for-byte (scripts/test_range_bracket.mjs).
+const UNMAPPED_NAME_GUIDANCE = {
+  worldbank: "the exact World Bank English name",
+  iso3: "the exact ISO3 economy/aggregate code (filter other aggregate rows such as OWID_* regions and income groups out in SQL)",
+  iso2: "the exact ISO 3166-1 alpha-2 economy code (filter aggregate rows such as EU27_2020 or EA20 out in SQL)",
+  iso4217: "the exact ISO 4217 currency code",
+};
+
 // E: the viz-spec field category_names localizes, keyed by chart_type -
 // category_field for the five ranking/comparison forms and waffle, facet_field for
 // small_multiples (each panel's title is a name), series_field for
-// multi_line (each series' direct label is a name). Returns null for any
+// multi_line (each series' direct label is a name), label_field for scatter
+// (each highlighted point's direct label is a name). Returns null for any
 // other chart_type, which lintVizSpec turns into a blocker and the
 // renderers never call for. Shared by lintVizSpec's unmapped-value check
 // and every renderer's resolveEconomyDisplayName call so the two can never
 // key off different fields.
+const CATEGORY_NAMES_FIELD_KEY = new Map([
+  ["horizontal_bar", "category_field"],
+  ["dot", "category_field"],
+  ["dumbbell", "category_field"],
+  ["slope", "category_field"],
+  ["diverging_bar", "category_field"],
+  ["waffle", "category_field"],
+  ["choropleth", "category_field"],
+  ["treemap", "category_field"],
+  ["small_multiples", "facet_field"],
+  ["multi_line", "series_field"],
+  ["scatter", "label_field"],
+]);
+
 function categoryNamesField(spec) {
-  if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "choropleth", "treemap"].includes(spec.chart_type)) return spec.category_field;
-  if (spec.chart_type === "small_multiples") return spec.facet_field;
-  if (spec.chart_type === "multi_line") return spec.series_field;
-  return null;
+  const key = CATEGORY_NAMES_FIELD_KEY.get(spec.chart_type);
+  return key ? spec[key] : null;
+}
+
+// sankey and alluvial name their nodes from TWO row fields (every node id
+// comes from source_field or target_field, with the internal node-type prefix
+// stripped by stripNodePrefix) and renderSankey already resolves each node
+// name through category_names, so category_names is legal there too. They are
+// explicit-only: no auto-resolution, because source/target field names carry no
+// economy or currency token to key off.
+const CATEGORY_NAMES_NODE_CHART_TYPES = new Set(["sankey", "alluvial"]);
+
+// Every row field whose values category_names localizes on this chart type:
+// the single name field of the one-field forms, source_field and target_field
+// of the flow forms. null when category_names is not supported on the chart
+// type; an empty list when the type supports it but the field is not set.
+function categoryNameFields(spec) {
+  if (CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type)) return [spec.source_field, spec.target_field].filter(Boolean);
+  const field = categoryNamesField(spec);
+  if (field === null) return null;
+  return field ? [field] : [];
+}
+
+// The raw values of one name field, as the renderer resolves them: node ids
+// have their internal prefix stripped first.
+function nameFieldValues(spec, rows, field) {
+  const values = rows.map((row) => row[field]);
+  return CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type) ? values.map(stripNodePrefix) : values;
 }
 
 // Diagnosis P6: category_names is optional in the spec, so a chart whose name
@@ -2575,42 +2642,161 @@ function categoryNamesField(spec) {
 // Values alone never prove a column holds economies (Georgia, Jordan or Chad
 // are also states, people and institutions), so auto-resolution additionally
 // requires the FIELD NAME to carry a generic economy token (whole-token match
-// after splitting on non-alphanumerics and camelCase boundaries).
+// after splitting on non-alphanumerics and camelCase boundaries) - or, for
+// ISO 4217 currency codes, a generic currency token. iso2 is never inferred:
+// two-letter values (US state codes, country-subdivision codes ...) are too
+// ambiguous, so it stays explicit-only.
 const ECONOMY_FIELD_TOKENS = new Set(["country", "countries", "economy", "economies", "nation", "nations", "iso3", "iso3c", "国家", "经济体", "国别"]);
+const CURRENCY_FIELD_TOKENS = new Set(["currency", "currencies", "cur", "ccy", "货币", "币种"]);
+const AUTO_ECONOMY_NAME_MODES = Object.freeze(["worldbank", "iso3"]);
 
-function fieldNameSignalsEconomy(field) {
-  const tokens = String(field ?? "")
+function fieldNameTokens(field) {
+  return String(field ?? "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(/[^\p{L}\p{N}]+/u)
     .map((t) => t.toLowerCase())
     .filter(Boolean);
-  return tokens.some((t) => ECONOMY_FIELD_TOKENS.has(t));
 }
 
+function fieldNameSignalsEconomy(field) {
+  return fieldNameTokens(field).some((t) => ECONOMY_FIELD_TOKENS.has(t));
+}
+
+function fieldNameSignalsCurrency(field) {
+  return fieldNameTokens(field).some((t) => CURRENCY_FIELD_TOKENS.has(t));
+}
+
+// Whether the field name carries the token family a mode belongs to.
+function fieldNameSignalsMode(field, mode) {
+  return CURRENCY_NAME_MODES.includes(mode) ? fieldNameSignalsCurrency(field) : fieldNameSignalsEconomy(field);
+}
+
+// `signalled`: the field name carries the token family of the chosen mode (the
+// mode a signalled field resolves to wins when several tables match, e.g. the
+// codes BTN/MKD/SLE are both ISO3 and ISO 4217).
 function economyValueMatch(spec, rows) {
   if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth") return null;
   const field = categoryNamesField(spec);
   if (!field || !fieldExists(rows, field)) return null;
   const values = unique(rows.map((row) => row[field]));
   if (!values.length) return null;
-  for (const mode of ECONOMY_NAME_MODES) {
-    if (unmappedEconomyNameValues(values, mode).length === 0) return { field, mode, values: values.length };
-  }
-  return null;
+  const matching = [...AUTO_ECONOMY_NAME_MODES, ...CURRENCY_NAME_MODES].filter((mode) => unmappedEconomyNameValues(values, mode).length === 0);
+  if (!matching.length) return null;
+  const signalled = matching.find((mode) => fieldNameSignalsMode(field, mode));
+  return { field, mode: signalled ?? matching[0], values: values.length, signalled: signalled !== undefined };
 }
 
 // Warning text for a column whose values all match but whose name gives no
-// economy signal (so nothing was auto-resolved); null otherwise.
+// economy (or currency) signal (so nothing was auto-resolved); null otherwise.
 function unsignaledEconomyWarning(spec, rows) {
   const match = economyValueMatch(spec, rows);
-  if (!match || fieldNameSignalsEconomy(match.field)) return null;
+  if (!match || match.signalled) return null;
+  if (CURRENCY_NAME_MODES.includes(match.mode)) {
+    return `category field '${match.field}' values all match ISO 4217 currency codes, but the field name does not say they are currencies, so names are not auto-resolved; if they are currencies, declare category_names explicitly`;
+  }
   return `category field '${match.field}' values all match World Bank names, but the field name does not say they are economies, so names are not auto-resolved; if they are economies, declare category_names explicitly`;
 }
 
 export function resolveAutoCategoryNames(spec, rows) {
   const match = economyValueMatch(spec, rows);
-  if (!match || !fieldNameSignalsEconomy(match.field)) return null;
+  if (!match || !match.signalled) return null;
   return { spec: { ...spec, category_names: match.mode }, resolution: { field: match.field, mode: match.mode, source: "auto", values: match.values } };
+}
+
+// The localized name a zh chart prints for a name-field value, as a lookup for
+// a caller that writes text about the chart outside the renderer (the inline
+// claim fill in newsroom.ts). It answers with the SAME table, mode and
+// fields the renderer and lint use: the mode is the spec's category_names
+// (explicit, else the one resolveAutoCategoryNames picks), the fields are
+// categoryNameFields(spec), and a value is localized only on an exact table
+// match - never translated, guessed or matched by text. Returns null when the
+// chart would print no localized name (not a zh chart, no mode, a chart type
+// without name fields); otherwise { mode, fields, display(column, value) }
+// where display() is the zh name for a string value of a name-field column and
+// null for any other column, any non-string value and any value the table
+// cannot resolve (the caller then keeps the raw value). It only reads: the
+// raw value stays the evidence, the localized name is how it is shown.
+export function chartNameDisplay(spec, rows) {
+  if (vizLang(spec) !== "zh") return null;
+  const mode = spec.category_names !== undefined ? spec.category_names : resolveAutoCategoryNames(spec, rows)?.spec.category_names;
+  if (!mode) return null;
+  const fields = categoryNameFields(spec);
+  if (!fields?.length) return null;
+  const nodeNames = CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type);
+  return {
+    mode,
+    fields,
+    display(column, value) {
+      if (!fields.includes(column) || typeof value !== "string") return null;
+      const entry = economyEntryFor(nodeNames ? stripNodePrefix(value) : value, mode);
+      return entry ? entry.zh : null;
+    },
+  };
+}
+
+// zh name-field lint (blocker): a zh chart none of whose name values contains a
+// CJK character, while the values read as economies or currencies the vendored
+// tables can name, would print English names or bare codes to a Chinese
+// reader. Returns the best-matching table for the column, or null when the
+// column is not recognizable: fewer than 2 distinct values match, or fewer than
+// half of them do. `values` are the column's distinct trimmed non-empty
+// strings. Every mode is tried (exact World Bank English names, ISO3, ISO2,
+// ISO 4217); the one matching the most values wins, a tie goes to the mode
+// whose token family the field name carries (currency tokens -> iso4217,
+// economy tokens -> the economy modes), then to the fixed mode order. A
+// two-letter value can only match iso2; a three-letter value can be an ISO3
+// code or a currency code (BTN, MKD and SLE are both), which is exactly what
+// the match-count comparison and the signal tie-break settle.
+const ZH_NAME_MODE_TEXT = {
+  worldbank: { match: "exact World Bank English names", readers: "English names", column: "ISO3 code column", target: "iso3", alt: " (category_names='worldbank' also resolves these exact names)" },
+  iso3: { match: "ISO3 codes", readers: "raw codes", column: "ISO3 code column", target: "iso3", alt: "" },
+  iso2: { match: "ISO 3166-1 alpha-2 codes", readers: "raw codes", column: "ISO2 code column", target: "iso2", alt: "" },
+  iso4217: { match: "ISO 4217 currency codes", readers: "bare currency codes", column: "ISO 4217 currency code column", target: "iso4217", alt: "" },
+};
+
+function recognizableNameColumn(values, fields) {
+  if (values.length < 2) return null;
+  const candidates = CATEGORY_NAME_MODES.map((mode, order) => ({
+    mode,
+    order,
+    matched: values.length - unmappedEconomyNameValues(values, mode).length,
+    signalled: fields.some((field) => fieldNameSignalsMode(field, mode)),
+  }));
+  candidates.sort((a, b) => b.matched - a.matched || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
+  const best = candidates[0];
+  return best.matched >= 2 && best.matched * 2 >= values.length ? best : null;
+}
+
+function zhNameFieldBlocker(fields, values, best) {
+  const text = ZH_NAME_MODE_TEXT[best.mode];
+  const unmapped = new Set(unmappedEconomyNameValues(values, best.mode));
+  const shown = values.filter((value) => !unmapped.has(value)).slice(0, 3).map((value) => `'${value}'`).join(", ");
+  const fieldText = fields.map((field) => `'${field}'`).join(" and ");
+  const plural = fields.length > 1 ? "s" : "";
+  const notNames = best.signalled ? "" : "; if these values are not economies or currencies, label them in Chinese instead";
+  return `zh chart's ${fieldText} values match ${text.match} (best mode '${best.mode}': ${best.matched} of ${values.length} distinct values, e.g. ${shown}) and none contains CJK characters, so readers would see ${text.readers}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
+}
+
+// Policy rule 4 (zh-naming-policy-1003): a list that includes Hong Kong, Macao
+// or Taiwan must say 国家和地区 (or 经济体) in its title and subtitle, never a
+// bare 国家.
+const SPECIAL_REGION_ISO3 = Object.freeze(["HKG", "MAC", "TWN"]);
+
+function specialRegionsInNameFields(spec, rows, fields) {
+  if (!ECONOMY_NAME_MODES.includes(spec.category_names)) return [];
+  const found = new Map();
+  for (const field of fields) {
+    for (const value of nameFieldValues(spec, rows, field)) {
+      const entry = economyEntryFor(value, spec.category_names);
+      if (entry && SPECIAL_REGION_ISO3.includes(entry.iso3) && !found.has(entry.iso3)) found.set(entry.iso3, entry.zh);
+    }
+  }
+  return SPECIAL_REGION_ISO3.filter((iso3) => found.has(iso3)).map((iso3) => ({ iso3, zh: found.get(iso3) }));
+}
+
+function saysCountryWithoutRegions(text) {
+  const value = String(text ?? "");
+  return value.includes("国家") && !value.includes("和地区") && !value.includes("经济体");
 }
 
 // The value-axis domain a reference_line must fall inside, mirroring each

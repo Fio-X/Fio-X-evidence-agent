@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getBasemap } from "./basemap_registry.mjs";
-import { economyEntryFor } from "./economy_names.mjs";
+import { ECONOMY_NAME_MODES, economyEntryFor } from "./economy_names.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +77,10 @@ export function neFeatureCount() {
  * per row, in row order. `entry` is economy_names.mjs's own table entry
  * (carries `.kind` - "economy" | "aggregate" - and `.iso3`), or null when
  * the raw value has no exact table match at all (economy_names.mjs's own
- * unmappedEconomyNameValues lint already blocks that case).
+ * unmappedEconomyNameValues lint already blocks that case). Every
+ * ECONOMY_NAME_MODES mode ("worldbank", "iso3", "iso2") lands on the same
+ * entry, so an ISO2-keyed row joins through that entry's iso3 exactly like
+ * an ISO3-keyed one.
  */
 export function joinChoroplethRows(rows, spec) {
   const field = spec?.category_field;
@@ -107,12 +110,18 @@ export function lintChoroplethSpec(spec, rows) {
   const blockers = [];
   const warnings = [];
   const categoryNames = spec?.category_names;
-  if (!["worldbank", "iso3"].includes(categoryNames)) {
-    blockers.push("choropleth requires category_names to be 'worldbank' or 'iso3'");
+  // The modes that name a place: each resolves to an economy-table entry whose
+  // iso3 keys into the basemap sidecar. A currency mode (iso4217) names no map
+  // feature, so it is never a legal choropleth join key.
+  const mapModes = ECONOMY_NAME_MODES;
+  if (!mapModes.includes(categoryNames)) {
+    const modeList = `${mapModes.slice(0, -1).map((mode) => `'${mode}'`).join(", ")} or '${mapModes[mapModes.length - 1]}'`;
+    const currencyNote = categoryNames === "iso4217" ? "; 'iso4217' names a currency, which is not a map feature" : "";
+    blockers.push(`choropleth requires category_names to be ${modeList}${currencyNote}`);
   }
   const rowList = Array.isArray(rows) ? rows : [];
   if (rowList.length > 60) blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
-  if (!["worldbank", "iso3"].includes(categoryNames) || !spec?.category_field) return { blockers, warnings };
+  if (!mapModes.includes(categoryNames) || !spec?.category_field) return { blockers, warnings };
 
   const joined = joinChoroplethRows(rowList, spec);
   const aggregateValues = [...new Set(joined.filter((item) => item.entry?.kind === "aggregate").map((item) => String(item.raw)))];
