@@ -249,12 +249,15 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
 }
 
 // ---- other chart types are byte-identical to the base commit -----------------------------------------
+// No silent skips: if the base commit cannot be extracted, or the old renderer throws on a fixture, the test fails.
 const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", BASE_COMMIT, "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-if (archive.status === 0) {
+assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow clone lacks it; fetch full history): ${String(archive.stderr ?? "").slice(0, 200)}`);
+{
   const dir = mkdtempSync(join(tmpdir(), "round3-base-"));
   process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "b.tar"), archive.stdout);
-  spawnSync("tar", ["-xf", join(dir, "b.tar"), "-C", dir]);
+  const untar = spawnSync("tar", ["-xf", join(dir, "b.tar"), "-C", dir]);
+  assert.equal(untar.status, 0, "extracting the base commit failed");
   const old = await import(pathToFileURL(join(dir, "runtime/pi/viz.mjs")).href);
   const names = ["华北", "华东", "华南", "西北", "东北", "西南"];
   const cats = names.map((region, i) => ({ region, v: 10 + i * 7, w: 5 + i * 3 }));
@@ -270,13 +273,44 @@ if (archive.status === 0) {
       [{ ...base, language, reader_task: "correlation", chart_type: "scatter", x_field: "v", y_field: "w", label_field: "region", unit: "%" }, cats],
     ];
     for (const [spec, data] of same) {
-      let before;
-      try { before = old.renderVizSvg(spec, data); } catch { continue; }
+      const before = old.renderVizSvg(spec, data); // a throw here fails the test
       const after = renderVizSvg(spec, data);
-      // scatter gains auto labels on purpose; everything else must match to the byte (en horizontal_bar etc.)
+      // scatter gains auto labels on purpose; everything else must match to the byte, in both languages
       if (spec.chart_type === "scatter") continue;
-      if (language === "zh" && /\d{5,}/.test(before)) continue; // zh large-value scaling changed on purpose
       assert.equal(after, before, `${language} ${spec.chart_type} unchanged`);
+    }
+  }
+  // large values: en is byte-identical; zh changes only in the value-label text nodes, from the comma-grouped integer to
+  // the shared 亿 label with the decimal count the chart needs (every difference pinned below, nothing else may differ)
+  {
+    const big = names.map((region, i) => ({ region, v: [3.5e9, 1.2e9, 8.4e8, 1.1e8, 2.2e5, 86000][i], w: [4e9, 1e9, 9e8, 1e8, 2e5, 9e4][i] }));
+    const NEW_LABEL = { "3,500,000,000": "35.000亿", "1,200,000,000": "12.000亿", "840,000,000": "8.400亿", "110,000,000": "1.100亿", "220,000": "0.002亿", "86,000": "0.001亿",
+      "4,000,000,000": "40.000亿", "1,000,000,000": "10.000亿", "900,000,000": "9.000亿", "100,000,000": "1.000亿", "200,000": "0.002亿", "90,000": "0.001亿" };
+    const textNodes = (svg) => [...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+    const withoutText = (svg) => svg.replace(/<text [^>]*>[^<]*<\/text>/g, "");
+    const tagNames = (svg) => [...svg.matchAll(/<([a-zA-Z]+)[ >\/]/g)].map((m) => m[1]).join(",");
+    const fixtures = [
+      ["horizontal_bar", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" }],
+      ["dot", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" }],
+      ["slope", { reader_task: "change", category_field: "region", start_field: "v", end_field: "w" }],
+    ];
+    for (const [chart_type, extra] of fixtures) {
+      const spec = (language) => ({ ...base, language, chart_type, unit: "元", ...extra });
+      assert.equal(renderVizSvg(spec("en"), big), old.renderVizSvg(spec("en"), big), `en ${chart_type} large values unchanged`);
+      const [before, after] = [old.renderVizSvg(spec("zh"), big), renderVizSvg(spec("zh"), big)];
+      const [a, b] = [textNodes(before), textNodes(after)];
+      assert.equal(a.length, b.length, `zh ${chart_type}: same number of text nodes`);
+      let changed = 0;
+      a.forEach((text, i) => {
+        if (text === b[i]) return;
+        const m = /^(.*?)(-?[\d,]{5,})( 元)?$/.exec(text);
+        assert.ok(m && NEW_LABEL[m[2]], `zh ${chart_type}: unexpected old text ${JSON.stringify(text)}`);
+        assert.equal(b[i], `${m[1]}${NEW_LABEL[m[2]]}${m[3] ?? ""}`, `zh ${chart_type}: ${JSON.stringify(text)} becomes the shared 亿 label`);
+        changed += 1;
+      });
+      assert.ok(changed >= 6, `zh ${chart_type}: every value label changed (${changed})`);
+      if (chart_type === "horizontal_bar") assert.equal(tagNames(after), tagNames(before), "zh horizontal_bar: same elements (label width moves marks)");
+      else assert.equal(withoutText(after), withoutText(before), `zh ${chart_type}: nothing but the label text differs`);
     }
   }
 }
