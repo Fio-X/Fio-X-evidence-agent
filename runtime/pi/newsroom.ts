@@ -289,6 +289,7 @@ const preflightIo = {
   // (the same test the render applies).
   async lintCurrent(lint: any) {
     try {
+      if (!lintIsCurrent(lint)) return false;
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(String(lint.plan_ref), "infographics/plans/");
       const assets = await loadInfographicAssets(spec, mobilePages);
@@ -2244,30 +2245,28 @@ function registerVizChain(pi: ExtensionAPI) {
 
 // ---- Hero value gate (on by default; NEWSROOM_HERO_VALUE_GATE=0 turns it off) -----------------------------------
 // A hero_stat does not type its number: it names one placeholder of its claim (value_from) and the runtime copies the
-// text the claim itself shows. A claim recorded inline carries its bindings; a claim recorded with record_claim has none,
-// so the selector is resolved on the claim's own computation rows and the result must also be stated by the claim text.
+// text the claim itself shows. Only a claim the system bound can fill a hero: a claim recorded inline carries its bindings
+// (claim_bindings), and a claim recorded with record_claim has none, so it is refused (HERO_CLAIM_UNBOUND); there is no
+// fallback that matches a row's value against the claim text, because two rows can show the same text.
 // label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
 // writes a number of its own and never changes a claim's status.
 // Only the exact string "0" switches the gate off; unset, "1", empty or any other value leaves it on, so a typo can never
 // quietly open the gate. The pure lint in infographic.mjs stays opt-in through context.hero_value_gate: this runtime
 // is the only caller that passes it, and it passes it whenever this switch is on.
 const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE !== "0";
+// A stored page lint is only as good as the rules it ran under. Bump this when a page-lint rule changes what passes; the lint
+// record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
+const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
+const currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: heroGateOn() });
 const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
 
-type HeroClaimContext = { claimId: string; tables: Record<string, unknown>[][]; bindings: ClaimBinding[] | null; claimText: string; template: string | null };
+type HeroClaimContext = { claimId: string; bindings: ClaimBinding[] | null; claimText: string; template: string | null };
 
 async function heroClaimContext(claimId: string, records: Map<string, any>): Promise<HeroClaimContext | null> {
   const record = records.get(claimId);
   if (!record) return null;
-  const tables: Record<string, unknown>[][] = [];
-  for (const ref of Array.isArray(record.computation_refs) ? record.computation_refs : []) {
-    try {
-      const computation = await readArtifactJson(String(ref), "computations/");
-      if (Array.isArray(computation?.rows)) tables.push(computation.rows);
-    } catch {}
-  }
   const bindings = Array.isArray(record.claim_bindings) && record.claim_bindings.length ? (record.claim_bindings as ClaimBinding[]) : null;
-  return { claimId, tables, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null };
+  return { claimId, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null };
 }
 
 // Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
@@ -2292,22 +2291,14 @@ function heroTokenOffsets(text: string, claim: string): number[] {
 
 function resolveHeroPlaceholder(context: HeroClaimContext, placeholder: string, where: string): { text: string; column?: string } {
   if (!/^\{[^{}]*\}$/.test(placeholder)) throw new Error(`HERO_PLACEHOLDER_INVALID: ${where} must be one placeholder of claim '${context.claimId}' written in braces, got '${placeholder.slice(0, 60)}'`);
-  if (context.bindings) {
-    const hit = context.bindings.find((binding) => binding.placeholder === placeholder);
-    if (!hit) throw new Error(`HERO_PLACEHOLDER_UNBOUND: ${where} ${placeholder} is not one of claim '${context.claimId}' bindings; use one of: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}`);
-    return { text: String(hit.text), column: hit.column };
-  }
-  let reason = "the claim has no computation rows to resolve it on";
-  for (const rows of context.tables) {
-    try {
-      const filled = fillClaimTemplate(placeholder, rows);
-      if (heroTokenOffsets(filled.text, context.claimText).length) return { text: filled.text, column: filled.bindings[0]?.column };
-      reason = `it resolves to '${filled.text.slice(0, 40)}', which the claim text does not state`;
-    } catch (error) {
-      reason = String((error as any)?.message ?? error).replace(/^CLAIM_TEMPLATE_ERROR:\s*/, "").slice(0, 200);
-    }
-  }
-  throw new Error(`HERO_PLACEHOLDER_NOT_STATED: ${where} ${placeholder} cannot be used with claim '${context.claimId}': ${reason}`);
+  if (!context.bindings) throw heroUnbound(context.claimId, where);
+  const hit = context.bindings.find((binding) => binding.placeholder === placeholder);
+  if (!hit) throw new Error(`HERO_PLACEHOLDER_UNBOUND: ${where} ${placeholder} is not one of claim '${context.claimId}' bindings; use one of: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}`);
+  return { text: String(hit.text), column: hit.column };
+}
+
+function heroUnbound(claimId: string, where = "a hero_stat") {
+  return new Error(`HERO_CLAIM_UNBOUND: ${where} claim '${claimId}' has no system bindings (it was not recorded from a claim template), so a hero_stat cannot take its number from it. Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template.`);
 }
 
 // Units a hero may show: the literal that follows the placeholder in the claim itself, and the unit the page's own chart
@@ -2325,6 +2316,18 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
     } catch {}
   }
   return [...out];
+}
+
+// A magnitude word or percent sign at the start of the literal after the number. A lone 千 and single letters (千克, 千米, m) are not one.
+const HERO_MAGNITUDES = ["万亿", "千亿", "亿", "千万", "百万", "万", "%", "％", "‰", "个百分点", "百分点"];
+const HERO_MAGNITUDE_WORDS = /^(thousand|million|billion|trillion)(?:s)?(?!\p{L})/iu;
+function heroMagnitudeStart(literal: string): string | null {
+  const sign = HERO_MAGNITUDES.find((entry) => literal.startsWith(entry));
+  if (sign) return sign;
+  return literal.match(HERO_MAGNITUDE_WORDS)?.[1] ?? null;
+}
+function heroUnitStartsWith(unit: string, magnitude: string) {
+  return /^[a-z]/i.test(magnitude) ? unit.toLowerCase().startsWith(magnitude.toLowerCase()) : unit.startsWith(magnitude);
 }
 
 function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, valueText: string): string[] {
@@ -2360,6 +2363,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const id = String(module.id);
   const claimId = String(module.claim_id ?? "");
   if (!context) throw new Error(`HERO_CLAIM_NOT_VERIFIED: hero_stat '${id}' claim '${claimId}' is not a system-verified claim`);
+  if (!context.bindings) throw heroUnbound(claimId, `hero_stat '${id}'`);
   const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
   if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
   const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
@@ -2370,6 +2374,10 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     const allowed = [...new Set([...heroLiteralsAfter(context, from, value.text), ...(await heroPlanUnits(modules, claimId, value.column))])];
     if (!allowed.includes(unit)) throw new Error(`HERO_UNIT_NOT_ALLOWED: hero_stat '${id}' unit '${unit.slice(0, 20)}' is not shown by claim '${claimId}'; allowed: empty${allowed.map((entry) => `, '${entry}'`).join("")}`);
   }
+  // The claim formatter writes a bare number (12.3); a magnitude word or percent sign is a literal of the claim after it. The unit
+  // must carry it, or "12.3亿美元" would become a hero of 12.3 with no unit or with 美元 alone.
+  const magnitude = heroLiteralsAfter(context, from, value.text).map(heroMagnitudeStart).find(Boolean);
+  if (magnitude && !heroUnitStartsWith(unit, magnitude)) throw new Error(`HERO_UNIT_DROPPED: hero_stat '${id}' claim '${claimId}' shows '${magnitude}' right after the number, so the unit must start with '${magnitude}'${unit ? ` (got '${unit.slice(0, 20)}')` : " (the unit is empty)"}; keep it at the start of unit`);
   const text: Record<string, string> = {};
   for (const field of ["label", "detail"]) {
     const templateKey = `${field}_template`;
@@ -2391,6 +2399,15 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   }
   const { label_template: _l, detail_template: _d, ...rest } = module;
   return { ...rest, value: value.text, value_from: from, ...text };
+}
+
+/** The render accepts a stored lint only when it was made under today's policy version and hero gate state. */
+function lintIsCurrent(lint: any) {
+  const now = currentLintPolicy();
+  return lint?.lint_policy_version === now.lint_policy_version && lint?.hero_value_gate === now.hero_value_gate;
+}
+function assertLintCurrent(lint: any) {
+  if (!lintIsCurrent(lint)) throw new Error(`LINT_STALE: the stored infographic lint was made under another lint policy (version ${String(lint?.lint_policy_version ?? "none")}, hero gate ${String(lint?.hero_value_gate ?? "unknown")}) than the current one (version ${INFOGRAPHIC_LINT_POLICY_VERSION}, hero gate ${heroGateOn()}); run newsroom_infographic_lint again on this plan, then render with the new lint_ref`);
 }
 
 // The deterministic page lint over a stored or proposed plan; shared by
@@ -2456,9 +2473,10 @@ async function lintInfographicPlan(spec: any) {
         heroChecks[String(module.id)] = [String((error as any)?.message ?? error)];
       }
     }
-    heroGate.hero_value_gate = true;
     heroGate.hero_checks = heroChecks;
   }
+  // The gate state is passed explicitly in both states (the pure lint reads only an exact true).
+  heroGate.hero_value_gate = heroGateOn();
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
   return { lint, assets, mobilePages, verifiedRecords };
@@ -4566,9 +4584,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         data_hash: asset.manifest?.data_hash ?? null,
         critic_score: asset.critic?.score ?? null,
       }]));
-      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes }));
+      const policy = currentLintPolicy();
+      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes, ...policy }));
       const lintRef = `infographics/lints/${key}.json`;
-      await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes });
+      await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes, ...policy });
       const igShadow = shadowChecksEnabled()
         ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
         : null;
@@ -4598,11 +4617,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         const unverified = cited.filter((id) => !verifiedNow.has(id));
         if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
       }
+      assertLintCurrent(lint);
       const assets = await loadInfographicAssets(spec, mobilePages);
       for (const [ref, asset] of Object.entries(assets) as any) {
         const expected = lint.asset_hashes?.[ref];
         if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
         if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
+      }
+      {
+        // The stored lint is not trusted for its verdict either: the plan is linted again under today's settings.
+        const fresh = (await lintInfographicPlan(spec)).lint;
+        if (!fresh.passed || (fresh.blockers ?? []).length) throw new Error(`Infographic lint has blocking failures under the current settings: ${fresh.blockers.join(" | ")}`);
       }
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
