@@ -2413,7 +2413,11 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     if (wordedNear !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`);
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
-    for (const placeholder of new Set(placeholders)) filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+    for (const placeholder of new Set(placeholders)) {
+      filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+      // Every placeholder the module fills must still be in the computation rows, not only the one the value comes from.
+      await assertHeroBindingHolds(id, context, context.bindings!.find((binding) => binding.placeholder === placeholder)!);
+    }
     if (hasTemplate && String(module[field] ?? "") !== filled) throw new Error(`HERO_EDITED_AFTER_FILL: hero_stat '${id}' ${field} no longer matches its ${templateKey}; edit the template, not the filled text`);
     text[field] = filled;
     if (placeholders.length) text[templateKey] = src;

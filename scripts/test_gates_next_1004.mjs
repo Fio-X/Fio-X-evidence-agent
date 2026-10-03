@@ -280,5 +280,20 @@ await ok("K37 control: a correct unit still passes with an invisible character i
   }
 });
 
+// ---- K41: every placeholder the module fills is rechecked against the computation rows ----
+const regionChanged = (rows) => rows.map((row) => (row.region === "B" ? { ...row, region: "Z" } : row));
+for (const field of ["label", "detail"]) {
+  const hero = { value_from: "{max.value}", [field]: "Largest in B", [`${field}_template`]: "Largest in {max.value.region}" };
+  await refused(`K41 ${field}_template: bound field changed, value unchanged`, hero, /HERO_BINDING_STALE.*\{max\.value\.region\}/, { claim_id: "c-bound", mutateRows: regionChanged });
+  await ok(`K41 ${field}_template: unchanged rows pass`, async () => {
+    const r = await heroRun(true, hero, { claim_id: "c-bound" });
+    must(!r.refused && r.stored[field] === "Largest in B", JSON.stringify(r.refused ?? r.stored));
+  });
+}
+await ok("K41 control: the value alone with a changed region still passes", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound", mutateRows: regionChanged });
+  must(!r.refused, JSON.stringify(r.refused));
+});
+
 // @@NEXT@@
 console.log(`gates next (K37-K41): ${results.length} checks -- PASS`);
