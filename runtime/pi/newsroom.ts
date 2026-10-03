@@ -2301,7 +2301,10 @@ function resolveHeroPlaceholder(context: HeroClaimContext, placeholder: string, 
 }
 
 function heroUnbound(claimId: string, where = "a hero_stat") {
-  return new Error(`HERO_CLAIM_UNBOUND: ${where} claim '${claimId}' has no system bindings (it was not recorded from a claim template), so a hero_stat cannot take its number from it. Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template.`);
+  const head = `HERO_CLAIM_UNBOUND: ${where} claim '${claimId}' has no system bindings (it was not recorded from a claim template), so a hero_stat cannot take its number from it.`;
+  // Only a run that can record a claim from a claim template may point at one; otherwise the lead visual is the only page top.
+  if (!inlineClaimEnabled()) return new Error(`${head} This run records no claim templates, so use the lead visual for the page top.`);
+  return new Error(`${head} Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template.`);
 }
 
 // Units a hero may show: the literal that follows the placeholder in the claim itself, and the unit the page's own chart
