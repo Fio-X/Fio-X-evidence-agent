@@ -1831,7 +1831,17 @@ export function lintVizSpec(spec, rows, context = {}) {
       }
     }
   } else if (vizLang(spec) === "zh" && nameFields?.length) {
-    const fields = nameFields.filter((candidate) => fieldExists(rows, candidate));
+    let fields = nameFields.filter((candidate) => fieldExists(rows, candidate));
+    // A column whose name says it holds economies or currencies has to resolve in full: one value without CJK characters
+    // blocks, whatever the match count (declaredNameFieldBlocker). The older rule below keeps every other column.
+    // Choropleth owns its own name blockers.
+    if (spec.chart_type !== "choropleth") {
+      const declared = fields.filter((field) => (fieldNameSignalsEconomy(field) || fieldNameSignalsCurrency(field)) && distinctNameValues(spec, rows, field).some((value) => !hasCjk(value)));
+      if (declared.length) {
+        blockers.push(declaredNameFieldBlocker(spec, rows, declared));
+        fields = fields.filter((field) => !declared.includes(field));
+      }
+    }
     const raw = fields.flatMap((field) => nameFieldValues(spec, rows, field));
     if (fields.length && raw.length && raw.every((value) => !hasCjk(value))) {
       const values = [...new Set(raw.map((value) => String(value ?? "").trim()).filter(Boolean))];
@@ -2660,6 +2670,11 @@ function nameFieldValues(spec, rows, field) {
   return CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type) ? values.map(stripNodePrefix) : values;
 }
 
+// The distinct values of one name field the way lint counts them: trimmed, with the empty ones dropped.
+function distinctNameValues(spec, rows, field) {
+  return [...new Set(nameFieldValues(spec, rows, field).map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
 // Diagnosis P6: category_names is optional in the spec, so a chart whose name
 // column already holds exact World Bank English names (or ISO3 codes) used to
 // print the raw English text on a zh page unless the author remembered to set
@@ -2785,15 +2800,23 @@ export function chartNameDisplay(spec, rows) {
 // countries). A two-letter value can only match iso2; a three-letter value can
 // be an ISO3 code or a currency code (BTN, MKD and SLE are both), which is
 // exactly what the match-count comparison and the signal tie-break settle.
+// A column whose NAME says it holds economies or currencies (an economy or
+// currency token, as for auto-resolution) is held to more than recognition: on
+// a zh chart with no category_names, one value without CJK characters blocks
+// (declaredNameFieldBlocker), whatever the match count. The column declared
+// what it holds, so a code the tables do not know, an aggregate outside the
+// policy table or a name typed by hand cannot be shown as it is; only a column
+// of Chinese values from a Chinese source passes. Columns whose names say
+// nothing keep the thresholds above.
 const ZH_NAME_MODE_TEXT = {
-  worldbank: { match: "exact World Bank English names", readers: "English names", column: "ISO3 code column", target: "iso3", alt: " (category_names='worldbank' also resolves these exact names)" },
-  iso3: { match: "ISO3 codes", readers: "raw codes", column: "ISO3 code column", target: "iso3", alt: "" },
-  iso2: { match: "ISO 3166-1 alpha-2 codes", readers: "raw codes", column: "ISO2 code column", target: "iso2", alt: "" },
-  iso4217: { match: "ISO 4217 currency codes", readers: "bare currency codes", column: "ISO 4217 currency code column", target: "iso4217", alt: "" },
+  worldbank: { match: "exact World Bank English names", none: "World Bank economy name or code", readers: "English names", column: "ISO3 code column", target: "iso3", alt: " (category_names='worldbank' also resolves these exact names)" },
+  iso3: { match: "ISO3 codes", none: "World Bank economy name or code", readers: "raw codes", column: "ISO3 code column", target: "iso3", alt: "" },
+  iso2: { match: "ISO 3166-1 alpha-2 codes", none: "World Bank economy name or code", readers: "raw codes", column: "ISO2 code column", target: "iso2", alt: "" },
+  iso4217: { match: "ISO 4217 currency codes", none: "ISO 4217 currency code", readers: "bare currency codes", column: "ISO 4217 currency code column", target: "iso4217", alt: "" },
 };
 
-function recognizableNameColumn(values, fields) {
-  if (values.length < 2) return null;
+function recognizableNameColumn(values, fields, { threshold = true } = {}) {
+  if (threshold && values.length < 2) return null;
   const candidates = CATEGORY_NAME_MODES.map((mode, order) => ({
     mode,
     order,
@@ -2802,17 +2825,36 @@ function recognizableNameColumn(values, fields) {
   })).filter((candidate) => candidate.mode !== "iso2" || candidate.signalled);
   candidates.sort((a, b) => b.matched - a.matched || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
   const best = candidates[0];
-  return best.matched >= 2 && best.matched * 2 >= values.length ? best : null;
+  return !threshold || (best.matched >= 2 && best.matched * 2 >= values.length) ? best : null;
 }
 
-function zhNameFieldBlocker(fields, values, best) {
+// `cjk`: the distinct values that do contain CJK characters, which only the
+// declared-column rule can have (the older rule needs every value without).
+function zhNameFieldBlocker(fields, values, best, { cjk = [] } = {}) {
   const text = ZH_NAME_MODE_TEXT[best.mode];
   const unmapped = new Set(unmappedEconomyNameValues(values, best.mode));
-  const shown = values.filter((value) => !unmapped.has(value)).slice(0, 3).map((value) => `'${value}'`).join(", ");
+  const examples = (list) => list.slice(0, 3).map((value) => `'${value}'`).join(", ");
   const fieldText = fields.map((field) => `'${field}'`).join(" and ");
   const plural = fields.length > 1 ? "s" : "";
-  const notNames = best.signalled ? "" : "; if these values are not economies or currencies, label them in Chinese instead";
-  return `zh chart's ${fieldText} values match ${text.match} (best mode '${best.mode}': ${best.matched} of ${values.length} distinct values, e.g. ${shown}) and none contains CJK characters, so readers would see ${text.readers}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
+  // The column name says they are economies or currencies, which only stands against recognized values: when no value is
+  // recognized, the hedge stays.
+  const notNames = best.signalled && best.matched > 0 ? "" : "; if these values are not economies or currencies, label them in Chinese instead";
+  const matches = best.matched > 0
+    ? `match ${text.match} (best mode '${best.mode}': ${best.matched} of ${values.length} distinct values, e.g. ${examples(values.filter((value) => !unmapped.has(value)))})`
+    : `match no ${text.none} (e.g. ${examples(values.filter((value) => !hasCjk(value)))})`;
+  const chinese = cjk.length ? `${cjk.length} of them ${cjk.length > 1 ? "contain" : "contains"} CJK characters (e.g. ${examples(cjk)})` : "none contains CJK characters";
+  const readers = `${best.matched > 0 ? text.readers : "the raw values"}${cjk.length ? " for the rest" : ""}`;
+  return `zh chart's ${fieldText} values ${matches} and ${chinese}, so readers would see ${readers}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
+}
+
+// The blocker for name fields that say they hold economies or currencies but
+// have a value without CJK characters: the recognizable-column message, with
+// no match threshold (best may match one value or none, and some values may be
+// Chinese). `fields` are the offending fields only.
+function declaredNameFieldBlocker(spec, rows, fields) {
+  const values = [...new Set(fields.flatMap((field) => distinctNameValues(spec, rows, field)))];
+  const best = recognizableNameColumn(values, fields, { threshold: false });
+  return zhNameFieldBlocker(fields, values, best, { cjk: values.filter((value) => hasCjk(value)) });
 }
 
 // category_names='iso2' on a column whose name does not say it holds countries
