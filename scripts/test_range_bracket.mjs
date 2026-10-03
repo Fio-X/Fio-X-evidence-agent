@@ -5,7 +5,7 @@
 // with category_names) plus CJK widow control in wrapText, the other
 // reader-facing fix landed alongside it.
 import assert from "node:assert/strict";
-import { chartNameDisplay, validateVizSpec, lintVizSpec, renderVizSvg, wrapText } from "../runtime/pi/viz.mjs";
+import { chartNameDisplay, validateVizSpec, lintVizSpec, renderVizMobileSvg, renderVizSvg, wrapText } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 
 const BASE = {
@@ -764,6 +764,97 @@ console.log("aggregate rows fail closed: PASS");
 }
 
 console.log("iso2 needs a country-code column: PASS");
+
+// ---------------------------------------------------------------------
+// Scatter labels resolve (zh-naming-policy-1003). A highlighted scatter point is named by its label_field value, and both
+// scatter renderers printed that value as it is, so a zh scatter of ISO3 codes labelled its points KEN and BRA. The raw
+// value stays the point's identity (highlight_values match it, the way they match a bar's category value); the name the
+// table gives it is what is measured, laid out and drawn. A spec with no category_names, declared or inferred, renders as
+// before (test_viz_snapshots.mjs pins that byte for byte).
+// ---------------------------------------------------------------------
+{
+  const scatter = (overrides = {}) => spec({ chart_type: "scatter", reader_task: "correlation", language: "zh", title: "各经济体的收入与可再生能源占比", x_field: "x", y_field: "y", label_field: "label", category_field: undefined, value_field: undefined, x_unit: "index", y_unit: "%", unit: "%", highlight_values: ["KEN", "BRA"], ...overrides });
+  const points = (field, labels) => labels.map((label, i) => ({ [field]: label, x: i + 1, y: 20 + i * 7 }));
+  const VIEWPORTS = { desktop: renderVizSvg, mobile: renderVizMobileSvg };
+  const directLabels = (svg) => [...svg.matchAll(/<text data-role="direct-label" x="([^"]*)" y="([^"]*)" text-anchor="([^"]*)"[^>]*>([^<]*)<\/text>/g)].map((m) => ({ x: m[1], y: m[2], anchor: m[3], text: m[4] }));
+  const circles = (svg) => [...svg.matchAll(/<circle [^>]*\/>/g)].map((m) => m[0]);
+  const accentCircles = (svg) => circles(svg).filter((circle) => circle.endsWith('opacity="1"/>'));
+  const allTexts = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const nameBlockers = (l) => l.blockers.filter((b) => b.startsWith("zh chart's") || b.startsWith("category_names"));
+  const CODES = ["KEN", "NOR", "BRA", "CHN", "IND"];
+  const NAMES = ["Kenya", "Norway", "Brazil", "China", "India"];
+
+  // --- A zh scatter prints each highlighted point's name, on both viewports, however the mode was chosen ---
+  const cases = [
+    ["declared iso3 on a column that does not say country", scatter({ category_names: "iso3" }), points("label", CODES), CODES],
+    ["inferred from a column named iso3", scatter({ label_field: "iso3" }), points("iso3", CODES), CODES],
+    ["declared worldbank names", scatter({ label_field: "label", category_names: "worldbank", highlight_values: ["Kenya", "Brazil"] }), points("label", NAMES), NAMES],
+    ["inferred from a column named country", scatter({ label_field: "country", highlight_values: ["Kenya", "Brazil"] }), points("country", NAMES), NAMES],
+  ];
+  for (const [name, theSpec, rows, raw] of cases) {
+    assert.deepEqual(nameBlockers(lintVizSpec(theSpec, rows, {})), [], `${name}: a spec the model can reach is not blocked`);
+    // The same points under an unsignalled column name and no category_names: what the renderer drew before.
+    const unresolvedSpec = { ...theSpec, label_field: "label", category_names: undefined };
+    const unresolvedRows = rows.map((row) => ({ ...row, label: row[theSpec.label_field], ...(theSpec.label_field === "label" ? {} : { [theSpec.label_field]: undefined }) }));
+    for (const [viewport, render] of Object.entries(VIEWPORTS)) {
+      const svg = render(theSpec, rows);
+      const before = render(unresolvedSpec, unresolvedRows);
+      assert.deepEqual(directLabels(svg).map((l) => l.text), ["肯尼亚", "巴西"], `${name} (${viewport})`);
+      assert.deepEqual(directLabels(before).map((l) => l.text), [raw[0], raw[2]], `${name} (${viewport}): the unresolved render prints the raw values`);
+      assert.ok(!allTexts(svg).some((text) => raw.includes(text)), `${name} (${viewport}): no raw value may reach a zh page: ${JSON.stringify(allTexts(svg))}`);
+      // The point stays what it was: the same circles, in the same places, with the same two highlighted.
+      assert.equal(accentCircles(svg).length, 2, `${name} (${viewport})`);
+      assert.deepEqual(circles(svg), circles(before), `${name} (${viewport}): resolution changes names, never marks`);
+      // The two names are as wide to the layout as their codes, so the printed name is the only thing that differs.
+      assert.equal(svg, before.replace(`>${raw[0]}</text>`, ">肯尼亚</text>").replace(`>${raw[2]}</text>`, ">巴西</text>"), `${name} (${viewport})`);
+    }
+  }
+
+  // --- The raw value stays the point's identity: highlight_values match it, never the printed name ---
+  for (const [viewport, render] of Object.entries(VIEWPORTS)) {
+    const named = render(scatter({ category_names: "iso3", highlight_values: ["肯尼亚", "巴西"] }), points("label", CODES));
+    assert.deepEqual(directLabels(named), [], `${viewport}: a printed name in highlight_values highlights nothing`);
+    assert.equal(accentCircles(named).length, 0, viewport);
+    const mixed = render(scatter({ category_names: "iso3", highlight_values: ["KEN", "巴西"] }), points("label", CODES));
+    assert.deepEqual(directLabels(mixed).map((l) => l.text), ["肯尼亚"], `${viewport}: only the raw value picks a point`);
+  }
+
+  // --- A label the table does not know is printed as it is, and a spec in which nothing resolves renders as it did ---
+  for (const [viewport, render] of Object.entries(VIEWPORTS)) {
+    const rows = points("label", ["ZZZ", "NOR", "QQQ"]);
+    const declared = scatter({ category_names: "iso3", highlight_values: ["ZZZ"] });
+    const svg = render(declared, rows);
+    assert.deepEqual(directLabels(svg).map((l) => l.text), ["ZZZ"], viewport);
+    assert.equal(svg, render({ ...declared, category_names: undefined }, rows), `${viewport}: nothing resolves, so nothing changes`);
+  }
+  // An English page prints World Bank English for the same points; the names it already has stay exactly as they are.
+  for (const [viewport, render] of Object.entries(VIEWPORTS)) {
+    const en = scatter({ language: "en", title: "Income against renewable share", category_names: "iso3" });
+    assert.deepEqual(directLabels(render(en, points("label", CODES))).map((l) => l.text), ["Kenya", "Brazil"], viewport);
+    const worldbank = scatter({ language: "en", title: "Income against renewable share", category_names: "worldbank", highlight_values: ["Kenya", "Brazil"] });
+    const rows = points("label", NAMES);
+    assert.equal(render(worldbank, rows), render({ ...worldbank, category_names: undefined }, rows), `${viewport}: worldbank names on an English page are the text itself`);
+  }
+
+  // --- The name is what is measured and laid out: it is placed exactly like the same text typed raw, and not like its code ---
+  {
+    const LONG = "St. Vincent and the Grenadines"; // 30 characters against the 3 of its code
+    for (const [viewport, render, x] of [["desktop", renderVizSvg, 8.7], ["mobile", renderVizMobileSvg, 7]]) {
+      const rows = (label) => [["NOR", 0, 10], ["CHN", 3, 30], [label, x, 22], ["BRA", 10, 40]].map(([name, px, y]) => ({ label: name, x: px, y }));
+      const en = (overrides) => scatter({ language: "en", title: "Income against renewable share", highlight_values: ["VCT"], ...overrides });
+      const resolved = directLabels(render(en({ category_names: "iso3" }), rows("VCT")));
+      const typed = directLabels(render(en({ highlight_values: [LONG] }), rows(LONG)));
+      const code = directLabels(render(en({}), rows("VCT")));
+      assert.equal(resolved.length, 1, viewport);
+      assert.deepEqual(resolved, typed, `${viewport}: a resolved name is placed like the same text typed raw`);
+      assert.equal(resolved[0].text, LONG, viewport);
+      assert.equal(resolved[0].anchor, "end", `${viewport}: the long name does not fit to the right of its point, so its label flips to the left`);
+      assert.equal(code[0].anchor, "start", `${viewport}: the code alone fits on the right, so a layout that measured the code would not flip`);
+    }
+  }
+}
+
+console.log("scatter labels resolve: PASS");
 
 // ---------------------------------------------------------------------
 // chartNameDisplay (zh-naming-policy-1003): the lookup newsroom.ts's inline claim fill uses to write a place or currency
