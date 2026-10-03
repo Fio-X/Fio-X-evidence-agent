@@ -160,7 +160,8 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   // layout defaults: each form's default layout is what the field's description (tool and JSON schema) calls "(<value>, default)" and
   // the opt-in alternative is never called a default. viz.mjs and the form tests pin the behaviour; this pins what the model is told.
   const DEFAULT_LAYOUTS = {
-    point_layout: { value: "beeswarm", optIn: "jitter" },
+    point_layout: { value: "beeswarm", optIn: "jitter" }, // strip_plot
+    segment_values: { value: "highlight_column", optIn: "in_bar" }, // stacked_bar_100
   };
   for (const [field, { value, optIn }] of Object.entries(DEFAULT_LAYOUTS)) {
     for (const [label, props] of [["newsroom_viz_plan", planProps], ["newsroom_viz_chain", chainProps]]) {

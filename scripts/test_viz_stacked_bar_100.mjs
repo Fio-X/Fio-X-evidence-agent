@@ -9,7 +9,12 @@
 // greys, the axis), every lint blocker both refused and accepted at its
 // boundary, the lint warnings, the spec validation, the schema (checked
 // structurally: no JSON Schema library is available), render QA on the typical
-// cases, and SVG hash snapshots of three typical cases.
+// cases, and SVG hash snapshots of four typical cases.
+//
+// Values are printed per segment_values. The default is "highlight_column" (only the
+// highlight segment's value, in a column right of the bars); "in_bar" is the opt-in that prints
+// every value inside its segment. The in-bar rules are tested with segment_values "in_bar" named
+// (specIn below); everything else leaves it out and so runs on the default.
 //
 //   node scripts/test_viz_stacked_bar_100.mjs            compare with the fixture
 //   node scripts/test_viz_stacked_bar_100.mjs --update   rewrite the fixture
@@ -44,6 +49,9 @@ function spec(overrides = {}) {
     ...overrides,
   };
 }
+
+// A spec that asks for the in-bar values by name (the default is the highlight column).
+const specIn = (overrides = {}) => spec({ segment_values: "in_bar", ...overrides });
 
 // [[entity, {segment: value, ...}], ...] -> long rows, in that order.
 function rowsOf(table) {
@@ -201,6 +209,8 @@ const near = (a, b, tol = 0.011) => Math.abs(a - b) <= tol;
   assert.equal(p.sort_segment.type, "string");
   assert.equal(p.highlight_segment.type, "string");
   assert.deepEqual(p.segment_values.enum, ["in_bar", "highlight_column"]);
+  assert.match(p.segment_values.description, /highlight_column \(default\)/, "the schema names highlight_column as the default");
+  assert.doesNotMatch(p.segment_values.description, /in_bar \(default\)/, "...and not in_bar");
   const block = schema.allOf.find((entry) => entry.if?.properties?.chart_type?.const === "stacked_bar_100");
   assert.ok(block, "the schema has an if/then block for the type");
   assert.deepEqual(block.then.required, ["category_field", "series_field", "value_field", "unit"]);
@@ -313,7 +323,7 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   // Printed values: the row's own value, rounded with the spec's decimals, never adjusted.
   const rows = rowsOf([["甲", { X: 33.4, Y: 33.3, Z: 33.3 }], ["乙", { X: 12.34, Y: 50.56, Z: 37.1 }]]);
   for (const decimals of [0, 1]) {
-    const s = spec({ sort: "none", decimals, segment_order: ["X", "Y", "Z"] });
+    const s = specIn({ sort: "none", decimals, segment_order: ["X", "Y", "Z"] });
     const v = read(renderVizSvg(s, rows));
     for (const label of v.role("stacked-value")) {
       const owner = v.segments.find((seg) => seg.x <= label.x && label.x <= seg.x + seg.w && seg.y <= label.y && label.y <= seg.y + seg.h);
@@ -321,13 +331,15 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
     }
     assert.equal(v.role("stacked-value").length, 6, `decimals ${decimals}: every segment is wide enough for its label`);
   }
-  assert.deepEqual(printed(read(renderVizSvg(spec({ sort: "none", decimals: 0, segment_order: ["X", "Y", "Z"] }), rows))), ["33", "33", "33", "12", "51", "37"], "decimals 0: 33.4/33.3/33.3 stay 33/33/33 (no largest-remainder adjustment)");
-  assert.deepEqual(printed(read(renderVizSvg(spec({ sort: "none", decimals: 1, segment_order: ["X", "Y", "Z"] }), rows))), ["33.4", "33.3", "33.3", "12.3", "50.6", "37.1"], "decimals 1");
+  assert.deepEqual(printed(read(renderVizSvg(specIn({ sort: "none", decimals: 0, segment_order: ["X", "Y", "Z"] }), rows))), ["33", "33", "33", "12", "51", "37"], "decimals 0: 33.4/33.3/33.3 stay 33/33/33 (no largest-remainder adjustment)");
+  assert.deepEqual(printed(read(renderVizSvg(specIn({ sort: "none", decimals: 1, segment_order: ["X", "Y", "Z"] }), rows))), ["33.4", "33.3", "33.3", "12.3", "50.6", "37.1"], "decimals 1");
   // Default decimals: 1 when any value is not a whole number, else 0.
-  assert.deepEqual(printed(read(renderVizSvg(spec({ sort: "none", segment_order: ["X", "Y", "Z"] }), rowsOf([["甲", { X: 20, Y: 30, Z: 50 }]])))), ["20", "30", "50"], "default decimals: 0 when every value is whole");
-  assert.deepEqual(printed(read(renderVizSvg(spec({ sort: "none", segment_order: ["X", "Y", "Z"] }), rowsOf([["甲", { X: 20, Y: 30, Z: 50 }], ["乙", { X: 20.5, Y: 29.5, Z: 50 }]])))), ["20.0", "30.0", "50.0", "20.5", "29.5", "50.0"], "default decimals: 1 as soon as one value is not whole");
+  assert.deepEqual(printed(read(renderVizSvg(specIn({ sort: "none", segment_order: ["X", "Y", "Z"] }), rowsOf([["甲", { X: 20, Y: 30, Z: 50 }]])))), ["20", "30", "50"], "default decimals: 0 when every value is whole");
+  assert.deepEqual(printed(read(renderVizSvg(specIn({ sort: "none", segment_order: ["X", "Y", "Z"] }), rowsOf([["甲", { X: 20, Y: 30, Z: 50 }], ["乙", { X: 20.5, Y: 29.5, Z: 50 }]])))), ["20.0", "30.0", "50.0", "20.5", "29.5", "50.0"], "default decimals: 1 as soon as one value is not whole");
   // The explicit style (DECIMAL_MODE) cannot change what is printed.
-  assert.equal(renderVizSvg(spec({ style_id: "house", ...SECTOR_SPEC }), sectorRows()), renderVizSvg(spec(SECTOR_SPEC), sectorRows()), "style_id house prints the same text and marks as the default");
+  for (const segment_values of ["in_bar", "highlight_column"]) {
+    assert.equal(renderVizSvg(spec({ style_id: "house", segment_values, ...SECTOR_SPEC }), sectorRows()), renderVizSvg(spec({ segment_values, ...SECTOR_SPEC }), sectorRows()), `style_id house prints the same text and marks as the default (${segment_values})`);
+  }
   console.log("stacked_bar_100: printed value = the row's own value, rounded only with fmtSpec, never adjusted -- PASS");
 }
 
@@ -335,30 +347,32 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   // The rounding note: only when some row's printed values do not add to 100 at that precision.
   const exact = rowsOf([["甲", { X: 33.4, Y: 33.3, Z: 33.3 }], ["乙", { X: 20.0, Y: 30.0, Z: 50.0 }]]);
   const noteTexts = (s, rows) => read(renderVizSvg(s, rows)).role("stacked-rounding-note").map((t) => t.text);
-  assert.deepEqual(noteTexts(spec({ decimals: 1 }), exact), [], "decimals 1, rows that add to exactly 100.0: no note");
-  assert.deepEqual(noteTexts(spec({ decimals: 0 }), exact), [NOTE_ZH], "decimals 0 turns 33.4/33.3/33.3 into 33/33/33: the zh note appears, once");
-  assert.deepEqual(noteTexts(spec({ decimals: 0, language: "en" }), exact), [NOTE_EN], "the en note");
+  assert.deepEqual(noteTexts(specIn({ decimals: 1 }), exact), [], "decimals 1, rows that add to exactly 100.0: no note");
+  assert.deepEqual(noteTexts(specIn({ decimals: 0 }), exact), [NOTE_ZH], "decimals 0 turns 33.4/33.3/33.3 into 33/33/33: the zh note appears, once");
+  assert.deepEqual(noteTexts(specIn({ decimals: 0, language: "en" }), exact), [NOTE_EN], "the en note");
   const whole = rowsOf([["甲", { X: 20, Y: 30, Z: 50 }], ["乙", { X: 99, Y: 1, Z: 0 }]]);
-  assert.deepEqual(noteTexts(spec({ decimals: 0 }), whole), [], "decimals 0 with whole numbers that add to 100: no note");
-  assert.deepEqual(noteTexts(spec({}), whole), [], "...and by default");
-  assert.deepEqual(noteTexts(spec({ decimals: 0 }), rowsOf([["甲", { X: 20, Y: 30, Z: 50 }], ["乙", { X: 12.4, Y: 30.4, Z: 57.2 }]])), [NOTE_ZH], "one off row is enough");
+  assert.deepEqual(noteTexts(specIn({ decimals: 0 }), whole), [], "decimals 0 with whole numbers that add to 100: no note");
+  assert.deepEqual(noteTexts(specIn({}), whole), [], "...and with the default decimals");
+  assert.deepEqual(noteTexts(specIn({ decimals: 0 }), rowsOf([["甲", { X: 20, Y: 30, Z: 50 }], ["乙", { X: 12.4, Y: 30.4, Z: 57.2 }]])), [NOTE_ZH], "one off row is enough");
   // A row that sums to 99.9 at the data's own precision is off by data, not by rounding: still a note (the printed values do not add to 100).
-  assert.deepEqual(noteTexts(spec({ decimals: 1 }), rowsOf([["甲", { X: 33.3, Y: 33.3, Z: 33.3 }]])), [NOTE_ZH], "printed values that sum to 99.9 get the note");
+  assert.deepEqual(noteTexts(specIn({ decimals: 1 }), rowsOf([["甲", { X: 33.3, Y: 33.3, Z: 33.3 }]])), [NOTE_ZH], "printed values that sum to 99.9 get the note");
   // The note's only number is the 100% of the work-order text; it sits below the bars, left aligned, muted.
-  const v = read(renderVizSvg(spec({ decimals: 0 }), exact));
+  const v = read(renderVizSvg(specIn({ decimals: 0 }), exact));
   const [note] = v.role("stacked-rounding-note");
   assert.ok(note.y > Math.max(...v.segments.map((s) => s.y + s.h)), "the note sits below the last bar");
   assert.equal(note.fill, HOUSE.muted, "...in the muted text colour");
   assert.equal(note.size, 12);
   // The highlight column prints one figure per bar, so there is nothing to add up: no note.
   assert.deepEqual(noteTexts(spec({ decimals: 0, segment_values: "highlight_column" }), exact), [], "highlight_column: no rounding note (one printed figure per bar)");
+  assert.deepEqual(noteTexts(spec({ decimals: 0 }), exact), [], "the default is the highlight column: no rounding note either");
   console.log("stacked_bar_100: rounding note (zh/en), only when printed values do not add to 100 -- PASS");
 }
 
-{
+for (const extra of [{}, { segment_values: "in_bar" }]) {
   // Segment names: once each, centred on their own segment, directly above the
-  // first bar, in segment order. Axis and gridlines.
-  const v = read(renderVizSvg(spec(SECTOR_SPEC), sectorRows()));
+  // first bar, in segment order. Axis and gridlines. The default values (the highlight
+  // column) and the in-bar values both leave all of this where it is.
+  const v = read(renderVizSvg(spec({ ...SECTOR_SPEC, ...extra }), sectorRows()));
   const names = v.role("stacked-segment-name");
   const first = v.bars[0];
   assert.deepEqual(names.map((n) => n.text), ["农业", "工业", "服务业"], "each segment name appears exactly once, in segment order");
@@ -386,13 +400,15 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
     assert.ok(v.gridLines[i].y2 > Math.max(...v.segments.map((s) => s.y + s.h)), "...and runs past the last bar");
   });
   assert.ok(v.gridLines.every((g) => g.stroke === HOUSE.grid), "gridlines are the light house grey");
-  // No number is printed that is not a value_field value or an axis tick.
+  // No number is printed that is not a value_field value or an axis tick: the bars' own value labels in the bars, or the
+  // highlight column (the value and a %) by default.
   const numeric = v.texts.filter((t) => /\d/.test(t.text) && !ticks.includes(t));
-  assert.ok(numeric.length > 0 && numeric.every((t) => t.role === "stacked-value"), "the only other numbers are the bars' own value labels");
+  const valueRole = extra.segment_values === "in_bar" ? "stacked-value" : "stacked-column-value";
+  assert.ok(numeric.length > 0 && numeric.every((t) => t.role === valueRole), `the only other numbers are the ${valueRole} texts`);
   const allValues = new Set(sectorRows().map((row) => fmtSpec(spec(), row.v, "", 1)));
-  assert.ok(numeric.every((t) => allValues.has(t.text)), "...each one a value_field value rounded with fmtSpec");
-  console.log("stacked_bar_100: segment names (once, centred, above the first bar), axis and gridlines -- PASS");
+  assert.ok(numeric.every((t) => allValues.has(t.text.replace(/%$/, ""))), "...each one a value_field value rounded with fmtSpec");
 }
+console.log("stacked_bar_100: segment names (once, centred, above the first bar), axis and gridlines, in both value modes -- PASS");
 
 {
   // The key fallback: when a name does not fit its own segment on the first bar
@@ -441,7 +457,7 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
 }
 
 {
-  // In-bar value labels: drawn only where the label fits inside its segment
+  // In-bar value labels (segment_values "in_bar", the opt-in): drawn only where the label fits inside its segment
   // with 4px of padding each side. Checked against an independent estimate of
   // the label's width (re-derived here from render QA's own glyph tables).
   const check = (label, s, rows) => {
@@ -470,13 +486,13 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
     return { kept, dropped, v };
   };
 
-  const big = check("25 bars", spec(SECTOR_SPEC), sectorRows());
+  const big = check("25 bars", specIn(SECTOR_SPEC), sectorRows());
   assert.ok(big.kept > 60 && big.dropped >= 3, `the 25-bar case has both kept (${big.kept}) and dropped (${big.dropped}) labels, so the rule is exercised both ways`);
   // White on the accent and the dark greys, ink on the light grey, whichever the contrast floor picks.
   const colourOf = (v, series) => v.role("stacked-value").filter((t) => v.segments.some((s) => s.series === series && t.x >= s.x && t.x <= s.x + s.w && t.y >= s.y && t.y <= s.y + s.h)).map((t) => t.fill.toLowerCase());
   assert.ok(colourOf(big.v, "农业").every((f) => f === "#ffffff"), "white on the accent");
   const five = rowsOf([["甲", { A: 30, B: 25, C: 20, D: 15, E: 10 }], ["乙", { A: 10, B: 20, C: 30, D: 25, E: 15 }], ["丙", { A: 20, B: 20, C: 20, D: 20, E: 20 }]]);
-  const fiveV = check("5 segments", spec({ sort: "none", segment_order: ["A", "B", "C", "D", "E"], highlight_segment: "B" }), five);
+  const fiveV = check("5 segments", specIn({ sort: "none", segment_order: ["A", "B", "C", "D", "E"], highlight_segment: "B" }), five);
   const byFill = new Map();
   for (const t of fiveV.v.role("stacked-value")) {
     const seg = fiveV.v.segments.find((s) => t.x >= s.x && t.x <= s.x + s.w && t.y >= s.y && t.y <= s.y + s.h);
@@ -491,17 +507,17 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   let sawDrop = false, sawKeep = false;
   for (let tenths = 10; tenths <= 60; tenths += 1) {
     const rows = rowsOf([["甲", { X: (800 - tenths) / 10, Y: tenths / 10, Z: 20 }]]);
-    const { kept, dropped } = check(`sweep ${tenths / 10}%`, spec({ sort: "none", decimals: 1, segment_order: ["X", "Y", "Z"] }), rows);
+    const { kept, dropped } = check(`sweep ${tenths / 10}%`, specIn({ sort: "none", decimals: 1, segment_order: ["X", "Y", "Z"] }), rows);
     if (dropped) sawDrop = true;
     if (kept === 3) sawKeep = true;
   }
   assert.ok(sawDrop && sawKeep, "the sweep crosses the threshold (labels drop below it and come back above it)");
   // Precision changes what fits: "12.3" is wider than "12".
   const wideRow = rowsOf([["甲", { X: 4.1, Y: 15.9, Z: 80 }]]);
-  const withOne = read(renderVizSvg(spec({ sort: "none", decimals: 1, segment_order: ["X", "Y", "Z"] }), wideRow));
-  const withZero = read(renderVizSvg(spec({ sort: "none", decimals: 0, segment_order: ["X", "Y", "Z"] }), wideRow));
+  const withOne = read(renderVizSvg(specIn({ sort: "none", decimals: 1, segment_order: ["X", "Y", "Z"] }), wideRow));
+  const withZero = read(renderVizSvg(specIn({ sort: "none", decimals: 0, segment_order: ["X", "Y", "Z"] }), wideRow));
   assert.ok(withZero.role("stacked-value").length >= withOne.role("stacked-value").length, "fewer decimals never drop more labels");
-  console.log("stacked_bar_100: in-bar labels only where they fit (4px each side), label colours -- PASS");
+  console.log("stacked_bar_100: in-bar labels (the in_bar opt-in) only where they fit (4px each side), label colours -- PASS");
 }
 
 {
@@ -549,7 +565,7 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
 }
 
 {
-  // segment_values "highlight_column": no in-bar labels; only the highlight segment's value, in a column just right of the 100% end.
+  // segment_values "highlight_column" (the default, named here explicitly): no in-bar labels; only the highlight segment's value, in a column just right of the 100% end.
   const column = spec({ ...SECTOR_SPEC, segment_values: "highlight_column" });
   const svg = renderVizSvg(column, sectorRows());
   const v = read(svg);
@@ -576,7 +592,7 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   assert.ok(near(header.x, rightEdge), "the header sits above the column");
   assert.ok(header.y < v.bars[0][0].y, "...above the first bar");
   assert.equal(v.role("stacked-rounding-note").length, 0, "no rounding note: one printed figure per bar");
-  const inBar = read(renderVizSvg(spec(SECTOR_SPEC), sectorRows()));
+  const inBar = read(renderVizSvg(specIn(SECTOR_SPEC), sectorRows()));
   assert.ok(v.plotRight < inBar.plotRight, "the column takes room from the bars");
   for (const bar of v.bars) assert.ok(near(bar.at(-1).x + bar.at(-1).w, v.plotRight), "every bar still ends exactly at 100%");
   assertQaClean("highlight column", svg);
@@ -600,6 +616,39 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
     assert.ok(headers.at(-1).y + 3 <= longV.bars[0][0].y, "the first bar starts below the last header line");
   }
   console.log("stacked_bar_100: highlight_column (no in-bar labels, one value per bar, right of 100%) -- PASS");
+}
+
+{
+  // The default value layout. A spec that leaves segment_values out is the highlight column, not the in-bar values:
+  // only the highlighted segment's value is printed, once per bar, in a right column; in_bar is the opt-in.
+  const rows = sectorRows();
+  const byDefault = renderVizSvg(spec(SECTOR_SPEC), rows);
+  assert.ok(!("segment_values" in spec(SECTOR_SPEC)), "the default spec leaves segment_values out");
+  assert.equal(byDefault, renderVizSvg(spec({ ...SECTOR_SPEC, segment_values: "highlight_column" }), rows), "segment_values omitted is byte-identical to highlight_column");
+  assert.notEqual(byDefault, renderVizSvg(specIn(SECTOR_SPEC), rows), "...and differs from in_bar");
+  const d = read(byDefault);
+  assert.equal(d.role("stacked-value").length, 0, "by default no value is printed inside a bar");
+  assert.equal(d.role("stacked-column-value").length, 25, "...only the highlight segment's value, once per bar, in the right column");
+  assert.equal(d.role("stacked-column-header").length, 1, "...under one header");
+  assert.equal(d.role("stacked-rounding-note").length, 0, "...and with one figure per bar there is no rounding note");
+  // The opt-in: in_bar prints every value inside its segment (where it fits) and has no column.
+  const o = read(renderVizSvg(specIn(SECTOR_SPEC), rows));
+  assert.ok(o.role("stacked-value").length > 60 && o.role("stacked-column-value").length === 0 && o.role("stacked-column-header").length === 0, "in_bar still prints the values inside the segments and draws no column");
+  // The column follows the highlight that the spec picks, whichever way it is picked.
+  const columnOf = (overrides, data = rows) => {
+    const v = read(renderVizSvg(spec({ ...SECTOR_SPEC, ...overrides }), data));
+    return { header: v.role("stacked-column-header").map((t) => t.text).join(" "), n: v.role("stacked-column-value").length };
+  };
+  assert.deepEqual(columnOf({ highlight_segment: "工业" }), { header: "工业", n: 25 }, "highlight_segment picks the column");
+  assert.deepEqual(columnOf({ highlight_segment: undefined, sort_segment: "服务业" }), { header: "服务业", n: 25 }, "else sort_segment");
+  assert.deepEqual(columnOf({ highlight_segment: undefined, sort_segment: undefined, segment_order: ["服务业", "农业", "工业"] }), { header: "服务业", n: 25 }, "else the first segment_order entry");
+  assert.deepEqual(columnOf({ highlight_segment: undefined, sort_segment: undefined, segment_order: undefined }), { header: "农业", n: 25 }, "else the first segment of the data");
+  // No highlight in the data: the column has nothing to print, so the values stay in the bars (never lost).
+  const none = read(renderVizSvg(spec({ highlight_segment: "nope", sort: "none" }), THREE));
+  assert.ok(none.role("stacked-value").length > 0 && none.role("stacked-column-value").length === 0, "a highlight that is not in the data falls back to in-bar values");
+  // A rendered default stays inside the page's own checks.
+  assertQaClean("default value layout", byDefault);
+  console.log("stacked_bar_100: default value layout is the highlight column, in_bar is the opt-in -- PASS");
 }
 
 {
@@ -637,6 +686,7 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   const noAccent = renderVizSvg(spec({ highlight_segment: "nope", sort: "none" }), THREE);
   clean("unknown highlight", noAccent);
   assert.ok(!read(noAccent).segments.some((s) => s.fill === HOUSE.accent), "no segment takes the accent when the highlight is not in the data");
+  assert.ok(read(noAccent).role("stacked-value").length > 0, "...and the values stay in the bars, since there is no highlight column to carry them");
   // More segments than the lint limit still draw (the 6th and 7th reuse greys, never the accent).
   const many = rowsOf([["甲", { A: 20, B: 20, C: 20, D: 20, E: 10, F: 5, G: 5 }]]);
   const manySvg = renderVizSvg(spec({}), many);
@@ -656,10 +706,14 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   const empty = renderVizSvg(spec({}), []);
   clean("no rows", empty);
   assert.equal(read(empty).segments.length, 0, "no rows: no bars");
-  const solo = renderVizSvg(spec({}), rowsOf([["甲", { X: 100 }]]));
+  const solo = renderVizSvg(specIn({}), rowsOf([["甲", { X: 100 }]]));
   clean("one bar, one segment", solo);
   assert.equal(read(solo).role("stacked-value")[0].text, "100", "100 prints as 100");
   assertQaClean("one bar, one segment", solo);
+  const soloColumn = renderVizSvg(spec({}), rowsOf([["甲", { X: 100 }]]));
+  clean("one bar, one segment, default", soloColumn);
+  assert.deepEqual(read(soloColumn).role("stacked-column-value").map((t) => t.text), ["100%"], "the default column prints 100%");
+  assertQaClean("one bar, one segment, default", soloColumn);
   console.log("stacked_bar_100: robustness (folded names, escaping, odd rows, no rows) -- PASS");
 }
 
@@ -674,13 +728,20 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
     return { height: v.height, barsBottom: Math.max(...v.segments.map((s) => s.y + s.h)), ruleY: Number(rule.attrs.y1), note: v.role("stacked-rounding-note")[0] };
   };
   const groups = (count, parts) => rowsOf(Array.from({ length: count }, (_, i) => [`第${i + 1}组`, parts]));
-  for (const count of [2, 3, 4, 5, 6, 12]) {
-    const m = measure(renderVizSvg(spec({ sort: "none" }), groups(count, { X: 60, Y: 40 })));
-    assert.ok(m.ruleY - m.barsBottom <= 20, `${count} bars: no blank band under the last bar (${m.ruleY - m.barsBottom}px down to the footer rule)`);
-    if (count <= 5) assert.ok(m.height < 420, `${count} bars: the canvas follows the content (${m.height} < 420)`);
+  for (const extra of [{}, { segment_values: "in_bar" }]) {
+    const mode = extra.segment_values ?? "default";
+    for (const count of [2, 3, 4, 5, 6, 12]) {
+      const m = measure(renderVizSvg(spec({ sort: "none", ...extra }), groups(count, { X: 60, Y: 40 })));
+      assert.ok(m.ruleY - m.barsBottom <= 20, `${mode}, ${count} bars: no blank band under the last bar (${m.ruleY - m.barsBottom}px down to the footer rule)`);
+      if (count <= 5) assert.ok(m.height < 420, `${mode}, ${count} bars: the canvas follows the content (${m.height} < 420)`);
+    }
+    assert.equal(measure(renderVizSvg(spec({ sort: "none", ...extra }), groups(1, { X: 60, Y: 40 }))).height, 300, `${mode}, one bar: the 300px floor`);
   }
-  assert.equal(measure(renderVizSvg(spec({ sort: "none" }), groups(1, { X: 60, Y: 40 }))).height, 300, "one bar: the 300px floor");
-  const withNote = measure(renderVizSvg(spec({ sort: "none", decimals: 0 }), groups(3, { X: 33.4, Y: 33.3, Z: 33.3 })));
+  // By default the rounding note is off (one printed figure per bar), so 33/33/33 draws no note and the footer rule still hugs the bars.
+  const noNote = measure(renderVizSvg(spec({ sort: "none", decimals: 0 }), groups(3, { X: 33.4, Y: 33.3, Z: 33.3 })));
+  assert.ok(!noNote.note, "three bars of 33/33/33, default layout: no rounding note");
+  assert.ok(noNote.ruleY - noNote.barsBottom <= 20, `...and no blank band under the last bar (${noNote.ruleY - noNote.barsBottom}px)`);
+  const withNote = measure(renderVizSvg(specIn({ sort: "none", decimals: 0 }), groups(3, { X: 33.4, Y: 33.3, Z: 33.3 })));
   assert.ok(withNote.note, "three bars of 33/33/33: the rounding note is drawn");
   assert.ok(withNote.note.y > withNote.barsBottom && withNote.ruleY - withNote.note.y <= 20, `the rounding note sits between the last bar and the footer rule (${withNote.barsBottom} < ${withNote.note?.y} < ${withNote.ruleY})`);
   assert.ok(withNote.height < 420, `three bars with the note: the canvas follows the content (${withNote.height} < 420)`);
@@ -695,7 +756,12 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
   const legacy = renderVizSvg(spec({ ...SECTOR_SPEC, style_id: "legacy" }), rows);
   const lv = read(legacy);
   assert.deepEqual(lv.texts.filter((t) => t.role === null && /^\d+%?$/.test(t.text)).map((t) => t.text), ["0%", "25%", "50%", "75%", "100%"], "legacy style: the % is on every tick");
-  assert.deepEqual(lv.role("stacked-value").map((t) => t.text), read(renderVizSvg(spec(SECTOR_SPEC), rows)).role("stacked-value").map((t) => t.text), "the printed values do not depend on the style");
+  for (const [role, extra] of [["stacked-column-value", {}], ["stacked-value", { segment_values: "in_bar" }]]) {
+    const texts = (style) => read(renderVizSvg(spec({ ...SECTOR_SPEC, ...extra, style_id: style }), rows)).role(role).map((t) => t.text);
+    assert.ok(texts("legacy").length >= 25, `${role}: legacy prints its values`);
+    assert.deepEqual(texts("legacy"), texts("house"), `the printed values (${role}) do not depend on the style`);
+    assert.equal(renderVizSvg(spec({ ...SECTOR_SPEC, ...extra, style_id: "house" }), rows), renderVizSvg(spec({ ...SECTOR_SPEC, ...extra }), rows), `style_id house is byte-identical to the default (${role})`);
+  }
   assert.notEqual(lv.segments[0].fill, HOUSE.accent, "legacy draws the legacy accent");
   assert.equal(new Set(lv.segments.filter((s) => s.category === lv.bars[0][0].category).map((s) => s.fill)).size, 3, "legacy: three distinct segment fills");
   assertQaClean("legacy style", legacy);
@@ -705,10 +771,13 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
 {
   // Objective QA on the typical cases: render QA (geometry + contrast), the 12px scan, no non-finite tokens, own rules.
   const cases = [
-    ["25 bars, in-bar values", spec(SECTOR_SPEC), sectorRows()],
-    ["25 bars, highlight column", spec({ ...SECTOR_SPEC, segment_values: "highlight_column" }), sectorRows()],
-    ["25 bars, decimals 0 with the rounding note", spec({ ...SECTOR_SPEC, decimals: 0 }), sectorRows()],
-    ["25 bars, key (direct labels off)", spec({ ...SECTOR_SPEC, direct_labels: false }), sectorRows()],
+    ["25 bars, in-bar values (opt-in)", specIn(SECTOR_SPEC), sectorRows()],
+    ["25 bars, default (highlight column)", spec(SECTOR_SPEC), sectorRows()],
+    ["25 bars, highlight column named explicitly", spec({ ...SECTOR_SPEC, segment_values: "highlight_column" }), sectorRows()],
+    ["25 bars, decimals 0 with the rounding note (in-bar)", specIn({ ...SECTOR_SPEC, decimals: 0 }), sectorRows()],
+    ["25 bars, decimals 0, default (no note)", spec({ ...SECTOR_SPEC, decimals: 0 }), sectorRows()],
+    ["25 bars, key (direct labels off), default", spec({ ...SECTOR_SPEC, direct_labels: false }), sectorRows()],
+    ["25 bars, key (direct labels off), in-bar", specIn({ ...SECTOR_SPEC, direct_labels: false }), sectorRows()],
     ["25 bars, sorted ascending by the last segment", spec({ segment_order: ["服务业", "工业", "农业"], highlight_segment: "农业", sort: "asc" }), sectorRows()],
     ["25 bars, English", spec({ ...SECTOR_SPEC, language: "en", title: "Sample data: shares by sector", subtitle: "Sample data", source_note: "Sample data (synthetic)" }), sectorRows().map((row) => ({ ...row, c: row.c.replace("国", " Land"), s: { 农业: "Farming", 工业: "Industry", 服务业: "Services" }[row.s] }))],
     ["4 bars (roomy)", spec({}), THREE],
@@ -720,8 +789,17 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
     ["a long highlight name in the column", spec({ language: "en", sort: "none", segment_values: "highlight_column", highlight_segment: "A very long highlighted segment name for the column header" }), rowsOf([["甲", { "A very long highlighted segment name for the column header": 60, Other: 40 }], ["乙", { "A very long highlighted segment name for the column header": 30, Other: 70 }]])],
     ["legacy style", spec({ ...SECTOR_SPEC, style_id: "legacy" }), sectorRows()],
   ];
-  for (const [label, s, rows] of cases) assertQaClean(label, renderVizSvg(s, rows));
-  console.log(`stacked_bar_100: objective QA clean on ${cases.length} typical and edge cases -- PASS`);
+  // Every case is also drawn with the in-bar opt-in (unless it already sets segment_values), so both layouts are covered.
+  let drawn = 0;
+  for (const [label, s, rows] of cases) {
+    assertQaClean(label, renderVizSvg(s, rows));
+    drawn += 1;
+    if (s.segment_values === undefined) {
+      assertQaClean(`${label} (in-bar)`, renderVizSvg({ ...s, segment_values: "in_bar" }, rows));
+      drawn += 1;
+    }
+  }
+  console.log(`stacked_bar_100: objective QA clean on ${cases.length} typical and edge cases (${drawn} renders, both value layouts) -- PASS`);
 }
 
 // ---------------------------------------------------------------------------
@@ -813,9 +891,12 @@ const barCategories = (v) => v.bars.map((bar) => bar[0].category);
 // ---------------------------------------------------------------------------
 {
   const cases = {
-    "25 bars, in-bar values": () => renderVizSvg(spec(SECTOR_SPEC), sectorRows()),
+    // The three keys that existed before the default changed keep the layout they were taken with (now written out),
+    // so their hashes are unchanged; the default itself is pinned by the fourth key and by the equality check below.
+    "25 bars, in-bar values": () => renderVizSvg(specIn(SECTOR_SPEC), sectorRows()),
     "25 bars, highlight column": () => renderVizSvg(spec({ ...SECTOR_SPEC, segment_values: "highlight_column" }), sectorRows()),
-    "25 bars, no decimals, rounding note": () => renderVizSvg(spec({ ...SECTOR_SPEC, decimals: 0 }), sectorRows()),
+    "25 bars, no decimals, rounding note": () => renderVizSvg(specIn({ ...SECTOR_SPEC, decimals: 0 }), sectorRows()),
+    "25 bars, no decimals, default layout (no note)": () => renderVizSvg(spec({ ...SECTOR_SPEC, decimals: 0 }), sectorRows()),
   };
   const actual = Object.fromEntries(Object.entries(cases).map(([name, draw]) => {
     const svg = draw();
