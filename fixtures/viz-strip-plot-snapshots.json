@@ -10,5 +10,9 @@
   "strip_jitter_12_groups_en_highlight": {
     "desktop": "9b2acc6f43ba55dafcb018a4a05fb6cfa13018100b6cc481b732ee1b3447ee03",
     "mobile": "9b2acc6f43ba55dafcb018a4a05fb6cfa13018100b6cc481b732ee1b3447ee03"
+  },
+  "strip_default_12_groups_en_highlight": {
+    "desktop": "536fb8c8aaedeb8fbd59e8c5e22bf378f249223a9e970fa684f1260be423feae",
+    "mobile": "536fb8c8aaedeb8fbd59e8c5e22bf378f249223a9e970fa684f1260be423feae"
   }
 }

@@ -6,7 +6,8 @@
 // blocker refused and accepted at its boundary), the rendered SVG's geometry
 // (read back from the markup, not from the renderer's internals), and the
 // product's own render-QA gates (runtime/pi/render_qa.mjs) - on deterministic
-// synthetic data. Also keeps an SVG hash snapshot of three typical charts in
+// synthetic data. The dots of a row are laid out as a beeswarm unless point_layout asks for "jitter"; both layouts are tested, and
+// the default is pinned. Also keeps an SVG hash snapshot of four typical charts in
 // fixtures/viz-strip-plot-snapshots.json, rewritten only by `--update`.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -222,6 +223,7 @@ function withoutRandom(fn) {
   assert.equal(enumValues.indexOf("strip_plot"), enumValues.indexOf("scatter") + 1, "schema enum lists strip_plot right after scatter");
   assert.deepEqual(schema.properties.group_order.enum, ["median_desc", "median_asc", "data"]);
   assert.deepEqual(schema.properties.point_layout.enum, ["jitter", "beeswarm"]);
+  assert.match(schema.properties.point_layout.description, /beeswarm \(default\)/, "the schema names beeswarm as the default layout");
   assert.equal(schema.properties.show_median.type, "boolean");
   assert.deepEqual({ ...schema.properties.label_extremes }, { type: "integer", minimum: 0, maximum: 6 });
   const rule = schema.allOf.find((entry) => entry.if?.properties?.chart_type?.const === "strip_plot");
@@ -620,7 +622,7 @@ console.log("strip_plot medians: tick positions (odd and even n), mark only, key
   assert.equal(readChart(renderVizSvg({ ...spec, label_field: "nope" }, smallRows)).labels.length, 0);
 
   // every label sits next to its own dot (a short leader at most), and every leader starts on a dot's edge
-  for (const chart of [readChart(renderVizSvg(typicalSpec, typical)), readChart(renderVizSvg({ ...typicalSpec, point_layout: "beeswarm" }, typical))]) {
+  for (const chart of ["jitter", "beeswarm"].map((layout) => readChart(renderVizSvg({ ...typicalSpec, point_layout: layout }, typical)))) {
     assert.equal(chart.labels.length, 4);
     for (const leader of chart.leaders) {
       const onEdge = chart.dots.some((dot) => Math.abs(Math.hypot(leader.x1 - dot.x, leader.y1 - dot.y) - (dot.r + 0.8)) < 0.1);
@@ -647,9 +649,10 @@ console.log("strip_plot extremes: ceil/floor selection for 0-6, name+value text 
     const widest = typical.filter((row) => row.group === groupName(4));
     assert.ok(new Set(widest.map((row) => chart.dots[typical.indexOf(row)].y)).size > 3, `${layout} spreads the 38-unit group over several heights`);
   }
-  assert.notEqual(renderVizSvg(typicalSpec, typical), renderVizSvg({ ...typicalSpec, point_layout: "beeswarm" }, typical), "the two layouts differ");
+  const jitterSpec = { ...typicalSpec, point_layout: "jitter" };
+  assert.notEqual(renderVizSvg(jitterSpec, typical), renderVizSvg({ ...typicalSpec, point_layout: "beeswarm" }, typical), "the two layouts differ");
   // jitter depends on the unit's label and row index: reordering the rows moves the offsets, not the x positions
-  assert.notEqual(renderVizSvg(typicalSpec, typical), renderVizSvg(typicalSpec, [...typical].reverse()));
+  assert.notEqual(renderVizSvg(jitterSpec, typical), renderVizSvg(jitterSpec, [...typical].reverse()));
   assert.equal(renderVizSvg(typicalSpec, typical), renderVizSvg(typicalSpec, typical.map((row) => ({ ...row }))), "equal data renders equal SVG");
 
   // beeswarm: dots a few pixels apart are dodged vertically so none overlaps (pin the axis with an outer group)
@@ -666,8 +669,36 @@ console.log("strip_plot extremes: ceil/floor selection for 0-6, name+value text 
   for (let i = 0; i < mid.length; i++) for (let j = i + 1; j < mid.length; j++) closest = Math.min(closest, Math.hypot(mid[i].x - mid[j].x, mid[i].y - mid[j].y));
   assert.ok(closest >= 2 * 3 + 0.3, `beeswarm separates dots 5.5px apart horizontally (closest pair ${closest.toFixed(2)}px)`);
   assert.ok(new Set(mid.map((dot) => dot.y)).size > 1, "the dodge uses more than one height");
+  // the default is the beeswarm: with no point_layout the same rows get the same dodged dots
+  const omitted = readChart(renderVizSvg({ ...base, label_extremes: 0 }, [...pin, ...values.map((v, i) => ({ g: "Mid", u: `M${i + 1}`, v }))])).dots.slice(2);
+  assert.deepEqual(omitted.map((dot) => [dot.x, dot.y]), mid.map((dot) => [dot.x, dot.y]), "no point_layout places the dots exactly as the beeswarm does");
 }
 console.log("strip_plot layouts: jitter and beeswarm are deterministic, Math.random-free, inside the band; the beeswarm dodges -- PASS");
+
+// --- the default layout: no point_layout draws the beeswarm, byte for byte; jitter stays an explicit opt-in
+{
+  const sets = [
+    ["typical (zh, 35 groups, 286 units)", typicalSpec, typical],
+    ["three groups (en)", base, smallRows],
+    ["12 groups with a highlight and 6 labels", { ...base, group_order: "median_asc", highlight_values: ["G03"], label_extremes: 6 }, scattered(12, 8)],
+    ["40 groups x 15 units (600 points)", base, scattered(40, 15)],
+    ["one group, one unit", base, [{ g: "Solo", u: "S1", v: 12 }]],
+  ];
+  for (const [name, spec, rows] of sets) {
+    assert.equal(Object.hasOwn(spec, "point_layout"), false, `${name}: the spec leaves point_layout out`);
+    const byDefault = renderVizBundle(spec, rows);
+    const beeswarm = renderVizBundle({ ...spec, point_layout: "beeswarm" }, rows);
+    assert.equal(byDefault.desktop, beeswarm.desktop, `${name}: the default desktop SVG is the beeswarm's`);
+    assert.equal(byDefault.mobile, beeswarm.mobile, `${name}: the default mobile SVG is the beeswarm's`);
+    assert.equal(renderVizSvg({ ...spec, point_layout: undefined }, rows), beeswarm.desktop, `${name}: point_layout undefined is the default too`);
+    // jitter is still there when asked for. A single unit sits on its row's centre line in either layout, so only the others differ.
+    const jitter = renderVizSvg({ ...spec, point_layout: "jitter" }, rows);
+    if (rows.length > 1) assert.notEqual(jitter, byDefault.desktop, `${name}: jitter differs from the default`);
+    assert.deepEqual(validateVizSpec(spec), [], `${name}: a spec without point_layout is valid`);
+    assert.deepEqual(lint(spec, rows).blockers, [], `${name}: and lints clean`);
+  }
+}
+console.log("strip_plot default layout: no point_layout is the beeswarm (byte for byte), jitter is the explicit opt-in -- PASS");
 
 // --- legacy style and mobile
 {
@@ -682,7 +713,7 @@ console.log("strip_plot legacy style and mobile bundle -- PASS");
 // --- render QA: geometry + contrast, 12px floor, no non-finite tokens, every label drawn
 {
   const cases = [
-    ["typical jitter (zh, 35 groups, 286 units)", typicalSpec, typical, 4],
+    ["typical default layout (zh, 35 groups, 286 units)", typicalSpec, typical, 4],
     ["typical beeswarm (zh)", { ...typicalSpec, point_layout: "beeswarm" }, typical, 4],
     ["typical median_asc, 6 labels", { ...typicalSpec, group_order: "median_asc", label_extremes: 6 }, typical, 6],
     ["typical data order, no medians, no labels", { ...typicalSpec, group_order: "data", show_median: false, label_extremes: 0 }, typical, 0],
@@ -704,7 +735,11 @@ console.log("strip_plot legacy style and mobile bundle -- PASS");
     ["percent house style with one decimal", { ...typicalSpec, style_id: "house" }, typical, 4],
     ["localized row labels (zh)", { ...base, language: "zh", category_names: "worldbank" }, ["Zambia", "Liberia", "Ghana", "Nigeria"].flatMap((g, i) => [0, 1, 2].map((k) => ({ g, u: `${g} ${k + 1}`, v: 8 + i * 6 + k * 2.5 }))), 4],
   ];
-  for (const [name, spec, rows, labels] of cases) renderQaClean(name, spec, rows, labels);
+  for (const [name, spec, rows, labels] of cases) {
+    renderQaClean(name, spec, rows, labels);
+    // the cases that leave the layout open use the default (beeswarm); run them under the jitter opt-in too
+    if (spec.point_layout === undefined) renderQaClean(`${name} [jitter]`, { ...spec, point_layout: "jitter" }, rows, labels);
+  }
 
   // the gate bites on this markup: a label moved onto a dot, or a font shrunk below 12px, fails
   const svg = renderVizSvg(typicalSpec, typical);
@@ -720,13 +755,15 @@ console.log("strip_plot render QA: geometry, contrast, 12px floor, tokens and a 
 // --- a plot saturated with dots (integer values in every row of 20-40 groups) has no free spot for every
 // label: it stays QA-clean and leaves a label out rather than drawing it over a mark
 {
-  for (const [name, spec, rows] of [
-    ["saturated lattice, 20 groups x 30 integer units", base, lattice(20, 30)],
-    ["saturated lattice, 40 groups x 15 integer units", { ...base, decimals: 0 }, lattice(40, 15)],
-  ]) {
-    const svg = renderQaClean(name, spec, rows);
-    const labels = readChart(svg).labels.length;
-    assert.ok(labels >= 1 && labels <= 4, `${name} draws ${labels} of the 4 labels`);
+  for (const layout of ["jitter", "beeswarm"]) {
+    for (const [name, spec, rows] of [
+      ["saturated lattice, 20 groups x 30 integer units", { ...base, point_layout: layout }, lattice(20, 30)],
+      ["saturated lattice, 40 groups x 15 integer units", { ...base, point_layout: layout, decimals: 0 }, lattice(40, 15)],
+    ]) {
+      const svg = renderQaClean(`${name} (${layout})`, spec, rows);
+      const labels = readChart(svg).labels.length;
+      assert.ok(labels >= 1 && labels <= 4, `${name} (${layout}) draws ${labels} of the 4 labels`);
+    }
   }
 }
 console.log("strip_plot saturated plot: QA-clean, a label with no free position is left out, never drawn over a mark -- PASS");
@@ -777,7 +814,7 @@ console.log("strip_plot random charts: 480 seeded renders are QA-clean with ever
 
 // --- numbers on the page: only axis ticks and extreme labels carry digits
 {
-  for (const [spec, rows] of [[typicalSpec, typical], [base, smallRows], [{ ...base, point_layout: "beeswarm" }, scattered(12, 8)]]) {
+  for (const [spec, rows] of [[typicalSpec, typical], [{ ...typicalSpec, point_layout: "jitter" }, typical], [base, smallRows], [{ ...base, point_layout: "jitter" }, scattered(12, 8)], [{ ...base, point_layout: "beeswarm" }, scattered(12, 8)]]) {
     const chart = readChart(renderVizSvg(spec, rows));
     const groupNames = new Set(rows.map((row) => row[spec.category_field]));
     for (const rowLabel of chart.rowLabels) assert.ok(groupNames.has(rowLabel.text), `row label '${rowLabel.text}' is a group name of the data`);
@@ -796,10 +833,14 @@ console.log("strip_plot random charts: 480 seeded renders are QA-clean with ever
 console.log("strip_plot numbers: only ticks and extreme labels are numeric, and labels print row values -- PASS");
 
 // --- SVG hash snapshots of typical charts (rewritten only by --update)
+// The two jitter cases name their layout, so they still pin the layout that used to be the default; strip_default_* leaves
+// point_layout out and pins the default (the beeswarm).
+const highlightSpec = { ...base, group_order: "median_asc", highlight_values: ["G03"], label_extremes: 6 };
 const snapshotCases = {
-  strip_jitter_35_groups_zh: [typicalSpec, typical],
+  strip_jitter_35_groups_zh: [{ ...typicalSpec, point_layout: "jitter" }, typical],
   strip_beeswarm_35_groups_zh: [{ ...typicalSpec, point_layout: "beeswarm" }, typical],
-  strip_jitter_12_groups_en_highlight: [{ ...base, group_order: "median_asc", highlight_values: ["G03"], label_extremes: 6 }, scattered(12, 8)],
+  strip_jitter_12_groups_en_highlight: [{ ...highlightSpec, point_layout: "jitter" }, scattered(12, 8)],
+  strip_default_12_groups_en_highlight: [highlightSpec, scattered(12, 8)],
 };
 const actual = {};
 for (const [name, [spec, rows]] of Object.entries(snapshotCases)) {

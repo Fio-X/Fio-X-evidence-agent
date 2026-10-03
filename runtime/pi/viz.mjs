@@ -4190,7 +4190,7 @@ function renderHeatmap(spec, rows) {
 // that check accepts too.
 // ===========================================================================
 const STRIP_GROUP_ORDERS = ["median_desc", "median_asc", "data"];
-const STRIP_POINT_LAYOUTS = ["jitter", "beeswarm"];
+const STRIP_POINT_LAYOUTS = ["jitter", "beeswarm"]; // point_layout: "beeswarm" is the default, "jitter" the opt-in
 const STRIP_MAX_LABEL_EXTREMES = 6;
 const STRIP_DEFAULT_LABEL_EXTREMES = 4;
 const STRIP_MAX_GROUPS = 40;
@@ -4500,7 +4500,7 @@ function renderStripPlot(spec, rows) {
   const valueField = spec.value_field;
   const labelField = spec.label_field && fieldExists(rows, spec.label_field) ? spec.label_field : null;
   const order = STRIP_GROUP_ORDERS.includes(spec.group_order) ? spec.group_order : "median_desc";
-  const layout = spec.point_layout === "beeswarm" ? "beeswarm" : "jitter";
+  const layout = spec.point_layout === "jitter" ? "jitter" : "beeswarm"; // beeswarm unless jitter is asked for
   const showMedian = spec.show_median !== false;
   const extremeCount = Number.isInteger(spec.label_extremes) ? spec.label_extremes : STRIP_DEFAULT_LABEL_EXTREMES;
   const highlight = new Set((Array.isArray(spec.highlight_values) ? spec.highlight_values : []).map(String));

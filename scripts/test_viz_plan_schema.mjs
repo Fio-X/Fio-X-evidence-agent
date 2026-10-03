@@ -157,6 +157,23 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   must(/strip_plot\/stacked_bar_100/.test(categoryNames) && !/mirrored_bar/.test(categoryNames), "category_names must list strip_plot and stacked_bar_100, not mirrored_bar");
   console.log(`PASS the plan path wires ${FORM_CHART_TYPES.join(", ")}: chart_type enum, ${FORM_FIELDS.length} optional fields equal to the JSON schema in newsroom_viz_plan and newsroom_viz_chain`);
 
+  // layout defaults: each form's default layout is what the field's description (tool and JSON schema) calls "(<value>, default)" and
+  // the opt-in alternative is never called a default. viz.mjs and the form tests pin the behaviour; this pins what the model is told.
+  const DEFAULT_LAYOUTS = {
+    point_layout: { value: "beeswarm", optIn: "jitter" },
+  };
+  for (const [field, { value, optIn }] of Object.entries(DEFAULT_LAYOUTS)) {
+    for (const [label, props] of [["newsroom_viz_plan", planProps], ["newsroom_viz_chain", chainProps]]) {
+      const text = props[field].description ?? "";
+      must(props[field].enum.includes(value) && props[field].enum.includes(optIn), `${label}: ${field} must offer both ${value} and ${optIn}`);
+      must(text.includes(`(${value}, default)`), `${label}: the ${field} description must name ${value} as the default: "${text}"`);
+      must(!text.includes(`${optIn}, default`) && !text.includes(`${optIn} (default`), `${label}: the ${field} description calls the opt-in ${optIn} a default`);
+    }
+    const schemaText = spec.properties[field].description ?? "";
+    must(new RegExp(`${value}(, default| \\(default\\))`).test(schemaText), `the JSON schema description of ${field} must name ${value} as the default: "${schemaText}"`);
+  }
+  console.log(`PASS the layout defaults are named in the tool and schema descriptions: ${Object.entries(DEFAULT_LAYOUTS).map(([field, { value }]) => `${field}=${value}`).join(", ")}`);
+
   // guidance (default on): exactly one sentence per form, naming the required fields and quoting viz.mjs's own limits, so a changed
   // limit fails here instead of leaving a stale hint
   const vizSource = readFileSync(join(ROOT, "runtime/pi/viz.mjs"), "utf8");
