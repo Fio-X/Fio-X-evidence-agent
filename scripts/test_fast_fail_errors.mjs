@@ -2,7 +2,10 @@
 // to fix it in one turn. No network, no model API: fetch is a stub and the 30 s
 // download timer is shortened by wrapping setTimeout for that one delay.
 //   1. download_data: a timeout is a structured DOWNLOAD_TIMEOUT (host, elapsed
-//      seconds, one generic hint) and an identical retry is refused at once.
+//      seconds, one generic hint). The first timeout allows one identical retry; after the
+//      second the exact request (query order and fragment aside) is refused for the rest of
+//      the run. The error carries no cause, query string or body; a body-read timeout counts
+//      toward the host circuit like a header timeout.
 //   2. EDITORIAL_GRAMMAR_BLOCKED also names the relations that accept the chosen
 //      chart type, read from the same table; the block itself is unchanged.
 //   3. One explanatory_dimension vocabulary: every tool that takes it for a module
@@ -14,6 +17,7 @@
 //      --novelty-digest <dir holding editorial.mjs>).
 //   4. quantity_kind (infographic plan) carries one clause of at most 160 bytes
 //      mapping the values a model reaches for onto the enum; the enum is unchanged.
+//   5. Each tool's explanatory_dimension enum is pinned exactly, with the set it had before 83d5ad1.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -103,11 +107,12 @@ async function freshTools(extraEnv = {}) {
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
 
 const evidenceGate = await import(join(ROOT, "runtime/pi/evidence_gate.mjs"));
-const { DOWNLOAD_TIMEOUT_HINT, createDownloadTimeoutGuard, createSourceAccessCircuit } = evidenceGate;
+const { DOWNLOAD_TIMEOUT_HINT, createDownloadTimeoutGuard, createSourceAccessCircuit, downloadRequestKey } = evidenceGate;
 
 // ---------------------------------------------------------------- 1. download timeout
-const HINT = "Retrying the same URL rarely helps. Make the request lighter: fewer series or a shorter period; for SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
-assert.equal(DOWNLOAD_TIMEOUT_HINT, HINT, "the hint is the one generic sentence from the work order");
+const HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. For SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+assert.equal(DOWNLOAD_TIMEOUT_HINT, HINT, "the hint is the one generic text");
+for (const part of ["One identical retry is allowed", "after a second timeout that exact request is refused for the rest of this run", "splitting it into smaller requests", "combining them in SQL", "every series and period the question needs must still be fetched", "`detail=dataonly`", "or use another source"]) assert.ok(HINT.includes(part), `the hint says: ${part}`);
 
 // Pure guard: shape, repeat key, pass-through rules.
 {
@@ -122,19 +127,29 @@ assert.equal(DOWNLOAD_TIMEOUT_HINT, HINT, "the hint is the one generic sentence 
   check("timeout error carries code, host, elapsed seconds and the one generic hint");
 
   const repeat = (request) => { try { guard.assertNotRepeat(request); return null; } catch (e) { return e; } };
+  assert.equal(repeat(ecb), null, "after the first timeout one identical retry is allowed");
+  assert.equal(guard.recordTimeout(ecb, 31_000, abort).code, "DOWNLOAD_TIMEOUT", "the retry that times out again is still the structured timeout");
   const refused = repeat(ecb);
   assert.equal(refused?.code, "DOWNLOAD_TIMEOUT_REPEAT");
-  assert.match(refused.message, /^DOWNLOAD_TIMEOUT_REPEAT: this exact request to data-api\.ecb\.europa\.eu already timed out after 30\.1 s in this session, so it was not sent again\. /);
+  assert.match(refused.message, /^DOWNLOAD_TIMEOUT_REPEAT: this exact request to data-api\.ecb\.europa\.eu timed out 2 times \(the last after 31\.0 s\), so it is refused for the rest of this run and was not sent again; the count starts over with the next CLI run\. /);
   assert.ok(refused.message.endsWith(HINT));
-  assert.equal(repeat({ ...ecb, url: ecb.url.replace("startPeriod=2000", "startPeriod=2000&detail=dataonly") }), null, "a changed URL is a new request");
-  assert.equal(repeat({ ...ecb, url: ecb.url.replace("startPeriod=2000", "startPeriod=2010") }), null, "a changed query value is a new request");
-  assert.equal(repeat({ ...ecb, method: "POST" }), null, "a changed method is a new request");
-  assert.equal(repeat({ ...ecb, body: "{}" }), null, "a changed body is a new request");
-  assert.equal(repeat({ ...ecb, url: "https://data-api.ecb.europa.eu/service/data/EXR/D.GBP.EUR.SP00.A?startPeriod=2000" }), null, "a changed path is a new request");
-  assert.ok(repeat({ ...ecb, method: "get" }), "method case does not change the request");
-  assert.ok(repeat({ ...ecb, url: `${ecb.url}#fragment` }), "a fragment never reaches the server, so it does not change the request");
-  assert.ok(repeat({ ...ecb, url: ecb.url.replace("data-api.ecb.europa.eu", "DATA-API.ECB.EUROPA.EU") }), "host case does not change the request");
-  check("identical retry is refused; any changed URL, method or body passes");
+  assert.equal(repeat(ecb)?.code, "DOWNLOAD_TIMEOUT_REPEAT", "and it stays refused");
+  check("first timeout allows one identical retry; the second timeout refuses the exact request for the rest of the run");
+
+  const timedTwice = (request) => { guard.recordTimeout(request, 5, abort); guard.recordTimeout(request, 5, abort); };
+  timedTwice({ method: "GET", url: "https://k.example/x?b=2&a=1&a=0" });
+  assert.ok(repeat({ method: "GET", url: "https://k.example/x?a=0&a=1&b=2" }), "swapped query order is the same request");
+  assert.ok(repeat({ method: "get", url: "HTTPS://K.EXAMPLE:443/x?a=1&b=2&a=0#frag" }), "scheme and host case, a default port and a fragment do not make a new request");
+  assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=0&a=2&b=2" }), null, "a different value is a different request");
+  assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=1&b=2" }), null, "a repeated name that is dropped is a different request");
+  assert.equal(repeat({ method: "GET", url: "https://k.example:8443/x?a=0&a=1&b=2" }), null, "a non-default port is a different request");
+  assert.equal(repeat({ method: "GET", url: "https://k.example/X?a=0&a=1&b=2" }), null, "the path stays case-sensitive");
+  assert.equal(repeat({ method: "POST", url: "https://k.example/x?a=0&a=1&b=2" }), null);
+  assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=0&a=1&b=2", body: "{}" }), null);
+  assert.equal(downloadRequestKey({ method: "GET", url: "https://k.example/x?b=2&a=1" }), downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=2" }));
+  assert.notEqual(downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=2" }), downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=3" }));
+  assert.equal(downloadRequestKey({ method: "GET", url: "not a url" }), "GET not a url\n", "an unparsable URL keeps its raw text");
+  check("request key: query order, scheme and host case, default port and fragment are normalised; a changed value, name, port, path, method or body is a new request");
 
   const blocked = new Error("SOURCE_ACCESS_BLOCKED: 3 consecutive source-access attempts failed. Stop.");
   assert.equal(guard.recordTimeout({ method: "GET", url: "https://a.example/blocked" }, 1, blocked), blocked, "the stop instruction is never softened");
@@ -142,8 +157,10 @@ assert.equal(DOWNLOAD_TIMEOUT_HINT, HINT, "the hint is the one generic sentence 
   assert.equal(guard.recordTimeout({ method: "GET", url: "https://a.example/other" }, 1, other), other, "an error that is not the abort keeps its own text");
   assert.equal(repeat({ method: "GET", url: "https://a.example/other" }), null, "and does not poison the key");
   assert.equal(repeat({ method: "GET", url: "https://a.example/blocked" }), null);
-  const wrapped = new Error("SOURCE_ACCESS_FAILED: network evidence fetch timed out or was cancelled (1/3).", { cause: abort });
-  assert.equal(guard.recordTimeout({ method: "GET", url: "https://a.example/wrapped" }, 5, wrapped).code, "DOWNLOAD_TIMEOUT", "the circuit's wrapped abort is recognised through its cause");
+  const flagged = Object.assign(new Error("SOURCE_ACCESS_FAILED: network evidence fetch timed out or was cancelled (1/3)."), { request_aborted: true });
+  assert.equal(guard.recordTimeout({ method: "GET", url: "https://a.example/wrapped" }, 5, flagged).code, "DOWNLOAD_TIMEOUT", "the circuit's abort is recognised through its flag");
+  const unflagged = new Error("SOURCE_ACCESS_FAILED: network evidence fetch timed out or was cancelled (1/3).", { cause: abort });
+  assert.equal(guard.recordTimeout({ method: "GET", url: "https://a.example/unflagged" }, 5, unflagged), unflagged, "a cause is no longer walked: only the flag or the error's own name counts");
   check("SOURCE_ACCESS_BLOCKED and non-abort errors pass through unchanged");
 
   const circuit = createSourceAccessCircuit(2);
@@ -153,9 +170,13 @@ assert.equal(DOWNLOAD_TIMEOUT_HINT, HINT, "the hint is the one generic sentence 
   const second = circuit.recordFailure("t", abort, "h");
   assert.equal(circuit.isBlocked("h"), true);
   assert.match(second.message, /^SOURCE_ACCESS_BLOCKED: 2 consecutive/);
-  assert.equal(circuit.recordFailure("t", abort, "other").cause, abort);
+  const failed = circuit.recordFailure("t", Object.assign(new Error("boom https://x.example/data?secret=1"), { name: "AbortError" }), "other");
+  assert.equal(failed.request_aborted, true);
+  assert.ok(!("cause" in failed), "the raw error is not kept as cause");
+  assert.ok(!JSON.stringify(failed).includes("secret") && !failed.message.includes("secret") && !String(failed.stack).includes("secret"), "nothing of the raw error is carried");
+  assert.ok(!("request_aborted" in circuit.recordFailure("t", new Error("HTTP 404"), "third")), "a non-abort failure carries no flag");
   assert.throws(() => circuit.assertAvailable("h"), /SOURCE_ACCESS_BLOCKED/);
-  check("circuit gains a read-only isBlocked and keeps the abort as cause; its messages are unchanged");
+  check("circuit gains a read-only isBlocked and carries a boolean abort flag instead of the raw cause; its messages are unchanged");
 }
 
 // Through download_data: fetch is a stub, the 30 s timer fires after 150 ms.
@@ -199,17 +220,24 @@ try {
   assert.equal(fetchCalls.length, 1);
   check("body-phase timeout: structured DOWNLOAD_TIMEOUT with host, elapsed seconds and hint, no raw AbortError");
 
-  // The identical retry never reaches the network and comes back at once.
+  // The first timeout allows one identical retry; it goes to the network.
+  const second = await message(run(base));
+  assert.equal(second.code, "DOWNLOAD_TIMEOUT", "the allowed retry that times out again is the structured timeout");
+  assert.equal(fetchCalls.length, 2, "the identical retry was sent");
+  check("first timeout, then one identical retry is allowed and sent");
+
+  // The second timeout refuses the exact request for the rest of the run; nothing reaches the network.
   const t0 = Date.now();
   const repeated = await message(run(base));
   assert.equal(repeated.code, "DOWNLOAD_TIMEOUT_REPEAT");
+  assert.match(repeated.message, /timed out 2 times .* for the rest of this run .* next CLI run\. /);
   assert.ok(repeated.message.endsWith(HINT));
   assert.ok(Date.now() - t0 < 30, "refused before any network wait");
-  assert.equal(fetchCalls.length, 1, "no second request was sent");
+  assert.equal(fetchCalls.length, 2, "no third request was sent");
   assert.equal((await message(run(base, { filename: "other.csv" }))).code, "DOWNLOAD_TIMEOUT_REPEAT", "a new filename does not change what the server is asked");
   assert.equal((await message(run(`${base}#top`))).code, "DOWNLOAD_TIMEOUT_REPEAT");
-  assert.equal(fetchCalls.length, 1);
-  check("identical retry (same URL) is refused at once with DOWNLOAD_TIMEOUT_REPEAT and the same hint");
+  assert.equal(fetchCalls.length, 2);
+  check("second timeout, then the exact request is refused at once with DOWNLOAD_TIMEOUT_REPEAT and the same hint");
 
   // The key is process memory only.
   assert.deepEqual(walk(artifact), [], "nothing was written to the investigation directory");
@@ -229,16 +257,17 @@ try {
   const pre1 = await message(run(`${host2}/a.csv`));
   assert.equal(pre1.code, "DOWNLOAD_TIMEOUT");
   assert.ok(pre1.message.endsWith(HINT));
+  assert.equal((await message(run(`${host2}/a.csv`))).code, "DOWNLOAD_TIMEOUT", "the one allowed retry of a pre-header timeout is sent");
+  assert.equal(fetchCalls.length, 2);
   assert.equal((await message(run(`${host2}/a.csv`))).code, "DOWNLOAD_TIMEOUT_REPEAT");
-  assert.equal(fetchCalls.length, 1, "the repeat of a pre-header timeout is not sent either");
-  const pre2 = await message(run(`${host2}/b.csv`));
-  assert.equal(pre2.code, "DOWNLOAD_TIMEOUT", "a different request to the same host is allowed");
-  // Third consecutive failure on this host: the stop instruction wins and is not rewritten.
-  const pre3 = await message(run(`${host2}/c.csv`));
+  assert.equal(fetchCalls.length, 2, "the third attempt of a pre-header timeout is not sent");
+  // Two failures counted so far (the refusal sent nothing and added none). The third consecutive failure on this
+  // host: the stop instruction wins and is not rewritten.
+  const pre3 = await message(run(`${host2}/b.csv`));
   assert.match(pre3.message, /^SOURCE_ACCESS_BLOCKED: 3 consecutive source-access attempts failed\. Stop source-dependent reporting/);
   assert.equal(pre3.code, undefined);
   // The blocked host answers with the stronger instruction even to an identical retry.
-  assert.match((await message(run(`${host2}/c.csv`))).message, /^SOURCE_ACCESS_BLOCKED:/);
+  assert.match((await message(run(`${host2}/b.csv`))).message, /^SOURCE_ACCESS_BLOCKED:/);
   assert.match((await message(run(`${host2}/a.csv`))).message, /^SOURCE_ACCESS_BLOCKED:/);
   check("pre-header timeout: DOWNLOAD_TIMEOUT; circuit counting and SOURCE_ACCESS_BLOCKED precedence are unchanged");
 
@@ -263,13 +292,87 @@ try {
   // The scheme and private-host checks run inside safeFetch, which has always reported them as an unreachable source.
   const scheme = await message(run("ftp://203.0.113.12/x.csv"));
   assert.match(scheme.message, /^SOURCE_ACCESS_FAILED: network evidence fetch could not reach a public source \(1\/3\)\./);
-  assert.match(scheme.cause.message, /^Only http\/https URLs are allowed$/);
+  assert.ok(!("cause" in scheme), "no raw cause on the thrown error");
   const privateHost = await message(run("http://127.0.0.1/x.csv"));
   assert.match(privateHost.message, /^SOURCE_ACCESS_FAILED: network evidence fetch could not reach a public source \(1\/3\)\./);
-  assert.match(privateHost.cause.message, /^Private and local network hosts are blocked$/);
+  assert.ok(!("cause" in privateHost), "no raw cause on the thrown error");
   assert.equal(scheme.code, undefined);
   assert.equal(privateHost.code, undefined);
   check("HTTP status, 25 MB cap, scheme and private-host checks keep their messages and are not rewritten as timeouts");
+
+  // ---- host circuit and error hygiene (fresh process state, own artifact folder) ----
+  const art2 = join(mkdtempSync(join(tmpdir(), "fast-fail-circuit-")), "run");
+  mkdirSync(art2, { recursive: true });
+  const download2 = (await freshTools({ NEWSROOM_ARTIFACT_DIR: art2 })).get("download_data");
+  const run2 = (url) => download2.execute("id", { url });
+  const SECRET = "token=SECRET-QUERY-VALUE";
+  const clean = (error, label) => {
+    assert.ok(!("cause" in error), `${label}: no cause`);
+    for (const [name, text] of [["message", error.message], ["json", JSON.stringify(error)], ["stack", String(error.stack)]]) {
+      assert.ok(!text.includes("token=") && !text.includes("SECRET") && (name === "stack" || !text.includes("?")), `${label}: no query string or secret in the ${name}`);
+    }
+  };
+  const byPath = (handlers) => stubFetch((url, init) => handlers[new URL(url).pathname](url, init));
+  const header = (url, init) => hangsUntilAborted(init.signal);
+  const body = (url, init) => Promise.resolve(stalledBody(url, init.signal));
+
+  // A header timeout counts: two of them, then the third request on the host meets the stop instruction.
+  let h = "http://203.0.113.30";
+  byPath({ "/a": header, "/b": header, "/c": header });
+  const h1 = await message(run2(`${h}/a?${SECRET}`));
+  assert.equal(h1.code, "DOWNLOAD_TIMEOUT"); clean(h1, "header timeout");
+  assert.equal((await message(run2(`${h}/b?${SECRET}`))).code, "DOWNLOAD_TIMEOUT");
+  assert.match((await message(run2(`${h}/c?${SECRET}`))).message, /^SOURCE_ACCESS_BLOCKED: 3 consecutive/, "the third failure on the host is the stop instruction");
+  check("header timeout counts toward the host circuit; the error carries no cause, query string or body");
+
+  // A body-read timeout counts the same way (the host answered the headers, then stalled).
+  h = "http://203.0.113.31";
+  byPath({ "/a": body, "/b": body, "/c": body, "/d": body });
+  const b1 = await message(run2(`${h}/a?${SECRET}`));
+  assert.equal(b1.code, "DOWNLOAD_TIMEOUT"); clean(b1, "body timeout");
+  assert.equal((await message(run2(`${h}/b?${SECRET}`))).code, "DOWNLOAD_TIMEOUT");
+  assert.equal(fetchCalls.length, 2);
+  assert.match((await message(run2(`${h}/c?${SECRET}`))).message, /^SOURCE_ACCESS_BLOCKED: 3 consecutive/, "after two body timeouts the third failure is the stop instruction");
+  assert.equal(fetchCalls.length, 3);
+  assert.match((await message(run2(`${h}/d?${SECRET}`))).message, /^SOURCE_ACCESS_BLOCKED:/);
+  assert.equal(fetchCalls.length, 3, "the blocked host is not asked a fourth time");
+  check("body-read timeout counts toward the host circuit; the error carries no cause, query string or body");
+
+  // Header and body timeouts add up on one host.
+  h = "http://203.0.113.32";
+  byPath({ "/a": header, "/b": body, "/c": header });
+  assert.equal((await message(run2(`${h}/a`))).code, "DOWNLOAD_TIMEOUT");
+  assert.equal((await message(run2(`${h}/b`))).code, "DOWNLOAD_TIMEOUT");
+  assert.match((await message(run2(`${h}/c`))).message, /^SOURCE_ACCESS_BLOCKED:/);
+  // A body that finishes resets the count, as a finished header used to.
+  h = "http://203.0.113.33";
+  byPath({ "/a": body, "/ok": (url) => Promise.resolve(withUrl(new Response("a\n1\n", { status: 200, headers: { "content-type": "text/csv" } }), url)), "/c": header, "/d": header });
+  assert.equal((await message(run2(`${h}/a`))).code, "DOWNLOAD_TIMEOUT");
+  assert.match((await run2(`${h}/ok`)).content[0].text, /^Downloaded 4 bytes/);
+  assert.equal((await message(run2(`${h}/c`))).code, "DOWNLOAD_TIMEOUT");
+  assert.equal((await message(run2(`${h}/d`))).code, "DOWNLOAD_TIMEOUT", "after a completed download the count started again");
+  check("header and body timeouts add up on one host; a completed body resets the count");
+
+  // A repeat refusal sends nothing and is not a failure: the host still answers the next request.
+  h = "http://203.0.113.34";
+  byPath({ "/a": body, "/b": header });
+  const r1 = await message(run2(`${h}/a?${SECRET}`));
+  const r2 = await message(run2(`${h}/a?${SECRET}`));
+  assert.equal(r1.code, "DOWNLOAD_TIMEOUT"); assert.equal(r2.code, "DOWNLOAD_TIMEOUT");
+  const callsBefore = fetchCalls.length;
+  const refusal = await message(run2(`${h}/a?${SECRET}`));
+  assert.equal(refusal.code, "DOWNLOAD_TIMEOUT_REPEAT"); clean(refusal, "repeat refusal");
+  assert.equal(fetchCalls.length, callsBefore, "the refusal sent nothing");
+  const next = await message(run2(`${h}/b`));
+  assert.equal(fetchCalls.length, callsBefore + 1, "the host was not blocked by the refusal: the next request was sent");
+  assert.match(next.message, /^SOURCE_ACCESS_BLOCKED: 3 consecutive/, "and its timeout is the third counted failure");
+  check("a repeat refusal is clean (no cause, query string or body) and does not count against the host, so the smaller request it asks for is still sent");
+
+  // Nothing about any of this reaches the disk: no failure record, no repeat key.
+  // The only files are the three of the one download that finished on purpose (data, its metadata, its origin).
+  assert.equal(walk(art2).length, 3, "no file was written for any failure");
+  assert.ok(walk(art2).every((file) => /\/data\/(?:origins\/[0-9a-f]{64}\.json|[0-9a-f]{64}\.data(?:\.meta\.json)?)$/.test(file)), "and those three are the finished download's");
+  check("no failure record or repeat key is written to disk");
 } finally {
   globalThis.setTimeout = realSetTimeout;
   globalThis.fetch = realFetch;
@@ -496,10 +599,61 @@ try {
   for (const reached of ["level", "change", "rate_of_change", "measure"]) assert.ok(!kind.enum.includes(reached), `${reached} is still not a value`);
   assert.ok(Buffer.byteLength(kind.description) <= 160, `the clause is at most 160 bytes (${Buffer.byteLength(kind.description)})`);
   // What the clause names must exist: a renamed enum value makes this fail instead of leaving a stale hint.
-  for (const named of kind.description.match(/\b(?:rate|other|stock_change|index)\b/g)) assert.ok(kind.enum.includes(named), `the clause names '${named}', which is in the enum`);
-  assert.equal(kind.description, "For a measured level or rate use rate or other; for a change in a stock use stock_change; for an index use index.");
+  for (const named of kind.description.match(/\b(?:stock_change|stock|count|rate|share|index|other)\b/g)) assert.ok(kind.enum.includes(named), `the clause names '${named}', which is in the enum`);
+  const CLAUSE = "Level of a stock (people, money): stock; its change: stock_change; items or events: count; ratio: rate; part of whole: share; true index: index; else other.";
+  assert.equal(kind.description, CLAUSE);
+  assert.equal(Buffer.byteLength(CLAUSE), 156, "156 bytes, 43 more than the 113-byte clause it replaces");
+  assert.deepEqual([...new Set(kind.description.match(/\b(?:stock_change|stock|count|rate|share|index|other)\b/g))].sort(), ["count", "index", "other", "rate", "share", "stock", "stock_change"].sort(), "the clause names exactly the seven values that carry meaning for a measured quantity");
   for (const [key, field] of Object.entries(encoding.properties)) if (key !== "quantity_kind") assert.equal(field.description, undefined, `${key} gained no description`);
-  check("quantity_kind carries one clause of at most 160 bytes that maps level/rate, change in a stock and index onto rate|other, stock_change and index; the enum is unchanged");
+  check("quantity_kind carries one clause of 156 bytes that maps a level of a stock to stock, its change to stock_change, items or events to count, a ratio to rate, a part of a whole to share and a true index to index; the enum is unchanged");
+}
+
+// ---------------------------------------------------------------- 5. the widened vocabularies, pinned
+{
+  const story = await import(join(ROOT, "runtime/pi/story_graph.mjs"));
+  const tools = await freshTools({});
+  const enumsOf = (name) => {
+    const found = [];
+    const visit = (node) => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) { node.forEach(visit); return; }
+      for (const [key, value] of Object.entries(node)) {
+        if (key === "explanatory_dimension" && value && Array.isArray(value.enum)) found.push(value.enum);
+        else visit(value);
+      }
+    };
+    visit(tools.get(name).parameters);
+    assert.equal(found.length, 1, `${name} declares explanatory_dimension once`);
+    return found[0];
+  };
+  const T10 = ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"];
+  const T12 = [...T10, "outcome", "relationship"];
+  const T16 = [...T10, "outcome", "flow", "network", "relationship", "hierarchy", "model"];
+  // before: the literal list of each tool on abd9d8b (read from that commit's newsroom.ts); added: what 83d5ad1 meant to add.
+  const PINS = {
+    newsroom_story_graph: { before: T12, added: [], after: T12 },
+    newsroom_semantic_novelty: { before: T10, added: ["outcome", "relationship"], after: T12 },
+    newsroom_infographic_plan: { before: [...T10, "outcome"], added: ["relationship"], after: T12 },
+    newsroom_publication_plan: { before: T16, added: [], after: T16 },
+    newsroom_portable_publication: { before: T16, added: [], after: T16 },
+  };
+  // Every value a model could send: all sixteen, and the near misses that were never valid.
+  const CANDIDATES = [...new Set([...T16, "Relationship", "Outcome", " outcome", "", "level", "bogus", "constructor", "__proto__"])];
+  for (const [name, pin] of Object.entries(PINS)) {
+    const actual = enumsOf(name);
+    assert.deepEqual([...actual], pin.after, `${name} enum is exactly the pinned list, in order`);
+    assert.deepEqual(actual.filter((v) => !pin.before.includes(v)), pin.added, `${name} gained exactly the intended additions`);
+    assert.ok(pin.before.every((v) => actual.includes(v)), `${name} lost nothing it accepted before`);
+    const refusedBefore = CANDIDATES.filter((v) => !pin.before.includes(v));
+    const stillRefused = refusedBefore.filter((v) => !actual.includes(v));
+    assert.deepEqual(refusedBefore.filter((v) => actual.includes(v)), pin.added, `${name}: every value refused before is still refused, except the additions`);
+    assert.ok(stillRefused.length === refusedBefore.length - pin.added.length);
+  }
+  for (const name of ["newsroom_story_graph", "newsroom_semantic_novelty", "newsroom_infographic_plan"]) assert.deepEqual([...enumsOf(name)], [...story.STORY_DIMENSIONS]);
+  assert.deepEqual(PINS.newsroom_publication_plan.after, [...story.PUBLICATION_DIMENSIONS]);
+  console.log("explanatory_dimension before/after:");
+  for (const [name, pin] of Object.entries(PINS)) console.log(`  ${name}: ${pin.before.length} -> ${pin.after.length}${pin.added.length ? ` (+${pin.added.join(", ")})` : ""}`);
+  check("each tool's explanatory_dimension enum is pinned exactly; every value refused before 83d5ad1 is still refused except semantic_novelty +outcome,+relationship and infographic_plan +relationship");
 }
 
 for (const name of results) console.log(`${name} -- PASS`);
