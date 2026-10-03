@@ -254,6 +254,7 @@ export async function renderPrerequisiteIssues(params, io, unresolved = {}) {
       const lint = await io.read(String(params.lint_ref), "infographics/lints/");
       if (lint.plan_ref !== params.plan_ref) issues.push("the infographic lint does not belong to the supplied plan");
       if (!lint.passed || (lint.blockers ?? []).length) issues.push("the infographic lint has blocking failures; fix the plan and lint it again");
+      else if (typeof io.lintCurrent === "function" && !(await io.lintCurrent(lint))) issues.push("LINT_STALE: the infographic lint is stale (made under another lint policy, or its upstream visualizations changed since); run newsroom_infographic_lint again on this plan");
     } catch (error) { issues.push(`lint_ref '${params.lint_ref}' cannot be read (${message(error)})`); }
   }
   if (spec) for (const issue of await loadableIssues(spec.modules ?? [], io)) issues.push(issue);

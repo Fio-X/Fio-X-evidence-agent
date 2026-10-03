@@ -89,6 +89,15 @@ const BASE = { story_graph_ref: "editorial/story-graphs/g.json", selected_concep
   assert.match(text, /^Preflight found \d+ unmet preconditions for newsroom_infographic_plan/);
   check("unit: six independent problems come back in one error, each with what to call next");
 }
+{ // an explicitly named lint that is no longer current is listed (C1)
+  const files = { "infographics/plans/p.json": { modules: [] }, "infographics/lints/l.json": { plan_ref: "infographics/plans/p.json", passed: true, blockers: [] } };
+  const params = { plan_ref: "infographics/plans/p.json", lint_ref: "infographics/lints/l.json" };
+  const stale = { ...fakeIo(files), lintCurrent: async () => false };
+  assert.match((await renderPrerequisiteIssues(params, stale, {})).join("|"), /LINT_STALE/);
+  const fresh = { ...fakeIo(files), lintCurrent: async () => true };
+  assert.deepEqual(await renderPrerequisiteIssues(params, fresh, {}), []);
+  check("unit: an explicit stale lint_ref is listed as LINT_STALE; a current one is not");
+}
 { // stage fills: render, critic and preview
   const stage = { ...FILES, "infographics/lints/l.json": { plan_ref: "infographics/plans/p.json", passed: true, blockers: [] }, "infographics/m1.json": { plan_ref: "infographics/plans/p.json", lint_ref: "infographics/lints/l.json", variants: { desktop: "x" } }, "infographics/critics/k.json": { manifest_ref: "infographics/m1.json", passed: true }, "infographics/plans/p.json": { modules: [] } };
   const io = fakeIo(stage);
