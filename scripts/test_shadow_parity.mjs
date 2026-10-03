@@ -22,6 +22,20 @@ const BASELINE = "327de35";
 // from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
 const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
 const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
+// fix/page-top-1003 also puts the lint policy version and the hero gate state into the page lint's record and key, so the page lint ref
+// differs from the older commit's. Only that is masked: the ref's hash in the model-visible text, the details and the file path, and the two
+// added fields of the lint record; every other byte is still compared.
+const LINT_REF = /infographics\/lints\/[0-9a-f]{64}\.json/g;
+const ADDED_LINT_FIELDS = ["lint_policy_version", "hero_value_gate"];
+const maskLintRef = (value) => JSON.parse(JSON.stringify(value).replace(LINT_REF, "infographics/lints/<ref>.json"));
+const maskedCalls = (calls) => calls.map((call) => maskLintRef(call));
+const maskedFiles = (files) => new Map([...files].map(([path, bytes]) => {
+  if (!LINT_REF.test(path)) return [path, bytes];
+  LINT_REF.lastIndex = 0;
+  const record = JSON.parse(bytes.toString("utf8"));
+  for (const key of ADDED_LINT_FIELDS) delete record[key];
+  return ["infographics/lints/<ref>.json", Buffer.from(JSON.stringify(record))];
+}));
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
 
 function walk(dir, root = dir, out = new Map()) {
@@ -86,9 +100,9 @@ const comparable = (files) => new Map([...files].filter(([path]) => path !== "cl
 // OFF == baseline, byte for byte.
 assert.equal(off.defs, base.defs, "tool definitions identical to the baseline with the switch off");
 assert.equal(off.claimId, base.claimId);
-assert.deepEqual(off.calls, base.calls, "model-visible text and details identical to the baseline with the switch off");
-assert.deepEqual([...comparable(off.files).keys()], [...comparable(base.files).keys()], "same artifact file set as the baseline");
-for (const [path, bytes] of comparable(base.files)) assert.ok(bytes.equals(comparable(off.files).get(path)), `artifact bytes differ from the baseline: ${path}`);
+assert.deepEqual(maskedCalls(off.calls), maskedCalls(base.calls), "model-visible text and details identical to the baseline with the switch off (page lint ref masked)");
+assert.deepEqual([...maskedFiles(comparable(off.files)).keys()], [...maskedFiles(comparable(base.files)).keys()], "same artifact file set as the baseline");
+for (const [path, bytes] of maskedFiles(comparable(base.files))) assert.ok(bytes.equals(maskedFiles(comparable(off.files)).get(path)), `artifact bytes differ from the baseline: ${path}`);
 assert.equal([...off.files.keys()].some((path) => path.startsWith("shadow/")), false, "off: nothing is written under shadow/");
 for (const call of off.calls) assert.equal("shadow" in (call.details ?? {}) || "shadow_asof" in (call.details ?? {}), false, "off: details carry no shadow key");
 
