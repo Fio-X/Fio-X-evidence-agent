@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
+const INVIS = [["zwsp", "\u200b", "亿美元"], ["wj", "\u2060", "亿美元"], ["shy", "\u00ad", "亿美元"], ["bom", "\ufeff", "亿美元"], ["mvs", "\u180e", "亿美元"], ["nel", "\u0085", "亿美元"],
+    ["mixed", "\u200b\u2060\u00ad\ufeff\u180e", "亿美元"], ["spmixed", " \u200b \u2060", "亿美元"], ["en-zwsp", "\u200b", "million tonnes"], ["inword", " ", "mil\u00adlion tonnes"], ["inword2", " ", "mil\u200blion tonnes"], ["pct", "\u200b", "%"]];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -93,6 +95,7 @@ function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, ve
     "c-pct-nbsp": inlineClaim("The share is {max.value}\u00a0% of the total.", "The share is 2\u00a0% of the total."),
     "c-pct-nl": inlineClaim("The share is {max.value}\n% of the total.", "The share is 2\n% of the total."),
     "c-mil-sp2": inlineClaim("Output reached {max.value}  million tonnes.", "Output reached 2  million tonnes."),
+    ...Object.fromEntries(INVIS.map(([name, gap, word]) => [`c-inv-${name}`, inlineClaim(`Reserves reached {max.value}${gap}${word} in total.`, `Reserves reached 2${gap}${word} in total.`)])),
     "c-yi-sp": inlineClaim("Reserves reached {max.value} 亿美元 in total.", "Reserves reached 2 亿美元 in total."),
   };
   const inlineTemplate = "The top value is {max.value}% in {max.value.region} in {max.value.year}.";
@@ -100,7 +103,7 @@ function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, ve
     { placeholder: "{max.value}", column: "value", row_index: 1, value: 2, text: "2" },
     { placeholder: "{max.value.region}", column: "region", row_index: 1, value: "B", text: "B" },
     { placeholder: "{max.value.year}", column: "year", row_index: 1, value: 2018, text: "2018" }], recorded_by: "newsroom_viz_plan" };
-  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline", "c-rose", "c-thou", "c-million", "c-times", "c-bound", "c-yi", "c-pct", "c-pct-sp", "c-pct-sp2", "c-pct-nbsp", "c-pct-nl", "c-mil-sp2", "c-yi-sp", "c-tie"].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-tie" ? { claim: "Region A has 9 and region B has 9.", computation_refs: [tieRef] } : {}), ...(claim_id === "c-inline" ? inline : {}), ...(inlines[claim_id] ?? {}) }));
+  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline", "c-rose", "c-thou", "c-million", "c-times", "c-bound", "c-yi", "c-pct", "c-pct-sp", "c-pct-sp2", "c-pct-nbsp", "c-pct-nl", "c-mil-sp2", "c-yi-sp", "c-tie", ...INVIS.map(([name]) => `c-inv-${name}`)].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-tie" ? { claim: "Region A has 9 and region B has 9.", computation_refs: [tieRef] } : {}), ...(claim_id === "c-inline" ? inline : {}), ...(inlines[claim_id] ?? {}) }));
   writeFileSync(join(art, "claims.jsonl"), `${claims.join("\n")}\n`);
   for (const [id, chart_type, claim_id] of VIZ) {
     writeFileSync(join(art, `visualizations/${id}.svg`), svg);
@@ -263,6 +266,18 @@ await ok("K39 a current lint passes preflight", async () => {
   const { out } = await k39(() => {});
   must(!(out.msg && /LINT_STALE/.test(out.msg)), JSON.stringify(out.msg));
   must(out.ok, JSON.stringify(out.msg));
+});
+
+// ---- K37: invisible characters do not hide the magnitude word ----
+for (const [name, , word] of INVIS) {
+  const magnitude = /亿/.test(word) ? "亿" : /%/.test(word) ? "%" : "million";
+  await refused(`K37 ${name}: invisible character between the number and the magnitude, unit dropped`, { value_from: "{max.value}" }, new RegExp(`HERO_UNIT_DROPPED.*'${magnitude}'.*empty`), { claim_id: `c-inv-${name}` });
+}
+await ok("K37 control: a correct unit still passes with an invisible character in the claim", async () => {
+  for (const [name, , word] of INVIS.filter(([n]) => ["zwsp", "mixed", "nel"].includes(n))) {
+    const r = await heroRun(true, { value_from: "{max.value}", unit: "亿美元" }, { claim_id: `c-inv-${name}` });
+    must(!r.refused && r.stored.unit === "亿美元", `${name}: ${JSON.stringify(r.refused ?? r.stored)}`);
+  }
 });
 
 // @@NEXT@@

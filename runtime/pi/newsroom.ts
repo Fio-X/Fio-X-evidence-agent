@@ -2351,6 +2351,9 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
     if (at !== undefined) rest = context.claimText.slice(at + valueText.length);
   }
   if (rest === null) return [];
+  // Invisible characters (zero-width, soft hyphen, BOM, word joiner, Mongolian vowel separator and the rest of Default_Ignorable / Cf) are not
+  // part of what a reader sees: delete them, and treat NEL (U+0085, which JS \s misses) as whitespace, before looking for the magnitude word.
+  rest = rest.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, "").replace(/\u0085/g, " ");
   // The literal right after the number, and a scale word after exactly one space (letters only: "million", never "3").
   const out = [rest.match(HERO_LITERAL_STOP)?.[0] ?? ""];
   if (/^ \S/u.test(rest)) {
