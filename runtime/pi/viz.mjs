@@ -2794,12 +2794,19 @@ export function chartNameDisplay(spec, rows) {
 // strings. Every mode is tried (exact World Bank English names, ISO3, ISO2,
 // ISO 4217); the one matching the most values wins, a tie goes to the mode
 // whose token family the field name carries (currency tokens -> iso4217,
-// economy tokens -> the economy modes), then to the fixed mode order. iso2 is a
-// candidate only for a field whose name carries an economy token (two letters
-// match too many state and subdivision codes to read a bare column as
-// countries). A two-letter value can only match iso2; a three-letter value can
-// be an ISO3 code or a currency code (BTN, MKD and SLE are both), which is
-// exactly what the match-count comparison and the signal tie-break settle.
+// economy tokens -> the economy modes), then to the fixed mode order. A
+// two-letter value can only match iso2; a three-letter value can be an ISO3
+// code or a currency code (BTN, MKD and SLE are both), which is exactly what
+// the match-count comparison and the signal tie-break settle.
+// Recognition only decides whether to block; it never resolves a name. So iso2
+// is a candidate whatever the field name: a column of codes the table knows
+// (FR, DE, PL) prints as raw codes on a Chinese page, and it must block there
+// too. What the field name decides is how the column is READ: two letters match
+// too many state and subdivision codes to read a bare column as countries, so
+// only a column whose name carries an economy token is told to set
+// category_names='iso2'; any other column is told to rename the column first
+// (zhNameFieldBlocker), the same rule iso2NeedsCountryColumnBlocker applies to
+// a declared category_names='iso2'.
 // A column whose NAME says it holds economies or currencies (an economy or
 // currency token, as for auto-resolution) is held to more than recognition: on
 // a zh chart with no category_names, one value without CJK characters blocks
@@ -2822,7 +2829,7 @@ function recognizableNameColumn(values, fields, { threshold = true } = {}) {
     order,
     matched: values.length - unmappedEconomyNameValues(values, mode).length,
     signalled: fields.some((field) => fieldNameSignalsMode(field, mode)),
-  })).filter((candidate) => candidate.mode !== "iso2" || candidate.signalled);
+  }));
   candidates.sort((a, b) => b.matched - a.matched || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
   const best = candidates[0];
   return !threshold || (best.matched >= 2 && best.matched * 2 >= values.length) ? best : null;
@@ -2844,7 +2851,13 @@ function zhNameFieldBlocker(fields, values, best, { cjk = [] } = {}) {
     : `match no ${text.none} (e.g. ${examples(values.filter((value) => !hasCjk(value)))})`;
   const chinese = cjk.length ? `${cjk.length} of them ${cjk.length > 1 ? "contain" : "contains"} CJK characters (e.g. ${examples(cjk)})` : "none contains CJK characters";
   const readers = `${best.matched > 0 ? text.readers : "the raw values"}${cjk.length ? " for the rest" : ""}`;
-  return `zh chart's ${fieldText} values ${matches} and ${chinese}, so readers would see ${readers}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
+  const head = `zh chart's ${fieldText} values ${matches} and ${chinese}, so readers would see ${readers}`;
+  // Two-letter codes are also US states and subdivisions, so a column whose name does not say countries cannot simply be
+  // told to set category_names='iso2' (iso2NeedsCountryColumnBlocker would refuse it): the rename comes first.
+  if (best.mode === "iso2" && !best.signalled) {
+    return `${head}; two-letter codes are also US states, provinces and other subdivisions; if these values are countries, rename ${plural ? "the columns" : "the column"} in SQL so ${plural ? "each name carries" : "the name carries"} country, economy, iso2 or geo (for example 'country_iso2') and set category_names='iso2'; if they are not countries, label them in Chinese instead; never translate a name yourself`;
+  }
+  return `${head}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
 }
 
 // The blocker for name fields that say they hold economies or currencies but

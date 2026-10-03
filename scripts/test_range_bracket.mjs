@@ -659,7 +659,9 @@ console.log("aggregate rows fail closed: PASS");
 // CA, GA, IN and PA are Canada, Gabon, India and Panama as ISO 3166-1 alpha-2 codes and California, Georgia, Indiana and
 // Pennsylvania as state codes, and a subset in which every code matches would print the wrong country. So iso2 is suggested,
 // and accepted when declared, only for a column whose name says it holds countries (country, economy, iso2 or geo, which is
-// Eurostat's column); a match count alone proves nothing.
+// Eurostat's column); a match count alone proves nothing. A column of such codes whose name says nothing still blocks on a zh
+// chart, because FR, DE and PL would print as FR, DE and PL: recognition only decides whether to block and never resolves a
+// name, so the name decides the advice, not the block (the rename, not category_names='iso2').
 // ---------------------------------------------------------------------
 {
   const zhSpec = (overrides = {}) => spec({ language: "zh", title: "可再生能源占比最高的经济体", ...overrides });
@@ -674,24 +676,78 @@ console.log("aggregate rows fail closed: PASS");
     const many = fields.length > 1;
     return `category_names='iso2' on ${fields.map((f) => `'${f}'`).join(" and ")}: two-letter codes are also US states, provinces and other subdivisions, so the column name must say these are countries; rename ${many ? "the columns" : "the column"} in SQL so ${many ? "each name carries" : "the name carries"} country, economy, iso2 or geo (for example 'country_iso2'), or use an ISO3 code column with category_names='iso3'`;
   };
+  // What a zh column of two-letter codes with no category_names is told, by what its name says. A column that says countries
+  // is told to set category_names='iso2' (BARE_ISO2_ADVICE, unchanged). Any other column is told to rename itself first, in
+  // the words iso2NeedsCountryColumnBlocker uses (RENAME_WORDS), because category_names='iso2' on that name would be refused.
+  const BARE_ISO2_ADVICE = "select the ISO2 code column as the name field and set category_names='iso2'";
+  const RENAME_WORDS = "country, economy, iso2 or geo (for example 'country_iso2')";
+  const codesHead = (fields, matched, total, shown) => `zh chart's ${fields.map((f) => `'${f}'`).join(" and ")} values match ISO 3166-1 alpha-2 codes (best mode 'iso2': ${matched} of ${total} distinct values, e.g. ${shown.map((v) => `'${v}'`).join(", ")}) and none contains CJK characters, so readers would see raw codes`;
+  const renameMessage = (fields, matched, total, shown) => {
+    const many = fields.length > 1;
+    return `${codesHead(fields, matched, total, shown)}; two-letter codes are also US states, provinces and other subdivisions; if these values are countries, rename ${many ? "the columns" : "the column"} in SQL so ${many ? "each name carries" : "the name carries"} ${RENAME_WORDS} and set category_names='iso2'; if they are not countries, label them in Chinese instead; never translate a name yourself`;
+  };
+  const plainMessage = (field, matched, total, shown) => `${codesHead([field], matched, total, shown)}; ${BARE_ISO2_ADVICE}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself`;
 
-  // --- The lint's suggestion: a list of US state codes gets no iso2 suggestion, whole or as the subset that is countries too ---
-  for (const values of [STATE_CODES, ["CA", "GA", "IN", "PA"]]) {
+  // --- A column of two-letter codes whose name does not say countries blocks on a zh chart, and is told to rename itself ---
+  // Recognition only decides whether to block (it never resolves a name), so these codes block whatever the column is called:
+  // 'code' FR, DE, PL would otherwise print as FR, DE and PL on a Chinese page, and the first version of the iso2 fix let that
+  // pass. The name only decides the advice: never category_names='iso2' for a column that does not say countries, whether the
+  // codes are countries, state codes, or the subset that is both (CA, GA, IN and PA).
+  for (const [values, matched, shown] of [
+    [["FR", "DE", "PL"], 3, ["FR", "DE", "PL"]],
+    [["CA", "GA", "IN", "PA"], 4, ["CA", "GA", "IN"]],
+    [STATE_CODES, 4, ["CA", "GA", "IN"]],
+  ]) {
     for (const field of ["state", "code", "region", "abbr", "iso"]) {
       const l = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, values), {});
-      assert.deepEqual(suggestions(l), [], `${field} ${values.join(",")}`);
-      assert.deepEqual(nameBlockers(l), [], `${field} ${values.join(",")}`);
-      assert.equal(l.category_names_resolution, undefined, field);
-      assert.ok(l.warnings.includes(ADVISORY(field)), `${field}: the older advisory stays: ${JSON.stringify(l.warnings)}`);
+      const label = `${field} ${values.join(",")}`;
+      assert.deepEqual(nameBlockers(l), [renameMessage([field], matched, values.length, shown)], label);
+      assert.ok(!l.blockers.some((b) => b.includes(BARE_ISO2_ADVICE)), `${label}: no iso2 advice for a column that does not say countries`);
+      assert.equal(l.category_names_resolution, undefined, label);
+      assert.ok(!l.warnings.includes(ADVISORY(field)), `${label}: the blocker replaces the older advisory`);
     }
   }
-  // The same codes in a column that says country keep being suggested as iso2: the field name is the evidence.
+  // The recognition thresholds are the older rule's: fewer than two matches, or fewer than half, is not recognized, so a list
+  // of state codes that are mostly not countries keeps the advisory; exactly half blocks.
+  for (const field of ["state", "code"]) {
+    for (const values of [["TX", "NY", "FL", "WA", "OR", "CA"], ["FR", "ZZ", "YY"], ["FR", "DE", "ZZ", "YY", "XX"]]) {
+      const l = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, values), {});
+      assert.deepEqual(nameBlockers(l), [], `${field} ${values.join(",")}`);
+      assert.ok(l.warnings.includes(ADVISORY(field)), `${field} ${values.join(",")}: the older advisory stays`);
+    }
+    assert.deepEqual(nameBlockers(lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, ["FR", "DE", "ZZ", "YY"]), {})), [renameMessage([field], 2, 4, ["FR", "DE"])], `${field}: half of the values match`);
+  }
+  // The same codes in a column that says country keep being suggested as iso2, word for word: the field name is the evidence.
   for (const field of ["country", "geo", "iso2", "country_code", "countryCode", "nation", "economy", "国家"]) {
     const l = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, ["CA", "GA", "IN", "PA"]), {});
     assert.equal(suggestions(l).length, 1, field);
     assert.ok(suggestions(l)[0].includes("(best mode 'iso2': 4 of 4 distinct values, e.g. 'CA', 'GA', 'IN')"), suggestions(l)[0]);
     assert.ok(!suggestions(l)[0].includes("label them in Chinese instead"), `${field}: a signalled column has no hedge`);
+    assert.deepEqual(nameBlockers(l), [plainMessage(field, 4, 4, ["CA", "GA", "IN"])], field);
     assert.equal(l.category_names_resolution, undefined, `${field}: iso2 is never auto-resolved`);
+  }
+  {
+    // FR, DE and PL in the Eurostat-style columns: today's message, unchanged (the advice that is true for a column that says
+    // countries).
+    for (const field of ["geo", "country_iso2"]) {
+      const l = lintVizSpec(zhSpec({ category_field: field }), rowsOf(field, ["FR", "DE", "PL"]), {});
+      assert.deepEqual(nameBlockers(l), [plainMessage(field, 3, 3, ["FR", "DE", "PL"])], field);
+    }
+    // A declared iso2 on a column that does not say countries keeps its own blocker, and only that one.
+    const declared = lintVizSpec(zhSpec({ category_field: "state", category_names: "iso2" }), rowsOf("state", ["FR", "DE", "PL"]), {});
+    assert.deepEqual(nameBlockers(declared), [iso2Message(["state"])]);
+    // The two blockers ask for the same rename, in the same words.
+    const [rename] = nameBlockers(lintVizSpec(zhSpec({ category_field: "code" }), rowsOf("code", ["FR", "DE", "PL"]), {}));
+    for (const message of [rename, nameBlockers(declared)[0]]) assert.ok(message.includes(`so the name carries ${RENAME_WORDS}`), message);
+    // Name fields of one chart are named together: a flow's from and to, in the plural.
+    const flow = zhSpec({ chart_type: "sankey", reader_task: "flow", title: "资金流向", category_field: undefined, source_field: "from", target_field: "to", value_field: "v" });
+    const flowed = lintVizSpec(flow, [{ from: "FR", to: "DE", v: 3 }, { from: "DE", to: "PL", v: 2 }], {});
+    assert.deepEqual(nameBlockers(flowed), [renameMessage(["from", "to"], 3, 3, ["FR", "DE", "PL"])]);
+    // A column named for currencies that holds two-letter country codes blocks as well; the advice follows the codes it holds.
+    const cur = lintVizSpec(zhSpec({ category_field: "currency" }), rowsOf("currency", ["FR", "DE", "PL"]), {});
+    assert.deepEqual(nameBlockers(cur), [renameMessage(["currency"], 3, 3, ["FR", "DE", "PL"])]);
+    // An English page is not a zh page: nothing blocks there.
+    assert.deepEqual(nameBlockers(lintVizSpec(spec({ title: "Ranking", category_field: "code" }), rowsOf("code", ["FR", "DE", "PL"]), {})), []);
   }
   // Other modes are untouched: an unsignalled ISO3 or World Bank name column is still suggested.
   assert.equal(nameBlockers(lintVizSpec(zhSpec({ category_field: "code" }), rowsOf("code", ["USA", "CHN", "DEU"]), {})).length, 1);
