@@ -170,9 +170,11 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false } = {}) => {
+const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
-  if (dropRows) { const c = JSON.parse(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n")[3]); rmSync(join(art, c.computation_refs[0])); }
+  const claimRecord = () => readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).find((c) => c.claim_id === claim_id);
+  if (dropRows) rmSync(join(art, claimRecord().computation_refs[0]));
+  if (mutateRows) { const file = join(art, claimRecord().computation_refs[0]); const computation = JSON.parse(readFileSync(file, "utf8")); writeFileSync(file, JSON.stringify({ ...computation, rows: mutateRows(computation.rows) })); }
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
@@ -216,6 +218,14 @@ await ok("accepted: unit t on a tonnes measure (the claim's own chart declares i
 await refused("unit t when the claim has no chart declaring it", { value_from: "{max.value}", unit: "t" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-bound" });
 
 await refused("an unbound claim whose computation file is also missing", { value_from: "{max.value}" }, /HERO_CLAIM_UNBOUND/, { claim_id: "c-outcome", dropRows: true });
+// C6: a hero on a bound claim must not pass when the claim's computation no longer holds the binding
+await refused("a bound claim whose computation file is missing", { value_from: "{max.value}" }, /HERO_BINDING_STALE.*not readable/, { claim_id: "c-bound", dropRows: true });
+await refused("a bound claim whose bound row now has another value", { value_from: "{max.value}" }, /HERO_BINDING_STALE.*no longer in the rows/, { claim_id: "c-bound", mutateRows: (rows) => rows.map((row) => (row.region === "B" ? { ...row, value: 7 } : row)) });
+await refused("a bound claim whose bound row is gone", { value_from: "{max.value}" }, /HERO_BINDING_STALE/, { claim_id: "c-bound", mutateRows: (rows) => rows.slice(0, 1) });
+await ok("a bound claim whose rows still hold the binding passes", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound", mutateRows: (rows) => [...rows] });
+  must(!r.refused && r.stored.value === "2", JSON.stringify(r.refused ?? r.stored));
+});
 
 // ---- units: a scale word after one space, and its limits ----
 const unitOk = (name, claim_id, unit) => ok(`unit allowed: ${name}`, async () => {
