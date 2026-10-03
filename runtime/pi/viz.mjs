@@ -5,7 +5,7 @@ import { ASCENT_RATIO, DESCENT_RATIO, checkSvgGeometry, estimateTextWidth } from
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1540,6 +1540,8 @@ export function validateVizSpec(spec) {
   if (spec.decimals !== undefined && (!Number.isInteger(spec.decimals) || spec.decimals < 0 || spec.decimals > 3)) errors.push("decimals must be an integer between 0 and 3");
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
+  // world mode is behind NEWSROOM_MAP_WORLD (off by default): a spec that sets map_extent is refused on any chart
+  if (spec.map_extent !== undefined && !mapWorldEnabled()) errors.push("MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar");
   if (spec.index_base !== undefined) {
     if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
     else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
@@ -1608,7 +1610,7 @@ export function validateVizSpec(spec) {
       }
     }
     // map_extent: opt-in whole-world mode; the only accepted value is "world".
-    if (spec.map_extent !== undefined && spec.map_extent !== "world") errors.push("choropleth map_extent must be 'world' when provided");
+    if (spec.map_extent !== undefined && mapWorldEnabled() && spec.map_extent !== "world") errors.push("choropleth map_extent must be 'world' when provided");
     // inset (task: zoom inset for regions too small to label on the main
     // map): opt-in, so its absence changes nothing. Either an explicit ISO3
     // list (`iso3`) or automatic selection (`auto: true`), never both -
