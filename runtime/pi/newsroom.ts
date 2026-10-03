@@ -2263,13 +2263,29 @@ const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
 const currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: heroGateOn() });
 const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
 
-type HeroClaimContext = { claimId: string; bindings: ClaimBinding[] | null; claimText: string; template: string | null };
+type HeroClaimContext = { claimId: string; bindings: ClaimBinding[] | null; claimText: string; template: string | null; computationRefs: string[] };
 
 async function heroClaimContext(claimId: string, records: Map<string, any>): Promise<HeroClaimContext | null> {
   const record = records.get(claimId);
   if (!record) return null;
   const bindings = Array.isArray(record.claim_bindings) && record.claim_bindings.length ? (record.claim_bindings as ClaimBinding[]) : null;
-  return { claimId, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null };
+  const computationRefs = Array.isArray(record.computation_refs) ? record.computation_refs.map(String).filter(Boolean) : [];
+  return { claimId, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null, computationRefs };
+}
+
+// A bound hero number must still be in the rows of the computation its claim was verified from: the bound row and column hold
+// the binding's value. A missing computation file or a changed row refuses (HERO_BINDING_STALE); nothing is repaired.
+async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding) {
+  const same = (a: unknown, b: unknown) => a === b || (typeof a !== "boolean" && typeof b !== "boolean" && String(a ?? "").trim() !== "" && String(b ?? "").trim() !== "" && Number.isFinite(Number(a)) && Number(a) === Number(b));
+  let readable = 0;
+  for (const ref of context.computationRefs) {
+    let computation: any;
+    try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
+    readable += 1;
+    const row = Array.isArray(computation?.rows) ? computation.rows[binding.row_index] : undefined;
+    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return;
+  }
+  throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
 }
 
 // Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
@@ -2379,6 +2395,7 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
   if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
   const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
+  await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
   const typed = module.value !== undefined && module.value !== null && String(module.value).trim() !== "";
   if (typed && String(module.value) !== value.text) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
   const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);

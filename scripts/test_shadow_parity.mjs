@@ -23,19 +23,42 @@ const BASELINE = "327de35";
 const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
 const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
 // fix/page-top-1003 also puts the lint policy version and the hero gate state into the page lint's record and key, so the page lint ref
-// differs from the older commit's. Only that is masked: the ref's hash in the model-visible text, the details and the file path, and the two
-// added fields of the lint record; every other byte is still compared.
-const LINT_REF = /infographics\/lints\/[0-9a-f]{64}\.json/g;
+// differs from the older commit's. Only that is masked, and only after it is checked: the page lints of the two runs are paired one to
+// one by plan_ref (a different count or a repeated plan_ref fails); every older record must lack both added fields and every newer one must
+// carry lint_policy_version "2" and hero_value_gate false (this test turns the gate off); then the two fields are deleted and the records
+// are compared byte for byte. In the calls' text, only the page lint's own ref is replaced; every other byte is compared.
+const PAGE_LINT_PATH = /^infographics\/lints\/[0-9a-f]{64}\.json$/;
 const ADDED_LINT_FIELDS = ["lint_policy_version", "hero_value_gate"];
-const maskLintRef = (value) => JSON.parse(JSON.stringify(value).replace(LINT_REF, "infographics/lints/<ref>.json"));
-const maskedCalls = (calls) => calls.map((call) => maskLintRef(call));
-const maskedFiles = (files) => new Map([...files].map(([path, bytes]) => {
-  if (!LINT_REF.test(path)) return [path, bytes];
-  LINT_REF.lastIndex = 0;
-  const record = JSON.parse(bytes.toString("utf8"));
-  for (const key of ADDED_LINT_FIELDS) delete record[key];
-  return ["infographics/lints/<ref>.json", Buffer.from(JSON.stringify(record))];
-}));
+const POLICY_VERSION = "2";
+function pageLints(files) {
+  const byPlan = new Map();
+  for (const [path, bytes] of files) {
+    if (!PAGE_LINT_PATH.test(path)) continue;
+    const record = JSON.parse(bytes.toString("utf8"));
+    assert.equal(typeof record.plan_ref, "string", `page lint ${path} names its plan`);
+    assert.equal(byPlan.has(record.plan_ref), false, `two page lints for one plan: ${record.plan_ref}`);
+    byPlan.set(record.plan_ref, { path, record });
+  }
+  return byPlan;
+}
+/** The run with its page lints normalised to <plan_ref>-named files without the two added fields (checked first), and its calls with only those lint refs replaced. */
+function withMaskedLints(run, { added }) {
+  const lints = pageLints(run.files);
+  const files = new Map([...run.files].filter(([path]) => !PAGE_LINT_PATH.test(path)));
+  let text = JSON.stringify(run.calls);
+  for (const [planRef, { path, record }] of lints) {
+    for (const key of ADDED_LINT_FIELDS) assert.equal(key in record, added, `${added ? "head" : "baseline"} page lint for ${planRef}: ${key} ${added ? "missing" : "present"}`);
+    if (added) {
+      assert.equal(record.lint_policy_version, POLICY_VERSION, `head page lint for ${planRef}: lint_policy_version`);
+      assert.equal(record.hero_value_gate, false, `head page lint for ${planRef}: hero_value_gate (this test turns the gate off)`);
+    }
+    const bare = { ...record };
+    for (const key of ADDED_LINT_FIELDS) delete bare[key];
+    files.set(`infographics/lints/<${planRef}>.json`, Buffer.from(JSON.stringify(bare)));
+    text = text.split(path).join(`infographics/lints/<${planRef}>.json`);
+  }
+  return { calls: JSON.parse(text), files, plans: [...lints.keys()].sort() };
+}
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
 
 function walk(dir, root = dir, out = new Map()) {
@@ -100,9 +123,13 @@ const comparable = (files) => new Map([...files].filter(([path]) => path !== "cl
 // OFF == baseline, byte for byte.
 assert.equal(off.defs, base.defs, "tool definitions identical to the baseline with the switch off");
 assert.equal(off.claimId, base.claimId);
-assert.deepEqual(maskedCalls(off.calls), maskedCalls(base.calls), "model-visible text and details identical to the baseline with the switch off (page lint ref masked)");
-assert.deepEqual([...maskedFiles(comparable(off.files)).keys()], [...maskedFiles(comparable(base.files)).keys()], "same artifact file set as the baseline");
-for (const [path, bytes] of maskedFiles(comparable(base.files))) assert.ok(bytes.equals(maskedFiles(comparable(off.files)).get(path)), `artifact bytes differ from the baseline: ${path}`);
+const baseMasked = withMaskedLints({ calls: base.calls, files: comparable(base.files) }, { added: false });
+const offMasked = withMaskedLints({ calls: off.calls, files: comparable(off.files) }, { added: true });
+assert.ok(baseMasked.plans.length >= 1, "the scenario writes at least one page lint");
+assert.deepEqual(offMasked.plans, baseMasked.plans, "the same page lints (paired by plan_ref) in the baseline and the head");
+assert.deepEqual(offMasked.calls, baseMasked.calls, "model-visible text and details identical to the baseline with the switch off (only the page lint ref replaced)");
+assert.deepEqual([...offMasked.files.keys()], [...baseMasked.files.keys()], "same artifact file set as the baseline");
+for (const [path, bytes] of baseMasked.files) assert.ok(bytes.equals(offMasked.files.get(path)), `artifact bytes differ from the baseline: ${path}`);
 assert.equal([...off.files.keys()].some((path) => path.startsWith("shadow/")), false, "off: nothing is written under shadow/");
 for (const call of off.calls) assert.equal("shadow" in (call.details ?? {}) || "shadow_asof" in (call.details ?? {}), false, "off: details carry no shadow key");
 
