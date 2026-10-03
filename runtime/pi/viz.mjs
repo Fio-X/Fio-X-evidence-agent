@@ -3369,6 +3369,10 @@ export function nonIntegerRankRows(spec, rows) {
 // 新进, one that drops out 跌出. An entity outside the top N at both ends is not
 // drawn (it is in neither list).
 function renderRankSlope(spec, rows, cutoff) {
+  // Lint refuses these ranks (RANK_NOT_INTEGER), but render only checks that some lint passed for this plan and data, so a PASS
+  // recorded before the rule existed must not draw them: refuse here too, on the same rows, and never round or drop.
+  const notRanks = nonIntegerRankRows(spec, rows);
+  if (notRanks.length) throw new Error(`RANK_NOT_INTEGER: with rank_cutoff, ${spec.start_field} and ${spec.end_field} must hold ranks that are positive integers (or be empty for outside the ranking); not rounded; rows: ${notRanks.slice(0, 8).join("; ")}${notRanks.length > 8 ? `; and ${notRanks.length - 8} more` : ""}`);
   const lang = vizLang(spec);
   const T = VIZ_STRINGS[lang];
   // Ranks are positive integers (lint refuses anything else, RANK_NOT_INTEGER); a missing end means "outside the
