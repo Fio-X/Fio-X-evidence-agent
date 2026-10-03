@@ -138,8 +138,8 @@ for (const part of ["One identical retry is allowed", "after a second timeout th
 
   const timedTwice = (request) => { guard.recordTimeout(request, 5, abort); guard.recordTimeout(request, 5, abort); };
   timedTwice({ method: "GET", url: "https://k.example/x?b=2&a=1&a=0" });
-  assert.ok(repeat({ method: "GET", url: "https://k.example/x?a=0&a=1&b=2" }), "swapped query order is the same request");
-  assert.ok(repeat({ method: "get", url: "HTTPS://K.EXAMPLE:443/x?a=1&b=2&a=0#frag" }), "scheme and host case, a default port and a fragment do not make a new request");
+  assert.ok(repeat({ method: "GET", url: "https://k.example/x?a=1&a=0&b=2" }), "moving a different name is the same request (repeated names keep their own order)");
+  assert.ok(repeat({ method: "get", url: "HTTPS://K.EXAMPLE:443/x?a=1&a=0&b=2#frag" }), "scheme and host case, a default port and a fragment do not make a new request");
   assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=0&a=2&b=2" }), null, "a different value is a different request");
   assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=1&b=2" }), null, "a repeated name that is dropped is a different request");
   assert.equal(repeat({ method: "GET", url: "https://k.example:8443/x?a=0&a=1&b=2" }), null, "a non-default port is a different request");
@@ -148,6 +148,9 @@ for (const part of ["One identical retry is allowed", "after a second timeout th
   assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=0&a=1&b=2", body: "{}" }), null);
   assert.equal(downloadRequestKey({ method: "GET", url: "https://k.example/x?b=2&a=1" }), downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=2" }));
   assert.notEqual(downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=2" }), downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=3" }));
+  assert.notEqual(downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&a=2" }), downloadRequestKey({ method: "GET", url: "https://k.example/x?a=2&a=1" }), "repeated names keep their order: a first- or last-value server sees two requests");
+  assert.equal(downloadRequestKey({ method: "GET", url: "https://k.example/x?b=1&a=1" }), downloadRequestKey({ method: "GET", url: "https://k.example/x?a=1&b=1" }), "different names still sort");
+  assert.equal(repeat({ method: "GET", url: "https://k.example/x?a=0&b=2&a=1" }), null, "a=1 then a=0 is a different request from a=0 then a=1 (the timed one was b=2&a=1&a=0)");
   assert.equal(downloadRequestKey({ method: "GET", url: "not a url" }), "GET not a url\n", "an unparsable URL keeps its raw text");
   check("request key: query order, scheme and host case, default port and fragment are normalised; a changed value, name, port, path, method or body is a new request");
 
@@ -373,6 +376,25 @@ try {
   assert.equal(walk(art2).length, 3, "no file was written for any failure");
   assert.ok(walk(art2).every((file) => /\/data\/(?:origins\/[0-9a-f]{64}\.json|[0-9a-f]{64}\.data(?:\.meta\.json)?)$/.test(file)), "and those three are the finished download's");
   check("no failure record or repeat key is written to disk");
+
+  // A redirect counts against the host that answered: three entry hosts that all redirect to B and stall there
+  // block B, and never A1-A3.
+  {
+    const B = "http://203.0.113.50";
+    const entries = ["http://203.0.113.41", "http://203.0.113.42", "http://203.0.113.43"];
+    const viaB = (url, init) => Promise.resolve(stalledBody(`${B}/data.csv`, init.signal));
+    byPath({ "/a": viaB, "/b": viaB, "/c": viaB, "/d": header });
+    // A1 and A2 time out through B (counted on B), then A3's request meets B's stop instruction at the entry check or after.
+    assert.equal((await message(run2(`${entries[0]}/a`))).code, "DOWNLOAD_TIMEOUT");
+    assert.equal((await message(run2(`${entries[1]}/b`))).code, "DOWNLOAD_TIMEOUT");
+    assert.match((await message(run2(`${entries[2]}/c`))).message, /^SOURCE_ACCESS_BLOCKED: 3 consecutive/, "the third body timeout through B is the stop instruction");
+    assert.match((await message(run2(`${B}/data.csv`))).message, /^SOURCE_ACCESS_BLOCKED:/, "B is blocked");
+    for (const entry of entries) {
+      byPath({ "/d": (url) => Promise.resolve(withUrl(new Response("a\n1\n", { status: 200, headers: { "content-type": "text/csv" } }), url)) });
+      assert.match((await run2(`${entry}/d`)).content[0].text, /^Downloaded 4 bytes/, `${entry} is not blocked by B's failures`);
+    }
+    check("a redirect's body timeout counts against the host that answered, not the entry host");
+  }
 } finally {
   globalThis.setTimeout = realSetTimeout;
   globalThis.fetch = realFetch;

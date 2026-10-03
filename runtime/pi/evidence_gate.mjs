@@ -191,14 +191,14 @@ export function createSourceAccessCircuit(limit = 3) {
 export const DOWNLOAD_TIMEOUT_HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. For SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
 export const DOWNLOAD_TIMEOUTS_ALLOWED = 2;
 
-// The key of a request: method, scheme, host and path, the query parameters sorted by name then value (repeated
-// names kept), and the body. URL parsing lowercases scheme and host and drops a default port; the fragment never
+// The key of a request: method, scheme, host and path, the query parameters stably sorted by name only (repeated
+// names keep their relative order, which a first- or last-value server can tell apart), and the body. URL parsing lowercases scheme and host and drops a default port; the fragment never
 // reaches the server and is dropped.
 export function downloadRequestKey({ method, url, body } = {}) {
   let target = String(url ?? "");
   try {
     const parsed = new URL(target);
-    const pairs = [...parsed.searchParams.entries()].sort(([an, av], [bn, bv]) => (an < bn ? -1 : an > bn ? 1 : av < bv ? -1 : av > bv ? 1 : 0));
+    const pairs = [...parsed.searchParams.entries()].sort(([an], [bn]) => (an < bn ? -1 : an > bn ? 1 : 0));
     const query = pairs.map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join("&");
     target = `${parsed.protocol}//${parsed.host}${parsed.pathname}${query ? `?${query}` : ""}`;
   } catch { /* keep the raw text */ }
