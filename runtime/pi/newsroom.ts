@@ -3351,7 +3351,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       // strip_plot, stacked_bar_100 and mirrored_bar fields. Names, enums and ranges equal schemas/newsroom-viz-spec.schema.json
       // (scripts/test_viz_plan_schema.mjs compares them); viz.mjs validateVizSpec and lintVizSpec stay the authority on every data rule.
       group_order: Type.Optional(StringEnum(["median_desc", "median_asc", "data"] as const)),
-      point_layout: Type.Optional(StringEnum(["jitter", "beeswarm"] as const)),
+      point_layout: Type.Optional(StringEnum(["jitter", "beeswarm"] as const, { description: "strip_plot: dots packed without overlap (beeswarm, default) or scattered (jitter)" })),
       show_median: Type.Optional(Type.Boolean()),
       label_extremes: Type.Optional(Type.Integer({ minimum: 0, maximum: 6, description: "strip_plot: units named chart-wide, half highest and half lowest (default 4; needs label_field)" })),
       segment_order: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 5, uniqueItems: true, description: "stacked_bar_100: series_field values left to right" })),
