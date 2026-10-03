@@ -496,6 +496,161 @@ console.log("range_bracket: PASS");
 console.log("zh name-field lint: PASS");
 
 // ---------------------------------------------------------------------
+// Aggregates fail closed (zh-naming-policy-1003 rule 7). On the forms whose marks are peers of one another, a name field
+// that resolves to a mix of aggregate rows (the World, a region, an income group) and economies or territories is blocked,
+// whatever the page language: the aggregate would be ranked or compared as if it were a country. The rule keys on the
+// resolved entry's kind, never on a topic or a code prefix (OWID_KOS is Kosovo). A field of aggregates only is a chart
+// about aggregates and stays legal; multi_line, small_multiples, sankey and alluvial may mix, because a World series, panel
+// or node is a reference there; an aggregate the policy table does not list does not resolve at all, so it blocks as an
+// unmapped value.
+// ---------------------------------------------------------------------
+{
+  const zhSpec = (overrides = {}) => spec({ language: "zh", title: "可再生能源占比最高的经济体", ...overrides });
+  const rowsOf = (field, values) => values.map((value, i) => ({ [field]: value, pct: 90 - i }));
+  const texts = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const mixBlockers = (l) => l.blockers.filter((b) => b.includes("with economies; an aggregate such as the World"));
+  const nameBlockers = (l) => l.blockers.filter((b) => b.startsWith("zh chart's") || b.startsWith("category_names"));
+  // The eight forms the rule covers (the merge adds strip_plot and stacked_bar_100), in the lint's own list order.
+  const FORMS = ["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "treemap", "scatter"];
+  const formSpec = (chartType, overrides = {}) => {
+    const nameKey = chartType === "scatter" ? "label_field" : "category_field";
+    return zhSpec({ chart_type: chartType, category_field: undefined, label_field: undefined, [nameKey]: "country", ...overrides });
+  };
+  const MESSAGE_TAIL = "Filter the aggregate rows out in SQL (World Bank 'region' = 'Aggregates'; Our World in Data aggregate codes start with 'OWID_' except OWID_KOS (Kosovo), or have an empty code); to compare with the world, put its value in the subtitle or a reference annotation instead; the renderer never drops rows for you";
+  const ALL_AGGREGATE_SETS = {
+    incomeGroups: ["HIC", "UMC", "LMC", "LIC"],
+    regions: ["EAS", "ECS", "LCN", "MEA", "NAC", "SAS", "SSF"],
+    continents: ["OWID_AFR", "OWID_ASI", "OWID_EUR", "OWID_NAM", "OWID_SAM", "OWID_OCE"],
+    worldAndUnion: ["WLD", "EUU"],
+  };
+
+  // --- Blocked on every covered form, in explicit iso3 mode ---
+  for (const form of FORMS) {
+    const l = lintVizSpec(formSpec(form, { category_names: "iso3" }), rowsOf("country", ["USA", "CHN", "WLD"]), {});
+    assert.deepEqual(mixBlockers(l), [`'country' on chart_type '${form}' mixes 1 aggregate row(s) ('WLD') with economies; an aggregate such as the World, a region or an income group is not a peer of a country, so it would be ranked, compared or drawn as one. ${MESSAGE_TAIL}`], form);
+    assert.deepEqual(nameBlockers(l), [], `${form}: the codes themselves resolve; only the mix is refused`);
+  }
+
+  // --- The message names every aggregate row (the first five, then a count) and tells the author what to do ---
+  {
+    const rows = rowsOf("country", ["USA", "WLD", "EUU", "HIC", "UMC", "LMC", "LIC", "OWID_AFR", "CHN"]);
+    const [blocker, ...rest] = mixBlockers(lintVizSpec(formSpec("horizontal_bar", { category_names: "iso3" }), rows, {}));
+    assert.deepEqual(rest, [], "one blocker per name field, however many aggregates it holds");
+    assert.ok(blocker.includes("mixes 7 aggregate row(s) ('WLD', 'EUU', 'HIC', 'UMC', 'LMC' and 2 more) with economies"), blocker);
+    // A value with the trailing space World Bank data sometimes carries is named without it.
+    const padded = mixBlockers(lintVizSpec(formSpec("dot", { category_names: "worldbank" }), rowsOf("country", ["United States", "World ", "China"]), {}));
+    assert.equal(padded.length, 1);
+    assert.ok(padded[0].includes("mixes 1 aggregate row(s) ('World') with economies"), padded[0]);
+    // A territory is an economy for this rule: Hong Kong next to its income group is still a mix.
+    assert.equal(mixBlockers(lintVizSpec(formSpec("slope", { category_names: "iso3" }), rowsOf("country", ["HKG", "HIC"]), {})).length, 1);
+    // The same chart in each of the three economy modes.
+    assert.equal(mixBlockers(lintVizSpec(formSpec("horizontal_bar", { category_names: "worldbank" }), rowsOf("country", ["United States", "China", "World", "High income"]), {})).length, 1);
+    const named = mixBlockers(lintVizSpec(formSpec("horizontal_bar", { category_names: "worldbank" }), rowsOf("country", ["United States", "China", "World", "High income"]), {}))[0];
+    assert.ok(named.includes("mixes 2 aggregate row(s) ('World', 'High income') with economies"), named);
+    // iso2 has no aggregates at all, so it never mixes (EU27_2020 does not resolve and is the unmapped blocker's business).
+    assert.deepEqual(mixBlockers(lintVizSpec(formSpec("horizontal_bar", { category_names: "iso2" }), rowsOf("country", ["DE", "FR", "EU27_2020"]), {})), []);
+  }
+
+  // --- The language of the page does not matter ---
+  {
+    const en = lintVizSpec(spec({ title: "Ranking", category_field: "code", category_names: "iso3" }), rowsOf("code", ["USA", "CHN", "OWID_WRL"]), {});
+    assert.equal(mixBlockers(en).length, 1);
+    assert.ok(mixBlockers(en)[0].includes("('OWID_WRL')"), mixBlockers(en)[0]);
+  }
+
+  // --- An auto-resolved field is checked the same way, and still recorded as auto ---
+  {
+    const codes = lintVizSpec(zhSpec({ category_field: "iso3" }), rowsOf("iso3", ["USA", "CHN", "WLD"]), {});
+    assert.deepEqual(codes.category_names_resolution, { field: "iso3", mode: "iso3", source: "auto", values: 3 });
+    assert.equal(mixBlockers(codes).length, 1);
+    const names = lintVizSpec(zhSpec({ category_field: "country" }), rowsOf("country", ["United States", "China", "World"]), {});
+    assert.deepEqual(names.category_names_resolution, { field: "country", mode: "worldbank", source: "auto", values: 3 });
+    assert.equal(mixBlockers(names).length, 1);
+  }
+
+  // --- A chart of aggregates only is a chart about aggregates ---
+  for (const form of FORMS) {
+    for (const [group, codes] of Object.entries(ALL_AGGREGATE_SETS)) {
+      const l = lintVizSpec(formSpec(form, { category_names: "iso3" }), rowsOf("country", codes), {});
+      assert.deepEqual(mixBlockers(l), [], `${form} ${group}`);
+      assert.deepEqual(nameBlockers(l), [], `${form} ${group}`);
+    }
+  }
+  {
+    const groups = rowsOf("country", ["HIC", "UMC", "LMC", "LIC"]);
+    const shown = texts(renderVizSvg(formSpec("horizontal_bar", { category_names: "iso3" }), groups));
+    for (const zh of ["高收入经济体", "中等偏上收入经济体", "中等偏下收入经济体", "低收入经济体"]) assert.ok(shown.includes(zh), `${zh} in ${JSON.stringify(shown)}`);
+    assert.ok(!shown.some((t) => /^(HIC|UMC|LMC|LIC)$/.test(t)), "no raw code may reach a zh page");
+  }
+
+  // --- multi_line, small_multiples, sankey and alluvial may mix: a World series, panel or node is a reference ---
+  {
+    const mixed = ["USA", "CHN", "WLD", "HIC"];
+    const multiLine = zhSpec({ chart_type: "multi_line", category_field: undefined, series_field: "country", x_field: "year", value_field: "pct", category_names: "iso3" });
+    const series = mixed.flatMap((country, i) => [2000, 2010, 2020].map((year, j) => ({ country, year, pct: 10 + i * 5 + j })));
+    const l1 = lintVizSpec(multiLine, series, {});
+    assert.deepEqual(mixBlockers(l1), []);
+    assert.deepEqual(nameBlockers(l1), []);
+    const panels = zhSpec({ chart_type: "small_multiples", category_field: undefined, facet_field: "country", x_field: "year", value_field: "pct", category_names: "iso3" });
+    const l2 = lintVizSpec(panels, series, {});
+    assert.deepEqual(mixBlockers(l2), []);
+    assert.deepEqual(nameBlockers(l2), []);
+    const flows = [{ from: "origin:CHN", to: "destination:USA", v: 3 }, { from: "origin:WLD", to: "destination:USA", v: 2 }, { from: "origin:HIC", to: "destination:CHN", v: 1 }];
+    for (const chartType of ["sankey", "alluvial"]) {
+      const flow = zhSpec({ chart_type: chartType, reader_task: "flow", title: "资金流向", category_field: undefined, source_field: "from", target_field: "to", value_field: "v", category_names: "iso3" });
+      const l3 = lintVizSpec(flow, flows, {});
+      assert.deepEqual(mixBlockers(l3), [], chartType);
+      assert.deepEqual(nameBlockers(l3), [], chartType);
+    }
+  }
+
+  // --- The rule keys on kind, not on a code prefix ---
+  {
+    const lint = (values) => lintVizSpec(formSpec("horizontal_bar", { category_names: "iso3" }), rowsOf("country", values), {});
+    assert.deepEqual(mixBlockers(lint(["USA", "OWID_KOS", "CHN"])), [], "OWID_KOS is Kosovo, an economy");
+    assert.deepEqual(nameBlockers(lint(["USA", "OWID_KOS", "CHN"])), []);
+    for (const code of ["OWID_WRL", "OWID_EU27", "OWID_HIC", "OWID_UMC", "OWID_LMC", "OWID_LIC", "OWID_AFR", "OWID_NAM", "OWID_OCE"]) {
+      const l = lint(["USA", "CHN", code]);
+      assert.equal(mixBlockers(l).length, 1, code);
+      assert.ok(mixBlockers(l)[0].includes(`('${code}')`), mixBlockers(l)[0]);
+    }
+    // A code that merely looks like an aggregate is just unmapped.
+    const lookalike = lint(["USA", "CHN", "OWID_XYZ"]);
+    assert.deepEqual(mixBlockers(lookalike), []);
+    assert.equal(nameBlockers(lookalike).length, 1);
+  }
+
+  // --- An aggregate outside the policy table does not resolve, so it blocks as an unmapped value ---
+  {
+    const iso3 = lintVizSpec(formSpec("horizontal_bar", { category_names: "iso3" }), rowsOf("country", ["USA", "CHN", "TEA", "TEC"]), {});
+    assert.deepEqual(mixBlockers(iso3), []);
+    assert.deepEqual(nameBlockers(iso3), ["category_names='iso3' cannot resolve 2 value(s) in 'country' (e.g. 'TEA', 'TEC'); use the exact ISO3 economy/aggregate code (filter other aggregate rows such as OWID_* regions and income groups out in SQL) instead of translating it yourself"]);
+    const byName = lintVizSpec(formSpec("horizontal_bar", { category_names: "worldbank" }), rowsOf("country", ["United States", "China", "Small states", "East Asia & Pacific (IDA & IBRD countries)"]), {});
+    assert.deepEqual(mixBlockers(byName), []);
+    assert.equal(nameBlockers(byName).length, 1);
+    assert.ok(nameBlockers(byName)[0].startsWith("category_names='worldbank' cannot resolve 2 value(s) in 'country'"), nameBlockers(byName)[0]);
+    // Only values that resolve count: an aggregate beside an unlisted aggregate is the unmapped blocker's business alone.
+    const onlyAggregates = lintVizSpec(formSpec("horizontal_bar", { category_names: "iso3" }), rowsOf("country", ["HIC", "TEA"]), {});
+    assert.deepEqual(mixBlockers(onlyAggregates), []);
+    assert.equal(nameBlockers(onlyAggregates).length, 1);
+    // Also where a mix is allowed: an unlisted aggregate series is still refused.
+    const multiLine = zhSpec({ chart_type: "multi_line", category_field: undefined, series_field: "country", x_field: "year", value_field: "pct", category_names: "iso3" });
+    const rows = ["USA", "TEA"].flatMap((country) => [2000, 2010].map((year) => ({ country, year, pct: 5 })));
+    assert.equal(nameBlockers(lintVizSpec(multiLine, rows, {})).length, 1);
+  }
+
+  // --- Not touched: currencies, choropleth (it blocks aggregates by kind on its own) ---
+  {
+    assert.deepEqual(mixBlockers(lintVizSpec(formSpec("horizontal_bar", { category_names: "iso4217" }), rowsOf("country", ["USD", "EUR", "JPY"]), {})), []);
+    const map = lintVizSpec(zhSpec({ chart_type: "choropleth", category_field: "country", category_names: "worldbank" }), rowsOf("country", ["United States", "China", "World"]), {});
+    assert.deepEqual(mixBlockers(map), []);
+    assert.deepEqual(map.blockers.filter((b) => b.includes("aggregate row(s)")), ["choropleth category_field 'country' contains 1 aggregate row(s) that are not map features: World"], "the map's own blocker is the only one");
+  }
+}
+
+console.log("aggregate rows fail closed: PASS");
+
+// ---------------------------------------------------------------------
 // chartNameDisplay (zh-naming-policy-1003): the lookup newsroom.ts's inline claim fill uses to write a place or currency
 // name the way the chart itself prints it. It answers with the table, mode and fields that lint and the renderers use,
 // never translates anything, and is null for a chart that prints no localized name. What the claim fill does with it is
