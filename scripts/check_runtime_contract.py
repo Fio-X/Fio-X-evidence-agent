@@ -158,6 +158,13 @@ if 'include_str!("../runtime/pi/assets/economy-names.json")' not in runtime:
     raise SystemExit('economy-names.json asset is not embedded in the Rust runtime materializer')
 if not has_materializer_call('economy_names_asset_path', 'ECONOMY_NAMES_ASSET'):
     raise SystemExit('economy-names.json is embedded but not materialized beside newsroom.ts')
+# The currency name table (category_names 'iso4217') is read by the same
+# economy_names.mjs module from the same assets/ directory, so it ships and
+# materializes exactly like the economy table.
+if 'include_str!("../runtime/pi/assets/currency-names.json")' not in runtime:
+    raise SystemExit('currency-names.json asset is not embedded in the Rust runtime materializer')
+if not has_materializer_call('currency_names_asset_path', 'CURRENCY_NAMES_ASSET'):
+    raise SystemExit('currency-names.json is embedded but not materialized beside newsroom.ts')
 for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('provenance.mjs', 'PROVENANCE_RUNTIME', 'provenance_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
