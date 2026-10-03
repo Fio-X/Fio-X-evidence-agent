@@ -1544,6 +1544,10 @@ export function validateVizSpec(spec) {
     if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
     else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
   }
+  if (spec.rank_cutoff !== undefined) {
+    if (spec.chart_type !== "slope") errors.push("RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff only applies to chart_type slope; drop rank_cutoff for this chart");
+    else if (!(Number.isInteger(spec.rank_cutoff) && spec.rank_cutoff >= 2 && spec.rank_cutoff <= 30)) errors.push("RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff must be an integer from 2 to 30");
+  }
   if (spec.chart_type === "parallel_sets") {
     if (!Array.isArray(spec.dimension_fields) || spec.dimension_fields.length < 2 || spec.dimension_fields.length > 5) errors.push("parallel_sets requires dimension_fields with 2 to 5 field names");
     else if (spec.dimension_fields.some((field) => !String(field ?? "").trim())) errors.push("parallel_sets dimension_fields must be non-empty strings");
@@ -1932,6 +1936,11 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
 
+  if (spec.chart_type === "slope" && Number.isInteger(spec.rank_cutoff) && Array.isArray(rows)) {
+    const bad = nonIntegerRankRows(spec, rows);
+    if (bad.length) blockers.push(`RANK_NOT_INTEGER: with rank_cutoff, ${spec.start_field} and ${spec.end_field} must hold ranks that are positive integers (or be empty for outside the ranking); not rounded; rows: ${bad.slice(0, 8).join("; ")}${bad.length > 8 ? `; and ${bad.length - 8} more` : ""}. Compute integer ranks in SQL (RANK() or ROW_NUMBER()), or drop rank_cutoff`);
+  }
+
   if (spec.chart_type === "small_multiples") {
     if (!spec.panel_mark || !["line", "dot"].includes(spec.panel_mark)) {
       blockers.push("small_multiples requires panel_mark='line' or panel_mark='dot'");
@@ -2312,11 +2321,11 @@ export function vizLang(spec) {
 // logScale and group are standalone chrome words.
 const VIZ_STRINGS = {
   en: {
-    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `#${r}`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
+    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `#${r}`, rankNone: "unranked", rankCutNote: (cut, shown, hidden) => `Showing only the ${shown} items that ranked in the top ${cut} in either period${hidden ? `; another ${hidden} were outside the top ${cut} in both periods and are not drawn` : ""}.`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
   },
   zh: {
-    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
+    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankNone: "\u699C\u5916", rankCutNote: (cut, shown, hidden) => `\u53EA\u663E\u793A\u4EFB\u4E00\u671F\u8FDB\u5165\u524D ${cut} \u540D\u7684 ${shown} \u9879${hidden ? `\uFF1B\u53E6\u6709 ${hidden} \u9879\u4E24\u671F\u90FD\u4E0D\u5728\u524D ${cut} \u540D\uFF0C\u672A\u753B\u51FA` : ""}\u3002`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
   },
 };
@@ -3333,6 +3342,23 @@ function renderDumbbell(spec, rows) {
 // between two end labels sharing the same x column.
 const END_LABEL_MIN_GAP = 18;
 
+const UNRANKED = 1e9;
+const isMissingRank = (v) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
+// the rows whose start or end field holds a rank that is not a positive integer (a missing end is allowed)
+export function nonIntegerRankRows(spec, rows) {
+  const bad = [];
+  rows.forEach((row, i) => {
+    const fields = [spec.start_field, spec.end_field].filter((field) => {
+      const v = row[field];
+      if (isMissingRank(v)) return false;
+      const x = typeof v === "number" ? v : Number(v);
+      return !(Number.isInteger(x) && x >= 1);
+    });
+    if (fields.length) bad.push(`${String(row[spec.category_field] ?? `row ${i + 1}`)} (${fields.map((field) => `${field}=${String(row[field])}`).join(", ")})`);
+  });
+  return bad;
+}
+
 // Rank slope (bump chart). Opt-in through spec.rank_cutoff = N: the start and
 // end fields hold ranks (1 = best). Axis inverted so rank 1 is on top; one
 // ordinal row per rank 1..N, and an entity outside the top N at one end sits on
@@ -3343,10 +3369,14 @@ const END_LABEL_MIN_GAP = 18;
 function renderRankSlope(spec, rows, cutoff) {
   const lang = vizLang(spec);
   const T = VIZ_STRINGS[lang];
-  const rankOf = (v) => { const r = n(v); return r !== null && r >= 1 ? Math.round(r) : null; };
-  const entries = rows
-    .map((row, i) => ({ row, i, a: rankOf(row[spec.start_field]), b: rankOf(row[spec.end_field]) }))
-    .filter((e) => e.a !== null && e.b !== null && (e.a <= cutoff || e.b <= cutoff));
+  // Ranks are positive integers (lint refuses anything else, RANK_NOT_INTEGER); a missing end means "outside the
+  // ranking" and sorts after every real rank on the N+1 row.
+  const rankOf = (v) => (isMissingRank(v) ? UNRANKED : Number(v));
+  const all = rows.map((row, i) => ({ row, i, a: rankOf(row[spec.start_field]), b: rankOf(row[spec.end_field]) }));
+  const entries = all.filter((e) => e.a <= cutoff || e.b <= cutoff);
+  const hiddenCount = all.length - entries.length;
+  // the chart says what it cut
+  spec = { ...spec, note: [spec.note, T.rankCutNote(cutoff, entries.length, hiddenCount)].filter(Boolean).join(" ") };
   const outsideCount = (key) => entries.filter((e) => e[key] > cutoff).length;
   const stack = Math.max(1, outsideCount("a"), outsideCount("b"));
   const ROW = 30, STACK = 17;
@@ -3356,7 +3386,7 @@ function renderRankSlope(spec, rows, cutoff) {
   const name = (e) => resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, lang);
   const joinColor = HOUSE_STYLE_ACTIVE ? PALETTE.ink : PALETTE.accent2;
   const leaveColor = PALETTE.accent;
-  const rankText = (r) => (r > cutoff ? T.rankOutside(r) : String(r));
+  const rankText = (r) => (r === UNRANKED ? T.rankNone : r > cutoff ? T.rankOutside(r) : String(r));
   f.parts.push(`<text x="${left}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.start_label ?? spec.start_field)}</text>`);
   f.parts.push(`<text x="${right}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.end_label ?? spec.end_field)}</text>`);
   // faint ordinal row guides: one per rank, the last one is the "N+1" row
