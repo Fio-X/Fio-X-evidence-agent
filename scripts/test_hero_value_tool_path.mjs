@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES"];
+const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -170,14 +170,14 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {} } = {}) => {
+const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
   if (dropRows) { const c = JSON.parse(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n")[3]); rmSync(join(art, c.computation_refs[0])); }
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
   // Gate on is the default: no switch is set. The old path (typed hero values) is asked for with NEWSROOM_HERO_VALUE_GATE=0.
-  const tools = await registerFor({ env: gate ? { NEWSROOM_MOBILE_PAGES: "0" } : { NEWSROOM_HERO_VALUE_GATE: "0" } });
+  const tools = await registerFor({ env: { ...(gate ? { NEWSROOM_MOBILE_PAGES: "0" } : { NEWSROOM_HERO_VALUE_GATE: "0" }), ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");
@@ -278,6 +278,13 @@ await refused("an unbound claim (record_claim) cannot fill a hero", { value_from
 await ok("a bound claim is still filled", async () => {
   const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound" });
   must(!r.refused && r.stored.value === "2" && r.blockers.length === 0, JSON.stringify(r.refused ?? r.blockers));
+});
+await ok("the unbound-hero hint follows what this run can do (C5)", async () => {
+  const off = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-outcome" });
+  must(/HERO_CLAIM_UNBOUND/.test(off.refused) && /records no claim templates/.test(off.refused) && /lead visual/.test(off.refused), off.refused);
+  must(!/point the hero at a claim|claim_kind|claim_template/.test(off.refused), `the off hint offers nothing this run lacks: ${off.refused}`);
+  const on = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-outcome", inline: true });
+  must(/HERO_CLAIM_UNBOUND/.test(on.refused) && /Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template/.test(on.refused) && !/records no claim templates/.test(on.refused), on.refused);
 });
 await ok("lint: a stored hero on an unbound claim is blocked, not passed", async () => {
   const r = await heroRun(true, { value_from: "{max.value}" });
