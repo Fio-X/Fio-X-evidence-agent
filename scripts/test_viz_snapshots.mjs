@@ -9,6 +9,20 @@ import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 
 const choroplethBasemap = getBasemap(CHOROPLETH_BASEMAP_ID);
 
+const complexBase = {
+  schema_version: "0.8.0",
+  takeaway: "Snapshot fixture",
+  title: "Snapshot fixture",
+  alt: "Stable synthetic newsroom visualization used for SVG regression snapshot testing.",
+  source_note: "Synthetic snapshot fixture",
+  claim_id: "snapshot-claim",
+  sql: "SELECT 1",
+  unit: "units",
+  complexity_budget: "medium",
+  annotations: [],
+  highlight_values: [],
+};
+
 const base = {
   schema_version: "0.7.0",
   reader_task: "comparison",
@@ -105,7 +119,101 @@ const cases = {
     },
     [{ country: "Chad", v: 70.0 }, { country: "Guinea", v: 66.6 }, { country: "Liberia", v: 92.8 }, { country: "Nigeria", v: 80.3 }, { country: "Zambia", v: 83.0 }],
   ],
+  // Names the chart is not told about stay as they are. Each case below holds
+  // values the vendored name tables could localize (World Bank names, ISO3,
+  // ISO2 and ISO 4217 codes), but the spec sets no category_names and the
+  // column fails the auto-resolution test: its field name says nothing about
+  // economies or currencies, or one of its values is unknown to the table, or
+  // its code type (ISO2) is explicit-only. The renderer must print the values
+  // as they are, byte for byte as before the tables grew (the digests below
+  // were taken at the commit before them and are unchanged).
+  horizontal_bar_zh_country_field_partial_match: [
+    { ...base, chart_type: "horizontal_bar", category_field: "country", value_field: "v", language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ country: "Kenya", v: 42 }, { country: "Norway", v: 31 }, { country: "Brazil", v: 24 }, { country: "Atlantis", v: 9 }],
+  ],
+  horizontal_bar_zh_iso3_codes_unsignalled_field: [
+    { ...base, chart_type: "horizontal_bar", category_field: "c", value_field: "v", language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ c: "KEN", v: 42 }, { c: "NOR", v: 31 }, { c: "BRA", v: 24 }, { c: "CHN", v: 9 }],
+  ],
+  horizontal_bar_zh_currency_codes_unsignalled_field: [
+    { ...base, chart_type: "horizontal_bar", category_field: "code", value_field: "v", language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ code: "TRY", v: 42 }, { code: "GBP", v: 31 }, { code: "JPY", v: 24 }, { code: "USD", v: 9 }],
+  ],
+  horizontal_bar_zh_iso2_codes_country_field: [
+    { ...base, chart_type: "horizontal_bar", category_field: "country", value_field: "v", language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ country: "KE", v: 42 }, { country: "NO", v: 31 }, { country: "BR", v: 24 }, { country: "CN", v: 9 }],
+  ],
+  horizontal_bar_zh_currency_field_partial_match: [
+    { ...base, chart_type: "horizontal_bar", category_field: "currency", value_field: "v", language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ currency: "USD", v: 42 }, { currency: "EUR", v: 31 }, { currency: "Basket", v: 24 }],
+  ],
+  horizontal_bar_en_plain_names: [
+    { ...base, chart_type: "horizontal_bar", category_field: "region", value_field: "v" },
+    [{ region: "Northern Europe", v: 42 }, { region: "Southern Europe", v: 31 }, { region: "Eastern Europe", v: 24 }],
+  ],
+  // An English chart keeps the World Bank English names, auto-resolved or
+  // declared (two of the declared names, Hong Kong and the DRC, have a zh override).
+  horizontal_bar_en_worldbank_names_auto: [
+    { ...base, chart_type: "horizontal_bar", category_field: "country", value_field: "v" },
+    [{ country: "Kenya", v: 42 }, { country: "Norway", v: 31 }, { country: "Brazil", v: 24 }],
+  ],
+  horizontal_bar_en_worldbank_names_declared: [
+    { ...base, chart_type: "horizontal_bar", category_field: "country", value_field: "v", category_names: "worldbank" },
+    [{ country: "Kenya", v: 42 }, { country: "Norway", v: 31 }, { country: "Hong Kong SAR, China", v: 24 }, { country: "Congo, Dem. Rep.", v: 9 }],
+  ],
+  // Chart types whose name fields the viz-spec guidance now lists: a scatter
+  // label_field, a multi_line series_field and sankey nodes, with no
+  // category_names, print their values as they are. (The sankey source column
+  // is named iso3 and holds only ISO3 codes: flow charts are explicit-only, so
+  // even a perfect match is not auto-resolved. The scatter and multi_line
+  // columns match only in part, so these two stay as they are whether or not a
+  // renderer learns to localize a declared category_names.)
+  scatter_zh_iso3_label_field: [
+    { ...base, reader_task: "correlation", chart_type: "scatter", x_field: "x", y_field: "y", label_field: "label", x_unit: "index", y_unit: "%", unit: "%", highlight_values: ["KEN"], language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ x: 1, y: 20, label: "KEN" }, { x: 2, y: 26, label: "NOR" }, { x: 3, y: 31, label: "BRA" }, { x: 4, y: 29, label: "CHN" }, { x: 5, y: 40, label: "IND" }],
+  ],
+  scatter_zh_country_label_field_partial_match: [
+    { ...base, reader_task: "correlation", chart_type: "scatter", x_field: "x", y_field: "y", label_field: "country", x_unit: "index", y_unit: "%", unit: "%", highlight_values: ["Kenya"], language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ x: 1, y: 20, country: "Kenya" }, { x: 2, y: 26, country: "Norway" }, { x: 3, y: 31, country: "Atlantis" }, { x: 4, y: 29, country: "China" }, { x: 5, y: 40, country: "India" }],
+  ],
+  multi_line_zh_country_series_partial_match: [
+    { ...base, reader_task: "change", chart_type: "multi_line", x_field: "year", value_field: "value", series_field: "country", highlight_values: ["Kenya"], language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    ["Kenya", "Norway", "Atlantis"].flatMap((country, s) => [2021, 2022, 2023, 2024].map((year, i) => ({ country, year, value: 20 + s * 10 + i * (3 + s) }))),
+  ],
+  sankey_zh_iso3_source_field_explicit_only: [
+    { ...complexBase, reader_task: "flow", visual_family: "flow", data_topology: "flow_edges", chart_type: "sankey", source_field: "iso3", target_field: "target", value_field: "value", language: "zh", title: "快照测试图表", note: "仅用于回归测试" },
+    [{ iso3: "KEN", target: "Exports", value: 20 }, { iso3: "NOR", target: "Exports", value: 30 }, { iso3: "BRA", target: "Exports", value: 25 }, { iso3: "CHN", target: "Domestic", value: 15 }],
+  ],
 };
+
+// A snapshot refresh rewrites the digests blindly, so the intent of the cases
+// above is also checked on the markup: each prints its raw values (as a
+// whole text node, or as a label followed by a value) in both viewports. A
+// localized name sneaking into these charts fails here before --update can
+// bless it.
+const PRINTS_RAW_VALUES = {
+  horizontal_bar_zh_country_field_partial_match: ["Kenya", "Norway", "Brazil", "Atlantis"],
+  horizontal_bar_zh_iso3_codes_unsignalled_field: ["KEN", "NOR", "BRA", "CHN"],
+  horizontal_bar_zh_currency_codes_unsignalled_field: ["TRY", "GBP", "JPY", "USD"],
+  horizontal_bar_zh_iso2_codes_country_field: ["KE", "NO", "BR", "CN"],
+  horizontal_bar_zh_currency_field_partial_match: ["USD", "EUR", "Basket"],
+  horizontal_bar_en_plain_names: ["Northern Europe", "Southern Europe", "Eastern Europe"],
+  horizontal_bar_en_worldbank_names_auto: ["Kenya", "Norway", "Brazil"],
+  horizontal_bar_en_worldbank_names_declared: ["Kenya", "Norway", "Hong Kong SAR, China", "Congo, Dem. Rep."],
+  scatter_zh_iso3_label_field: ["KEN"],
+  scatter_zh_country_label_field_partial_match: ["Kenya"],
+  multi_line_zh_country_series_partial_match: ["Kenya", "Atlantis"],
+  sankey_zh_iso3_source_field_explicit_only: ["KEN", "NOR", "BRA", "CHN"],
+};
+for (const [name, values] of Object.entries(PRINTS_RAW_VALUES)) {
+  const [spec, rows] = cases[name];
+  const bundle = renderVizBundle(spec, rows);
+  for (const value of values) {
+    for (const viewport of ["desktop", "mobile"]) {
+      assert.ok(bundle[viewport].includes(`>${value}<`) || bundle[viewport].includes(`>${value} `), `${name}: the ${viewport} render does not print ${value} as it is`);
+    }
+  }
+}
 
 const actual = {};
 for (const [name, [spec, rows]] of Object.entries(cases)) {

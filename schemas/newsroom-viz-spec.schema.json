@@ -259,7 +259,9 @@
     "category_names": {
       "enum": [
         "worldbank",
-        "iso3"
+        "iso3",
+        "iso2",
+        "iso4217"
       ]
     },
     "x_unit": {
