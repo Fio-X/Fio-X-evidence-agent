@@ -166,7 +166,7 @@ function glyphWidth(text, size) {
  * @param {Array<object>} options.rows - the exact rows the chart was built from.
  * @param {string} options.category_field
  * @param {string} options.value_field
- * @param {string} options.category_names - 'worldbank' | 'iso3'
+ * @param {string} options.category_names - 'worldbank' | 'iso3' | 'iso2'
  * @param {string} [options.unit]
  * @param {(text: string) => any} deps.parseXml - injected to avoid a static
  *   import cycle with render_qa_svg.mjs's own consumers; render_qa.mjs wires
