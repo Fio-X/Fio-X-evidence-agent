@@ -11,6 +11,7 @@ const CARTOGRAPHY_BASEMAP_50M: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-50m.geojson");
 const GSHHS_BASEMAP: &str = include_str!("../runtime/pi/assets/gshhs-i-syros-local.geojson");
 const ECONOMY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/economy-names.json");
+const CURRENCY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/currency-names.json");
 const ECONOMY_NAMES_RUNTIME: &str = include_str!("../runtime/pi/economy_names.mjs");
 const CHOROPLETH_RUNTIME: &str = include_str!("../runtime/pi/choropleth.mjs");
 const CHOROPLETH_ATTRIBUTES_ASSET: &str =
@@ -121,6 +122,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let cartography_basemap_50m_path = assets_dir.join("naturalearth-admin0-50m.geojson");
     let gshhs_basemap_path = assets_dir.join("gshhs-i-syros-local.geojson");
     let economy_names_asset_path = assets_dir.join("economy-names.json");
+    let currency_names_asset_path = assets_dir.join("currency-names.json");
     let economy_names_path = runtime_dir.join("economy_names.mjs");
     let choropleth_path = runtime_dir.join("choropleth.mjs");
     let choropleth_attributes_asset_path =
@@ -208,6 +210,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&cartography_basemap_50m_path, CARTOGRAPHY_BASEMAP_50M)?;
     write_if_changed(&gshhs_basemap_path, GSHHS_BASEMAP)?;
     write_if_changed(&economy_names_asset_path, ECONOMY_NAMES_ASSET)?;
+    write_if_changed(&currency_names_asset_path, CURRENCY_NAMES_ASSET)?;
     write_if_changed(&economy_names_path, ECONOMY_NAMES_RUNTIME)?;
     write_if_changed(
         &choropleth_attributes_asset_path,
