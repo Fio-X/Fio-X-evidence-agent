@@ -26,7 +26,7 @@ import { checkSvgGeometry, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geomet
 import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contrast.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
-import { joinChoroplethRows } from "./choropleth.mjs";
+import { joinChoroplethRows, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, PALETTE } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 
@@ -42,7 +42,7 @@ function checkViewport(svgText, options) {
   const contrast = checkSvgContrast(svgText, options?.contrast);
   let valueLabels = null;
   if (options?.choropleth) {
-    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid });
+    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
   }
   return {
     svg_sha256: sha256Hex(svgText),

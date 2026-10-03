@@ -5,7 +5,7 @@ import { checkSvgGeometry } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1549,6 +1549,8 @@ export function validateVizSpec(spec) {
         if (spec.basemap_content_hash !== basemap.content_hash) errors.push('basemap_content_hash does not match the registered basemap geometry');
       }
     }
+    // map_extent: opt-in whole-world mode; the only accepted value is "world".
+    if (spec.map_extent !== undefined && spec.map_extent !== "world") errors.push("choropleth map_extent must be 'world' when provided");
     // inset (task: zoom inset for regions too small to label on the main
     // map): opt-in, so its absence changes nothing. Either an explicit ISO3
     // list (`iso3`) or automatic selection (`auto: true`), never both -
@@ -5592,7 +5594,7 @@ const INSET_LADDER = [
 // could not run (never treated as "no failures").
 function insetRenderQaRules(svg, spec, rows) {
   try {
-    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid });
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
     return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
   } catch {
     return null;
@@ -5686,6 +5688,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
     }
   }
+  // World mode: a fixed Equal Earth frame (never the data's bbox) with no Antarctica.
+  const worldMode = isWorldExtent(spec);
+  if (worldMode) dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
   // Review fix (framing): ~6% padding around the data bbox, not the wider
   // 10% this renderer started with - a caller's data footprint (e.g. a
   // handful of West/Central African states) otherwise leaves the projection
@@ -5697,7 +5702,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // than one azimuthal hemisphere gets a world projection instead of silently
   // losing every ring beyond the horizon. horizonLat0 is lat0 for the
   // azimuthal projection and null for the world one (no horizon to filter on).
-  const mapChoice = chooseMapProjection(dataPoints);
+  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : chooseMapProjection(dataPoints);
   const { lon0, lat0 } = mapChoice;
   const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
   let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
@@ -5723,7 +5728,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // above. A region chosen for the inset gets no main-map label at all (see
   // labelItems below) - only its colour fill and white outline stay on the
   // main map, same as any other plotted region.
-  const insetSpec = spec.inset && typeof spec.inset === "object" ? spec.inset : null;
+  const insetSpec = !worldMode && spec.inset && typeof spec.inset === "object" ? spec.inset : null;
   const insetIso3Set = new Set();
   const INSET_CLUSTER_DEG = tune.clusterDeg;
   // Centre for a secondary view (locator, zoom inset, clustering): the same
@@ -5940,7 +5945,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     const dot = tinyRegionDot(item.featureIndices, project, lon0, horizonLat0);
     if (dot) tinyDots.set(item.iso3, dot);
   }
-  const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3)).map((item) => {
+  // World mode: only the range ends and highlight_values carry text (at most 8); every other economy is colour only.
+  const worldLabelled = worldMode ? worldLabelIso3s(joined, spec) : null;
+  const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3) && (!worldLabelled || worldLabelled.has(item.iso3))).map((item) => {
     const idx = item.featureIndices[0];
     const point = neFeatureAttributes(idx)?.label ?? [lon0, lat0];
     const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
@@ -6177,7 +6184,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // segment and every rect (e.g. the inset panel), and inside the bounds. A
   // marker with no clear spot keeps the position that breaks the fewest rules
   // and the numbered list under the chart still names it.
-  function placeNumberedMarkers(points, { bounds, boxes = [], segments = [], dots = [], radius = 9 } = {}) {
+  function placeNumberedMarkers(points, { bounds, boxes = [], segments = [], dots = [], radius = 9, nearDotTolerance = 0 } = {}) {
     const R = radius;
     const keepOut = R + 1;
     const segDist = (q, a, b) => {
@@ -6219,7 +6226,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
       for (const bx of boxes) if (segmentCrossesBox(a, b, bx)) v++;
       for (const sg of segments) if (segmentsIntersect(a, b, sg.a, sg.b)) v++;
       placed.forEach((o, i) => { if (i !== ownIndex && segDist(o, a, b) < R + 1) v++; });
-      for (const d of dots) if (Math.hypot(d.x - pt.x, d.y - pt.y) >= 1 && segDist(d, a, b) < (d.r ?? 3.5) + 1) v++;
+      // nearDotTolerance (world mode only): a dot this close to the true point is part of the same cluster, so its tether may graze it.
+      for (const d of dots) if (Math.hypot(d.x - pt.x, d.y - pt.y) >= Math.max(1, nearDotTolerance) && segDist(d, a, b) < (d.r ?? 3.5) + 1) v++;
       for (const t of tethers) if (segmentsIntersect(a, b, t.a, t.b)) v++;
       return v;
     };
@@ -6516,7 +6524,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     // this still confirms it empirically (belt-and-braces) and catches the
     // rarer case of a leader clipping a neighbouring polygon's own coastline.
     const acceptedLeaders = [];
-    const acceptedBoxes = onMap.map((p) => p.box);
+    // World mode: the many unlabelled tiny-country dots are obstacles too, so a leader label never lands on one.
+    const worldDotBoxes = worldMode ? [...tinyDots.entries()].filter(([iso3]) => !worldLabelled.has(iso3)).map(([, d]) => ({ x: d.x - 4, y: d.y - 4, w: 8, h: 8 })) : [];
+    const acceptedBoxes = [...onMap.map((p) => p.box), ...worldDotBoxes];
     let allPlaced = true;
     placedOverflow = [];
     // Numbering is the last resort: before it, look for any open spot on the
@@ -7255,6 +7265,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     boxes: [...allLabelBoxes, ...(insetCorner ? [{ x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h }] : [])],
     segments: placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
     dots: [...tinyDots.values()].map((d) => ({ x: d.x, y: d.y, r: mobile ? 3 : 3.5 })),
+    ...(worldMode ? { nearDotTolerance: 8 } : {}),
   });
   footnoteItems.forEach((li, i) => {
     const num = fallbackNumberByIso3.get(li.item.iso3);
@@ -7761,6 +7772,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
   for (let index = 0; index < featureCount; index++) {
+    if (worldMode && isAntarcticaFeature(index)) continue;
     const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
     if (!d) continue;
     const item = dataByIndex.get(index);
@@ -7775,9 +7787,12 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"` : "";
     f.parts.push(`<path data-role="${item ? "choropleth-data" : "choropleth-context"}"${dataAttrs} d="${d}" fill="${fill}" stroke="${PAPER}" stroke-width="${mobile ? 0.5 : 0.7}" stroke-linejoin="round"/>`);
   }
+  // World mode: a numbered marker sitting exactly on its region's dot already marks it, and its digit would cross the dot circle.
+  const dotCoveredByMarker = new Set();
+  if (worldMode) footnoteItems.forEach((li, i) => { const mk = footnoteMarkerPositions[i], dot = tinyDots.get(li.item.iso3); if (mk && dot && Math.hypot(mk.x - dot.x, mk.y - dot.y) < 1) dotCoveredByMarker.add(li.item.iso3); });
   for (const item of joined) {
     const dot = tinyDots.get(item.iso3);
-    if (!dot) continue;
+    if (!dot || dotCoveredByMarker.has(item.iso3)) continue;
     const value = n(item.row[spec.value_field]) ?? 0;
     f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
   }
@@ -7791,6 +7806,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const highlightSet = new Set((spec.highlight_values ?? []).map(String));
   for (const item of joined) {
     if (!highlightSet.has(String(item.row[spec.category_field]))) continue;
+    // World mode: a numbered marker already singles the region out, and its digit would sit on the outline stroke.
+    if (worldMode && footnoteIso3.has(item.iso3)) continue;
     for (const idx of item.featureIndices) {
       const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
       if (!d) continue;

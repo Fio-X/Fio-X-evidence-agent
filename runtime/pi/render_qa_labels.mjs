@@ -183,7 +183,7 @@ function glyphWidth(text, size) {
  *   PALETTE.grid through.
  */
 export function checkChoroplethValueLabels(svgText, options, deps) {
-  const { parseXml, joinChoroplethRows, fmt, noDataFill } = deps;
+  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s } = deps;
   const expectedNoDataFill = String(noDataFill ?? "").toLowerCase();
   const rows = Array.isArray(options?.rows) ? options.rows : [];
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
@@ -248,6 +248,12 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[value_field])),
   );
 
+  // World mode (map_extent: "world") labels only the range ends and highlight_values;
+  // the set is re-derived from the rows here, and every other region must carry no text.
+  const worldLabelled = options?.map_extent === "world" && typeof worldLabelIso3s === "function"
+    ? worldLabelIso3s(joined, { value_field, category_field: options?.category_field, highlight_values: options?.highlight_values })
+    : null;
+
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
@@ -259,6 +265,12 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     const renderedValue = dataIso3ByRegion.get(iso3);
     if (Number.isFinite(renderedValue) && Math.abs(renderedValue - value) > 1e-9) {
       failures.push({ rule: "region_value_mismatch", message: `${iso3} region data-value is ${renderedValue}, row value is ${value}` });
+    }
+    if (worldLabelled && !worldLabelled.has(iso3)) {
+      if ((namesByIso3.get(iso3) ?? []).length || (valuesByIso3.get(iso3) ?? []).length) {
+        failures.push({ rule: "value_label_unexpected", message: `${iso3} is labelled although world mode labels only the range ends and highlight_values` });
+      }
+      continue;
     }
     const names = namesByIso3.get(iso3) ?? [];
     const values = valuesByIso3.get(iso3) ?? [];
