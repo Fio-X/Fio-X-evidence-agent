@@ -172,7 +172,7 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, claimsEdit = null } = {}) => {
+const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, claimsEdit = null, extraEnv = {} } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
   if (claimsEdit) writeFileSync(join(art, "claims.jsonl"), `${claimsEdit(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean)).join("\n")}\n`);
   const claimRecord = () => readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).find((c) => c.claim_id === claim_id);
@@ -182,7 +182,7 @@ const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", 
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
   // Gate on is the default: no switch is set. The old path (typed hero values) is asked for with NEWSROOM_HERO_VALUE_GATE=0.
-  const tools = await registerFor({ env: { ...(gate ? { NEWSROOM_MOBILE_PAGES: "0" } : { NEWSROOM_HERO_VALUE_GATE: "0" }), ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
+  const tools = await registerFor({ env: { ...(gate ? { NEWSROOM_MOBILE_PAGES: "0" } : { NEWSROOM_HERO_VALUE_GATE: "0" }), ...extraEnv, ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");
@@ -235,6 +235,34 @@ await ok("K38 a plan citing a revoked claim fails the render check", async () =>
   let msg = "";
   try { await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: r.planRef, lint_ref: lintRef }); } catch (error) { msg = String(error.message); }
   must(/not system-verified: c-map/.test(msg), `render said: ${msg}`);
+});
+
+
+// ---- K39: preflight runs the render's own lint check ----
+const PRE = { NEWSROOM_SPEED_PREFLIGHT: "1" };
+const renderWith = async (r) => { try { return { ok: true, out: await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: r.planRef, lint_ref: r.lint.details.lintRef }) }; } catch (error) { return { ok: false, msg: String(error.message) }; } };
+const k39 = async (edit) => {
+  const r = await heroRun(false, { value: "2", unit: "" }, { extraEnv: PRE });
+  must(!r.refused && r.lint.details.passed === true, `lint should pass: ${r.refused ?? JSON.stringify(r.lint.details.blockers)}`);
+  const t0 = performance.now();
+  const out = await renderWith({ ...r });
+  r.ms = performance.now() - t0;
+  const lines = readFileSync(join(r.art, "claims.jsonl"), "utf8").split("\n").filter(Boolean);
+  edit(r.art, lines);
+  return { r, out, stale: await renderWith(r) };
+};
+await ok("K39 a claim removed after the lint: preflight says LINT_STALE", async () => {
+  const { stale } = await k39((art, lines) => writeFileSync(join(art, "claims.jsonl"), `${lines.filter((l) => asRecord(l).claim_id !== "c-map").join("\n")}\n`));
+  must(!stale.ok && /LINT_STALE/.test(stale.msg), JSON.stringify(stale.msg ?? "rendered"));
+});
+await ok("K39 a claim revoked after the lint: preflight says LINT_STALE", async () => {
+  const { stale } = await k39((art, lines) => writeFileSync(join(art, "claims.jsonl"), `${[...lines, revoked("c-map")].join("\n")}\n`));
+  must(!stale.ok && /LINT_STALE/.test(stale.msg), JSON.stringify(stale.msg ?? "rendered"));
+});
+await ok("K39 a current lint passes preflight", async () => {
+  const { out } = await k39(() => {});
+  must(!(out.msg && /LINT_STALE/.test(out.msg)), JSON.stringify(out.msg));
+  must(out.ok, JSON.stringify(out.msg));
 });
 
 // @@NEXT@@

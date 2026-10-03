@@ -285,18 +285,13 @@ const preflightIo = {
   read: (ref: string, prefix?: string) => readArtifactJson(ref, prefix),
   manifest: (dir: string, ref: string, prefix: string) => readManifestOrRejected(dir, ref, prefix),
   verified: async () => new Set(await verifiedClaimIds()),
-  // A lint is current while the upstream assets still hash as the lint recorded
-  // (the same test the render applies).
+  // A lint is current while the render would still accept it (the render's own check).
   async lintCurrent(lint: any) {
+    // Exactly the render's own checks (assertInfographicLintHolds): the verdict, the cited claims, the policy,
+    // the upstream asset hashes and a fresh lint under today's settings. Any refusal means the lint is stale.
     try {
-      if (!lintIsCurrent(lint)) return false;
-      const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(String(lint.plan_ref), "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages);
-      for (const [ref, asset] of Object.entries(assets) as any) {
-        const expected = lint.asset_hashes?.[ref];
-        if (!expected || sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) return false;
-      }
+      await assertInfographicLintHolds(spec, lint, String(lint.plan_ref));
       return true;
     } catch { return false; }
   },
