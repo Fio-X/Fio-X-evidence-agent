@@ -86,13 +86,19 @@ function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, ve
     "c-times": inlineClaim("It is {max.value} 3 times larger.", "It is 2 3 times larger."),
     "c-yi": inlineClaim("Reserves reached {max.value}亿美元 in total.", "Reserves reached 2亿美元 in total."),
     "c-pct": inlineClaim("The share is {max.value}% of the total.", "The share is 2% of the total."),
+    "c-pct-sp": inlineClaim("The share is {max.value} % of the total.", "The share is 2 % of the total."),
+    "c-pct-sp2": inlineClaim("The share is {max.value}  % of the total.", "The share is 2  % of the total."),
+    "c-pct-nbsp": inlineClaim("The share is {max.value}\u00a0% of the total.", "The share is 2\u00a0% of the total."),
+    "c-pct-nl": inlineClaim("The share is {max.value}\n% of the total.", "The share is 2\n% of the total."),
+    "c-mil-sp2": inlineClaim("Output reached {max.value}  million tonnes.", "Output reached 2  million tonnes."),
+    "c-yi-sp": inlineClaim("Reserves reached {max.value} 亿美元 in total.", "Reserves reached 2 亿美元 in total."),
   };
   const inlineTemplate = "The top value is {max.value}% in {max.value.region} in {max.value.year}.";
   const inline = { claim: "The top value is 2% in B in 2018.", claim_template: inlineTemplate, claim_bindings: [
     { placeholder: "{max.value}", column: "value", row_index: 1, value: 2, text: "2" },
     { placeholder: "{max.value.region}", column: "region", row_index: 1, value: "B", text: "B" },
     { placeholder: "{max.value.year}", column: "year", row_index: 1, value: 2018, text: "2018" }], recorded_by: "newsroom_viz_plan" };
-  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline", "c-rose", "c-thou", "c-million", "c-times", "c-bound", "c-yi", "c-pct", "c-tie"].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-tie" ? { claim: "Region A has 9 and region B has 9.", computation_refs: [tieRef] } : {}), ...(claim_id === "c-inline" ? inline : {}), ...(inlines[claim_id] ?? {}) }));
+  const claims = ["c-map", "c-flow", "c-trend", "c-outcome", "c-inline", "c-rose", "c-thou", "c-million", "c-times", "c-bound", "c-yi", "c-pct", "c-pct-sp", "c-pct-sp2", "c-pct-nbsp", "c-pct-nl", "c-mil-sp2", "c-yi-sp", "c-tie"].filter((id) => !verifiedOnly || verifiedOnly.includes(id)).map((claim_id) => JSON.stringify({ claim_id, status: "verified", source_refs: ["data/x.csv"], computation_refs: [computationRef], verification, ...(texts[claim_id] ? { claim: texts[claim_id] } : {}), ...(claim_id === "c-tie" ? { claim: "Region A has 9 and region B has 9.", computation_refs: [tieRef] } : {}), ...(claim_id === "c-inline" ? inline : {}), ...(inlines[claim_id] ?? {}) }));
   writeFileSync(join(art, "claims.jsonl"), `${claims.join("\n")}\n`);
   for (const [id, chart_type, claim_id] of VIZ) {
     writeFileSync(join(art, `visualizations/${id}.svg`), svg);
@@ -294,6 +300,15 @@ await refused("亿美元 claim, plan unit 't' without 亿", { value_from: "{max.
 await refused("亿美元 claim, 美元 alone is not shown by the claim", { value_from: "{max.value}", unit: "美元" }, /HERO_UNIT_NOT_ALLOWED/, { claim_id: "c-yi" });
 await refused("% claim, unit dropped", { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'%'/, { claim_id: "c-pct" });
 await refused("% claim, plan unit 't' without %", { value_from: "{max.value}", unit: "t" }, /HERO_UNIT_DROPPED.*'%'/, { claim_id: "c-pct", manifestClaim: { trend: "c-pct" } });
+for (const id of ["c-pct-sp", "c-pct-sp2", "c-pct-nbsp", "c-pct-nl"]) {
+  await refused(`${id}: whitespace between the number and %, unit dropped`, { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'%'/, { claim_id: id });
+  await ok(`${id}: unit % kept`, async () => {
+    const r = await heroRun(true, { value_from: "{max.value}", unit: "%" }, { claim_id: id });
+    must(!r.refused && r.stored.unit === "%", JSON.stringify(r.refused ?? r.stored));
+  });
+}
+await refused("two spaces before million, unit dropped", { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'million'/, { claim_id: "c-mil-sp2" });
+await refused("space before 亿美元, unit dropped", { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'亿'/, { claim_id: "c-yi-sp" });
 await ok("% claim, unit % kept", async () => {
   const r = await heroRun(true, { value_from: "{max.value}", unit: "%" }, { claim_id: "c-pct" });
   must(!r.refused && r.stored.unit === "%" && r.blockers.length === 0, JSON.stringify(r.refused ?? r.blockers));
