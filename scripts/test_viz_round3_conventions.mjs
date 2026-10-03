@@ -156,14 +156,30 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
     let seed = 7;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
     const rowsH = [];
-    for (let k = 0; k < 12; k++) { let v = 100; for (let i = 0; i < 16; i++) { v += (rnd() - 0.5) * 6 + (k % 3 === 0 ? 0.2 : -0.1); rowsH.push({ f: `地区${k + 1}`, x: 2009 + i, v }); } }
+    for (let k = 0; k < 12; k++) { let v = 100; for (let i = 0; i < 16; i++) { if (i > 0) v += (rnd() - 0.5) * 6 + (k % 3 === 0 ? 0.2 : -0.1); rowsH.push({ f: `地区${k + 1}`, x: 2009 + i, v }); } }
     const svgH = renderVizSvg(spec, rowsH);
     const failures = checkSvgGeometry(svgH).failures;
     const byRule = (r) => failures.filter((x) => x.rule === r).length;
     assert.equal(byRule("text_crosses_data_mark"), 0, `index panels: text over a data mark: ${failures.map((x) => x.message).join(" | ")}`);
     assert.equal(byRule("text_overlap"), 0, "index panels: overlapping text");
     assert.equal(failures.length, 0, `index panels: render QA geometry clean: ${failures.map((x) => x.rule)}`);
-    assert.ok(roleTexts(svgH, "index-base-label").length <= 1, "the base is named at most once");
+    assert.equal(roleTexts(svgH, "index-base-label").length, 1, "the base is named exactly once");
+    assert.equal(textOf(roleTexts(svgH, "index-base-label")[0]), "2009 = 100", "the label names the base period");
+  }
+  // zigzag: 4 panels of a 40-month series alternating 97/103 (base 100 in the first month) leave no clear spot in
+  // any panel; the label still shows exactly once, above the first row of panels, with render QA clean
+  {
+    const rowsZ = [];
+    for (let k = 0; k < 4; k++) for (let i = 0; i < 40; i++) rowsZ.push({ f: `地区${k + 1}`, x: `${2020 + Math.floor(i / 12)}-${String(1 + (i % 12)).padStart(2, "0")}`, v: i === 0 ? 100 : i % 2 ? 97 : 103 });
+    const svgZ = renderVizSvg(spec, rowsZ);
+    const labels = roleTexts(svgZ, "index-base-label");
+    assert.equal(labels.length, 1, "zigzag: the base label shows exactly once");
+    assert.equal(textOf(labels[0]), "2020-01 = 100", "zigzag: the label names the base period like the x axis");
+    const failuresZ = checkSvgGeometry(svgZ).failures;
+    assert.equal(failuresZ.length, 0, `zigzag: render QA geometry clean: ${failuresZ.map((x) => `${x.rule}: ${x.message}`).join(" | ")}`);
+    const firstPanelTitle = tags(svgZ, /<text [^>]*font-weight="700"[^>]*>地区1<\/text>/g)[0];
+    assert.equal(attr(labels[0], "x"), attr(firstPanelTitle, "x"), "zigzag: the label is left-aligned with the first panel");
+    assert.ok(Number(attr(labels[0], "y")) < Number(attr(firstPanelTitle, "y")), "zigzag: the label sits above the first row of panels");
   }
   const { index_base, ...plain } = spec;
   assert.ok(!renderVizSvg(plain, rows).includes('data-role="index-base-line"'), "no index_base: ordinary small multiples");
