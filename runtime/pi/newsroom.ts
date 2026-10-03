@@ -2349,6 +2349,12 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
     const word = rest.slice(1).match(HERO_LITERAL_STOP)?.[0] ?? "";
     if (/^\p{L}+$/u.test(word)) out.push(word);
   }
+  // Any whitespace (several spaces, a tab, a newline, NBSP) between the number and a magnitude word or percent sign does not hide it.
+  const trimmed = rest.replace(/^\s+/u, "");
+  if (trimmed !== rest) {
+    const literal = trimmed.match(HERO_LITERAL_STOP)?.[0] ?? "";
+    if (heroMagnitudeStart(literal)) out.push(literal);
+  }
   return out.filter(Boolean);
 }
 
