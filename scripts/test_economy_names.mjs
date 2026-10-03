@@ -10,10 +10,14 @@
 //     since those are build-machine facts, not derived content. The economy
 //     table derives identically under every Node CI uses. The currency table
 //     matches exactly on the pinned toolchain; on any other one (CI runs Node
-//     22: ICU 77.1 / CLDR 47.0) only the codes CLDR 47 and CLDR 48 really word
-//     differently (KGS en, XCG and ZWG zh) may differ. The territory ISO2 codes
-//     come from the pinned Natural Earth release when NE_SOURCE_PATH points at
-//     it (sha256-checked), else from the committed asset itself;
+//     22: ICU 77.1 / CLDR 47.0) this is a cross-version check: only the nine
+//     explicit (code, field, committed value, derived value) tuples that CLDR
+//     47 words differently (KGS en; XCG and ZWG, which CLDR 47 has no zh name
+//     for) may differ, never a whole entry, and on CLDR 47.0 itself every one
+//     of them must show up. The territory ISO2 codes are re-derived from the
+//     pinned Natural Earth release when NE_SOURCE_PATH points at it
+//     (sha256-checked); without it that check prints SKIP, because the only
+//     codes left to compare would be the committed asset's own;
 //   - the 217/22/19 economy/territory/aggregate counts and the exact aggregate
 //     ID set: the aggregates are the explicit policy table's entries (policy
 //     rule 7), never derived from the World Bank list, each carries its rule
@@ -79,10 +83,19 @@ for (const key of Object.keys(PINNED_TOOLCHAIN)) {
 assert.equal(asset.schema_version, ECONOMY_NAMES_SCHEMA_VERSION);
 const nePath = process.env.NE_SOURCE_PATH;
 const committedTerritoryIso2 = Object.fromEntries(asset.territories.map((territory) => [territory.iso3, territory.iso2]));
+// The territory ISO2 codes are the one derived fact the repository cannot re-derive: they come from the pinned Natural
+// Earth release (3MB, pinned by hash, not vendored). The derivation below needs some codes as input; without the release
+// the only codes at hand are the committed asset's own, so that part of the comparison would be the asset compared with
+// itself. It is skipped out loud and left out of the territories comparison instead of passing silently. (The codes are
+// still compared with the hand-written EXPECTED_TERRITORIES list below, which does not read the release either.)
 let territoryIso2 = committedTerritoryIso2;
-if (nePath) {
+const territoryIso2Rederived = Boolean(nePath);
+const TERRITORY_ISO2_SKIP_REASON = "NE_SOURCE_PATH is not set, so the iso2 codes of the 22 territories are not re-derived from the pinned Natural Earth release (they are still compared with the expected list in this test; set NE_SOURCE_PATH to the pinned ne_50m_admin_0_countries.geojson to re-derive them)";
+if (territoryIso2Rederived) {
   territoryIso2 = readNeTerritoryIso2(nePath);
   assert.deepEqual(territoryIso2, committedTerritoryIso2, "the territory ISO2 codes equal ISO_A2_EH of the pinned Natural Earth release");
+} else {
+  console.log(`SKIP territory ISO2 re-derivation: ${TERRITORY_ISO2_SKIP_REASON}`);
 }
 {
   // The reader refuses anything but the pinned release (it never guesses), and the derivation refuses to run without codes.
@@ -101,31 +114,124 @@ const derived = buildEconomyNames({ territoryIso2 });
 assert.deepEqual(derived.rules, asset.rules, "rules block must match a fresh derivation");
 assert.deepEqual(derived.sources, asset.sources, "sources block (file/bytes/sha256) must match a fresh derivation");
 assert.deepEqual(derived.economies, asset.economies, "economies table must match a fresh derivation (not stale/hand-edited)");
-assert.deepEqual(derived.territories, asset.territories, "territories table must match a fresh derivation (not stale/hand-edited)");
+if (territoryIso2Rederived) {
+  assert.deepEqual(derived.territories, asset.territories, "territories table must match a fresh derivation (not stale/hand-edited)");
+} else {
+  // The iso2 field was fed from the asset itself, so it says nothing here: everything else about a territory still must match.
+  const withoutIso2 = (territories) => territories.map(({ iso2, ...rest }) => rest);
+  assert.deepEqual(withoutIso2(derived.territories), withoutIso2(asset.territories), "territories table (iso2 not re-derived) must match a fresh derivation (not stale/hand-edited)");
+}
 assert.deepEqual(derived.aggregates, asset.aggregates, "aggregates table must match a fresh derivation (not stale/hand-edited)");
 assert.deepEqual(derived.aliases, asset.aliases, "aliases table must match a fresh derivation (not stale/hand-edited)");
 assert.equal(asset.sources.natural_earth_admin0_50m.vendored, false, "the 3MB Natural Earth source is pinned by hash, not vendored");
 
-// -- committed currency asset matches a fresh derivation --
+// -- committed currency asset vs a fresh derivation --
 assert.equal(currencyAsset.schema_version, CURRENCY_NAMES_SCHEMA_VERSION);
-// CLDR 47 (Node 22) and CLDR 48 (the pin) word these three codes differently; nothing else may differ.
-const CLDR_VERSION_SENSITIVE_CURRENCIES = new Set(["KGS", "XCG", "ZWG"]);
 const derivedCurrencies = buildCurrencyNames();
 assert.deepEqual(derivedCurrencies.rules, currencyAsset.rules, "currency rules block must match a fresh derivation");
 assert.deepEqual(derivedCurrencies.source, currencyAsset.source, "currency source block must match a fresh derivation");
-{
-  const byCodeOf = (list) => new Map(list.map((entry) => [entry.code, entry]));
-  const [dCur, aCur, dExc, aExc] = [derivedCurrencies.currencies, currencyAsset.currencies, derivedCurrencies.excluded, currencyAsset.excluded].map(byCodeOf);
-  const mismatched = [...new Set([...dCur.keys(), ...aCur.keys(), ...dExc.keys(), ...aExc.keys()])].sort()
-    .filter((code) => JSON.stringify([dCur.get(code) ?? null, dExc.get(code) ?? null]) !== JSON.stringify([aCur.get(code) ?? null, aExc.get(code) ?? null]));
-  if (onPinnedToolchain) {
-    assert.deepEqual(mismatched, [], "the currencies table must match a fresh derivation exactly on the pinned toolchain");
-  } else {
-    assert.ok(
-      mismatched.every((code) => CLDR_VERSION_SENSITIVE_CURRENCIES.has(code)),
-      `on node ${live.node} / CLDR ${live.cldr} only ${[...CLDR_VERSION_SENSITIVE_CURRENCIES]} may differ from the committed table, got ${mismatched}`,
-    );
+
+// What CLDR 47.0 (ICU 77.1; Node 22.19.0, the toolchain CI runs) words differently from the pinned CLDR 48.0, as explicit
+// [code, field, committed value, derived value] tuples, null meaning the field is absent. KGS: CLDR 47 says "Kyrgystani Som"
+// where CLDR 48 says "Kyrgyz Som". XCG and ZWG: CLDR 47 has no zh-Hans name for them, so the builder lists them as excluded
+// and every field of their entries is absent (excluded_reason is the reason of the excluded entry). A tuple stands for that
+// one change and nothing else: another field of the same code, or another value of the same field, is a difference nobody
+// has looked at, so it fails.
+const CLDR_47_CURRENCY_DIFFERENCES = [
+  ["KGS", "en", "Kyrgyz Som", "Kyrgystani Som"],
+  ["XCG", "en", "Caribbean guilder", null],
+  ["XCG", "excluded_reason", null, "no CLDR zh-Hans display name"],
+  ["XCG", "zh", "加勒比盾", null],
+  ["XCG", "zh_source", "cldr", null],
+  ["ZWG", "en", "Zimbabwean Gold", null],
+  ["ZWG", "excluded_reason", null, "no CLDR zh-Hans display name"],
+  ["ZWG", "zh", "津巴布韦金元", null],
+  ["ZWG", "zh_source", "cldr", null],
+];
+const tupleKey = (tuple) => JSON.stringify(tuple);
+const sortedKeys = (tuples) => tuples.map(tupleKey).sort();
+
+// Every (code, field, committed value, derived value) in which two currency tables differ: per code the fields of its named
+// entry plus the reason of its excluded entry, so a code that moves between `currencies` and `excluded` shows up field by field.
+function currencyDifferences(committed, derivedTable) {
+  const fieldsByCode = (table) => {
+    const fields = new Map();
+    for (const { code, ...rest } of table.currencies) fields.set(code, { ...rest });
+    for (const { code, reason } of table.excluded) fields.set(code, { ...(fields.get(code) ?? {}), excluded_reason: reason });
+    return fields;
+  };
+  const [was, now] = [committed, derivedTable].map(fieldsByCode);
+  const differences = [];
+  for (const code of [...new Set([...was.keys(), ...now.keys()])].sort()) {
+    const [before, after] = [was.get(code) ?? {}, now.get(code) ?? {}];
+    for (const field of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
+      if ((before[field] ?? null) !== (after[field] ?? null)) differences.push([code, field, before[field] ?? null, after[field] ?? null]);
+    }
   }
+  return differences;
+}
+// The differences that are not exactly one of the listed tuples.
+function unlistedCurrencyDifferences(differences) {
+  const listed = new Set(CLDR_47_CURRENCY_DIFFERENCES.map(tupleKey));
+  return differences.filter((tuple) => !listed.has(tupleKey(tuple)));
+}
+
+// The tolerance is exact, whichever toolchain runs this: it takes the listed tuples and nothing else, never a whole entry.
+{
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const entry = (table, code) => table.currencies.find((candidate) => candidate.code === code);
+  const exclude = (table, code, reason = "no CLDR zh-Hans display name") => {
+    table.currencies = table.currencies.filter((candidate) => candidate.code !== code);
+    table.excluded.push({ code, reason });
+  };
+  const asCldr47 = () => {
+    const table = clone(currencyAsset);
+    entry(table, "KGS").en = "Kyrgystani Som";
+    exclude(table, "XCG");
+    exclude(table, "ZWG");
+    return table;
+  };
+  assert.deepEqual(currencyDifferences(currencyAsset, clone(currencyAsset)), [], "a table does not differ from itself");
+  assert.deepEqual(sortedKeys(currencyDifferences(currencyAsset, asCldr47())), sortedKeys(CLDR_47_CURRENCY_DIFFERENCES), "the listed tuples are what CLDR 47 does to the committed table");
+  assert.deepEqual(unlistedCurrencyDifferences(currencyDifferences(currencyAsset, asCldr47())), [], "the listed tuples are tolerated");
+  // Each of these is a code that has a tuple, or a code that has none, changed one step further than the tuple says.
+  const unlistedAfter = (edit, committed = currencyAsset) => {
+    const table = asCldr47();
+    edit(table);
+    return unlistedCurrencyDifferences(currencyDifferences(committed, table));
+  };
+  assert.deepEqual(unlistedAfter((t) => { entry(t, "KGS").zh = "吉尔吉斯索姆"; }), [["KGS", "zh", "吉尔吉斯斯坦索姆", "吉尔吉斯索姆"]], "another field of KGS");
+  assert.deepEqual(unlistedAfter((t) => { entry(t, "KGS").en = "Kyrgyz Soms"; }), [["KGS", "en", "Kyrgyz Som", "Kyrgyz Soms"]], "another value of KGS en");
+  assert.deepEqual(unlistedAfter((t) => { entry(t, "KGS").zh_source = "override"; }), [["KGS", "zh_source", "cldr", "override"]], "a field KGS never had a tuple for");
+  const keptXcg = (t) => { t.excluded = t.excluded.filter((candidate) => candidate.code !== "XCG"); t.currencies.push({ code: "XCG", en: "Caribbean guilder", zh: "加勒比盾元", zh_source: "cldr" }); };
+  assert.deepEqual(unlistedAfter(keptXcg), [["XCG", "zh", "加勒比盾", "加勒比盾元"]], "XCG named differently instead of excluded");
+  assert.deepEqual(unlistedAfter((t) => { t.excluded.find((candidate) => candidate.code === "ZWG").reason = "no usable zh-Hans display name"; }), [["ZWG", "excluded_reason", null, "no usable zh-Hans display name"]], "ZWG excluded for another reason");
+  assert.deepEqual(unlistedAfter((t) => { entry(t, "AED").en = "UAE Dirham"; }), [["AED", "en", "United Arab Emirates Dirham", "UAE Dirham"]], "a code with no tuple at all");
+  assert.deepEqual(unlistedAfter((t) => exclude(t, "TRY")).map(([code]) => code), ["TRY", "TRY", "TRY", "TRY"], "another code excluded");
+  // The committed value has to be the one the tuple names, not just the derived one.
+  const committedElsewhere = clone(currencyAsset);
+  entry(committedElsewhere, "KGS").en = "Kyrgyz Soms";
+  assert.deepEqual(unlistedAfter(() => {}, committedElsewhere), [["KGS", "en", "Kyrgyz Soms", "Kyrgystani Som"]], "the committed value is part of the tuple");
+}
+
+const currencyDifferenceList = currencyDifferences(currencyAsset, derivedCurrencies);
+const spellTuple = ([code, field, was, now]) => `${code} ${field}: ${was ?? "(absent)"} -> ${now ?? "(absent)"}`;
+const currencyCheck = { mode: onPinnedToolchain ? "exact match on the pinned toolchain" : "cross-version check", tolerated: onPinnedToolchain ? [] : currencyDifferenceList.map(spellTuple) };
+if (onPinnedToolchain) {
+  assert.deepEqual(currencyDifferenceList, [], "the currencies table must match a fresh derivation exactly on the pinned toolchain");
+  assert.deepEqual(derivedCurrencies.currencies, currencyAsset.currencies, "the currencies table must match a fresh derivation exactly on the pinned toolchain, order included");
+  assert.deepEqual(derivedCurrencies.excluded, currencyAsset.excluded, "the excluded list must match a fresh derivation exactly on the pinned toolchain");
+} else {
+  assert.deepEqual(
+    unlistedCurrencyDifferences(currencyDifferenceList),
+    [],
+    `cross-version check on node ${live.node} / ICU ${live.icu} / CLDR ${live.cldr} (the pin is ${PINNED_TOOLCHAIN.node} / ${PINNED_TOOLCHAIN.icu} / ${PINNED_TOOLCHAIN.cldr}): only the listed (code, field, committed value, derived value) tuples may differ from the committed currencies table`,
+  );
+  // On the toolchain the tuples were recorded on every one of them shows up, so none is stale or hiding something else.
+  if (live.icu === "77.1" && live.cldr === "47.0") {
+    assert.deepEqual(sortedKeys(currencyDifferenceList), sortedKeys(CLDR_47_CURRENCY_DIFFERENCES), "on CLDR 47.0 exactly the listed tuples differ from the committed currencies table");
+  }
+  console.log(`cross-version check: node ${live.node} / CLDR ${live.cldr} is not the pinned toolchain, so the currencies table was compared tuple by tuple: ${currencyDifferenceList.length} (code, field, committed value, derived value) differences, all of them listed (${[...new Set(currencyDifferenceList.map(([code]) => code))].join(", ") || "none"})`);
 }
 // Every code the toolchain knows is named or recorded as excluded, never silently missing.
 {
@@ -515,5 +621,6 @@ console.log(JSON.stringify({
   aggregate_ids: aggregateIds,
   versions: asset.versions,
   toolchain: { ...live, pinned: onPinnedToolchain },
-  territory_iso2_source: nePath ? "pinned Natural Earth release" : "committed asset",
+  currency_table_check: currencyCheck,
+  territory_iso2: territoryIso2Rederived ? { checked: true, source: "pinned Natural Earth release" } : { checked: false, status: "SKIP", reason: TERRITORY_ISO2_SKIP_REASON },
 }, null, 2));
