@@ -7,7 +7,8 @@
 // string this table can produce came from Unicode CLDR (via Node's bundled
 // ICU, Intl.DisplayNames), from the World Bank's own zh country list
 // (vendored in fixtures/external/worldbank_country_list/, see SOURCE.json
-// there), or from the small policy override table below.
+// there), or from the small policy tables below (the override table and the
+// table of displayable aggregates).
 //
 // Inputs:
 //   - the two raw World Bank Countries-and-Lending-Groups API responses
@@ -46,7 +47,7 @@ export const DEFAULT_EN_PATH = join(ROOT, "fixtures/external/worldbank_country_l
 export const DEFAULT_ZH_PATH = join(ROOT, "fixtures/external/worldbank_country_list/wb-country-zh.json");
 export const NE_SOURCE_RECORD_PATH = join(ROOT, "fixtures/external/naturalearth_50m_attributes/SOURCE.json");
 export const ECONOMY_NAMES_ASSET_PATH = join(ROOT, "runtime/pi/assets/economy-names.json");
-export const ECONOMY_NAMES_SCHEMA_VERSION = "0.2.0";
+export const ECONOMY_NAMES_SCHEMA_VERSION = "0.3.0";
 
 // The node/ICU/CLDR the committed names were generated with. The CLI refuses
 // to run on anything else; the currency builder shares this pin.
@@ -90,13 +91,60 @@ export const ZH_OVERRIDES = Object.freeze({
   COG: Object.freeze({ zh: "刚果（布）", policy_rule: 6 }),
 });
 
+// The aggregates that may ever get a display name (zh-naming-policy-1003 rule 7,
+// section 3 of the policy, amended 2026-10-03). Aggregates are NEVER derived
+// from the World Bank list: only these entries exist in the asset's
+// `aggregates`, each carrying `policy_rule` 7, and every other aggregate code
+// or name (the other World Bank aggregates such as TEA or ARB, every other
+// OWID_ code, a region the table does not list) stays unresolved, so a chart
+// that holds one is refused. An aggregate row belongs out of a country chart:
+// the lint (runtime/pi/viz.mjs) blocks one mixed with economies on the ranking
+// forms and tells the author to filter it out in SQL.
+//   - `zh` is the policy table's own name; `zh_from: "worldbank"` instead takes
+//     the World Bank's own zh name (the seven regions: a sourced name beats
+//     losing region comparisons, and after the lint they can only appear on an
+//     all-aggregate chart or as a reference series).
+//   - an entry with `en_name` has no World Bank row (the six Our World in Data
+//     continents): `en_name` is OWID's name for it.
+//   - the income groups are 经济体, never 国家: they include Hong Kong, Macao
+//     and Taiwan (rule 4).
+export const AGGREGATE_POLICY_RULE = 7;
+export const AGGREGATE_POLICY = Object.freeze([
+  Object.freeze({ iso3: "WLD", zh: "世界" }),
+  Object.freeze({ iso3: "EUU", zh: "欧盟" }),
+  Object.freeze({ iso3: "HIC", zh: "高收入经济体" }),
+  Object.freeze({ iso3: "UMC", zh: "中等偏上收入经济体" }),
+  Object.freeze({ iso3: "LMC", zh: "中等偏下收入经济体" }),
+  Object.freeze({ iso3: "LIC", zh: "低收入经济体" }),
+  Object.freeze({ iso3: "EAS", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "ECS", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "LCN", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "MEA", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "NAC", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "SAS", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "SSF", zh_from: "worldbank" }),
+  Object.freeze({ iso3: "OWID_AFR", en_name: "Africa", zh: "非洲" }),
+  Object.freeze({ iso3: "OWID_ASI", en_name: "Asia", zh: "亚洲" }),
+  Object.freeze({ iso3: "OWID_EUR", en_name: "Europe", zh: "欧洲" }),
+  Object.freeze({ iso3: "OWID_NAM", en_name: "North America", zh: "北美洲" }),
+  Object.freeze({ iso3: "OWID_SAM", en_name: "South America", zh: "南美洲" }),
+  Object.freeze({ iso3: "OWID_OCE", en_name: "Oceania", zh: "大洋洲" }),
+]);
+
 // Documented alternate spellings of a code, per mode. `target` is a key of the
-// same mode's primary table. Every other OWID_* aggregate code stays
-// unresolved on purpose (aggregate rows belong out of a country chart; the
-// lint tells the model to filter them in SQL).
+// same mode's primary table. The OWID_ codes that name an aggregate of the
+// policy table below alias the World Bank code of that aggregate (the six
+// continents are primary entries of their own); every other OWID_ code
+// stays unresolved on purpose (aggregate rows belong out of a country chart;
+// the lint tells the model to filter them in SQL).
 export const ALIASES = Object.freeze([
   Object.freeze({ mode: "iso3", alias: "OWID_KOS", target: "XKX", source: "Our World in Data code for Kosovo" }),
   Object.freeze({ mode: "iso3", alias: "OWID_WRL", target: "WLD", source: "Our World in Data code for the World aggregate" }),
+  Object.freeze({ mode: "iso3", alias: "OWID_EU27", target: "EUU", source: "Our World in Data code for the European Union aggregate" }),
+  Object.freeze({ mode: "iso3", alias: "OWID_HIC", target: "HIC", source: "Our World in Data code for the World Bank high-income group" }),
+  Object.freeze({ mode: "iso3", alias: "OWID_UMC", target: "UMC", source: "Our World in Data code for the World Bank upper-middle-income group" }),
+  Object.freeze({ mode: "iso3", alias: "OWID_LMC", target: "LMC", source: "Our World in Data code for the World Bank lower-middle-income group" }),
+  Object.freeze({ mode: "iso3", alias: "OWID_LIC", target: "LIC", source: "Our World in Data code for the World Bank low-income group" }),
   Object.freeze({ mode: "iso2", alias: "EL", target: "GR", source: "Eurostat geo code for Greece (ISO 3166-1 alpha-2 is GR)" }),
   Object.freeze({ mode: "iso2", alias: "UK", target: "GB", source: "Eurostat geo code for the United Kingdom (ISO 3166-1 alpha-2 is GB)" }),
 ]);
@@ -105,10 +153,10 @@ export const ALIASES = Object.freeze([
 // this script) can see how every name was chosen.
 const RULES = Object.freeze([
   "zh = Unicode CLDR zh-Hans region name (Intl.DisplayNames) for the entry's ISO 3166-1 alpha-2 code.",
-  "When CLDR has no name for the code (the World Bank pseudo-code JG for the Channel Islands), zh = the World Bank's own zh name, zh_source 'worldbank'.",
+  "When CLDR has no name for the code (the World Bank pseudo-code JG for the Channel Islands, CHI), zh = the World Bank's own zh name, zh_source 'worldbank'. This is the one exception to policy rule 8 (an iso3 with no CLDR name is dropped and never shown in English): the World Bank's name is Chinese, a source name and not an English fallback, so the entry is kept (reviewed decision of 2026-10-03).",
   "The override table (zh_source 'override') replaces the CLDR name only where a policy rule says so; policy_rule is that rule's number and cldr_zh records what CLDR said.",
   "Natural Earth territories (the `territories` list) have no World Bank row: they resolve by ISO3 and ISO2 only, never by an English name. Their ISO2 is ISO_A2_EH of the pinned Natural Earth source (sources.natural_earth_admin0_50m); their en_name is the CLDR English region name.",
-  "Aggregates (World Bank regions and income groups, plus WLD) keep the World Bank zh names. Aggregate rows belong out of a country chart; use them only when the aggregate itself is the subject.",
+  "Aggregates are never derived from the World Bank list: only the entries of the explicit policy table (policy rule 7) exist in `aggregates`, each with policy_rule 7, and every other aggregate code or name does not resolve, so a chart that holds one is refused. The seven World Bank regions keep the World Bank's zh names (zh_source 'worldbank'); the others take the policy table's name (zh_source 'policy', wb_zh records what the World Bank said where it has a name). The income groups are 经济体, never 国家, because they include Hong Kong, Macao and Taiwan. Aggregate rows belong out of a country chart; use them only when the aggregate itself is the subject.",
   "`aliases` map a documented alternate code to a primary key of the same mode; any other code that is not a primary key does not resolve.",
   "A zh name is never an English fallback: an empty name or one with Latin letters aborts the build.",
 ]);
@@ -192,18 +240,24 @@ export function readNeTerritoryIso2(nePath) {
 /**
  * Pure derivation of the economy-names asset's substantive content: the
  * vendored-file provenance and the economies / territories / aggregates /
- * aliases tables. Throws if any included zh name would be empty or contain
- * Latin letters, if an override or alias does not land on a real entry, or if
- * a code is not unique (a real World Bank/CLDR data change or fixture
- * corruption, never something to route around).
+ * aliases tables (the aggregates are exactly the entries of
+ * AGGREGATE_POLICY). Throws if any included zh name would be empty or contain
+ * Latin letters, if an override, an aggregate policy entry or an alias does
+ * not land on a real entry, or if a code is not unique (a real World
+ * Bank/CLDR data change or fixture corruption, never something to route
+ * around).
  *
  * `territoryIso2` is the iso3 -> iso2 map of the TERRITORY_ISO3 entries
  * (readNeTerritoryIso2() produces it from the pinned Natural Earth file; a
  * test without that file may pass the values stored in the committed asset).
  *
- * @param {{enPath?: string, zhPath?: string, territoryIso2: Record<string, string>}} options
+ * `aggregatePolicy` is AGGREGATE_POLICY and `aliasTable` is ALIASES; a test
+ * passes other tables to prove the aggregates are exactly the policy table's
+ * entries and that a bad entry aborts the build.
+ *
+ * @param {{enPath?: string, zhPath?: string, territoryIso2: Record<string, string>, aggregatePolicy?: readonly object[], aliasTable?: readonly object[]}} options
  */
-export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_ZH_PATH, territoryIso2 } = {}) {
+export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_ZH_PATH, territoryIso2, aggregatePolicy = AGGREGATE_POLICY, aliasTable = ALIASES } = {}) {
   if (!territoryIso2) throw new Error("buildEconomyNames: territoryIso2 (iso3 -> iso2 of the Natural Earth territories) is required; see readNeTerritoryIso2()");
   const en = loadWbList(enPath);
   const zh = loadWbList(zhPath);
@@ -279,30 +333,32 @@ export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_Z
     })
     .sort((a, b) => a.iso3.localeCompare(b.iso3));
 
-  // Aggregates are derived from the economies themselves, never hand-
-  // picked: "WLD" (the whole-world aggregate every economy rolls up to)
-  // plus every distinct region.id and incomeLevel.id an included economy
-  // is actually assigned to. All 12 aggregate names come from the World
-  // Bank's own zh list - CLDR's region catalogue has no notion of a
-  // lending/income aggregate.
-  const aggregateIds = new Set(["WLD"]);
-  for (const row of en.rows) {
-    if (row.region?.value === "Aggregates") continue;
-    if (row.region?.id) aggregateIds.add(row.region.id);
-    if (row.incomeLevel?.id) aggregateIds.add(row.incomeLevel.id);
-  }
+  // Aggregates are exactly the entries of AGGREGATE_POLICY (policy rule 7), in
+  // code order: the policy table names which aggregates exist, nothing is
+  // derived from the World Bank list. A table entry that does not land on a
+  // real World Bank aggregate (or, for an OWID continent, that collides with a
+  // World Bank row) aborts the build, so a typo cannot silently do nothing.
   const enById = new Map(en.rows.map((row) => [row.id, row]));
-  const aggregates = [...aggregateIds]
-    .sort()
-    .map((iso3) => {
+  const aggregates = aggregatePolicy
+    .map((policy) => {
+      const iso3 = policy.iso3;
       const enRow = enById.get(iso3);
-      if (!enRow) throw new Error(`economy-names build: aggregate '${iso3}' is not present in the World Bank en list`);
-      const wb_name = String(enRow.name ?? "").trim();
-      const zhName = worldBankZh(iso3);
-      const entry = { iso3, wb_name, zh: zhName, zh_source: "worldbank" };
+      let entry;
+      if (policy.en_name) {
+        if (enRow) throw new Error(`economy-names build: aggregate policy entry '${iso3}' carries its own English name but the World Bank list has a row for it`);
+        entry = { iso3, en_name: policy.en_name, zh: policy.zh, zh_source: "policy", policy_rule: AGGREGATE_POLICY_RULE };
+      } else {
+        if (!enRow) throw new Error(`economy-names build: aggregate policy entry '${iso3}' is not present in the World Bank en list`);
+        if (enRow.region?.value !== "Aggregates") throw new Error(`economy-names build: aggregate policy entry '${iso3}' is an economy in the World Bank list, not an aggregate`);
+        const wb_name = String(enRow.name ?? "").trim();
+        entry = policy.zh_from === "worldbank"
+          ? { iso3, wb_name, zh: worldBankZh(iso3), zh_source: "worldbank", policy_rule: AGGREGATE_POLICY_RULE }
+          : { iso3, wb_name, zh: policy.zh, zh_source: "policy", policy_rule: AGGREGATE_POLICY_RULE, wb_zh: worldBankZh(iso3) };
+      }
       assertZhName(entry.zh, `aggregate ${iso3}`);
       return entry;
-    });
+    })
+    .sort((a, b) => (a.iso3 < b.iso3 ? -1 : a.iso3 > b.iso3 ? 1 : 0));
 
   // Every override must land on a real economy or territory (a mistyped code
   // would otherwise silently do nothing), and never on an aggregate.
@@ -324,12 +380,13 @@ export function buildEconomyNames({ enPath = DEFAULT_EN_PATH, zhPath = DEFAULT_Z
   // wb_name is the lookup key of the by-name mode: unique across entries that have one.
   const wbNameSeen = new Set();
   for (const entry of [...economies, ...aggregates]) {
+    if (entry.wb_name === undefined) continue; // an OWID continent has no World Bank name
     if (wbNameSeen.has(entry.wb_name)) throw new Error(`duplicate wb_name '${entry.wb_name}'`);
     wbNameSeen.add(entry.wb_name);
   }
 
   const primaryKeys = { iso3: iso3Seen, iso2: iso2Seen };
-  const aliases = ALIASES.map((alias) => {
+  const aliases = aliasTable.map((alias) => {
     const primary = primaryKeys[alias.mode];
     if (!primary) throw new Error(`alias '${alias.alias}' names an unsupported mode '${alias.mode}'`);
     if (primary.has(alias.alias)) throw new Error(`alias '${alias.alias}' would shadow a primary ${alias.mode} code`);
