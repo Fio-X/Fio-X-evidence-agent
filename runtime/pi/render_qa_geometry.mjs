@@ -211,7 +211,7 @@ const DEFAULT_OPTIONS = Object.freeze({
 // not, strictly, "CJK" - a documented, deliberate widening of the bucket.
 const WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
 
-function estimateTextWidth(text, fontSize, bold) {
+export function estimateTextWidth(text, fontSize, bold) {
   const table = bold ? LATIN_BOLD_ADVANCE_WIDTHS : LATIN_ADVANCE_WIDTHS;
   let units = 0;
   for (const ch of Array.from(String(text))) {
