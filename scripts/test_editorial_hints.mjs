@@ -24,6 +24,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
@@ -151,11 +152,15 @@ function checkDefinitions(mod, { quiet = false } = {}) {
       assert.deepEqual([...off.keys()], [...base.keys()], `${where}: switch off registers the tools a4d4cb0 registers`);
       for (const name of base.keys()) {
         const approved = APPROVED_LATER[name];
-        if (!approved) { assert.equal(slim(off.get(name)), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
-        const [o, b] = [withPathCleared(off.get(name), approved.path), withPathCleared(base.get(name), approved.path)];
+        // The category_names wording and enum (zh-names-1003) are a second declared difference from a4d4cb0, for the two
+        // tools that carry them; revertNameLocalization puts the old wording back and refuses a surface that lacks exactly
+        // those edits. It is the identity for every other tool.
+        const current = revertNameLocalization(off.get(name));
+        if (!approved) { assert.equal(slim(current), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
+        const [o, b] = [withPathCleared(current, approved.path), withPathCleared(base.get(name), approved.path)];
         assert.ok(o.had && b.had, `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
         assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${approved.path.join(".")} (approved change ${approved.commit})`);
-        assert.notEqual(slim(off.get(name)), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
+        assert.notEqual(slim(current), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
       }
     }
     const changed = [...off.keys()].filter((name) => slim(on.get(name)) !== slim(off.get(name)));

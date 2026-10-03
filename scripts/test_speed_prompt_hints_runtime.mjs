@@ -11,6 +11,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = "bc1ccfd";
@@ -60,6 +61,10 @@ try {
   // baseline registers a weaker duplicate). Mask only that property; test_viz_plan_schema.mjs asserts the full schema.
   const MASKED = new Set(["newsroom_viz_plan", "newsroom_viz_chain"]);
   const visible = (tool) => JSON.stringify({ ...tool, execute: undefined }, MASKED.has(tool.name) ? (key, value) => (key === "measure_semantics" ? "masked" : value) : undefined);
+  // The other declared difference from bc1ccfd: the category_names enum and two newsroom_viz_plan guideline sentences
+  // (zh-names-1003). revertNameLocalization puts the old wording back and refuses a surface that lacks exactly those edits. This
+  // suite's StringEnum stand-in keeps only the enum values (no options object), so the field description is not on this surface.
+  const asBaseline = (tool) => revertNameLocalization(tool, { descriptions: false });
 
   let compared = 0;
   for (const profile of PROFILES) {
@@ -67,7 +72,7 @@ try {
     const off = definitions(current, profile, []);
     assert.deepEqual([...off.keys()], [...base.keys()], `${profile}: same tools in the same order`);
     for (const [name, tool] of base) {
-      assert.equal(visible(off.get(name)), visible(tool), `${profile}/${name}: switch off is byte-identical to ${BASELINE_REF}`);
+      assert.equal(visible(asBaseline(off.get(name))), visible(tool), `${profile}/${name}: switch off is byte-identical to ${BASELINE_REF}`);
       compared++;
     }
     for (const [env, tools] of Object.entries(SWITCHES)) {
@@ -77,12 +82,12 @@ try {
         const probe = new Map();
         current(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => probe.set(tool.name, tool) : () => {}) }));
         delete process.env[env];
-        for (const [name, tool] of base) assert.equal(visible(probe.get(name)), visible(tool), `${profile}/${name}: ${env}=${JSON.stringify(bad)} changes nothing`);
+        for (const [name, tool] of base) assert.equal(visible(asBaseline(probe.get(name))), visible(tool), `${profile}/${name}: ${env}=${JSON.stringify(bad)} changes nothing`);
       }
       const on = definitions(current, profile, [env]);
       for (const [name, tool] of base) {
         if (!tools.includes(name)) {
-          assert.equal(visible(on.get(name)), visible(tool), `${profile}/${name}: untouched by ${env}`);
+          assert.equal(visible(asBaseline(on.get(name))), visible(tool), `${profile}/${name}: untouched by ${env}`);
           continue;
         }
         const after = on.get(name);

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -120,7 +121,9 @@ const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description
   const base = register(baseMod, {});
   const off = register(mod, {});
   assert.deepEqual([...off.keys()], [...base.keys()]);
-  for (const [name, tool] of base) assert.equal(slim(off.get(name)), slim(tool), `switch off: ${name} is byte-identical to the integration head`);
+  // One declared difference from the integration head: the wording and enum of category_names (zh-names-1003), put back by
+  // revertNameLocalization, which refuses a surface that does not carry exactly those edits. Everything else stays byte-identical.
+  for (const [name, tool] of base) assert.equal(slim(revertNameLocalization(off.get(name))), slim(tool), `switch off: ${name} is byte-identical to the integration head`);
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();
