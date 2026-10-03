@@ -216,14 +216,17 @@ assert.deepEqual(
   assert.ok(!unresolved.warnings.some((w) => w.includes("contain no CJK characters")), "the blocker replaces the advisory warning for a recognizable column");
   assert.ok(!/刚果（金）/.test(renderVizSvg(spec({ language: "zh", title: zhTitle }), mixed)), "partially unresolvable names must not be re-labelled");
 
-  // Non-economy categories (companies, provinces ...) are left alone: no resolution, no blocker, only the advisory warning.
+  // Non-economy categories (companies, provinces ...) in a column whose name does not say economies or currencies are
+  // left alone: no resolution, no blocker, only the advisory warning. (A column NAMED country that holds them has
+  // declared economies, so it is blocked in full: see "declared economy and currency columns resolve in full" below.)
   const companies = ROWS.map((r, i) => ({ ...r, country: `Acme Group ${i}` }));
-  const nonEconomy = lintVizSpec(spec({ language: "zh", title: zhTitle }), companies, {});
+  const nonEconomy = lintVizSpec(spec({ language: "zh", title: zhTitle, category_field: "company" }), companies.map((r) => ({ ...r, company: r.country })), {});
   assert.equal(nonEconomy.category_names_resolution, undefined);
-  assert.equal(nonEconomy.blockers.length, lintVizSpec(spec({ language: "zh", title: zhTitle }), companies, {}).blockers.length);
+  assert.equal(nonEconomy.blockers.length, lintVizSpec(spec({ language: "zh", title: zhTitle, category_field: "company" }), companies.map((r) => ({ ...r, company: r.country })), {}).blockers.length);
   assert.ok(!nonEconomy.blockers.some((b) => b.includes("values match")), JSON.stringify(nonEconomy.blockers));
+  assert.ok(!nonEconomy.blockers.some((b) => b.startsWith("zh chart's")), JSON.stringify(nonEconomy.blockers));
   assert.ok(
-    nonEconomy.warnings.includes("zh chart's 'country' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text"),
+    nonEconomy.warnings.includes("zh chart's 'company' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text"),
     JSON.stringify(nonEconomy.warnings),
   );
 
@@ -855,6 +858,203 @@ console.log("iso2 needs a country-code column: PASS");
 }
 
 console.log("scatter labels resolve: PASS");
+
+// ---------------------------------------------------------------------
+// A declared economy or currency column must resolve in full (zh-naming-policy-1003, rule 2). A column whose name says it
+// holds economies or currencies (an economy or currency token, the signal auto-resolution already keys off) has told the
+// reader what its values are. The older rule blocked a zh chart with no category_names only when at least two values and
+// at least half of them were recognizable and none was Chinese, so one code the tables do not know, one aggregate outside
+// the policy table or one name typed by hand turned the blocker into an advisory warning and the page printed the rest
+// raw. Now one value without CJK characters in such a column blocks, with the same message. A column whose name says
+// nothing keeps the thresholds, and a column of Chinese values from a Chinese source stays legal.
+// ---------------------------------------------------------------------
+{
+  const zhSpec = (overrides = {}) => spec({ language: "zh", title: "可再生能源占比最高的经济体", ...overrides });
+  const rowsOf = (field, values) => values.map((value, i) => ({ [field]: value, pct: 90 - i }));
+  const nameBlockers = (l) => l.blockers.filter((b) => b.startsWith("zh chart's") || b.startsWith("category_names"));
+  const nameWarnings = (l) => l.warnings.filter((w) => w.startsWith("zh chart's"));
+  const lint = (field, values, overrides = {}) => lintVizSpec(zhSpec({ category_field: field, ...overrides }), rowsOf(field, values), {});
+  const SQL_FILTER = "filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself";
+  const NOT_NAMES_TAIL = "; if these values are not economies or currencies, label them in Chinese instead";
+  const ADVISORY = (field) => `zh chart's '${field}' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text`;
+  const SELECT_ISO3 = "select the ISO3 code column as the name field and set category_names='iso3'";
+  const SELECT_ISO4217 = "select the ISO 4217 currency code column as the name field and set category_names='iso4217'";
+
+  // --- One value the tables do not know is enough, below the old threshold of two matches ---
+  {
+    const one = lint("country", ["KEN", "ZZZ"]);
+    assert.deepEqual(nameBlockers(one), [`zh chart's 'country' values match ISO3 codes (best mode 'iso3': 1 of 2 distinct values, e.g. 'KEN') and none contains CJK characters, so readers would see raw codes; ${SELECT_ISO3}; ${SQL_FILTER}`], "no hedge: the column name says these are economies and one of them is");
+    assert.deepEqual(nameWarnings(one), [], "the blocker replaces the advisory warning");
+    assert.equal(one.category_names_resolution, undefined, "a column that does not resolve in full is not resolved at all");
+    // Where the older rule already blocked, the message is the one it gave.
+    assert.deepEqual(nameBlockers(lint("country", ["KEN", "NOR", "BRA", "ZZZ"])), [`zh chart's 'country' values match ISO3 codes (best mode 'iso3': 3 of 4 distinct values, e.g. 'KEN', 'NOR', 'BRA') and none contains CJK characters, so readers would see raw codes; ${SELECT_ISO3}; ${SQL_FILTER}`]);
+    // Values are trimmed and de-duplicated before they are counted, empty cells are not values.
+    assert.deepEqual(nameBlockers(lint("country", [" KEN", "KEN", "ZZZ ", "", null])), [`zh chart's 'country' values match ISO3 codes (best mode 'iso3': 1 of 2 distinct values, e.g. 'KEN') and none contains CJK characters, so readers would see raw codes; ${SELECT_ISO3}; ${SQL_FILTER}`]);
+    // A column that resolves in full is not blocked: the names are chosen automatically.
+    const full = lint("country", ["KEN", "NOR"]);
+    assert.deepEqual(nameBlockers(full), []);
+    assert.deepEqual(full.category_names_resolution, { field: "country", mode: "iso3", source: "auto", values: 2 });
+    // The same two values in a column that says nothing keep the older rule: an advisory warning, never a blocker.
+    const unsignalled = lint("code", ["KEN", "ZZZ"]);
+    assert.deepEqual(nameBlockers(unsignalled), []);
+    assert.deepEqual(nameWarnings(unsignalled), [ADVISORY("code")]);
+  }
+
+  // --- No value matches: the message says so, names the table it looked in, and keeps the not-economies hedge ---
+  {
+    assert.deepEqual(nameBlockers(lint("country", ["ZZZ"])), [`zh chart's 'country' values match no World Bank economy name or code (e.g. 'ZZZ') and none contains CJK characters, so readers would see the raw values; ${SELECT_ISO3} (category_names='worldbank' also resolves these exact names); ${SQL_FILTER}${NOT_NAMES_TAIL}`], "one value, no match");
+    // Examples are capped at three.
+    assert.deepEqual(nameBlockers(lint("country", ["Atlantis", "Narnia", "Mordor", "Gondor"])), [`zh chart's 'country' values match no World Bank economy name or code (e.g. 'Atlantis', 'Narnia', 'Mordor') and none contains CJK characters, so readers would see the raw values; ${SELECT_ISO3} (category_names='worldbank' also resolves these exact names); ${SQL_FILTER}${NOT_NAMES_TAIL}`]);
+    assert.deepEqual(nameBlockers(lint("currency", ["Gold", "Bitcoin"])), [`zh chart's 'currency' values match no ISO 4217 currency code (e.g. 'Gold', 'Bitcoin') and none contains CJK characters, so readers would see the raw values; ${SELECT_ISO4217}; ${SQL_FILTER}${NOT_NAMES_TAIL}`]);
+    // A list of companies in a column that says country is blocked, not warned about.
+    const companies = lint("country", ["Acme Group 1", "Acme Group 2"]);
+    assert.equal(nameBlockers(companies).length, 1);
+    assert.ok(nameBlockers(companies)[0].startsWith("zh chart's 'country' values match no World Bank economy name or code (e.g. 'Acme Group 1', 'Acme Group 2')"), nameBlockers(companies)[0]);
+    assert.deepEqual(nameWarnings(companies), []);
+    // The same list in a column that says nothing keeps the advisory warning.
+    const company = lint("company", ["Acme Group 1", "Acme Group 2"]);
+    assert.deepEqual(nameBlockers(company), []);
+    assert.deepEqual(nameWarnings(company), [ADVISORY("company")]);
+  }
+
+  // --- A name typed by hand in a column that also holds other values: blocked, and the message says who is left ---
+  {
+    const typed = lint("country", ["KEN", "NOR", "美国"]);
+    assert.deepEqual(nameBlockers(typed), [`zh chart's 'country' values match ISO3 codes (best mode 'iso3': 2 of 3 distinct values, e.g. 'KEN', 'NOR') and 1 of them contains CJK characters (e.g. '美国'), so readers would see raw codes for the rest; ${SELECT_ISO3}; ${SQL_FILTER}`]);
+    assert.deepEqual(nameWarnings(typed), []);
+    assert.deepEqual(nameBlockers(lint("country", ["KEN", "美国", "日本"])), [`zh chart's 'country' values match ISO3 codes (best mode 'iso3': 1 of 3 distinct values, e.g. 'KEN') and 2 of them contain CJK characters (e.g. '美国', '日本'), so readers would see raw codes for the rest; ${SELECT_ISO3}; ${SQL_FILTER}`]);
+    assert.deepEqual(nameBlockers(lint("country", ["中国", "Other"])), [`zh chart's 'country' values match no World Bank economy name or code (e.g. 'Other') and 1 of them contains CJK characters (e.g. '中国'), so readers would see the raw values for the rest; ${SELECT_ISO3} (category_names='worldbank' also resolves these exact names); ${SQL_FILTER}${NOT_NAMES_TAIL}`]);
+    assert.deepEqual(nameBlockers(lint("currency", ["美元", "EUR", "JPY"])), [`zh chart's 'currency' values match ISO 4217 currency codes (best mode 'iso4217': 2 of 3 distinct values, e.g. 'EUR', 'JPY') and 1 of them contains CJK characters (e.g. '美元'), so readers would see bare currency codes for the rest; ${SELECT_ISO4217}; ${SQL_FILTER}`]);
+    // Examples of the Chinese values are capped at three too.
+    assert.ok(nameBlockers(lint("country", ["KEN", "中国", "美国", "日本", "韩国"]))[0].includes("4 of them contain CJK characters (e.g. '中国', '美国', '日本')"), nameBlockers(lint("country", ["KEN", "中国", "美国", "日本", "韩国"]))[0]);
+    // In a column that says nothing, one Chinese value still means the author is labelling by hand.
+    for (const values of [["KEN", "美国"], ["KEN", "NOR", "美国"]]) {
+      const labelled = lint("label", values);
+      assert.deepEqual(nameBlockers(labelled), [], JSON.stringify(values));
+      assert.deepEqual(nameWarnings(labelled), [], JSON.stringify(values));
+    }
+  }
+
+  // --- Every economy and currency token signals, as a whole token of the field name ---
+  {
+    for (const field of ["country", "Countries", "economy", "economies", "nation", "nations", "geo", "iso2", "iso3", "iso3c", "国家", "经济体", "国别", "origin_country", "countryName", "Country Name"]) {
+      const l = lint(field, ["KEN", "ZZZ"]);
+      assert.equal(nameBlockers(l).length, 1, field);
+      assert.ok(nameBlockers(l)[0].startsWith(`zh chart's '${field}' values match ISO3 codes (best mode 'iso3': 1 of 2 distinct values, e.g. 'KEN') and none contains CJK characters`), `${field}: ${nameBlockers(l)[0]}`);
+      assert.ok(!nameBlockers(l)[0].endsWith(NOT_NAMES_TAIL), field);
+      assert.deepEqual(nameWarnings(l), [], field);
+    }
+    for (const field of ["currency", "Currencies", "cur", "ccy", "货币", "币种", "base_currency", "localCurrency"]) {
+      const l = lint(field, ["USD", "ZZZ"]);
+      assert.equal(nameBlockers(l).length, 1, field);
+      assert.ok(nameBlockers(l)[0].startsWith(`zh chart's '${field}' values match ISO 4217 currency codes (best mode 'iso4217': 1 of 2 distinct values, e.g. 'USD') and none contains CJK characters`), `${field}: ${nameBlockers(l)[0]}`);
+      assert.ok(!nameBlockers(l)[0].endsWith(NOT_NAMES_TAIL), field);
+      assert.deepEqual(nameWarnings(l), [], field);
+    }
+    // The two-letter column Eurostat publishes: one code the table does not know (an EU aggregate) is enough.
+    assert.deepEqual(nameBlockers(lint("geo", ["DE", "EU27_2020"])), [`zh chart's 'geo' values match ISO 3166-1 alpha-2 codes (best mode 'iso2': 1 of 2 distinct values, e.g. 'DE') and none contains CJK characters, so readers would see raw codes; select the ISO2 code column as the name field and set category_names='iso2'; ${SQL_FILTER}`]);
+    // Anything else is no signal: not a token of its own, or a word that merely contains one.
+    for (const field of ["code", "label", "name", "entity", "iso", "region", "countryside", "currencyless", "iso4217", "hecountry"]) {
+      const l = lint(field, ["KEN", "ZZZ"]);
+      assert.deepEqual(nameBlockers(l), [], field);
+      assert.deepEqual(nameWarnings(l), [ADVISORY(field)], field);
+    }
+  }
+
+  // --- A column of Chinese values stays legal, empty cells and all ---
+  {
+    for (const [field, values] of [["country", ["中国", "美国", "日本"]], ["country", ["中国", "", null, "  ", "美国"]], ["currency", ["美元", "欧元"]], ["货币", ["円", "ウォン", "원"]], ["economy", ["中国香港"]]]) {
+      const l = lint(field, values);
+      assert.deepEqual(nameBlockers(l), [], `${field} ${JSON.stringify(values)}`);
+      assert.deepEqual(nameWarnings(l), [], `${field} ${JSON.stringify(values)}`);
+    }
+    // A column with no value at all has nothing to show and nothing to block.
+    assert.deepEqual(nameBlockers(lint("country", ["", null, " "])), []);
+    // A Chinese value with a Latin tail is still Chinese: the reader sees Chinese.
+    assert.deepEqual(nameBlockers(lint("country", ["中国 (CHN)", "美国 (USA)"])), []);
+  }
+
+  // --- Aggregates outside the policy table are not names: they block the column even when almost everything else resolves ---
+  {
+    const mixed = lint("country", ["Kenya", "Euro area", "East Asia & Pacific (IDA & IBRD countries)"]);
+    assert.deepEqual(nameBlockers(mixed), [`zh chart's 'country' values match exact World Bank English names (best mode 'worldbank': 1 of 3 distinct values, e.g. 'Kenya') and none contains CJK characters, so readers would see English names; ${SELECT_ISO3} (category_names='worldbank' also resolves these exact names); ${SQL_FILTER}`]);
+    // An aggregate of the policy table resolves, and the column resolves in full (the mix itself is aggregateMixBlocker's business).
+    const world = lint("country", ["Kenya", "World"]);
+    assert.deepEqual(world.category_names_resolution, { field: "country", mode: "worldbank", source: "auto", values: 2 });
+    assert.deepEqual(nameBlockers(world).filter((b) => b.startsWith("zh chart's")), []);
+  }
+
+  // --- What the rule leaves alone ---
+  {
+    // An English page may show codes and names as it likes.
+    const en = lintVizSpec(spec({ title: "Ranking", category_field: "country" }), rowsOf("country", ["KEN", "ZZZ"]), {});
+    assert.deepEqual(nameBlockers(en), []);
+    assert.deepEqual(nameWarnings(en), []);
+    // A declared category_names keeps its own unmapped-value blocker, once.
+    assert.deepEqual(nameBlockers(lint("country", ["KEN", "ZZZ"], { category_names: "iso3" })), ["category_names='iso3' cannot resolve 1 value(s) in 'country' (e.g. 'ZZZ'); use the exact ISO3 economy/aggregate code (filter other aggregate rows such as OWID_* regions and income groups out in SQL) instead of translating it yourself"]);
+    // Choropleth owns its name blockers.
+    const choropleth = lint("country", ["Kenya", "ZZZ"], { chart_type: "choropleth" });
+    assert.ok(!choropleth.blockers.some((b) => b.startsWith("zh chart's")), JSON.stringify(choropleth.blockers));
+    assert.deepEqual(nameWarnings(choropleth), [ADVISORY("country")], "choropleth keeps the advisory warning it always had");
+  }
+
+  // --- Every form that prints names from a field, the field being the one the chart type names ---
+  {
+    const values = ["KEN", "ZZZ"];
+    const oneField = [
+      ["horizontal_bar", { category_field: "country", value_field: "v" }, (f) => values.map((c, i) => ({ [f]: c, v: i + 1 }))],
+      ["dot", { category_field: "country", value_field: "v" }, (f) => values.map((c, i) => ({ [f]: c, v: i + 1 }))],
+      ["dumbbell", { category_field: "country", value_field: "v", start_field: "a", end_field: "b" }, (f) => values.map((c, i) => ({ [f]: c, v: i + 1, a: 1, b: 2 }))],
+      ["slope", { category_field: "country", value_field: "v", time_field: "t" }, (f) => values.flatMap((c, i) => [{ [f]: c, v: i + 1, t: 2000 }, { [f]: c, v: i + 2, t: 2020 }])],
+      ["diverging_bar", { category_field: "country", value_field: "v" }, (f) => values.map((c, i) => ({ [f]: c, v: i - 1 }))],
+      ["waffle", { category_field: "country", value_field: "v" }, (f) => values.map((c, i) => ({ [f]: c, v: 10 + i }))],
+      ["treemap", { category_field: "country", value_field: "v" }, (f) => values.map((c, i) => ({ [f]: c, v: 10 + i }))],
+      ["small_multiples", { facet_field: "country", x_field: "t", y_field: "v", panel_mark: "line" }, (f) => values.flatMap((c, i) => [{ [f]: c, t: 2000, v: i + 1 }, { [f]: c, t: 2010, v: i + 2 }])],
+      ["multi_line", { series_field: "country", x_field: "t", y_field: "v" }, (f) => values.flatMap((c, i) => [{ [f]: c, t: 2000, v: i + 1 }, { [f]: c, t: 2010, v: i + 2 }])],
+      ["scatter", { label_field: "country", x_field: "x", y_field: "y" }, (f) => values.map((c, i) => ({ [f]: c, x: i, y: i * 2 }))],
+    ];
+    const NAME_KEYS = ["category_field", "facet_field", "series_field", "label_field"];
+    for (const [chartType, fields, makeRows] of oneField) {
+      const key = NAME_KEYS.find((candidate) => fields[candidate]);
+      const theSpec = (nameField) => zhSpec({ chart_type: chartType, category_field: undefined, value_field: undefined, ...fields, [key]: nameField });
+      const blocked = lintVizSpec(theSpec("country"), makeRows("country"), {});
+      assert.equal(nameBlockers(blocked).length, 1, chartType);
+      assert.ok(nameBlockers(blocked)[0].startsWith("zh chart's 'country' values match ISO3 codes (best mode 'iso3': 1 of 2 distinct values, e.g. 'KEN') and none contains CJK characters"), `${chartType}: ${nameBlockers(blocked)[0]}`);
+      assert.deepEqual(nameWarnings(blocked), [], chartType);
+      const quiet = lintVizSpec(theSpec("label"), makeRows("label"), {});
+      assert.deepEqual(nameBlockers(quiet), [], `${chartType}: an unsignalled field keeps the older rule`);
+      assert.deepEqual(nameWarnings(quiet), [ADVISORY("label")], chartType);
+    }
+
+    // Sankey and alluvial name their nodes in two fields, prefixes stripped; only the fields that say economy are held to the rule.
+    for (const chartType of ["sankey", "alluvial"]) {
+      const flow = (overrides = {}) => zhSpec({ chart_type: chartType, reader_task: "flow", title: "资金流向", category_field: undefined, source_field: "origin_country", target_field: "to", value_field: "v", ...overrides });
+      const flows = [{ origin_country: "origin:CHN", to: "destination:USA", v: 3 }, { origin_country: "origin:ZZZ", to: "destination:IND", v: 2 }, { origin_country: "origin:BRA", to: "destination:USA", v: 1 }];
+      const l = lintVizSpec(flow(), flows, {});
+      assert.deepEqual(nameBlockers(l), [
+        `zh chart's 'origin_country' values match ISO3 codes (best mode 'iso3': 2 of 3 distinct values, e.g. 'CHN', 'BRA') and none contains CJK characters, so readers would see raw codes; ${SELECT_ISO3}; ${SQL_FILTER}`,
+        `zh chart's 'to' values match ISO3 codes (best mode 'iso3': 2 of 2 distinct values, e.g. 'USA', 'IND') and none contains CJK characters, so readers would see raw codes; ${SELECT_ISO3}; ${SQL_FILTER}${NOT_NAMES_TAIL}`,
+      ], `${chartType}: the signalled field is held to the full rule, the other keeps the thresholds and its hedge`);
+      // The unsignalled field below the thresholds is a warning, about that field only.
+      const named = [{ origin_country: "origin:CHN", to: "destination:Acme", v: 3 }, { origin_country: "origin:ZZZ", to: "destination:Globex", v: 2 }];
+      const quiet = lintVizSpec(flow(), named, {});
+      assert.equal(nameBlockers(quiet).length, 1, chartType);
+      assert.ok(nameBlockers(quiet)[0].startsWith("zh chart's 'origin_country' values match ISO3 codes (best mode 'iso3': 1 of 2 distinct values, e.g. 'CHN')"), nameBlockers(quiet)[0]);
+      assert.deepEqual(nameWarnings(quiet), [ADVISORY("to")], chartType);
+      // Both fields say economy: one blocker names both, and the column nouns are plural.
+      const both = lintVizSpec(flow({ target_field: "dest_country" }), [{ origin_country: "origin:CHN", dest_country: "destination:USA", v: 3 }, { origin_country: "origin:ZZZ", dest_country: "destination:IND", v: 2 }], {});
+      assert.deepEqual(nameBlockers(both), [`zh chart's 'origin_country' and 'dest_country' values match ISO3 codes (best mode 'iso3': 3 of 4 distinct values, e.g. 'CHN', 'USA', 'IND') and none contains CJK characters, so readers would see raw codes; select the ISO3 code columns as the name fields and set category_names='iso3'; ${SQL_FILTER}`], chartType);
+      // A signalled field of Chinese names beside one of codes: only the codes are named.
+      const half = lintVizSpec(flow({ source_field: "from_country", target_field: "to_country" }), [{ from_country: "origin:中国", to_country: "destination:USA", v: 3 }, { from_country: "origin:美国", to_country: "destination:ZZZ", v: 2 }], {});
+      assert.deepEqual(nameBlockers(half), [`zh chart's 'to_country' values match ISO3 codes (best mode 'iso3': 1 of 2 distinct values, e.g. 'USA') and none contains CJK characters, so readers would see raw codes; ${SELECT_ISO3}; ${SQL_FILTER}`], chartType);
+      assert.deepEqual(nameWarnings(half), [], chartType);
+      // Declared, the flow is judged by the declaration and nothing else.
+      assert.deepEqual(nameBlockers(lintVizSpec(flow({ category_names: "iso3" }), flows.map((r) => ({ ...r, origin_country: r.origin_country.replace("ZZZ", "TCD"), to: r.to })), {})), [], chartType);
+    }
+  }
+}
+
+console.log("declared economy and currency columns resolve in full: PASS");
 
 // ---------------------------------------------------------------------
 // chartNameDisplay (zh-naming-policy-1003): the lookup newsroom.ts's inline claim fill uses to write a place or currency
