@@ -867,6 +867,9 @@ async function assertApprovedInfographicLineage(infographicPlanRef: string): Pro
       `Publication blocked: infographic '${found.ref}' has no passing critic (missing or failed) - run newsroom_infographic_critic until it passes`,
     );
   }
+  try { await assertPageLintCurrent(found.manifest); } catch (error: any) {
+    throw new Error(`Publication blocked: the lint infographic '${found.ref}' was rendered from no longer holds - ${String(error?.message ?? error)}`);
+  }
   if (found.manifest.visual_review_required === true) {
     const hasVision = await hasPassingLinkedCritic("infographics/vision-critics", found.ref);
     if (!hasVision) {
@@ -2408,6 +2411,44 @@ function lintIsCurrent(lint: any) {
 }
 function assertLintCurrent(lint: any) {
   if (!lintIsCurrent(lint)) throw new Error(`LINT_STALE: the stored infographic lint was made under another lint policy (version ${String(lint?.lint_policy_version ?? "none")}, hero gate ${String(lint?.hero_value_gate ?? "unknown")}) than the current one (version ${INFOGRAPHIC_LINT_POLICY_VERSION}, hero gate ${heroGateOn()}); run newsroom_infographic_lint again on this plan, then render with the new lint_ref`);
+}
+
+/**
+ * The lint a page was made from must still hold today. Every consumer of an infographic lint, page manifest or critic
+ * record runs this: the lint belongs to the plan and passed; every claim the plan cites is still system-verified; it was
+ * made under today's lint policy; the upstream assets still hash as it recorded; and the plan lints clean again under
+ * today's settings. The checks and their messages are the render's own.
+ */
+async function assertInfographicLintHolds(spec: any, lint: any, planRef: string) {
+  const mobilePages = mobilePagesEnabled();
+  if (lint.plan_ref !== planRef) throw new Error("Infographic lint does not belong to the supplied plan");
+  if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
+  {
+    // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
+    const verifiedNow = new Set(await verifiedClaimIds());
+    const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
+    const unverified = cited.filter((id) => !verifiedNow.has(id));
+    if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
+  }
+  assertLintCurrent(lint);
+  const assets = await loadInfographicAssets(spec, mobilePages);
+  for (const [ref, asset] of Object.entries(assets) as any) {
+    const expected = lint.asset_hashes?.[ref];
+    if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
+    if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
+  }
+  // The stored lint is not trusted for its verdict either: the plan is linted again under today's settings.
+  const fresh = (await lintInfographicPlan(spec)).lint;
+  if (!fresh.passed || (fresh.blockers ?? []).length) throw new Error(`Infographic lint has blocking failures under the current settings: ${fresh.blockers.join(" | ")}`);
+}
+/** The same checks for a consumer that holds a page manifest: the lint the manifest names must be current. */
+async function assertPageLintCurrent(manifest: any) {
+  const lintRef = String(manifest?.lint_ref ?? "");
+  if (!lintRef) throw new Error("LINT_STALE: the infographic manifest names no lint; render the page again from a current lint");
+  const planRef = String(manifest?.plan_ref ?? "");
+  const lint = await readArtifactJson(lintRef, "infographics/lints/");
+  const spec = await readArtifactJson(planRef, "infographics/plans/");
+  await assertInfographicLintHolds(spec, lint, planRef);
 }
 
 // The deterministic page lint over a stored or proposed plan; shared by
@@ -4336,7 +4377,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       for (const [ref, prefix] of [[params.discovery_ref, "editorial/discovery/"], [params.concepts_ref, "editorial/concepts/"], [params.asset_plan_ref, "editorial/assets/"], [params.novelty_ref, "editorial/novelty/"]] as const) await readArtifactJson(ref, prefix);
-      await readManifestOrRejected("infographics", params.page_ref, "infographics/");
+      await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = summarizeAwardMode(params);
       const rel = `editorial/award-runs/${result.content_hash}.json`;
@@ -4608,27 +4649,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
-      if (lint.plan_ref !== params.plan_ref) throw new Error("Infographic lint does not belong to the supplied plan");
-      if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
-      {
-        // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
-        const verifiedNow = new Set(await verifiedClaimIds());
-        const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
-        const unverified = cited.filter((id) => !verifiedNow.has(id));
-        if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
-      }
-      assertLintCurrent(lint);
+      // The stored lint is not trusted: every consumer of a page runs the same current-lint checks (see assertInfographicLintHolds).
+      await assertInfographicLintHolds(spec, lint, params.plan_ref);
       const assets = await loadInfographicAssets(spec, mobilePages);
-      for (const [ref, asset] of Object.entries(assets) as any) {
-        const expected = lint.asset_hashes?.[ref];
-        if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
-        if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
-      }
-      {
-        // The stored lint is not trusted for its verdict either: the plan is linted again under today's settings.
-        const fresh = (await lintInfographicPlan(spec)).lint;
-        if (!fresh.passed || (fresh.blockers ?? []).length) throw new Error(`Infographic lint has blocking failures under the current settings: ${fresh.blockers.join(" | ")}`);
-      }
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
       const mobileSha = mobilePages ? sha256Hex(bundle.mobile.svg) : undefined;
@@ -4707,6 +4730,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       if (manifest.plan_ref !== params.plan_ref || manifest.lint_ref !== params.lint_ref) throw new Error("Infographic manifest is not linked to the supplied plan and lint artifacts");
+      // The critic is a consumer of the lint too: a stale policy, a changed claim or a changed upstream asset refuses here, as in render.
+      await assertInfographicLintHolds(spec, lint, params.plan_ref);
       const assets = await loadInfographicAssets(spec, mobilePages);
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
@@ -5388,6 +5413,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const critic = await readArtifactJson(params.critic_ref, "infographics/critics/");
       if (critic.manifest_ref !== params.manifest_ref || !critic.passed) throw new Error("A passing deterministic infographic critic linked to this manifest is required before image observation");
+      await assertPageLintCurrent(manifest);
       const desktopRef = manifest?.variants?.desktop, mobileRef = manifest?.variants?.mobile;
       if (!desktopRef || (mobilePages && !mobileRef)) throw new Error("Infographic manifest is missing responsive SVG variants");
       const desktopSvg = await readArtifactText(desktopRef, "infographics/");
@@ -5474,6 +5500,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const preview = await readArtifactJson(params.preview_ref, "infographics/previews/");
       const deterministicCritic = await readArtifactJson(params.deterministic_critic_ref, "infographics/critics/");
       if (!deterministicCritic.passed || deterministicCritic.manifest_ref !== params.manifest_ref) throw new Error("Image-aware critique requires a passing deterministic critic for the same infographic manifest");
+      await assertPageLintCurrent(manifest);
       if (preview.manifest_ref !== params.manifest_ref || preview.deterministic_critic_ref !== params.deterministic_critic_ref) throw new Error("Preview does not belong to the supplied infographic and deterministic critic");
       if (preview.source_hashes?.desktop_sha256 !== manifest.hashes?.desktop_sha256 || preview.source_hashes?.mobile_sha256 !== manifest.hashes?.mobile_sha256) throw new Error("Preview source hashes do not match the current infographic manifest");
       const plan = await readArtifactJson(manifest.plan_ref, "infographics/plans/");
@@ -5577,6 +5604,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Infographic manifest does not belong to the supplied plan");
       if (deterministicCritic.manifest_ref !== params.manifest_ref) throw new Error("Deterministic critic does not belong to the supplied manifest");
       if (visionCritic.manifest_ref !== params.manifest_ref || visionCritic.deterministic_critic_ref !== params.deterministic_critic_ref) throw new Error("Vision critic does not belong to the supplied final manifest/critic pair");
+      await assertPageLintCurrent(manifest);
       const assets = await loadInfographicAssets(spec);
       const result = evaluateCompetitionProfile({
         profile_id: spec.competition_profile ?? "editorial",

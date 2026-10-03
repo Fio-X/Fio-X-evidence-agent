@@ -378,6 +378,41 @@ await ok("the normal path (lint and render under the same settings): lint passes
   must(!/LINT_STALE|blocking failures|not system-verified|changed after infographic lint/.test(msg), msg);
 });
 
+// ---- every consumer of a rendered page re-checks its lint (C1) ----
+const callPage = async (r, name, params) => { try { return { ok: true, out: await r.tools.get(name).execute("x", params) }; } catch (error) { return { ok: false, msg: String(error.message) }; } };
+const renderedPage = async () => {
+  const r = await pageRun(false);
+  must(r.lint.details.passed === true, JSON.stringify(r.lint.details.blockers));
+  const out = await renderMsg(r, r.lint.details.lintRef);
+  must(out.ok, `the normal render must succeed: ${out.msg}`);
+  return { ...r, manifestRef: out.out.details.manifestRef, lintRef: r.lint.details.lintRef };
+};
+const criticArgs = (r) => ({ plan_ref: r.planRef, lint_ref: r.lintRef, manifest_ref: r.manifestRef });
+await ok("critic on a page whose lint is from an older policy: LINT_STALE", async () => {
+  const r = await renderedPage();
+  const fine = await callPage(r, "newsroom_infographic_critic", criticArgs(r));
+  must(fine.ok, `the unmodified page's critic must run: ${fine.msg}`);
+  const stored = JSON.parse(readFileSync(join(r.art, r.lintRef), "utf8"));
+  writeFileSync(join(r.art, r.lintRef), JSON.stringify({ ...stored, lint_policy_version: "1" }));
+  const out = await callPage(r, "newsroom_infographic_critic", criticArgs(r));
+  must(!out.ok && /LINT_STALE/.test(out.msg), JSON.stringify(out.msg ?? "critic ran"));
+});
+await ok("preview on a page whose lint is from an older policy: LINT_STALE", async () => {
+  const r = await renderedPage();
+  const critic = await callPage(r, "newsroom_infographic_critic", criticArgs(r));
+  must(critic.ok, critic.msg);
+  const stored = JSON.parse(readFileSync(join(r.art, r.lintRef), "utf8"));
+  writeFileSync(join(r.art, r.lintRef), JSON.stringify({ ...stored, lint_policy_version: "1" }));
+  const out = await callPage(r, "newsroom_infographic_preview", { manifest_ref: r.manifestRef, critic_ref: critic.out.details.criticRef });
+  must(!out.ok && /LINT_STALE/.test(out.msg), JSON.stringify(out.msg ?? "preview ran"));
+});
+await ok("a claim that lost its verified status after render: the critic refuses", async () => {
+  const r = await renderedPage();
+  writeFileSync(join(r.art, "claims.jsonl"), "");
+  const out = await callPage(r, "newsroom_infographic_critic", criticArgs(r));
+  must(!out.ok && /not system-verified/.test(out.msg), JSON.stringify(out.msg ?? "critic ran"));
+});
+
 // ---- empty verified set (gate off with NEWSROOM_HERO_VALUE_GATE=0) ----
 await ok("no claim verified: a plan citing a claim is refused at lint and at render", async () => {
   const r = await heroRun(false, { value: "2", unit: "" }, { emptyAfterPlan: true });
