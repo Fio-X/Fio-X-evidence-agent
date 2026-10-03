@@ -1156,7 +1156,7 @@ export function zhScaleText(value, minDecimals = 0) {
   let digits = String(Number(v.toFixed(d)));
   const have = digits.includes(".") ? digits.split(".")[1].length : 0;
   const want = Math.min(3, Math.max(0, minDecimals));
-  if (have < want) digits = Number(digits).toFixed(want);
+  if (have < want) digits = v.toFixed(want); // from the value: never pad a rounded string
   const text = (value < 0 ? "-" : "") + digits;
   return `${text}${suffix}`;
 }
