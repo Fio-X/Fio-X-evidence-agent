@@ -1076,6 +1076,16 @@ function autoValueDecimals(values) {
 // literally set style_id:"house", which is most of them now that "house" is
 // the default resolved style. Returning null here defers 100% to that
 // untouched mechanism, exactly as before fix 2.
+//
+// Shared-scale guarantees (what a reader may rely on, whatever the unit or sign):
+//   1. a non-zero value never prints as zero (0, 0.00亿, -0.00亿);
+//   2. no value loses or flips its sign;
+//   3. two different values print differently, whenever 3 decimals in the printed unit can show the difference;
+//   4. to meet 1-3 the shared decimal count is raised, up to 3;
+//   5. a value that 3 decimals still cannot show (it would print as zero) prints in its own unit (zh: its own
+//      万/亿/万亿, below 1万 a plain number; en: significant digits) - the one case where a chart mixes units.
+// `decimals` (spec.decimals or the auto count) is the count in the PRINTED unit: zh 10000.123 with decimals 3
+// prints 1.000万, not 10000.123. The count is a floor that rules 1-4 may raise; it is never lowered.
 function resolveChartDecimals(spec, values) {
   if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return null;
   const explicit = spec?.decimals;
@@ -1088,13 +1098,43 @@ function resolveChartDecimals(spec, values) {
     const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
     const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
     const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
-    return { zhScale: { div, suffix }, decimals: hasExplicit ? explicit : auto };
+    return { zhScale: { div, suffix }, decimals: raiseSharedDecimals(finite, hasExplicit ? explicit : auto, div) };
   }
-  if (hasExplicit) return explicit;
+  if (hasExplicit) return raiseSharedDecimals(finite, explicit, 1);
   const auto = autoValueDecimals(finite);
-  // every labelled value in the thousands: no decimals at all, decided per chart
-  if (finite.length && finite.every((v) => Math.abs(v) >= 1000) && auto !== null && auto > 0) return 0;
-  return auto;
+  // every labelled value in the thousands: no decimals at all, decided per chart - unless that would print two
+  // different values the same (1000.1 and 1000.2), which rule 3 forbids
+  if (finite.length && finite.every((v) => Math.abs(v) >= 1000) && auto !== null && auto > 0 && raiseSharedDecimals(finite, 0, 1) === 0) return 0;
+  return auto === null ? auto : raiseSharedDecimals(finite, auto, 1);
+}
+
+// The smallest count in [start, 3] at which no non-zero value prints as zero and no two values that 3 decimals
+// can tell apart print the same; 3 when nothing smaller does (see the guarantees above).
+function raiseSharedDecimals(values, start, div) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  const at = (v, d) => (v / div).toFixed(d);
+  for (let d = Math.min(3, Math.max(0, start)); d < 3; d++) {
+    const seen = new Map();
+    let ok = true;
+    for (const v of finite) {
+      const short = at(v, d);
+      const full = at(v, 3);
+      if (v !== 0 && Number(short) === 0 && Number(full) !== 0) { ok = false; break; }
+      if (!seen.has(short)) seen.set(short, full);
+      else if (seen.get(short) !== full) { ok = false; break; }
+    }
+    if (ok) return d;
+  }
+  return 3;
+}
+
+// A value that the shared count cannot show without printing zero: significant digits, never zero, sign kept.
+function tinyValueText(value) {
+  const abs = Math.abs(value);
+  if (abs >= 1) return String(Number(value.toPrecision(4)));
+  const decimals = Math.min(20, 1 - Math.floor(Math.log10(abs)));
+  const text = value.toFixed(decimals).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return Number(text) === 0 ? value.toExponential(1) : text;
 }
 
 // Chart-level formatter: resolves the shared unit / decimal count once from all
@@ -1107,12 +1147,17 @@ export function chartValueFormatter(spec, values) {
 // zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
 // four significant digits (161.1万, -325.6万, 1.611亿, 1611万), never a trailing
 // zero. Exported so a hero number can print through the same formatter.
-export function zhScaleText(value) {
+// minDecimals keeps an explicit shared count: the result never shows fewer decimals than that.
+export function zhScaleText(value, minDecimals = 0) {
   const abs = Math.abs(value);
   const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
   const v = abs / div;
   const d = v >= 1000 ? 0 : v >= 100 ? 1 : v >= 10 ? 2 : 3;
-  const text = (value < 0 ? "-" : "") + String(Number((v).toFixed(d)));
+  let digits = String(Number(v.toFixed(d)));
+  const have = digits.includes(".") ? digits.split(".")[1].length : 0;
+  const want = Math.min(3, Math.max(0, minDecimals));
+  if (have < want) digits = Number(digits).toFixed(want);
+  const text = (value < 0 ? "-" : "") + digits;
   return `${text}${suffix}`;
 }
 
@@ -1122,11 +1167,14 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
   // not 83%) so every value label in a chart shares the same decimal
   // count - the default style's own trailing-zero-stripping behaviour
   // below is untouched so its output stays byte-identical.
-  if (DECIMAL_MODE !== "default" && unit === "%") return `${value.toFixed(1)}%`;
+  if (DECIMAL_MODE !== "default" && unit === "%") return value !== 0 && Number(value.toFixed(1)) === 0 ? `${tinyValueText(value)}%` : `${value.toFixed(1)}%`;
   const abs = Math.abs(value);
   let text;
   if (decimals && typeof decimals === "object" && decimals.zhScale) {
-    text = (value / decimals.zhScale.div).toFixed(decimals.decimals) + decimals.zhScale.suffix;
+    text = (value / decimals.zhScale.div).toFixed(decimals.decimals);
+    // rule 5: a value the shared unit cannot show at 3 decimals prints in its own unit
+    if (value !== 0 && Number(text) === 0) text = abs >= 10_000 ? zhScaleText(value) : tinyValueText(value);
+    else text += decimals.zhScale.suffix;
     if (unit === "%") return `${text}%`;
     return unit && !/^[£$€¥]$/.test(unit) ? `${text} ${unit}` : unit ? `${unit}${text}` : text;
   }
@@ -1138,7 +1186,9 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     // same number of decimal places (0.720 must stay "0.720", not "0.72").
     text = value.toFixed(decimals);
     if (lang === "zh" && abs >= 10_000) {
-      text = zhScaleText(value);
+      text = zhScaleText(value, decimals);
+    } else if (value !== 0 && Number(text) === 0) {
+      text = tinyValueText(value);
     }
     // Fix 2 follow-up (b): toFixed() never groups the integer part, and a
     // resolved decimals count takes this branch instead of the magnitude
