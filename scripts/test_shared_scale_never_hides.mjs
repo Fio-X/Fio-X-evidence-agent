@@ -86,4 +86,14 @@ assert.deepEqual(labels("zh", [86000, 88000]), ["8.6万", "8.8万"]);
 assert.deepEqual(labels("zh", [3.5e9, 1.2e9, 8.4e8, 1.1e8]), ["35.0亿", "12.0亿", "8.4亿", "1.1亿"]);
 assert.deepEqual(labels("zh", [350000, 120000]), ["35万", "12万"]);
 assert.deepEqual(labels("en", [5, 5, 3]), ["5", "5", "3"]);
+// an explicit decimal count is formatted from the value, never padded onto the four-significant-digit rounding
+{
+  const zh = (v, d) => fmtSpec({ language: "zh" }, v, "", d);
+  assert.equal(zh(1234567, 3), "123.457万");
+  assert.equal(zh(12345678, 3), "1234.568万");
+  assert.equal(zh(123456789012, 2), "1234.57亿");
+  assert.equal(zh(12345.678, 3), "1.235万");
+  assert.equal(zh(-67500.5, 1), "-6.75万");
+  assert.equal(zh(12345678, 1), "1234.6万", "an index-panel end value at or above 1000万 (fmtSpec(spec, lv, '', 1))");
+}
 console.log("shared scale never hides a value: all checks passed");
