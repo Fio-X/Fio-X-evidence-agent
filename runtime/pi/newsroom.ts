@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
@@ -111,7 +111,7 @@ function lieflatHidden() {
   return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
 }
 
-const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Pass claim or claim_id, never both.";
+const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Write a place or currency name in a claim as a placeholder on the chart's name column (for example {max.value.country}); on a zh chart the runtime prints its localized name, so never type one. Pass claim or claim_id, never both.";
 const INLINE_CLAIM_RECORD_GUIDELINE = "A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain or newsroom_viz_plan, which records it from that chart's own SQL rows. Use record_claim for claims no chart carries.";
 
 // Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
@@ -1800,7 +1800,14 @@ const CLAIM_TEMPLATE_GRAMMAR = "{first.col}, {last.col}, {max.col}, {min.col}, {
 const CLAIM_TEMPLATE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CLAIM_TEMPLATE_STRING_MAX_CHARS = 80;
 
-type ClaimBinding = { placeholder: string; column: string; row_index: number; value: unknown; text: string };
+// `value` is always the raw cell. `text` is what the claim shows: the formatted raw value, or, when the runtime localized a
+// name on a zh chart (see ClaimNames), the localized name - then `raw_text` is the formatted raw value and `category_names`
+// the table mode that resolved it. Both fields are absent from every other binding.
+type ClaimBinding = { placeholder: string; column: string; row_index: number; value: unknown; text: string; raw_text?: string; category_names?: string };
+
+// How a chart localizes its name field (chartNameDisplay in viz.mjs): display() is the localized name of a raw value of a
+// name-field column, or null when the chart prints that value as it is.
+type ClaimNames = { mode: string; display: (column: string, value: unknown) => string | null };
 
 function claimTemplateError(message: string) {
   return new Error(`CLAIM_TEMPLATE_ERROR: ${message}`);
@@ -1834,7 +1841,7 @@ function formatClaimValue(placeholder: string, value: unknown, rowIndex: number,
   throw claimTemplateError(`${placeholder} selects a value that is not a single number or text (row ${rowIndex})`);
 }
 
-function resolveClaimPlaceholder(placeholder: string, body: string, rows: Record<string, unknown>[], columns: string[], measures: string[]): ClaimBinding {
+function resolveClaimPlaceholder(placeholder: string, body: string, rows: Record<string, unknown>[], columns: string[], measures: string[], names: ClaimNames | null = null): ClaimBinding {
   let selector = body.trim();
   let decimals: number | null = null;
   const format = selector.match(/^(.*)\|([^|]*)$/);
@@ -1850,7 +1857,12 @@ function resolveClaimPlaceholder(placeholder: string, body: string, rows: Record
   };
   const bind = (name: string, rowIndex: number): ClaimBinding => {
     const value = rows[rowIndex]?.[name];
-    return { placeholder, column: name, row_index: rowIndex, value, text: formatClaimValue(placeholder, value, rowIndex, decimals) };
+    const text = formatClaimValue(placeholder, value, rowIndex, decimals);
+    // Only a text placeholder (no |N) on a name column of the chart can show a localized name; every check still sees `value`.
+    const shown = decimals === null ? names?.display(name, value) ?? null : null;
+    return shown === null || !names
+      ? { placeholder, column: name, row_index: rowIndex, value, text }
+      : { placeholder, column: name, row_index: rowIndex, value, text: shown, raw_text: text, category_names: names.mode };
   };
   const lookup = selector.match(/^([^@=]*)@([^@=]*)=(.*)$/);
   if (lookup) {
@@ -1940,8 +1952,11 @@ function literalNumberIn(template: string) {
 /** Fill a claim template from SQL result rows. Every placeholder selects one
  *  value of one row; the bindings record which, for audit. `measures` are the
  *  plan's value columns: when any is in the result, max and min rank only
- *  those. Typed digits, ambiguous rows and missing columns are refused. */
-export function fillClaimTemplate(template: string, rows: Record<string, unknown>[], measures: string[] = []) {
+ *  those. Typed digits, ambiguous rows and missing columns are refused.
+ *  `names` (zh charts only, from chartNameDisplay) swaps a raw place or
+ *  currency code for the name the chart itself prints; the binding keeps the
+ *  raw value and its text beside the localized one. */
+export function fillClaimTemplate(template: string, rows: Record<string, unknown>[], measures: string[] = [], names: ClaimNames | null = null) {
   if (typeof template !== "string" || !template.trim()) throw claimTemplateError("the claim is empty");
   if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) throw claimTemplateError(`the claim has an unmatched { or }; placeholders look like ${CLAIM_TEMPLATE_GRAMMAR}`);
   const typed = literalNumberIn(template);
@@ -1953,7 +1968,7 @@ export function fillClaimTemplate(template: string, rows: Record<string, unknown
   const ranked = measures.filter((name) => columns.includes(name));
   const bindings: ClaimBinding[] = [];
   const text = template.replace(/\{([^{}]*)\}/g, (placeholder: string, body: string) => {
-    const binding = resolveClaimPlaceholder(placeholder, body, rows, columns, ranked);
+    const binding = resolveClaimPlaceholder(placeholder, body, rows, columns, ranked, names);
     bindings.push(binding);
     return binding.text;
   });
@@ -2070,13 +2085,19 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   const resultHash = hashRows(rows);
   const computationRef = computationRelativePath(safeSql, snapshot.hash, resultHash);
   const record = buildComputationRecord({ sql: safeSql, inputSnapshot: snapshot, derivedInputs: derived, resultHash, rows });
-  const filled = fillClaimTemplate(template, rows, inlineClaimMeasures(rawParams));
+  const measures = inlineClaimMeasures(rawParams);
+  const filled = fillClaimTemplate(template, rows, measures, chartNameDisplay(plan, rows));
+  // A localized name is how a raw value is shown, never a different claim: the claim-support rule below reads the claim
+  // with the raw values as well, so a name swap cannot make a refused claim pass.
+  const rawText = filled.bindings.some((binding) => binding.raw_text !== undefined) ? fillClaimTemplate(template, rows, measures).text : filled.text;
   // Everything record_claim would refuse for these inputs is refused now, so a
   // refused claim leaves no claim line and no plan.
   const sourceRefs = await normalizeArtifactRefs(effective, "source");
   await validateSourceEvidence(sourceRefs);
-  const support = evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: filled.text });
-  if (!support.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${support.reasons.join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
+  const supportOf = (claimText: string) => evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: claimText });
+  const support = supportOf(filled.text);
+  const rawSupport = rawText === filled.text ? support : supportOf(rawText);
+  if (!support.passed || !rawSupport.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${[...new Set([...support.reasons, ...rawSupport.reasons])].join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
   let sourceNote: string | null = null;
   if (plan.source_note === undefined) {
     sourceNote = await inlineSourceNote(sourceRefs);
@@ -3226,8 +3247,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       "To mark a threshold or target on the value axis, add an annotations entry with type='reference_line' and a numeric value; it renders as a thin rule across the plot area on horizontal_bar, dot, dumbbell, and small_multiples charts only, and is lint-blocked on other chart types or if value falls outside the rendered value axis domain.",
       "Use chart_type='waffle' to show a share out of 100 for one to four items (for example, the percentage of a population, budget, or category covered by something). It requires unit='%', category_field, value_field, every row's value finite and within 0-100, and at most 4 rows - filter further upstream in SQL. It does not support reference_line annotations.",
       "To bracket a contiguous run of rows on horizontal_bar/dot (for example '8 countries at least 70%'), add an annotations entry with type='range_bracket', match_field equal to category_field, and match_value/end_match_value naming the first and last row in rendered order; at most 2 per chart, and their row ranges must not overlap.",
-      "Use chart_type='choropleth' to show one value per country on a map (for example a World Bank indicator across countries or territories). It requires category_field, value_field, and category_names='worldbank' or 'iso3'; category_field joins through the same vendored economy table category_names uses, so every value must be an exact World Bank name or ISO3 code, never a paraphrase. It supports at most 60 rows (filter upstream in SQL), rejects regional/income-group aggregates (for example Sub-Saharan Africa or World) and any economy the basemap has no feature for, and rejects duplicate economies. It draws its own locator inset and does not support reference_line or range_bracket annotations. Set inset={iso3:[...]} to zoom a manual list of small economies into their own panel, or inset={auto:true} to let the renderer pick which ones are too small to label on the main map.",
-      "Never translate a place name yourself. If a chart's category_field, facet_field, or series_field holds World Bank English country/region names or ISO3 codes and the chart's language is 'zh', set category_names='worldbank' or 'iso3' so the renderer shows the vendored, provenance-recorded localized name instead; lint blocks any value that table cannot resolve.",
+      "Use chart_type='choropleth' to show one value per country on a map (for example a World Bank indicator across countries or territories). It requires category_field, value_field, and category_names='worldbank', 'iso3' or 'iso2'; category_field joins through the same vendored economy table category_names uses, so every value must be an exact World Bank name, ISO3 code or ISO2 code, never a paraphrase. It supports at most 60 rows (filter upstream in SQL), rejects regional/income-group aggregates (for example Sub-Saharan Africa or World) and any economy the basemap has no feature for, and rejects duplicate economies. It draws its own locator inset and does not support reference_line or range_bracket annotations. Set inset={iso3:[...]} to zoom a manual list of small economies into their own panel, or inset={auto:true} to let the renderer pick which ones are too small to label on the main map.",
+      "Never translate a place name yourself. If a chart's category_field, facet_field, or series_field holds World Bank English country/region names or ISO3 codes and the chart's language is 'zh', set category_names='worldbank' or 'iso3' so the renderer shows the vendored, provenance-recorded localized name instead; lint blocks any value that table cannot resolve. On zh pages a country name field is the ISO3 code column with category_names='iso3' (ISO2 codes: 'iso2') and a currency name field is the ISO 4217 code column with category_names='iso4217'; drop aggregate rows (OWID_*, regions, income groups) in SQL, and never type a translated name.",
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
     parameters: withInlineClaimSchema(Type.Object({
@@ -3347,7 +3368,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
       direct_labels: Type.Optional(Type.Boolean()),
       measure_kind: Type.Optional(StringEnum(["year", "count", "index", "level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "duration", "distance", "price"] as const, { description: "What the value_field measures, so numbers are spelled correctly: 'year' (a calendar year such as 2017) and 'count' (a whole-number tally) print as plain integers - never '2.0k' or '3.0' - and choropleth legends use whole-number steps. A year-like unit on measure_kind 'index' is also read as a calendar year. Omit for ordinary quantities." })),
-      category_names: Type.Optional(StringEnum(["worldbank", "iso3"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth, facet_field for small_multiples, series_field for multi_line): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes. On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
+      category_names: Type.Optional(StringEnum(["worldbank", "iso3", "iso2", "iso4217"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth, facet_field for small_multiples, series_field for multi_line, label_field for scatter, source_field and target_field for sankey/alluvial): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes, 'iso2' when values are exact ISO 3166-1 alpha-2 economy codes, 'iso4217' when values are exact ISO 4217 currency codes (not for choropleth). On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
       annotations: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["point", "node", "reference_line", "range_bracket"] as const, { description: "point/node label a specific mark. reference_line draws a thin rule across the plot area at a fixed value on the value axis; supported only on horizontal_bar, dot, dumbbell, and small_multiples. range_bracket draws a bracket spanning a contiguous run of rows (match_value to end_match_value, in rendered order); supported only on horizontal_bar and dot, at most 2 per chart, and ranges must not overlap." }),
         text: Type.String(),

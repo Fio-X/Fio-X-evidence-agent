@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CHOROPLETH_RAMP, PALETTE, critiqueViz, lintVizSpec, renderVizBundle, validateVizSpec } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
+import { economyEntryFor } from "../runtime/pi/economy_names.mjs";
 import { TEXT_WIDTH_FACTORS, LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, BOLD_WEIGHT_THRESHOLD } from "../runtime/pi/render_qa_geometry.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import {
@@ -89,7 +90,8 @@ const AFRICA_ROWS = [
 console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matches the registry -- PASS");
 
 // --- sidecar: every feature whose iso3 the economy table can actually reach
-//     (i.e. every row this chart type could ever join to) has its own
+//     (the World Bank economies and the Natural Earth territories the table
+//     adds, i.e. every row this chart type could ever join to) has its own
 //     LABEL_X/LABEL_Y label point inside its own polygon, via a plain
 //     nonzero-winding point-in-polygon test on the vendored (raw lon/lat)
 //     geometry - except a small, documented allowlist of real Natural Earth
@@ -97,8 +99,16 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
 //     official label point sits in a bay/strait between its own islands,
 //     not a bug): Trinidad and Tobago, Sao Tome and Principe, St. Vincent
 //     and the Grenadines, New Zealand, Equatorial Guinea, Macao, Antigua and
-//     Barbuda. Those seven must still sit nearer their own polygon than any
-//     other feature's, so they prove the index alignment too. Loosening this
+//     Barbuda. Two more joined that list when the table gained the Natural
+//     Earth territories, each checked rather than assumed: British Indian
+//     Ocean Territory and South Georgia and the South Sandwich Islands (both
+//     archipelagic, label point between the islands). Those nine must still
+//     sit nearer their own polygon than any other feature's, so they prove
+//     the index alignment too. Vatican City is the one enclave: its label
+//     point falls 0.01 degrees outside its own sliver of a polygon, inside
+//     Italy's, so "nearest polygon" would name Italy; for it the proof of
+//     alignment is a 0.02 degree bound on the distance to its own polygon
+//     instead (a tighter, not looser, statement than "nearest"). Loosening this
 //     check to tolerate more than this list would silently hide a real
 //     indexing/coordinate bug; a new failure here means look at it, not add
 //     it to the list without checking.
@@ -131,9 +141,10 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
     }
     return best;
   }
-  const KNOWN_LABEL_POINT_OUTSIDE_OWN_POLYGON = new Set(["TTO", "STP", "VCT", "NZL", "GNQ", "MAC", "ATG"]);
+  const KNOWN_LABEL_POINT_OUTSIDE_OWN_POLYGON = new Set(["TTO", "STP", "VCT", "NZL", "GNQ", "MAC", "ATG", "IOT", "SGS"]);
+  const KNOWN_ENCLAVE_LABEL_POINT_MAX_DEGREES_FROM_OWN_POLYGON = new Map([["VAT", 0.02]]);
   const econAsset = JSON.parse(readFileSync(new URL("../runtime/pi/assets/economy-names.json", import.meta.url), "utf8"));
-  const reachableIso3 = new Set(econAsset.economies.map((e) => e.iso3));
+  const reachableIso3 = new Set([...econAsset.economies, ...econAsset.territories].map((e) => e.iso3));
   const asset = neAttributesAsset();
   const checked = [];
   const failures = [];
@@ -144,6 +155,12 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
     const [lx, ly] = feature.label;
     const inside = pointInRings(rings, lx, ly);
     if (inside) continue;
+    const enclaveBound = KNOWN_ENCLAVE_LABEL_POINT_MAX_DEGREES_FROM_OWN_POLYGON.get(feature.iso3);
+    if (enclaveBound !== undefined) {
+      const d = distanceToRings(rings, lx, ly);
+      if (d > enclaveBound) failures.push(`${feature.iso3} (label point is ${d.toFixed(4)} degrees from its own polygon, bound ${enclaveBound})`);
+      continue;
+    }
     if (!KNOWN_LABEL_POINT_OUTSIDE_OWN_POLYGON.has(feature.iso3)) { failures.push(feature.iso3); continue; }
     const nearest = asset.features.reduce((best, other) => {
       const d = distanceToRings(geometryRings(neFeatureGeometry(other.index)), lx, ly);
@@ -151,10 +168,11 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
     }, { index: -1, d: Infinity });
     if (nearest.index !== feature.index) failures.push(`${feature.iso3} (nearest feature is index ${nearest.index})`);
   }
-  assert.ok(checked.length > 200, `expected to check the bulk of the ~217 reachable economies, only checked ${checked.length}`);
+  assert.ok(checked.length > 200, `expected to check the bulk of the ~239 reachable economies and territories, only checked ${checked.length}`);
+  for (const territory of econAsset.territories) assert.ok(checked.includes(territory.iso3), `territory ${territory.iso3} should be checked too (it has a basemap feature)`);
   assert.deepEqual(failures, [], `label point falls outside its own polygon for undocumented iso3(s): ${failures.join(", ")}`);
 }
-console.log("choropleth sidecar: every reachable economy's label point is inside its own polygon, and the 7 documented exceptions are nearest their own -- PASS");
+console.log("choropleth sidecar: every reachable economy's and territory's label point is inside its own polygon, the 9 documented exceptions are nearest their own, and the Vatican enclave is within 0.02 degrees of its own -- PASS");
 
 // --- join: row -> economy table -> iso3 -> basemap feature indices; several
 //     features can share one iso3 (AUS); an economy with no matching feature
@@ -691,6 +709,110 @@ console.log("choropleth en render: real Africa fixture, locator + frame trace pr
   assert.equal(critic.passed, true, JSON.stringify(critic));
 }
 console.log("choropleth zh render: real Africa fixture shows localized names, no leader crosses an on-map label, render-QA passes (desktop/mobile) -- PASS");
+
+// --- iso2, territories and the blocked currency mode. The Africa fixture keyed by ISO 3166-1 alpha-2 codes joins to the
+//     same features and renders byte for byte like the World Bank-name keying (en and zh, desktop and mobile). The Natural
+//     Earth territories the economy table gained join by ISO3 or ISO2 only, never by an English name. A currency code is
+//     not a map feature, so iso4217 stays blocked with its own message. The 60-row cap is not touched (its test is in the
+//     lint block above).
+{
+  const ISO2_BY_NAME = { Chad: "TD", "Congo, Dem. Rep.": "CD", "Congo, Rep.": "CG", Guinea: "GN", Liberia: "LR", Mauritania: "MR", Niger: "NE", Nigeria: "NG", "Sierra Leone": "SL", "South Sudan": "SS", Zambia: "ZM" };
+  const iso2Rows = AFRICA_ROWS.map((row) => ({ ...row, country: ISO2_BY_NAME[row.country] }));
+  const iso3Rows = AFRICA_ROWS.map((row) => ({ ...row, country: economyEntryFor(row.country, "worldbank").iso3 }));
+  // The literal ISO2 table is checked against the economy table, so a typo cannot make the comparisons below vacuous.
+  for (const row of AFRICA_ROWS) {
+    assert.equal(economyEntryFor(ISO2_BY_NAME[row.country], "iso2").iso3, economyEntryFor(row.country, "worldbank").iso3, row.country);
+  }
+  const joinKey = (joined) => joined.map(({ iso3, featureIndices }) => ({ iso3, featureIndices }));
+  const byName = joinChoroplethRows(AFRICA_ROWS, base);
+  assert.ok(byName.every((row) => row.featureIndices.length >= 1));
+  assert.deepEqual(joinKey(joinChoroplethRows(iso2Rows, { ...base, category_names: "iso2" })), joinKey(byName), "ISO2 codes join to the same features as the World Bank names");
+  assert.deepEqual(joinKey(joinChoroplethRows(iso3Rows, { ...base, category_names: "iso3" })), joinKey(byName), "ISO3 codes join to the same features as the World Bank names");
+
+  const iso2Spec = { ...base, category_names: "iso2" };
+  const iso2Lint = lintVizSpec(iso2Spec, iso2Rows, { verified_claim_ids: [claimId] });
+  assert.equal(iso2Lint.passed, true, iso2Lint.blockers.join("; "));
+  assert.deepEqual(lintChoroplethSpec(iso2Spec, iso2Rows).blockers, []);
+  assert.deepEqual(validateVizSpec(iso2Spec), []);
+
+  const zhOverrides = {
+    language: "zh",
+    title: "非洲可再生能源消费占比",
+    subtitle: "部分非洲经济体，最新可得年份",
+    alt: "非洲多国可再生能源占最终能源消费比例的分级设色地图，颜色越深占比越高。",
+    source_note: "世界银行 EG.FEC.RNEW.ZS",
+  };
+  for (const [language, overrides] of [["en", {}], ["zh", zhOverrides]]) {
+    const named = renderVizBundle({ ...base, ...overrides }, AFRICA_ROWS);
+    for (const [mode, keyedRows] of [["iso2", iso2Rows], ["iso3", iso3Rows]]) {
+      const keyed = renderVizBundle({ ...base, ...overrides, category_names: mode }, keyedRows);
+      assert.equal(keyed.desktop, named.desktop, `${language} desktop render keyed by ${mode} must equal the World Bank-name render`);
+      assert.equal(keyed.mobile, named.mobile, `${language} mobile render keyed by ${mode} must equal the World Bank-name render`);
+    }
+  }
+
+  // Rows that cannot join are named, never guessed: an unknown code and a Eurostat aggregate.
+  for (const value of ["XX", "EU27_2020"]) {
+    const unmapped = lintVizSpec(iso2Spec, [...iso2Rows, { country: value, year: 2021, renewable_energy_consumption_pct: 1 }], { verified_claim_ids: [claimId] });
+    assert.equal(unmapped.passed, false, value);
+    assert.ok(unmapped.blockers.some((b) => b.startsWith(`category_names='iso2' cannot resolve 1 value(s) in 'country' (e.g. '${value}')`)), unmapped.blockers.join("; "));
+  }
+
+  // The join lint behind that check runs for iso2 like for the other economy modes: Greece spelled GR and EL (the Eurostat code)
+  // is one map feature twice, and only the join lint, not the unmapped-value check, can see that.
+  const greekRows = [{ country: "GR", year: 2021, renewable_energy_consumption_pct: 1 }, { country: "EL", year: 2021, renewable_energy_consumption_pct: 2 }];
+  const duplicated = lintChoroplethSpec(iso2Spec, [...iso2Rows, ...greekRows]);
+  assert.ok(duplicated.blockers.some((b) => b.includes("duplicate economy/economies mapping to the same map feature(s): GRC (GR, EL)")), duplicated.blockers.join("; "));
+
+  // The Natural Earth territories join by ISO3 or ISO2 (with the Eurostat spelling EL for Greece), and only by those.
+  const territoryCodes = [["TWN", "TW"], ["AIA", "AI"], ["VAT", "VA"]];
+  for (const [mode, column] of [["iso3", 0], ["iso2", 1]]) {
+    const joined = joinChoroplethRows(territoryCodes.map((codes) => ({ country: codes[column] })), { category_field: "country", category_names: mode });
+    joined.forEach((row, i) => {
+      assert.equal(row.iso3, territoryCodes[i][0], `${mode} ${territoryCodes[i][column]}`);
+      assert.equal(row.featureIndices.length, 1, `${mode} ${territoryCodes[i][column]} should have exactly one basemap feature`);
+      assert.deepEqual(row.featureIndices, featureIndicesForIso3(territoryCodes[i][0]));
+    });
+  }
+  assert.deepEqual(joinChoroplethRows([{ country: "EL" }], { category_field: "country", category_names: "iso2" }).map((row) => [row.iso3, row.featureIndices]), [["GRC", featureIndicesForIso3("GRC")]]);
+  assert.deepEqual(joinChoroplethRows([{ country: "Taiwan" }, { country: "Taiwan, China" }, { country: "Anguilla" }], { category_field: "country", category_names: "worldbank" }).map((row) => row.entry), [null, null, null], "a territory has no World Bank English name");
+
+  // A zh map says 中国台湾 and 中国香港 (policy rule 3), and its title must not say a bare 国家 (rule 4). The en render of Taiwan
+  // together with Hong Kong is a known layout limit (its footnote marker meets a data mark), which the render-QA gate catches, so
+  // this test draws en with Taiwan alone and zh with both.
+  const asia = (pairs) => pairs.map(([country, pct]) => ({ country, year: 2021, renewable_energy_consumption_pct: pct }));
+  const asiaBase = { ...base, category_names: "iso3", title: "East Asia renewable share", alt: "A choropleth map of renewable energy's share of final energy consumption across several East Asian economies, darker meaning a higher share.", source_note: "World Bank fixture" };
+  const asiaZh = { ...asiaBase, language: "zh", title: "东亚经济体可再生能源占比", subtitle: "国家和地区，最新可得年份", alt: "东亚多个经济体可再生能源占最终能源消费比例的分级设色地图，颜色越深占比越高。", source_note: "世界银行" };
+  const asiaRows = asia([["CHN", 20], ["TWN", 8], ["JPN", 12], ["KOR", 3], ["HKG", 1], ["MNG", 15]]);
+  const zhLint = lintVizSpec(asiaZh, asiaRows, { verified_claim_ids: [claimId] });
+  assert.equal(zhLint.passed, true, zhLint.blockers.join("; "));
+  assert.deepEqual(zhLint.warnings, []);
+  const zhAsia = renderVizBundle(asiaZh, asiaRows);
+  for (const [viewport, svg] of [["desktop", zhAsia.desktop], ["mobile", zhAsia.mobile]]) {
+    assert.match(svg, />中国台湾</, `${viewport} should name Taiwan 中国台湾`);
+    assert.match(svg, />中国香港</, `${viewport} should name Hong Kong 中国香港`);
+    assert.doesNotMatch(svg, /台湾省|中国香港特别行政区|>(TWN|HKG)</, `${viewport}: no raw code and no longer form in visible text (data-iso3 attributes are machine-readable and stay)`);
+  }
+  assert.equal(runRenderQa(zhAsia).passed, true, JSON.stringify(runRenderQa(zhAsia).viewports));
+  const badTitle = lintVizSpec({ ...asiaZh, title: "东亚国家可再生能源占比", subtitle: undefined }, asiaRows, { verified_claim_ids: [claimId] });
+  assert.ok(badTitle.warnings.includes("zh chart lists 中国香港 (HKG), 中国台湾 (TWN), but its title says 国家 without 和地区; write 国家和地区 (or 经济体) instead of a bare 国家 (zh naming policy rule 4)"), JSON.stringify(badTitle.warnings));
+  const enRows = asia([["CHN", 20], ["TWN", 8], ["JPN", 12], ["KOR", 3], ["MNG", 15]]);
+  const enAsia = renderVizBundle(asiaBase, enRows);
+  assert.match(enAsia.desktop, />Taiwan</);
+  assert.equal(runRenderQa(enAsia).passed, true, JSON.stringify(runRenderQa(enAsia).viewports));
+
+  // A currency code is not a map feature: the mode is a valid enum value elsewhere, so the schema allows it and choropleth lint
+  // refuses it, once, with the reason.
+  const currencyRows = [{ country: "TRY", year: 2021, renewable_energy_consumption_pct: 1 }];
+  const CURRENCY_BLOCKER = "choropleth requires category_names to be 'worldbank', 'iso3' or 'iso2'; 'iso4217' names a currency, which is not a map feature";
+  assert.deepEqual(validateVizSpec({ ...base, category_names: "iso4217" }), []);
+  assert.deepEqual(lintChoroplethSpec({ ...base, category_names: "iso4217" }, currencyRows).blockers, [CURRENCY_BLOCKER]);
+  const viaLint = lintVizSpec({ ...base, category_names: "iso4217" }, currencyRows, { verified_claim_ids: [claimId] });
+  assert.equal(viaLint.passed, false);
+  assert.deepEqual(viaLint.blockers, [CURRENCY_BLOCKER], "no second, unmapped-value blocker for the same mistake");
+  assert.ok(lintChoroplethSpec({ ...base, category_names: undefined }, AFRICA_ROWS).blockers.some((b) => b.includes("'worldbank', 'iso3' or 'iso2'")));
+}
+console.log("choropleth iso2: keyed by ISO2 the Africa fixture joins and renders like the World Bank names, territories join by code, a zh map says 中国台湾 and 中国香港, iso4217 stays blocked -- PASS");
 
 // --- reference_line and range_bracket annotations stay blocked on choropleth
 {

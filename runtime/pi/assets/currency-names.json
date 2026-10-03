@@ -1,0 +1,999 @@
+{
+  "schema_version": "0.1.0",
+  "generated_by": "scripts/build_currency_names.mjs",
+  "versions": {
+    "node": "24.14.1",
+    "icu": "78.2",
+    "cldr": "48.0"
+  },
+  "rules": [
+    "codes = Intl.supportedValuesOf('currency'); zh = Unicode CLDR zh-Hans currency display name; en = the CLDR English currency display name.",
+    "The override table (zh_source 'override') replaces the CLDR name only where a policy rule says so; policy_rule is that rule's number and cldr_zh records what CLDR said.",
+    "A code CLDR has no zh name for (or whose zh name has Latin letters) is listed in `excluded` and resolves nowhere; a zh name is never an English fallback.",
+    "Resolution is by exact ISO 4217 code only; a currency name is never matched by text."
+  ],
+  "source": {
+    "codes": "Intl.supportedValuesOf('currency')",
+    "zh": "Intl.DisplayNames(['zh-Hans'], { type: 'currency' })",
+    "en": "Intl.DisplayNames(['en'], { type: 'currency' })"
+  },
+  "currencies": [
+    {
+      "code": "AED",
+      "en": "United Arab Emirates Dirham",
+      "zh": "阿联酋迪拉姆",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "AFN",
+      "en": "Afghan Afghani",
+      "zh": "阿富汗尼",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ALL",
+      "en": "Albanian Lek",
+      "zh": "阿尔巴尼亚列克",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "AMD",
+      "en": "Armenian Dram",
+      "zh": "亚美尼亚德拉姆",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ANG",
+      "en": "Netherlands Antillean Guilder",
+      "zh": "荷属安的列斯盾",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "AOA",
+      "en": "Angolan Kwanza",
+      "zh": "安哥拉宽扎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ARS",
+      "en": "Argentine Peso",
+      "zh": "阿根廷比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "AUD",
+      "en": "Australian Dollar",
+      "zh": "澳元",
+      "zh_source": "override",
+      "policy_rule": 9,
+      "cldr_zh": "澳大利亚元"
+    },
+    {
+      "code": "AWG",
+      "en": "Aruban Florin",
+      "zh": "阿鲁巴弗罗林",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "AZN",
+      "en": "Azerbaijani Manat",
+      "zh": "阿塞拜疆马纳特",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BAM",
+      "en": "Bosnia-Herzegovina Convertible Mark",
+      "zh": "波斯尼亚-黑塞哥维那可兑换马克",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BBD",
+      "en": "Barbadian Dollar",
+      "zh": "巴巴多斯元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BDT",
+      "en": "Bangladeshi Taka",
+      "zh": "孟加拉塔卡",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BGN",
+      "en": "Bulgarian Lev",
+      "zh": "保加利亚列弗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BHD",
+      "en": "Bahraini Dinar",
+      "zh": "巴林第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BIF",
+      "en": "Burundian Franc",
+      "zh": "布隆迪法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BMD",
+      "en": "Bermudan Dollar",
+      "zh": "百慕大元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BND",
+      "en": "Brunei Dollar",
+      "zh": "文莱元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BOB",
+      "en": "Bolivian Boliviano",
+      "zh": "玻利维亚诺",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BRL",
+      "en": "Brazilian Real",
+      "zh": "巴西雷亚尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BSD",
+      "en": "Bahamian Dollar",
+      "zh": "巴哈马元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BTN",
+      "en": "Bhutanese Ngultrum",
+      "zh": "不丹努尔特鲁姆",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BWP",
+      "en": "Botswanan Pula",
+      "zh": "博茨瓦纳普拉",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BYN",
+      "en": "Belarusian Ruble",
+      "zh": "白俄罗斯卢布",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "BZD",
+      "en": "Belize Dollar",
+      "zh": "伯利兹元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CAD",
+      "en": "Canadian Dollar",
+      "zh": "加元",
+      "zh_source": "override",
+      "policy_rule": 9,
+      "cldr_zh": "加拿大元"
+    },
+    {
+      "code": "CDF",
+      "en": "Congolese Franc",
+      "zh": "刚果法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CHF",
+      "en": "Swiss Franc",
+      "zh": "瑞士法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CLP",
+      "en": "Chilean Peso",
+      "zh": "智利比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CNY",
+      "en": "Chinese Yuan",
+      "zh": "人民币",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "COP",
+      "en": "Colombian Peso",
+      "zh": "哥伦比亚比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CRC",
+      "en": "Costa Rican Colón",
+      "zh": "哥斯达黎加科朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CUC",
+      "en": "Cuban Convertible Peso",
+      "zh": "古巴可兑换比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CUP",
+      "en": "Cuban Peso",
+      "zh": "古巴比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CVE",
+      "en": "Cape Verdean Escudo",
+      "zh": "佛得角埃斯库多",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "CZK",
+      "en": "Czech Koruna",
+      "zh": "捷克克朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "DJF",
+      "en": "Djiboutian Franc",
+      "zh": "吉布提法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "DKK",
+      "en": "Danish Krone",
+      "zh": "丹麦克朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "DOP",
+      "en": "Dominican Peso",
+      "zh": "多米尼加比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "DZD",
+      "en": "Algerian Dinar",
+      "zh": "阿尔及利亚第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "EGP",
+      "en": "Egyptian Pound",
+      "zh": "埃及镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ERN",
+      "en": "Eritrean Nakfa",
+      "zh": "厄立特里亚纳克法",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ETB",
+      "en": "Ethiopian Birr",
+      "zh": "埃塞俄比亚比尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "EUR",
+      "en": "Euro",
+      "zh": "欧元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "FJD",
+      "en": "Fijian Dollar",
+      "zh": "斐济元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "FKP",
+      "en": "Falkland Islands Pound",
+      "zh": "福克兰群岛镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GBP",
+      "en": "British Pound",
+      "zh": "英镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GEL",
+      "en": "Georgian Lari",
+      "zh": "格鲁吉亚拉里",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GHS",
+      "en": "Ghanaian Cedi",
+      "zh": "加纳塞地",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GIP",
+      "en": "Gibraltar Pound",
+      "zh": "直布罗陀镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GMD",
+      "en": "Gambian Dalasi",
+      "zh": "冈比亚达拉西",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GNF",
+      "en": "Guinean Franc",
+      "zh": "几内亚法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GTQ",
+      "en": "Guatemalan Quetzal",
+      "zh": "危地马拉格查尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "GYD",
+      "en": "Guyanaese Dollar",
+      "zh": "圭亚那元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "HKD",
+      "en": "Hong Kong Dollar",
+      "zh": "港元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "HNL",
+      "en": "Honduran Lempira",
+      "zh": "洪都拉斯伦皮拉",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "HRK",
+      "en": "Croatian Kuna",
+      "zh": "克罗地亚库纳",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "HTG",
+      "en": "Haitian Gourde",
+      "zh": "海地古德",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "HUF",
+      "en": "Hungarian Forint",
+      "zh": "匈牙利福林",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "IDR",
+      "en": "Indonesian Rupiah",
+      "zh": "印度尼西亚卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ILS",
+      "en": "Israeli New Shekel",
+      "zh": "以色列新谢克尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "INR",
+      "en": "Indian Rupee",
+      "zh": "印度卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "IQD",
+      "en": "Iraqi Dinar",
+      "zh": "伊拉克第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "IRR",
+      "en": "Iranian Rial",
+      "zh": "伊朗里亚尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ISK",
+      "en": "Icelandic Króna",
+      "zh": "冰岛克朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "JMD",
+      "en": "Jamaican Dollar",
+      "zh": "牙买加元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "JOD",
+      "en": "Jordanian Dinar",
+      "zh": "约旦第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "JPY",
+      "en": "Japanese Yen",
+      "zh": "日元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KES",
+      "en": "Kenyan Shilling",
+      "zh": "肯尼亚先令",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KGS",
+      "en": "Kyrgyz Som",
+      "zh": "吉尔吉斯斯坦索姆",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KHR",
+      "en": "Cambodian Riel",
+      "zh": "柬埔寨瑞尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KMF",
+      "en": "Comorian Franc",
+      "zh": "科摩罗法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KPW",
+      "en": "North Korean Won",
+      "zh": "朝鲜元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KRW",
+      "en": "South Korean Won",
+      "zh": "韩元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KWD",
+      "en": "Kuwaiti Dinar",
+      "zh": "科威特第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KYD",
+      "en": "Cayman Islands Dollar",
+      "zh": "开曼元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "KZT",
+      "en": "Kazakhstani Tenge",
+      "zh": "哈萨克斯坦坚戈",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "LAK",
+      "en": "Laotian Kip",
+      "zh": "老挝基普",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "LBP",
+      "en": "Lebanese Pound",
+      "zh": "黎巴嫩镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "LKR",
+      "en": "Sri Lankan Rupee",
+      "zh": "斯里兰卡卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "LRD",
+      "en": "Liberian Dollar",
+      "zh": "利比里亚元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "LSL",
+      "en": "Lesotho Loti",
+      "zh": "莱索托洛蒂",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "LYD",
+      "en": "Libyan Dinar",
+      "zh": "利比亚第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MAD",
+      "en": "Moroccan Dirham",
+      "zh": "摩洛哥迪拉姆",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MDL",
+      "en": "Moldovan Leu",
+      "zh": "摩尔多瓦列伊",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MGA",
+      "en": "Malagasy Ariary",
+      "zh": "马达加斯加阿里亚里",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MKD",
+      "en": "Macedonian Denar",
+      "zh": "马其顿第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MMK",
+      "en": "Myanmar Kyat",
+      "zh": "缅甸元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MNT",
+      "en": "Mongolian Tugrik",
+      "zh": "蒙古图格里克",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MOP",
+      "en": "Macanese Pataca",
+      "zh": "澳门币",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MRU",
+      "en": "Mauritanian Ouguiya",
+      "zh": "毛里塔尼亚乌吉亚",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MUR",
+      "en": "Mauritian Rupee",
+      "zh": "毛里求斯卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MVR",
+      "en": "Maldivian Rufiyaa",
+      "zh": "马尔代夫卢菲亚",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MWK",
+      "en": "Malawian Kwacha",
+      "zh": "马拉维克瓦查",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MXN",
+      "en": "Mexican Peso",
+      "zh": "墨西哥比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MYR",
+      "en": "Malaysian Ringgit",
+      "zh": "马来西亚林吉特",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "MZN",
+      "en": "Mozambican Metical",
+      "zh": "莫桑比克美提卡",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "NAD",
+      "en": "Namibian Dollar",
+      "zh": "纳米比亚元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "NGN",
+      "en": "Nigerian Naira",
+      "zh": "尼日利亚奈拉",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "NIO",
+      "en": "Nicaraguan Córdoba",
+      "zh": "尼加拉瓜科多巴",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "NOK",
+      "en": "Norwegian Krone",
+      "zh": "挪威克朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "NPR",
+      "en": "Nepalese Rupee",
+      "zh": "尼泊尔卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "NZD",
+      "en": "New Zealand Dollar",
+      "zh": "新西兰元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "OMR",
+      "en": "Omani Rial",
+      "zh": "阿曼里亚尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PAB",
+      "en": "Panamanian Balboa",
+      "zh": "巴拿马巴波亚",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PEN",
+      "en": "Peruvian Sol",
+      "zh": "秘鲁索尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PGK",
+      "en": "Papua New Guinean Kina",
+      "zh": "巴布亚新几内亚基那",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PHP",
+      "en": "Philippine Peso",
+      "zh": "菲律宾比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PKR",
+      "en": "Pakistani Rupee",
+      "zh": "巴基斯坦卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PLN",
+      "en": "Polish Zloty",
+      "zh": "波兰兹罗提",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "PYG",
+      "en": "Paraguayan Guarani",
+      "zh": "巴拉圭瓜拉尼",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "QAR",
+      "en": "Qatari Riyal",
+      "zh": "卡塔尔里亚尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "RON",
+      "en": "Romanian Leu",
+      "zh": "罗马尼亚列伊",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "RSD",
+      "en": "Serbian Dinar",
+      "zh": "塞尔维亚第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "RUB",
+      "en": "Russian Ruble",
+      "zh": "俄罗斯卢布",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "RWF",
+      "en": "Rwandan Franc",
+      "zh": "卢旺达法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SAR",
+      "en": "Saudi Riyal",
+      "zh": "沙特里亚尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SBD",
+      "en": "Solomon Islands Dollar",
+      "zh": "所罗门群岛元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SCR",
+      "en": "Seychellois Rupee",
+      "zh": "塞舌尔卢比",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SDG",
+      "en": "Sudanese Pound",
+      "zh": "苏丹镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SEK",
+      "en": "Swedish Krona",
+      "zh": "瑞典克朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SGD",
+      "en": "Singapore Dollar",
+      "zh": "新加坡元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SHP",
+      "en": "St. Helena Pound",
+      "zh": "圣赫勒拿群岛磅",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SLE",
+      "en": "Sierra Leonean Leone",
+      "zh": "塞拉利昂新利昂",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SLL",
+      "en": "Sierra Leonean Leone (1964—2022)",
+      "zh": "塞拉利昂利昂",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SOS",
+      "en": "Somali Shilling",
+      "zh": "索马里先令",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SRD",
+      "en": "Surinamese Dollar",
+      "zh": "苏里南元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SSP",
+      "en": "South Sudanese Pound",
+      "zh": "南苏丹镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "STN",
+      "en": "São Tomé & Príncipe Dobra",
+      "zh": "圣多美和普林西比多布拉",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SVC",
+      "en": "Salvadoran Colón",
+      "zh": "萨尔瓦多科朗",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SYP",
+      "en": "Syrian Pound",
+      "zh": "叙利亚镑",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "SZL",
+      "en": "Swazi Lilangeni",
+      "zh": "斯威士兰里兰吉尼",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "THB",
+      "en": "Thai Baht",
+      "zh": "泰铢",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TJS",
+      "en": "Tajikistani Somoni",
+      "zh": "塔吉克斯坦索莫尼",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TMT",
+      "en": "Turkmenistani Manat",
+      "zh": "土库曼斯坦马纳特",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TND",
+      "en": "Tunisian Dinar",
+      "zh": "突尼斯第纳尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TOP",
+      "en": "Tongan Paʻanga",
+      "zh": "汤加潘加",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TRY",
+      "en": "Turkish Lira",
+      "zh": "土耳其里拉",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TTD",
+      "en": "Trinidad & Tobago Dollar",
+      "zh": "特立尼达和多巴哥元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TWD",
+      "en": "New Taiwan Dollar",
+      "zh": "新台币",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "TZS",
+      "en": "Tanzanian Shilling",
+      "zh": "坦桑尼亚先令",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "UAH",
+      "en": "Ukrainian Hryvnia",
+      "zh": "乌克兰格里夫纳",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "UGX",
+      "en": "Ugandan Shilling",
+      "zh": "乌干达先令",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "USD",
+      "en": "US Dollar",
+      "zh": "美元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "UYU",
+      "en": "Uruguayan Peso",
+      "zh": "乌拉圭比索",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "UZS",
+      "en": "Uzbekistani Som",
+      "zh": "乌兹别克斯坦苏姆",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "VES",
+      "en": "Venezuelan Bolívar",
+      "zh": "委内瑞拉玻利瓦尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "VND",
+      "en": "Vietnamese Dong",
+      "zh": "越南盾",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "VUV",
+      "en": "Vanuatu Vatu",
+      "zh": "瓦努阿图瓦图",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "WST",
+      "en": "Samoan Tala",
+      "zh": "萨摩亚塔拉",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XAF",
+      "en": "Central African CFA Franc",
+      "zh": "中非法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XCD",
+      "en": "East Caribbean Dollar",
+      "zh": "东加勒比元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XCG",
+      "en": "Caribbean guilder",
+      "zh": "加勒比盾",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XDR",
+      "en": "Special Drawing Rights",
+      "zh": "特别提款权",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XOF",
+      "en": "West African CFA Franc",
+      "zh": "西非法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XPF",
+      "en": "CFP Franc",
+      "zh": "太平洋法郎",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "XSU",
+      "en": "Sucre",
+      "zh": "苏克雷",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "YER",
+      "en": "Yemeni Rial",
+      "zh": "也门里亚尔",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ZAR",
+      "en": "South African Rand",
+      "zh": "南非兰特",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ZMW",
+      "en": "Zambian Kwacha",
+      "zh": "赞比亚克瓦查",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ZWG",
+      "en": "Zimbabwean Gold",
+      "zh": "津巴布韦金元",
+      "zh_source": "cldr"
+    },
+    {
+      "code": "ZWL",
+      "en": "Zimbabwean Dollar (2009–2024)",
+      "zh": "津巴布韦元 (2009)",
+      "zh_source": "cldr"
+    }
+  ],
+  "excluded": []
+}
