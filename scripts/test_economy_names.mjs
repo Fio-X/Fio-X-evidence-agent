@@ -14,8 +14,10 @@
 //     differently (KGS en, XCG and ZWG zh) may differ. The territory ISO2 codes
 //     come from the pinned Natural Earth release when NE_SOURCE_PATH points at
 //     it (sha256-checked), else from the committed asset itself;
-//   - the 217/22/12 economy/territory/aggregate counts and the exact aggregate
-//     ID set;
+//   - the 217/22/19 economy/territory/aggregate counts and the exact aggregate
+//     ID set: the aggregates are the explicit policy table's entries (policy
+//     rule 7), never derived from the World Bank list, each carries its rule
+//     number, and every other aggregate code or name stays unresolved;
 //   - the specific name checks (Congo Dem. Rep. / Congo Rep. and neighbouring
 //     Sub-Saharan African economies, Channel Islands falling back to the World
 //     Bank zh name because CLDR has no name for pseudo-code "JG", and the
@@ -28,17 +30,21 @@
 //     this re-checks the committed bytes themselves, so a hand-edit that skips
 //     the build cannot silently reintroduce a leaked English/code string);
 //   - runtime/pi/economy_names.mjs's resolver: category_names "worldbank",
-//     "iso3", "iso2" and "iso4217", the alias codes (OWID_KOS, OWID_WRL, EL, UK),
-//     aggregates staying unresolved in the ISO2 mode, "en" passthrough or
-//     expansion, and unmapped-value detection for lintVizSpec's blocker.
+//     "iso3", "iso2" and "iso4217", the alias codes (OWID_KOS, OWID_WRL, the OWID_
+//     income groups and OWID_EU27, EL, UK), the OWID_ continents, aggregates
+//     staying unresolved in the ISO2 mode, "en" passthrough or expansion, and
+//     unmapped-value detection for lintVizSpec's blocker.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  AGGREGATE_POLICY,
+  AGGREGATE_POLICY_RULE,
   ALIASES,
   assertPinnedToolchain,
   buildEconomyNames,
+  DEFAULT_EN_PATH,
   ECONOMY_NAMES_ASSET_PATH,
   ECONOMY_NAMES_SCHEMA_VERSION,
   PINNED_TOOLCHAIN,
@@ -132,13 +138,52 @@ assert.deepEqual(derivedCurrencies.source, currencyAsset.source, "currency sourc
 // -- counts --
 assert.equal(asset.economies.length, 217, "217 economies (region.value !== 'Aggregates')");
 assert.equal(asset.territories.length, 22, "22 Natural Earth territories without a World Bank row");
-assert.equal(asset.aggregates.length, 12, "WLD plus every distinct region/incomeLevel id in use");
-assert.equal(asset.aliases.length, 4);
+assert.equal(asset.aggregates.length, 19, "the aggregate policy table: WLD, EUU, four income groups, seven World Bank regions, six OWID continents");
+assert.equal(asset.aliases.length, 9, "OWID_KOS, OWID_WRL, OWID_EU27, the four OWID_ income groups, EL and UK");
 assert.deepEqual(asset.territories.map((entry) => entry.iso3).sort(), [...TERRITORY_ISO3].sort());
 
-// -- exact aggregate ID set (derived, never hand-picked) --
+// -- exact aggregate ID set: the explicit policy table (zh-naming-policy-1003 rule 7), never derived from the World Bank list --
 const aggregateIds = asset.aggregates.map((a) => a.iso3).sort();
-assert.deepEqual(aggregateIds, ["EAS", "ECS", "HIC", "LCN", "LIC", "LMC", "MEA", "NAC", "SAS", "SSF", "UMC", "WLD"]);
+assert.deepEqual(aggregateIds, [
+  "EAS", "ECS", "EUU", "HIC", "LCN", "LIC", "LMC", "MEA", "NAC", "OWID_AFR", "OWID_ASI", "OWID_EUR", "OWID_NAM", "OWID_OCE", "OWID_SAM", "SAS", "SSF", "UMC", "WLD",
+]);
+assert.deepEqual(AGGREGATE_POLICY.map((policy) => policy.iso3).sort(), aggregateIds, "the asset holds exactly the policy table's aggregates");
+assert.equal(AGGREGATE_POLICY_RULE, 7);
+assert.ok(Object.isFrozen(AGGREGATE_POLICY) && AGGREGATE_POLICY.every((policy) => Object.isFrozen(policy)), "the policy table cannot be mutated by a caller");
+// Section 3 of the policy plus the amended rule 7: the name of every displayable aggregate and where it comes from.
+const EXPECTED_AGGREGATES = {
+  WLD: ["世界", "policy"], EUU: ["欧盟", "policy"],
+  HIC: ["高收入经济体", "policy"], UMC: ["中等偏上收入经济体", "policy"], LMC: ["中等偏下收入经济体", "policy"], LIC: ["低收入经济体", "policy"],
+  OWID_AFR: ["非洲", "policy"], OWID_ASI: ["亚洲", "policy"], OWID_EUR: ["欧洲", "policy"], OWID_NAM: ["北美洲", "policy"], OWID_SAM: ["南美洲", "policy"], OWID_OCE: ["大洋洲", "policy"],
+  EAS: ["东亚与太平洋地区", "worldbank"], ECS: ["欧洲与中亚地区", "worldbank"], LCN: ["拉丁美洲与加勒比海地区", "worldbank"], MEA: ["中东、北非、阿富汗与巴基斯坦", "worldbank"],
+  NAC: ["北美", "worldbank"], SAS: ["南亚", "worldbank"], SSF: ["撒哈拉以南非洲地区", "worldbank"],
+};
+assert.deepEqual(
+  Object.fromEntries(asset.aggregates.map((entry) => [entry.iso3, [entry.zh, entry.zh_source]])),
+  EXPECTED_AGGREGATES,
+  "every displayable aggregate: zh name and whether the policy table or the World Bank named it",
+);
+for (const entry of asset.aggregates) {
+  assert.equal(entry.policy_rule, 7, `aggregate ${entry.iso3} carries its policy rule number`);
+  assert.equal("wb_zh" in entry, entry.zh_source === "policy" && "wb_name" in entry, `aggregate ${entry.iso3}: wb_zh records the World Bank's own name wherever the policy table replaced one`);
+}
+// The income groups include Hong Kong, Macao and Taiwan, so they are 经济体, never 国家 (rule 4).
+for (const code of ["HIC", "UMC", "LMC", "LIC"]) assert.match(asset.aggregates.find((entry) => entry.iso3 === code).zh, /收入经济体$/, `${code} is an economy group`);
+{
+  // Nothing is derived from the World Bank list: the aggregates are exactly the table passed in, and a bad entry aborts the build.
+  const build = (aggregatePolicy) => buildEconomyNames({ territoryIso2, aggregatePolicy, aliasTable: [] }); // the alias table targets the real aggregates
+  assert.deepEqual(build([{ iso3: "WLD", zh: "世界" }]).aggregates.map((entry) => entry.iso3), ["WLD"], "a one-entry table yields one aggregate, whatever else the World Bank lists");
+  assert.deepEqual(build([]).aggregates, [], "an empty table yields none");
+  assert.deepEqual(build([{ iso3: "WLD", zh: "世界" }, { iso3: "EAS", zh_from: "worldbank" }]).aggregates.map((entry) => entry.iso3), ["EAS", "WLD"], "sorted by code");
+  assert.throws(() => build([{ iso3: "ZZZ", zh: "某地" }]), /'ZZZ' is not present in the World Bank en list/);
+  assert.throws(() => build([{ iso3: "USA", zh: "某地" }]), /'USA' is an economy in the World Bank list, not an aggregate/);
+  assert.throws(() => build([{ iso3: "WLD", en_name: "World", zh: "世界" }]), /carries its own English name but the World Bank list has a row/);
+  assert.throws(() => build([{ iso3: "WLD", zh: "World" }]), /contains Latin letters/);
+  assert.throws(() => build([{ iso3: "WLD", zh: "" }]), /empty zh name/);
+  assert.throws(() => build([{ iso3: "AFR", zh_from: "worldbank" }]), /empty zh name for aggregate AFR/, "the World Bank has no zh name for AFR, so it cannot take one from there");
+  assert.throws(() => build([{ iso3: "WLD", zh: "世界" }, { iso3: "WLD", zh: "世界" }]), /duplicate iso3 'WLD'/);
+  assert.equal(build([{ iso3: "OWID_AFR", en_name: "Africa", zh: "非洲" }, { iso3: "OWID_ASI", en_name: "Asia", zh: "亚洲" }]).aggregates.length, 2, "entries without a World Bank name are not checked for a duplicate wb_name");
+}
 
 // -- codes are lookup keys: unique, well formed, and disjoint across the three lists --
 {
@@ -146,7 +191,8 @@ assert.deepEqual(aggregateIds, ["EAS", "ECS", "HIC", "LCN", "LIC", "LMC", "MEA",
   assert.equal(new Set(everything.map((entry) => entry.iso3)).size, everything.length, "every iso3 is unique across economies, territories and aggregates");
   const withIso2 = [...asset.economies, ...asset.territories];
   assert.equal(new Set(withIso2.map((entry) => entry.iso2)).size, withIso2.length, "every iso2 is unique across economies and territories");
-  for (const entry of everything) assert.match(entry.iso3, /^[A-Z]{3}$/, `${entry.iso3} is three capital letters`);
+  for (const entry of [...asset.economies, ...asset.territories]) assert.match(entry.iso3, /^[A-Z]{3}$/, `${entry.iso3} is three capital letters`);
+  for (const entry of asset.aggregates) assert.match(entry.iso3, /^(?:[A-Z]{3}|OWID_[A-Z]{3})$/, `${entry.iso3} is three capital letters or an OWID_ continent code`);
   for (const entry of withIso2) assert.match(entry.iso2, /^[A-Z]{2}$/, `${entry.iso3}'s iso2 is two capital letters`);
   for (const aggregate of asset.aggregates) assert.equal("iso2" in aggregate, false, `aggregate ${aggregate.iso3} has no iso2`);
   for (const territory of asset.territories) assert.equal("wb_name" in territory, false, `territory ${territory.iso3} has no World Bank name`);
@@ -180,6 +226,13 @@ for (const [iso3, expected] of Object.entries(expectedEconomies)) {
   assert.ok(entry, `economy ${iso3} must be present`);
   assert.deepEqual({ iso2: entry.iso2, wb_name: entry.wb_name, zh: entry.zh, zh_source: entry.zh_source }, expected, `economy ${iso3}`);
 }
+// CHI keeps the World Bank's own zh name: it is a source name in Chinese, not an English fallback, so it is the one exception to policy rule 8
+// (an iso3 with no CLDR zh name is dropped). The exception and its reason are recorded in the shipped asset's rules.
+assert.ok(
+  asset.rules.some((rule) => rule.includes("CHI") && rule.includes("exception to policy rule 8") && rule.includes("not an English fallback")),
+  "the CHI exception to policy rule 8 and its reason are recorded in the rules list",
+);
+assert.deepEqual(asset.economies.filter((entry) => entry.zh_source === "worldbank").map((entry) => entry.iso3), ["CHI"], "CHI is the only economy named by the World Bank rather than CLDR");
 
 // -- the 22 Natural Earth territories: ISO3 -> [ISO2, CLDR English name, CLDR zh name] --
 const EXPECTED_TERRITORIES = {
@@ -253,14 +306,37 @@ const EXPECTED_OVERRIDES = {
 // build's wb_name derivation always trims, so this checks the trim did
 // not silently change which aggregate matched) --
 const byAggIso3 = new Map(asset.aggregates.map((a) => [a.iso3, a]));
-assert.deepEqual(byAggIso3.get("SSF"), { iso3: "SSF", wb_name: "Sub-Saharan Africa", zh: "撒哈拉以南非洲地区", zh_source: "worldbank" });
-assert.deepEqual(byAggIso3.get("LCN"), { iso3: "LCN", wb_name: "Latin America & Caribbean", zh: "拉丁美洲与加勒比海地区", zh_source: "worldbank" });
-assert.equal(byAggIso3.get("WLD").zh, "世界");
-for (const agg of asset.aggregates) assert.equal(agg.wb_name, agg.wb_name.trim(), `aggregate ${agg.iso3} wb_name must already be trimmed`);
+assert.deepEqual(byAggIso3.get("SSF"), { iso3: "SSF", wb_name: "Sub-Saharan Africa", zh: "撒哈拉以南非洲地区", zh_source: "worldbank", policy_rule: 7 });
+assert.deepEqual(byAggIso3.get("LCN"), { iso3: "LCN", wb_name: "Latin America & Caribbean", zh: "拉丁美洲与加勒比海地区", zh_source: "worldbank", policy_rule: 7 });
+assert.deepEqual(byAggIso3.get("WLD"), { iso3: "WLD", wb_name: "World", zh: "世界", zh_source: "policy", policy_rule: 7, wb_zh: "世界" });
+assert.deepEqual(byAggIso3.get("HIC"), { iso3: "HIC", wb_name: "High income", zh: "高收入经济体", zh_source: "policy", policy_rule: 7, wb_zh: "高收入国家" }, "the policy name replaced the World Bank's 国家 wording, which stays recorded");
+assert.deepEqual(byAggIso3.get("EUU"), { iso3: "EUU", wb_name: "European Union", zh: "欧盟", zh_source: "policy", policy_rule: 7, wb_zh: "欧洲联盟" });
+assert.deepEqual(byAggIso3.get("OWID_OCE"), { iso3: "OWID_OCE", en_name: "Oceania", zh: "大洋洲", zh_source: "policy", policy_rule: 7 }, "an OWID continent has no World Bank row, hence no wb_name or wb_zh");
+for (const agg of asset.aggregates) {
+  if ("wb_name" in agg) assert.equal(agg.wb_name, agg.wb_name.trim(), `aggregate ${agg.iso3} wb_name must already be trimmed`);
+  else assert.ok(agg.en_name && agg.en_name === agg.en_name.trim(), `aggregate ${agg.iso3} has no World Bank name, so it carries its own trimmed en_name`);
+}
+// Every other aggregate the World Bank lists (TEA, TEC, ARB, EMU, OED, the IDA/IBRD subsets, small states ...) is NOT in the table: it
+// resolves neither by code nor by name, so a chart that holds one is refused by the unmapped-value blocker.
+{
+  const listed = JSON.parse(readFileSync(DEFAULT_EN_PATH, "utf8"))[1].filter((row) => row.region?.value === "Aggregates");
+  const inTable = new Set(asset.aggregates.map((entry) => entry.iso3));
+  const others = listed.filter((row) => !inTable.has(row.id));
+  assert.equal(listed.length, 78, "the vendored World Bank list has 78 aggregate rows");
+  assert.equal(others.length, 65, "13 of them are in the policy table, the other 65 are not");
+  assert.deepEqual(unmappedEconomyNameValues(others.map((row) => row.id), "iso3"), others.map((row) => row.id), "no other aggregate resolves by code");
+  assert.deepEqual(unmappedEconomyNameValues(others.map((row) => row.name.trim()), "worldbank").length, others.length, "no other aggregate resolves by its World Bank name");
+  for (const code of ["TEA", "TEC", "ARB", "EMU", "OED", "LDC", "IDA", "SST", "AFR"]) assert.equal(economyEntryFor(code, "iso3"), null, `${code} is not displayable`);
+  for (const row of listed.filter((row) => inTable.has(row.id))) assert.equal(economyEntryFor(row.id, "iso3")?.kind, "aggregate", `${row.id} is an aggregate`);
+}
 
 // -- the alias codes: documented alternates of a primary code, per mode --
 const aliasRows = (list) => list.map(({ mode, alias, target }) => [mode, alias, target]);
-assert.deepEqual(aliasRows(asset.aliases), [["iso3", "OWID_KOS", "XKX"], ["iso3", "OWID_WRL", "WLD"], ["iso2", "EL", "GR"], ["iso2", "UK", "GB"]]);
+assert.deepEqual(aliasRows(asset.aliases), [
+  ["iso3", "OWID_KOS", "XKX"], ["iso3", "OWID_WRL", "WLD"], ["iso3", "OWID_EU27", "EUU"],
+  ["iso3", "OWID_HIC", "HIC"], ["iso3", "OWID_UMC", "UMC"], ["iso3", "OWID_LMC", "LMC"], ["iso3", "OWID_LIC", "LIC"],
+  ["iso2", "EL", "GR"], ["iso2", "UK", "GB"],
+]);
 assert.deepEqual(aliasRows(ALIASES), aliasRows(asset.aliases));
 for (const alias of asset.aliases) assert.ok(alias.source, `alias ${alias.alias} records where the code comes from`);
 
@@ -337,22 +413,43 @@ assert.deepEqual(unmappedEconomyNameValues(["Sub-Saharan Africa ", "Latin Americ
 
 // Every economy and aggregate resolves through all its keys to the same zh name, and the English output is unchanged.
 for (const entry of [...asset.economies, ...asset.aggregates]) {
-  assert.equal(resolveEconomyDisplayName(entry.wb_name, "worldbank", "zh"), entry.zh, `${entry.wb_name} by World Bank name`);
   assert.equal(resolveEconomyDisplayName(entry.iso3, "iso3", "zh"), entry.zh, `${entry.iso3} by ISO3`);
-  assert.equal(resolveEconomyDisplayName(entry.iso3, "iso3", "en"), entry.wb_name, `${entry.iso3} en is the World Bank name`);
-  assert.equal(resolveEconomyDisplayName(entry.wb_name, "worldbank", "en"), entry.wb_name, `${entry.wb_name} en passthrough`);
+  if (entry.wb_name !== undefined) {
+    assert.equal(resolveEconomyDisplayName(entry.wb_name, "worldbank", "zh"), entry.zh, `${entry.wb_name} by World Bank name`);
+    assert.equal(resolveEconomyDisplayName(entry.iso3, "iso3", "en"), entry.wb_name, `${entry.iso3} en is the World Bank name`);
+    assert.equal(resolveEconomyDisplayName(entry.wb_name, "worldbank", "en"), entry.wb_name, `${entry.wb_name} en passthrough`);
+  } else {
+    // An OWID continent has no World Bank name: by code only, and its English name is OWID's.
+    assert.equal(resolveEconomyDisplayName(entry.iso3, "iso3", "en"), entry.en_name, `${entry.iso3} en is its own en_name`);
+    assert.notEqual(economyEntryFor(entry.en_name, "worldbank"), economyEntryFor(entry.iso3, "iso3"), `${entry.iso3} never resolves by an English name`);
+  }
   if (entry.iso2) assert.equal(resolveEconomyDisplayName(entry.iso2, "iso2", "zh"), entry.zh, `${entry.iso2} by ISO2`);
 }
 
-// -- ISO3 aliases: documented, and the only OWID_* codes that resolve --
+// -- OWID_ codes: Kosovo (an economy, whatever its prefix), the aggregates of the policy table, and nothing else --
 assert.equal(resolveEconomyDisplayName("OWID_KOS", "iso3", "zh"), "科索沃");
 assert.equal(resolveEconomyDisplayName("OWID_WRL", "iso3", "zh"), "世界");
 assert.equal(resolveEconomyDisplayName("OWID_KOS", "iso3", "en"), "Kosovo");
 assert.equal(economyEntryFor("OWID_KOS", "iso3"), economyEntryFor("XKX", "iso3"), "an alias is the same entry as its target");
+assert.equal(economyEntryFor("OWID_KOS", "iso3")?.kind, "economy", "OWID_KOS is Kosovo: an economy, so the kind (never the OWID_ prefix) decides what is an aggregate");
 assert.equal(economyEntryFor("OWID_WRL", "iso3")?.kind, "aggregate");
 {
-  const otherOwid = ["OWID_AFR", "OWID_ASI", "OWID_EU27", "OWID_EUR", "OWID_HIC", "OWID_LIC", "OWID_LMC", "OWID_NAM", "OWID_OCE", "OWID_SAM", "OWID_UMC"];
-  assert.deepEqual(unmappedEconomyNameValues(otherOwid, "iso3"), otherOwid, "every other OWID_* aggregate stays unresolved");
+  // Section 3 of the policy: the OWID aggregates that may be shown, and the name each one gets.
+  const OWID_AGGREGATES = {
+    OWID_WRL: "世界", OWID_EU27: "欧盟", OWID_AFR: "非洲", OWID_ASI: "亚洲", OWID_EUR: "欧洲", OWID_NAM: "北美洲", OWID_SAM: "南美洲", OWID_OCE: "大洋洲",
+    OWID_HIC: "高收入经济体", OWID_UMC: "中等偏上收入经济体", OWID_LMC: "中等偏下收入经济体", OWID_LIC: "低收入经济体",
+  };
+  for (const [code, zh] of Object.entries(OWID_AGGREGATES)) {
+    assert.equal(resolveEconomyDisplayName(code, "iso3", "zh"), zh, `${code} by ISO3`);
+    assert.equal(economyEntryFor(code, "iso3")?.kind, "aggregate", `${code} is an aggregate`);
+    assert.equal(economyEntryFor(code, "iso2"), null, `${code} has no ISO2 code`);
+  }
+  assert.equal(economyEntryFor("OWID_HIC", "iso3"), economyEntryFor("HIC", "iso3"), "an OWID income group is the World Bank group of the same name");
+  assert.equal(economyEntryFor("OWID_EU27", "iso3"), economyEntryFor("EUU", "iso3"));
+  assert.equal(resolveEconomyDisplayName("OWID_EUR", "iso3", "en"), "Europe");
+  // Every other OWID_ code (historical states, the UK nations, anything else) stays unresolved.
+  const otherOwid = ["OWID_USS", "OWID_YUG", "OWID_CZS", "OWID_SRM", "OWID_ENG", "OWID_SCT", "OWID_WLS", "OWID_NIR", "OWID_CIS", "OWID_WORLD"];
+  assert.deepEqual(unmappedEconomyNameValues(otherOwid, "iso3"), otherOwid, "every other OWID_* code stays unresolved");
 }
 assert.equal(resolveEconomyDisplayName("OWID_KOS", "iso2", "zh"), "OWID_KOS", "an ISO3 alias does not resolve in the ISO2 mode");
 

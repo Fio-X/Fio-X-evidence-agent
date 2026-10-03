@@ -5,8 +5,9 @@
 //     scripts/build_economy_names.mjs from fixtures/external/
 //     worldbank_country_list/ plus the Natural Earth territory codes):
 //       category_names "worldbank"  exact World Bank English name ("Congo, Dem. Rep.")
-//       category_names "iso3"       ISO3 economy/aggregate/territory code ("COD"),
-//                                   plus the documented alias codes (OWID_KOS, OWID_WRL)
+//       category_names "iso3"       ISO3 economy/aggregate/territory code ("COD"), the
+//                                   OWID_ continent codes, plus the documented alias codes
+//                                   (OWID_KOS, OWID_WRL, OWID_EU27 and the OWID_ income groups)
 //       category_names "iso2"       ISO 3166-1 alpha-2 code ("CD"), plus the
 //                                   documented Eurostat aliases (EL, UK)
 //   - runtime/pi/assets/currency-names.json (built by
@@ -57,7 +58,8 @@ function loadEconomyNamesAsset() {
   const byIso3 = new Map(entries.map((entry) => [entry.iso3, entry]));
   const byIso2 = new Map([...economies, ...territories].map((entry) => [entry.iso2, entry]));
   // Territories have no World Bank name: they resolve by code only, never by an English name.
-  const byWbName = new Map([...economies, ...aggregates].map((entry) => [entry.wb_name, entry]));
+  // Neither does an aggregate that has no World Bank row (the Our World in Data continents).
+  const byWbName = new Map([...economies, ...aggregates].filter((entry) => entry.wb_name !== undefined).map((entry) => [entry.wb_name, entry]));
   const modeTables = { iso3: byIso3, iso2: byIso2 };
   for (const alias of asset.aliases ?? []) {
     const table = modeTables[alias.mode];
