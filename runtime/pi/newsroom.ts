@@ -905,19 +905,33 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
 
 // The latest record per claim_id decides: a claim counts as verified only while its last record in
 // claims.jsonl is system-verified (a later non-verified record revokes it). Order is first appearance.
+// A line that does not parse, is not a JSON object or has no claim_id closes the registry: such a line could
+// have been a revoking record, so no claim counts as verified until the file is intact again.
 async function latestClaimRecords(): Promise<Map<string, any>> {
   const root = artifactRoot();
   const latest = new Map<string, any>();
   if (!root) return latest;
+  let text = "";
   try {
-    const text = await readFile(join(root, "claims.jsonl"), "utf8");
-    for (const line of text.split(/\r?\n/).filter(Boolean)) {
-      try {
-        const claim = JSON.parse(line);
-        if (claim?.claim_id) latest.set(String(claim.claim_id), claim);
-      } catch {}
+    text = await readFile(join(root, "claims.jsonl"), "utf8");
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") throw error;
+    return latest;
+  }
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].trim()) continue;
+    let claim: any;
+    try {
+      claim = JSON.parse(lines[index]);
+    } catch {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not valid JSON, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
     }
-  } catch {}
+    if (!claim || typeof claim !== "object" || Array.isArray(claim) || typeof claim.claim_id !== "string" || !claim.claim_id) {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not a claim record with a claim_id, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
+    }
+    latest.set(claim.claim_id, claim);
+  }
   return latest;
 }
 
