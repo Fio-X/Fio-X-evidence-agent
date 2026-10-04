@@ -242,6 +242,28 @@ await ok("K38 a plan citing a revoked claim fails the render check", async () =>
 });
 
 
+await ok("K38 a line that does not parse closes the registry (after, before, not an object, no claim_id); blank lines and CRLF stay fine", async () => {
+  const art = freshRun("k38-corrupt");
+  const lines = readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean);
+  const bound = verifiedLine(lines, "c-bound");
+  const mod = await import(`${pathToFileURL(COPY).href}?v=${++loadN}`);
+  const refusesBoth = async (name, text, lineNo) => {
+    writeFileSync(join(art, "claims.jsonl"), text);
+    for (const fn of ["verifiedClaimIds", "verifiedClaimRecords"]) {
+      let msg = "";
+      try { await mod[fn](); } catch (error) { msg = String(error.message); }
+      must(new RegExp(`CLAIMS_REGISTRY_CORRUPT.*line ${lineNo}\\b`).test(msg) && !/edit/i.test(msg), `${name} ${fn}: ${JSON.stringify(msg)}`);
+    }
+  };
+  await refusesBoth("verified then garbage", `${bound}\n{"claim_id":"c-bound","status":"dra\n`, 2);
+  await refusesBoth("garbage then verified", `not json\n${bound}\n`, 1);
+  await refusesBoth("a JSON array line", `${bound}\n[1,2]\n`, 2);
+  await refusesBoth("a record without claim_id", `${bound}\n{"status":"draft"}\n`, 2);
+  // intact files with blank lines and CRLF give the same lists as before
+  writeFileSync(join(art, "claims.jsonl"), `${bound}\r\n\r\n${verifiedLine(lines, "c-map")}\r\n   \n`);
+  must(JSON.stringify(await mod.verifiedClaimIds()) === JSON.stringify(["c-bound", "c-map"]), JSON.stringify(await mod.verifiedClaimIds()));
+});
+
 // ---- K39: preflight runs the render's own lint check ----
 const PRE = { NEWSROOM_SPEED_PREFLIGHT: "1" };
 const renderWith = async (r) => { try { return { ok: true, out: await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: r.planRef, lint_ref: r.lint.details.lintRef }) }; } catch (error) { return { ok: false, msg: String(error.message) }; } };
