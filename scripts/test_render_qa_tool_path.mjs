@@ -82,7 +82,7 @@ export function runRenderQa(svgs, options) {
   mkdirSync(join(art, "data"), { recursive: true });
   writeFileSync(join(art, dataRef), csvBytes);
   writeFileSync(join(art, `${dataRef}.meta.json`), JSON.stringify({ file: dataRef, sha256: createHash("sha256").update(csvBytes).digest("hex"), bytes: csvBytes.length, label: "render-qa timeline" }));
-  // all_varchar keeps every value the string the fixture has (no date or number inference), so the rows are the same rows.
+  // Plain read_csv_auto: DuckDB infers the types, and the lint learns the data hash from DuckDB's own output.
   spec.sql = `SELECT ${columns.map((c) => `"${c}"`).join(", ")} FROM read_csv_auto('${dataRef}')`;
   const planRef = "visualizations/plans/plan.json";
   const lintRef = "visualizations/lints/lint.json";
@@ -452,7 +452,7 @@ export function runRenderQa(svgs, options) {
   const lieflatRows = [{ label: "A", value: 7 }, { label: "B", value: 11 }, { label: "C", value: 13 }];
   const lieflatComputationRef = "computations/lieflat-rows.json";
   writeFileSync(join(art, lieflatComputationRef), JSON.stringify({ schema_version: "0.7.0", sql: "SELECT label, value FROM lieflat_fixture", result_hash: hashRows(lieflatRows), rows: lieflatRows }));
-  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({ schema_version: "0.7.0", claim_id: "lieflat-claim-1", claim: "The fixture value is measured.", status: "verified", source_refs: [lieflatSourceRef], computation_refs: [lieflatComputationRef] })}\n`);
+  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({ schema_version: "0.7.0", claim_id: "lieflat-claim-1", claim: "The fixture value is measured.", status: "verified", source_refs: [lieflatSourceRef], computation_refs: [lieflatComputationRef] })}\n`, { flag: "a" });
   const lieflatParams = {
     mode: "chart",
     language: "en",
@@ -823,8 +823,12 @@ export function runRenderQa(svgs, options) {
     writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
       claim_id: verifiedClaimId,
       status: "verified",
-      source_refs: [dataRef],
-      computation_refs: [claimComputationRef],
+      claim: "The sample metric is 42.",
+      claim_template: "The sample metric is {first.value}.",
+      claim_bindings: [{ placeholder: "{first.value}", column: "value", row_index: 0, value: 42, text: "42" }],
+      recorded_by: "newsroom_viz_plan",
+      source_refs: [dataRef, "sources/ig-revise-f1-source.json"],
+      computation_refs: [claimComputationRef, "computations/hero-rows.json"],
       verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
     })}\n`, { flag: "a" });
     const verifiedVizPlanRef = "visualizations/plans/plan-ig-f1-verified.json";
