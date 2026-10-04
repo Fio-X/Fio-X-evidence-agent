@@ -287,18 +287,27 @@ assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow cl
     const NEW_LABEL = { "3,500,000,000": "35.000亿", "1,200,000,000": "12.000亿", "840,000,000": "8.400亿", "110,000,000": "1.100亿", "220,000": "0.002亿", "86,000": "0.001亿",
       "4,000,000,000": "40.000亿", "1,000,000,000": "10.000亿", "900,000,000": "9.000亿", "100,000,000": "1.000亿", "200,000": "0.002亿", "90,000": "0.001亿" };
     const textNodes = (svg) => [...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
-    const withoutText = (svg) => svg.replace(/<text [^>]*>[^<]*<\/text>/g, "");
-    const tagNames = (svg) => [...svg.matchAll(/<([a-zA-Z]+)[ >\/]/g)].map((m) => m[1]).join(",");
+    // Everything but the text content is compared byte for byte: the text content of every <text> is emptied (it is pinned below as a
+    // full list), and only the attributes named for a chart (tag name + attribute) have their values masked.
+    const maskAttr = (svg, allowed) => svg.replace(/<([a-zA-Z]+)( [^>]*)?>/g, (tag, name) => tag.replace(/ ([\w:-]+)="[^"]*"/g, (attrText, attrName) => (allowed.includes(`${name} ${attrName}`) ? ` ${attrName}="*"` : attrText)));
+    const comparable = (svg, allowed) => maskAttr(svg.replace(/(<text [^>]*>)[^<]*(<\/text>)/g, "$1$2"), allowed);
+    // chart_type -> [spec fields, the full expected zh text list, how many of those texts changed, the attributes allowed to differ]
     const fixtures = [
-      ["horizontal_bar", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" }],
-      ["dot", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" }],
-      ["slope", { reader_task: "change", category_field: "region", start_field: "v", end_field: "w" }],
+      ["horizontal_bar", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" },
+        ["Round three", "synthetic", "0", "10亿", "20亿", "30亿 元", "华北", "35.000亿 元", "华东", "12.000亿", "华南", "8.400亿", "西北", "1.100亿", "东北", "0.002亿", "西南", "0.001亿", "数据来源：synthetic fixture"], 6,
+        // wider labels move the value-label and axis-tick x positions and shorten the bars: nothing else may move
+        ["text x", "rect width"]],
+      ["dot", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" },
+        ["Round three", "synthetic", "0", "10亿", "20亿", "30亿 元", "华北", "35.000亿 元", "华东", "12.000亿", "华南", "8.400亿", "西北", "1.100亿", "东北", "0.002亿", "西南", "0.001亿", "数据来源：synthetic fixture"], 6, []],
+      ["slope", { reader_task: "change", category_field: "region", start_field: "v", end_field: "w" },
+        ["Round three", "synthetic", "v", "w", "华北 35.000亿 元", "40.000亿", "华东 12.000亿", "10.000亿", "华南 8.400亿", "9.000亿", "西北 1.100亿", "1.000亿", "东北 0.002亿", "0.002亿", "西南 0.001亿", "0.001亿", "数据来源：synthetic fixture"], 12, []],
     ];
-    for (const [chart_type, extra] of fixtures) {
+    for (const [chart_type, extra, expected, expectedChanged, allowed] of fixtures) {
       const spec = (language) => ({ ...base, language, chart_type, unit: "元", ...extra });
       assert.equal(renderVizSvg(spec("en"), big), old.renderVizSvg(spec("en"), big), `en ${chart_type} large values unchanged`);
       const [before, after] = [old.renderVizSvg(spec("zh"), big), renderVizSvg(spec("zh"), big)];
       const [a, b] = [textNodes(before), textNodes(after)];
+      assert.deepEqual(b, expected, `zh ${chart_type}: the full text list`);
       assert.equal(a.length, b.length, `zh ${chart_type}: same number of text nodes`);
       let changed = 0;
       a.forEach((text, i) => {
@@ -308,9 +317,8 @@ assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow cl
         assert.equal(b[i], `${m[1]}${NEW_LABEL[m[2]]}${m[3] ?? ""}`, `zh ${chart_type}: ${JSON.stringify(text)} becomes the shared 亿 label`);
         changed += 1;
       });
-      assert.ok(changed >= 6, `zh ${chart_type}: every value label changed (${changed})`);
-      if (chart_type === "horizontal_bar") assert.equal(tagNames(after), tagNames(before), "zh horizontal_bar: same elements (label width moves marks)");
-      else assert.equal(withoutText(after), withoutText(before), `zh ${chart_type}: nothing but the label text differs`);
+      assert.equal(changed, expectedChanged, `zh ${chart_type}: exactly ${expectedChanged} labels changed (${changed})`);
+      assert.equal(comparable(after, allowed), comparable(before, allowed), `zh ${chart_type}: nothing but the label text${allowed.length ? ` and ${allowed.join(", ")}` : ""} differs`);
     }
   }
 }
