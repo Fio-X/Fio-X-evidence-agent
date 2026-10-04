@@ -69,6 +69,7 @@ async function fixture(language) {
       claim_id: `claim-${module.index}`,
       claim: module.title,
       status: "verified",
+      verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
       source_refs: [sourceRef],
       computation_refs: [computationRef],
     });
@@ -181,6 +182,28 @@ try {
   assert.notEqual(report.status, 0, "news verify must reject a Lieflat-only publication");
   const output = `${report.stdout}\n${report.stderr}`;
   assert.match(output, /is a Lieflat publication \(kind=lieflat_publication\)/);
+
+  // 3. A claim counts as verified only while its latest record is system-verified; the registry must be intact.
+  {
+    const claimsPath = join(zh.base, "claims.jsonl");
+    const original = await readFile(claimsPath, "utf8");
+    const lines = original.split("\n").filter(Boolean);
+    const first = JSON.parse(lines[0]);
+    const renders = () => renderLieflatPublication({ ...zh.input, artifact_root: zh.base });
+    const refusing = async (name, text, pattern) => {
+      await writeFile(claimsPath, text, "utf8");
+      await assert.rejects(renders, pattern, name);
+    };
+    await refusing("a claim revoked by a later record", `${original}${JSON.stringify({ ...first, status: "contested" })}\n`, /unverified claim|only verified claims/);
+    const { verification: _dropped, ...withoutVerification } = first;
+    await refusing("status verified without system verification", `${[JSON.stringify(withoutVerification), ...lines.slice(1)].join("\n")}\n`, /unverified claim|only verified claims/);
+    await refusing("a line that does not parse", `${original}{"claim_id":"claim-1","status":"con\n`, new RegExp(`CLAIMS_REGISTRY_CORRUPT.*line ${lines.length + 1}\\b`));
+    await refusing("a record without claim_id", `${original}{"status":"contested"}\n`, /CLAIMS_REGISTRY_CORRUPT/);
+    // contested, then verified again: renders; blank lines and CRLF are fine
+    await writeFile(claimsPath, `${JSON.stringify({ ...first, status: "contested" })}\r\n\r\n${lines.join("\r\n")}\r\n`, "utf8");
+    await renders();
+    await writeFile(claimsPath, original, "utf8");
+  }
 
   console.log(JSON.stringify({
     status: "PASS",
