@@ -2351,9 +2351,14 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
     if (at !== undefined) rest = context.claimText.slice(at + valueText.length);
   }
   if (rest === null) return [];
-  // Invisible characters (zero-width, soft hyphen, BOM, word joiner, Mongolian vowel separator and the rest of Default_Ignorable / Cf) are not
-  // part of what a reader sees: delete them, and treat NEL (U+0085, which JS \s misses) as whitespace, before looking for the magnitude word.
-  rest = rest.replace(/[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu, "").replace(/\u0085/g, " ");
+  // A character the reader cannot see (zero-width, soft hyphen, BOM, word joiner, variation selector, combining mark, NEL and the rest of
+  // Default_Ignorable / Cf / Mn / Me / Cc) in the text read after the number could hide a magnitude word, and deleting it would accept a
+  // unit the claim never showed. Refuse it instead; plain whitespace (space, tab, newline, NBSP) stays as it is.
+  const seen = rest.match(/^\s*/u)![0] + (rest.replace(/^\s+/u, "").match(HERO_LITERAL_STOP)?.[0] ?? "");
+  for (const ch of seen) {
+    if (/[\t\n\v\f\r]/.test(ch) || !/[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Mn}\p{Me}\p{Cc}]/u.test(ch)) continue;
+    throw new Error(`HERO_LITERAL_HIDDEN_CHAR: the claim text right after the number holds the hidden character U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}; record the claim again without it`);
+  }
   // The literal right after the number, and a scale word after exactly one space (letters only: "million", never "3").
   const out = [rest.match(HERO_LITERAL_STOP)?.[0] ?? ""];
   if (/^ \S/u.test(rest)) {

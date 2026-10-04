@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { chartSvgText, checkReaderText } from "../runtime/pi/infographic.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
-const INVIS = [["zwsp", "\u200b", "亿美元"], ["wj", "\u2060", "亿美元"], ["shy", "\u00ad", "亿美元"], ["bom", "\ufeff", "亿美元"], ["mvs", "\u180e", "亿美元"], ["nel", "\u0085", "亿美元"],
+const INVIS = [["zwsp", "\u200b", "亿美元"], ["wj", "\u2060", "亿美元"], ["shy", "\u00ad", "亿美元"], ["bom", "\ufeff", "亿美元"], ["mvs", "\u180e", "亿美元"], ["nel", "\u0085", "亿美元"], ["vs16", "\ufe0f", "亿美元"], ["mn", "\u0301", "亿美元"], ["inyi", "", "亿\u200b美元"],
     ["mixed", "\u200b\u2060\u00ad\ufeff\u180e", "亿美元"], ["spmixed", " \u200b \u2060", "亿美元"], ["en-zwsp", "\u200b", "million tonnes"], ["inword", " ", "mil\u00adlion tonnes"], ["inword2", " ", "mil\u200blion tonnes"], ["pct", "\u200b", "%"]];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
@@ -269,17 +269,20 @@ await ok("K39 a current lint passes preflight", async () => {
   must(out.ok, JSON.stringify(out.msg));
 });
 
-// ---- K37: invisible characters do not hide the magnitude word ----
+// ---- K37: a hidden character right after the number is refused (never deleted: a unit the claim never showed would pass) ----
 for (const [name, , word] of INVIS) {
-  const magnitude = /亿/.test(word) ? "亿" : /%/.test(word) ? "%" : "million";
-  await refused(`K37 ${name}: invisible character between the number and the magnitude, unit dropped`, { value_from: "{max.value}" }, new RegExp(`HERO_UNIT_DROPPED.*'${magnitude}'.*empty`), { claim_id: `c-inv-${name}` });
+  const unit = /亿/.test(word) ? "亿美元" : /%/.test(word) ? "%" : "million";
+  await refused(`K37 ${name}: hidden character after the number, empty unit`, { value_from: "{max.value}" }, /HERO_LITERAL_HIDDEN_CHAR.*U\+[0-9A-F]{4}.*without it/, { claim_id: `c-inv-${name}` });
+  await refused(`K37 ${name}: hidden character after the number, unit ${unit}`, { value_from: "{max.value}", unit }, /HERO_LITERAL_HIDDEN_CHAR.*U\+[0-9A-F]{4}.*without it/, { claim_id: `c-inv-${name}` });
 }
-await ok("K37 control: a correct unit still passes with an invisible character in the claim", async () => {
-  for (const [name, , word] of INVIS.filter(([n]) => ["zwsp", "mixed", "nel"].includes(n))) {
-    const r = await heroRun(true, { value_from: "{max.value}", unit: "亿美元" }, { claim_id: `c-inv-${name}` });
-    must(!r.refused && r.stored.unit === "亿美元", `${name}: ${JSON.stringify(r.refused ?? r.stored)}`);
-  }
+await ok("K37 control: without a hidden character a correct unit passes, an empty unit is dropped, and whitespace is as before", async () => {
+  const r = await heroRun(true, { value_from: "{max.value}", unit: "亿美元" }, { claim_id: "c-yi" });
+  must(!r.refused && r.stored.unit === "亿美元", JSON.stringify(r.refused ?? r.stored));
+  const m = await heroRun(true, { value_from: "{max.value}", unit: "million" }, { claim_id: "c-million" });
+  must(!m.refused && m.stored.unit === "million", JSON.stringify(m.refused ?? m.stored));
 });
+await refused("K37 control: {v}亿美元 with an empty unit is still HERO_UNIT_DROPPED", { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'亿'/, { claim_id: "c-yi" });
+await refused("K37 control: several spaces before 亿 still require the unit to start with 亿", { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'亿'/, { claim_id: "c-yi-sp" });
 
 // ---- K41: every placeholder the module fills is rechecked against the computation rows ----
 const regionChanged = (rows) => rows.map((row) => (row.region === "B" ? { ...row, region: "Z" } : row));
