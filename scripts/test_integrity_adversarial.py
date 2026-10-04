@@ -637,6 +637,29 @@ def check_publication_infographic_lineage_verifies():
         print("PASS control: publication-infographic-lineage-verifies")
 
 
+def check_claim_revoked_by_a_later_record():
+    # A claim counts as verified only while its latest record is system-verified: the same claim_id recorded again as
+    # contested revokes it, so the chart and page that cite it must fail with the existing "not verified" messages.
+    # Contested then verified is verified again and verifies clean.
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-claim-revoked-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        verified = claim(root)
+        revoked = {**verified, "status": "contested"}
+        (root / "claims.jsonl").write_text(json.dumps(verified) + "\n" + json.dumps(revoked) + "\n", encoding="utf-8")
+        report = verify(root)
+        errors = [e for e in report.errors if "claim_id is not verified: claim-valid" in e]
+        if report.passed or not any(e.startswith("visualization ") for e in errors):
+            raise SystemExit(f"FAIL: a visualization citing a later-revoked claim verified: {report.errors}")
+        if not any(e.startswith("infographic ") for e in errors):
+            raise SystemExit(f"FAIL: an infographic citing a later-revoked claim verified: {report.errors}")
+        (root / "claims.jsonl").write_text(json.dumps(revoked) + "\n" + json.dumps(verified) + "\n", encoding="utf-8")
+        report = verify(root)
+        if not report.passed:
+            raise SystemExit(f"FAIL: contested then verified should verify: {report.errors}")
+        print("PASS adversary+control: claim-revoked-by-a-later-record")
+
+
 def check_infographic_en_unchanged_verifies():
     # An infographic with no language field (the runtime's own
     # params.language ?? "en" default) must keep verifying exactly as it
@@ -719,6 +742,7 @@ def main():
     check_clean_1_4_0_infographic_verifies()
     check_publication_infographic_lineage_verifies()
     check_infographic_en_unchanged_verifies()
+    check_claim_revoked_by_a_later_record()
     check_infographic_zh_plan_with_zh_strip_verifies()
 
 
