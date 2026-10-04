@@ -345,5 +345,18 @@ await ok("K40 ordinary text stays clean", async () => {
   must(blocked(svg).length === 0 && /Region B, 2 units/.test(chartSvgText(svg)), chartSvgText(svg));
 });
 
+await ok("K40 entity-written separators and ids: a&#32;b, a&#x9;b and id=\"&#97;\" are read", async () => {
+  for (const sep of ["&#32;", "&#x9;", "&#10;", "&#x20;"]) {
+    const svg = `<svg><rect aria-labelledby="a${sep}b"/><metadata id="a">未经闸门</metadata><g id="b">结论未绑定</g></svg>`;
+    must(JSON.stringify(blocked(svg)) === '["未经闸门","未绑定"]', `${sep}: ${JSON.stringify(blocked(svg))}`);
+  }
+  const byEntityId = '<svg><rect aria-describedby="a"/><g id="&#97;">结论未绑定</g></svg>';
+  must(JSON.stringify(blocked(byEntityId)) === '["未绑定"]', JSON.stringify(blocked(byEntityId)));
+});
+await ok("K40 an element that references itself ends without looping", async () => {
+  const svg = '<svg><g id="a" aria-labelledby="a&#32;a">Region B</g></svg>';
+  must(chartSvgText(svg).includes("Region B"), chartSvgText(svg));
+});
+
 // @@NEXT@@
 console.log(`gates next (K37-K41): ${results.length} checks -- PASS`);
