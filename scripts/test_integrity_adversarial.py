@@ -686,6 +686,17 @@ def check_malformed_claim_records_fail_the_report():
                 raise SystemExit(f"FAIL: a malformed claim record ({name}) crashed the verifier: {exc!r}")
             if report.passed or not any("claims.jsonl line 3 is not a claim record" in e for e in report.errors):
                 raise SystemExit(f"FAIL: a malformed claim record ({name}) was not refused with its line number: {report.errors}")
+        # A record carrying the reserved key __parse_error__ is refused whatever its other fields, and never counts.
+        keyed_extra = '{"claim_id": "extra", "status": "contested", "__parse_error__": "x"}'
+        keyed_verified = json.dumps({**json.loads(verified), "__parse_error__": "x"})
+        for name, text, line in (
+            ("reserved key on an extra record", verified + "\n" + keyed_extra + "\n", 2),
+            ("reserved key on the verified record", keyed_verified + "\n", 1),
+        ):
+            (root / "claims.jsonl").write_text(text, encoding="utf-8")
+            report = verify(root)
+            if report.passed or not any(f"claims.jsonl line {line} " in e and "__parse_error__" in e for e in report.errors):
+                raise SystemExit(f"FAIL: {name} was not refused with its line number: {report.errors}")
         (root / "claims.jsonl").write_text(verified + "\n", encoding="utf-8")
         report = verify(root)
         if not report.passed:

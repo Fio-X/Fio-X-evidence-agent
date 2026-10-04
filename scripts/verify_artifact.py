@@ -1072,6 +1072,9 @@ def verify(root: Path) -> Report:
             except json.JSONDecodeError as exc:
                 report.check(False, f"claims.jsonl parse error: line {line_no}: {exc}")
                 continue
+            if isinstance(record, dict) and "__parse_error__" in record:
+                report.check(False, f"claims.jsonl line {line_no} carries the reserved key __parse_error__")
+                continue
             claim_id = record.get("claim_id") if isinstance(record, dict) else None
             if not isinstance(claim_id, str) or not claim_id:
                 report.check(False, f"claims.jsonl line {line_no} is not a claim record with a non-empty string claim_id")
