@@ -36,7 +36,8 @@ def build(root: Path):
     for d in ["data", "sources", "computations", "session"]:
         (root / d).mkdir(parents=True, exist_ok=True)
     for name in ["prompt.md", "answer.md", "conversation.md", "events.jsonl", "tools.json", "session-stats.json", "plan.json", "claims.jsonl"]:
-        (root / name).write_text("{}\n" if name.endswith((".json", ".jsonl")) else "fixture\n")
+        # claims.jsonl records no claims here: a "{}" line is not a claim record and the verifier refuses it.
+        (root / name).write_text("" if name == "claims.jsonl" else "{}\n" if name.endswith((".json", ".jsonl")) else "fixture\n")
     data = "country,value\nA,15208319.706770007\nB,-0.280294\nC,23747.0703125\n"
     data_hash = hashlib.sha256(data.encode()).hexdigest()
     data_ref = f"data/{data_hash}.csv"
