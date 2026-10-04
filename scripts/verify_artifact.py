@@ -1060,7 +1060,13 @@ def verify(root: Path) -> Report:
             report.check(False, f"computation unreadable {path}: {exc}")
 
     claims = jsonl(root / "claims.jsonl")
-    verified_ids = set()
+    # A claim counts as verified only while its latest record is system-verified (a later non-verified record
+    # with the same claim_id revokes it), as in the runtime.
+    latest_claims = {}
+    for claim in claims:
+        if isinstance(claim, dict) and "__parse_error__" not in claim and claim.get("claim_id"):
+            latest_claims[str(claim["claim_id"])] = claim
+    verified_ids = {claim_id for claim_id, claim in latest_claims.items() if system_verified_claim(claim)}
     for claim in claims:
         if "__parse_error__" in claim:
             report.check(False, f"claims.jsonl parse error: {claim['__parse_error__']}")
@@ -1071,8 +1077,6 @@ def verify(root: Path) -> Report:
         if not system_verified_claim(claim):
             continue
         claim_id = claim.get("claim_id")
-        if claim_id:
-            verified_ids.add(str(claim_id))
         srcs = claim.get("source_refs") or []
         comps = claim.get("computation_refs") or []
         report.check(bool(srcs), f"verified claim {claim_id} has no source_refs")
