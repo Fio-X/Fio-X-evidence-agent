@@ -189,20 +189,38 @@ try {
     const original = await readFile(claimsPath, "utf8");
     const lines = original.split("\n").filter(Boolean);
     const first = JSON.parse(lines[0]);
-    const renders = () => renderLieflatPublication({ ...zh.input, artifact_root: zh.base });
-    const refusing = async (name, text, pattern) => {
-      await writeFile(claimsPath, text, "utf8");
-      await assert.rejects(renders, pattern, name);
+    const chartModule = zh.input.modules[0];
+    // The same registry negatives, once through report mode and once through chart mode (the chart cites claim-1,
+    // the first record).
+    const modes = {
+      report: () => renderLieflatPublication({ ...zh.input, artifact_root: zh.base }),
+      chart: () => renderLieflatPublication({
+        mode: "chart",
+        language: "zh",
+        template_id: "L2",
+        template_file: "templates/lupi-gallery.html",
+        modules: [chartModule],
+        claim_ids: chartModule.claim_ids,
+        source_refs: chartModule.source_refs,
+        output_name: "index.html",
+        artifact_root: zh.base,
+      }),
     };
-    await refusing("a claim revoked by a later record", `${original}${JSON.stringify({ ...first, status: "contested" })}\n`, /unverified claim|only verified claims/);
-    const { verification: _dropped, ...withoutVerification } = first;
-    await refusing("status verified without system verification", `${[JSON.stringify(withoutVerification), ...lines.slice(1)].join("\n")}\n`, /unverified claim|only verified claims/);
-    await refusing("a line that does not parse", `${original}{"claim_id":"claim-1","status":"con\n`, new RegExp(`CLAIMS_REGISTRY_CORRUPT.*line ${lines.length + 1}\\b`));
-    await refusing("a record without claim_id", `${original}{"status":"contested"}\n`, /CLAIMS_REGISTRY_CORRUPT/);
-    // contested, then verified again: renders; blank lines and CRLF are fine
-    await writeFile(claimsPath, `${JSON.stringify({ ...first, status: "contested" })}\r\n\r\n${lines.join("\r\n")}\r\n`, "utf8");
-    await renders();
-    await writeFile(claimsPath, original, "utf8");
+    for (const [mode, renders] of Object.entries(modes)) {
+      const refusing = async (name, text, pattern) => {
+        await writeFile(claimsPath, text, "utf8");
+        await assert.rejects(renders, pattern, `${mode}: ${name}`);
+      };
+      await refusing("a claim revoked by a later record", `${original}${JSON.stringify({ ...first, status: "contested" })}\n`, /unverified claim|only verified claims/);
+      const { verification: _dropped, ...withoutVerification } = first;
+      await refusing("status verified without system verification", `${[JSON.stringify(withoutVerification), ...lines.slice(1)].join("\n")}\n`, /unverified claim|only verified claims/);
+      await refusing("a line that does not parse", `${original}{"claim_id":"claim-1","status":"con\n`, new RegExp(`CLAIMS_REGISTRY_CORRUPT.*line ${lines.length + 1}\\b`));
+      await refusing("a record without claim_id", `${original}{"status":"contested"}\n`, /CLAIMS_REGISTRY_CORRUPT/);
+      // contested, then verified again: renders; blank lines and CRLF are fine
+      await writeFile(claimsPath, `${JSON.stringify({ ...first, status: "contested" })}\r\n\r\n${lines.join("\r\n")}\r\n`, "utf8");
+      await renders();
+      await writeFile(claimsPath, original, "utf8");
+    }
   }
 
   console.log(JSON.stringify({
