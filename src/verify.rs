@@ -2,7 +2,7 @@ use crate::hash::{sha256_bytes, sha256_file};
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
@@ -3544,24 +3544,29 @@ fn find_critics(root: &Path, critics_dir: &str, manifest_ref: &str) -> Result<Ve
     Ok(out)
 }
 
+// A claim counts as verified only while its latest record in claims.jsonl is system-verified, as in the
+// runtime: a later non-verified record for the same claim_id revokes it. Lines that do not parse are
+// reported by verify_claims and skipped here.
 fn verified_claim_ids(root: &Path) -> Result<HashSet<String>> {
-    let mut ids = HashSet::new();
+    let mut latest: HashMap<String, Value> = HashMap::new();
     let path = root.join("claims.jsonl");
     if !path.is_file() {
-        return Ok(ids);
+        return Ok(HashSet::new());
     }
     for line in BufReader::new(fs::File::open(path)?).lines() {
         let value: Value = match serde_json::from_str(&line?) {
             Ok(value) => value,
             Err(_) => continue,
         };
-        if is_system_verified_claim(&value) {
-            if let Some(id) = value.get("claim_id").and_then(Value::as_str) {
-                ids.insert(id.to_owned());
-            }
+        if let Some(id) = value.get("claim_id").and_then(Value::as_str) {
+            latest.insert(id.to_owned(), value);
         }
     }
-    Ok(ids)
+    Ok(latest
+        .into_iter()
+        .filter(|(_, value)| is_system_verified_claim(value))
+        .map(|(id, _)| id)
+        .collect())
 }
 
 fn is_system_verified_claim(value: &Value) -> bool {
@@ -6714,6 +6719,59 @@ mod tests {
         set_infographic_claim_ids(temp.path(), &[]);
         let errors = infographic_errors(temp.path());
         assert!(!errors.iter().any(|e| e.contains("claim_id is not verified")), "{errors:?}");
+    }
+
+    fn claim_line(claim_id: &str, status: &str) -> String {
+        serde_json::to_string(&serde_json::json!({
+            "claim_id": claim_id,
+            "status": status,
+            "verification": {
+                "authority": "system",
+                "source_resolved": true,
+                "extraction_passed": true,
+                "computation_replayed": true,
+                "claim_supported": true,
+                "publishable": true,
+                "rule_id": "verification.source+extraction+computation+claim.v1",
+            },
+            "source_refs": ["sources/x.json"],
+            "computation_refs": ["computations/x.json"],
+        }))
+        .unwrap()
+    }
+
+    fn write_claim_lines(root: &Path, lines: &[(&str, &str)]) {
+        let text: String = lines.iter().map(|(id, status)| format!("{}\n", claim_line(id, status))).collect();
+        fs::write(root.join("claims.jsonl"), text).unwrap();
+    }
+
+    #[test]
+    fn infographic_citing_a_revoked_claim_fails_and_a_reverified_one_passes() {
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &["c-x"]);
+        write_claim_lines(temp.path(), &[("c-x", "verified"), ("c-x", "contested")]);
+        assert_error(
+            &infographic_errors(temp.path()),
+            "infographic infographics/x.json claim_id is not verified: c-x",
+        );
+        write_claim_lines(temp.path(), &[("c-x", "contested"), ("c-x", "verified")]);
+        assert!(
+            !infographic_errors(temp.path()).iter().any(|e| e.contains("claim_id is not verified")),
+            "contested then verified must count as verified"
+        );
+    }
+
+    #[test]
+    fn visualization_citing_a_revoked_claim_fails_and_a_reverified_one_passes() {
+        let temp = build_viz_fixture(true, true);
+        let id = "claim-render-qa-fixture";
+        write_claim_lines(temp.path(), &[(id, "verified"), (id, "contested")]);
+        assert_error(&viz_errors(temp.path()), &format!("claim_id is not verified: {id}"));
+        write_claim_lines(temp.path(), &[(id, "contested"), (id, "verified")]);
+        assert!(
+            !viz_errors(temp.path()).iter().any(|e| e.contains("claim_id is not verified")),
+            "contested then verified must count as verified"
+        );
     }
 
     #[test]
