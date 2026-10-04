@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
@@ -71,26 +71,24 @@ export function runRenderQa(svgs, options) {
   // registers everything below in one import.
   process.env.NEWSROOM_TOOL_PROFILE = "full";
 
-  // fixtures/complex/timeline.json is a proven-valid {spec, rows} pair; feed its
-  // rows back through DuckDB as a VALUES query so the render path runs its SQL.
+  // fixtures/complex/timeline.json is a proven-valid {spec, rows} pair. Its rows are written as a synthetic CSV in this project's data/
+  // (content-addressed, with the .meta.json a real run records beside it, as precision_harness.mjs does), and the chart's SQL reads that file,
+  // so a verified claim can bind to the chart: the claim's computation reads the same file (claim_binding.mjs).
   const { spec, rows } = JSON.parse(readFileSync(join(ROOT, "fixtures", "complex", "timeline.json"), "utf8"));
   const columns = Object.keys(rows[0]);
-  const literal = (v) => (v === null || v === undefined ? "NULL" : typeof v === "number" ? String(v) : `'${String(v).replace(/'/g, "''")}'`);
-  spec.sql = `SELECT * FROM (VALUES ${rows.map((r) => `(${columns.map((c) => literal(r[c])).join(", ")})`).join(", ")}) AS t(${columns.map((c) => `"${c}"`).join(", ")})`;
+  const csvText = `${columns.join(",")}\n${rows.map((r) => columns.map((c) => String(r[c])).join(",")).join("\n")}\n`;
+  const csvBytes = Buffer.from(csvText);
+  const dataRef = `data/${createHash("sha256").update(csvBytes).digest("hex")}.csv`;
+  mkdirSync(join(art, "data"), { recursive: true });
+  writeFileSync(join(art, dataRef), csvBytes);
+  writeFileSync(join(art, `${dataRef}.meta.json`), JSON.stringify({ file: dataRef, sha256: createHash("sha256").update(csvBytes).digest("hex"), bytes: csvBytes.length, label: "render-qa timeline" }));
+  // all_varchar keeps every value the string the fixture has (no date or number inference), so the rows are the same rows.
+  spec.sql = `SELECT ${columns.map((c) => `"${c}"`).join(", ")} FROM read_csv_auto('${dataRef}')`;
   const planRef = "visualizations/plans/plan.json";
   const lintRef = "visualizations/lints/lint.json";
   writeFileSync(join(art, planRef), JSON.stringify(spec));
   writeFileSync(join(art, "computations", "rows.json"), JSON.stringify({ rows }));
-  const writeLint = (dataHash) => writeFileSync(join(art, lintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: planRef, data_hash: dataHash, computation_ref: "computations/rows.json" }));
-
-  // The shared visualization is rendered from a verified claim, so its manifest is publishable and the infographic render's claim re-check accepts it.
-  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
-    claim_id: spec.claim_id,
-    status: "verified",
-    source_refs: ["sources/ig-revise-f1-source.json"],
-    computation_refs: ["computations/rows.json"],
-    verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
-  })}\n`, { flag: "a" });
+  const writeLint = (dataHash) => writeFileSync(join(art, lintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: planRef, data_hash: dataHash, computation_ref: claimComputationRef }));
 
   const tools = new Map();
   const piApi = new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) });
@@ -99,6 +97,16 @@ export function runRenderQa(svgs, options) {
   const render = tools.get("newsroom_viz_render");
   const critic = tools.get("newsroom_viz_critic");
   assert.ok(render && critic, "newsroom_viz_render and newsroom_viz_critic must register");
+  // The claim's computation is the chart's own query run through the real duckdb_query tool, so it reads the same data file.
+  const claimComputationRef = relative(art, (await tools.get("duckdb_query").execute("q", { sql: spec.sql })).details.path);
+  // The shared visualization is rendered from a verified claim, so its manifest is publishable and the infographic render's claim re-check accepts it.
+  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
+    claim_id: spec.claim_id,
+    status: "verified",
+    source_refs: [dataRef],
+    computation_refs: [claimComputationRef],
+    verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
+  })}\n`, { flag: "a" });
 
   // The render path refuses data that changed after lint; learn the hash DuckDB yields.
   writeLint("0".repeat(64));
@@ -530,7 +538,7 @@ export function runRenderQa(svgs, options) {
     const failPlanRef = "visualizations/plans/critic-fail-plan.json";
     const failLintRef = "visualizations/lints/critic-fail-lint.json";
     writeFileSync(join(art, failPlanRef), JSON.stringify(failSpec));
-    writeFileSync(join(art, failLintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: failPlanRef, data_hash: learned, computation_ref: "computations/rows.json" }));
+    writeFileSync(join(art, failLintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: failPlanRef, data_hash: learned, computation_ref: claimComputationRef }));
 
     const failRendered = await render.execute("critic-fail-render", { plan_ref: failPlanRef, lint_ref: failLintRef });
     assert.match(failRendered.content[0].text, /Render QA: PASS/);
@@ -587,7 +595,7 @@ export function runRenderQa(svgs, options) {
     const revisedPlanRef = "visualizations/plans/critic-revised-plan.json";
     const revisedLintRef = "visualizations/lints/critic-revised-lint.json";
     writeFileSync(join(art, revisedPlanRef), JSON.stringify(revisedSpec));
-    writeFileSync(join(art, revisedLintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: revisedPlanRef, data_hash: learned, computation_ref: "computations/rows.json" }));
+    writeFileSync(join(art, revisedLintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: revisedPlanRef, data_hash: learned, computation_ref: claimComputationRef }));
     const revisedRendered = await render.execute("critic-revised-render", { plan_ref: revisedPlanRef, lint_ref: revisedLintRef });
     const revisedManifestRef = revisedRendered.details.manifestRef;
     assert.notEqual(revisedManifestRef, failManifestRef, "a revised plan must render under a new content-addressed key");
@@ -815,14 +823,14 @@ export function runRenderQa(svgs, options) {
     writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
       claim_id: verifiedClaimId,
       status: "verified",
-      source_refs: ["sources/ig-revise-f1-source.json"],
-      computation_refs: ["computations/rows.json"],
+      source_refs: [dataRef],
+      computation_refs: [claimComputationRef],
       verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
     })}\n`, { flag: "a" });
     const verifiedVizPlanRef = "visualizations/plans/plan-ig-f1-verified.json";
     const verifiedVizLintRef = "visualizations/lints/lint-ig-f1-verified.json";
     writeFileSync(join(art, verifiedVizPlanRef), JSON.stringify({ ...spec, claim_id: verifiedClaimId }));
-    writeFileSync(join(art, verifiedVizLintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: verifiedVizPlanRef, data_hash: learned, computation_ref: "computations/rows.json" }));
+    writeFileSync(join(art, verifiedVizLintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: verifiedVizPlanRef, data_hash: learned, computation_ref: claimComputationRef }));
     const verifiedVizRendered = await render.execute("ig-f1-verified-viz-render", { plan_ref: verifiedVizPlanRef, lint_ref: verifiedVizLintRef });
     assert.match(verifiedVizRendered.content[0].text, /Render QA: PASS/);
     const verifiedViz = verifiedVizRendered.details;
