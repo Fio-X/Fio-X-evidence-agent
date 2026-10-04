@@ -25,6 +25,19 @@ assert.deepEqual(labelsOf(renderVizBundle(spec, good, { mobilePages: false }).de
 assert.deepEqual(labelsOf(renderVizBundle({ ...spec, language: "en" }, good, { mobilePages: false }).desktop), ["2023-01 = 100"]);
 // within a relative tolerance of 1e-9
 assert.deepEqual(codes(spec, rowsFor(["甲", "乙"], (k, i) => (i === 2 ? 100 * (1 + 5e-10) : 90 + i))), [], "inside the tolerance");
+// just outside the tolerance is refused (the edge is pinned from both sides: 5e-10 passes above, 2e-9 does not)
+{
+  const outside = codes(spec, rowsFor(["甲", "乙"], (k, i) => (i === 2 ? 100 * (1 + 2e-9) : 90 + i)));
+  assert.equal(outside.length, 1, `one refusal just outside the tolerance: ${outside}`);
+  assert.match(outside[0], /^INDEX_BASE_NOT_IN_DATA/);
+  assert.ok(outside[0].includes("甲") && outside[0].includes("乙"), "every panel is named when none holds the base");
+}
+// empty rows are refused by the general no-data check, not by an index_base code: pin that check's exact message and that it comes first
+{
+  const found = blockers(spec, []);
+  assert.equal(found[0], "Visualization query returned no rows", "the no-data check fires first, with its exact message");
+  assert.deepEqual(found.filter((b) => b.startsWith("INDEX_BASE_")), [], "an empty result is not an index_base refusal");
+}
 // a panel without the base period is named; no panel having it at all names every panel
 {
   const rows = rowsFor(["甲", "乙", "丙"], (k, i) => (k === 1 ? 101 + i : 100 + i));
