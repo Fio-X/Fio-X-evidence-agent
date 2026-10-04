@@ -22,6 +22,8 @@ import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+// A stored infographic lint is current only under today's policy stamps (assertLintCurrent); these hand-written lints carry them, read from the runtime.
+const LINT_POLICY = { lint_policy_version: /const INFOGRAPHIC_LINT_POLICY_VERSION = "([^"]+)"/.exec(readFileSync(join(ROOT, "runtime", "pi", "newsroom.ts"), "utf8"))[1], hero_value_gate: true };
 const tmp = mkdtempSync(join(tmpdir(), "render-qa-tool-path-"));
 try {
   cpSync(join(ROOT, "runtime"), join(tmp, "runtime"), { recursive: true });
@@ -80,6 +82,15 @@ export function runRenderQa(svgs, options) {
   writeFileSync(join(art, planRef), JSON.stringify(spec));
   writeFileSync(join(art, "computations", "rows.json"), JSON.stringify({ rows }));
   const writeLint = (dataHash) => writeFileSync(join(art, lintRef), JSON.stringify({ passed: true, blockers: [], plan_ref: planRef, data_hash: dataHash, computation_ref: "computations/rows.json" }));
+
+  // The shared visualization is rendered from a verified claim, so its manifest is publishable and the infographic render's claim re-check accepts it.
+  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
+    claim_id: spec.claim_id,
+    status: "verified",
+    source_refs: ["sources/ig-revise-f1-source.json"],
+    computation_refs: ["computations/rows.json"],
+    verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
+  })}\n`, { flag: "a" });
 
   const tools = new Map();
   const piApi = new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) });
@@ -225,14 +236,31 @@ export function runRenderQa(svgs, options) {
     alt: "A section header, a hero statistic, and a bar chart visual module in a single-column feature layout.",
     modules: [
       { id: "m1", type: "section_header", span: "full", heading: "Overview" },
-      { id: "m2", type: "hero_stat", span: "full", value: "42", label: "Sample metric", claim_id: "claim-1" },
+      { id: "m2", type: "hero_stat", span: "full", value: "42", value_from: "{first.value}", label: "Sample metric", claim_id: "claim-1" },
       { id: "m3", type: "visual", span: "full", manifest_ref: p.manifestRef },
     ],
   };
+  // The infographic render re-reads the verified set and refuses any cited claim that is not system-verified, so the claim the
+  // shared plans cite (claim-1) is recorded as verified here, in the same shape as the verified claim recorded further down.
+  writeFileSync(join(art, "computations", "hero-rows.json"), JSON.stringify({ rows: [{ value: 42 }, { value: 7 }] }));
+  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
+    claim_id: "claim-1",
+    status: "verified",
+    claim: "The sample metric is 42 and the other metric is 7.",
+    claim_template: "The sample metric is {first.value} and the other metric is {second.value}.",
+    claim_bindings: [
+      { placeholder: "{first.value}", column: "value", row_index: 0, value: 42, text: "42" },
+      { placeholder: "{second.value}", column: "value", row_index: 1, value: 7, text: "7" },
+    ],
+    recorded_by: "newsroom_viz_plan",
+    source_refs: ["sources/ig-revise-f1-source.json"],
+    computation_refs: ["computations/hero-rows.json"],
+    verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
+  })}\n`, { flag: "a" });
   const infographicPlanRef = "infographics/plans/plan.json";
   writeFileSync(join(art, infographicPlanRef), JSON.stringify(infographicSpec));
   const infographicLintRef = "infographics/lints/lint.json";
-  writeFileSync(join(art, infographicLintRef), JSON.stringify({
+  writeFileSync(join(art, infographicLintRef), JSON.stringify({ ...LINT_POLICY,
     passed: true,
     blockers: [],
     plan_ref: infographicPlanRef,
@@ -356,14 +384,14 @@ export function runRenderQa(svgs, options) {
     alt: "A section header and two hero statistics in a single-column feature layout.",
     modules: [
       { id: "m1", type: "section_header", span: "full", heading: "Overview" },
-      { id: "m2", type: "hero_stat", span: "full", value: "42", label: "Sample metric", claim_id: "claim-1" },
-      { id: "m3", type: "hero_stat", span: "full", value: "7", label: "Another metric", claim_id: "claim-1" },
+      { id: "m2", type: "hero_stat", span: "full", value: "42", value_from: "{first.value}", label: "Sample metric", claim_id: "claim-1" },
+      { id: "m3", type: "hero_stat", span: "full", value: "7", value_from: "{second.value}", label: "Another metric", claim_id: "claim-1" },
     ],
   };
   const infographicPlanRefOn = "infographics/plans/plan-on.json";
   writeFileSync(join(art, infographicPlanRefOn), JSON.stringify(infographicSpecOn));
   const infographicLintRefOn = "infographics/lints/lint-on.json";
-  writeFileSync(join(art, infographicLintRefOn), JSON.stringify({ passed: true, blockers: [], plan_ref: infographicPlanRefOn, asset_hashes: {} }));
+  writeFileSync(join(art, infographicLintRefOn), JSON.stringify({ ...LINT_POLICY, passed: true, blockers: [], plan_ref: infographicPlanRefOn, asset_hashes: {} }));
   const infographicRenderedOn = await infographicRender.execute("ig-render-on", { plan_ref: infographicPlanRefOn, lint_ref: infographicLintRefOn });
   assert.match(infographicRenderedOn.content[0].text, /Mobile SVG:/);
   const igOn = infographicRenderedOn.details;
@@ -703,7 +731,7 @@ export function runRenderQa(svgs, options) {
     const infographicPlanRefRevised = "infographics/plans/plan-revised.json";
     writeFileSync(join(art, infographicPlanRefRevised), JSON.stringify(infographicSpecRevised));
     const infographicLintRefRevised = "infographics/lints/lint-revised.json";
-    writeFileSync(join(art, infographicLintRefRevised), JSON.stringify({
+    writeFileSync(join(art, infographicLintRefRevised), JSON.stringify({ ...LINT_POLICY,
       passed: true,
       blockers: [],
       plan_ref: infographicPlanRefRevised,
@@ -809,7 +837,7 @@ export function runRenderQa(svgs, options) {
     const revisePlanRef = "infographics/plans/plan-revise-f1.json";
     writeFileSync(join(art, revisePlanRef), JSON.stringify(infographicSpecF1));
     const reviseLintRef = "infographics/lints/lint-revise-f1.json";
-    writeFileSync(join(art, reviseLintRef), JSON.stringify({
+    writeFileSync(join(art, reviseLintRef), JSON.stringify({ ...LINT_POLICY,
       passed: true,
       blockers: [],
       plan_ref: revisePlanRef,
@@ -1225,14 +1253,14 @@ sys.exit(0)
         visual_thesis: pubGateVisualThesis,
         modules: [
           { id: "m1", type: "section_header", span: "full", heading: "Overview" },
-          { id: "m2", type: "hero_stat", span: "full", value: "42", label: "Sample metric", claim_id: "claim-1" },
+          { id: "m2", type: "hero_stat", span: "full", value: "42", value_from: "{first.value}", label: "Sample metric", claim_id: "claim-1" },
           { id: "m3", type: "visual", span: "full", manifest_ref: p.manifestRef },
         ],
       };
       const planRef = `infographics/plans/pub-gate-${label}.json`;
       writeFileSync(join(art, planRef), JSON.stringify(spec));
       const lintRef = `infographics/lints/pub-gate-${label}.json`;
-      writeFileSync(join(art, lintRef), JSON.stringify({
+      writeFileSync(join(art, lintRef), JSON.stringify({ ...LINT_POLICY,
         passed: true,
         blockers: [],
         plan_ref: planRef,
