@@ -1059,18 +1059,29 @@ def verify(root: Path) -> Report:
         except Exception as exc:
             report.check(False, f"computation unreadable {path}: {exc}")
 
-    claims = jsonl(root / "claims.jsonl")
+    # Every non-blank line must be a JSON object with a non-empty string claim_id, whatever its status; the file line
+    # number is reported (jsonl() drops blank lines, so its row index is not the file line).
+    claims = []
+    claims_path = root / "claims.jsonl"
+    if claims_path.is_file():
+        for line_no, line in enumerate(claims_path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                report.check(False, f"claims.jsonl parse error: line {line_no}: {exc}")
+                continue
+            claim_id = record.get("claim_id") if isinstance(record, dict) else None
+            if not isinstance(claim_id, str) or not claim_id:
+                report.check(False, f"claims.jsonl line {line_no} is not a claim record with a non-empty string claim_id")
+                continue
+            claims.append(record)
     # A claim counts as verified only while its latest record is system-verified (a later non-verified record
     # with the same claim_id revokes it), as in the runtime.
-    latest_claims = {}
-    for claim in claims:
-        if isinstance(claim, dict) and "__parse_error__" not in claim and claim.get("claim_id"):
-            latest_claims[str(claim["claim_id"])] = claim
+    latest_claims = {claim["claim_id"]: claim for claim in claims}
     verified_ids = {claim_id for claim_id, claim in latest_claims.items() if system_verified_claim(claim)}
     for claim in claims:
-        if "__parse_error__" in claim:
-            report.check(False, f"claims.jsonl parse error: {claim['__parse_error__']}")
-            continue
         if claim.get("status") != "verified":
             continue
         report.check(system_verified_claim(claim), f"verified claim {claim.get('claim_id')} lacks system-derived verification")
