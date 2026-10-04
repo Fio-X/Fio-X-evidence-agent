@@ -275,8 +275,17 @@ assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow cl
     for (const [spec, data] of same) {
       const before = old.renderVizSvg(spec, data); // a throw here fails the test
       const after = renderVizSvg(spec, data);
-      // scatter gains auto labels on purpose; everything else must match to the byte, in both languages
-      if (spec.chart_type === "scatter") continue;
+      // scatter gains auto labels on purpose (up to 8, with a leader line when a label lands far from its point): remove exactly those
+      // elements from the new SVG and the rest must equal the base byte for byte. The base has no such element, so nothing it drew is hidden.
+      if (spec.chart_type === "scatter") {
+        const isAdded = (line) => /^<text data-role="auto-label" /.test(line) || /^<line data-role="direct-label-leader" /.test(line);
+        assert.ok(!before.split("\n").some(isAdded), `${language} scatter: the base draws no auto label or leader`);
+        const lines = after.split("\n");
+        assert.equal(lines.filter(isAdded).length, 4, `${language} scatter: the four extremes gain a label (and no leader at this size)`);
+        assert.deepEqual(lines.filter(isAdded).map((l) => l.replace(/^.*>([^<]*)<\/text>$/, "$1")), ["西南", "华北", "东北", "华东"], `${language} scatter: which points are named, in order`);
+        assert.equal(lines.filter((l) => !isAdded(l)).join("\n"), before, `${language} scatter: apart from the added labels, unchanged`);
+        continue;
+      }
       assert.equal(after, before, `${language} ${spec.chart_type} unchanged`);
     }
   }
