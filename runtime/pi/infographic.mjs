@@ -815,8 +815,12 @@ const decodeSvgEntities = (text) => text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z
 
 /** The inner markup of the element whose id is `id` (any tag; nested same-name tags are balanced), or "" when there is none. */
 function svgElementContentById(svg, id) {
-  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const open = new RegExp(`<([A-Za-z][\\w:.-]*)\\b[^>]*?\\sid\\s*=\\s*(?:"${escaped}"|'${escaped}')[^>]*>`, "i").exec(svg);
+  // The id attribute is compared after entity decoding, so id="&#97;" is the id "a".
+  const tagPattern = /<([A-Za-z][\w:.-]*)\b[^>]*?\sid\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
+  let open = null;
+  for (let tag = tagPattern.exec(svg); tag; tag = tagPattern.exec(svg)) {
+    if (decodeSvgEntities(tag[2] ?? tag[3] ?? "") === id) { open = tag; break; }
+  }
   if (!open || /\/\s*>$/.test(open[0])) return "";
   const name = open[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const tags = new RegExp(`<(/?)${name}\\b[^>]*>`, "gi");
@@ -848,7 +852,8 @@ export function chartSvgText(svg) {
   for (const match of svg.matchAll(/\s(?:aria-(?:label|description|roledescription)|xlink:title)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) take(match[1] ?? match[2] ?? "");
   // aria-labelledby / aria-describedby name other elements by id: the whole text content of each, whatever its tag.
   for (const match of svg.matchAll(/\saria-(?:labelledby|describedby)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
-    for (const id of (match[1] ?? match[2] ?? "").split(/\s+/).filter(Boolean)) {
+    // Decode before splitting: aria-labelledby="a&#32;b" names the two ids a and b.
+    for (const id of decodeSvgEntities(match[1] ?? match[2] ?? "").split(/\s+/).filter(Boolean)) {
       const content = svgElementContentById(svg, id);
       if (content) take(content);
     }
