@@ -30,6 +30,35 @@ const base = {
 const attr = (tag, name) => tag.match(new RegExp(`(?:^|[\\s<])${name}="([^"]*)"`))?.[1];
 const tags = (svg, re) => [...svg.matchAll(re)].map((m) => m[0]);
 const textOf = (tag) => tag.replace(/<[^>]*>/g, "");
+// Scatter points carry no id: the i-th point <circle> is the i-th row (a row with a missing x or y draws none, and the fixtures have none).
+// Each auto-label must be visible and sit at its own row's point: within 28 px of it (the renderer's own rule: it draws a leader only when the
+// label lands farther than 28 px), or else with a leader that starts exactly at that point and comes right before the label.
+function checkAutoLabels(svg, spec, data, where) {
+  const circles = [...svg.matchAll(/<circle cx="([-\d.]+)" cy="([-\d.]+)" r="[\d.]+" fill="[^"]*" opacity="[^"]*"\/>/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+  assert.equal(circles.length, data.length, `${where}: one circle per row`);
+  const lines = svg.split("\n");
+  let checked = 0;
+  const hidden = (line) => /opacity="0(?:\.0*)?"/.test(line) || /display\s*:\s*none|visibility\s*:\s*hidden/i.test(line);
+  lines.forEach((line, i) => {
+    if (!/^<text data-role="auto-label" /.test(line)) return;
+    const text = textOf(line);
+    const at = data.findIndex((row) => String(row[spec.label_field]) === text);
+    assert.ok(at >= 0, `${where}: auto-label '${text}' names a row`);
+    const point = circles[at];
+    assert.ok(!hidden(line), `${where}: auto-label '${text}' is visible`);
+    assert.ok(!/^(?:none|transparent|rgba?\([^)]*,\s*0(?:\.0*)?\))$/i.test(attr(line, "fill") ?? "none"), `${where}: auto-label '${text}' has a visible fill`);
+    const tx = Number(attr(line, "x")), ty = Number(attr(line, "y"));
+    const before = lines[i - 1] ?? "";
+    if (/^<line data-role="direct-label-leader" /.test(before)) {
+      assert.ok(!hidden(before), `${where}: the leader of '${text}' is visible`);
+      assert.ok(Math.abs(Number(attr(before, "x1")) - point.x) < 0.01 && Math.abs(Number(attr(before, "y1")) - point.y) < 0.01, `${where}: the leader of '${text}' starts at its own point`);
+    } else {
+      assert.ok(Math.hypot(tx - point.x, ty - point.y) <= 28, `${where}: '${text}' with no leader sits within 28 px of its own point (is ${Math.hypot(tx - point.x, ty - point.y).toFixed(1)})`);
+    }
+    checked += 1;
+  });
+  return checked;
+}
 const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${role}"[^>]*>[^<]*</text>`, "g"));
 
 // ---- 1. choropleth classes ---------------------------------------------------------------------------
@@ -284,6 +313,7 @@ assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow cl
         assert.equal(lines.filter(isAdded).length, 4, `${language} scatter: the four extremes gain a label (and no leader at this size)`);
         assert.deepEqual(lines.filter(isAdded).map((l) => l.replace(/^.*>([^<]*)<\/text>$/, "$1")), ["西南", "华北", "东北", "华东"], `${language} scatter: which points are named, in order`);
         assert.equal(lines.filter((l) => !isAdded(l)).join("\n"), before, `${language} scatter: apart from the added labels, unchanged`);
+        assert.equal(checkAutoLabels(after, spec, data, `${language} scatter`), 4, `${language} scatter: all four auto-labels checked against their points`);
         continue;
       }
       assert.equal(after, before, `${language} ${spec.chart_type} unchanged`);
@@ -330,5 +360,35 @@ assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow cl
       assert.equal(comparable(after, allowed), comparable(before, allowed), `zh ${chart_type}: nothing but the label text${allowed.length ? ` and ${allowed.join(", ")}` : ""} differs`);
     }
   }
+}
+// Auto-labels at their own points, visible; a crowded fixture needs a leader. Two planted regressions must each fail the check.
+{
+  const names12 = ["华北", "华东", "华南", "西北", "东北", "西南", "华中", "中原", "江南", "塞北", "岭南", "关中"];
+  const crowded = names12.map((region, i) => ({ region, v: 50 + (i % 3) * 0.4 + i * 0.05, w: 50 + (i % 4) * 0.3 }));
+  crowded.push({ region: "远点", v: 90, w: 10 }, { region: "另一点", v: 10, w: 90 });
+  const spec = { ...base, reader_task: "correlation", chart_type: "scatter", x_field: "v", y_field: "w", label_field: "region", unit: "%" };
+  const svg = renderVizSvg(spec, crowded);
+  const n = checkAutoLabels(svg, spec, crowded, "crowded scatter");
+  assert.ok(n >= 5, `crowded scatter: auto-labels checked (${n})`);
+  assert.ok(svg.split("\n").some((l, i, a) => /^<text data-role="auto-label" /.test(l) && /^<line data-role="direct-label-leader" /.test(a[i - 1] ?? "")), "crowded scatter: at least one auto-label needs a leader");
+  // planted regression 1: two labels' positions swapped
+  const lines = svg.split("\n");
+  const idx = lines.map((l, i) => (/^<text data-role="auto-label" /.test(l) ? i : -1)).filter((i) => i >= 0);
+  const swapped = [...lines];
+  const pos = (l) => [attr(l, "x"), attr(l, "y")];
+  const [a, b] = [idx[0], idx[1]];
+  const [pa, pb] = [pos(lines[a]), pos(lines[b])];
+  swapped[a] = lines[a].replace(`x="${pa[0]}" y="${pa[1]}"`, `x="${pb[0]}" y="${pb[1]}"`);
+  swapped[b] = lines[b].replace(`x="${pb[0]}" y="${pb[1]}"`, `x="${pa[0]}" y="${pa[1]}"`);
+  assert.throws(() => checkAutoLabels(swapped.join("\n"), spec, crowded, "swapped"), /own point|starts at its own point/, "swapped labels are caught");
+  // planted regression 2: one label with opacity 0
+  const faded = [...lines];
+  faded[idx[0]] = lines[idx[0]].replace(" fill=", ' opacity="0" fill=');
+  assert.throws(() => checkAutoLabels(faded.join("\n"), spec, crowded, "faded"), /is visible/, "an opacity-0 label is caught");
+  // a leader that starts at the wrong point is caught too
+  const li = lines.findIndex((l) => /^<line data-role="direct-label-leader" /.test(l));
+  const moved = [...lines];
+  moved[li] = lines[li].replace(`x1="${attr(lines[li], "x1")}"`, `x1="${Number(attr(lines[li], "x1")) + 40}"`);
+  assert.throws(() => checkAutoLabels(moved.join("\n"), spec, crowded, "moved leader"), /starts at its own point/, "a leader from another point is caught");
 }
 console.log("ok test_viz_round3_conventions");
