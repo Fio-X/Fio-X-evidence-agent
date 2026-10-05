@@ -9,9 +9,9 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { HELD_CHART_TYPES, HELD_CHART_TYPE_EDITS, revertHeldChartTypes } from "./lib_held_chart_types_baseline.mjs";
+import { HELD_CHART_TYPES, HELD_CHART_TYPE_EDITS, HELD_PLAN_VALUES, revertHeldChartTypes } from "./lib_held_chart_types_baseline.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL } from "../runtime/pi/cartography.mjs";
-import { renderVizBundle } from "../runtime/pi/viz.mjs";
+import { lintVizSpec, renderVizBundle } from "../runtime/pi/viz.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ALL = HELD_CHART_TYPE_EDITS.enum.before;
@@ -93,6 +93,43 @@ assert.equal(listing().split("\n").filter((name) => !name.startsWith("visualizat
 // What the chain says when its plan step is refused is reported, not asserted; it must carry the refusal's type only.
 const chainRefusal = await off.get("newsroom_viz_chain").execute("t", { chart_type: "hierarchy_tree", sql: "SELECT 1" }).then((value) => JSON.stringify(value), (error) => String(error.message));
 assert.ok(!/item|K\d+|\/Users|\/tmp/.test(chainRefusal), "the chain's refusal carries no ids or paths");
+
+// ---- 2b. plan values that fit only held chart types ---------------------------------------------------------------------------
+{
+  const PLAN_ENUMS = HELD_CHART_TYPE_EDITS.planEnums;
+  // viz.mjs's own lint says which chart types a value fits: a mismatch is the blocker "<field> '<value>' does not match chart_type".
+  const fits = (field, value) => ALL.filter((type) => {
+    const result = lintVizSpec({ chart_type: type, [field]: value }, [], { verified_claim_ids: [] });
+    return !(result.blockers ?? []).some((message) => String(message).includes(`${field} '${value}' does not match chart_type`));
+  });
+  for (const [field, entry] of Object.entries(PLAN_ENUMS)) {
+    for (const value of entry.before) {
+      const types = fits(field, value);
+      const held = HELD_PLAN_VALUES[field].includes(value);
+      if (held) {
+        assert.ok(types.length > 0 && types.every((type) => HELD_CHART_TYPES.includes(type)), `${field} '${value}' fits only held types (${types})`);
+      } else {
+        assert.ok(types.some((type) => !HELD_CHART_TYPES.includes(type)), `${field} '${value}' still fits an available type (${types})`);
+      }
+    }
+    for (const [label, set] of [["hints off", off], ["hints on", on]]) for (const name of ["newsroom_viz_plan", "newsroom_viz_chain"]) {
+      assert.deepEqual(set.get(name).parameters.properties[field].enum, entry.after, `${label}: ${name} ${field} enum without the held values`);
+    }
+  }
+  assert.deepEqual(HELD_PLAN_VALUES, { visual_family: ["hierarchy"], data_topology: ["hierarchy", "geo_edges"] });
+  const listingBefore = listing();
+  for (const [field, value] of [["visual_family", "hierarchy"], ["data_topology", "hierarchy"], ["data_topology", "geo_edges"]]) {
+    await assert.rejects(() => off.get("newsroom_viz_plan").execute("t", { chart_type: "horizontal_bar", sql: "SELECT 1", [field]: value }), (error) => error.message === `PLAN_VALUE_HELD: ${field} '${value}' is not available; choose another ${field}.`, `plan refuses ${field}=${value} before planning`);
+    const planFile = `visualizations/plans/held-value-${field}-${value}.json`;
+    writeFileSync(join(artifacts, planFile), JSON.stringify({ chart_type: "horizontal_bar", sql: "SELECT 1", [field]: value }));
+    const withPlan = listing();
+    await assert.rejects(() => off.get("newsroom_viz_lint").execute("t", { plan_ref: planFile }), (error) => /^PLAN_VALUE_HELD: /.test(error.message), `lint refuses ${field}=${value}`);
+    await assert.rejects(() => off.get("newsroom_viz_render").execute("t", { plan_ref: planFile, lint_ref: "visualizations/lints/none.json" }), (error) => /^PLAN_VALUE_HELD: /.test(error.message), `render refuses ${field}=${value}`);
+    assert.equal(listing(), withPlan, `${field}=${value}: lint and render wrote nothing`);
+  }
+  assert.ok(listing().split("\n").every((name) => !name.startsWith("visualizations/lints") && !name.startsWith("visualizations/renders")), "no lint or render artifact from a held plan value");
+  void listingBefore;
+}
 
 // ---- 3. the strict-grammar message ------------------------------------------------------------------------------------------
 for (const relation of ["flow", "geography"]) {
