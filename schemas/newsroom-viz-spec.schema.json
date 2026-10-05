@@ -53,11 +53,13 @@
         "horizontal_bar",
         "dot",
         "dumbbell",
+        "mirrored_bar",
         "slope",
         "line",
         "multi_line",
         "small_multiples",
         "scatter",
+        "strip_plot",
         "diverging_bar",
         "heatmap",
         "sankey",
@@ -75,7 +77,8 @@
         "process_schematic",
         "waffle",
         "choropleth",
-        "treemap"
+        "treemap",
+        "stacked_bar_100"
       ]
     },
     "title": {
@@ -202,6 +205,41 @@
       "type": "string",
       "maxLength": 100
     },
+    "left_series": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "minLength": 1,
+      "description": "mirrored_bar: the series_field value drawn on the left half. Defaults to the first series in row order."
+    },
+    "first_row": {
+      "enum": [
+        "bottom",
+        "top"
+      ],
+      "description": "mirrored_bar: where the first category in row order is drawn. Defaults to bottom."
+    },
+    "period_field": {
+      "type": "string",
+      "minLength": 1,
+      "description": "mirrored_bar: optional field holding at most 2 distinct periods to compare."
+    },
+    "current_period": {
+      "type": [
+        "string",
+        "number"
+      ],
+      "minLength": 1,
+      "description": "mirrored_bar: the period drawn filled. Defaults to the later period in sorted order."
+    },
+    "compare_layout": {
+      "enum": [
+        "overlay",
+        "side_by_side"
+      ],
+      "description": "mirrored_bar: how a second period is drawn, as an outline over the same rows (overlay, default) or as a second pyramid beside the first sharing one axis maximum (side_by_side)."
+    },
     "series_field": {
       "type": "string",
       "minLength": 1
@@ -215,6 +253,28 @@
         "line",
         "dot"
       ]
+    },
+    "group_order": {
+      "enum": [
+        "median_desc",
+        "median_asc",
+        "data"
+      ]
+    },
+    "point_layout": {
+      "enum": [
+        "jitter",
+        "beeswarm"
+      ],
+      "description": "strip_plot: how the dots of one group sit in its row. beeswarm (default) packs them without overlap; jitter scatters them by a fixed hash of the unit."
+    },
+    "show_median": {
+      "type": "boolean"
+    },
+    "label_extremes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6
     },
     "label_field": {
       "type": "string",
@@ -333,6 +393,34 @@
       "type": "number",
       "minimum": 0,
       "maximum": 50
+    },
+    "segment_order": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "description": "stacked_bar_100: the segment values (series_field values) in the order they are drawn, left to right, so the key segment sits against the 0 baseline. At most 5. Default: highlight_segment first, then the segments in the order they first appear in the rows."
+    },
+    "sort_segment": {
+      "type": "string",
+      "minLength": 1,
+      "description": "stacked_bar_100: the segment whose own value orders the bars (direction from sort; none keeps the SQL row order). Default: the first segment in segment_order."
+    },
+    "highlight_segment": {
+      "type": "string",
+      "minLength": 1,
+      "description": "stacked_bar_100: the segment drawn in the accent colour; every other segment is a house grey. Default: sort_segment."
+    },
+    "segment_values": {
+      "enum": [
+        "in_bar",
+        "highlight_column"
+      ],
+      "description": "stacked_bar_100: where values are printed. highlight_column (default) prints no value inside the bars and prints only the highlight segment's value in a column just right of the 100% end. in_bar prints each value inside its segment wherever the label fits."
     },
     "x_scale": {
       "enum": [
@@ -728,6 +816,25 @@
       "if": {
         "properties": {
           "chart_type": {
+            "const": "mirrored_bar"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "series_field",
+          "value_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
             "const": "line"
           }
         },
@@ -796,6 +903,24 @@
         "required": [
           "x_field",
           "y_field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "strip_plot"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "value_field"
         ]
       }
     },
@@ -1158,6 +1283,37 @@
         "required": [
           "flow_unit_field"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chart_type": {
+            "const": "stacked_bar_100"
+          }
+        },
+        "required": [
+          "chart_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "category_field",
+          "series_field",
+          "value_field",
+          "unit"
+        ],
+        "properties": {
+          "unit": {
+            "const": "%"
+          },
+          "decimals": {
+            "enum": [
+              0,
+              1
+            ]
+          }
+        }
       }
     }
   ],
