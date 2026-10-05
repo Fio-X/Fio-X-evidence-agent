@@ -226,6 +226,8 @@ jobs:
         run: node scripts/test_viz_form_wiring.mjs
       - name: Chart form plan-path tests
         run: node scripts/test_viz_forms_plan_path.mjs
+      - name: Chart form plan schema tests
+        run: node scripts/test_viz_plan_schema.mjs
       - name: Complex visualization semantic smoke tests
         run: |
           node scripts/test_complex_viz.mjs
