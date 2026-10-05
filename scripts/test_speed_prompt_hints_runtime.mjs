@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
+import { formWiringMask } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE_REF = "bc1ccfd";
@@ -57,10 +58,13 @@ try {
     return tools;
   };
   // Everything the model reads of a tool (all fields except the handler).
-  // One intended difference from the baseline: viz_plan's and viz_chain's measure_semantics is the full schema again (the
-  // baseline registers a weaker duplicate). Mask only that property; test_viz_plan_schema.mjs asserts the full schema.
+  // Two intended differences from the baseline, both only in viz_plan and viz_chain. measure_semantics is the full schema again (the
+  // baseline registers a weaker duplicate). strip_plot, stacked_bar_100 and mirrored_bar are wired into the plan path: three chart_type
+  // values, fourteen fields, three guideline sentences (scripts/lib_viz_form_wiring.mjs removes exactly those). Mask only these;
+  // test_viz_plan_schema.mjs asserts the full measure_semantics schema and the form wiring.
   const MASKED = new Set(["newsroom_viz_plan", "newsroom_viz_chain"]);
-  const visible = (tool) => JSON.stringify({ ...tool, execute: undefined }, MASKED.has(tool.name) ? (key, value) => (key === "measure_semantics" ? "masked" : value) : undefined);
+  const maskViz = function (key, value) { return formWiringMask.call(this, key, key === "measure_semantics" ? "masked" : value); };
+  const visible = (tool) => JSON.stringify({ ...tool, execute: undefined }, MASKED.has(tool.name) ? maskViz : undefined);
   // The other declared difference from bc1ccfd: the category_names enum and two newsroom_viz_plan guideline sentences
   // (zh-names-1003). revertNameLocalization puts the old wording back and refuses a surface that lacks exactly those edits. This
   // suite's StringEnum stand-in keeps only the enum values (no options object), so the field description is not on this surface.

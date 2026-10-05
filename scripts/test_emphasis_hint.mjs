@@ -49,6 +49,24 @@ const codes = (c) => c.issues.map((i) => i.code);
   const spec = bar("新加坡领先", rows, { language: "zh", category_names: "iso3" });
   assert.deepEqual(hint(spec, rows), ['标题点名了『新加坡』，但 highlight_values 为空；建议填 ["SGP"]']);
 }
+{
+  // strip_plot and mirrored_bar paint highlight_values on their category_field (a group; a band), so the hint reaches them too
+  const groups = ["Group Alpha", "Group Beta", "Group Gamma"];
+  const strip = groups.flatMap((g, gi) => [1, 2, 3, 4].map((k) => ({ g, u: `${g} unit ${k}`, v: 2 + gi * 3 + k })));
+  const stripSpec = { ...base, chart_type: "strip_plot", reader_task: "distribution", category_field: "g", value_field: "v", label_field: "u", title: "Group Beta spreads the widest" };
+  assert.deepEqual(hint(stripSpec, strip), ['The title names "Group Beta" but highlight_values is empty; suggest ["Group Beta"]']);
+  assert.ok(codes(critic(stripSpec, strip)).includes("title_names_unhighlighted"));
+  assert.equal(hint({ ...stripSpec, highlight_values: ["Group Beta"] }, strip).length, 0, "a declared highlight silences the strip_plot hint");
+  assert.equal(hint({ ...stripSpec, title: "Spread by group" }, strip).length, 0, "an unnamed group raises nothing");
+
+  const bands = ["Under 20", "20 to 39", "40 to 64", "65 and over"];
+  const pyramid = ["Side A", "Side B"].flatMap((side, s) => bands.map((band, b) => ({ band, side, share: 10 + b * 4 + s * 2 })));
+  const mirroredSpec = { ...base, chart_type: "mirrored_bar", category_field: "band", series_field: "side", value_field: "share", title: "65 and over is the fastest growing band" };
+  assert.deepEqual(hint(mirroredSpec, pyramid), ['The title names "65 and over" but highlight_values is empty; suggest ["65 and over"]']);
+  assert.ok(codes(critic(mirroredSpec, pyramid)).includes("title_names_unhighlighted"));
+  assert.equal(hint({ ...mirroredSpec, highlight_values: ["65 and over"] }, pyramid).length, 0, "a declared highlight silences the mirrored_bar hint");
+  assert.equal(hint({ ...mirroredSpec, title: "Share of each band" }, pyramid).length, 0, "an unnamed band raises nothing");
+}
 
 // --- negatives -----------------------------------------------------------
 {
@@ -60,6 +78,12 @@ const codes = (c) => c.issues.map((i) => i.code);
   assert.ok(!codes(critic(unnamed, countries)).includes("title_names_unhighlighted"));
   assert.ok(codes(critic(unnamed, countries)).includes("no_visual_focus"), "generic info is kept when nothing is named");
   assert.equal(hint(bar("新加坡", countries, { chart_type: "heatmap", x_field: "name", y_field: "name" }), countries).length, 0, "chart types that never paint highlights are ignored");
+  // stacked_bar_100 highlights one segment (highlight_segment), never highlight_values, so naming an entity in its title is not an emphasis gap
+  const stacked = ["Entity Alpha", "Entity Beta", "Entity Gamma"].flatMap((e, i) => [["Low", 30 - i * 5], ["Mid", 40], ["High", 30 + i * 5]].map(([seg, v]) => ({ e, seg, v })));
+  const stackedSpec = { ...base, reader_task: "part_to_whole", chart_type: "stacked_bar_100", unit: "%", category_field: "e", series_field: "seg", value_field: "v", highlight_segment: "Low", title: "Entity Beta has the smallest Low share" };
+  assert.equal(titleNamedHighlightValues(stackedSpec, stacked).length, 0);
+  assert.equal(hint(stackedSpec, stacked).length, 0);
+  assert.ok(!codes(critic(stackedSpec, stacked)).includes("title_names_unhighlighted"));
 }
 {
   // longest name first: 印度尼西亚 must not also count 印度 (and vice versa when only 印度 is named)

@@ -216,6 +216,14 @@ jobs:
         run: node scripts/test_choropleth.mjs
       - name: Treemap chart tests
         run: node scripts/test_treemap.mjs
+      - name: Strip plot chart tests
+        run: node scripts/test_viz_strip_plot.mjs
+      - name: Stacked bar 100 chart tests
+        run: node scripts/test_viz_stacked_bar_100.mjs
+      - name: Mirrored bar chart tests
+        run: node scripts/test_viz_mirrored_bar.mjs
+      - name: Chart form grammar wiring tests
+        run: node scripts/test_viz_form_wiring.mjs
       - name: Complex visualization semantic smoke tests
         run: |
           node scripts/test_complex_viz.mjs

@@ -1,0 +1,18 @@
+{
+  "strip_jitter_35_groups_zh": {
+    "desktop": "b16e9371dda19820db2fcc49ebf61741ac595c380ade4175fc399b6f3e0cc698",
+    "mobile": "b16e9371dda19820db2fcc49ebf61741ac595c380ade4175fc399b6f3e0cc698"
+  },
+  "strip_beeswarm_35_groups_zh": {
+    "desktop": "7d4c59805fb9a4ad41c713bdf22e8e71b61281779f2a1f77d6561dc3eb756319",
+    "mobile": "7d4c59805fb9a4ad41c713bdf22e8e71b61281779f2a1f77d6561dc3eb756319"
+  },
+  "strip_jitter_12_groups_en_highlight": {
+    "desktop": "9b2acc6f43ba55dafcb018a4a05fb6cfa13018100b6cc481b732ee1b3447ee03",
+    "mobile": "9b2acc6f43ba55dafcb018a4a05fb6cfa13018100b6cc481b732ee1b3447ee03"
+  },
+  "strip_default_12_groups_en_highlight": {
+    "desktop": "536fb8c8aaedeb8fbd59e8c5e22bf378f249223a9e970fa684f1260be423feae",
+    "mobile": "536fb8c8aaedeb8fbd59e8c5e22bf378f249223a9e970fa684f1260be423feae"
+  }
+}

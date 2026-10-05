@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { ASCENT_RATIO, DESCENT_RATIO, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
+import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
@@ -11,11 +11,13 @@ export const CHART_TYPES = [
   "horizontal_bar",
   "dot",
   "dumbbell",
+  "mirrored_bar",
   "slope",
   "line",
   "multi_line",
   "small_multiples",
   "scatter",
+  "strip_plot",
   "diverging_bar",
   "heatmap",
   "sankey",
@@ -34,6 +36,7 @@ export const CHART_TYPES = [
   "waffle",
   "choropleth",
   "treemap",
+  "stacked_bar_100",
 ];
 
 export const VISUAL_FAMILIES = [
@@ -1448,11 +1451,13 @@ function requiredFields(spec) {
     horizontal_bar: ["category_field", "value_field"],
     dot: ["category_field", "value_field"],
     dumbbell: ["category_field", "start_field", "end_field"],
+    mirrored_bar: ["category_field", "series_field", "value_field"],
     slope: ["category_field", "start_field", "end_field"],
     line: ["x_field", "value_field"],
     multi_line: ["x_field", "value_field", "series_field"],
     small_multiples: ["x_field", "value_field", "facet_field"],
     scatter: ["x_field", "y_field"],
+    strip_plot: ["category_field", "value_field"],
     diverging_bar: ["category_field", "value_field"],
     heatmap: ["x_field", "y_field", "value_field"],
     waffle: ["category_field", "value_field"],
@@ -1471,6 +1476,7 @@ function requiredFields(spec) {
     process_schematic: ["source_field", "target_field"],
     choropleth: ["category_field", "value_field", "category_names", "basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"],
     treemap: ["category_field", "value_field"],
+    stacked_bar_100: ["category_field", "series_field", "value_field"],
   };
   return [...common, ...(byType[spec.chart_type] ?? [])];
 }
@@ -1587,6 +1593,39 @@ export function validateVizSpec(spec) {
     // rather than inventing a per-group Other bucket nobody asked for.
     if (spec.group_field && spec.other_threshold_pct !== undefined) errors.push("treemap other_threshold_pct is not supported together with group_field");
   }
+  if (spec.chart_type === "strip_plot") {
+    if (spec.group_order !== undefined && !STRIP_GROUP_ORDERS.includes(spec.group_order)) errors.push(`strip_plot group_order must be one of ${STRIP_GROUP_ORDERS.join(", ")}`);
+    if (spec.point_layout !== undefined && !STRIP_POINT_LAYOUTS.includes(spec.point_layout)) errors.push(`strip_plot point_layout must be one of ${STRIP_POINT_LAYOUTS.join(", ")}`);
+    if (spec.show_median !== undefined && typeof spec.show_median !== "boolean") errors.push("strip_plot show_median must be true or false");
+    if (spec.label_extremes !== undefined && (typeof spec.label_extremes !== "number" || !Number.isInteger(spec.label_extremes) || spec.label_extremes < 0 || spec.label_extremes > STRIP_MAX_LABEL_EXTREMES)) errors.push(`strip_plot label_extremes must be an integer between 0 and ${STRIP_MAX_LABEL_EXTREMES}`);
+  }
+  if (spec.chart_type === "stacked_bar_100") {
+    // All of these are optional; a malformed one is refused here so the
+    // renderer (which only ever sees a validated spec) never has to guess.
+    if (spec.decimals !== undefined && spec.decimals !== 0 && spec.decimals !== 1) errors.push("stacked_bar_100 decimals must be 0 or 1");
+    if (spec.sort !== undefined && !["asc", "desc", "none"].includes(spec.sort)) errors.push("stacked_bar_100 sort must be asc, desc or none");
+    if (spec.segment_order !== undefined) {
+      if (!Array.isArray(spec.segment_order) || spec.segment_order.length < 1 || spec.segment_order.length > STACKED_MAX_SEGMENTS || spec.segment_order.some((item) => typeof item !== "string" || !item.trim())) errors.push(`stacked_bar_100 segment_order must list 1 to ${STACKED_MAX_SEGMENTS} non-empty segment names`);
+      else if (new Set(spec.segment_order).size !== spec.segment_order.length) errors.push("stacked_bar_100 segment_order must not repeat a segment");
+    }
+    for (const key of ["sort_segment", "highlight_segment"]) {
+      if (spec[key] !== undefined && (typeof spec[key] !== "string" || !spec[key].trim())) errors.push(`stacked_bar_100 ${key} must be a non-empty segment name when provided`);
+    }
+    if (spec.segment_values !== undefined && !STACKED_SEGMENT_VALUES.includes(spec.segment_values)) errors.push(`stacked_bar_100 segment_values must be one of ${STACKED_SEGMENT_VALUES.join(", ")}`);
+  }
+  if (spec.chart_type === "mirrored_bar") {
+    // Optional mirrored_bar fields: reject malformed shapes here so the
+    // renderer and lintVizSpec can rely on the documented values. Whether a
+    // left_series / current_period value exists in the rows is a data check
+    // and lives in lintVizSpec.
+    if (spec.first_row !== undefined && !["bottom", "top"].includes(spec.first_row)) errors.push("mirrored_bar first_row must be 'bottom' or 'top'");
+    if (spec.compare_layout !== undefined && !["overlay", "side_by_side"].includes(spec.compare_layout)) errors.push("mirrored_bar compare_layout must be 'overlay' or 'side_by_side'");
+    for (const field of ["left_series", "current_period", "period_field"]) {
+      const value = spec[field];
+      if (value !== undefined && (value === null || typeof value === "object" || !String(value).trim())) errors.push(`mirrored_bar ${field} must be a non-empty string when provided`);
+    }
+    if (spec.direct_labels !== undefined && typeof spec.direct_labels !== "boolean") errors.push("mirrored_bar direct_labels must be true or false");
+  }
   for (const field of requiredFields(spec)) {
     if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") errors.push(`Missing required field '${field}'`);
   }
@@ -1636,6 +1675,8 @@ const HIGHLIGHT_NAME_FIELD = {
   slope: "category_field",
   multi_line: "series_field",
   scatter: "label_field",
+  strip_plot: "category_field", // paints highlight_values on a whole group (or on a unit named by label_field)
+  mirrored_bar: "category_field",
 };
 const HIGHLIGHT_HINT_MAX_NAMES = 4;
 const HIGHLIGHT_HINT_MIN_NAME_LENGTH = 2;
@@ -1707,7 +1748,10 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.semantic_gate?.status === "BLOCK") blockers.push("semantic_comparison_blocked");
   if (spec.semantic_gate?.status === "CONTEXTUAL") notes.push("Semantic comparison is contextual; visual roles must remain explicitly differentiated");
   if (!Array.isArray(rows) || rows.length === 0) blockers.push("Visualization query returned no rows");
-  if (rows.length > 240) blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
+  // strip_plot draws one dot per row (many units per group), so it carries its
+  // own point cap (STRIP_MAX_POINTS, checked in lintStripPlotSpec) instead of
+  // this general row cap; every other chart type keeps the 240-row limit.
+  if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
 
   const requiredDataFields = [
     spec.category_field,
@@ -1976,13 +2020,91 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
 
+  if (spec.chart_type === "stacked_bar_100") {
+    // Every bar is one entity's whole (0-100%) split into its segments. The
+    // renderer never rescales a value to make a bar add up, so the data must
+    // already do: each entity's values sum to 100 (+/- 1 for rounding in the
+    // source), and a value cannot be drawn as a negative width. A non-numeric
+    // or non-finite value is already blocked by the generic value_field check
+    // above, so it is not repeated here.
+    if (spec.unit !== "%") blockers.push("stacked_bar_100 requires unit='%'");
+    if (fieldExists(rows, spec.category_field) && fieldExists(rows, spec.series_field)) {
+      const model = stackedBarModel(spec, rows);
+      if (model.entities.length > STACKED_MAX_BARS) blockers.push(`stacked_bar_100 has ${model.entities.length} bars; maximum is ${STACKED_MAX_BARS} - filter rows in SQL to at most ${STACKED_MAX_BARS} entities`);
+      else if (model.entities.length > STACKED_WARN_BARS) warnings.push(`stacked_bar_100 has ${model.entities.length} bars; more than ${STACKED_WARN_BARS} bars make a long page - consider filtering to the entities the claim is about`);
+      if (model.segments.length > STACKED_MAX_SEGMENTS) blockers.push(`stacked_bar_100 has ${model.segments.length} segments; maximum is ${STACKED_MAX_SEGMENTS} - merge the smallest segments into one 'Other' segment in SQL`);
+      if (model.blank) blockers.push(`stacked_bar_100 has ${model.blank} row(s) with a blank category_field or series_field value`);
+      if (model.duplicates) blockers.push(`stacked_bar_100 has ${model.duplicates} repeated (category, series) pair(s); each segment may appear once per bar - aggregate in SQL`);
+      if (fieldExists(rows, spec.value_field)) {
+        if (rows.some((row) => { const value = n(row[spec.value_field]); return value !== null && value < 0; })) blockers.push(`stacked_bar_100 value_field '${spec.value_field}' must not be negative; a share cannot be drawn as a negative width`);
+        const offSum = model.entities
+          .map((entity) => {
+            const values = [...entity.cells.values()];
+            return { entity: entity.key, complete: values.every((value) => value !== null), sum: values.reduce((total, value) => total + (value ?? 0), 0) };
+          })
+          .filter((item) => item.complete && Math.abs(item.sum - 100) > STACKED_SUM_TOLERANCE + 1e-9);
+        if (offSum.length) blockers.push(`stacked_bar_100 bars must each sum to 100 +/- ${STACKED_SUM_TOLERANCE} (${offSum.slice(0, 3).map((item) => `${item.entity} sums to ${Number(item.sum.toFixed(4))}`).join(", ")}${offSum.length > 3 ? ", ..." : ""}); compute shares in SQL so that each row sums to 100`);
+      }
+      const knownSegments = new Set(model.segments);
+      for (const [name, value] of [["highlight_segment", spec.highlight_segment], ["sort_segment", spec.sort_segment]]) {
+        if (value !== undefined && !knownSegments.has(String(value))) blockers.push(`stacked_bar_100 ${name} '${value}' is not a value of series_field '${spec.series_field}'`);
+      }
+      if (Array.isArray(spec.segment_order)) {
+        const unknown = spec.segment_order.filter((value) => !knownSegments.has(String(value)));
+        if (unknown.length) blockers.push(`stacked_bar_100 segment_order lists ${unknown.map((value) => `'${value}'`).join(", ")}, not a value of series_field '${spec.series_field}'`);
+      }
+      const gaps = model.segments
+        .map((segment) => ({ segment, missing: model.entities.filter((entity) => !entity.cells.has(segment)).length }))
+        .filter((item) => item.missing > 0);
+      if (gaps.length) warnings.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' is missing from ${item.missing} bar(s)`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; a missing segment is drawn as 0`);
+    }
+  }
+  if (spec.chart_type === "mirrored_bar" && Array.isArray(rows) && rows.length > 0) {
+    // Two sides, one bar per (category, series, period): the drawing has no
+    // way to show two values in one slot, so a duplicate row is a data error
+    // rather than something to sum or pick from. Non-numeric, missing and
+    // non-finite values are already blocked by the shared numericCount check
+    // above; this adds the floor (a bar cannot be negative) and the shape
+    // limits that keep the pyramid legible.
+    const periodField = spec.period_field ? String(spec.period_field) : "";
+    const periodPresent = Boolean(periodField) && fieldExists(rows, periodField);
+    if (periodField && !periodPresent) blockers.push(`Field '${periodField}' is absent from query output`);
+    if (fieldExists(rows, spec.category_field) && fieldExists(rows, spec.series_field)) {
+      const categories = unique(rows.map((row) => row[spec.category_field]));
+      const sides = unique(rows.map((row) => row[spec.series_field]));
+      const periods = periodPresent ? unique(rows.map((row) => row[periodField])) : [];
+      if (categories.length > 25) blockers.push(`mirrored_bar has ${categories.length} categories; maximum is 25 - merge bands in SQL`);
+      else if (categories.length > 20) warnings.push(`mirrored_bar has ${categories.length} categories; above 20 the rows get thin and only every second label is shown - consider merging bands`);
+      if (sides.length !== 2) blockers.push(`mirrored_bar series_field '${spec.series_field}' must have exactly 2 distinct values (one per side); found ${sides.length}`);
+      if (periods.length > 2) blockers.push(`mirrored_bar period_field '${periodField}' has ${periods.length} distinct values; maximum is 2 (current and one comparison period)`);
+      const cell = (row) => JSON.stringify([String(row[spec.category_field]), String(row[spec.series_field]), periodPresent ? String(row[periodField]) : ""]);
+      const seen = new Set();
+      let duplicates = 0;
+      for (const row of rows) {
+        const key = cell(row);
+        if (seen.has(key)) duplicates += 1;
+        seen.add(key);
+      }
+      if (duplicates) blockers.push(`mirrored_bar has ${duplicates} duplicate (category, series, period) row(s); each bar needs exactly one row`);
+      if (fieldExists(rows, spec.value_field) && rows.some((row) => { const value = n(row[spec.value_field]); return value !== null && value < 0; })) {
+        blockers.push(`mirrored_bar value_field '${spec.value_field}' must be >= 0; each side draws a magnitude from its own centre line`);
+      }
+      if (spec.left_series !== undefined && !sides.includes(String(spec.left_series))) blockers.push(`mirrored_bar left_series '${spec.left_series}' is not a value of '${spec.series_field}'`);
+      if (spec.current_period !== undefined && !periods.includes(String(spec.current_period))) {
+        blockers.push(periodPresent ? `mirrored_bar current_period '${spec.current_period}' is not a value of '${periodField}'` : "mirrored_bar current_period needs a period_field present in the query output");
+      }
+      const expected = categories.length * sides.length * Math.max(periods.length, 1);
+      if (seen.size < expected) warnings.push(`mirrored_bar is missing ${expected - seen.size} (category, series, period) combination(s); those bars stay empty`);
+    }
+  }
+
   const taskFit = {
     ranking: new Set(["horizontal_bar", "dot", "diverging_bar"]),
-    comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix"]),
+    comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix", "mirrored_bar"]),
     change: new Set(["line", "multi_line", "slope", "small_multiples", "streamgraph"]),
-    distribution: new Set(["dot", "scatter", "heatmap"]),
+    distribution: new Set(["dot", "scatter", "heatmap", "strip_plot", "mirrored_bar"]),
     correlation: new Set(["scatter"]),
-    part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap"]),
+    part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap", "stacked_bar_100"]),
     spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
     flow: new Set(["sankey", "alluvial", "parallel_sets", "geo_flow_map", "cartographic_flow_map"]),
     relationship: new Set(["node_link", "adjacency_matrix", "chord"]),
@@ -2157,6 +2279,11 @@ export function lintVizSpec(spec, rows, context = {}) {
     const ys = unique(rows.map((r) => r[spec.y_field]));
     if (xs.length * ys.length > 400) blockers.push("Heatmap exceeds 400 cells");
   }
+  if (spec.chart_type === "strip_plot") {
+    const stripLint = lintStripPlotSpec(spec, rows);
+    blockers.push(...stripLint.blockers);
+    warnings.push(...stripLint.warnings);
+  }
 
   if (spec.title && /\b(latest|current|today|now)\b/i.test(spec.title) && spec.reference_period_field) {
     warnings.push("Title uses currentness language; verify the observation period is actually current");
@@ -2294,12 +2421,16 @@ export function vizLang(spec) {
 // logScale and group are standalone chrome words.
 const VIZ_STRINGS = {
   en: {
+    stripMedianKey: "Line: median",
     note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (b) => `base = ${b}`, rankOutside: (r) => `#${r}`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
+    stackedRoundingNote: "Figures may not add up to 100% because of rounding",
   },
   zh: {
+    stripMedianKey: "\u7AD6\u7EBF\uFF1A\u4E2D\u4F4D\u6570",
     note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (b) => `\u57FA\u671F = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
+    stackedRoundingNote: "\u56E0\u56DB\u820D\u4E94\u5165\uFF0C\u5404\u9879\u76F8\u52A0\u53EF\u80FD\u4E0D\u7B49\u4E8E100%",
   },
 };
 
@@ -3582,6 +3713,302 @@ function renderDumbbell(spec, rows) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+// ---------------------------------------------------------------------------
+// mirrored_bar: two sides back to back, e.g. a population pyramid.
+//
+// Ordered categories run up a centre gutter that also holds their labels. The
+// first series' bars grow left from the gutter's left edge and the second
+// series' bars grow right from its right edge, both on ONE symmetric axis, so
+// two bars of equal length are two equal values. The spec chooses which series
+// goes left (left_series) and where the first category sits (first_row); the
+// renderer assumes nothing about the topic. An optional second period
+// (period_field) is drawn either as an outline over the same rows
+// (compare_layout "overlay", the default) or as a second pyramid beside the
+// first on the same axis maximum ("side_by_side"). Every printed number is a
+// value_field value formatted by fmtSpec, or an axis tick: nothing is summed,
+// differenced or rescaled.
+// ---------------------------------------------------------------------------
+const MIRRORED_ROW_GAP = 2; // px between neighbouring rows (house rule: 1-2px)
+
+// Width of a text in px, for fitting only (the gutter, the series names, the
+// room a value label needs). Per-glyph classes charged at least what render
+// QA's own advance table charges that class, in either weight, times QA's
+// 1.05 margin: narrow letters and punctuation, capitals (and &), the wide m w
+// M W @ % and dashes, one em for CJK, and a full em for any other character
+// outside the ASCII range (QA's fallback for a glyph its table lacks). A
+// layout fitted to this never trips the text-outside-viewbox or
+// text-crosses-mark checks on its own labels, whatever the label's letters.
+const MIRRORED_NARROW_GLYPHS = new Set(Array.from("ijlI.,:;'|! "));
+const MIRRORED_WIDE_GLYPHS = new Set(Array.from("mwMW@%\u2026\u2014\u2192"));
+const MIRRORED_MEASURED_SYMBOLS = new Set(Array.from("\u00B7\u00A3\u20AC\u00A5\u201C\u201D\u2018\u2019\u2013\u00B0\u00B1\u00D7\u00F7\u2022"));
+function mirroredTextPx(text, fontSize = 12) {
+  let em = 0;
+  for (const ch of Array.from(String(text ?? ""))) {
+    if (isWideChar(ch)) em += 1;
+    else if (MIRRORED_NARROW_GLYPHS.has(ch)) em += 0.3;
+    else if (MIRRORED_WIDE_GLYPHS.has(ch)) em += 1.02;
+    else if (ch > "~" && !MIRRORED_MEASURED_SYMBOLS.has(ch)) em += 1.02;
+    else if ((ch >= "A" && ch <= "Z") || ch === "&") em += 0.78;
+    else em += 0.62;
+  }
+  return Math.ceil(em * fontSize * 1.05);
+}
+
+// The text itself if it fits capPx, else its longest prefix that fits with an
+// ellipsis appended (at least one character is always kept).
+function mirroredFit(text, fontSize, capPx) {
+  const chars = Array.from(String(text ?? ""));
+  if (mirroredTextPx(text, fontSize) <= capPx) return String(text ?? "");
+  let keep = chars.length - 1;
+  while (keep > 1 && mirroredTextPx(`${chars.slice(0, keep).join("")}\u2026`, fontSize) > capPx) keep -= 1;
+  return `${chars.slice(0, Math.max(keep, 1)).join("")}\u2026`;
+}
+
+// Rows -> the pieces the drawing needs. Category order is row order (first
+// appearance). Lint requires exactly 2 series, at most 2 periods and a
+// left_series / current_period that exist; a spec that skipped lint still
+// renders instead of throwing (extra series are ignored, a missing right side
+// stays empty).
+function mirroredModel(spec, rows) {
+  const periodField = spec.period_field ? String(spec.period_field) : "";
+  const categories = unique(rows.map((row) => row[spec.category_field]));
+  const seriesValues = unique(rows.map((row) => row[spec.series_field]));
+  const leftSeries = spec.left_series !== undefined && seriesValues.includes(String(spec.left_series)) ? String(spec.left_series) : (seriesValues[0] ?? "");
+  const rightSeries = seriesValues.find((series) => series !== leftSeries) ?? null;
+  const periodValues = periodField ? unique(rows.map((row) => row[periodField])) : [];
+  const numericPeriods = periodValues.length > 0 && periodValues.every((period) => period.trim() !== "" && Number.isFinite(Number(period)));
+  const periods = [...periodValues].sort((a, b) => (numericPeriods ? Number(a) - Number(b) : a < b ? -1 : a > b ? 1 : 0));
+  const current = periods.length ? (spec.current_period !== undefined && periods.includes(String(spec.current_period)) ? String(spec.current_period) : periods.at(-1)) : "";
+  const other = periods.find((period) => period !== current) ?? null;
+  const cells = new Map();
+  for (const row of rows) {
+    const value = n(row[spec.value_field]);
+    if (value === null) continue;
+    const key = JSON.stringify([String(row[spec.category_field]), String(row[spec.series_field]), periodField ? String(row[periodField]) : ""]);
+    if (!cells.has(key)) cells.set(key, value);
+  }
+  const valueAt = (category, series, period) => (series === null || period === null ? null : (cells.get(JSON.stringify([category, series, period])) ?? null));
+  let maxValue = 0;
+  for (const category of categories) {
+    for (const series of [leftSeries, rightSeries]) {
+      for (const period of [current, other]) {
+        const value = valueAt(category, series, period);
+        if (value !== null && value > maxValue) maxValue = value;
+      }
+    }
+  }
+  return { categories, leftSeries, rightSeries, periods, current, other, valueAt, maxValue };
+}
+
+// One half's axis, mirrored onto the other: ticks 0, step, 2*step ... up to
+// the nice ceiling of the largest value (over both sides and both periods).
+// The step is a 1/2/5 x 10^k number aiming at 4 intervals, then thinned (at
+// the limit down to just 0 and the maximum) while two neighbouring tick labels
+// would crowd: ticks are evenly spaced, so each pair needs the average of its
+// two label widths plus 14px between centres, and never less than 30px.
+// labelWidths(ticks) is the width in px of every label of a candidate tick list.
+function mirroredAxis(maxValue, halfLen, labelWidths) {
+  const peak = maxValue > 0 ? maxValue : 1;
+  const build = (step) => {
+    const count = Math.max(1, Math.ceil(peak / step - 1e-9));
+    return Array.from({ length: count + 1 }, (_, i) => Number((i * step).toPrecision(12)));
+  };
+  const crowded = (list) => {
+    if (!Number.isFinite(halfLen)) return false;
+    const spacing = halfLen / (list.length - 1);
+    const widths = labelWidths(list);
+    return widths.some((width, i) => i + 1 < widths.length && spacing < Math.max(30, (width + widths[i + 1]) / 2 + 14));
+  };
+  let step = niceAxisStep(peak / 4);
+  let ticks = build(step);
+  for (let guard = 0; guard < 16 && ticks.length > 2 && crowded(ticks); guard++) {
+    step = niceAxisStep(step * 1.6);
+    ticks = build(step);
+  }
+  return { max: ticks.at(-1), ticks };
+}
+
+function renderMirroredBar(spec, rows) {
+  const m = mirroredModel(spec, rows);
+  const total = m.categories.length;
+  const highlights = new Set((spec.highlight_values ?? []).map(String));
+  const sideBySide = spec.compare_layout === "side_by_side" && m.other !== null;
+  const overlay = !sideBySide && m.other !== null;
+  // side_by_side: the earlier period (sorted order) on the left.
+  const panelPeriods = sideBySide ? [m.current, m.other].sort((a, b) => m.periods.indexOf(a) - m.periods.indexOf(b)) : [m.current];
+  const sideSeries = [m.leftSeries, m.rightSeries];
+  const rowFromTop = (i) => (spec.first_row === "top" ? i : total - 1 - i);
+  const px = (value) => String(Math.round(value * 100) / 100);
+  const textPx = (text) => mirroredTextPx(text, 12);
+  const OUTLINE = `stroke="${PALETTE.ink}" stroke-opacity="0.8" stroke-width="1.5"`;
+
+  // Value labels: direct_labels prints each bar's own value at its end, for
+  // every row when there are 12 or fewer, else only for highlight_values rows.
+  // Overlay prints the current period only (the outline is context); in
+  // side_by_side each panel prints its own period.
+  const labelled = (category) => spec.direct_labels === true && (total <= 12 || highlights.has(category));
+  const printed = [];
+  for (const period of panelPeriods) {
+    for (const category of m.categories) {
+      if (!labelled(category)) continue;
+      for (const series of sideSeries) {
+        const value = m.valueAt(category, series, period);
+        if (value !== null) printed.push(value);
+      }
+    }
+  }
+  const decimals = resolveChartDecimals(spec, printed);
+  // House style states the unit once per half, on its top-most printed label.
+  const unitHolders = new Set();
+  panelPeriods.forEach((period, pk) => sideSeries.forEach((series, sk) => {
+    for (let d = 0; d < total; d++) {
+      const i = spec.first_row === "top" ? d : total - 1 - d;
+      if (labelled(m.categories[i]) && m.valueAt(m.categories[i], series, period) !== null) { unitHolders.add(`${pk}:${sk}:${i}`); break; }
+    }
+  }));
+  const labelUnit = (pk, sk, i) => (!HOUSE_STYLE_ACTIVE || unitHolders.has(`${pk}:${sk}:${i}`) ? spec.unit : "");
+
+  // Vertical layout: [panel titles | period key] row, series names, rows, ticks.
+  const pitch = Math.max(17, Math.min(32, Math.round(440 / Math.max(total, 1))));
+  const headRow = overlay || sideBySide;
+  const headerH = (headRow ? 24 : 0) + 28;
+  const f = frame(spec, headerH + total * pitch + 32);
+  const rowY = f.bodyTop + 16;
+  const namesY = rowY + (headRow ? 24 : 0);
+  const plotTop = namesY + 12;
+  const plotBottom = plotTop + total * pitch;
+  const tickY = plotBottom + 18;
+
+  // Horizontal layout: one pyramid, or two with a gap. The centre gutter fits
+  // the widest label that is shown; each half then spans the room between the
+  // gutter and the panel edge, less half the outermost tick label. A value
+  // label sits just past its bar, so the scale is shortened only as far as
+  // needed to keep the labels of the bars that carry one inside the panel.
+  const panelGap = 36;
+  const panelW = sideBySide ? (f.width - 108 - panelGap) / 2 : f.width - 108;
+  const categoryText = m.categories.map(String);
+  const gutterShown = (i) => total <= 12 || i % 2 === 0 || i === total - 1;
+  const widestCategory = Math.max(0, ...categoryText.map((text, i) => (gutterShown(i) ? textPx(text) : 0)));
+  // [value the label sits beyond, its width, its width without the unit]
+  const labelBars = [];
+  panelPeriods.forEach((period, pk) => {
+    m.categories.forEach((category, i) => {
+      if (!labelled(category)) return;
+      sideSeries.forEach((series, sk) => {
+        const value = m.valueAt(category, series, period);
+        if (value === null) return;
+        const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
+        labelBars.push([Math.max(value, otherValue ?? 0), textPx(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals)), textPx(fmtSpec(spec, value, "", decimals))]);
+      });
+    });
+  });
+  const tickLabelWidths = (ticks) => ticks.map((tick, ti) => textPx(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, ticks.length))));
+  const fullTicks = mirroredAxis(m.maxValue, Infinity, () => []).ticks; // before any thinning
+  // Room a half needs past its axis end: the widest tick label is centred on it.
+  const tickRoom = Math.ceil((Math.max(...tickLabelWidths(fullTicks)) + 8) / 2);
+  // The gutter may take whatever leaves each half 80px plus that room. The room
+  // is measured without the unit, so a long unit shortens bars (below), never
+  // the category labels.
+  const tickRoomBare = Math.ceil((Math.max(...fullTicks.map((tick) => textPx(tickLabelSpec(spec, tick, "")))) + 8) / 2);
+  const labelRoomBare = labelBars.length ? Math.max(...labelBars.map(([, , bare]) => bare)) + 9 : 0;
+  // The two "0" labels sit on the gutter's two edges; where the style puts the
+  // unit on every tick (legacy) the gutter must hold both side by side.
+  const zeroLabelPx = textPx(tickLabelSpec(spec, 0, axisTickUnit(spec.unit, 0, fullTicks.length)));
+  let gutterW = Math.max(56, widestCategory + 24, zeroLabelPx + 8);
+  let gutterText = categoryText;
+  const gutterCap = Math.max(56, panelW - 2 * (80 + Math.max(labelRoomBare, tickRoomBare)));
+  if (gutterW > gutterCap) {
+    // Only a label too long for any sensible gutter is shortened (with an ellipsis).
+    gutterW = gutterCap;
+    gutterText = categoryText.map((text) => mirroredFit(text, 12, gutterW - 24));
+  }
+  const halfFull = (panelW - gutterW) / 2;
+  const fitAxis = (halfLen) => {
+    const fitted = mirroredAxis(m.maxValue, halfLen, tickLabelWidths);
+    let scale = halfLen / fitted.max;
+    for (const [value, width] of labelBars) if (value > 0) scale = Math.min(scale, (halfFull - 9 - width) / value);
+    // A label too wide to sit beside even a short bar must not flip or erase
+    // the bars: the longest one keeps at least 40px (render QA then reports
+    // the label that no longer fits).
+    return { axis: fitted, k: Math.max(scale, 40 / fitted.max) };
+  };
+  let fit = fitAxis(Math.max(40, halfFull - tickRoom));
+  fit = fitAxis(fit.axis.max * fit.k); // shortened by a label: re-thin the ticks for the shorter axis
+  const { axis, k } = fit;
+  const halfLen = axis.max * k;
+  // A series name is centred over its half: it may reach toward the other name
+  // (up to 8px short of it) and out to its panel's edge, no further.
+  const nameCap = Math.min(halfLen + gutterW - 16, 2 * halfFull - halfLen);
+
+  // Layers are collected, then painted: gridlines under bars, outlines over
+  // bars, text last (text never sits on a bar: labels go beyond the bar ends).
+  const heads = [], grid = [], bars = [], outlines = [], valueTexts = [], gutterLabels = [], tickLabels = [];
+  panelPeriods.forEach((period, pk) => {
+    const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
+    const gl = cx - gutterW / 2, gr = cx + gutterW / 2;
+    if (sideBySide) heads.push(`<text data-role="panel-title" x="${px(cx)}" y="${px(rowY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="15" font-weight="700" fill="${PALETTE.ink}">${esc(mirroredFit(period, 15, panelW - 16))}</text>`);
+    sideSeries.forEach((series, sk) => {
+      if (series === null) return;
+      const mid = sk === 0 ? gl - halfLen / 2 : gr + halfLen / 2;
+      heads.push(`<text data-role="series-name" x="${px(mid)}" y="${px(namesY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="13" font-weight="700" fill="${PALETTE.ink}">${esc(mirroredFit(series, 13, nameCap))}</text>`);
+    });
+    axis.ticks.forEach((tick, ti) => {
+      for (const sk of [0, 1]) {
+        const x = sk === 0 ? gl - tick * k : gr + tick * k;
+        grid.push(`<line data-role="grid-line" x1="${px(x)}" y1="${px(plotTop)}" x2="${px(x)}" y2="${px(plotBottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, axis.ticks.length)))}</text>`);
+      }
+    });
+    m.categories.forEach((category, i) => {
+      const highlighted = highlights.has(category);
+      const rowTop = plotTop + rowFromTop(i) * pitch;
+      const barY = rowTop + MIRRORED_ROW_GAP / 2, barH = pitch - MIRRORED_ROW_GAP;
+      const baseline = rowTop + pitch / 2 + 4;
+      if (gutterShown(i)) gutterLabels.push(`<text data-role="category-label" x="${px(cx)}" y="${px(baseline)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="${highlighted ? 700 : 400}" fill="${PALETTE.ink}">${esc(gutterText[i])}</text>`);
+      sideSeries.forEach((series, sk) => {
+        const value = m.valueAt(category, series, period);
+        const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
+        const length = value === null ? 0 : value * k;
+        const otherLength = otherValue === null || otherValue <= 0 ? 0 : Math.max(2, otherValue * k);
+        const fill = highlighted ? PALETTE.accent : sk === 0 ? PALETTE.accent2 : PALETTE.series3;
+        if (length > 0) {
+          const w = Math.max(1, length);
+          bars.push(`<rect data-role="data-bar" x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
+        }
+        // The other period: a stroke with no fill, inset so its outer edge
+        // lands on the value and neighbouring rows' strokes keep a gap.
+        if (otherLength > 0) {
+          outlines.push(`<rect data-role="data-bar-outline" x="${px(sk === 0 ? gl - otherLength + 0.75 : gr + 0.75)}" y="${px(barY + 0.75)}" width="${px(otherLength - 1.5)}" height="${px(barH - 1.5)}" fill="none" ${OUTLINE}/>`);
+        }
+        if (value !== null && labelled(category)) {
+          const reach = Math.max(length, otherLength);
+          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals))}</text>`);
+        }
+      });
+    });
+  });
+
+  // Period key (overlay only): a filled swatch and an outline swatch, each
+  // with its period value from the rows.
+  if (overlay) {
+    // Each period value gets at most half the room left by the two swatches,
+    // so even an absurdly long period label stays on the page.
+    const keyCap = Math.floor((f.width - 108 - 66) / 2);
+    const keyCurrent = mirroredFit(m.current, 12, keyCap), keyOther = mirroredFit(m.other, 12, keyCap);
+    const w1 = textPx(keyCurrent), w2 = textPx(keyOther);
+    let x = f.width / 2 - (14 + 5 + w1 + 28 + 14 + 5 + w2) / 2;
+    heads.push(`<rect data-role="legend-swatch" x="${px(x)}" y="${px(rowY - 9)}" width="14" height="10" fill="${PALETTE.context}"/>`);
+    heads.push(`<text data-role="period-key-label" x="${px(x + 19)}" y="${px(rowY)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(keyCurrent)}</text>`);
+    x += 19 + w1 + 28;
+    heads.push(`<rect data-role="legend-swatch" x="${px(x)}" y="${px(rowY - 9)}" width="14" height="10" fill="none" ${OUTLINE}/>`);
+    heads.push(`<text data-role="period-key-label" x="${px(x + 19)}" y="${px(rowY)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(keyOther)}</text>`);
+  }
+  f.parts.push(...heads, ...grid, ...bars, ...outlines, ...valueTexts, ...gutterLabels, ...tickLabels);
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
+}
+
 // End-label height (12px font, single line, house-style-approved ascent/
 // descent) plus 4px, per the label-repel contract: the minimum vertical gap
 // between two end labels sharing the same x column.
@@ -4308,6 +4735,500 @@ function renderHeatmap(spec, rows) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+
+// ===========================================================================
+// strip_plot: a dot strip plot. One row per group on one shared linear value
+// axis and one dot per unit inside the group - "how spread out is each group,
+// and where are the extremes?". The FT Visual Vocabulary files it under
+// Distribution and Datawrapper draws its range/strip plots the same way. The
+// form is generic: groups, units and values are named by role
+// (category_field / label_field / value_field), never by topic.
+//
+// Text the chart prints: the group names (row labels), the axis ticks, the
+// median key, and at most STRIP_MAX_LABEL_EXTREMES "name value" labels whose
+// value is the unit's own value_field value through fmtSpec. The per-group
+// median (and the jitter offset) are derived, so they are drawn as marks only
+// and never printed.
+//
+// Everything below is deterministic: jitter offsets come from a sha256 of the
+// unit's label and row index, the beeswarm is a greedy dodge, and the extreme
+// labels are placed by a fixed candidate search - no Math.random anywhere.
+// The label search measures text with the same width tables the render-QA
+// geometry check uses (imported, not copied), so a label it accepts is one
+// that check accepts too.
+// ===========================================================================
+const STRIP_GROUP_ORDERS = ["median_desc", "median_asc", "data"];
+const STRIP_POINT_LAYOUTS = ["jitter", "beeswarm"]; // point_layout: "beeswarm" is the default, "jitter" the opt-in
+const STRIP_MAX_LABEL_EXTREMES = 6;
+const STRIP_DEFAULT_LABEL_EXTREMES = 4;
+const STRIP_MAX_GROUPS = 40;
+const STRIP_WARN_GROUPS = 30;
+const STRIP_MAX_POINTS = 600;
+const STRIP_DOT_RADIUS = 3;
+const STRIP_DOT_OPACITY = 0.5;
+const STRIP_FONT_SIZE = 12;
+const STRIP_LABEL_WEIGHT = 600;
+// Row band: 480px of rows shared by the groups, never thinner than 17px (a
+// 35-row chart is 17px per row) and never fatter than 28px, so a chart with
+// more rows grows taller instead of squeezing its rows.
+const STRIP_BAND_TARGET = 480;
+const STRIP_MIN_BAND = 17;
+const STRIP_MAX_BAND = 28;
+const STRIP_MAX_JITTER = 9;
+const STRIP_TICK_TARGET = 6;
+const STRIP_MIN_PLOT_WIDTH = 360;
+// Extreme-label search: the label sits STRIP_LABEL_GAP px from the dot's edge
+// (no leader) or, when that spot is taken, further out along one of
+// STRIP_LABEL_TURNS directions in STRIP_LABEL_STEP px steps, with a short
+// leader once it no longer touches the dot.
+const STRIP_LABEL_GAP = 4;
+const STRIP_LABEL_STEP = 6;
+const STRIP_LABEL_STEPS = 24;
+const STRIP_LABEL_TURNS = 24;
+// Extra px reserved right of a high label so rounding never pushes it past the limit.
+const STRIP_LABEL_SLACK = 3;
+// Label layout search: candidates tried per label at each level, and the total
+// number of placements it may try before settling for the first-choice layout.
+const STRIP_SEARCH_BREADTH = 10;
+const STRIP_SEARCH_BUDGET = 20000;
+// Same literal as WIDE_CHAR_RE in render_qa_geometry.mjs (not exported there):
+// CJK, kana, hangul and full-width forms all measure one em wide.
+const STRIP_WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
+// render_qa_geometry.mjs FALLBACK_LATIN_WIDTH (not exported there): the width
+// it assumes for a character missing from both advance-width tables.
+const STRIP_FALLBACK_LATIN_WIDTH = 1.02;
+
+// Lint for the strip_plot-only rules. The generic rules (non-finite or missing
+// value, unknown fields, ...) stay in lintVizSpec; the field-value rules
+// (label_extremes, group_order, ...) are validateVizSpec errors, which
+// lintVizSpec already turns into blockers.
+function lintStripPlotSpec(spec, rows) {
+  const blockers = [];
+  const warnings = [];
+  const list = Array.isArray(rows) ? rows : [];
+  const groupCount = new Set(list.map((row) => String(row?.[spec.category_field] ?? "")).filter(Boolean)).size;
+  if (groupCount > STRIP_MAX_GROUPS) blockers.push(`strip_plot has ${groupCount} groups; maximum is ${STRIP_MAX_GROUPS}`);
+  else if (groupCount > STRIP_WARN_GROUPS) warnings.push(`strip_plot has ${groupCount} groups; more than ${STRIP_WARN_GROUPS} rows are hard to read`);
+  if (list.length > STRIP_MAX_POINTS) blockers.push(`strip_plot has ${list.length} points; maximum is ${STRIP_MAX_POINTS}`);
+  const extremes = spec.label_extremes ?? STRIP_DEFAULT_LABEL_EXTREMES;
+  if (Number.isInteger(extremes) && extremes > 0) {
+    if (!spec.label_field) warnings.push("strip_plot label_extremes is above 0 but no label_field is set, so no extreme labels are drawn");
+    else if (!fieldExists(list, spec.label_field)) warnings.push(`strip_plot label_field '${spec.label_field}' is absent from the rows, so no extreme labels are drawn`);
+  }
+  if (annotations(spec).some((annotation) => annotation?.type === "point")) warnings.push("strip_plot does not draw point annotations; they are ignored");
+  return { blockers, warnings };
+}
+
+// Text size exactly as render_qa_geometry.mjs estimates it (same tables, same
+// 1.05 safety margin, same bold switch), so label placement and the QA gate
+// agree on every box.
+function stripTextWidth(text, bold) {
+  const table = bold ? QA_LATIN_BOLD_ADVANCE_WIDTHS : QA_LATIN_ADVANCE_WIDTHS;
+  let units = 0;
+  for (const ch of Array.from(String(text))) {
+    if (/\s/.test(ch)) units += QA_TEXT_WIDTH_FACTORS.space;
+    else if (STRIP_WIDE_CHAR_RE.test(ch)) units += QA_TEXT_WIDTH_FACTORS.cjk;
+    else units += table[ch] ?? STRIP_FALLBACK_LATIN_WIDTH;
+  }
+  return units * STRIP_FONT_SIZE * QA_TEXT_WIDTH_FACTORS.safetyMargin;
+}
+
+function stripTextBox(text, x, baseline, anchor, bold) {
+  const width = stripTextWidth(text, bold);
+  const x0 = anchor === "end" ? x - width : anchor === "middle" ? x - width / 2 : x;
+  return { x0, x1: x0 + width, y0: baseline - STRIP_FONT_SIZE * QA_ASCENT_RATIO, y1: baseline + STRIP_FONT_SIZE * QA_DESCENT_RATIO };
+}
+
+function stripBoxesOverlap(a, b, pad = 0) {
+  return a.x0 - pad < b.x1 && a.x1 + pad > b.x0 && a.y0 - pad < b.y1 && a.y1 + pad > b.y0;
+}
+
+function stripCircleHitsBox(circle, box, pad = 0) {
+  const nearestX = Math.max(box.x0 - pad, Math.min(circle.x, box.x1 + pad));
+  const nearestY = Math.max(box.y0 - pad, Math.min(circle.y, box.y1 + pad));
+  return Math.hypot(circle.x - nearestX, circle.y - nearestY) <= circle.r;
+}
+
+// Liang-Barsky clip of the segment a-b against the box grown by pad.
+function stripSegmentHitsBox(a, b, box, pad = 0) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  let t0 = 0, t1 = 1;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0;
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    return true;
+  };
+  return clip(-dx, a.x - (box.x0 - pad)) && clip(dx, box.x1 + pad - a.x) && clip(-dy, a.y - (box.y0 - pad)) && clip(dy, box.y1 + pad - a.y);
+}
+
+function stripSegmentsCross(a1, a2, b1, b2) {
+  const side = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = side(b1, b2, a1), d2 = side(b1, b2, a2), d3 = side(a1, a2, b1), d4 = side(a1, a2, b2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+function stripPointSegmentDistance(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// The median of an ascending, non-empty list. It orders the rows and places
+// the median tick; it is never printed.
+function stripMedian(sorted) {
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Value axis: starts at 0 when every value is >= 0 and the smallest is below a
+// quarter of the largest (a zero baseline then costs the dots no resolution);
+// otherwise at a rounded value strictly below the smallest. The top end is a
+// rounded value strictly above the largest. Ticks are integer multiples of one
+// {1,2,5}x10^k step, so none is float noise like 0.30000000000000004.
+function stripAxis(values) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const fromZero = min >= 0 && min < max / 4;
+  const span = fromZero ? max : (max > min ? max - min : Math.max(Math.abs(max), 1));
+  const step = niceAxisStep(span / STRIP_TICK_TARGET);
+  let first = fromZero ? 0 : Math.floor(min / step);
+  if (!fromZero && first * step >= min) first -= 1;
+  let last = Math.ceil(max / step);
+  if (last * step <= max) last += 1;
+  const ticks = [];
+  for (let k = first; k <= last; k++) ticks.push(Number((k * step).toPrecision(12)));
+  return { lo: ticks[0], hi: ticks[ticks.length - 1], step, ticks };
+}
+
+// A reproducible number in [0, 1) from a seed string (jitter offsets).
+function stripHashUnit(seed) {
+  return createHash("sha256").update(seed).digest().readUInt32BE(0) / 4294967296;
+}
+
+// Greedy beeswarm dodge inside one row band. Dots are placed left to right;
+// each takes the lane (vertical offset, whole pixels, centre lane first and
+// alternating sides) nearest the row centre where it clears every dot already
+// placed, or the lane with the most clearance when the band is too tight.
+function stripBeeswarmOffsets(xs, amp, minDistance) {
+  const order = xs.map((_x, i) => i).sort((a, b) => xs[a] - xs[b] || a - b);
+  const lanes = [0];
+  for (let k = 1; k <= Math.floor(amp); k++) lanes.push(k, -k);
+  const placed = [];
+  const offsets = new Array(xs.length).fill(0);
+  order.forEach((i, rank) => {
+    let chosen = 0, chosenGap = -1;
+    for (const lane of lanes) {
+      const y = rank % 2 === 1 ? -lane : lane;
+      let gap = Infinity;
+      for (const other of placed) gap = Math.min(gap, Math.hypot(other.x - xs[i], other.y - y));
+      if (gap >= minDistance) { chosen = y; chosenGap = gap; break; }
+      if (gap > chosenGap) { chosen = y; chosenGap = gap; }
+    }
+    offsets[i] = chosen;
+    placed.push({ x: xs[i], y: chosen });
+  });
+  return offsets;
+}
+
+// Every position an extreme label may take, cheapest first. The label is set
+// at distance d from its dot's centre along one of STRIP_LABEL_TURNS evenly
+// spaced directions, reading rightwards when the direction points right and
+// leftwards otherwise, and always keeps STRIP_LABEL_GAP px clear of its own
+// dot. Cost grows with the distance and with the turn away from "straight to
+// the right"; a label that does not touch its dot gets a leader that stops 2px
+// before the text.
+function stripLabelCandidates(label) {
+  const dot = label.dot;
+  const bold = STRIP_LABEL_WEIGHT >= QA_BOLD_WEIGHT_THRESHOLD;
+  const found = [];
+  const round2 = (value) => Math.round(value * 100) / 100;
+  for (let s = 0; s < STRIP_LABEL_STEPS; s++) {
+    const d = STRIP_DOT_RADIUS + STRIP_LABEL_GAP + s * STRIP_LABEL_STEP;
+    for (let k = 0; k < STRIP_LABEL_TURNS; k++) {
+      const turn = (k < STRIP_LABEL_TURNS / 2 ? k : k - STRIP_LABEL_TURNS) * (360 / STRIP_LABEL_TURNS);
+      const rad = (turn * Math.PI) / 180;
+      const ux = Math.round(Math.cos(rad) * 1e4) / 1e4;
+      const uy = Math.round(Math.sin(rad) * 1e4) / 1e4;
+      const anchor = ux >= -0.01 ? "start" : "end";
+      const tx = round2(dot.x + d * ux);
+      const baseline = round2(dot.y + d * uy + 4);
+      const box = stripTextBox(label.text, tx, baseline, anchor, bold);
+      const nearX = Math.max(box.x0, Math.min(dot.x, box.x1));
+      const nearY = Math.max(box.y0, Math.min(dot.y, box.y1));
+      const near = Math.hypot(nearX - dot.x, nearY - dot.y);
+      if (near < STRIP_DOT_RADIUS + STRIP_LABEL_GAP - 0.01) continue;
+      const touching = near <= STRIP_DOT_RADIUS + STRIP_LABEL_GAP + 1;
+      let leader = null;
+      if (!touching) {
+        const end = { x: anchor === "start" ? box.x0 - 2 : box.x1 + 2, y: baseline - 4 };
+        const length = Math.hypot(end.x - dot.x, end.y - dot.y);
+        const f = (STRIP_DOT_RADIUS + 0.8) / length;
+        leader = { a: { x: dot.x + (end.x - dot.x) * f, y: dot.y + (end.y - dot.y) * f }, b: end };
+      }
+      found.push({ tx, baseline, anchor, box, leader, cost: d + 0.2 * Math.abs(turn) + (touching ? 0 : 6) + (anchor === "end" ? 1 : 0) });
+    }
+  }
+  return found.sort((a, b) => a.cost - b.cost);
+}
+
+// Constraints that depend only on what is already on the page (dots, fixed
+// text, median ticks, the label bounds). strict: a leader may not pass within a
+// dot's radius (+1.5px) of any other dot or cross a median tick; the relaxed
+// test drops only those two rules. A label never overlaps a dot, other text or
+// a median tick, and a leader never crosses text, in either test.
+function stripCandidateFitsFixed(candidate, label, ctx, strict) {
+  const { box, leader } = candidate;
+  const b = ctx.bounds;
+  if (box.x0 < b.x0 || box.x1 > b.x1 || box.y0 < b.y0 || box.y1 > b.y1) return false;
+  for (const circle of ctx.circles) if (stripCircleHitsBox(circle, box, 1.5)) return false;
+  for (const other of ctx.boxes) if (stripBoxesOverlap(box, other, 2)) return false;
+  for (const tick of ctx.segments) if (stripSegmentHitsBox(tick.a, tick.b, box, 1.5)) return false;
+  if (!leader) return true;
+  if (stripSegmentHitsBox(leader.a, leader.b, box, 1.5)) return false;
+  for (const other of ctx.boxes) if (stripSegmentHitsBox(leader.a, leader.b, other, 1.5)) return false;
+  if (strict) {
+    for (const circle of ctx.circles) {
+      if (circle === label.dot) continue;
+      if (stripPointSegmentDistance(circle, leader.a, leader.b) < circle.r + 1.5) return false;
+    }
+    for (const tick of ctx.segments) if (stripSegmentsCross(leader.a, leader.b, tick.a, tick.b)) return false;
+  }
+  return true;
+}
+
+// Constraints against the labels already placed: no overlapping text, no label
+// on another label's leader, no leader across another label's text or leader.
+function stripCandidateFitsPlaced(candidate, placed) {
+  const { box, leader } = candidate;
+  for (const other of placed) {
+    if (stripBoxesOverlap(box, other.box, 2)) return false;
+    if (other.leader && stripSegmentHitsBox(other.leader.a, other.leader.b, box, 1.5)) return false;
+    if (!leader) continue;
+    if (stripSegmentHitsBox(leader.a, leader.b, other.box, 1.5)) return false;
+    if (other.leader && stripSegmentsCross(leader.a, leader.b, other.leader.a, other.leader.b)) return false;
+  }
+  return true;
+}
+
+// Places the labels (highest values first, then lowest). Each label has its
+// candidates in preference order - strict ones before relaxed ones, cheapest
+// first. The labels are placed one after another at their first candidate that
+// clears the labels already placed; when a later label is left with no
+// position, the search backs up and gives an earlier label its next candidate
+// (depth first, STRIP_SEARCH_BREADTH candidates per label, STRIP_SEARCH_BUDGET
+// steps in all, so the layout is always the same for the same input). Whenever
+// the first choices already work the result is exactly that first-choice
+// layout. A label that still has no position is left out rather than drawn over
+// something.
+function stripPlaceLabels(labels, ctx) {
+  const options = labels.map((label) => {
+    const strict = [];
+    const relaxed = [];
+    for (const candidate of stripLabelCandidates(label)) {
+      if (!stripCandidateFitsFixed(candidate, label, ctx, false)) continue;
+      (stripCandidateFitsFixed(candidate, label, ctx, true) ? strict : relaxed).push(candidate);
+    }
+    return [...strict, ...relaxed];
+  });
+  const omitted = labels.filter((_label, i) => options[i].length === 0);
+  const todo = labels.map((_label, i) => i).filter((i) => options[i].length > 0);
+  const picks = [];
+  let budget = STRIP_SEARCH_BUDGET;
+  const search = (depth) => {
+    if (depth === todo.length) return true;
+    let tried = 0;
+    for (const candidate of options[todo[depth]]) {
+      if (budget <= 0 || tried >= STRIP_SEARCH_BREADTH) return false;
+      if (!stripCandidateFitsPlaced(candidate, picks)) continue;
+      tried++;
+      budget--;
+      picks.push(candidate);
+      if (search(depth + 1)) return true;
+      picks.pop();
+    }
+    return false;
+  };
+  if (search(0)) return { placed: picks.map((candidate, k) => ({ label: labels[todo[k]], ...candidate })), omitted };
+  const placed = [];
+  for (const i of todo) {
+    const candidate = options[i].find((option) => stripCandidateFitsPlaced(option, placed));
+    if (candidate) placed.push({ label: labels[i], ...candidate });
+    else omitted.push(labels[i]);
+  }
+  return { placed, omitted };
+}
+
+function renderStripPlot(spec, rows) {
+  const lang = vizLang(spec);
+  const strings = VIZ_STRINGS[lang];
+  const categoryField = spec.category_field;
+  const valueField = spec.value_field;
+  const labelField = spec.label_field && fieldExists(rows, spec.label_field) ? spec.label_field : null;
+  const order = STRIP_GROUP_ORDERS.includes(spec.group_order) ? spec.group_order : "median_desc";
+  const layout = spec.point_layout === "jitter" ? "jitter" : "beeswarm"; // beeswarm unless jitter is asked for
+  const showMedian = spec.show_median !== false;
+  const extremeCount = Number.isInteger(spec.label_extremes) ? spec.label_extremes : STRIP_DEFAULT_LABEL_EXTREMES;
+  const highlight = new Set((Array.isArray(spec.highlight_values) ? spec.highlight_values : []).map(String));
+  const q = (value) => Math.round(value * 100) / 100;
+  const r = STRIP_DOT_RADIUS;
+
+  // Units, then groups (rows). A unit without a group name or a finite value
+  // is not drawn (lintVizSpec blocks a non-finite value before this point).
+  const points = [];
+  rows.forEach((row, index) => {
+    const group = String(row[categoryField] ?? "");
+    const value = n(row[valueField]);
+    if (!group || value === null) return;
+    points.push({ index, group, value, name: labelField ? String(row[labelField] ?? "").trim() : "" });
+  });
+  const byGroup = new Map();
+  for (const point of points) {
+    if (!byGroup.has(point.group)) byGroup.set(point.group, { key: point.group, first: byGroup.size, pts: [] });
+    byGroup.get(point.group).pts.push(point);
+  }
+  const groups = [...byGroup.values()];
+  for (const group of groups) group.median = stripMedian(group.pts.map((point) => point.value).sort((a, b) => a - b));
+  if (order !== "data") {
+    const sign = order === "median_desc" ? -1 : 1;
+    groups.sort((a, b) => sign * (a.median - b.median) || a.first - b.first);
+  }
+  groups.forEach((group, row) => {
+    group.row = row;
+    group.display = String(resolveEconomyDisplayName(group.key, spec.category_names, lang));
+    for (const point of group.pts) point.row = row;
+  });
+  const rowCount = groups.length;
+
+  // Extreme units of the whole chart: the ceil(n/2) highest and the floor(n/2)
+  // lowest, never the same unit twice. Labels read "name value"; in house style
+  // only the top-most label carries the unit (the "unit once" convention).
+  let highs = [];
+  let lows = [];
+  if (labelField && extremeCount > 0) {
+    highs = [...points].sort((a, b) => b.value - a.value || a.index - b.index).slice(0, Math.ceil(extremeCount / 2));
+    const taken = new Set(highs);
+    lows = [...points].sort((a, b) => a.value - b.value || a.index - b.index).filter((point) => !taken.has(point)).slice(0, Math.floor(extremeCount / 2));
+  }
+  const labeled = [...highs.map((point) => ({ point, high: true })), ...lows.map((point) => ({ point, high: false }))];
+  const labelDecimals = resolveChartDecimals(spec, labeled.map((item) => item.point.value));
+  const unitOwner = labeled.reduce((best, item) => (!best || item.point.row < best.point.row ? item : best), null);
+  for (const item of labeled) {
+    const valueText = fmtSpec(spec, item.point.value, HOUSE_STYLE_ACTIVE && item !== unitOwner ? "" : spec.unit, labelDecimals);
+    item.text = item.point.name ? `${item.point.name} ${valueText}` : valueText;
+    item.width = stripTextWidth(item.text, STRIP_LABEL_WEIGHT >= QA_BOLD_WEIGHT_THRESHOLD);
+  }
+
+  // Frame and plot box. The row-label column is as wide as the widest group
+  // name; the right edge leaves room for the high-side labels, which sit just
+  // right of their dots.
+  const axis = stripAxis(points.length ? points.map((point) => point.value) : [0, 1]);
+  const catX = 54 + Math.max(24, Math.ceil(Math.max(0, ...groups.map((group) => stripTextWidth(group.display, false)))));
+  const left = catX + 20;
+  const band = clamp(Math.round(STRIP_BAND_TARGET / Math.max(rowCount, 1)), STRIP_MIN_BAND, STRIP_MAX_BAND);
+  const amp = Math.min(STRIP_MAX_JITTER, (band - 2 * r - 1.5) / 2);
+  const keyHeight = showMedian && rowCount ? 26 : 8;
+  const f = frame(spec, keyHeight + rowCount * band + 34, 300);
+  const top = f.bodyTop + keyHeight;
+  const bottom = top + rowCount * band;
+  const rowCenters = groups.map((_group, i) => top + band * (i + 0.5));
+  const labelLimit = LAYOUT_W - 54;
+  let right = labelLimit;
+  for (const item of labeled) {
+    if (!item.high) continue;
+    const fraction = (item.point.value - axis.lo) / (axis.hi - axis.lo);
+    if (fraction > 0) right = Math.min(right, left + (labelLimit - (r + STRIP_LABEL_GAP + item.width + STRIP_LABEL_SLACK) - left) / fraction);
+  }
+  right = Math.min(labelLimit, Math.max(right, left + STRIP_MIN_PLOT_WIDTH));
+  const scale = (value) => left + ((value - axis.lo) / (axis.hi - axis.lo)) * (right - left);
+
+  // Dot positions: x from the value, y offset inside the row band by the
+  // chosen layout. A group with a single unit sits on its row's centre line.
+  for (const group of groups) {
+    const xs = group.pts.map((point) => scale(point.value));
+    const offsets = group.pts.length < 2
+      ? group.pts.map(() => 0)
+      : layout === "beeswarm"
+        ? stripBeeswarmOffsets(xs, amp, 2 * r + 0.4)
+        : group.pts.map((point) => (stripHashUnit(`${point.name || group.key}|${point.index}`) * 2 - 1) * amp);
+    group.pts.forEach((point, k) => {
+      point.dot = { x: q(xs[k]), y: q(rowCenters[group.row] + offsets[k]), r };
+    });
+  }
+
+  const parts = f.parts;
+  const fixedBoxes = [];
+  // Row guides and vertical gridlines come first so every mark covers them.
+  for (const group of groups) {
+    const y = q(rowCenters[group.row]);
+    parts.push(`<line x1="${q(left)}" y1="${y}" x2="${q(right)}" y2="${y}" stroke="${PALETTE.faint}" stroke-width="1"/>`);
+  }
+  axis.ticks.forEach((tick) => {
+    const x = q(scale(tick));
+    parts.push(`<line x1="${x}" y1="${q(top)}" x2="${x}" y2="${q(bottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  });
+  if (axis.lo === 0) {
+    parts.push(`<line data-role="zero-line" x1="${q(left)}" y1="${q(top)}" x2="${q(left)}" y2="${q(bottom)}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
+  }
+  axis.ticks.forEach((tick, i) => {
+    const x = q(scale(tick));
+    const text = tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, axis.ticks.length));
+    parts.push(`<text x="${x}" y="${q(bottom + 21)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+    fixedBoxes.push(stripTextBox(text, x, q(bottom + 21), "middle", false));
+  });
+  for (const group of groups) {
+    const y = q(rowCenters[group.row] + 4);
+    parts.push(`<text x="${catX}" y="${y}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(group.display)}</text>`);
+    fixedBoxes.push(stripTextBox(group.display, catX, y, "end", false));
+  }
+  if (showMedian && rowCount) {
+    const y = q(f.bodyTop + 12);
+    parts.push(`<text data-role="strip-median-key" x="${q(left)}" y="${y}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(strings.stripMedianKey)}</text>`);
+    fixedBoxes.push(stripTextBox(strings.stripMedianKey, q(left), y, "start", false));
+  }
+
+  // Dots: every ordinary unit in the house data colour at half opacity (so
+  // overlap darkens), highlighted units in the accent on top of them.
+  const isHighlighted = (point) => highlight.has(point.group) || (point.name !== "" && highlight.has(point.name));
+  const dotMarkup = (point, accent) => `<circle data-role="data-point" cx="${point.dot.x}" cy="${point.dot.y}" r="${r}" fill="${accent ? PALETTE.accent : PALETTE.accent2}"${accent ? "" : ` opacity="${STRIP_DOT_OPACITY}"`}/>`;
+  for (const point of points) if (!isHighlighted(point)) parts.push(dotMarkup(point, false));
+  for (const point of points) if (isHighlighted(point)) parts.push(dotMarkup(point, true));
+
+  // Median ticks: a mark only (no number); the key above the plot names it.
+  const medianTicks = [];
+  if (showMedian) {
+    const half = Math.min(10, band / 2 - 1.5);
+    for (const group of groups) {
+      const x = q(scale(group.median));
+      const cy = rowCenters[group.row];
+      parts.push(`<line data-role="data-median" x1="${x}" y1="${q(cy - half)}" x2="${x}" y2="${q(cy + half)}" stroke="${PALETTE.ink}" stroke-width="1.5"/>`);
+      medianTicks.push({ a: { x, y: cy - half }, b: { x, y: cy + half } });
+    }
+  }
+
+  // Extreme labels, highest first then lowest first, each clear of every dot,
+  // text, median tick and other leader.
+  const placement = stripPlaceLabels(
+    labeled.map((item) => ({ text: item.text, dot: item.point.dot })),
+    {
+      circles: points.map((point) => point.dot),
+      boxes: fixedBoxes,
+      segments: medianTicks,
+      bounds: { x0: left + 2, x1: labelLimit, y0: top - 1, y1: bottom + 1 },
+    },
+  );
+  for (const item of placement.placed) {
+    if (item.leader) {
+      parts.push(`<line data-role="direct-label-leader" x1="${q(item.leader.a.x)}" y1="${q(item.leader.a.y)}" x2="${q(item.leader.b.x)}" y2="${q(item.leader.b.y)}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+    }
+    parts.push(`<text data-role="direct-label" x="${q(item.tx)}" y="${q(item.baseline)}" text-anchor="${item.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${STRIP_LABEL_WEIGHT}" fill="${PALETTE.ink}">${esc(item.label.text)}</text>`);
+  }
+  addFooter(parts, spec, f.footerTop);
+  parts.push("</svg>");
+  return parts.join("\n") + "\n";
+}
 
 function mobileFrame(spec, bodyHeight) {
   const width = 640;
@@ -5849,6 +6770,333 @@ function renderTreemap(spec, rows, mobile = false) {
   (mobile ? addMobileFooter : addFooter)(f.parts, spec, f.footerTop);
   f.parts.push("</svg>");
   return f.parts.join("\n") + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// stacked_bar_100: composition across many entities. Each entity gets one
+// horizontal bar running 0-100%, split into its segments (for example
+// employment by sector in each country), so the reader compares how the mix
+// differs from bar to bar. The bars are ordered by one named segment and that
+// segment is drawn against the 0 baseline (FT Visual Vocabulary lists the
+// form under part-to-whole; Datawrapper Academy: sort by one segment and keep
+// it on the baseline).
+//
+// Every number drawn is a value_field value read from the rows and rounded
+// only with fmtSpec and the spec's decimals (the axis ticks aside). A
+// segment's width is its value divided by its own row's sum, so a bar always
+// ends exactly at 100% and no value is ever adjusted to make a row add up;
+// lintVizSpec refuses rows that do not already sum to 100 +/- 1 instead.
+// ---------------------------------------------------------------------------
+import { LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS } from "./render_qa_geometry.mjs";
+
+const STACKED_MAX_BARS = 25;
+const STACKED_WARN_BARS = 20;
+const STACKED_MAX_SEGMENTS = 5;
+const STACKED_SUM_TOLERANCE = 1;
+const STACKED_SEGMENT_VALUES = ["in_bar", "highlight_column"]; // segment_values: "highlight_column" is the default, "in_bar" the opt-in
+const STACKED_LABEL_PAD = 4; // px between an in-bar label and each edge of its segment
+const STACKED_FALLBACK_ADVANCE = 1.02; // render QA's width for a glyph outside its tables (not exported there)
+
+// Width of one line of text, estimated the way render QA measures it (same
+// per-glyph tables and 1.05 safety margin), so "this label fits inside its
+// segment" here and "this text overflows or overlaps" there cannot disagree.
+function stackedTextWidth(text, fontSize = 12, bold = false) {
+  const table = bold ? LATIN_BOLD_ADVANCE_WIDTHS : LATIN_ADVANCE_WIDTHS;
+  let units = 0;
+  for (const ch of Array.from(String(text ?? ""))) {
+    if (/\s/.test(ch)) units += TEXT_WIDTH_FACTORS.space;
+    else if (isWideChar(ch)) units += TEXT_WIDTH_FACTORS.cjk;
+    else units += table[ch] ?? STACKED_FALLBACK_ADVANCE;
+  }
+  return units * fontSize * TEXT_WIDTH_FACTORS.safetyMargin;
+}
+
+// Coordinates are written to two decimals; adjacent segments share the one
+// rounded boundary, so neighbours never overlap or leave a hairline gap.
+function stackedPx(value) {
+  return Math.round(value * 100) / 100;
+}
+
+// The rows read once into entities (bars, in first-appearance order) x
+// segments. cells maps a segment to that entity's value (null when the value
+// is not numeric). Shared by the renderer and by lintVizSpec so both see the
+// same bars, segments and repeats.
+function stackedBarModel(spec, rows) {
+  const entities = [];
+  const byKey = new Map();
+  const segments = [];
+  const seenSegment = new Set();
+  let duplicates = 0;
+  let blank = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = String(row?.[spec.category_field] ?? "");
+    const segment = String(row?.[spec.series_field] ?? "");
+    if (key.trim() === "" || segment.trim() === "") blank += 1;
+    if (!seenSegment.has(segment)) { seenSegment.add(segment); segments.push(segment); }
+    let entity = byKey.get(key);
+    if (!entity) { entity = { key, row, cells: new Map() }; byKey.set(key, entity); entities.push(entity); }
+    if (entity.cells.has(segment)) { duplicates += 1; continue; }
+    entity.cells.set(segment, n(row?.[spec.value_field]));
+  }
+  return { entities, segments, duplicates, blank };
+}
+
+// Segment order, highlight and sort segment, resolved from the spec's
+// defaults: highlight_segment defaults to sort_segment, sort_segment to the
+// first segment of segment_order, and segment_order to the highlight segment
+// followed by the segments in the order they first appear. A segment the
+// spec's segment_order does not list is appended (in first-appearance order)
+// rather than dropped, so a bar can never end short of 100%.
+function stackedPlan(spec, model) {
+  const known = new Set(model.segments);
+  const named = (value) => (value === undefined || value === null || String(value).trim() === "" ? null : String(value));
+  const listed = Array.isArray(spec.segment_order) ? [...new Set(spec.segment_order.map(String))].filter((segment) => known.has(segment)) : [];
+  const highlight = named(spec.highlight_segment) ?? named(spec.sort_segment) ?? listed[0] ?? model.segments[0] ?? null;
+  let order;
+  if (listed.length) order = [...listed, ...model.segments.filter((segment) => !listed.includes(segment))];
+  else if (highlight !== null && known.has(highlight)) order = [highlight, ...model.segments.filter((segment) => segment !== highlight)];
+  else order = [...model.segments];
+  const sortSegment = named(spec.sort_segment) ?? order[0] ?? null;
+  return { order, highlight, sortSegment };
+}
+
+// Bars ordered by the sort segment's own value (a bar without that segment
+// counts as 0); "none" keeps the SQL row order. Ties keep the SQL row order.
+function stackedSortedEntities(spec, model, sortSegment) {
+  const entities = [...model.entities];
+  const mode = spec.sort === "asc" || spec.sort === "none" ? spec.sort : "desc";
+  if (mode === "none") return entities;
+  const keyOf = (entity) => entity.cells.get(sortSegment) ?? 0;
+  entities.sort((a, b) => (mode === "asc" ? keyOf(a) - keyOf(b) : keyOf(b) - keyOf(a)));
+  return entities;
+}
+
+// 0 or 1 decimals: the spec's own choice, else one decimal when any value is
+// not a whole number.
+function stackedDecimals(spec, model) {
+  if (spec.decimals === 0 || spec.decimals === 1) return spec.decimals;
+  const fractional = model.entities.some((entity) => [...entity.cells.values()].some((value) => value !== null && Math.abs(value - Math.round(value)) > 1e-9));
+  return fractional ? 1 : 0;
+}
+
+// True when some bar's values, as printed at this precision, do not add up to
+// exactly 100. The printed strings are what get summed (never the raw values),
+// and nothing is nudged so that they do.
+function stackedNeedsRoundingNote(spec, entities, decimals) {
+  const scale = 10 ** decimals;
+  return entities.some((entity) => {
+    let total = 0;
+    for (const value of entity.cells.values()) {
+      if (value !== null && value > 0) total += Math.round(Number(fmtSpec(spec, value, "", decimals)) * scale);
+    }
+    return total !== 100 * scale;
+  });
+}
+
+// One accent for the highlight segment; every other segment takes the next of
+// five distinct greys (the style's own grey steps, darkest to lightest), so
+// two adjacent segments never share a fill (render QA's indistinct-adjacent-
+// marks rule), even when a bar skips a segment. The steps are taken
+// mid / darkest / light / dark so that neighbours differ strongly in
+// lightness, which keeps the 1px gap between them easy to see.
+function stackedFills(order, highlight) {
+  const greys = [2, 0, 3, 1, 4].map((index) => WAFFLE_GREYS[index]);
+  let next = 0;
+  return new Map(order.map((segment) => [segment, segment === highlight ? PALETTE.accent : greys[next++ % greys.length]]));
+}
+
+// A name is never cut: one that is wider than its column (an entity name in
+// the label column, the highlight name over the value column) is folded onto
+// further lines (at a space when there is one past the first 40% of the line,
+// else between characters).
+function stackedFoldName(name, maxWidth, bold = false) {
+  const lines = [];
+  let rest = String(name);
+  while (stackedTextWidth(rest, 12, bold) > maxWidth) {
+    const chars = Array.from(rest);
+    let cut = chars.length;
+    while (cut > 1 && stackedTextWidth(chars.slice(0, cut).join(""), 12, bold) > maxWidth) cut -= 1;
+    const head = chars.slice(0, cut).join("");
+    const space = head.lastIndexOf(" ");
+    const at = space > head.length * 0.4 ? space : head.length;
+    lines.push(rest.slice(0, at).trimEnd());
+    rest = rest.slice(at).trimStart();
+  }
+  lines.push(rest);
+  return lines;
+}
+
+function renderStackedBar100(spec, rows) {
+  const lang = vizLang(spec);
+  const t = VIZ_STRINGS[lang];
+  const model = stackedBarModel(spec, rows);
+  const { order, highlight, sortSegment } = stackedPlan(spec, model);
+  const entities = stackedSortedEntities(spec, model, sortSegment);
+  const decimals = stackedDecimals(spec, model);
+  const valueText = (value) => fmtSpec(spec, value, "", decimals);
+  const fills = stackedFills(order, highlight);
+  // segment_values "highlight_column" (the default; "in_bar" is the opt-in): no
+  // value inside the bars; only the highlight segment's value is printed,
+  // right-aligned in a column just past the 100% end.
+  const columnMode = spec.segment_values !== "in_bar" && highlight !== null && order.includes(highlight);
+  const accentText = textSafeColor(PALETTE.accent);
+
+  const left0 = 54, right0 = LAYOUT_W - 54;
+  const roomy = entities.length <= 12;
+  const barH = roomy ? 24 : 18;
+  const nameLines = entities.map((entity) => stackedFoldName(String(resolveEconomyDisplayName(entity.row[spec.category_field], spec.category_names, lang)), Math.floor(LAYOUT_W * 0.3)));
+  const nameLineCount = Math.max(1, ...nameLines.map((lines) => lines.length));
+  const pitch = Math.max(roomy ? 36 : 26, nameLineCount > 1 ? 14 * nameLineCount + 6 : 0);
+  const nameColW = Math.ceil(Math.min(Math.max(0, ...nameLines.flat().map((line) => stackedTextWidth(line))), LAYOUT_W * 0.4));
+  const plotLeft = left0 + nameColW + 14;
+  const columnTexts = columnMode ? entities.map((entity) => { const value = entity.cells.get(highlight); return value === undefined || value === null ? null : `${valueText(value)}%`; }) : [];
+  const columnW = columnMode ? Math.ceil(Math.min(Math.max(stackedTextWidth(highlight, 12, true), ...columnTexts.filter((text) => text !== null).map((text) => stackedTextWidth(text))), LAYOUT_W * 0.2)) : 0;
+  const plotRight = columnMode ? right0 - columnW - 14 : right0 - 16;
+  const plotW = Math.max(1, plotRight - plotLeft);
+  // The column header is the highlight name; a name wider than the column
+  // folds onto further lines, and the rows below it move down to make room.
+  const headerLines = columnMode ? stackedFoldName(highlight, columnW, true) : [];
+  const headerExtra = Math.max(0, headerLines.length - 1) * 14;
+
+  // Each bar's segments, left to right in segment order. A segment's width is
+  // its value over this bar's own sum; the last segment ends exactly at the
+  // 100% mark.
+  const pieces = entities.map((entity) => {
+    const present = order.filter((segment) => (entity.cells.get(segment) ?? 0) > 0);
+    const total = present.reduce((sum, segment) => sum + entity.cells.get(segment), 0);
+    let running = 0;
+    return present.map((segment, index) => {
+      const value = entity.cells.get(segment);
+      const x0 = plotLeft + (plotW * running) / total;
+      running += value;
+      const x1 = index === present.length - 1 ? plotRight : plotLeft + (plotW * running) / total;
+      return { segment, value, x0: stackedPx(x0), x1: stackedPx(x1) };
+    });
+  });
+
+  // Segment names go once, centred on their own segment directly above the
+  // first bar. If any name does not fit its segment (or direct labels are
+  // switched off), one plain key line above the chart names them instead.
+  const firstPieces = pieces[0] ?? [];
+  const namesFit = spec.direct_labels !== false && firstPieces.length > 0 && order.every((segment) => {
+    const piece = firstPieces.find((candidate) => candidate.segment === segment);
+    return piece !== undefined && stackedTextWidth(segment, 12, segment === highlight) + 2 * STACKED_LABEL_PAD <= piece.x1 - piece.x0;
+  });
+  const keyLines = [];
+  if (!namesFit && order.length) {
+    const maxKeyW = (columnMode ? plotRight : right0) - plotLeft;
+    let line = [], cursor = 0;
+    for (const segment of order) {
+      const width = 16 + stackedTextWidth(segment, 12, segment === highlight);
+      if (line.length && cursor + 20 + width > maxKeyW) { keyLines.push(line); line = []; cursor = 0; }
+      const x = line.length ? cursor + 20 : 0;
+      line.push({ segment, x, width });
+      cursor = x + width;
+    }
+    if (line.length) keyLines.push(line);
+  }
+  // The rounding note is about printed figures that a reader could add up, so
+  // it is only drawn when a bar prints several of them (in-bar values); the
+  // single highlight column prints one figure per bar, with nothing to add.
+  const needNote = !columnMode && stackedNeedsRoundingNote(spec, entities, decimals);
+
+  // Vertical layout, relative to the top of the chart body: key line(s), the
+  // axis row, the segment-name row, then the bars and the rounding note.
+  let rel = 0;
+  const keyRel = [];
+  if (keyLines.length) { keyLines.forEach((_, k) => keyRel.push(rel + 12 + k * 18)); rel += keyLines.length * 18 + 8 + headerExtra; }
+  const axisRel = rel + 12;
+  rel = axisRel + 10;
+  let namesRel = null;
+  if (namesFit) { namesRel = rel + 12; rel = namesRel + 9 + headerExtra; } else rel += 2;
+  const barsRel = rel;
+  const barsEndRel = barsRel + Math.max(0, entities.length - 1) * pitch + barH;
+  const gridEndRel = barsEndRel + 6;
+  const noteRel = barsEndRel + 26;
+  const bodyHeight = (needNote ? noteRel + 6 : gridEndRel + 6) + 4;
+
+  // A short chart (a handful of bars) keeps the canvas its content needs
+  // instead of the 420px default, which would leave a blank band under the
+  // bars; 300 is the same floor renderHorizontal's tight layout uses.
+  const f = frame(spec, bodyHeight, 300);
+  const o = f.bodyTop + 2;
+  const parts = f.parts;
+  const ticks = [0, 25, 50, 75, 100];
+  const tickX = (tick) => stackedPx(plotLeft + (plotW * tick) / 100);
+
+  // Gridlines first, so every bar and label paints over them.
+  for (const tick of ticks) {
+    parts.push(`<line data-role="grid-line" x1="${tickX(tick)}" y1="${o + axisRel + 5}" x2="${tickX(tick)}" y2="${o + gridEndRel}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  }
+  // A paper-coloured plate behind each segment name keeps a gridline from
+  // running through the text.
+  if (namesFit) {
+    for (const piece of firstPieces) {
+      const width = stackedTextWidth(piece.segment, 12, piece.segment === highlight);
+      parts.push(`<rect x="${stackedPx((piece.x0 + piece.x1) / 2 - width / 2 - 3)}" y="${o + namesRel - 11}" width="${stackedPx(width + 6)}" height="15" fill="${PAPER}"/>`);
+    }
+  }
+  ticks.forEach((tick, i) => {
+    parts.push(`<text x="${tickX(tick)}" y="${o + axisRel}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${tick}${axisTickUnit("%", i, ticks.length)}`)}</text>`);
+  });
+  if (namesFit) {
+    for (const piece of firstPieces) {
+      const isHighlight = piece.segment === highlight;
+      parts.push(`<text data-role="stacked-segment-name" x="${stackedPx((piece.x0 + piece.x1) / 2)}" y="${o + namesRel}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="${isHighlight ? 700 : 400}" fill="${isHighlight ? accentText : PALETTE.ink}">${esc(piece.segment)}</text>`);
+    }
+  } else {
+    keyLines.forEach((line, k) => {
+      for (const item of line) {
+        const isHighlight = item.segment === highlight;
+        parts.push(`<rect data-role="legend-swatch" x="${stackedPx(plotLeft + item.x)}" y="${o + keyRel[k] - 9}" width="10" height="10" fill="${fills.get(item.segment)}"/>`);
+        parts.push(`<text data-role="stacked-key" x="${stackedPx(plotLeft + item.x + 16)}" y="${o + keyRel[k]}" font-family="${FONT_SANS}" font-size="12" font-weight="${isHighlight ? 700 : 400}" fill="${isHighlight ? accentText : PALETTE.ink}">${esc(item.segment)}</text>`);
+      }
+    });
+  }
+  headerLines.forEach((line, k) => {
+    parts.push(`<text data-role="stacked-column-header" x="${right0}" y="${o + (namesFit ? namesRel : keyRel[0]) + 14 * k}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${accentText}">${esc(line)}</text>`);
+  });
+
+  // The bars: one rect per segment, a 1px paper-coloured stroke making the gap
+  // between neighbours.
+  entities.forEach((entity, i) => {
+    const barTop = o + barsRel + i * pitch;
+    for (const piece of pieces[i]) {
+      parts.push(`<rect data-role="stacked-segment" data-category="${esc(entity.key)}" data-series="${esc(piece.segment)}" data-value="${piece.value}" x="${piece.x0}" y="${barTop}" width="${stackedPx(piece.x1 - piece.x0)}" height="${barH}" fill="${fills.get(piece.segment)}" stroke="${PAPER}" stroke-width="1"/>`);
+    }
+  });
+  // In-bar values only where the label fits inside its segment with the
+  // padding on each side; white on the accent or a dark grey, ink on a light
+  // grey, whichever clears the contrast floor.
+  if (!columnMode) {
+    entities.forEach((entity, i) => {
+      const barTop = o + barsRel + i * pitch;
+      for (const piece of pieces[i]) {
+        const text = valueText(piece.value);
+        if (stackedTextWidth(text) + 2 * STACKED_LABEL_PAD > piece.x1 - piece.x0) continue;
+        const style = labelStyleOnFill(hexToRgb(fills.get(piece.segment)));
+        const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
+        parts.push(`<text data-role="stacked-value" x="${stackedPx((piece.x0 + piece.x1) / 2)}" y="${barTop + barH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(text)}</text>`);
+      }
+    });
+  }
+  entities.forEach((entity, i) => {
+    const centre = o + barsRel + i * pitch + barH / 2;
+    const lines = nameLines[i];
+    lines.forEach((line, k) => {
+      parts.push(`<text data-role="stacked-entity" x="${plotLeft - 14}" y="${centre + 4 - 7 * (lines.length - 1) + 14 * k}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`);
+    });
+    if (columnMode && columnTexts[i] !== null) {
+      parts.push(`<text data-role="stacked-column-value" x="${right0}" y="${centre + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(columnTexts[i])}</text>`);
+    }
+  });
+  if (needNote) {
+    parts.push(`<text data-role="stacked-rounding-note" x="${left0}" y="${o + noteRel}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(t.stackedRoundingNote)}</text>`);
+  }
+
+  addFooter(parts, spec, f.footerTop);
+  parts.push("</svg>");
+  return parts.join("\n") + "\n";
 }
 
 // Average glyph advance width (em/char) used only for this renderer's own
@@ -8363,11 +9611,13 @@ export function renderVizMobileSvg(spec, rows) {
     case "dot": return renderMobileHorizontal(spec,rows,"dot");
     case "diverging_bar": return renderMobileHorizontal(spec,rows,"bar");
     case "dumbbell": return renderMobileDumbbell(spec,rows);
+    case "mirrored_bar": return renderMirroredBar(spec,rows);
     case "slope": return renderMobileSlope(spec,rows);
     case "line": return renderMobileLine(spec,rows,false);
     case "multi_line": return renderMobileLine(spec,rows,true);
     case "small_multiples": return renderMobileSmallMultiples(spec,rows);
     case "scatter": return renderMobileScatter(spec,rows);
+    case "strip_plot": return renderStripPlot(spec,rows);
     case "heatmap": return renderMobileHeatmap(spec,rows);
     case "sankey": return renderSankey(spec,rows,true);
     case "alluvial": return renderSankey(spec,rows,true);
@@ -8385,6 +9635,7 @@ export function renderVizMobileSvg(spec, rows) {
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, true) : renderWaffle(spec, rows, true);
     case "choropleth": return renderChoropleth(spec, rows, true);
     case "treemap": return renderTreemap(spec, rows, true);
+    case "stacked_bar_100": return renderStackedBar100(spec, rows);
     default: throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
   }
 }
@@ -8432,11 +9683,13 @@ export function renderVizSvg(spec, rows) {
     case "dot": return renderHorizontal(spec, rows, "dot");
     case "diverging_bar": return renderHorizontal(spec, rows, "bar");
     case "dumbbell": return renderDumbbell(spec, rows);
+    case "mirrored_bar": return renderMirroredBar(spec, rows);
     case "slope": return renderSlope(spec, rows);
     case "line": return renderLine(spec, rows, false);
     case "multi_line": return renderLine(spec, rows, true);
     case "small_multiples": return renderSmallMultiples(spec, rows);
     case "scatter": return renderScatter(spec, rows);
+    case "strip_plot": return renderStripPlot(spec, rows);
     case "heatmap": return renderHeatmap(spec, rows);
     case "sankey": return renderSankey(spec, rows, false);
     case "alluvial": return renderSankey(spec, rows, false);
@@ -8454,6 +9707,7 @@ export function renderVizSvg(spec, rows) {
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, false) : renderWaffle(spec, rows, false);
     case "choropleth": return renderChoropleth(spec, rows, false);
     case "treemap": return renderTreemap(spec, rows, false);
+    case "stacked_bar_100": return renderStackedBar100(spec, rows);
     default: throw new Error(`Renderer does not support '${spec.chart_type}'`);
   }
 }
