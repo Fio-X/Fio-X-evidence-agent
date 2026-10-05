@@ -921,6 +921,13 @@ console.log("stacked_bar_100: segment names (once, centred, above the first bar)
 {
   const lintIso = (codes) => lintVizSpec(spec({ category_names: "iso3" }), rowsOf(codes.map((code) => [code, { X: 60, Y: 40 }])), { verified_claim_ids: ["claim-stacked"] });
   assert.deepEqual(lintIso(["USA", "CHN", "DEU"]).blockers, [], "economies only pass");
+  // ...and a zh chart that passes lint prints Chinese bar names, not the codes
+  const zhRows = rowsOf([["USA", { X: 60, Y: 40 }], ["CHN", { X: 30, Y: 70 }], ["DEU", { X: 45, Y: 55 }]]);
+  const zhSpec = spec({ language: "zh", category_names: "iso3", sort: "none", title: "示例数据：占比", subtitle: "示例数据" });
+  assert.deepEqual(lintVizSpec(zhSpec, zhRows, { verified_claim_ids: ["claim-stacked"] }).blockers, [], "the zh iso3 chart passes lint");
+  const zhNames = read(renderVizSvg(zhSpec, zhRows)).role("stacked-entity").map((t) => t.text);
+  assert.equal(zhNames.length, 3);
+  assert.ok(zhNames.every((name) => /[一-鿿]/.test(name) && !/^[A-Z]{3}$/.test(name)), `zh bar names are Chinese: ${zhNames.join(", ")}`);
   const mixed = lintIso(["USA", "CHN", "WLD"]);
   assert.ok(mixed.blockers.some((m) => m.includes("'WLD'") && m.includes("aggregate")), mixed.blockers.join("; "));
   const unknown = lintIso(["USA", "CHN", "XXQ"]);
