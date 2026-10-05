@@ -1123,6 +1123,18 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
                 continue;
             }
         };
+        let has_claim_id = claim.is_object()
+            && claim
+                .get("claim_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty());
+        if !has_claim_id {
+            report.error(format!(
+                "claims.jsonl line {} is not a claim record with a non-empty string claim_id",
+                line_no + 1
+            ));
+            continue;
+        }
         if claim.get("status").and_then(Value::as_str) != Some("verified") {
             continue;
         }
@@ -6772,6 +6784,94 @@ mod tests {
             !viz_errors(temp.path()).iter().any(|e| e.contains("claim_id is not verified")),
             "contested then verified must count as verified"
         );
+    }
+
+    fn claims_errors(root: &Path) -> Vec<String> {
+        let mut report = VerificationReport::default();
+        verify_claims(root, &mut report).unwrap();
+        report.errors
+    }
+
+    fn write_claims_text(root: &Path, text: &str) {
+        fs::write(root.join("claims.jsonl"), text).unwrap();
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_record_without_a_claim_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let good = claim_line("c-x", "verified");
+        write_claims_text(temp.path(), &format!("{good}\n{{\"status\":\"contested\"}}\n"));
+        assert_error(
+            &claims_errors(temp.path()),
+            "claims.jsonl line 2 is not a claim record with a non-empty string claim_id",
+        );
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_numeric_claim_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let good = claim_line("1", "verified");
+        write_claims_text(
+            temp.path(),
+            &format!("{good}\n{{\"claim_id\": 1, \"status\": \"contested\"}}\n"),
+        );
+        assert_error(
+            &claims_errors(temp.path()),
+            "claims.jsonl line 2 is not a claim record with a non-empty string claim_id",
+        );
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_line_that_is_not_an_object() {
+        for bad in ["[1]", "\"x\"", "7", "null"] {
+            let temp = tempfile::tempdir().unwrap();
+            let good = claim_line("c-x", "verified");
+            write_claims_text(temp.path(), &format!("{good}\n\n{bad}\n"));
+            assert_error(
+                &claims_errors(temp.path()),
+                "claims.jsonl line 3 is not a claim record with a non-empty string claim_id",
+            );
+        }
+    }
+
+    #[test]
+    fn verify_claims_refuses_an_empty_claim_id() {
+        let temp = tempfile::tempdir().unwrap();
+        write_claims_text(temp.path(), &format!("{}\n", claim_line("", "contested")));
+        assert_error(
+            &claims_errors(temp.path()),
+            "claims.jsonl line 1 is not a claim record with a non-empty string claim_id",
+        );
+    }
+
+    #[test]
+    fn verified_claim_set_leaves_out_a_status_only_record() {
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &["c-x"]);
+        let status_only = serde_json::to_string(&serde_json::json!({
+            "claim_id": "c-x", "status": "verified",
+        }))
+        .unwrap();
+        write_claims_text(
+            temp.path(),
+            &format!("{}\n{status_only}\n", claim_line("c-x", "verified")),
+        );
+        assert!(!verified_claim_ids(temp.path()).unwrap().contains("c-x"));
+        assert_error(
+            &infographic_errors(temp.path()),
+            "infographic infographics/x.json claim_id is not verified: c-x",
+        );
+        let viz = build_viz_fixture(true, true);
+        let id = "claim-render-qa-fixture";
+        write_claims_text(
+            viz.path(),
+            &format!(
+                "{}\n{}\n",
+                claim_line(id, "verified"),
+                serde_json::json!({"claim_id": id, "status": "verified"})
+            ),
+        );
+        assert_error(&viz_errors(viz.path()), &format!("claim_id is not verified: {id}"));
     }
 
     #[test]
