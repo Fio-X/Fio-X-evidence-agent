@@ -151,7 +151,10 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   // the JSON schema documents nine of the fields with a "<form>:" description: none of those may be left out of the tool
   const documented = Object.entries(spec.properties).filter(([, v]) => typeof v.description === "string" && FORM_CHART_TYPES.some((form) => v.description.startsWith(`${form}:`))).map(([k]) => k);
   must(documented.length >= 9, `expected at least 9 form-documented JSON schema properties, found ${documented.length}`);
-  for (const field of documented) must(FORM_FIELDS.includes(field), `the JSON schema documents ${field} for one of the three forms but the tool does not expose it (add it to the tool and to scripts/lib_viz_form_wiring.mjs)`);
+  // decimals is documented for stacked_bar_100 but deliberately not on the plan path (value labels use the shared formatter)
+  const NOT_ON_PLAN_PATH = ["decimals"];
+  for (const field of NOT_ON_PLAN_PATH) must(!planProps[field] && !chainProps[field], `${field} must not be a property of newsroom_viz_plan or newsroom_viz_chain`);
+  for (const field of documented.filter((f) => !NOT_ON_PLAN_PATH.includes(f))) must(FORM_FIELDS.includes(field), `the JSON schema documents ${field} for one of the three forms but the tool does not expose it (add it to the tool and to scripts/lib_viz_form_wiring.mjs)`);
   // category_names names the forms whose category_field the renderer localizes (viz.mjs categoryNamesField); mirrored_bar is not one of them
   const categoryNames = planProps.category_names.description;
   must(/strip_plot\/stacked_bar_100/.test(categoryNames) && !/mirrored_bar/.test(categoryNames), "category_names must list strip_plot and stacked_bar_100, not mirrored_bar");
