@@ -100,7 +100,8 @@ const mainMod = await loadTree("main");
 
 // Every other speed switch is unset so the only difference between two runs is the one under test.
 const OTHER_SWITCHES = Object.fromEntries(Object.keys(process.env).filter((k) => /^NEWSROOM_(SPEED_|SHADOW_|HIDE_)/.test(k) && k !== SWITCH).map((k) => [k, undefined]));
-const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined, NEWSROOM_MOBILE_PAGES: undefined };
+// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with a4d4cb0, which has the old typed-hero path.
+const BASE_ENV = { ...OTHER_SWITCHES, [SWITCH]: undefined, NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_PHASE_METRICS: undefined, NEWSROOM_MOBILE_PAGES: undefined };
 const setEnv = (env) => { for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
 function register(mod, env) {
   setEnv({ ...BASE_ENV, ...env });
@@ -108,7 +109,12 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines }, mask);
+// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
+// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
+// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
+const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
+const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
+const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) }, mask);
 const dropDescriptions = (schema) => JSON.stringify(schema, (k, v) => (k === "description" && typeof v === "string" ? undefined : v));
 function descriptionPaths(node, path = "", out = {}) {
   if (Array.isArray(node)) node.forEach((v, i) => descriptionPaths(v, `${path}[${i}]`, out));

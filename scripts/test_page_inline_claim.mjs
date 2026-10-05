@@ -97,11 +97,17 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
+// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with a4d4cb0, which has the old typed-hero path.
 const BASE_ENV = {
-  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
+  NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
+// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
+// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
+// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
+const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
+const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
 
 const { mod, dir: treeDir } = await loadTree("current");
 const { fillClaimTemplate, inlineSourceNote } = mod;
@@ -339,7 +345,7 @@ const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsr
 // Everything else is still compared byte for byte.
 const surface = (tools, { current = false } = {}) => [...tools.entries()].map(([name, tool]) => {
   const t = current ? revertNameLocalization(tool) : tool;
-  return [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: t.promptGuidelines, parameters: maskMeasureSemantics(name, t.parameters) }, maskFor(name))];
+  return [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: withoutPageTopSentences(t.promptGuidelines), parameters: maskMeasureSemantics(name, t.parameters) }, maskFor(name))];
 });
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
@@ -386,7 +392,7 @@ if (baseline) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       const [before, after] = [register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
-      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, after.get(name).promptGuidelines, after.get(name).parameters]) !== JSON.stringify([before.get(name).description, before.get(name).promptGuidelines, before.get(name).parameters]));
+      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, withoutPageTopSentences(after.get(name).promptGuidelines), after.get(name).parameters]) !== JSON.stringify([before.get(name).description, withoutPageTopSentences(before.get(name).promptGuidelines), before.get(name).parameters]));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);
       const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), revertNameLocalization(after.get("newsroom_viz_plan")), before.get("record_claim"), after.get("record_claim"), revertNameLocalization(after.get("newsroom_viz_chain"))];
       // record_claim: same description and schema, one more guideline.

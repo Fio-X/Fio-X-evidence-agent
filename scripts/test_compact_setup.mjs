@@ -90,7 +90,8 @@ const PI_DIR = spawnSync("npm", ["root", "-g"], { encoding: "utf8" }).stdout.tri
 const REAL_COMPILE = createRequire(join(PI_DIR, "package.json")).resolve("typebox/compile");
 const { Compile } = await import(pathToFileURL(REAL_COMPILE).href);
 const SWITCH = "NEWSROOM_SPEED_COMPACT_SETUP";
-const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
+// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with an older commit, which has the old typed-hero path.
+const BASE_ENV = { NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_SPEED_COMPACT_SETUP: undefined };
 function register(mod, env) {
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...env })) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   const tools = new Map();
@@ -116,7 +117,12 @@ const baseSource = process.env.BASELINE_NEWSROOM_TS ? readFileSync(process.env.B
 assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");
 const mod = await loadTree("head");
 const baseMod = await loadTree("base", baseSource);
-const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines }, mask);
+// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
+// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
+// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
+const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
+const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
+const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) }, mask);
 
 { // switch off: identical definitions; switch on: only the four setup tools (+ plan guideline) change
   const base = register(baseMod, {});
