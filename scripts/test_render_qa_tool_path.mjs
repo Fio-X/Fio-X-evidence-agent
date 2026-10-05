@@ -452,7 +452,7 @@ export function runRenderQa(svgs, options) {
   const lieflatRows = [{ label: "A", value: 7 }, { label: "B", value: 11 }, { label: "C", value: 13 }];
   const lieflatComputationRef = "computations/lieflat-rows.json";
   writeFileSync(join(art, lieflatComputationRef), JSON.stringify({ schema_version: "0.7.0", sql: "SELECT label, value FROM lieflat_fixture", result_hash: hashRows(lieflatRows), rows: lieflatRows }));
-  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({ schema_version: "0.7.0", claim_id: "lieflat-claim-1", claim: "The fixture value is measured.", status: "verified", source_refs: [lieflatSourceRef], computation_refs: [lieflatComputationRef] })}\n`, { flag: "a" });
+  writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({ schema_version: "0.7.0", claim_id: "lieflat-claim-1", claim: "The fixture value is measured.", status: "verified", verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" }, source_refs: [lieflatSourceRef], computation_refs: [lieflatComputationRef] })}\n`, { flag: "a" });
   const lieflatParams = {
     mode: "chart",
     language: "en",

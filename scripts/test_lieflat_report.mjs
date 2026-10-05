@@ -68,6 +68,7 @@ async function fixture(language) {
       claim_id: `claim-${module.index}`,
       claim: module.title,
       status: "verified",
+      verification: { authority: "system", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true, rule_id: "verification.source+extraction+computation+claim.v1" },
       source_refs: [sourceRef],
       computation_refs: [computationRef],
     });
