@@ -10,7 +10,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { PAGE_TOP_GUIDANCE, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
@@ -113,6 +113,14 @@ function lieflatHidden() {
 
 const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Write a place or currency name in a claim as a placeholder on the chart's name column (for example {max.value.country}); on a zh chart the runtime prints its localized name, so never type one. Pass claim or claim_id, never both.";
 const INLINE_CLAIM_RECORD_GUIDELINE = "A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain or newsroom_viz_plan, which records it from that chart's own SQL rows. Use record_claim for claims no chart carries.";
+
+// One sentence each, always shown (no switch). A hero label is read on its own under the big number, so it names its
+// subject, measure and period. With the hero value gate on (the default) typed digits in a label are refused, so the
+// period is a placeholder of the hero's claim; the gate-off text keeps the plain example. A relative window is written in
+// the SQL, so its sentence sits on duckdb_query; the page-top sentence is exported by infographic.mjs beside its lint.
+const HERO_LABEL_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「2024年阿根廷年通胀率」, not 「通胀率」.";
+const HERO_LABEL_GATED_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「{max.rate.year}年阿根廷年通胀率」, not 「通胀率」; the year comes from a placeholder of the hero's claim (typed digits are refused), so that claim must state the period.";
+const RELATIVE_WINDOW_GUIDELINE = "A relative window such as 近三年 means the 36 months up to the latest data point; state its start and end dates on the page.";
 
 // Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
 // promptGuidelines only when its switch is exactly "1" in the Pi child
@@ -277,17 +285,13 @@ const preflightIo = {
   read: (ref: string, prefix?: string) => readArtifactJson(ref, prefix),
   manifest: (dir: string, ref: string, prefix: string) => readManifestOrRejected(dir, ref, prefix),
   verified: async () => new Set(await verifiedClaimIds()),
-  // A lint is current while the upstream assets still hash as the lint recorded
-  // (the same test the render applies).
+  // A lint is current while the render would still accept it (the render's own check).
   async lintCurrent(lint: any) {
+    // Exactly the render's own checks (assertInfographicLintHolds): the verdict, the cited claims, the policy,
+    // the upstream asset hashes and a fresh lint under today's settings. Any refusal means the lint is stale.
     try {
-      const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(String(lint.plan_ref), "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages);
-      for (const [ref, asset] of Object.entries(assets) as any) {
-        const expected = lint.asset_hashes?.[ref];
-        if (!expected || sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) return false;
-      }
+      await assertInfographicLintHolds(spec, lint, String(lint.plan_ref));
       return true;
     } catch { return false; }
   },
@@ -858,6 +862,9 @@ async function assertApprovedInfographicLineage(infographicPlanRef: string): Pro
       `Publication blocked: infographic '${found.ref}' has no passing critic (missing or failed) - run newsroom_infographic_critic until it passes`,
     );
   }
+  try { await assertPageLintCurrent(found.manifest); } catch (error: any) {
+    throw new Error(`Publication blocked: the lint infographic '${found.ref}' was rendered from no longer holds - ${String(error?.message ?? error)}`);
+  }
   if (found.manifest.visual_review_required === true) {
     const hasVision = await hasPassingLinkedCritic("infographics/vision-critics", found.ref);
     if (!hasVision) {
@@ -896,37 +903,45 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
   return { rejectedManifestRef, rejectedQaReportRef, rejectionRef };
 }
 
-async function verifiedClaimIds() {
+// The latest record per claim_id decides: a claim counts as verified only while its last record in
+// claims.jsonl is system-verified (a later non-verified record revokes it). Order is first appearance.
+// A line that does not parse, is not a JSON object or has no claim_id closes the registry: such a line could
+// have been a revoking record, so no claim counts as verified until the file is intact again.
+async function latestClaimRecords(): Promise<Map<string, any>> {
   const root = artifactRoot();
-  if (!root) return [];
+  const latest = new Map<string, any>();
+  if (!root) return latest;
+  let text = "";
   try {
-    const text = await readFile(join(root, "claims.jsonl"), "utf8");
-    return text.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-      try {
-        const claim = JSON.parse(line);
-        return isSystemVerifiedClaim(claim) && claim.claim_id ? [String(claim.claim_id)] : [];
-      } catch {
-        return [];
-      }
-    });
-  } catch {
-    return [];
+    text = await readFile(join(root, "claims.jsonl"), "utf8");
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") throw error;
+    return latest;
   }
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].trim()) continue;
+    let claim: any;
+    try {
+      claim = JSON.parse(lines[index]);
+    } catch {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not valid JSON, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
+    }
+    if (!claim || typeof claim !== "object" || Array.isArray(claim) || typeof claim.claim_id !== "string" || !claim.claim_id) {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not a claim record with a claim_id, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
+    }
+    latest.set(claim.claim_id, claim);
+  }
+  return latest;
 }
 
-async function verifiedClaimRecords() {
-  const root = artifactRoot();
+export async function verifiedClaimIds() {
+  return [...(await latestClaimRecords())].filter(([, claim]) => isSystemVerifiedClaim(claim)).map(([id]) => id);
+}
+
+export async function verifiedClaimRecords() {
   const out = new Map<string, any>();
-  if (!root) return out;
-  try {
-    const text = await readFile(join(root, "claims.jsonl"), "utf8");
-    for (const line of text.split(/\r?\n/).filter(Boolean)) {
-      try {
-        const claim = JSON.parse(line);
-        if (isSystemVerifiedClaim(claim) && claim.claim_id) out.set(String(claim.claim_id), claim);
-      } catch {}
-    }
-  } catch {}
+  for (const [id, claim] of await latestClaimRecords()) if (isSystemVerifiedClaim(claim)) out.set(id, claim);
   return out;
 }
 
@@ -2255,29 +2270,46 @@ function registerVizChain(pi: ExtensionAPI) {
   });
 }
 
-// ---- Hero value gate (NEWSROOM_HERO_VALUE_GATE=1) --------------------------------------------------------------
+// ---- Hero value gate (on by default; NEWSROOM_HERO_VALUE_GATE=0 turns it off) -----------------------------------
 // A hero_stat does not type its number: it names one placeholder of its claim (value_from) and the runtime copies the
-// text the claim itself shows. A claim recorded inline carries its bindings; a claim recorded with record_claim has none,
-// so the selector is resolved on the claim's own computation rows and the result must also be stated by the claim text.
+// text the claim itself shows. Only a claim the system bound can fill a hero: a claim recorded inline carries its bindings
+// (claim_bindings), and a claim recorded with record_claim has none, so it is refused (HERO_CLAIM_UNBOUND); there is no
+// fallback that matches a row's value against the claim text, because two rows can show the same text.
 // label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
 // writes a number of its own and never changes a claim's status.
-const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE === "1";
+// Only the exact string "0" switches the gate off; unset, "1", empty or any other value leaves it on, so a typo can never
+// quietly open the gate. The pure lint in infographic.mjs stays opt-in through context.hero_value_gate: this runtime
+// is the only caller that passes it, and it passes it whenever this switch is on.
+const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE !== "0";
+// A stored page lint is only as good as the rules it ran under. Bump this when a page-lint rule changes what passes; the lint
+// record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
+const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
+const currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: heroGateOn() });
 const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
 
-type HeroClaimContext = { claimId: string; tables: Record<string, unknown>[][]; bindings: ClaimBinding[] | null; claimText: string; template: string | null };
+type HeroClaimContext = { claimId: string; bindings: ClaimBinding[] | null; claimText: string; template: string | null; computationRefs: string[] };
 
 async function heroClaimContext(claimId: string, records: Map<string, any>): Promise<HeroClaimContext | null> {
   const record = records.get(claimId);
   if (!record) return null;
-  const tables: Record<string, unknown>[][] = [];
-  for (const ref of Array.isArray(record.computation_refs) ? record.computation_refs : []) {
-    try {
-      const computation = await readArtifactJson(String(ref), "computations/");
-      if (Array.isArray(computation?.rows)) tables.push(computation.rows);
-    } catch {}
-  }
   const bindings = Array.isArray(record.claim_bindings) && record.claim_bindings.length ? (record.claim_bindings as ClaimBinding[]) : null;
-  return { claimId, tables, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null };
+  const computationRefs = Array.isArray(record.computation_refs) ? record.computation_refs.map(String).filter(Boolean) : [];
+  return { claimId, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null, computationRefs };
+}
+
+// A bound hero number must still be in the rows of the computation its claim was verified from: the bound row and column hold
+// the binding's value. A missing computation file or a changed row refuses (HERO_BINDING_STALE); nothing is repaired.
+async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding) {
+  const same = (a: unknown, b: unknown) => a === b || (typeof a !== "boolean" && typeof b !== "boolean" && String(a ?? "").trim() !== "" && String(b ?? "").trim() !== "" && Number.isFinite(Number(a)) && Number(a) === Number(b));
+  let readable = 0;
+  for (const ref of context.computationRefs) {
+    let computation: any;
+    try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
+    readable += 1;
+    const row = Array.isArray(computation?.rows) ? computation.rows[binding.row_index] : undefined;
+    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return;
+  }
+  throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
 }
 
 // Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
@@ -2302,22 +2334,17 @@ function heroTokenOffsets(text: string, claim: string): number[] {
 
 function resolveHeroPlaceholder(context: HeroClaimContext, placeholder: string, where: string): { text: string; column?: string } {
   if (!/^\{[^{}]*\}$/.test(placeholder)) throw new Error(`HERO_PLACEHOLDER_INVALID: ${where} must be one placeholder of claim '${context.claimId}' written in braces, got '${placeholder.slice(0, 60)}'`);
-  if (context.bindings) {
-    const hit = context.bindings.find((binding) => binding.placeholder === placeholder);
-    if (!hit) throw new Error(`HERO_PLACEHOLDER_UNBOUND: ${where} ${placeholder} is not one of claim '${context.claimId}' bindings; use one of: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}`);
-    return { text: String(hit.text), column: hit.column };
-  }
-  let reason = "the claim has no computation rows to resolve it on";
-  for (const rows of context.tables) {
-    try {
-      const filled = fillClaimTemplate(placeholder, rows);
-      if (heroTokenOffsets(filled.text, context.claimText).length) return { text: filled.text, column: filled.bindings[0]?.column };
-      reason = `it resolves to '${filled.text.slice(0, 40)}', which the claim text does not state`;
-    } catch (error) {
-      reason = String((error as any)?.message ?? error).replace(/^CLAIM_TEMPLATE_ERROR:\s*/, "").slice(0, 200);
-    }
-  }
-  throw new Error(`HERO_PLACEHOLDER_NOT_STATED: ${where} ${placeholder} cannot be used with claim '${context.claimId}': ${reason}`);
+  if (!context.bindings) throw heroUnbound(context.claimId, where);
+  const hit = context.bindings.find((binding) => binding.placeholder === placeholder);
+  if (!hit) throw new Error(`HERO_PLACEHOLDER_UNBOUND: ${where} ${placeholder} is not one of claim '${context.claimId}' bindings; use one of: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}`);
+  return { text: String(hit.text), column: hit.column };
+}
+
+function heroUnbound(claimId: string, where = "a hero_stat") {
+  const head = `HERO_CLAIM_UNBOUND: ${where} claim '${claimId}' has no system bindings (it was not recorded from a claim template), so a hero_stat cannot take its number from it.`;
+  // Only a run that can record a claim from a claim template may point at one; otherwise the lead visual is the only page top.
+  if (!inlineClaimEnabled()) return new Error(`${head} This run records no claim templates, so use the lead visual for the page top.`);
+  return new Error(`${head} Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template.`);
 }
 
 // Units a hero may show: the literal that follows the placeholder in the claim itself, and the unit the page's own chart
@@ -2337,6 +2364,18 @@ async function heroPlanUnits(modules: any[], claimId: string, column: string | u
   return [...out];
 }
 
+// A magnitude word or percent sign at the start of the literal after the number. A lone 千 and single letters (千克, 千米, m) are not one.
+const HERO_MAGNITUDES = ["万亿", "千亿", "亿", "千万", "百万", "万", "%", "％", "‰", "个百分点", "百分点"];
+const HERO_MAGNITUDE_WORDS = /^(thousand|million|billion|trillion)(?:s)?(?!\p{L})/iu;
+function heroMagnitudeStart(literal: string): string | null {
+  const sign = HERO_MAGNITUDES.find((entry) => literal.startsWith(entry));
+  if (sign) return sign;
+  return literal.match(HERO_MAGNITUDE_WORDS)?.[1] ?? null;
+}
+function heroUnitStartsWith(unit: string, magnitude: string) {
+  return /^[a-z]/i.test(magnitude) ? unit.toLowerCase().startsWith(magnitude.toLowerCase()) : unit.startsWith(magnitude);
+}
+
 function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, valueText: string): string[] {
   let rest: string | null = null;
   if (context.template) {
@@ -2347,16 +2386,30 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
     if (at !== undefined) rest = context.claimText.slice(at + valueText.length);
   }
   if (rest === null) return [];
+  // A character the reader cannot see (zero-width, soft hyphen, BOM, word joiner, variation selector, combining mark, NEL and the rest of
+  // Default_Ignorable / Cf / Mn / Me / Cc) in the text read after the number could hide a magnitude word, and deleting it would accept a
+  // unit the claim never showed. Refuse it instead; plain whitespace (space, tab, newline, NBSP) stays as it is.
+  const seen = rest.match(/^\s*/u)![0] + (rest.replace(/^\s+/u, "").match(HERO_LITERAL_STOP)?.[0] ?? "");
+  for (const ch of seen) {
+    if (/[\t\n\v\f\r]/.test(ch) || !/[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Mn}\p{Me}\p{Cc}]/u.test(ch)) continue;
+    throw new Error(`HERO_LITERAL_HIDDEN_CHAR: the claim text right after the number holds the hidden character U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}; record the claim again without it`);
+  }
   // The literal right after the number, and a scale word after exactly one space (letters only: "million", never "3").
   const out = [rest.match(HERO_LITERAL_STOP)?.[0] ?? ""];
   if (/^ \S/u.test(rest)) {
     const word = rest.slice(1).match(HERO_LITERAL_STOP)?.[0] ?? "";
     if (/^\p{L}+$/u.test(word)) out.push(word);
   }
+  // Any whitespace (several spaces, a tab, a newline, NBSP) between the number and a magnitude word or percent sign does not hide it.
+  const trimmed = rest.replace(/^\s+/u, "");
+  if (trimmed !== rest) {
+    const literal = trimmed.match(HERO_LITERAL_STOP)?.[0] ?? "";
+    if (heroMagnitudeStart(literal)) out.push(literal);
+  }
   return out.filter(Boolean);
 }
 
-/** NEWSROOM_HERO_VALUE_GATE=1: every hero_stat is filled from its claim before validation and storage; off, the modules pass untouched. */
+/** Gate on (the default): every hero_stat is filled from its claim before validation and storage. NEWSROOM_HERO_VALUE_GATE=0: the modules pass untouched. */
 async function fillHeroModules(modules: any[]): Promise<any[]> {
   if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
   const records = await verifiedClaimRecords();
@@ -2370,9 +2423,11 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
   const id = String(module.id);
   const claimId = String(module.claim_id ?? "");
   if (!context) throw new Error(`HERO_CLAIM_NOT_VERIFIED: hero_stat '${id}' claim '${claimId}' is not a system-verified claim`);
+  if (!context.bindings) throw heroUnbound(claimId, `hero_stat '${id}'`);
   const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
   if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
   const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
+  await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
   const typed = module.value !== undefined && module.value !== null && String(module.value).trim() !== "";
   if (typed && String(module.value) !== value.text) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
   const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);
@@ -2380,6 +2435,10 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     const allowed = [...new Set([...heroLiteralsAfter(context, from, value.text), ...(await heroPlanUnits(modules, claimId, value.column))])];
     if (!allowed.includes(unit)) throw new Error(`HERO_UNIT_NOT_ALLOWED: hero_stat '${id}' unit '${unit.slice(0, 20)}' is not shown by claim '${claimId}'; allowed: empty${allowed.map((entry) => `, '${entry}'`).join("")}`);
   }
+  // The claim formatter writes a bare number (12.3); a magnitude word or percent sign is a literal of the claim after it. The unit
+  // must carry it, or "12.3亿美元" would become a hero of 12.3 with no unit or with 美元 alone.
+  const magnitude = heroLiteralsAfter(context, from, value.text).map(heroMagnitudeStart).find(Boolean);
+  if (magnitude && !heroUnitStartsWith(unit, magnitude)) throw new Error(`HERO_UNIT_DROPPED: hero_stat '${id}' claim '${claimId}' shows '${magnitude}' right after the number, so the unit must start with '${magnitude}'${unit ? ` (got '${unit.slice(0, 20)}')` : " (the unit is empty)"}; keep it at the start of unit`);
   const text: Record<string, string> = {};
   for (const field of ["label", "detail"]) {
     const templateKey = `${field}_template`;
@@ -2394,13 +2453,64 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     if (wordedNear !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`);
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
-    for (const placeholder of new Set(placeholders)) filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+    for (const placeholder of new Set(placeholders)) {
+      filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+      // Every placeholder the module fills must still be in the computation rows, not only the one the value comes from.
+      await assertHeroBindingHolds(id, context, context.bindings!.find((binding) => binding.placeholder === placeholder)!);
+    }
     if (hasTemplate && String(module[field] ?? "") !== filled) throw new Error(`HERO_EDITED_AFTER_FILL: hero_stat '${id}' ${field} no longer matches its ${templateKey}; edit the template, not the filled text`);
     text[field] = filled;
     if (placeholders.length) text[templateKey] = src;
   }
   const { label_template: _l, detail_template: _d, ...rest } = module;
   return { ...rest, value: value.text, value_from: from, ...text };
+}
+
+/** The render accepts a stored lint only when it was made under today's policy version and hero gate state. */
+function lintIsCurrent(lint: any) {
+  const now = currentLintPolicy();
+  return lint?.lint_policy_version === now.lint_policy_version && lint?.hero_value_gate === now.hero_value_gate;
+}
+function assertLintCurrent(lint: any) {
+  if (!lintIsCurrent(lint)) throw new Error(`LINT_STALE: the stored infographic lint was made under another lint policy (version ${String(lint?.lint_policy_version ?? "none")}, hero gate ${String(lint?.hero_value_gate ?? "unknown")}) than the current one (version ${INFOGRAPHIC_LINT_POLICY_VERSION}, hero gate ${heroGateOn()}); run newsroom_infographic_lint again on this plan, then render with the new lint_ref`);
+}
+
+/**
+ * The lint a page was made from must still hold today. Every consumer of an infographic lint, page manifest or critic
+ * record runs this: the lint belongs to the plan and passed; every claim the plan cites is still system-verified; it was
+ * made under today's lint policy; the upstream assets still hash as it recorded; and the plan lints clean again under
+ * today's settings. The checks and their messages are the render's own.
+ */
+async function assertInfographicLintHolds(spec: any, lint: any, planRef: string) {
+  const mobilePages = mobilePagesEnabled();
+  if (lint.plan_ref !== planRef) throw new Error("Infographic lint does not belong to the supplied plan");
+  if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
+  {
+    // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
+    const verifiedNow = new Set(await verifiedClaimIds());
+    const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
+    const unverified = cited.filter((id) => !verifiedNow.has(id));
+    if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
+  }
+  assertLintCurrent(lint);
+  const assets = await loadInfographicAssets(spec, mobilePages);
+  for (const [ref, asset] of Object.entries(assets) as any) {
+    const expected = lint.asset_hashes?.[ref];
+    if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
+    if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
+  }
+  // The stored lint is not trusted for its verdict either: the plan is linted again under today's settings.
+  const fresh = (await lintInfographicPlan(spec)).lint;
+  if (!fresh.passed || (fresh.blockers ?? []).length) throw new Error(`Infographic lint has blocking failures under the current settings: ${fresh.blockers.join(" | ")}`);
+}
+/** The same checks for a consumer that holds a page manifest: the lint the manifest names must be current. */
+async function assertPageLintCurrent(manifest: any) {
+  const lintRef = String(manifest?.lint_ref ?? "");
+  if (!lintRef) throw new Error("LINT_STALE: the infographic manifest names no lint; render the page again from a current lint");
+  const planRef = String(manifest?.plan_ref ?? "");
+  const lint = await readArtifactJson(lintRef, "infographics/lints/");
+  const spec = await readArtifactJson(planRef, "infographics/plans/");
+  await assertInfographicLintHolds(spec, lint, planRef);
 }
 
 // The deterministic page lint over a stored or proposed plan; shared by
@@ -2451,7 +2561,7 @@ async function lintInfographicPlan(spec: any) {
     }
     visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
   }
-  // NEWSROOM_HERO_VALUE_GATE=1: each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
+  // Gate on (the default; NEWSROOM_HERO_VALUE_GATE=0 turns it off): each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
   const heroGate: Record<string, any> = {};
   if (heroGateOn()) {
     const heroChecks: Record<string, string[]> = {};
@@ -2466,9 +2576,10 @@ async function lintInfographicPlan(spec: any) {
         heroChecks[String(module.id)] = [String((error as any)?.message ?? error)];
       }
     }
-    heroGate.hero_value_gate = true;
     heroGate.hero_checks = heroChecks;
   }
+  // The gate state is passed explicitly in both states (the pure lint reads only an exact true).
+  heroGate.hero_value_gate = heroGateOn();
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
   return { lint, assets, mobilePages, verifiedRecords };
@@ -2902,6 +3013,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use duckdb_query for aggregations, comparisons, joins, rankings, rates, and chart data whenever the required dataset is locally available.",
       "For every ordered result, make the ORDER BY a total order by adding deterministic secondary keys (usually country, iso_code, year, or all grouping fields). Do not rely on the arbitrary order of tied DuckDB rows; replay must reproduce the same row sequence.",
+      RELATIVE_WINDOW_GUIDELINE,
     ],
       parameters: Type.Object({
         sql: Type.String({ description: "One read-only analytical SQL statement" }),
@@ -4353,7 +4465,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       for (const [ref, prefix] of [[params.discovery_ref, "editorial/discovery/"], [params.concepts_ref, "editorial/concepts/"], [params.asset_plan_ref, "editorial/assets/"], [params.novelty_ref, "editorial/novelty/"]] as const) await readArtifactJson(ref, prefix);
-      await readManifestOrRejected("infographics", params.page_ref, "infographics/");
+      await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = summarizeAwardMode(params);
       const rel = `editorial/award-runs/${result.content_hash}.json`;
@@ -4442,9 +4554,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Use SceneGraph 0.2 cognitive goals. Every scene has one bounded hero, supporting claims, and explicit limits for sidecars, annotations, and claims.",
       "Define the editorial intent, target audience, one primary message, and a story arc before selecting modules. Form follows the reporting purpose.",
       "Assign every module a story_role and priority. Use a single explicit visual anchor, then alternate dense evidence with lighter context, turns, or section resets.",
+      PAGE_TOP_GUIDANCE,
       "Prefer 4-9 modules. A magazine page should have a reading sequence, not a dashboard grid. The composer will generate and rank balanced, anchor, and rhythm layout candidates.",
       "For award-target pages, include a hook, evidence, at least one priority-1 module, and a resolution or explanation. Originality must not reduce clarity or provenance.",
       "Every quantitative hero statistic or explanatory text module must cite verified claim IDs. Visual modules must reference their visualization manifest and critic artifacts.",
+      heroGateOn() ? HERO_LABEL_GATED_GUIDELINE : HERO_LABEL_GUIDELINE,
     ],
     parameters: Type.Object({
       kicker: Type.Optional(Type.String()),
@@ -4599,9 +4713,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         data_hash: asset.manifest?.data_hash ?? null,
         critic_score: asset.critic?.score ?? null,
       }]));
-      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes }));
+      const policy = currentLintPolicy();
+      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes, ...policy }));
       const lintRef = `infographics/lints/${key}.json`;
-      await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes });
+      await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes, ...policy });
       const igShadow = shadowChecksEnabled()
         ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
         : null;
@@ -4622,21 +4737,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
-      if (lint.plan_ref !== params.plan_ref) throw new Error("Infographic lint does not belong to the supplied plan");
-      if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
-      {
-        // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
-        const verifiedNow = new Set(await verifiedClaimIds());
-        const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
-        const unverified = cited.filter((id) => !verifiedNow.has(id));
-        if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
-      }
+      // The stored lint is not trusted: every consumer of a page runs the same current-lint checks (see assertInfographicLintHolds).
+      await assertInfographicLintHolds(spec, lint, params.plan_ref);
       const assets = await loadInfographicAssets(spec, mobilePages);
-      for (const [ref, asset] of Object.entries(assets) as any) {
-        const expected = lint.asset_hashes?.[ref];
-        if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
-        if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
-      }
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
       const mobileSha = mobilePages ? sha256Hex(bundle.mobile.svg) : undefined;
@@ -4715,6 +4818,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       if (manifest.plan_ref !== params.plan_ref || manifest.lint_ref !== params.lint_ref) throw new Error("Infographic manifest is not linked to the supplied plan and lint artifacts");
+      // The critic is a consumer of the lint too: a stale policy, a changed claim or a changed upstream asset refuses here, as in render.
+      await assertInfographicLintHolds(spec, lint, params.plan_ref);
       const assets = await loadInfographicAssets(spec, mobilePages);
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
@@ -5396,6 +5501,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const critic = await readArtifactJson(params.critic_ref, "infographics/critics/");
       if (critic.manifest_ref !== params.manifest_ref || !critic.passed) throw new Error("A passing deterministic infographic critic linked to this manifest is required before image observation");
+      await assertPageLintCurrent(manifest);
       const desktopRef = manifest?.variants?.desktop, mobileRef = manifest?.variants?.mobile;
       if (!desktopRef || (mobilePages && !mobileRef)) throw new Error("Infographic manifest is missing responsive SVG variants");
       const desktopSvg = await readArtifactText(desktopRef, "infographics/");
@@ -5482,6 +5588,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const preview = await readArtifactJson(params.preview_ref, "infographics/previews/");
       const deterministicCritic = await readArtifactJson(params.deterministic_critic_ref, "infographics/critics/");
       if (!deterministicCritic.passed || deterministicCritic.manifest_ref !== params.manifest_ref) throw new Error("Image-aware critique requires a passing deterministic critic for the same infographic manifest");
+      await assertPageLintCurrent(manifest);
       if (preview.manifest_ref !== params.manifest_ref || preview.deterministic_critic_ref !== params.deterministic_critic_ref) throw new Error("Preview does not belong to the supplied infographic and deterministic critic");
       if (preview.source_hashes?.desktop_sha256 !== manifest.hashes?.desktop_sha256 || preview.source_hashes?.mobile_sha256 !== manifest.hashes?.mobile_sha256) throw new Error("Preview source hashes do not match the current infographic manifest");
       const plan = await readArtifactJson(manifest.plan_ref, "infographics/plans/");
@@ -5585,6 +5692,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Infographic manifest does not belong to the supplied plan");
       if (deterministicCritic.manifest_ref !== params.manifest_ref) throw new Error("Deterministic critic does not belong to the supplied manifest");
       if (visionCritic.manifest_ref !== params.manifest_ref || visionCritic.deterministic_critic_ref !== params.deterministic_critic_ref) throw new Error("Vision critic does not belong to the supplied final manifest/critic pair");
+      await assertPageLintCurrent(manifest);
       const assets = await loadInfographicAssets(spec);
       const result = evaluateCompetitionProfile({
         profile_id: spec.competition_profile ?? "editorial",

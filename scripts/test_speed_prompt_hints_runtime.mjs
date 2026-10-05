@@ -22,6 +22,13 @@ const SWITCHES = {
 };
 const ALL_SWITCHES = Object.keys(SWITCHES);
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
+// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with bc1ccfd, which has the old typed-hero path.
+process.env.NEWSROOM_HERO_VALUE_GATE = "0";
+// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
+// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
+// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
+const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
+const withoutPageTopSentences = (tool) => (Array.isArray(tool?.promptGuidelines) ? { ...tool, promptGuidelines: tool.promptGuidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) } : tool);
 
 const tmp = mkdtempSync(join(tmpdir(), "speed-hints-runtime-"));
 try {
@@ -53,7 +60,7 @@ try {
     for (const name of ALL_SWITCHES) delete process.env[name];
     for (const name of on) process.env[name] = "1";
     const tools = new Map();
-    extension(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
+    extension(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, withoutPageTopSentences(tool)) : () => {}) }));
     for (const name of ALL_SWITCHES) delete process.env[name];
     return tools;
   };
@@ -84,7 +91,7 @@ try {
         process.env.NEWSROOM_TOOL_PROFILE = profile;
         process.env[env] = bad;
         const probe = new Map();
-        current(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => probe.set(tool.name, tool) : () => {}) }));
+        current(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => probe.set(tool.name, withoutPageTopSentences(tool)) : () => {}) }));
         delete process.env[env];
         for (const [name, tool] of base) assert.equal(visible(asBaseline(probe.get(name))), visible(tool), `${profile}/${name}: ${env}=${JSON.stringify(bad)} changes nothing`);
       }
