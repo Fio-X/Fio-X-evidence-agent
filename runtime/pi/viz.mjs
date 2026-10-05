@@ -5470,9 +5470,10 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
   let strokeIdx = -1; // the entry that takes the lightest grey also gets an outline
   if (HOUSE_STYLE_ACTIVE) {
     // A literal row named 其他/其它/Other/Others is the catch-all too (when no
-    // merged bucket exists): it is drawn last and takes the lightest grey.
+    // merged bucket exists), highlighted or not: it is drawn last, takes the
+    // lightest grey, or the accent when highlighted.
     // Rows keep today's order otherwise. A highlighted row keeps the accent.
-    const isLiteralOther = (e) => e.row !== null && !e.highlighted && /^(其他|其它|others?)$/i.test(String(e.row[spec.category_field] ?? "").trim());
+    const isLiteralOther = (e) => e.row !== null && /^(其他|其它|others?)$/i.test(String(e.row[spec.category_field] ?? "").trim());
     if (!hasOther) {
       const at = entries.findIndex(isLiteralOther);
       if (at >= 0 && at < entries.length - 1) entries.push(...entries.splice(at, 1));
@@ -5483,7 +5484,11 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
     const stepOf = named.length === 2 ? [0, 2] : named.map((_k, i) => i);
     const lightest = WAFFLE_GREYS.length - 1;
     colors = entries.map((e, k) => {
-      if (k === catchAll) { strokeIdx = k; return WAFFLE_GREYS[lightest]; }
+      if (k === catchAll) {
+        if (e.highlighted) return PALETTE.accent; // a highlighted catch-all keeps the accent and has no outline
+        strokeIdx = k;
+        return WAFFLE_GREYS[lightest];
+      }
       if (e.highlighted) return PALETTE.accent;
       return WAFFLE_GREYS[Math.min(stepOf[named.indexOf(k)], lightest)];
     });

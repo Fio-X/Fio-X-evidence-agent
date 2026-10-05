@@ -314,6 +314,16 @@ console.log("single-grid waffle passes geometry + contrast render QA on both vie
   // two plain rows plus a catch-all: G0, G2 and G4
   const twoPlusOther = renderVizSvg(baseSpec({ highlight_values: [] }), [{ source: "甲", share: 50 }, { source: "乙", share: 30 }, { source: "Other", share: 20 }]);
   assert.deepEqual(legend(twoPlusOther).map((e) => e.fill), [G[0], G[2], G[4]]);
+  // a highlighted catch-all is recognised too: last in the legend and the grid, accent fill, no outline
+  for (const name of ["Other", "其他"]) {
+    const hl = renderVizSvg(baseSpec({ highlight_values: [name] }), [{ source: name, share: 60 }, { source: "甲", share: 25 }, { source: "乙", share: 15 }]);
+    assert.deepEqual(legendNames(hl), ["甲", "乙", name], `highlighted '${name}' is drawn last in the legend`);
+    assert.deepEqual(legend(hl).map((e) => e.fill), [G[0], G[2], "#D0021B"], `highlighted '${name}' takes the accent, the others two steps apart`);
+    assert.ok(!/stroke="#8B8B8B"/.test(hl), `highlighted '${name}' has no outline`);
+    const cells = gridOutlines(hl).map(([fill]) => fill);
+    assert.equal(cells[cells.length - 1], "#D0021B", `highlighted '${name}' is last in the grid too`);
+    assert.equal(cells.filter((c) => c === "#D0021B").length, 60, `highlighted '${name}' owns its 60 cells`);
+  }
   // the merged bucket is the catch-all too
   checkOutline(desktop, G[4], "merged bucket");
   assert.deepEqual(legend(desktop).map((e) => e.fill), ["#D0021B", G[0], G[1], G[2], G[4]]);
