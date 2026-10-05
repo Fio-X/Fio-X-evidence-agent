@@ -2793,11 +2793,13 @@ const AGGREGATE_MIX_BLOCKED_CHART_TYPES = new Set([
   "diverging_bar",
   "waffle",
   "treemap",
+  "strip_plot",
+  "stacked_bar_100",
   "scatter",
 ]);
 
 // E: the viz-spec field category_names localizes, keyed by chart_type -
-// category_field for the five ranking/comparison forms and waffle, facet_field for
+// category_field for the five ranking/comparison forms, waffle, strip_plot and stacked_bar_100, facet_field for
 // small_multiples (each panel's title is a name), series_field for
 // multi_line (each series' direct label is a name), label_field for scatter
 // (each highlighted point's direct label is a name). Returns null for any
@@ -2814,6 +2816,8 @@ const CATEGORY_NAMES_FIELD_KEY = new Map([
   ["waffle", "category_field"],
   ["choropleth", "category_field"],
   ["treemap", "category_field"],
+  ["strip_plot", "category_field"],
+  ["stacked_bar_100", "category_field"],
   ["small_multiples", "facet_field"],
   ["multi_line", "series_field"],
   ["scatter", "label_field"],
