@@ -4769,24 +4769,44 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   const refMargin = referenceLineMargin(refLines);
   const idxLeft = indexBase !== null ? 54 + 40 : 70;
   const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
-  const rowsN = Math.ceil(facets.length / cols);
-  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20 + rowShift);
-  const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
+  const valuesOf = (list) => list.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
+  const domainOf = (values) => extent(indexBase !== null ? [...values, indexBase] : values, false);
+  const allY = valuesOf(rows);
+  const yDomain = domainOf(allY);
+  // One facet whose range dwarfs the rest squashes every other panel on the shared scale: with at least 4 facets, no
+  // reference line, and a shared span at least 3x the span without the facet that narrows it most, that facet moves to its
+  // own panel under the grid (its own vertical scale, said in a note) and the rest share the narrower domain.
+  const outlier = (() => {
+    if (facets.length < 4 || refLines.length) return null;
+    const span = (d) => d[1] - d[0];
+    let best = null;
+    for (const facet of facets) {
+      const rest = valuesOf(rows.filter((r) => String(r[spec.facet_field]) !== String(facet)));
+      if (!rest.length) continue;
+      const domain = domainOf(rest);
+      if (!best || span(domain) < span(best.domain)) best = { facet, domain };
+    }
+    if (!best || !(span(yDomain) >= 3 * span(best.domain))) return null;
+    const own = valuesOf(rows.filter((r) => String(r[spec.facet_field]) === String(best.facet)));
+    return own.length ? { ...best, ownDomain: domainOf(own) } : null;
+  })();
+  const gridFacets = outlier ? facets.filter((facet) => facet !== outlier.facet) : facets;
+  const gridDomain = outlier ? outlier.domain : yDomain;
+  const rowsN = Math.ceil(gridFacets.length / cols);
+  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + (outlier ? gapY + panelH : 0) + 20 + rowShift);
   // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
-  const idxTicks = (() => {
-    if (indexBase === null) return [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]];
-    const span = yDomain[1] - yDomain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  const ticksFor = (domain, nice = indexBase !== null) => {
+    if (!nice) return [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
+    const span = domain[1] - domain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
     const step = [1, 2, 5, 10].map((m) => m * mag).find((c) => c >= raw);
     const out = [];
-    for (let v = Math.ceil((yDomain[0] - 1e-9) / step) * step; v <= yDomain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
-    if (!out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
+    for (let v = Math.ceil((domain[0] - 1e-9) / step) * step; v <= domain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    if (indexBase !== null && !out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
     return out.sort((a, b) => a - b);
-  })();
+  };
+  const idxTicks = ticksFor(gridDomain);
   let indexBaseNamed = false;
-  facets.forEach((facet, fi) => {
-    const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowShift + rowN * (panelH + gapY);
+  const drawFacet = (facet, fi, col, x0, y0, yDomain, idxTicks, panelW, axisLabels = false) => {
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -4802,11 +4822,16 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
     if (indexBase !== null) {
       const by = yScale(indexBase);
       f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
-      if (col === 0) {
+      if (col === 0 || axisLabels) {
         idxTicks.forEach((tick) => {
           f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
         });
       }
+    }
+    if (indexBase === null && axisLabels) {
+      idxTicks.forEach((tick) => {
+        f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
+      });
     }
     const sorted = [...group].sort((a, b) => xMap.get(String(a[spec.x_field])) - xMap.get(String(b[spec.x_field])));
     if (xs.length > 1) {
@@ -4860,10 +4885,20 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
       }
     });
     tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+  };
+  gridFacets.forEach((facet, fi) => {
+    const col = fi % cols, rowN = Math.floor(fi / cols);
+    drawFacet(facet, fi, col, idxLeft + col * (panelW + gapX), f.bodyTop + rowShift + rowN * (panelH + gapY), gridDomain, idxTicks, panelW);
   });
-  if (indexBase !== null && !indexBaseNamed) {
-    if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
-    f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
+  if (outlier) {
+    const gridW = cols * panelW + (cols - 1) * gapX;
+    const y0 = f.bodyTop + rowShift + rowsN * (panelH + gapY);
+    const name = resolveEconomyDisplayName(outlier.facet, spec.category_names, vizLang(spec));
+    const noteStart = f.parts.length;
+    const note = vizLang(spec) === "zh" ? `${name}变化幅度远大于其他各项，单独成图，纵轴刻度与上面各图不同` : `${name} moved far more than the others, so it has its own panel with a different vertical scale.`;
+    f.parts.push(`<text data-role="outlier-note" x="${idxLeft}" y="${y0 - 14}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(note)}</text>`);
+    tagPanelTexts(f.parts, noteStart, [idxLeft - gapX + 2, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
+    drawFacet(outlier.facet, gridFacets.length, 0, idxLeft, y0, outlier.ownDomain, ticksFor(outlier.ownDomain, true), gridW, true);
   }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
