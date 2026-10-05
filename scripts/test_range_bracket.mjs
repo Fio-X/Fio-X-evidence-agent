@@ -837,6 +837,8 @@ console.log("iso2 needs a country-code column: PASS");
   const VIEWPORTS = { desktop: renderVizSvg, mobile: renderVizMobileSvg };
   const directLabels = (svg) => [...svg.matchAll(/<text data-role="direct-label" x="([^"]*)" y="([^"]*)" text-anchor="([^"]*)"[^>]*>([^<]*)<\/text>/g)].map((m) => ({ x: m[1], y: m[2], anchor: m[3], text: m[4] }));
   const circles = (svg) => [...svg.matchAll(/<circle [^>]*\/>/g)].map((m) => m[0]);
+  // Desktop also prints auto-labels (round-3 conventions) on the extreme points: one text element each. Rewrites the text of those elements only, by lookup.
+  const autoLabelsAs = (svg, names) => svg.replace(/(<text data-role="auto-label"[^>]*>)([^<]*)(<\/text>)/g, (_all, open, text, close) => `${open}${names.get(text) ?? text}${close}`);
   const accentCircles = (svg) => circles(svg).filter((circle) => circle.endsWith('opacity="1"/>'));
   const allTexts = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
   const nameBlockers = (l) => l.blockers.filter((b) => b.startsWith("zh chart's") || b.startsWith("category_names"));
@@ -865,7 +867,11 @@ console.log("iso2 needs a country-code column: PASS");
       assert.equal(accentCircles(svg).length, 2, `${name} (${viewport})`);
       assert.deepEqual(circles(svg), circles(before), `${name} (${viewport}): resolution changes names, never marks`);
       // The two names are as wide to the layout as their codes, so the printed name is the only thing that differs.
-      assert.equal(svg, before.replace(`>${raw[0]}</text>`, ">肯尼亚</text>").replace(`>${raw[2]}</text>`, ">巴西</text>"), `${name} (${viewport})`);
+      // Each auto-label resolves to its own point's name.
+      const AUTO_NAMES = new Map(raw.map((value, i) => [value, ["肯尼亚", "挪威", "巴西", "中国", "印度"][i]]));
+      const expectedSvg = autoLabelsAs(before
+        .replace(`>${raw[0]}</text>`, ">肯尼亚</text>").replace(`>${raw[2]}</text>`, ">巴西</text>"), AUTO_NAMES);
+      assert.equal(svg, expectedSvg, `${name} (${viewport})`);
     }
   }
 
@@ -884,7 +890,8 @@ console.log("iso2 needs a country-code column: PASS");
     const declared = scatter({ category_names: "iso3", highlight_values: ["ZZZ"] });
     const svg = render(declared, rows);
     assert.deepEqual(directLabels(svg).map((l) => l.text), ["ZZZ"], viewport);
-    assert.equal(svg, render({ ...declared, category_names: undefined }, rows), `${viewport}: nothing resolves, so nothing changes`);
+    // ZZZ and QQQ are not in the table and stay as they are; NOR is, so its auto-label (desktop) is the one element that changes.
+    assert.equal(svg, autoLabelsAs(render({ ...declared, category_names: undefined }, rows), new Map([["NOR", "挪威"]])), `${viewport}: only the known code's auto-label changes`);
   }
   // An English page prints World Bank English for the same points; the names it already has stay exactly as they are.
   for (const [viewport, render] of Object.entries(VIEWPORTS)) {
