@@ -868,6 +868,18 @@ check(`snapshots: exact SVG output of three typical cases${update ? " (rewritten
   }
 });
 
+// Annotations: mirrored_bar draws none, so a point/node annotation blocks and the nudge does not ask for one.
+{
+  const note = { type: "point", text: "Band 1", match_field: "band", match_value: typical[0].band, claim_id: claimId };
+  for (const type of ["point", "node"]) {
+    const lint = lintOf({ ...withPeriods, annotations: [{ ...note, type }] }, typical);
+    assert.equal(lint.passed, false, `a ${type} annotation on mirrored_bar blocks`);
+    assert.ok(lint.blockers.some((m) => m.includes(`${type} is not supported on chart_type 'mirrored_bar'`) && m.includes("nothing needs adding")), lint.blockers.join("; "));
+  }
+  assert.equal(lintOf({ ...withPeriods, annotations: [{ type: "reference_line", value: 10, text: "x" }] }, typical).passed, false, "a reference_line on mirrored_bar still blocks");
+  const findings = critiqueViz(withPeriods, typical, lintOf(withPeriods, typical), "");
+  assert.ok(!JSON.stringify(findings).includes("no_annotation"), "no annotation nudge for a form that draws none");
+}
 if (savedStyleEnv === undefined) delete process.env.NEWSROOM_HOUSE_STYLE;
 else process.env.NEWSROOM_HOUSE_STYLE = savedStyleEnv;
 console.log(update ? "mirrored_bar snapshots updated" : "mirrored_bar tests -- PASS");
