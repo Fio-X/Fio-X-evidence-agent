@@ -3479,7 +3479,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         editorial_plan: semanticGate.editorial_plan,
         language: params.language ?? "en",
         mixed_period_strategy: params.mixed_period_strategy ?? "reject",
-        sort: params.sort ?? "none",
+        // stacked_bar_100 orders its bars by the highlight segment unless the caller says otherwise; every other type keeps the row order.
+        sort: params.sort ?? (params.chart_type === "stacked_bar_100" ? "desc" : "none"),
         highlight_values: params.highlight_values ?? [],
         direct_labels: params.direct_labels ?? true,
         annotations: params.annotations ?? [],
