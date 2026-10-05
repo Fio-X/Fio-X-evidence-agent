@@ -917,4 +917,14 @@ console.log("stacked_bar_100: segment names (once, centred, above the first bar)
   }
 }
 
+// category_names iso3 on the bar names: a World row mixed with economies blocks and is named; an unknown code blocks.
+{
+  const lintIso = (codes) => lintVizSpec(spec({ category_names: "iso3" }), rowsOf(codes.map((code) => [code, { X: 60, Y: 40 }])), { verified_claim_ids: ["claim-stacked"] });
+  assert.deepEqual(lintIso(["USA", "CHN", "DEU"]).blockers, [], "economies only pass");
+  const mixed = lintIso(["USA", "CHN", "WLD"]);
+  assert.ok(mixed.blockers.some((m) => m.includes("'WLD'") && m.includes("aggregate")), mixed.blockers.join("; "));
+  const unknown = lintIso(["USA", "CHN", "XXQ"]);
+  assert.ok(unknown.blockers.some((m) => m.includes("cannot resolve") && m.includes("'XXQ'")), unknown.blockers.join("; "));
+}
+
 console.log("stacked_bar_100: ok");

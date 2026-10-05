@@ -490,6 +490,16 @@ console.log("strip_plot axis: start rule (0 vs rounded), nice evenly spaced tick
   const en = readChart(renderVizSvg({ ...base, language: "en", category_names: "worldbank", label_extremes: 0 }, countries)).rowLabels.map((row) => row.text);
   assert.ok(zh.every((name) => /[一-鿿]/.test(name)), `zh row labels are Chinese names: ${zh.join(", ")}`);
   assert.deepEqual([...en].sort(), ["Ghana", "Liberia", "Zambia"]);
+  // category_names iso3: codes print zh names; a World row mixed with economies blocks and is named; an unknown code blocks
+  const iso = (codes) => codes.flatMap((g, i) => [0, 1, 2].map((k) => ({ g, u: `${g} ${k + 1}`, v: 10 + i * 8 + k * 3 })));
+  const isoZh = readChart(renderVizSvg({ ...base, language: "zh", category_names: "iso3", label_extremes: 0 }, iso(["ZMB", "LBR", "GHA"]))).rowLabels.map((row) => row.text);
+  assert.ok(isoZh.length === 3 && isoZh.every((name) => /[一-鿿]/.test(name) && !/^[A-Z]{3}$/.test(name)), `iso3 codes print zh names: ${isoZh.join(", ")}`);
+  const mixed = lint({ ...base, category_names: "iso3" }, iso(["ZMB", "LBR", "WLD"]));
+  assert.equal(mixed.passed, false, "an aggregate row mixed with economies blocks");
+  assert.ok(mixed.blockers.some((m) => m.includes("'WLD'") && m.includes("aggregate")), mixed.blockers.join("; "));
+  assert.equal(lint({ ...base, category_names: "iso3" }, iso(["ZMB", "LBR", "GHA"])).passed, true, "economies only pass");
+  const unknown = lint({ ...base, category_names: "iso3" }, iso(["ZMB", "LBR", "XXQ"]));
+  assert.ok(unknown.blockers.some((m) => m.includes("cannot resolve") && m.includes("'XXQ'")), unknown.blockers.join("; "));
 }
 console.log("strip_plot rows: median_desc/median_asc/data order, ties, band size, chart growth, row labels, single-unit groups, localization -- PASS");
 
