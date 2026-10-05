@@ -865,7 +865,10 @@ console.log("iso2 needs a country-code column: PASS");
       assert.equal(accentCircles(svg).length, 2, `${name} (${viewport})`);
       assert.deepEqual(circles(svg), circles(before), `${name} (${viewport}): resolution changes names, never marks`);
       // The two names are as wide to the layout as their codes, so the printed name is the only thing that differs.
-      assert.equal(svg, before.replace(`>${raw[0]}</text>`, ">肯尼亚</text>").replace(`>${raw[2]}</text>`, ">巴西</text>"), `${name} (${viewport})`);
+      // Desktop also auto-labels three unhighlighted points (NOR, CHN, IND), and those print their names too; mobile draws no auto-labels.
+      let expected = before.replace(`>${raw[0]}</text>`, ">肯尼亚</text>").replace(`>${raw[2]}</text>`, ">巴西</text>");
+      if (viewport === "desktop") expected = expected.replace(`>${raw[3]}</text>`, ">中国</text>").replace(`>${raw[4]}</text>`, ">印度</text>").replace(`>${raw[1]}</text>`, ">挪威</text>");
+      assert.equal(svg, expected, `${name} (${viewport})`);
     }
   }
 
@@ -884,7 +887,15 @@ console.log("iso2 needs a country-code column: PASS");
     const declared = scatter({ category_names: "iso3", highlight_values: ["ZZZ"] });
     const svg = render(declared, rows);
     assert.deepEqual(directLabels(svg).map((l) => l.text), ["ZZZ"], viewport);
-    assert.equal(svg, render({ ...declared, category_names: undefined }, rows), `${viewport}: nothing resolves, so nothing changes`);
+    // Desktop auto-labels the unhighlighted NOR, and that one label now prints its name; everything else is the plain render.
+    const plain = render({ ...declared, category_names: undefined }, rows);
+    assert.equal(svg, viewport === "desktop" ? plain.replace(">NOR</text>", ">挪威</text>") : plain, `${viewport}: only the one resolvable auto-label changes`);
+  }
+  // Rows with no resolvable code at all: nothing changes on either viewport.
+  for (const [viewport, render] of Object.entries(VIEWPORTS)) {
+    const rows = points("label", ["ZZZ", "QQQ", "XXX"]);
+    const declared = scatter({ category_names: "iso3", highlight_values: ["ZZZ"] });
+    assert.equal(render(declared, rows), render({ ...declared, category_names: undefined }, rows), `${viewport}: nothing resolves, so nothing changes`);
   }
   // An English page prints World Bank English for the same points; the names it already has stay exactly as they are.
   for (const [viewport, render] of Object.entries(VIEWPORTS)) {
