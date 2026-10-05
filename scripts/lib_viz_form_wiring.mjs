@@ -2,7 +2,7 @@
 //
 // Several tests compare today's tool definitions with an older newsroom.ts (a4d4cb0, bc1ccfd, 42a5e77). The wiring is an approved
 // difference there. formWiringMask() is a JSON.stringify replacer that removes exactly that difference from a viz tool's
-// definition: the three chart_type values, the fourteen form fields, the three form names in the category_names description
+// definition: the three chart_type values, the thirteen form fields, the three form names in the category_names description
 // and the three guideline sentences. Everything else must still equal the baseline, and a half-applied wiring (one chart_type
 // value missing, a guideline not starting with its pattern) is not masked, so it fails the comparison.
 // test_viz_plan_schema.mjs asserts the wiring itself against schemas/newsroom-viz-spec.schema.json; it is not asserted here.
@@ -10,7 +10,7 @@ export const FORM_CHART_TYPES = ["strip_plot", "stacked_bar_100", "mirrored_bar"
 
 export const FORM_FIELDS = [
   "group_order", "point_layout", "show_median", "label_extremes",                      // strip_plot
-  "segment_order", "sort_segment", "highlight_segment", "segment_values", "decimals",  // stacked_bar_100 (decimals: 0 or 1 there)
+  "segment_order", "sort_segment", "highlight_segment", "segment_values",             // stacked_bar_100
   "first_row", "compare_layout", "left_series", "current_period", "period_field",      // mirrored_bar
 ];
 

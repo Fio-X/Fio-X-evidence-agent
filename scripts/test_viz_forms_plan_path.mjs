@@ -1,7 +1,8 @@
 // Drives the real newsroom_viz_plan handler (as test_viz_plan_inset_param.mjs does: a typed-stripped temporary copy of runtime/,
 // inert Pi stubs) for the strip_plot / stacked_bar_100 / mirrored_bar fields the plan path wires, then renders the recorded spec.
 //
-//   1. stacked_bar_100 records sort 'desc' by default (an explicit sort is kept); other types keep the row order.
+//   1. decimals is not a field of newsroom_viz_plan or newsroom_viz_chain, and a decimals value that reaches the handler anyway is
+//      not recorded in the plan (29.6 and 30.4 would both print as 30 at 0 decimals).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -58,3 +59,13 @@ const stacked = (extra = {}) => ({
   category_field: "c", series_field: "s", value_field: "v", segment_order: ["A", "B", "C"], sort_segment: "A", highlight_segment: "A",
   highlight_values: [], annotations: [], ...extra,
 });
+// 2. decimals is not on the plan path
+{
+  for (const name of ["newsroom_viz_plan", "newsroom_viz_chain"]) {
+    const tool = tools.get(name);
+    if (tool?.parameters?.properties) assert.ok(!("decimals" in tool.parameters.properties), `${name} has no decimals field`);
+  }
+  const spec = await recorded(stacked({ decimals: 0 }));
+  assert.ok(!("decimals" in spec), "a decimals value passed to the handler is not recorded in the plan");
+  console.log("decimals is dropped from the plan path -- PASS");
+}

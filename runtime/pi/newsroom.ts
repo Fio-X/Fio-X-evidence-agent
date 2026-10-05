@@ -3380,7 +3380,6 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       sort_segment: Type.Optional(Type.String({ minLength: 1, description: "stacked_bar_100: segment whose value orders the bars (direction from sort)" })),
       highlight_segment: Type.Optional(Type.String({ minLength: 1, description: "stacked_bar_100: segment drawn in the accent colour, the rest grey" })),
       segment_values: Type.Optional(StringEnum(["in_bar", "highlight_column"] as const, { description: "stacked_bar_100: highlight_column (default; highlight value in a right column) or in_bar (every value)" })),
-      decimals: Type.Optional(Type.Integer({ minimum: 0, maximum: 3, description: "Decimal count for value labels; stacked_bar_100 takes 0 or 1" })),
       first_row: Type.Optional(StringEnum(["bottom", "top"] as const, { description: "mirrored_bar: where the first category is drawn (default bottom)" })),
       compare_layout: Type.Optional(StringEnum(["overlay", "side_by_side"] as const, { description: "mirrored_bar: overlay (default; outline) or side_by_side (second pyramid)" })),
       left_series: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Number()], { description: "mirrored_bar: series_field value on the left (default: first in row order)" })),
@@ -3475,6 +3474,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         publishable: verificationMode === "verified",
         verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
+        // Value-label decimals come from the shared chart formatter. The tool schema has no decimals field, and a value that reaches
+        // here anyway (an unvalidated caller) is dropped, so a plan never carries one: 29.6 and 30.4 must not both print as 30.
+        decimals: undefined,
         semantic_gate: semanticGate,
         editorial_plan: semanticGate.editorial_plan,
         language: params.language ?? "en",
