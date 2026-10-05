@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { CHART_TYPES, fmtSpec, lintVizSpec, renderVizBundle, renderVizSvg, validateVizSpec } from "../runtime/pi/viz.mjs";
+import { CHART_TYPES, critiqueViz, fmtSpec, lintVizSpec, renderVizBundle, renderVizSvg, validateVizSpec } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { parseXml } from "../runtime/pi/render_qa_svg.mjs";
 import { numericFieldsOfSpec } from "../runtime/pi/claim_binding.mjs";
@@ -349,7 +349,14 @@ console.log("strip_plot data: the synthetic 35-group / 286-unit set has the docu
   assert.ok(lint({ ...base, label_field: "nope" }, smallRows).warnings.some((w) => w.includes("label_field 'nope' is absent from the rows")));
   assert.equal(lint({ ...base, label_field: "nope", label_extremes: 0 }, smallRows).warnings.some((w) => w.includes("absent")), false);
   const pointNote = lint({ ...base, annotations: [{ type: "point", text: "Unit A1", match_field: "u", match_value: "A1", claim_id: claimId }] }, smallRows);
-  assert.ok(pointNote.warnings.some((w) => w.includes("does not draw point annotations")), pointNote.warnings.join("; "));
+  assert.equal(pointNote.passed, false, "a point annotation on strip_plot blocks");
+  assert.ok(pointNote.blockers.some((m) => m.includes("point is not supported on chart_type 'strip_plot'") && m.includes("label_extremes")), pointNote.blockers.join("; "));
+  assert.equal(lint({ ...base, annotations: [{ type: "reference_line", value: 1, text: "x" }] }, smallRows).passed, false, "a reference_line on strip_plot still blocks");
+
+  // the annotation nudge names what the form does: it draws no annotations, it labels extreme points
+  const denseRows = Array.from({ length: 9 }, (_, i) => ({ ...smallRows[0], v: i }));
+  const nudge = JSON.stringify(critiqueViz(base, denseRows, lint(base, denseRows), ""));
+  assert.ok(nudge.includes("no_annotation") && nudge.includes("label_extremes") && !nudge.includes("Add one verified annotation"), nudge);
 
   // reader task fit: strip_plot is a distribution form
   assert.equal(lint(base, smallRows).warnings.some((w) => w.includes("unusual fit")), false);

@@ -1822,6 +1822,9 @@ export function lintVizSpec(spec, rows, context = {}) {
       if (!fieldExists(rows, annotation.match_field)) blockers.push(`annotations[${index}] match_field '${annotation.match_field}' is absent from query output`);
       else if (!rows.some((row) => String(row[annotation.match_field]) === String(annotation.match_value))) blockers.push(`annotations[${index}] target '${annotation.match_value}' was not found in '${annotation.match_field}'`);
     }
+    if (["point", "node"].includes(annotation.type) && ["strip_plot", "mirrored_bar"].includes(spec.chart_type)) {
+      blockers.push(`annotations[${index}] ${annotation.type} is not supported on chart_type '${spec.chart_type}'; ${spec.chart_type === "strip_plot" ? "it draws no annotations, so name an extreme with label_field and label_extremes instead" : "it draws no annotations and nothing needs adding"}`);
+    }
     if (annotation.type === "reference_line") {
       if (!REFERENCE_LINE_CHART_TYPES.has(spec.chart_type)) {
         blockers.push(`annotations[${index}] reference_line is not supported on chart_type '${spec.chart_type}'`);
@@ -2323,7 +2326,10 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
     add("warning", "title_names_unhighlighted", hint, HIGHLIGHT_HINT_CRITIC_PENALTY, hint);
   } else if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
   if ((spec.highlight_values ?? []).length > 4) add("warning", "too_many_highlights", "Too many marks compete for attention.", 10, "Reduce highlights to one primary focus and a small number of comparisons.");
-  if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
+  if (spec.chart_type === "mirrored_bar") {
+    // mirrored_bar draws no annotations, so there is nothing to add.
+  } else if (annotations(spec).length === 0 && rows.length >= 8 && spec.chart_type === "strip_plot") add("info", "no_annotation", "strip_plot draws no annotations; it labels its extreme points instead.", 4, "To name an outlier, set label_field and label_extremes; no annotation is needed.");
+  else if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
   if (annotations(spec).length > 4) add("warning", "annotation_density", "More than four annotations are likely to compete with the data.", 9, "Keep only annotations that identify, compare, summarize, or explain the governing claim.");
   if (spec.chart_type === "multi_line") {
     const count = spec.series_field ? unique(rows.map((r) => r[spec.series_field])).length : 1;
@@ -4815,7 +4821,6 @@ function lintStripPlotSpec(spec, rows) {
     if (!spec.label_field) warnings.push("strip_plot label_extremes is above 0 but no label_field is set, so no extreme labels are drawn");
     else if (!fieldExists(list, spec.label_field)) warnings.push(`strip_plot label_field '${spec.label_field}' is absent from the rows, so no extreme labels are drawn`);
   }
-  if (annotations(spec).some((annotation) => annotation?.type === "point")) warnings.push("strip_plot does not draw point annotations; they are ignored");
   return { blockers, warnings };
 }
 
