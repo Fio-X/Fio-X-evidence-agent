@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isSystemVerifiedClaim } from "./evidence_gate.mjs";
 import { LIEFLAT_BUNDLE, VISUAL_SKILL_INDEX, VISUAL_SKILLS } from "./visual_skill_bundle.mjs";
 
 export const LIEFLAT_SCHEMA_VERSION = "1.0.0";
@@ -474,22 +475,31 @@ async function validateEvidenceRefs(root, refs, allowedPrefixes = ["sources/", "
   return normalized;
 }
 
+// A claim counts as verified only while its latest record in claims.jsonl is system-verified, as in the runtime
+// (a later non-verified record with the same claim_id revokes it). A line that is not a JSON object with a claim_id
+// closes the registry: it could have been a revoking record.
 async function verifiedClaims(root) {
   const canonical = await canonicalRoot(root);
   const path = join(canonical, "claims.jsonl");
-  const out = new Map();
+  const latest = new Map();
+  let raw = "";
   try {
-    const raw = await readFile(path, "utf8");
-    for (const line of raw.split(/\r?\n/).filter(Boolean)) {
-      try {
-        const record = JSON.parse(line);
-        if (record.status === "verified" && record.claim_id) out.set(String(record.claim_id), record);
-      } catch {}
-    }
+    raw = await readFile(path, "utf8");
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
+    return latest;
   }
-  return out;
+  const lines = raw.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].trim()) continue;
+    let record;
+    try { record = JSON.parse(lines[index]); } catch { record = undefined; }
+    if (!record || typeof record !== "object" || Array.isArray(record) || typeof record.claim_id !== "string" || !record.claim_id) {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not a claim record with a claim_id, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
+    }
+    latest.set(record.claim_id, record);
+  }
+  return new Map([...latest].filter(([, record]) => isSystemVerifiedClaim(record)));
 }
 
 function claimSet(module) { return unique(module.claim_ids).sort(); }
