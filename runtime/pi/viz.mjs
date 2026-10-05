@@ -2054,9 +2054,9 @@ export function lintVizSpec(spec, rows, context = {}) {
         if (unknown.length) blockers.push(`stacked_bar_100 segment_order lists ${unknown.map((value) => `'${value}'`).join(", ")}, not a value of series_field '${spec.series_field}'`);
       }
       const gaps = model.segments
-        .map((segment) => ({ segment, missing: model.entities.filter((entity) => !entity.cells.has(segment)).length }))
-        .filter((item) => item.missing > 0);
-      if (gaps.length) warnings.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' is missing from ${item.missing} bar(s)`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; a missing segment is drawn as 0`);
+        .map((segment) => ({ segment, bars: model.entities.filter((entity) => !entity.cells.has(segment)).map((entity) => entity.key) }))
+        .filter((item) => item.bars.length > 0);
+      if (gaps.length) blockers.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' has no row for ${item.bars.length} bar(s): ${item.bars.slice(0, 5).map((bar) => `'${bar}'`).join(", ")}${item.bars.length > 5 ? ", ..." : ""}`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; if the true value is zero, return an explicit 0 row for it from SQL, otherwise fetch the missing rows (a missing segment is never filled in)`);
     }
   }
   if (spec.chart_type === "mirrored_bar" && Array.isArray(rows) && rows.length > 0) {
