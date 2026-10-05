@@ -4768,7 +4768,7 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
   const idxLeft = indexBase !== null ? 54 + 40 : 70;
-  const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
+  const panelH = 230 + refMargin;
   const valuesOf = (list) => list.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const domainOf = (values) => extent(indexBase !== null ? [...values, indexBase] : values, false);
   const allY = valuesOf(rows);
@@ -4792,7 +4792,10 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   })();
   const gridFacets = outlier ? facets.filter((facet) => facet !== outlier.facet) : facets;
   const gridDomain = outlier ? outlier.domain : yDomain;
-  const rowsN = Math.ceil(gridFacets.length / cols);
+  // the grid's columns follow the facets that stay in it
+  const gridCols = gridFacets.length === 1 ? 1 : indexBase !== null && gridFacets.length >= 7 ? (gridFacets.length >= 10 ? 4 : 3) : 2;
+  const panelW = indexBase !== null && gridCols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (gridCols - 1) * gapX) / gridCols) : 430;
+  const rowsN = Math.ceil(gridFacets.length / gridCols);
   const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + (outlier ? gapY + panelH : 0) + 20 + rowShift);
   // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
   const ticksFor = (domain, nice = indexBase !== null) => {
@@ -4806,7 +4809,7 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   };
   const idxTicks = ticksFor(gridDomain);
   let indexBaseNamed = false;
-  const drawFacet = (facet, fi, col, x0, y0, yDomain, idxTicks, panelW, axisLabels = false) => {
+  const drawFacet = (facet, fi, col, x0, y0, yDomain, idxTicks, panelW, axisLabels = false, boxLeft = x0 - gapX + 2) => {
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -4884,21 +4887,35 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
         f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase, i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 34))}</text>`);
       }
     });
-    tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+    tagPanelTexts(f.parts, facetPartStart, [boxLeft, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
   };
   gridFacets.forEach((facet, fi) => {
-    const col = fi % cols, rowN = Math.floor(fi / cols);
+    const col = fi % gridCols, rowN = Math.floor(fi / gridCols);
     drawFacet(facet, fi, col, idxLeft + col * (panelW + gapX), f.bodyTop + rowShift + rowN * (panelH + gapY), gridDomain, idxTicks, panelW);
   });
   if (outlier) {
-    const gridW = cols * panelW + (cols - 1) * gapX;
+    const gridW = gridCols * panelW + (gridCols - 1) * gapX;
     const y0 = f.bodyTop + rowShift + rowsN * (panelH + gapY);
     const name = resolveEconomyDisplayName(outlier.facet, spec.category_names, vizLang(spec));
+    // y labels come from tickValues on the panel's own domain: at least 3 inside it, plus the base when one is set
+    let ownTicks = [];
+    for (const count of [4, 6, 8, 12, 16, 24]) {
+      ownTicks = tickValues(outlier.ownDomain, count).filter((v) => v >= outlier.ownDomain[0] - 1e-9 && v <= outlier.ownDomain[1] + 1e-9);
+      if (ownTicks.length >= 3) break;
+    }
+    if (ownTicks.length < 3) ownTicks = [outlier.ownDomain[0], (outlier.ownDomain[0] + outlier.ownDomain[1]) / 2, outlier.ownDomain[1]];
+    if (indexBase !== null && !ownTicks.some((v) => Math.abs(v - indexBase) < 1e-9 * Math.max(1, Math.abs(indexBase)))) ownTicks.push(indexBase);
+    ownTicks.sort((a, b) => a - b);
+    // keep the widest y label 2 px inside the panel box: move the panel's left edge right by any shortfall
+    const boxLeft = idxLeft - gapX + 2;
+    const labelW = Math.max(...ownTicks.map((tick) => estimateTextWidth(tickLabelSpec(spec, tick, ""), 12, false)));
+    const shift = Math.max(0, Math.ceil(boxLeft + 2 + 6 + 2 + labelW - idxLeft));
+    const x0 = idxLeft + shift;
     const noteStart = f.parts.length;
-    const note = vizLang(spec) === "zh" ? `${name}变化幅度远大于其他各项，单独成图，纵轴刻度与上面各图不同` : `${name} moved far more than the others, so it has its own panel with a different vertical scale.`;
-    f.parts.push(`<text data-role="outlier-note" x="${idxLeft}" y="${y0 - 14}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(note)}</text>`);
-    tagPanelTexts(f.parts, noteStart, [idxLeft - gapX + 2, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
-    drawFacet(outlier.facet, gridFacets.length, 0, idxLeft, y0, outlier.ownDomain, ticksFor(outlier.ownDomain, true), gridW, true);
+    const note = vizLang(spec) === "zh" ? `${name}与其他各项数值相差悬殊，单独成图，纵轴刻度与上面各图不同` : `${name} is far outside the others' range, so it has its own panel with a different vertical scale.`;
+    f.parts.push(`<text data-role="outlier-note" x="${x0}" y="${y0 - 14}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(note)}</text>`);
+    tagPanelTexts(f.parts, noteStart, [boxLeft, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
+    drawFacet(outlier.facet, gridFacets.length, 0, x0, y0, outlier.ownDomain, ownTicks, gridW - shift, true, boxLeft);
   }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }

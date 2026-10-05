@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { lintVizSpec, renderVizBundle, renderVizSvg } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
+import { estimateTextWidth } from "../runtime/pi/render_qa_geometry.mjs";
 
 const spec = (o = {}) => ({ schema_version: "0.9.0", reader_task: "change", takeaway: "各系列走势", chart_type: "small_multiples", panel_mark: "line", title: "各系列走势", subtitle: "合成数据", alt: "A synthetic small-multiples chart with one line panel for each series.", source_note: "合成数据", claim_id: "claim-so", sql: "SELECT 1", unit: "点", language: "zh", facet_field: "series", x_field: "month", value_field: "value", highlight_values: [], annotations: [], direct_labels: true, ...o });
 const months = Array.from({ length: 12 }, (_, i) => `2024-${String(i + 1).padStart(2, "0")}`);
@@ -18,7 +19,7 @@ const geometry = (svg) => [...svg.matchAll(/<polyline [^>]*points="([^"]+)"/g)].
   return Math.max(...ys) - Math.min(...ys);
 });
 const qaOf = (svg) => { const q = runRenderQa({ desktop: svg }).viewports.desktop; return [...(q.geometry?.failures ?? []), ...(q.contrast?.failures ?? [])].map((x) => x.rule); };
-const NOTE_ZH = /变化幅度远大于其他各项，单独成图，纵轴刻度与上面各图不同/;
+const NOTE_ZH = /与其他各项数值相差悬殊，单独成图，纵轴刻度与上面各图不同/;
 
 // ---- split shapes ---------------------------------------------------------------------------------------------------------
 const shapeA = { spec: spec({ index_base: 100 }), rows: [...["S1", "S2", "S3", "S4", "S5"].map((n, k) => series(n, wave(100 + k, 6 + k))).flat(), ...series("S6", (i) => 100 + i * 28)] };
@@ -36,7 +37,7 @@ if (!process.env.PRINT_HASHES) for (const [name, { spec: sp, rows }, outlierName
   assert.ok(Math.min(...grid) / PLOT_H >= 0.25, `${name}: every grid panel's line spans >= 0.25 of its plot height (min ${(Math.min(...grid) / PLOT_H).toFixed(2)})`);
   assert.ok(own / PLOT_H >= 0.8, `${name}: the outlier spans >= 0.8 of its own plot height (${(own / PLOT_H).toFixed(2)})`);
   assert.match(svg, NOTE_ZH, `${name}: the note is present`);
-  assert.ok(svg.includes(`${outlierName}变化幅度远大于其他各项`), `${name}: the note names the outlier`);
+  assert.ok(svg.includes(`${outlierName}与其他各项数值相差悬殊`), `${name}: the note names the outlier`);
     const ownTicks = svg.slice(svg.indexOf('data-role="outlier-note"')).match(/data-role="value-axis-tick"/g) ?? [];
   assert.ok(ownTicks.length >= 3, `${name}: the outlier panel has its own y ticks (${ownTicks.length})`);
   assert.deepEqual(qaOf(svg), [], `${name}: render QA passes`);
@@ -52,7 +53,50 @@ if (!process.env.PRINT_HASHES) for (const [name, { spec: sp, rows }, outlierName
 // en note
 if (!process.env.PRINT_HASHES) {
   const svg = renderVizSvg({ ...shapeA.spec, language: "en" }, shapeA.rows);
-  assert.ok(svg.includes("S6 moved far more than the others, so it has its own panel with a different vertical scale."), "en note");
+  assert.ok(svg.replace(/&#39;|&apos;|&#x27;/g, "'").includes("S6 is far outside the others' range, so it has its own panel with a different vertical scale."), "en note");
+}
+
+
+// ---- round 2: ticks, label room, level shift, grid columns --------------------------------------------------------------------
+const ownPart = (svg) => svg.slice(svg.indexOf('data-role="outlier-note"'));
+const tickTexts = (svg) => [...ownPart(svg).matchAll(/<text ([^>]*)data-role="value-axis-tick"([^>]*)>([^<]*)</g)].map((m) => {
+  const attrs = m[1] + m[2];
+  return { x: Number(attrs.match(/ x="([^"]+)"/)[1]), box: attrs.match(/data-panel-box="([^"]+)"/)?.[1].split(",").map(Number), label: m[3] };
+});
+const thousands = { spec: spec({ unit: "点" }), rows: [...["甲", "乙", "丙", "丁"].map((n, k) => series(n, wave(30 + 3 * k, 8))).flat(), ...series("戊", (i) => 47 + (i / 11) * 822)] };
+{
+  const svg = renderVizSvg(thousands.spec, thousands.rows);
+  assert.match(svg, NOTE_ZH, "thousands: split");
+  const ticks = tickTexts(svg);
+  assert.ok(ticks.length >= 3, `thousands: >= 3 y labels (${ticks.map((t) => t.label)})`);
+  for (const t of ticks) {
+    assert.ok(t.box, "thousands: tick is tagged with its panel box");
+    assert.ok(t.x - estimateTextWidth(t.label, 12, false) >= t.box[0] + 2 - 1e-6, `thousands: label ${t.label} inside its panel box`);
+  }
+  assert.deepEqual(qaOf(svg), [], "thousands: render QA passes");
+  const wide = { spec: spec({ unit: "点" }), rows: [...["甲", "乙", "丙", "丁"].map((n, k) => series(n, wave(300 + 30 * k, 80))).flat(), ...series("戊", (i) => 3120 + i * 700)] };
+  const wsvg = renderVizSvg(wide.spec, wide.rows);
+  assert.match(wsvg, NOTE_ZH, "wide labels: split");
+  for (const t of tickTexts(wsvg)) assert.ok(t.x - estimateTextWidth(t.label, 12, false) >= t.box[0] + 2 - 1e-6, `wide labels: ${t.label} inside its box`);
+  assert.deepEqual(qaOf(wsvg), [], "wide labels: render QA passes");
+}
+{ // level shift: flat and far above the others, no bigger move
+  const flat = { spec: spec(), rows: [...["甲", "乙", "丙", "丁"].map((n, k) => series(n, wave(20 + 2 * k, 4))).flat(), ...series("戊", () => 300)] };
+  const svg = renderVizSvg(flat.spec, flat.rows);
+  assert.match(svg, NOTE_ZH, "level shift: split, new note");
+  assert.ok(svg.includes("戊与其他各项数值相差悬殊"), "level shift: note names the facet");
+  assert.ok(!/变化幅度/.test(svg), "level shift: no claim about the size of the change");
+  assert.deepEqual(qaOf(svg), [], "level shift: render QA passes");
+}
+{ // the grid counts columns from the facets that stay in it
+  const titleXs = (svg) => new Set([...svg.matchAll(/<text [^>]*? x="([^"]+)" y="[^"]+" font-family="[^"]+" font-size="14" font-weight="700"/g)].map((m) => m[1]));
+  for (const [total, wantCols] of [[7, 2], [10, 3]]) {
+    const rowsN = [...Array(total - 1)].map((_, k) => series(`F${k + 1}`, wave(100 + k, 4 + (k % 3)))).flat().concat(series("OUT", (i) => 100 + i * 28));
+    const svg = renderVizSvg(spec({ index_base: 100 }), rowsN);
+    assert.match(svg, NOTE_ZH, `${total} index facets: split`);
+    assert.equal(titleXs(svg).size, wantCols, `${total} index facets: grid has ${wantCols} columns`);
+    assert.deepEqual(qaOf(svg), [], `${total} index facets: render QA passes`);
+  }
 }
 
 // ---- byte-identical to a5f56b3 -------------------------------------------------------------------------------------------------
