@@ -224,6 +224,8 @@ jobs:
         run: node scripts/test_viz_mirrored_bar.mjs
       - name: Chart form grammar wiring tests
         run: node scripts/test_viz_form_wiring.mjs
+      - name: Chart form plan-path tests
+        run: node scripts/test_viz_forms_plan_path.mjs
       - name: Complex visualization semantic smoke tests
         run: |
           node scripts/test_complex_viz.mjs
