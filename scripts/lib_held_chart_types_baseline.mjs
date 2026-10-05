@@ -15,6 +15,14 @@ import assert from "node:assert/strict";
 const BEFORE_ENUM = Object.freeze(["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth"]);
 export const HELD_CHART_TYPES = Object.freeze(["hierarchy_tree", "geo_flow_map", "cartographic_flow_map", "trajectory_profile"]);
 const ENUM = Object.freeze({ before: BEFORE_ENUM, after: Object.freeze(BEFORE_ENUM.filter((type) => !HELD_CHART_TYPES.includes(type))) });
+// Plan values that fit only held chart types (viz.mjs's inferVisualFamily / inferDataTopology), taken out of the plan's
+// visual_family and data_topology enums.
+export const HELD_PLAN_VALUES = Object.freeze({ visual_family: Object.freeze(["hierarchy"]), data_topology: Object.freeze(["hierarchy", "geo_edges"]) });
+const PLAN_ENUMS = Object.freeze({
+  visual_family: { before: Object.freeze(["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"]) },
+  data_topology: { before: Object.freeze(["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"]) },
+});
+for (const [field, entry] of Object.entries(PLAN_ENUMS)) entry.after = Object.freeze(entry.before.filter((value) => !HELD_PLAN_VALUES[field].includes(value)));
 
 // The plan tool's own description (a string on the tool, not on a property).
 const DESCRIPTION_EDITS = Object.freeze([
@@ -46,7 +54,7 @@ const TOOLS = Object.freeze({
   newsroom_viz_chain: { description: false, guidelines: false, hints: true },
 });
 
-export const HELD_CHART_TYPE_EDITS = Object.freeze({ enum: ENUM, description: DESCRIPTION_EDITS, guidelines: GUIDELINE_EDITS, ruleHints: RULE_HINT_EDITS, tools: Object.keys(TOOLS) });
+export const HELD_CHART_TYPE_EDITS = Object.freeze({ enum: ENUM, planEnums: PLAN_ENUMS, description: DESCRIPTION_EDITS, guidelines: GUIDELINE_EDITS, ruleHints: RULE_HINT_EDITS, tools: Object.keys(TOOLS) });
 
 const sameArray = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
 
@@ -83,6 +91,12 @@ export function revertHeldChartTypes(tool, { descriptions = true, enumValues = t
         bump("enum", 1);
         return [...ENUM.before];
       }
+      for (const [field, entry] of Object.entries(PLAN_ENUMS)) {
+        if (sameArray(node, entry.after)) {
+          bump(`${field} enum`, 1);
+          return [...entry.before];
+        }
+      }
       return node.map((item) => walk(item, edits));
     }
     if (node && typeof node === "object") return Object.fromEntries(Object.entries(node).map(([key, value]) => [key, walk(value, edits)]));
@@ -92,6 +106,7 @@ export function revertHeldChartTypes(tool, { descriptions = true, enumValues = t
   if (typeof tool.description === "string") reverted.description = replaceIn(tool.description, DESCRIPTION_EDITS);
   if (tool.promptGuidelines !== undefined) reverted.promptGuidelines = walk(tool.promptGuidelines, GUIDELINE_EDITS);
   const expected = new Map([["enum", enumValues ? 1 : 0]]);
+  for (const field of Object.keys(PLAN_ENUMS)) expected.set(`${field} enum`, enumValues ? 1 : 0);
   for (const edit of DESCRIPTION_EDITS) expected.set(edit.id, scope.description ? 1 : 0);
   for (const edit of GUIDELINE_EDITS) expected.set(edit.id, scope.guidelines ? 1 : 0);
   // The rule hint is one string: its two fragments appear together, or (hints off) not at all.

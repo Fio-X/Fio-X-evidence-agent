@@ -200,6 +200,13 @@ const editorialHint = (description: string, base?: any): any => (editorialHintsE
 // grammar-blocked message all read this one list.
 const HELD_CHART_TYPES: readonly string[] = ["hierarchy_tree", "geo_flow_map", "cartographic_flow_map", "trajectory_profile"];
 const isHeldChartType = (chartType: unknown) => HELD_CHART_TYPES.includes(String(chartType ?? ""));
+// Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
+const HELD_PLAN_VALUES: Record<string, readonly string[]> = { visual_family: ["hierarchy"], data_topology: ["hierarchy", "geo_edges"] };
+function assertPlanValuesNotHeld(params: any) {
+  for (const [field, held] of Object.entries(HELD_PLAN_VALUES)) {
+    if (held.includes(String(params?.[field] ?? ""))) throw new Error(`PLAN_VALUE_HELD: ${field} '${String(params[field])}' is not available; choose another ${field}.`);
+  }
+}
 function assertChartTypeNotHeld(chartType: unknown) {
   if (isHeldChartType(chartType)) throw new Error(`CHART_TYPE_HELD: chart_type '${String(chartType)}' is not available; choose another chart_type.`);
 }
@@ -3987,8 +3994,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
       chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar"] as const).filter((chartType) => !isHeldChartType(chartType)) as any),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Chart language; defaults to 'en'. Every string the renderer adds on its own (note/source prefixes, axis and legend words) follows this field; the model's own title/subtitle copy must still be written in this language.", default: "en" })),
-      visual_family: Type.Optional(StringEnum(["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const)),
-      data_topology: Type.Optional(StringEnum(["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const)),
+      visual_family: Type.Optional(StringEnum((["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const).filter((value) => !HELD_PLAN_VALUES.visual_family.includes(value)) as any)),
+      data_topology: Type.Optional(StringEnum((["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const).filter((value) => !HELD_PLAN_VALUES.data_topology.includes(value)) as any)),
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
       flow_conservation: Type.Optional(StringEnum(["off", "warn", "strict"] as const)),
       flow_tolerance: Type.Optional(Type.Number({ minimum: 0, maximum: 0.5 })),
@@ -4135,6 +4142,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     })),
     async execute(_id, rawParams, signal) {
       assertChartTypeNotHeld(rawParams.chart_type);
+      assertPlanValuesNotHeld(rawParams);
       // Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1): the plan SQL runs and the
       // claim is filled and bound to the plan before the checks below; it is
       // recorded only after all of them pass. Off: params is rawParams.
@@ -4330,6 +4338,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       assertChartTypeNotHeld(spec.chart_type);
+      assertPlanValuesNotHeld(spec);
       const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
       const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
@@ -4394,6 +4403,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
       assertChartTypeNotHeld(spec.chart_type);
+      assertPlanValuesNotHeld(spec);
       const lint = await readArtifactJson(params.lint_ref, "visualizations/lints/");
       if (lint.plan_ref !== params.plan_ref) throw new Error("Lint artifact does not belong to the supplied visualization plan");
       if (!lint.passed || (Array.isArray(lint.blockers) && lint.blockers.length > 0)) throw new Error("Visualization lint has blocking failures; revise and lint again before rendering");
