@@ -2577,12 +2577,34 @@ async function fillHeroModules(modules: any[], collectAll = false): Promise<any[
     try { out.push(await fillHeroModule(module, context, modules)); } catch (error: any) {
       first ??= error;
       problems.push(...heroProblemsOf(module, context, error));
+      // NEWSROOM_SPEED_PRECHECK_ALL only: the fill stops at its first refusal, so later gates of the same hero are found by re-running it
+      // on a probe copy with the offending field removed. The stored plan is never the probe.
+      if (collectAll) for (const extra of await peelHeroProblems(module, context, modules, problems)) if (!problems.includes(extra)) problems.push(extra);
     }
   }
   if (!problems.length) return out;
   // One problem: the very error the off path throws. Several: every code the off path would have thrown first stays, one per line.
   if (problems.length === 1) throw first;
   throw combinedError(first, problems.join("\n"));
+}
+
+/** Probe copies only (NEWSROOM_SPEED_PRECHECK_ALL): the refusals fillHeroModule would give after the first one, found by dropping the field it refused. Stops at any refusal it cannot step past (the value itself, the claim). */
+async function peelHeroProblems(module: any, context: HeroClaimContext | null, modules: any[], known: string[]): Promise<string[]> {
+  const found: string[] = [];
+  let probe: any = { ...module };
+  for (let round = 0; round < 8; round++) {
+    let message = "";
+    try { await fillHeroModule(probe, context, modules); return found; } catch (error: any) { message = String(error?.message ?? error); }
+    const code = /^([A-Z][A-Z0-9_]+):/.exec(message)?.[1] ?? "";
+    if (!known.includes(message) && !found.includes(message)) found.push(message);
+    const field = new RegExp(`hero_stat '${String(module.id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}' (label|detail)\\b`).exec(message)?.[1];
+    if (code === "HERO_VALUE_TYPED") probe = { ...probe, value: undefined };
+    else if (code === "HERO_UNIT_NOT_ALLOWED") probe = { ...probe, unit: undefined };
+    else if (code === "HERO_UNIT_DROPPED") { const magnitude = /shows '([^']*)' right after/.exec(message)?.[1]; if (magnitude === undefined || probe.unit === magnitude) return found; probe = { ...probe, unit: magnitude }; }
+    else if (field && ["HERO_TYPED_NUMBER", "HERO_TEMPLATE_INVALID", "HERO_PLACEHOLDER_UNBOUND", "HERO_EDITED_AFTER_FILL"].includes(code)) probe = { ...probe, [field]: undefined, [`${field}_template`]: undefined };
+    else return found;
+  }
+  return found;
 }
 
 /** The first refusal fillHeroModule threw for a module, then the label/detail refusals that do not depend on the value (the loop below reads only the text). */
@@ -2814,8 +2836,12 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
   const firstText = String(first?.message ?? first);
   const problems: { stage: string; text: string }[] = [];
   const unchecked: string[] = [];
+  const failedHeroIds = new Set<string>();
   const seen = (text: string) => firstText.includes(text) || problems.some((problem) => problem.text === text);
-  const add = (stage: string, text: string) => { if (!seen(text)) problems.push({ stage, text }); };
+  // A hero whose fill was refused is planned unfilled, so a spec or lint line that only says its value or text is missing repeats the fill problem.
+  const heroConsequence = (stage: string, text: string) => stage !== "hero fill" && !text.includes("\n") && [...failedHeroIds].some((id) => text.includes(`hero_stat '${id}' requires value`) || text.includes(`module:${id}:label`) || text.includes(`module:${id}:detail`));
+  const add = (stage: string, text: string) => { if (heroConsequence(stage, text)) { suppressedForHero = true; return; } if (!seen(text)) problems.push({ stage, text }); };
+  let suppressedForHero = false;
   const fail = (stage: string, error: any) => add(stage, String(error?.message ?? error));
   const orderKeys = () => Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {});
   const hintContext: any = {
@@ -2858,7 +2884,7 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
   let modules = withDefaults;
   let heroFilled = true;
   try { modules = await fillHeroModules(withDefaults, true); } catch (error: any) {
-    fail("hero fill", error);
+    for (const line of String(error?.message ?? error).split("\n")) { add("hero fill", line); const id = /hero_stat '([^']+)'/.exec(line)?.[1]; if (id) failedHeroIds.add(id); }
     heroFilled = false;
   }
   const view: any = {
@@ -2998,7 +3024,7 @@ async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
     lines.push("Not checked (an earlier problem stops these from running; this is not a pass):");
     for (const entry of unchecked) lines.push(`- ${entry}`);
   }
-  if (!heroFilled && problems.length) lines.push("Note: hero_stat modules whose fill was refused are linted unfilled, so a lint line about their missing value repeats the fill problem.");
+  if (suppressedForHero) lines.push("Not shown: spec and page-lint lines that only say a refused hero_stat is missing its value or has unfilled template text; they follow from the hero fill problem above and are not checked separately.");
   return combinedError(first, lines.join("\n"));
 }
 
