@@ -2128,7 +2128,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       const gaps = model.segments
         .map((segment) => ({ segment, bars: model.entities.filter((entity) => !entity.cells.has(segment)).map((entity) => entity.key) }))
         .filter((item) => item.bars.length > 0);
-      if (gaps.length) blockers.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' has no row for ${item.bars.length} bar(s): ${item.bars.slice(0, 5).map((bar) => `'${bar}'`).join(", ")}${item.bars.length > 5 ? ", ..." : ""}`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; if the true value is zero, return an explicit 0 row for it from SQL, otherwise fetch the missing rows (a missing segment is never filled in)`);
+      if (gaps.length) blockers.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' has no row for ${item.bars.length} bar(s): ${item.bars.slice(0, 5).map((bar) => `'${bar}'`).join(", ")}${item.bars.length > 5 ? ", ..." : ""}`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; if the source data records this segment as zero, select that row from the data; a zero written into the SQL (a constant, a VALUES list or a COALESCE) is a filled-in fact; otherwise fetch the missing rows (a missing segment is never filled in)`);
     }
   }
   if (spec.chart_type === "mirrored_bar" && Array.isArray(rows) && rows.length > 0) {
