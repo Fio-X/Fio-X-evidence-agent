@@ -50,6 +50,7 @@ const SWITCHES = [
   { name: "CHANNEL_AXES", env: "NEWSROOM_CHANNEL_AXES" }, // the channel list also offers position_x / position_y; wording and one enum value, no check loosened
   { name: "PAGE_QA_NESTED_CLIP", env: "NEWSROOM_PAGE_QA_NESTED_CLIP" }, // page check: refuses only (text clipped by a nested svg)
   { name: "PAGE_MODULE_ORDER_CHECK", env: "NEWSROOM_PAGE_MODULE_ORDER_CHECK" }, // page check: refuses only (module numbers out of reading order)
+  { name: "SCATTER_PAIRED", env: "NEWSROOM_SCATTER_PAIRED_MEASURES" }, // refuses only; scatter calls are checked per axis, every forged case must still be refused with it on
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const PROPOSED_16 = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
