@@ -1,0 +1,169 @@
+// Exact patch lists for the byte-pin tests.
+//
+// A pin test compares the tool definitions the head registers with the ones an older commit registered. Some differences are approved on
+// purpose. Each one is one entry of a list (scripts/fixtures/pin_patches/<test>.json): tool, field, path inside the field, the exact old value
+// (omitted = absent), the exact new value (omitted = absent), and the merged commit that made the change. For every tool a profile registers:
+//   1. each entry must hold exactly: the baseline has the old value at the path and the head has the new one;
+//   2. the list is reversed on a copy of the head, and the whole definition must then equal the baseline's byte for byte
+//      (JSON.stringify of everything but the functions, so key order counts).
+// A tool without entries must be byte-equal as it is. There is no replacer, no regex and no prefix match: a value that differs in any way
+// other than the listed one fails. A list entry that no registered tool ever exercised fails too (finish()), so a stale entry cannot stay.
+//
+// PIN_PATCH_RECORD=<dir> turns check() into a recorder: it collects the exact differences it sees and finish() writes <dir>/<name>.json. Used once
+// to write the lists from the baseline and head definitions (every string comes from the two sources, none is typed); never set in CI.
+import assert from "node:assert/strict";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FIELDS = ["description", "promptSnippet", "promptGuidelines", "parameters"];
+const GUIDELINES = "promptGuidelines";
+const LIST_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "pin_patches");
+const isObj = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const json = (x) => JSON.stringify(x);
+const clone = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+const has = (entry, key) => Object.prototype.hasOwnProperty.call(entry, key);
+const where = (entry) => `${entry.tool} ${entry.field}${entry.path ? `.${entry.path.join(".")}` : ""}`;
+
+/** The model-visible definition: every non-function field, as the tests compare it (key order included). */
+export const definitionOf = (tool) => json(tool);
+
+function valueAt(root, path) {
+  let node = root;
+  for (const key of path) {
+    if (!isObj(node) && !Array.isArray(node)) return { found: false };
+    if (!Object.prototype.hasOwnProperty.call(node, key)) return { found: false };
+    node = node[key];
+  }
+  return { found: true, value: node };
+}
+
+function parentAt(root, path) {
+  const parent = valueAt(root, path.slice(0, -1));
+  assert.ok(parent.found && (isObj(parent.value) || Array.isArray(parent.value)), `the parent of ${path.join(".")} exists`);
+  return parent.value;
+}
+
+// ---- recording ---------------------------------------------------------------------------------------------------------------------------
+function recordDiff(out, tool, field, path, a, b) {
+  if (json(a) === json(b)) return;
+  if (field === GUIDELINES && Array.isArray(a) && Array.isArray(b)) {
+    const inA = new Set(a), inB = new Set(b);
+    const added = b.filter((entry) => !inA.has(entry)), removed = a.filter((entry) => !inB.has(entry));
+    for (const oldText of [...removed]) {
+      // a guideline that was reworded keeps its first words: pair it with the new text, so the entry is a change and not two
+      const at = added.findIndex((entry) => entry.slice(0, 24) === oldText.slice(0, 24));
+      if (at < 0) continue;
+      out.push({ tool, field, old: oldText, new: added[at] });
+      added.splice(at, 1);
+      removed.splice(removed.indexOf(oldText), 1);
+    }
+    for (const text of removed) out.push({ tool, field, old: text });
+    for (const text of added) out.push({ tool, field, new: text });
+    return;
+  }
+  if (isObj(a) && isObj(b)) {
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) recordDiff(out, tool, field, [...path, key], a[key], b[key]);
+    return;
+  }
+  // Arrays of objects of the same length (a stand-in schema keeps the builder's arguments as an array) are compared element by element, so an entry
+  // names the one property that changed; every other array (enum values, required names, anyOf) is one value.
+  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x) => x !== null && typeof x === "object")) {
+    a.forEach((x, i) => recordDiff(out, tool, field, [...path, i], x, b[i]));
+    return;
+  }
+  const entry = { tool, field, ...(field === GUIDELINES ? {} : { path }) };
+  if (a !== undefined) entry.old = a;
+  if (b !== undefined) entry.new = b;
+  out.push(entry);
+}
+
+// ---- reversing ---------------------------------------------------------------------------------------------------------------------------
+function reverseEntry(surface, entry) {
+  if (entry.field === GUIDELINES) {
+    const list = surface[GUIDELINES];
+    assert.ok(Array.isArray(list), `${where(entry)}: the head has a guideline list`);
+    if (has(entry, "new")) {
+      const at = list.indexOf(entry.new);
+      assert.notEqual(at, -1, `${where(entry)}: the head carries the new guideline`);
+      if (has(entry, "old")) list[at] = entry.old; else list.splice(at, 1);
+    } else list.push(entry.old);
+    return;
+  }
+  if (entry.path.length === 0) { if (has(entry, "old")) surface[entry.field] = clone(entry.old); else delete surface[entry.field]; return; }
+  const parent = parentAt(surface[entry.field], entry.path), key = entry.path.at(-1);
+  if (has(entry, "old")) parent[key] = clone(entry.old);
+  else if (Array.isArray(parent)) parent.splice(Number(key), 1);
+  else delete parent[key];
+}
+
+function assertHolds(entry, side, entryTool) {
+  const label = `${side}: ${where(entry)}`;
+  const want = side === "baseline" ? "old" : "new";
+  const other = side === "baseline" ? "new" : "old";
+  if (entry.field === GUIDELINES) {
+    const list = entryTool[GUIDELINES] ?? [];
+    if (has(entry, want)) assert.equal(list.filter((text) => text === entry[want]).length, 1, `${label} carries exactly the ${want} guideline once`);
+    else assert.ok(!list.includes(entry[other]), `${label} does not carry the ${other} guideline`);
+    if (has(entry, other) && has(entry, want)) assert.ok(!list.includes(entry[other]), `${label} does not carry the ${other} guideline`);
+    return;
+  }
+  const found = valueAt(entryTool[entry.field], entry.path);
+  if (has(entry, want)) { assert.ok(found.found, `${label} exists`); assert.equal(json(found.value), json(entry[want]), `${label} holds exactly the ${want} value`); }
+  else assert.ok(!found.found, `${label} is absent`);
+}
+
+// ---- the patch list --------------------------------------------------------------------------------------------------------------------------
+export function loadPinPatches(name, { baseline, dir = LIST_DIR } = {}) {
+  const file = join(dir, `${name}.json`);
+  const record = process.env.PIN_PATCH_RECORD;
+  let list = { baseline, entries: [] };
+  if (!record) {
+    list = JSON.parse(readFileSync(file, "utf8"));
+    assert.ok(Array.isArray(list.entries) && list.entries.length > 0, `${basename(file)} lists entries`);
+    if (baseline !== undefined) assert.equal(list.baseline, baseline, `${basename(file)} was written for baseline ${list.baseline}, this test reads ${baseline}`);
+    for (const [i, entry] of list.entries.entries()) {
+      assert.ok(typeof entry.tool === "string" && FIELDS.includes(entry.field), `${basename(file)} entry ${i}: tool and field`);
+      assert.ok(entry.field === GUIDELINES ? !entry.path : Array.isArray(entry.path), `${basename(file)} entry ${i}: path`);
+      assert.ok(has(entry, "old") || has(entry, "new"), `${basename(file)} entry ${i} changes something`);
+    }
+  }
+  const used = new Set();
+  const recorded = new Map();
+
+  /** base and head are Maps of tool name -> registered tool, for one profile / environment. Returns the names that carried entries. */
+  function check(base, head, label) {
+    assert.deepEqual([...head.keys()], [...base.keys()], `${label}: the same tools are registered, in the same order`);
+    const touched = [];
+    for (const [name, headTool] of head) {
+      const baseTool = base.get(name);
+      if (record) {
+        const out = [];
+        for (const field of FIELDS) recordDiff(out, name, field, [], baseTool[field], headTool[field]);
+        for (const entry of out) recorded.set(json(entry), entry);
+        continue;
+      }
+      const entries = list.entries.filter((entry) => entry.tool === name);
+      const surface = JSON.parse(definitionOf(headTool));
+      for (const entry of entries) {
+        assertHolds(entry, "baseline", baseTool);
+        assertHolds(entry, "head", headTool);
+      }
+      for (const entry of entries) { reverseEntry(surface, entry); used.add(list.entries.indexOf(entry)); }
+      assert.equal(json(surface), definitionOf(baseTool), `${label}: ${name}${entries.length ? ` with its ${entries.length} listed change(s) reversed` : ""} is byte-identical to the baseline`);
+      if (entries.length) touched.push(name);
+    }
+    return touched;
+  }
+
+  function finish() {
+    if (record) {
+      mkdirSync(record, { recursive: true });
+      writeFileSync(join(record, `${name}.json`), json({ baseline, entries: [...recorded.values()] }));
+      return;
+    }
+    const idle = list.entries.filter((_, i) => !used.has(i)).map(where);
+    assert.deepEqual(idle, [], `${name}: every listed change was exercised by a registered tool`);
+  }
+  return { check, finish, entries: list.entries };
+}

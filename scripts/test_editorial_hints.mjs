@@ -24,8 +24,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
-import { formWiringMask } from "./lib_viz_form_wiring.mjs";
+import { loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SWITCH = "NEWSROOM_SPEED_EDITORIAL_HINTS";
@@ -109,12 +108,7 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
-// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
-// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
-const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
-const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
-const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) }, mask);
+const slim = (tool) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines });
 const dropDescriptions = (schema) => JSON.stringify(schema, (k, v) => (k === "description" && typeof v === "string" ? undefined : v));
 function descriptionPaths(node, path = "", out = {}) {
   if (Array.isArray(node)) node.forEach((v, i) => descriptionPaths(v, `${path}[${i}]`, out));
@@ -131,50 +125,13 @@ const EXPECTED_DESCRIPTIONS = {
   [FOUR.assets]: { "properties.concept_ref": WORDING.conceptRef },
   [FOUR.concepts]: {},
 };
-// Default-on tool changes approved after a4d4cb0. For a listed tool the switch-off definition may differ from the baseline
-// only at the listed property path of its parameters; everything else (description, snippet, guidelines, every other
-// property) must still equal a4d4cb0. The path must really differ, so a reverted change fails here too.
-// newsroom_viz_plan has a second approved change, the wiring of strip_plot, stacked_bar_100 and mirrored_bar into the plan path:
-// its mask (scripts/lib_viz_form_wiring.mjs) removes exactly the three chart_type values, the fourteen form fields, the three form
-// names in the category_names description and the three form guideline lines from both sides before they are compared.
-// test_viz_plan_schema.mjs asserts that wiring against schemas/newsroom-viz-spec.schema.json.
-// `added` lists properties that did not exist in the baseline at all (removed from the switch-off copy); `described` lists paths where the
-// field exists in both and only a description was added (cleared on both sides).
-const DIMENSION_ENUM_PATH = ["properties", "modules", "items", "properties", "explanatory_dimension", "enum"];
-const APPROVED_LATER = {
-  newsroom_viz_plan: { commit: "b38a345 and the form wiring", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"]], addedWhy: "round-3 opt-in chart fields (the world choropleth field map_extent is behind NEWSROOM_MAP_WORLD, off by default, and absent here)", mask: formWiringMask },
-  // One explanatory_dimension vocabulary (fast-fail-1003 item 3): these two take every story-graph value. +25 B and +15 B.
-  newsroom_semantic_novelty: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
-  newsroom_infographic_plan: {
-    commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH,
-    // quantity_kind gets one guidance clause (fast-fail-1003 item 4): +130 B (113 B of text). The enum next to it stays pinned.
-    described: [{ commit: "fast-fail-1003 item 4", path: ["properties", "modules", "items", "properties", "quantitative_encoding", "properties", "quantity_kind", "description"] }],
-  },
-};
-// Properties an approved later change added: they must be absent from the baseline and present in the switch-off
-// definition, and are then removed from the switch-off copy before the comparison with a4d4cb0.
-const withAddedRemoved = (tool, paths) => {
-  const parameters = JSON.parse(JSON.stringify(tool.parameters));
-  const present = paths.map((path) => {
-    let node = parameters;
-    for (const key of path.slice(0, -1)) node = node?.[key];
-    const had = !!node && path[path.length - 1] in node;
-    if (had) delete node[path[path.length - 1]];
-    return had;
-  });
-  return { tool: { ...tool, parameters }, present };
-};
-const withPathsCleared = (tool, paths, mask) => {
-  const parameters = JSON.parse(JSON.stringify(tool.parameters));
-  const had = paths.map((path) => {
-    let node = parameters;
-    for (const key of path.slice(0, -1)) node = node?.[key];
-    const present = Boolean(node) && path[path.length - 1] in node;
-    if (node) node[path[path.length - 1]] = null; // cleared whether or not it was there, so a described path compares equal
-    return present;
-  });
-  return { had, slim: slim({ ...tool, parameters }, mask) };
-};
+// Default-on tool changes approved after a4d4cb0 are the entries of scripts/fixtures/pin_patches/editorial_hints.json, each with the commit that
+// made it (page top, fast-fail, the wiring of strip_plot, stacked_bar_100 and mirrored_bar into the plan path, zh names, measure_semantics, the
+// round-3 chart fields). Each is asserted exactly (a4d4cb0 holds the old value, the head the new one), then the list is reversed on a copy of the
+// head and the whole definition must equal a4d4cb0's byte for byte (scripts/lib_pin_patch.mjs). A tool without entries must be byte-equal.
+// test_viz_plan_schema.mjs asserts the wiring against schemas/newsroom-viz-spec.schema.json. The world choropleth field map_extent is behind
+// NEWSROOM_MAP_WORLD, off by default, and absent here.
+const pins = baseMod ? loadPinPatches("editorial_hints", { baseline: baselineFile.from === `git ${BASELINE_REF}` ? BASELINE_REF : undefined }) : null;
 function checkDefinitions(mod, { quiet = false } = {}) {
   let pairs = 0, delta = 0;
   for (const profile of PROFILES) for (const phase of PHASES) {
@@ -187,25 +144,7 @@ function checkDefinitions(mod, { quiet = false } = {}) {
     assert.deepEqual([...on.keys()], [...off.keys()], `${where}: the switch adds or removes no tool`);
     if (base) {
       assert.deepEqual([...off.keys()], [...base.keys()], `${where}: switch off registers the tools a4d4cb0 registers`);
-      for (const name of base.keys()) {
-        const approved = APPROVED_LATER[name];
-        // The category_names wording and enum (zh-names-1003) are a second declared difference from a4d4cb0, for the two
-        // tools that carry them; revertNameLocalization puts the old wording back and refuses a surface that lacks exactly
-        // those edits. It is the identity for every other tool.
-        const current = revertNameLocalization(off.get(name));
-        if (!approved) { assert.equal(slim(current), slim(base.get(name)), `${where}: switch off == baseline for ${name}`); continue; }
-        const added = approved.added ?? [];
-        const offTool = withAddedRemoved(current, added), baseTool = withAddedRemoved(base.get(name), added);
-        assert.ok(offTool.present.every(Boolean), `${where}: ${name} has the added properties ${added.map((p) => p.join(".")).join(", ")} (${approved.addedWhy})`);
-        assert.ok(baseTool.present.every((x) => !x), `${where}: a4d4cb0 has none of the added properties`);
-        const described = approved.described ?? [];
-        const paths = [approved.path, ...described.map((a) => a.path)];
-        const [o, b] = [withPathsCleared(offTool.tool, paths, approved.mask), withPathsCleared(base.get(name), paths, approved.mask)];
-        assert.ok(o.had[0] && b.had[0], `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
-        for (const [i, a] of described.entries()) assert.ok(o.had[i + 1] && !b.had[i + 1], `${where}: ${name} has ${a.path.join(".")} now and did not in the baseline (approved change ${a.commit}); drop the entry if it is reverted`);
-        assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${paths.map((path) => path.join(".")).join(" and ")} (approved changes ${[approved, ...described].map((a) => a.commit).join(", ")})`);
-        assert.notEqual(slim(current), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
-      }
+      pins.check(base, off, where);
     }
     const changed = [...off.keys()].filter((name) => slim(on.get(name)) !== slim(off.get(name)));
     assert.ok(changed.every((name) => Object.values(FOUR).includes(name)), `${where}: only editorial tools may differ, got ${changed.join(", ")}`);
@@ -524,6 +463,7 @@ async function checkMutants() {
 }
 
 checkDefinitions(mainMod);
+pins?.finish();
 await checkHandlers(mainMod);
 await checkEndToEnd(mainMod);
 await checkMutants();

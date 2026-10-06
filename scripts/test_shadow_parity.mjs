@@ -3,11 +3,12 @@
 //   switch OFF  : tool definitions, model-visible text, `details` and every
 //                 artifact byte equal the baseline 327de35 (before the claim
 //                 binding and the shadow code), for charts the binding accepts.
-//                 One declared difference in the tool definitions: the wording
-//                 and enum of category_names and two newsroom_viz_plan
-//                 guidelines (zh-names-1003), put back by
-//                 revertNameLocalization, which refuses a surface that does not
-//                 carry exactly those edits;
+//                 The declared differences in the tool definitions are the
+//                 entries of scripts/fixtures/pin_patches/shadow_parity.json
+//                 (the page top, the chart forms, zh names and measure_semantics
+//                 guidance, each with the commit that made it). Each is asserted
+//                 exactly, the list is reversed on a copy of the head, and the
+//                 whole definitions must then equal the baseline byte for byte;
 //   switch ON   : model-visible text and artifact bytes are still identical,
 //                 `details` differs only by `shadow: { path, counts }`, lint
 //                 warnings and blockers are unchanged, and the only new files
@@ -20,14 +21,12 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
-import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
+import { loadPinPatches } from "./lib_pin_patch.mjs";
 
 const BASELINE = "327de35";
-// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
-// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
-// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
-const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
-const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
+// This harness stubs the schema builders (every schema is {}), so the lists carry only what is visible here: tool names, descriptions, prompt
+// snippets and prompt guidelines. The parameter-level changes are pinned by the tests whose stubs build real schemas.
+const pins = loadPinPatches("shadow_parity", { baseline: BASELINE });
 // fix/page-top-1003 also puts the lint policy version and the hero gate state into the page lint's record and key, so the page lint ref
 // differs from the older commit's. Only that is masked, and only after it is checked: the page lints of the two runs are paired one to
 // one by plan_ref (a different count or a repeated plan_ref fails); every older record must lack both added fields and every newer one must
@@ -79,13 +78,8 @@ function walk(dir, root = dir, out = new Map()) {
 async function scenario({ baselineRev, shadow }) {
   const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_HERO_VALUE_GATE: "0" } });
   try {
-    const sortedTools = [...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, tool]) => ({ ...tool, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) }));
-    const stringify = (tools) => JSON.stringify(tools.map((tool) => ({ ...tool, execute: undefined })));
-    const defs = stringify(sortedTools);
-    // The baseline runtime is the old wording already; only the current runtime has the edits to put back. This harness
-    // stubs the schema builders, so the enum values and the field descriptions are not in the definitions: only the
-    // newsroom_viz_plan guideline edits are (and must be) present.
-    const defsBeforeNameLocalization = baselineRev ? defs : stringify(sortedTools.map((tool) => revertNameLocalization(tool, { descriptions: false, enumValues: false })));
+    const tools = new Map([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
+    const defs = JSON.stringify([...tools.values()].map((tool) => ({ ...tool, execute: undefined })));
     const csv = ["date,event", ...timeline.rows.map((row) => `${row.date},${row.event}`)].join("\n") + "\n";
     const fileA = h.addData("A", csv);
     const qa = await h.query(`SELECT date, event FROM read_csv_auto('${fileA}')`);
@@ -118,7 +112,7 @@ async function scenario({ baselineRev, shadow }) {
     }));
     await call("newsroom_infographic_lint", { plan_ref: igRef });
     const files = walk(h.art);
-    return { defs, defsBeforeNameLocalization, calls, files, claimId: claim.claim_id };
+    return { defs, tools, calls, files, claimId: claim.claim_id };
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });
   }
@@ -133,7 +127,8 @@ const withoutShadowDetails = (call) => ({ ...call, details: call.details && type
 const comparable = (files) => new Map([...files].filter(([path]) => path !== "claims.jsonl" && !path.startsWith("shadow/")));
 
 // OFF == baseline, byte for byte.
-assert.equal(off.defsBeforeNameLocalization, base.defs, "tool definitions identical to the baseline with the switch off, apart from the declared name-localization edits");
+pins.check(base.tools, off.tools, "switch off");
+pins.finish();
 assert.equal(off.claimId, base.claimId);
 const baseMasked = withMaskedLints({ calls: base.calls, files: comparable(base.files) }, { added: false });
 const offMasked = withMaskedLints({ calls: off.calls, files: comparable(off.files) }, { added: true });
