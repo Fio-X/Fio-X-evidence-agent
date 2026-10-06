@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791300432,
-  "source_commit": "9160233e55654d8a036d88dea82f88fcf829998e",
+  "created_at_epoch": 1791302294,
+  "source_commit": "220ba7aef2f5556c7292672a87eabe8f5e025d6c",
   "source_tree": {
-    "file_count": 1064,
-    "bytes": 69166973,
-    "sha256": "1915d4ce0f101e6f4904004905e52f8f79d961adf3d4ecd8b97a84aa0735af58",
+    "file_count": 1066,
+    "bytes": 69177412,
+    "sha256": "f147ed32c56d5c9c7dc60f9af61011ad896fb0d0c7dbcd235fc75b12e5ed3f34",
     "files": [
       {
         "path": ".env.example",
@@ -1464,6 +1464,11 @@
         "bytes": 13311
       },
       {
+        "path": "runtime/pi/contract_text.mjs",
+        "sha256": "6d5878d268a7d72ee4635ab732872bf1d0c84b15d1ee0e6bc996769abe41a752",
+        "bytes": 3556
+      },
+      {
         "path": "runtime/pi/d3_editorial.mjs",
         "sha256": "312aa12973aec94471804e18bef0cdacf53c528012fcce4c998cf1eff231f6b8",
         "bytes": 841
@@ -1540,8 +1545,8 @@
       },
       {
         "path": "runtime/pi/infographic.mjs",
-        "sha256": "c2301e34983afd5f03fb2bec19d98d7f193d6b4925423085aa1684f4db19c1d9",
-        "bytes": 164208
+        "sha256": "131ba372cdab0ec52f549f39ec308f379b53304b71f0ad97591593e62ac1d7b2",
+        "bytes": 164215
       },
       {
         "path": "runtime/pi/label_layout.mjs",
@@ -1600,8 +1605,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "5814a8a3cc994d9d775a593793b8daa5c7789fadd5b114949098aea15f5a76e9",
-        "bytes": 439183
+        "sha256": "1d08075ff20244275fa7a40bb3f2613e5e351f49ab71a4f58243cae6f44fefac",
+        "bytes": 440511
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -3177,6 +3182,11 @@
         "path": "scripts/test_content_addressing.mjs",
         "sha256": "0edfe4a8717718ce0d7ec6b68b7d996734eafb3bc4d290448153db73f8205121",
         "bytes": 1516
+      },
+      {
+        "path": "scripts/test_contract_text.mjs",
+        "sha256": "823533524efd891b7eb6e5c098a382a852fd8ce9315b0f8478aa85535ae7ce5a",
+        "bytes": 5548
       },
       {
         "path": "scripts/test_control_plane.sh",
@@ -5155,7 +5165,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "78f7dd9c9402dd4fd6eabe0e1b35b3361cf5423ffe42908e6e35ae13f0642c63",
+        "sha256": "58baa80ece9fbd37ffcf2eb8953d25d42bf85a55307d5e04ce717c985cd48971",
         "bytes": 1943
       },
       {
@@ -5413,5 +5423,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "b349a3cf3a3bf8655696bfab53aeee37ae8136105b24920bedd42fc0fd593f59"
+  "manifest_sha256": "5fa819bbef13b3bd01f02fede1dcb929da923d3056ffa54e11e59c81f46f4c91"
 }
