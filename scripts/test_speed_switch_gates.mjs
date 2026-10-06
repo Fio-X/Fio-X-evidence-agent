@@ -40,6 +40,8 @@ const SWITCHES = [
   { name: "RULE_HINTS", env: "NEWSROOM_SPEED_RULE_HINTS" },
   { name: "COMPACT_SETUP", env: "NEWSROOM_SPEED_COMPACT_SETUP" },
   { name: "CLAIM_SQL_LINT", env: "NEWSROOM_CLAIM_SQL_LINT" }, // refuses only; every forged case must still be refused with it on
+  { name: "PLAN_PATCH", env: "NEWSROOM_SPEED_PLAN_PATCH", requires: [ATOMIC] }, // after a refusal, send only the change; adds a tool and a hint line, never loosens a check
+  { name: "CHAIN_PATCH", env: "NEWSROOM_SPEED_CHAIN_PATCH", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"] },
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const CONFIGS = [
@@ -55,7 +57,7 @@ const CONFIGS = [
 const ENV_KEYS = [...SWITCHES.map((s) => s.env), "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_PHASE_METRICS"];
 
 // Files a refused call may add or change: append-only audit logs. Everything else must be untouched.
-const ALLOWED_AUDIT = [/^runtime\/tool-chain-events\.jsonl$/];
+const ALLOWED_AUDIT = [/^runtime\/tool-chain-events\.jsonl$/, /^infographics\/(plan|chain)-rejections\/[0-9a-f]{64}\.json$/]; // the kept raw params of a refused call (P2)
 const auditSeen = new Set();
 
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
@@ -504,7 +506,7 @@ defCase(8, "failing publication QA: no publishable delivery; unjudged QA is neve
 });
 
 // Case 9 differs: it registers under many phase/profile pairs per configuration.
-const CHAINS = { newsroom_viz_chain: ["newsroom_viz_plan", "NEWSROOM_SPEED_CHAIN_VIZ"], newsroom_infographic_chain: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"], newsroom_infographic_edit: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_EDIT"] };
+const CHAINS = { newsroom_viz_chain: ["newsroom_viz_plan", "NEWSROOM_SPEED_CHAIN_VIZ"], newsroom_infographic_chain: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"], newsroom_infographic_edit: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_EDIT"], newsroom_infographic_plan_patch: ["newsroom_infographic_plan", "NEWSROOM_SPEED_PLAN_PATCH"], newsroom_infographic_chain_patch: ["newsroom_infographic_plan", "NEWSROOM_SPEED_CHAIN_PATCH"] };
 const PROFILES = Array.isArray(TOOL_REGISTRY.profiles) ? TOOL_REGISTRY.profiles : Object.keys(TOOL_REGISTRY.profiles);
 const PHASES = ["all", "core", "design", "publish", "verify", "core,design"];
 defCase(9, "phase/profile scoping: disabled tools and their chains are not registered", async ({ cfg }) => {
