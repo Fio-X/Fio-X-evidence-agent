@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791312360,
-  "source_commit": "c6fe6dbb1899f4d96c3834bb6a85abdb3365d80a",
+  "created_at_epoch": 1791313347,
+  "source_commit": "d17657bf9f51445f416e9ea50ce5c03173c42741",
   "source_tree": {
     "file_count": 1058,
-    "bytes": 68969954,
-    "sha256": "afc073526add656b26cefabb002a1b9e00a47ab963fddbade775872d2a4d54be",
+    "bytes": 68975521,
+    "sha256": "25308756996b2f4bc549bf3af93cd3a4c08baefe9a7ab374d26081c889f32410",
     "files": [
       {
         "path": ".env.example",
@@ -1590,8 +1590,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "75f56996fc80b26564640cc7a980b76c02b74e2b49149a1b234a4ea461a6cd77",
-        "bytes": 431943
+        "sha256": "ea33cbd2536ec4a80208413312b302c80e5e89f69599ad9b335819a5341f9bbc",
+        "bytes": 434117
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -4020,8 +4020,8 @@
       },
       {
         "path": "scripts/test_scatter_paired.mjs",
-        "sha256": "3cc790f0b0c3379c29cd60099223e802afc630db51dae813237c146429622084",
-        "bytes": 24054
+        "sha256": "4d1d2847b1886f8ae71fd52d4dbe0c174495a4dcb1984feb8a6f9a830ee724fc",
+        "bytes": 27447
       },
       {
         "path": "scripts/test_scientific_map_layers.mjs",
@@ -5125,7 +5125,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "462b9991a7bf11eb23552cd3fac114379eb1b11bc855db2160859e9de680723f",
+        "sha256": "646c5ef23e3193726499522a09665b088a831ad67c1266be80a16ffb9af6a48e",
         "bytes": 1943
       },
       {
@@ -5383,5 +5383,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "7ffdd8845919727952d51aea9b69686374f534625757a56340ecd83b40b67e05"
+  "manifest_sha256": "64634c3e05073858f1eace66f281320e53fd7882c2d77fd704ab58def6eeac6b"
 }
