@@ -11,14 +11,14 @@ import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
-import { contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
+import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection } from "./editorial_grammar.mjs";
 import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -276,6 +276,11 @@ function preflightEnabled() {
 // problem that does not depend on another) in one refusal, the first problem's text unchanged. No check is removed or reordered. Off: nothing changes.
 function reportAllEnabled() {
   return process.env.NEWSROOM_SPEED_REPORT_ALL === "1";
+}
+// NEWSROOM_SPEED_PRECHECK_ALL=1: when the plan call is refused, the refusal also lists every other pre-draw check that can still run
+// (planPrecheckAll). It runs only after the unchanged checks have refused, so no verdict or code changes. Off: nothing changes.
+function precheckAllEnabled() {
+  return process.env.NEWSROOM_SPEED_PRECHECK_ALL === "1";
 }
 // NEWSROOM_SPEED_COMPACT_SETUP=1: shared concept defaults and inferred setup refs (see compact_setup.mjs). Off: nothing changes.
 function compactSetupEnabled() {
@@ -2559,7 +2564,7 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
 }
 
 /** Gate on (the default): every hero_stat is filled from its claim before validation and storage. NEWSROOM_HERO_VALUE_GATE=0: the modules pass untouched. */
-async function fillHeroModules(modules: any[]): Promise<any[]> {
+async function fillHeroModules(modules: any[], collectAll = false): Promise<any[]> {
   if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
   const records = await verifiedClaimRecords();
   const out: any[] = [];
@@ -2568,7 +2573,7 @@ async function fillHeroModules(modules: any[]): Promise<any[]> {
   for (const module of modules) {
     if (module?.type !== "hero_stat") { out.push(module); continue; }
     const context = await heroClaimContext(String(module.claim_id ?? ""), records);
-    if (!reportAllEnabled()) { out.push(await fillHeroModule(module, context, modules)); continue; }
+    if (!reportAllEnabled() && !collectAll) { out.push(await fillHeroModule(module, context, modules)); continue; }
     try { out.push(await fillHeroModule(module, context, modules)); } catch (error: any) {
       first ??= error;
       problems.push(...heroProblemsOf(module, context, error));
@@ -2767,6 +2772,202 @@ async function lintInfographicPlan(spec: any) {
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
   return { lint, assets, mobilePages, verifiedRecords };
+}
+
+// NEWSROOM_SPEED_PRECHECK_ALL=1, plan tool only. Called after the unchanged plan checks refused the call: it runs every other
+// pre-draw check that can still run (the plan checks below the refusal, and the page lint over the plan as proposed, in memory)
+// and returns one refusal. The first problem keeps its own text, code and class (combinedError). Nothing is written, no check is
+// skipped or changed, and nothing here can accept a call. A check whose input an earlier problem stops is listed as not checked.
+async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
+  const firstText = String(first?.message ?? first);
+  const problems: { stage: string; text: string }[] = [];
+  const unchecked: string[] = [];
+  const seen = (text: string) => firstText.includes(text) || problems.some((problem) => problem.text === text);
+  const add = (stage: string, text: string) => { if (!seen(text)) problems.push({ stage, text }); };
+  const fail = (stage: string, error: any) => add(stage, String(error?.message ?? error));
+  const orderKeys = () => Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {});
+  const hintContext: any = {
+    visualGrammarForms: VISUAL_GRAMMAR_FORMS,
+    visualGrammars: INFOGRAPHIC_VISUAL_GRAMMARS,
+    enums: { type: INFOGRAPHIC_MODULE_TYPES, span: INFOGRAPHIC_SPANS, story_role: INFOGRAPHIC_STORY_ROLES, emphasis: INFOGRAPHIC_EMPHASIS, pattern: INFOGRAPHIC_SCENE_PATTERNS },
+    registry: null,
+    selectedGrammarIds: [] as string[],
+  };
+
+  // 1. References the runtime fills (same fills as the plan tool).
+  let rawParams = givenParams;
+  try {
+    if (fillCopiedEnabled()) {
+      const copied = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
+      if (copied !== givenParams) rawParams = inSchemaOrder(copied, orderKeys());
+    }
+  } catch (error: any) { fail("fill", error); }
+  let params = rawParams;
+  let unresolvedRefs: Record<string, string> = {};
+  try {
+    if (preflightEnabled()) {
+      const filled = await fillPlanRefs(rawParams, preflightIo);
+      unresolvedRefs = filled.unresolved;
+      if (filled.filled.length) params = inSchemaOrder(filled.params, orderKeys());
+    }
+  } catch (error: any) { fail("fill", error); }
+  const rawModules: any[] = Array.isArray(params?.modules) ? params.modules : [];
+  const withDefaults = rawModules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }));
+
+  // 2. Editorial grammar build and hero fill: independent of each other.
+  let registry: any = null;
+  let editorialGrammar: any;
+  try {
+    registry = await loadEditorialGrammarRegistry();
+    hintContext.registry = registry;
+    editorialGrammar = materializeEditorialGrammarSelection(params?.editorial_grammar, registry);
+    hintContext.selectedGrammarIds = [editorialGrammar?.primary, ...(editorialGrammar?.supporting ?? [])].filter(Boolean).map(String);
+  } catch (error: any) { fail("editorial grammar", error); }
+  let modules = withDefaults;
+  let heroFilled = true;
+  try { modules = await fillHeroModules(withDefaults, true); } catch (error: any) {
+    fail("hero fill", error);
+    heroFilled = false;
+  }
+  const view: any = {
+    schema_version: "1.5.0",
+    layout: params?.layout ?? "feature",
+    language: params?.language ?? "en",
+    complexity_budget: params?.complexity_budget ?? "medium",
+    quality_target: params?.quality_target ?? "publishable",
+    competition_profile: params?.competition_profile ?? "editorial",
+    ...params,
+    editorial_grammar: editorialGrammar,
+    modules,
+  };
+  const specBuilt = editorialGrammar !== undefined && rawModules.length > 0;
+  if (!specBuilt) unchecked.push("spec validation, editorial grammar lint and page lint: the editorial grammar did not build or the plan has no modules, so there is no spec to check");
+
+  // 3. Preflight list and spec validation.
+  if (specBuilt && preflightEnabled()) {
+    try {
+      const issues: string[] = [];
+      issues.push(...validateInfographicSpec(view).filter((error: string) => !Object.keys(unresolvedRefs).some((field) => error.startsWith(`${field} is required`))));
+      const grammar = lintEditorialGrammarSelection(view.editorial_grammar, registry);
+      if (!grammar.passed) issues.push(...grammar.issues.map((issue: any) => `editorial grammar ${issue.rule_id}: ${issue.message}`));
+      issues.push(...(await planPrerequisiteIssues(view, preflightIo, unresolvedRefs)));
+      if (issues.length) add("preflight", preflightError("newsroom_infographic_plan", issues).message);
+    } catch (error: any) { fail("preflight", error); }
+  }
+
+  // 4. StoryGraph.
+  let storyGraph: any;
+  try { storyGraph = await readArtifactJson(String(view.story_graph_ref), "editorial/story-graphs/"); } catch (error: any) {
+    fail("story graph", error);
+    unchecked.push("StoryGraph checks (passed, reader_question, visual_thesis, story nodes): the StoryGraph could not be read");
+  }
+  if (storyGraph) {
+    if (!storyGraph.passed) add("story graph", "Infographic cannot proceed from a StoryGraph with blocking narrative-closure issues");
+    if (String(storyGraph.reader_question) !== String(view.reader_question)) add("story graph", "Infographic reader_question must exactly match StoryGraph reader_question");
+    if (String(storyGraph.visual_thesis) !== String(view.visual_thesis)) add("story graph", "Infographic visual_thesis must exactly match StoryGraph visual_thesis");
+    const storyNodeIds = new Set((storyGraph.nodes ?? []).map((node: any) => String(node.id)));
+    for (const module of modules) for (const nodeId of module.story_node_ids ?? []) if (!storyNodeIds.has(String(nodeId))) add("story graph", `Infographic module '${module.id}' references unknown story node '${nodeId}'`);
+  }
+
+  // 5. Spec validation and grammar lint, as the plan tool runs them.
+  if (specBuilt) {
+    try {
+      const errors = validateInfographicSpec(view);
+      if (errors.length) add("spec", `Invalid infographic plan: ${errors.join("; ")}`);
+      const grammarLint = lintEditorialGrammarSelection(view.editorial_grammar, registry);
+      if (!grammarLint.passed) add("editorial grammar lint", `Invalid editorial grammar selection: ${grammarLint.issues.map((issue: any) => `${issue.rule_id}: ${issue.message}`).join("; ")}`);
+    } catch (error: any) { fail("spec", error); }
+  }
+
+  // 6. Upstream editorial artifacts, each read on its own.
+  const read = async (stage: string, ref: unknown, prefix: string, what: string) => {
+    try { return await readArtifactJson(String(ref), prefix); } catch (error: any) {
+      fail(stage, error);
+      unchecked.push(`${what}: its artifact could not be read`);
+      return undefined;
+    }
+  };
+  const discovery = await read("discovery", view.editorial_discovery_ref, "editorial/discovery/", "editorial discovery decision");
+  if (discovery && discovery.decision !== "CONTINUE") add("discovery", `Award infographic cannot proceed from editorial discovery decision '${discovery.decision}'`);
+  const concepts = await read("concept", view.visual_concept_ref, "editorial/concepts/", "selected_concept_id finalist check");
+  if (concepts && !(concepts.finalists ?? []).includes(view.selected_concept_id)) add("concept", `selected_concept_id '${view.selected_concept_id}' is not a concept finalist`);
+  const novelty = await read("novelty", view.novelty_ref, "editorial/novelty/", "novelty checks");
+  if (novelty) {
+    if (novelty.concept_ref !== view.visual_concept_ref) add("novelty", "Semantic novelty report does not belong to the selected concept set");
+    if (!novelty.passed) add("novelty", "Award infographic contains unresolved high semantic redundancy");
+  }
+  const assetPlan = await read("asset plan", view.asset_plan_ref, "editorial/assets/", "asset plan checks");
+  if (assetPlan) {
+    if (assetPlan.concept_ref !== view.visual_concept_ref || assetPlan.concept_id !== view.selected_concept_id) add("asset plan", "Asset plan does not belong to the selected visual concept");
+    if (assetPlan.decision !== "CONTINUE") add("asset plan", `Award infographic asset plan is '${assetPlan.decision}'`);
+  }
+
+  // 7. Per module: claims and the visual or illustration artifacts.
+  let verified: Set<string> | null = null;
+  try { verified = new Set(await verifiedClaimIds()); } catch (error: any) {
+    fail("claims", error);
+    unchecked.push("verified-claim checks of every module: the verified claim list could not be read");
+  }
+  for (const module of modules) {
+    const claimIds = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+    if (verified) for (const claimId of claimIds) if (!verified.has(claimId)) add("module claims", `Infographic module '${module.id}' references unverified claim '${claimId}'`);
+    if (module.type === "visual") {
+      if (!module.manifest_ref || !module.critic_ref) { add("module assets", `Visual module '${module.id}' requires manifest_ref and critic_ref`); continue; }
+      let manifest: any;
+      let critic: any;
+      try { manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/"); } catch (error: any) { fail("module assets", error); unchecked.push(`visual module '${module.id}' manifest checks: the manifest could not be read`); }
+      try { critic = await readArtifactJson(String(module.critic_ref), "visualizations/critics/"); } catch (error: any) { fail("module assets", error); unchecked.push(`visual module '${module.id}' critic checks: the critic could not be read`); }
+      if (critic) {
+        if (!critic.passed) add("module assets", `Visual module '${module.id}' uses a visualization whose critic did not pass`);
+        if (critic.manifest_ref && critic.manifest_ref !== module.manifest_ref) add("module assets", `Visual module '${module.id}' critic does not match its manifest`);
+      }
+      if (manifest) {
+        if (manifest.verification_mode === "draft" || manifest.artifact_status === "DRAFT" || manifest.publishable === false) add("module assets", `Visual module '${module.id}' cannot use a DRAFT/non-publishable visualization manifest; bind a verified visual before infographic composition`);
+        if (verified && manifest.claim_id && !verified.has(String(manifest.claim_id))) add("module assets", `Visual module '${module.id}' manifest references unverified claim '${manifest.claim_id}'`);
+      }
+    }
+    if (module.type === "illustration") {
+      if (!module.asset_ref || !module.critic_ref) { add("module assets", `Illustration module '${module.id}' requires asset_ref and critic_ref`); continue; }
+      let manifest: any;
+      let critic: any;
+      try { manifest = await readManifestOrRejected("visualizations/illustrations", String(module.asset_ref), "visualizations/illustrations/"); } catch (error: any) { fail("module assets", error); unchecked.push(`illustration module '${module.id}' manifest checks: the manifest could not be read`); }
+      try { critic = await readArtifactJson(String(module.critic_ref), "visualizations/illustrations/critics/"); } catch (error: any) { fail("module assets", error); unchecked.push(`illustration module '${module.id}' critic checks: the critic could not be read`); }
+      if (critic) {
+        if (!critic.passed) add("module assets", `Illustration module '${module.id}' uses an explanatory graphic whose critic did not pass`);
+        if (critic.manifest_ref && critic.manifest_ref !== module.asset_ref) add("module assets", `Illustration module '${module.id}' critic does not match its asset manifest`);
+      }
+      if (manifest && verified) for (const claimId of manifest.claim_ids ?? []) if (!verified.has(String(claimId))) add("module assets", `Illustration module '${module.id}' manifest references unverified claim '${claimId}'`);
+    }
+  }
+
+  // 8. The page lint (newsroom_infographic_lint) over the plan as proposed, in memory. Its blockers are the ones the lint tool
+  // would refuse with after this call. An unfilled hero (its fill refused above) is lint's own business: the lint refuses it too.
+  if (specBuilt) {
+    try {
+      const { lint } = await lintInfographicPlan(view);
+      for (const blocker of lint.blockers ?? []) add("page lint", String(blocker));
+    } catch (error: any) {
+      unchecked.push(`page lint: it could not run on this plan (${String(error?.message ?? error).split("\n")[0].slice(0, 200)})`);
+    }
+  }
+
+  const firstHints = allowedValueHints(firstText, hintContext);
+  if (!problems.length && !unchecked.length && !firstHints.length) return first;
+  const lines = [firstText];
+  if (firstHints.length) lines.push(...firstHints.map((hint) => `  allowed values for the problem above: ${hint}`));
+  if (problems.length) {
+    lines.push(`Other problems found by running every pre-draw check that can still run (${problems.length}; each keeps its own code and text, in stage order). Fix them together before calling again:`);
+    problems.forEach((problem, index) => {
+      lines.push(`${index + 1}. [${problem.stage}] ${problem.text}`);
+      for (const hint of allowedValueHints(problem.text, hintContext)) lines.push(`   allowed values: ${hint}`);
+    });
+  }
+  if (unchecked.length) {
+    lines.push("Not checked (an earlier problem stops these from running; this is not a pass):");
+    for (const entry of unchecked) lines.push(`- ${entry}`);
+  }
+  if (!heroFilled && problems.length) lines.push("Note: hero_stat modules whose fill was refused are linted unfilled, so a lint line about their missing value repeats the fill problem.");
+  return combinedError(first, lines.join("\n"));
 }
 
 // Plan edit: exists only with NEWSROOM_SPEED_PLAN_EDIT exactly "1" and
@@ -4824,6 +5025,13 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       modules: Type.Array(infographicModuleParameters, contractHint("modules", { minItems: 3, maxItems: 12 })),
     }),
     async execute(_id, givenParams, signal?: AbortSignal) {
+      try { return await planAttempt(givenParams, signal); } catch (error: any) {
+        if (!precheckAllEnabled()) throw error;
+        throw await planPrecheckAll(error, givenParams).catch(() => error);
+      }
+    },
+  });
+  const planAttempt = async (givenParams: any, signal?: AbortSignal) => {
       let rawParams = givenParams;
       if (fillCopiedEnabled()) {
         const copied = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
@@ -4921,8 +5129,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       if (signal?.aborted) throw new Error("newsroom_infographic_plan cancelled before the plan was written");
       await writeArtifactIfAbsent(rel, spec);
       return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.`, { planRef: rel, modules: specCore.modules.length });
-    },
-  });
+  };
 
   registerScopedTool(pi, {
     name: "newsroom_infographic_lint",

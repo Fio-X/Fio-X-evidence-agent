@@ -51,3 +51,38 @@ export function contractStatements({ readerTasks, visualGrammarForms, registry, 
   }
   return out;
 }
+
+// NEWSROOM_SPEED_PRECHECK_ALL: for a refusal whose fix is a choice from a fixed set, the set itself.
+// Every list comes from the constant the check reads (passed in by the caller); the message templates below are the
+// checks' own wording, and scripts/test_contract_text.mjs builds a spec for each one so a reworded check fails there.
+// inputs: { visualGrammarForms (VISUAL_GRAMMAR_FORMS), visualGrammars (INFOGRAPHIC_VISUAL_GRAMMARS), enums: { type, span, story_role, emphasis, pattern }, registry, selectedGrammarIds }
+export function allowedValueHints(text, { visualGrammarForms, visualGrammars, enums, registry, selectedGrammarIds = [] }) {
+  const hints = [];
+  const push = (hint) => { if (!hints.includes(hint)) hints.push(hint); };
+  const source = String(text ?? "");
+  for (const match of source.matchAll(/grammar '([^']*)' is incompatible with chart_type '([^']*)'/g)) {
+    const [, grammar, chartType] = match;
+    const forms = visualGrammarForms?.[grammar];
+    if (forms) push(`chart_type values allowed for visual_grammar '${grammar}': ${list(forms)}`);
+    const grammars = Object.entries(visualGrammarForms ?? {}).filter(([, set]) => set.has(chartType)).map(([name]) => name);
+    if (grammars.length) push(`visual_grammar values that allow chart_type '${chartType}': ${list(grammars)}`);
+  }
+  for (const match of source.matchAll(/has unsupported (module )?visual_grammar '/g)) {
+    const values = match[1] ? Object.keys(visualGrammarForms ?? {}) : visualGrammars;
+    if (values?.length) push(`visual_grammar values allowed: ${list(values)}`);
+  }
+  for (const match of source.matchAll(/(?:module|scene) '[^']*' has unsupported (type|span|story_role|emphasis|pattern) '/g)) {
+    const values = enums?.[match[1]];
+    if (values?.length) push(`${match[1]} values allowed: ${list(values)}`);
+  }
+  for (const match of source.matchAll(/module visual grammar '([^']*)' is unsupported by the selected editorial grammar set/g)) {
+    const grammar = match[1];
+    const grammars = registry?.grammars ?? [];
+    const selected = grammars.filter((entry) => selectedGrammarIds.includes(entry.id));
+    const supported = [...new Set(selected.flatMap((entry) => entry.compatible_visual_grammars ?? []))];
+    if (supported.length) push(`visual_grammar values the selected editorial grammar set supports: ${list(supported)}`);
+    const carriers = grammars.filter((entry) => (entry.compatible_visual_grammars ?? []).includes(grammar)).map((entry) => entry.id);
+    push(carriers.length ? `editorial grammar ids whose compatible_visual_grammars include '${grammar}': ${list(carriers)}` : `no editorial grammar in the registry lists visual_grammar '${grammar}' as compatible: use another visual_grammar for this module`);
+  }
+  return hints;
+}
