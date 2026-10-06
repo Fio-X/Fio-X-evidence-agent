@@ -331,4 +331,23 @@ await ok("unknown visual_grammar: the plan refusal names the allowed grammars fr
   const { INFOGRAPHIC_VISUAL_GRAMMARS } = await import(join(ROOT, "runtime/pi/infographic.mjs"));
   assert.ok(b.message.includes(`visual_grammar values allowed: ${INFOGRAPHIC_VISUAL_GRAMMARS.join(", ")}`));
 });
+
+await ok("page chain: a claim/manifest stop also lists the page lint blockers the chain never reached; same stop code, off unchanged", async () => {
+  const CHAIN_ENV = { ...ENV_BASE, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_INFOGRAPHIC: "1" };
+  const mk = async (value) => { const t = await registerFor({ env: { ...CHAIN_ENV, ...(value === undefined ? {} : { NEWSROOM_SPEED_PRECHECK_ALL: value }) } }); t.switchValue = value; return t; };
+  const chainOff = await mk(undefined), chainOn = await mk("1");
+  assert.ok(chainOff.get("newsroom_infographic_chain"));
+  const plan = pagePlan({ withQuestion: true, moduleClaims: { map: ["c-flow"] } });
+  plan.modules[1].visual_grammar = "rank"; // also a page-lint blocker
+  const run = async (tools) => { useSwitch(tools); const art = freshRun("ra-chain", { manifestClaim: { map: "c-map" } }); const r = await tools.get("newsroom_infographic_chain").execute("c", keyOrder(tools, plan)); return { art, r }; };
+  const a = await run(chainOff);
+  const b = await run(chainOn);
+  assert.equal(a.r.details.stopCode, "CLAIM_MANIFEST_MISMATCH");
+  assert.equal(b.r.details.stopCode, "CLAIM_MANIFEST_MISMATCH");
+  assert.ok(b.r.details.stopMessage.startsWith(a.r.details.stopMessage));
+  assert.match(b.r.details.stopMessage, /\[page lint\] visual 'flow' grammar 'rank' is incompatible with chart_type 'sankey'/);
+  assert.match(b.r.details.stopMessage, /Not checked \(the stop prevents these from running; this is not a pass\):\n- render, critic and preview/);
+  assert.ok(!/page lint/.test(a.r.details.stopMessage));
+  assert.equal(a.r.details.chainStatus, b.r.details.chainStatus);
+});
 console.log(`precheck all: ${results.length} checks -- PASS`);
