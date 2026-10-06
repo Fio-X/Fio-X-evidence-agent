@@ -514,7 +514,8 @@ console.log("zh name-field lint: PASS");
   const texts = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
   const mixBlockers = (l) => l.blockers.filter((b) => b.includes("with economies; an aggregate such as the World"));
   const nameBlockers = (l) => l.blockers.filter((b) => b.startsWith("zh chart's") || b.startsWith("category_names"));
-  // The eight forms the rule covers (the merge adds strip_plot and stacked_bar_100), in the lint's own list order.
+  // The eight older forms the rule covers, in the lint's own list order. strip_plot and stacked_bar_100 need other fields,
+  // so the auto-mode block below builds them by hand.
   const FORMS = ["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "treemap", "scatter"];
   const formSpec = (chartType, overrides = {}) => {
     const nameKey = chartType === "scatter" ? "label_field" : "category_field";
@@ -585,6 +586,22 @@ console.log("zh name-field lint: PASS");
     const shown = texts(renderVizSvg(formSpec("horizontal_bar", { category_names: "iso3" }), groups));
     for (const zh of ["高收入经济体", "中等偏上收入经济体", "中等偏下收入经济体", "低收入经济体"]) assert.ok(shown.includes(zh), `${zh} in ${JSON.stringify(shown)}`);
     assert.ok(!shown.some((t) => /^(HIC|UMC|LMC|LIC)$/.test(t)), "no raw code may reach a zh page");
+  }
+
+  // --- strip_plot and stacked_bar_100: a zh chart with a country column, no category_names, World among economies ---
+  {
+    const stripSpec = () => zhSpec({ chart_type: "strip_plot", category_field: "country", value_field: "pct" });
+    const stackedSpec = () => zhSpec({ chart_type: "stacked_bar_100", category_field: "country", series_field: "seg", value_field: "pct" });
+    const stackedRows = (values) => values.flatMap((country, i) => ["High", "Low"].map((seg, j) => ({ country, seg, pct: 40 + i + j * 10 })));
+    for (const [form, build, rowsFor] of [["strip_plot", stripSpec, (v) => rowsOf("country", v)], ["stacked_bar_100", stackedSpec, stackedRows]]) {
+      for (const [mode, values, aggregates] of [["iso3", ["USA", "CHN", "WLD"], "'WLD'"], ["worldbank", ["United States", "China", "World"], "'World'"]]) {
+        const l = lintVizSpec(build(), rowsFor(values), {});
+        assert.deepEqual(l.category_names_resolution, { field: "country", mode, source: "auto", values: 3 }, `${form} ${mode}`);
+        assert.deepEqual(mixBlockers(l).map((b) => b.split(". ")[0]), [`'country' on chart_type '${form}' mixes 1 aggregate row(s) (${aggregates}) with economies; an aggregate such as the World, a region or an income group is not a peer of a country, so it would be ranked, compared or drawn as one`], `${form} ${mode}`);
+        assert.deepEqual(nameBlockers(l), [], `${form} ${mode}`);
+      }
+      assert.deepEqual(mixBlockers(lintVizSpec(build(), rowsFor(["USA", "CHN", "JPN"]), {})), [], `${form}: economies only`);
+    }
   }
 
   // --- multi_line, small_multiples, sankey and alluvial may mix: a World series, panel or node is a reference ---
