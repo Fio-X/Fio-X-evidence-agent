@@ -423,6 +423,28 @@ function scatterPairAxisUnits(semanticGate: any, params: any): { x_unit: string;
   return out;
 }
 
+// K110 fix: with the switch on, a scatter whose declarations do not form a pair is refused, naming every failed condition at once.
+// Built from the same constants as SCATTER_PAIR_HINT; today's comparison never runs for a scatter.
+function scatterPairFailures(semanticGate: any, params: any): string[] {
+  const claim = semanticGate.claim_spec ?? {};
+  const measures: any[] = semanticGate.measures ?? [];
+  const ids: string[] = Array.isArray(claim.measure_ids) ? claim.measure_ids : [];
+  const xField = String(params.x_field ?? "").trim();
+  const yField = String(params.y_field ?? "").trim();
+  const failed: string[] = [];
+  if (claim.relation !== SCATTER_PAIR_RELATION) failed.push(`claim_spec relation is '${claim.relation ?? ""}': set it to ${SCATTER_PAIR_RELATION}`);
+  if (new Set(ids).size !== 2) failed.push(`claim_spec names ${new Set(ids).size} distinct measure ids (target, baseline and context together): name exactly two, one per axis`);
+  if (measures.length !== 2) failed.push(`${measures.length} measure_semantics entries are declared: declare exactly two, one per axis, and no others`);
+  if (!xField || !yField || xField === yField) failed.push(`x_field and y_field must be two different fields (x_field '${xField}', y_field '${yField}')`);
+  else {
+    const fields = ids.map((id) => measures.find((measure: any) => measure.id === id)?.field);
+    const oneToOne = fields.length === 2 && ((fields[0] === xField && fields[1] === yField) || (fields[1] === xField && fields[0] === yField));
+    if (!oneToOne) failed.push(`the two measures' fields (${fields.map((f) => `'${f ?? ""}'`).join(", ")}) must be x_field '${xField}' and y_field '${yField}', one each`);
+  }
+  if (claim.derived_metric) failed.push(`claim_spec has a derived_metric: remove it, a ${SCATTER_PAIR_CHART} compares its two axes directly`);
+  return failed;
+}
+
 function assertScatterPairFields(params: any) {
   const missing = [SCATTER_PAIR_ENTITY_FIELD, SCATTER_PAIR_PERIOD_FIELD].filter((field) => !String(params[field] ?? "").trim());
   if (missing.length) throw new Error(`SCATTER_PAIRING_FIELDS_REQUIRED: a ${SCATTER_PAIR_CHART} with one measure per axis requires ${missing.join(" and ")}: ${SCATTER_PAIR_ENTITY_FIELD} names the object of each point (one row per object), ${SCATTER_PAIR_PERIOD_FIELD} the single period every row covers`);
@@ -3657,6 +3679,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const semanticGate = scatterPaired
         ? evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null }, { scatterPair: { chart_type: params.chart_type, x_field: params.x_field, y_field: params.y_field } })
         : evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
+      if (scatterPaired && !semanticGate.scatter_pair) {
+        throw new Error(`SCATTER_PAIRING_REQUIRED: a ${SCATTER_PAIR_CHART} chart's declarations do not form a pair of axes: ${scatterPairFailures(semanticGate, params).map((failure, index) => `(${index + 1}) ${failure}`).join("; ")}. ${SCATTER_PAIR_HINT}`);
+      }
       const scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null;
       if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
       if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);

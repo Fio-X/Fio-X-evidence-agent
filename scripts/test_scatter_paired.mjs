@@ -77,6 +77,7 @@ const base = (o = {}) => ({
   entity_field: "iso3", period_field: "year", measure_semantics: [gdp(), life()], claim_spec: claim(), ...o,
 });
 
+const SCATTER_HINT_FRAGMENT = "one measure_semantics entry per axis";
 // ---- 1. switch values and tool definitions -----------------------------------------------------------------
 const defs = (tools) => JSON.parse(JSON.stringify(Object.fromEntries([...tools].map(([name, t]) => [name, { description: t.description, parameters: t.parameters }]))));
 for (const value of ["0", "true", "01", " 1", "1 ", "", "yes"]) {
@@ -110,18 +111,18 @@ const cases = [
   ["reversed axes in measure_ids", base({ claim_spec: claim({ measure_ids: ["life", "gdp"] }) }), "SEMANTIC_COMPARISON_BLOCKED", "ok:PASS"],
   ["no declarations at all", base({ measure_semantics: undefined, claim_spec: undefined }), "ok:NOT_DECLARED", "SEMANTIC_DECLARATION_REQUIRED"],
   ["empty measure_semantics", base({ measure_semantics: [] }), "ok:NOT_DECLARED", "SEMANTIC_DECLARATION_REQUIRED"],
-  ["one measure declared (not paired: today's comparison)", base({ measure_semantics: [gdp()], claim_spec: claim({ measure_ids: ["gdp"] }) }), "ok:PASS", "ok:PASS"],
+  ["one measure declared (not paired: refused)", base({ measure_semantics: [gdp()], claim_spec: claim({ measure_ids: ["gdp"] }) }), "ok:PASS", "SCATTER_PAIRING_REQUIRED"],
   ["same id twice", base({ measure_semantics: [gdp(), gdp()] }), "duplicate measure_semantics id: gdp", "duplicate measure_semantics id: gdp"],
-  ["measure_ids repeat one id (not paired)", base({ claim_spec: claim({ measure_ids: ["gdp", "gdp"] }) }), "ok:PASS", "ok:PASS"],
-  ["two ids become three after merging (target)", base({ measure_semantics: [gdp(), life(), gdp({ id: "pop", field: "pop", phenomenon: "Population", unit: "people" })], claim_spec: claim({ target_measure: "pop" }) }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ["third declaration outside measure_ids (not paired)", base({ measure_semantics: [gdp(), life(), gdp({ id: "pop", field: "pop", phenomenon: "Population", unit: "people" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ["x_field equals y_field (not paired)", base({ y_field: "gdp" }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ["declared fields are neither axis (not paired)", base({ measure_semantics: [gdp({ field: "a" }), life({ field: "b" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ["one declared field is the x axis only (not paired)", base({ measure_semantics: [gdp(), life({ field: "b" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ["two measures for the same axis (not paired)", base({ measure_semantics: [gdp(), life({ field: "gdp" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ...["percent_change", "absolute_change", "percentage_point_change", "ratio"].map((metric) => [`derived_metric ${metric} (not paired)`, base({ claim_spec: claim({ derived_metric: metric, target_measure: "gdp", baseline_measure: "life" }) }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"]),
-  ["relation comparison on a scatter (not paired)", base({ reader_task: "comparison", claim_spec: claim({ relation: "comparison", reader_task: "comparison" }) }), "SEMANTIC_COMPARISON_BLOCKED", "SEMANTIC_COMPARISON_BLOCKED"],
-  ["same unit and phenomenon, not paired by field names", base({ measure_semantics: [gdp({ field: "a", unit: "u", phenomenon: "p" }), life({ field: "b", unit: "u", phenomenon: "p" })] }), "ok:PASS", "ok:PASS"],
+  ["measure_ids repeat one id (not paired)", base({ claim_spec: claim({ measure_ids: ["gdp", "gdp"] }) }), "ok:PASS", "SCATTER_PAIRING_REQUIRED"],
+  ["two ids become three after merging (target)", base({ measure_semantics: [gdp(), life(), gdp({ id: "pop", field: "pop", phenomenon: "Population", unit: "people" })], claim_spec: claim({ target_measure: "pop" }) }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ["third declaration outside measure_ids (not paired)", base({ measure_semantics: [gdp(), life(), gdp({ id: "pop", field: "pop", phenomenon: "Population", unit: "people" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ["x_field equals y_field (not paired)", base({ y_field: "gdp" }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ["declared fields are neither axis (not paired)", base({ measure_semantics: [gdp({ field: "a" }), life({ field: "b" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ["one declared field is the x axis only (not paired)", base({ measure_semantics: [gdp(), life({ field: "b" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ["two measures for the same axis (not paired)", base({ measure_semantics: [gdp(), life({ field: "gdp" })] }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ...["percent_change", "absolute_change", "percentage_point_change", "ratio"].map((metric) => [`derived_metric ${metric} (not paired)`, base({ claim_spec: claim({ derived_metric: metric, target_measure: "gdp", baseline_measure: "life" }) }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"]),
+  ["relation comparison on a scatter (not paired)", base({ reader_task: "comparison", claim_spec: claim({ relation: "comparison", reader_task: "comparison" }) }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_PAIRING_REQUIRED"],
+  ["same unit and phenomenon, not paired by field names", base({ measure_semantics: [gdp({ field: "a", unit: "u", phenomenon: "p" }), life({ field: "b", unit: "u", phenomenon: "p" })] }), "ok:PASS", "SCATTER_PAIRING_REQUIRED"],
   ["x_unit differs from the declaration", base({ x_unit: "EUR" }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_AXIS_UNIT_MISMATCH"],
   ["y_unit differs from the declaration", base({ y_unit: "months" }), "SEMANTIC_COMPARISON_BLOCKED", "SCATTER_AXIS_UNIT_MISMATCH"],
   ["x_unit and y_unit equal the declarations", base({ x_unit: "USD", y_unit: "years" }), "SEMANTIC_COMPARISON_BLOCKED", "ok:PASS"],
@@ -140,6 +141,34 @@ for (const [name, params, wantOff, wantOn] of cases) {
   must(outcome(on) === wantOn || (!on.ok && on.error.startsWith(wantOn)), `${name}: on expected ${wantOn}, got ${outcome(on)} ${on.error ?? ""}`.slice(0, 400));
 }
 {
+  // K110 fix: each failed pairing condition alone is refused with the one code, naming that condition; several are named together
+  const oneId = await plan(base({ measure_semantics: [gdp()], claim_spec: claim({ measure_ids: ["gdp"] }) }), true);
+  must(oneId.code === "SCATTER_PAIRING_REQUIRED" && /\(1\) .*2 .*distinct measure ids|exactly two/.test(oneId.error) && /fields \('gdp'\)/.test(oneId.error) && !/relation/.test(oneId.error.split(". For a")[0]), "one measure: refused and named (ids, one-to-one fields)");
+  const facets = {
+    relation: [base({ claim_spec: claim({ relation: "comparison", reader_task: "comparison" }), reader_task: "comparison" }), /relation is 'comparison'/],
+    ids: [base({ claim_spec: claim({ measure_ids: ["gdp", "gdp"] }) }), /1 distinct measure ids/],
+    extra: [base({ measure_semantics: [gdp(), life(), gdp({ id: "pop", field: "pop", phenomenon: "Population", unit: "people" })] }), /3 measure_semantics entries/],
+    xy: [base({ y_field: "gdp" }), /must be two different fields/],
+    fields: [base({ measure_semantics: [gdp({ field: "a" }), life({ field: "b" })] }), /must be x_field 'gdp' and y_field 'life'/],
+    derived: [base({ claim_spec: claim({ derived_metric: "ratio", target_measure: "gdp", baseline_measure: "life" }) }), /derived_metric/],
+  };
+  for (const [name, [params, re]] of Object.entries(facets)) {
+    const r = await plan(params, true);
+    must(r.code === "SCATTER_PAIRING_REQUIRED" && re.test(r.error), `condition '${name}' alone: refused with SCATTER_PAIRING_REQUIRED and named (${r.code} ${String(r.error).slice(0, 200)})`);
+    must(!(await plan(params, false)).error?.startsWith("SCATTER_PAIRING_REQUIRED"), `condition '${name}': off never produces the new code`);
+  }
+  const many = await plan(base({ claim_spec: claim({ relation: "comparison", reader_task: "comparison", measure_ids: ["gdp"], derived_metric: "ratio", target_measure: "gdp", baseline_measure: "gdp" }), reader_task: "comparison", y_field: "gdp" }), true);
+  must(many.code === "SCATTER_PAIRING_REQUIRED" && /\(1\)/.test(many.error) && /\(2\)/.test(many.error) && /\(3\)/.test(many.error) && /relation/.test(many.error) && /derived_metric/.test(many.error) && /different fields/.test(many.error), "several failing together are numbered and named together");
+  must(many.error.includes(SCATTER_HINT_FRAGMENT), "the refusal text carries the same hint constant text as the tool definition");
+  const honest = await plan(base(), true);
+  must(honest.ok && honest.spec.semantic_gate.scatter_pair, "the honest pair still passes");
+  // a non-scatter relationship: unchanged both ways
+  for (const on of [false, true]) {
+    const r = await plan(base({ chart_type: "node_link", measure_semantics: undefined, claim_spec: undefined, x_field: undefined, y_field: undefined, source_field: "a", target_field: "b" }), on);
+    must(!String(r.error).startsWith("SCATTER_PAIRING_REQUIRED"), `non-scatter relationship (switch ${on ? "on" : "off"}) never gets the scatter code`);
+  }
+}
+{
   // refusals carry the field or unit to change
   const unit = await plan(base({ x_unit: "EUR" }), true);
   must(unit.error.includes("'EUR'") && unit.error.includes("'USD'") && unit.error.includes("x axis"), "the unit refusal names the given and the declared unit");
@@ -153,7 +182,7 @@ for (const [name, params, wantOff, wantOn] of cases) {
 }
 
 // ---- 3. the chain tool refuses with the same code as the direct tool -------------------------------------------------
-for (const [name, params] of [["period mismatch", base({ measure_semantics: [gdp(), life({ temporal_basis: { type: "point_in_time", date: "2019" } })] })], ["no declarations", base({ measure_semantics: undefined, claim_spec: undefined })], ["x_unit differs", base({ x_unit: "EUR" })], ["no entity_field", base({ entity_field: undefined })]]) {
+for (const [name, params] of [["period mismatch", base({ measure_semantics: [gdp(), life({ temporal_basis: { type: "point_in_time", date: "2019" } })] })], ["no declarations", base({ measure_semantics: undefined, claim_spec: undefined })], ["x_unit differs", base({ x_unit: "EUR" })], ["no entity_field", base({ entity_field: undefined })], ["one measure (not a pair)", base({ measure_semantics: [gdp()], claim_spec: claim({ measure_ids: ["gdp"] }) })], ["several conditions failing", base({ claim_spec: claim({ relation: "comparison", reader_task: "comparison", measure_ids: ["gdp"] }), reader_task: "comparison", y_field: "gdp" })]]) {
   const direct = await plan(params, true);
   for (const k of Object.keys(process.env)) if (k.startsWith("NEWSROOM_")) delete process.env[k];
   process.env[SWITCH] = "1"; Object.assign(process.env, CHAIN_ENV); process.env.NEWSROOM_ARTIFACT_DIR = artifacts; process.env.NEWSROOM_TOOL_PROFILE = "visual-story";
