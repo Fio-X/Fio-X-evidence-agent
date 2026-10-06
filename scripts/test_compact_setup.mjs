@@ -9,8 +9,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
-import { maskFor } from "./lib_viz_form_wiring.mjs";
+import { definitionOf, loadPinPatches } from "./lib_pin_patch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { expandSharedConcepts, fillSetupRefs } = await import(join(ROOT, "runtime/pi/compact_setup.mjs"));
@@ -112,51 +111,22 @@ const own = (i) => ({ concept_id: `c${i + 1}`, framing: FRAMES[i], visual_metaph
 const full = (n = 8) => Array.from({ length: n }, (_, i) => ({ ...COMMON, ...own(i) }));
 const compact = (n = 8) => Array.from({ length: n }, (_, i) => own(i));
 
+const BASELINE_REF = process.env.BASELINE_REF ?? "42a5e77";
 const baseSource = process.env.BASELINE_NEWSROOM_TS ? readFileSync(process.env.BASELINE_NEWSROOM_TS, "utf8")
-  : spawnSync("git", ["show", `${process.env.BASELINE_REF ?? "42a5e77"}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
+  : spawnSync("git", ["show", `${BASELINE_REF}:runtime/pi/newsroom.ts`], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
 assert.ok(baseSource.includes("newsroom_visual_concepts"), "baseline newsroom.ts loaded");
 const mod = await loadTree("head");
 const baseMod = await loadTree("base", baseSource);
-// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
-// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
-// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
-const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
-const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
-const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: withoutPageTopSentences(tool.promptGuidelines) }, mask);
+// The approved differences from the older commit are the entries of scripts/fixtures/pin_patches/compact_setup.json, each with the commit that
+// made it (page top, fast-fail, the three chart forms, zh names, measure_semantics). They are asserted exactly and reversed on a copy of the
+// head (scripts/lib_pin_patch.mjs); every other byte of every tool, and every tool without an entry, must equal the baseline.
+const pins = loadPinPatches("compact_setup", { baseline: process.env.BASELINE_NEWSROOM_TS ? undefined : BASELINE_REF });
+const slim = (tool) => definitionOf({ parameters: tool.parameters, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines });
 
-{ // switch off: identical definitions; switch on: only the four setup tools (+ plan guideline) change
+{ // switch off: the listed differences only; switch on: only the four setup tools (+ plan guideline) change
   const base = register(baseMod, {});
   const off = register(mod, {});
-  assert.deepEqual([...off.keys()], [...base.keys()]);
-  // Two declared differences from the integration head: the wording and enum of category_names (zh-names-1003), put back by
-  // revertNameLocalization, which refuses a surface that does not carry exactly those edits; and the wiring of strip_plot,
-  // stacked_bar_100 and mirrored_bar (scripts/lib_viz_form_wiring.mjs masks exactly that; test_viz_plan_schema.mjs asserts it).
-  // Every other tool, and everything else of the viz tools, must equal the baseline.
-  // Approved differences since the integration head (fast-fail-1003): item 3, one explanatory_dimension vocabulary (semantic novelty and
-  // the infographic plan take every story-graph value) and item 4 (one guidance clause on the infographic plan's quantity_kind). Only
-  // these paths may differ, and each must really differ (drop the entry if it is reverted); everything else stays byte-identical.
-  const MODULE = ["properties", "modules", "items", "properties"];
-  const DIMENSION_ENUM = [...MODULE, "explanatory_dimension", "enum"];
-  const QUANTITY_KIND_DESCRIPTION = [...MODULE, "quantitative_encoding", "properties", "quantity_kind", "description"];
-  const APPROVED = { newsroom_semantic_novelty: [DIMENSION_ENUM], newsroom_infographic_plan: [DIMENSION_ENUM, QUANTITY_KIND_DESCRIPTION] };
-  const parentOf = (tool, path) => path.slice(0, -1).reduce((node, key) => node?.[key], tool.parameters);
-  const withoutApproved = (tool, mask) => {
-    const parameters = JSON.parse(JSON.stringify(tool.parameters));
-    for (const path of APPROVED[tool.name]) {
-      const parent = path.slice(0, -1).reduce((node, key) => node?.[key], parameters);
-      assert.ok(parent && typeof parent === "object", `${tool.name} keeps ${path.slice(0, -1).join(".")}`);
-      parent[path.at(-1)] = null;
-    }
-    return slim({ ...tool, parameters }, mask);
-  };
-  for (const [name, tool] of base) {
-    const current = revertNameLocalization(off.get(name)), mask = maskFor(name);
-    if (!APPROVED[name]) { assert.equal(slim(current, mask), slim(tool, mask), `switch off: ${name} is byte-identical to the integration head`); continue; }
-    assert.equal(withoutApproved(current, mask), withoutApproved(tool, mask), `switch off: ${name} is byte-identical to the integration head outside ${APPROVED[name].map((path) => path.at(-1)).join(" and ")}`);
-    assert.ok(Array.isArray(parentOf(current, DIMENSION_ENUM).enum) && Array.isArray(parentOf(tool, DIMENSION_ENUM).enum), `${name} keeps its explanatory_dimension enum`);
-    assert.notDeepEqual(parentOf(current, DIMENSION_ENUM).enum, parentOf(tool, DIMENSION_ENUM).enum, `${name}: the explanatory_dimension enum differs from the integration head (approved change)`);
-    if (APPROVED[name].includes(QUANTITY_KIND_DESCRIPTION)) assert.ok(typeof parentOf(current, QUANTITY_KIND_DESCRIPTION).description === "string" && parentOf(tool, QUANTITY_KIND_DESCRIPTION).description === undefined, `${name}: quantity_kind has a description now and had none (approved change)`);
-  }
+  pins.check(base, off, "switch off");
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();
@@ -169,7 +139,7 @@ const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, descr
   assert.deepEqual(Object.keys(c.properties), Object.keys(c0.properties), "same field order");
   assert.deepEqual(on.get("newsroom_asset_requirements").parameters.required, ["concept_id", "requirements"]);
   assert.deepEqual(on.get("newsroom_semantic_novelty").parameters.required, ["modules"]);
-  check("tools: switch off is byte-identical to the integration head; on, only the four setup tools change, not the page-plan tool (shared + optional refs; creative fields stay required)");
+  check("tools: switch off equals the integration head except the listed changes; on, only the four setup tools change, not the page-plan tool (shared + optional refs; creative fields stay required)");
 }
 
 const runSetup = async (label, env, conceptsInput) => {
@@ -285,5 +255,6 @@ const runSetup = async (label, env, conceptsInput) => {
   assert.deepEqual(register(mod, {}).get("newsroom_visual_concepts").parameters.required, ["discovery_ref", "concepts"]);
   check("off: refs stay required and nothing is inferred");
 }
+pins.finish();
 console.log(`${results.length} checks passed:`);
 for (const r of results) console.log(`  PASS ${r}`);

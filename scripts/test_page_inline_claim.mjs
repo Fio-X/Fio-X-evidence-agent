@@ -32,8 +32,8 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { revertNameLocalization } from "./lib_name_localization_baseline.mjs";
-import { FORM_FIELDS, FORM_GUIDELINE, formWiringMask, maskFor } from "./lib_viz_form_wiring.mjs";
+import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "a4d4cb0";
@@ -103,11 +103,6 @@ const BASE_ENV = {
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
-// fix/page-top-1003 adds three one-sentence guidelines on purpose: duckdb_query (relative windows) and newsroom_infographic_plan (page top,
-// hero label). With the hero value gate off (NEWSROOM_HERO_VALUE_GATE=0, the old typed-hero path, which this test sets) they are the only difference
-// from the older commit, so exactly those three sentences are masked here; everything else is still compared byte for byte.
-const PAGE_TOP_SENTENCES = [/^A relative window such as /, /^The first content module after the title and dek is /, /^A hero_stat label names the subject, the measure and the period/];
-const withoutPageTopSentences = (guidelines) => (Array.isArray(guidelines) ? guidelines.filter((entry) => !PAGE_TOP_SENTENCES.some((re) => re.test(String(entry)))) : guidelines);
 
 const { mod, dir: treeDir } = await loadTree("current");
 const { fillClaimTemplate, inlineSourceNote } = mod;
@@ -334,35 +329,12 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
 }
 
 // ---- 3. Switch off: the page line's tool surface is unchanged ----------------
-// Two intended differences from the page line, both only in viz_plan and viz_chain. measure_semantics is the full schema again (the page
-// line registers a weaker duplicate). strip_plot, stacked_bar_100 and mirrored_bar are wired into the plan path: three chart_type values,
-// fourteen fields, three guideline sentences (scripts/lib_viz_form_wiring.mjs removes exactly those). Mask only these here;
-// test_viz_plan_schema.mjs asserts the full measure_semantics schema and the form wiring itself.
-const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsroom_viz_chain"].includes(name) && parameters?.properties?.measure_semantics ? { ...parameters, properties: { ...parameters.properties, measure_semantics: "masked" } } : parameters);
-// The other declared difference from the page line: the category_names enum and wording on newsroom_viz_plan and
-// newsroom_viz_chain, and two viz_plan guideline sentences (zh-names-1003). `current: true` puts the old wording back with
-// revertNameLocalization, which refuses a surface that lacks exactly those edits; the form wiring is masked by maskFor (forms-1003).
-// Everything else is still compared byte for byte.
-// The second and third intended differences (fast-fail-1003): item 3, one explanatory_dimension vocabulary (semantic novelty and the infographic
-// plan take every story-graph value) and item 4 (one guidance clause on the infographic plan's quantity_kind). Only the enum of that field and
-// that one description are masked, in the baseline and in the current tree alike. It is a loud failure if either field moves.
-const maskApprovedChanges = (name, parameters) => {
-  if (!["newsroom_semantic_novelty", "newsroom_infographic_plan"].includes(name)) return parameters;
-  const masked = JSON.parse(JSON.stringify(parameters));
-  const module = masked?.properties?.modules?.items?.properties;
-  assert.ok(Array.isArray(module?.explanatory_dimension?.enum), `${name} keeps its explanatory_dimension enum`);
-  module.explanatory_dimension.enum = "masked";
-  if (name === "newsroom_infographic_plan") {
-    const kind = module?.quantitative_encoding?.properties?.quantity_kind;
-    assert.ok(Array.isArray(kind?.enum), `${name} keeps its quantity_kind enum`);
-    kind.description = "masked";
-  }
-  return masked;
-};
-const surface = (tools, { current = false } = {}) => [...tools.entries()].map(([name, tool]) => {
-  const t = current ? revertNameLocalization(tool) : tool;
-  return [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: withoutPageTopSentences(t.promptGuidelines), parameters: maskApprovedChanges(name, maskMeasureSemantics(name, t.parameters)) }, maskFor(name))];
-});
+// The approved differences from the page line (the page top, the fast-fail vocabulary, the three chart forms, zh names, measure_semantics, the
+// round-3 chart fields) are the entries of scripts/fixtures/pin_patches/page_inline_claim.json, each with the commit that made it. Each is asserted
+// exactly (a4d4cb0 holds the old value, the head the new one), then the list is reversed on a copy of the head and the whole definition (label,
+// description, snippet, guidelines, schema) must equal a4d4cb0's byte for byte (scripts/lib_pin_patch.mjs). A tool without entries must be byte-equal.
+// test_viz_plan_schema.mjs asserts the full measure_semantics schema and the form wiring against schemas/newsroom-viz-spec.schema.json.
+const pins = loadPinPatches("page_inline_claim", { baseline: BASELINE });
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
 if (!baseline) console.log(`git history for ${BASELINE} is unavailable; skipping the comparison with the page line`);
@@ -371,10 +343,9 @@ const PHASES = [undefined, "design", "verify", "verify,design"];
 if (baseline) {
   let compared = 0;
   const same = (label, env, current = mod) => {
-    const [a, b] = [surface(register(baseline, env)), surface(register(current, env), { current: true })];
-    assert.deepEqual(b.map(([n]) => n), a.map(([n]) => n), `${label}: tool list`);
-    for (const [i, [name, json]] of a.entries()) assert.equal(b[i][1], json, `${label}: ${name} definition changed`);
-    compared += a.length;
+    const [a, b] = [register(baseline, env), register(current, env)];
+    pins.check(a, b, label);
+    compared += a.size;
   };
   for (const profile of PROFILES) {
     for (const phase of PHASES) {
@@ -391,58 +362,58 @@ if (baseline) {
   for (const [profile, phase] of [["full", "design"], ["full", "verify"], ["publication", undefined], ["full", "design,publish"]]) same(`${profile}/${phase}: record_claim or duckdb_query hidden`, { ...BASE_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase, NEWSROOM_SPEED_INLINE_CLAIM: "1" });
   check(`switch off or unavailable: ${compared} tool definitions (list, label, description, guidelines, schema) equal ${BASELINE} across ${PROFILES.length} profiles x ${PHASES.length} phases`);
   {
-    // The declared name-localization edits are real (the current surface differs from the page line's) and the revert is
-    // strict (it refuses a surface that does not carry them), so neither a reverted change nor a spread one passes quietly.
-    const [old, now] = [register(baseline, { ...BASE_ENV }), register(mod, { ...BASE_ENV })];
-    for (const name of ["newsroom_viz_plan", "newsroom_viz_chain"]) {
-      assert.notEqual(JSON.stringify(now.get(name).parameters), JSON.stringify(old.get(name).parameters), `${name}: the category_names edit is present in the current surface`);
-      assert.throws(() => revertNameLocalization(old.get(name)), /name localization: .* carries the declared edit/, `${name}: a surface without the edits is refused`);
+    // The category_names edits (enum and wording on viz_plan and viz_chain) are entries of the list, so a reverted or half-applied edit fails
+    // the exact assertions above; this only keeps the list from losing them.
+    if (!process.env.PIN_PATCH_RECORD) for (const name of ["newsroom_viz_plan", "newsroom_viz_chain"]) {
+      for (const field of ["enum", "description"]) assert.ok(pins.entries.some((entry) => entry.tool === name && entry.path?.join(".") === `properties.category_names.${field}`), `${name}: the list carries the category_names ${field}`);
     }
-    assert.notDeepEqual(now.get("newsroom_viz_plan").promptGuidelines, old.get("newsroom_viz_plan").promptGuidelines, "the two viz_plan guideline edits are present");
-    check("name localization: the declared category_names edits are present on viz_plan and viz_chain, and reverting a surface that lacks them is refused");
+    check("patch list: the category_names edits are listed for viz_plan and viz_chain");
   }
 
   // On: exactly newsroom_viz_plan, record_claim (one guideline) and newsroom_viz_chain differ.
   for (const profile of ["full", "investigate", "competition", "visual", "visual-story"]) {
     for (const phase of [undefined, "verify,design"]) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
-      const [before, after] = [register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
+      // The head's own switch-off surface is the reference: the list pins it to a4d4cb0, and the switch is then compared with it as it is.
+      const [before, after] = [register(mod, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
+      pins.check(register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), before, `${profile}/${phase}: switch off, against ${BASELINE}`);
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
-      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, withoutPageTopSentences(after.get(name).promptGuidelines), maskApprovedChanges(name, after.get(name).parameters)]) !== JSON.stringify([before.get(name).description, withoutPageTopSentences(before.get(name).promptGuidelines), maskApprovedChanges(name, before.get(name).parameters)]));
+      const changed = [...after.keys()].filter((name) => JSON.stringify(after.get(name)) !== JSON.stringify(before.get(name)));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);
-      const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), revertNameLocalization(after.get("newsroom_viz_plan")), before.get("record_claim"), after.get("record_claim"), revertNameLocalization(after.get("newsroom_viz_chain"))];
+      const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), after.get("newsroom_viz_plan"), before.get("record_claim"), after.get("record_claim"), after.get("newsroom_viz_chain")];
       // record_claim: same description and schema, one more guideline.
       assert.equal(rc1.description, rc0.description);
       assert.deepEqual(rc1.parameters, rc0.parameters);
       assert.deepEqual(rc1.promptGuidelines.slice(0, rc0.promptGuidelines.length), rc0.promptGuidelines);
       assert.equal(rc1.promptGuidelines.length, rc0.promptGuidelines.length + 1);
       assert.match(rc1.promptGuidelines.at(-1), /^A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain/);
-      // newsroom_viz_plan: claim, claim_kind and claim_caveat follow claim_id; takeaway, alt and source_note become optional.
-      // The form wiring (fourteen more properties, three more chart_type values, a longer category_names description) is not what the switch
-      // changes: compare without it, and require the fourteen fields in the plan and, in the same order, in the chain.
-      const unwired = (value) => JSON.parse(JSON.stringify(value, formWiringMask));
+      // newsroom_viz_plan: claim, claim_kind and claim_caveat follow claim_id; takeaway, alt and source_note become optional. The chart forms and
+      // the other listed changes are in both surfaces, so nothing is masked; the plan registers every form field and, in the same order, the chain.
       const keys0 = Object.keys(plan0.parameters.properties);
-      const keys1 = Object.keys(plan1.parameters.properties).filter((key) => !FORM_FIELDS.includes(key));
+      const keys1 = Object.keys(plan1.parameters.properties);
       assert.deepEqual(FORM_FIELDS.filter((key) => !(key in plan1.parameters.properties)), [], "the plan registers every form field");
       assert.deepEqual(keys1, keys0.flatMap((key) => (key === "claim_id" ? [key, "claim", "claim_kind", "claim_caveat"] : [key])), "the shared properties keep their order");
-      for (const key of keys0) if (!["takeaway", "alt", "source_note", "measure_semantics"].includes(key)) assert.deepEqual(unwired(plan1.parameters.properties[key]), unwired(plan0.parameters.properties[key]), `${key} is unchanged`);
+      for (const key of keys0) if (!["takeaway", "alt", "source_note"].includes(key)) assert.deepEqual(plan1.parameters.properties[key], plan0.parameters.properties[key], `${key} is unchanged`);
       assert.deepEqual(plan1.parameters.required, plan0.parameters.required.filter((key) => !["takeaway", "alt", "source_note"].includes(key)));
       for (const key of ["claim", "claim_kind", "claim_caveat", "takeaway", "alt", "source_note"]) assert.ok(plan1.parameters.properties[key].__optional, `${key} is optional`);
       assert.deepEqual(plan1.parameters.properties.claim_kind.enum, rc1.parameters.properties.claim_kind.enum, "the same claim kinds as record_claim");
       assert.match(plan1.parameters.properties.claim.description, /\{max\.col\.other\}/);
-      const guidelines1 = plan1.promptGuidelines.filter((line) => !FORM_GUIDELINE.test(line));
-      assert.deepEqual(guidelines1.slice(0, plan0.promptGuidelines.length), plan0.promptGuidelines);
-      assert.match(guidelines1.at(-1), /^To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id/);
-      assert.match(guidelines1.at(-1), /Write a place or currency name in a claim as a placeholder on the chart's name column \(for example \{max\.value\.country\}\); on a zh chart the runtime prints its localized name, so never type one\. Pass claim or claim_id, never both\.$/);
+      assert.deepEqual(plan1.promptGuidelines.slice(0, plan0.promptGuidelines.length), plan0.promptGuidelines);
+      assert.equal(plan1.promptGuidelines.length, plan0.promptGuidelines.length + 1, "the switch adds exactly one plan guideline");
+      assert.match(plan1.promptGuidelines.at(-1), /^To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id/);
+      assert.match(plan1.promptGuidelines.at(-1), /Write a place or currency name in a claim as a placeholder on the chart's name column \(for example \{max\.value\.country\}\); on a zh chart the runtime prints its localized name, so never type one\. Pass claim or claim_id, never both\.$/);
       // The chain takes the plan's parameters, so it takes the claim too.
-      assert.deepEqual(Object.keys(chain1.parameters.properties).filter((key) => !FORM_FIELDS.includes(key)), [...keys1, "computation_ref"]);
-      assert.deepEqual(Object.keys(chain1.parameters.properties).filter((key) => FORM_FIELDS.includes(key)), Object.keys(plan1.parameters.properties).filter((key) => FORM_FIELDS.includes(key)), "the chain takes the plan's form fields in the same order");
+      const nonForm = (keys) => keys.filter((key) => !FORM_FIELDS.includes(key));
+      assert.deepEqual(nonForm(Object.keys(chain1.parameters.properties)), [...nonForm(keys1), "computation_ref"]);
+      assert.deepEqual(Object.keys(chain1.parameters.properties).filter((key) => FORM_FIELDS.includes(key)), keys1.filter((key) => FORM_FIELDS.includes(key)), "the chain takes the plan's form fields in the same order");
       assert.deepEqual(chain1.parameters.required, plan1.parameters.required);
       assert.match(chain1.description, /With claim and claim_kind instead of claim_id/);
     }
   }
   check("switch on: only newsroom_viz_plan (claim, claim_kind, claim_caveat; takeaway, alt, source_note optional), record_claim (one guideline) and newsroom_viz_chain change");
 }
+
+if (baseline) pins.finish();
 
 // ---- 4. Inline flows over five data shapes ----------------------------------
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
@@ -1003,7 +974,7 @@ if (!missingDependency) {
       assert.ok(!planless.has("newsroom_viz_plan") && !planless.has("newsroom_viz_chain"));
       if (baseline) {
         const { mod: noPlanBaseline } = await loadTree("no-plan-baseline", baselineDir, off("newsroom_viz_plan"));
-        assert.deepEqual(surface(planless), surface(register(noPlanBaseline, BASE_ENV)));
+        pins.check(register(noPlanBaseline, BASE_ENV), planless, "plan disabled");
       }
     }
     // Design only: record_claim and duckdb_query are hidden, so the call is the page line's own.
