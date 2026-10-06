@@ -65,6 +65,7 @@ python3 scripts/test_story_graph_schema_v18.py
 python3 scripts/verify_fixture.py
 node scripts/test_content_addressing.mjs
 node scripts/test_stream_limits.mjs
+node scripts/test_fast_fail_errors.mjs
 node scripts/test_cjk_viz.mjs
 node scripts/test_economy_names.mjs
 node scripts/test_range_bracket.mjs
