@@ -30,6 +30,35 @@ const base = {
 const attr = (tag, name) => tag.match(new RegExp(`(?:^|[\\s<])${name}="([^"]*)"`))?.[1];
 const tags = (svg, re) => [...svg.matchAll(re)].map((m) => m[0]);
 const textOf = (tag) => tag.replace(/<[^>]*>/g, "");
+// Scatter points carry no id: the i-th point <circle> is the i-th row (a row with a missing x or y draws none, and the fixtures have none).
+// Each auto-label must be visible and sit at its own row's point: within 28 px of it (the renderer's own rule: it draws a leader only when the
+// label lands farther than 28 px), or else with a leader that starts exactly at that point and comes right before the label.
+function checkAutoLabels(svg, spec, data, where) {
+  const circles = [...svg.matchAll(/<circle cx="([-\d.]+)" cy="([-\d.]+)" r="[\d.]+" fill="[^"]*" opacity="[^"]*"\/>/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+  assert.equal(circles.length, data.length, `${where}: one circle per row`);
+  const lines = svg.split("\n");
+  let checked = 0;
+  const hidden = (line) => /opacity="0(?:\.0*)?"/.test(line) || /display\s*:\s*none|visibility\s*:\s*hidden/i.test(line);
+  lines.forEach((line, i) => {
+    if (!/^<text data-role="auto-label" /.test(line)) return;
+    const text = textOf(line);
+    const at = data.findIndex((row) => String(row[spec.label_field]) === text);
+    assert.ok(at >= 0, `${where}: auto-label '${text}' names a row`);
+    const point = circles[at];
+    assert.ok(!hidden(line), `${where}: auto-label '${text}' is visible`);
+    assert.ok(!/^(?:none|transparent|rgba?\([^)]*,\s*0(?:\.0*)?\))$/i.test(attr(line, "fill") ?? "none"), `${where}: auto-label '${text}' has a visible fill`);
+    const tx = Number(attr(line, "x")), ty = Number(attr(line, "y"));
+    const before = lines[i - 1] ?? "";
+    if (/^<line data-role="direct-label-leader" /.test(before)) {
+      assert.ok(!hidden(before), `${where}: the leader of '${text}' is visible`);
+      assert.ok(Math.abs(Number(attr(before, "x1")) - point.x) < 0.01 && Math.abs(Number(attr(before, "y1")) - point.y) < 0.01, `${where}: the leader of '${text}' starts at its own point`);
+    } else {
+      assert.ok(Math.hypot(tx - point.x, ty - point.y) <= 28, `${where}: '${text}' with no leader sits within 28 px of its own point (is ${Math.hypot(tx - point.x, ty - point.y).toFixed(1)})`);
+    }
+    checked += 1;
+  });
+  return checked;
+}
 const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${role}"[^>]*>[^<]*</text>`, "g"));
 
 // ---- 1. choropleth classes ---------------------------------------------------------------------------
@@ -156,14 +185,30 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
     let seed = 7;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
     const rowsH = [];
-    for (let k = 0; k < 12; k++) { let v = 100; for (let i = 0; i < 16; i++) { v += (rnd() - 0.5) * 6 + (k % 3 === 0 ? 0.2 : -0.1); rowsH.push({ f: `地区${k + 1}`, x: 2009 + i, v }); } }
+    for (let k = 0; k < 12; k++) { let v = 100; for (let i = 0; i < 16; i++) { if (i > 0) v += (rnd() - 0.5) * 6 + (k % 3 === 0 ? 0.2 : -0.1); rowsH.push({ f: `地区${k + 1}`, x: 2009 + i, v }); } }
     const svgH = renderVizSvg(spec, rowsH);
     const failures = checkSvgGeometry(svgH).failures;
     const byRule = (r) => failures.filter((x) => x.rule === r).length;
     assert.equal(byRule("text_crosses_data_mark"), 0, `index panels: text over a data mark: ${failures.map((x) => x.message).join(" | ")}`);
     assert.equal(byRule("text_overlap"), 0, "index panels: overlapping text");
     assert.equal(failures.length, 0, `index panels: render QA geometry clean: ${failures.map((x) => x.rule)}`);
-    assert.ok(roleTexts(svgH, "index-base-label").length <= 1, "the base is named at most once");
+    assert.equal(roleTexts(svgH, "index-base-label").length, 1, "the base is named exactly once");
+    assert.equal(textOf(roleTexts(svgH, "index-base-label")[0]), "2009 = 100", "the label names the base period");
+  }
+  // zigzag: 4 panels of a 40-month series alternating 97/103 (base 100 in the first month) leave no clear spot in
+  // any panel; the label still shows exactly once, above the first row of panels, with render QA clean
+  {
+    const rowsZ = [];
+    for (let k = 0; k < 4; k++) for (let i = 0; i < 40; i++) rowsZ.push({ f: `地区${k + 1}`, x: `${2020 + Math.floor(i / 12)}-${String(1 + (i % 12)).padStart(2, "0")}`, v: i === 0 ? 100 : i % 2 ? 97 : 103 });
+    const svgZ = renderVizSvg(spec, rowsZ);
+    const labels = roleTexts(svgZ, "index-base-label");
+    assert.equal(labels.length, 1, "zigzag: the base label shows exactly once");
+    assert.equal(textOf(labels[0]), "2020-01 = 100", "zigzag: the label names the base period like the x axis");
+    const failuresZ = checkSvgGeometry(svgZ).failures;
+    assert.equal(failuresZ.length, 0, `zigzag: render QA geometry clean: ${failuresZ.map((x) => `${x.rule}: ${x.message}`).join(" | ")}`);
+    const firstPanelTitle = tags(svgZ, /<text [^>]*font-weight="700"[^>]*>地区1<\/text>/g)[0];
+    assert.equal(attr(labels[0], "x"), attr(firstPanelTitle, "x"), "zigzag: the label is left-aligned with the first panel");
+    assert.ok(Number(attr(labels[0], "y")) < Number(attr(firstPanelTitle, "y")), "zigzag: the label sits above the first row of panels");
   }
   const { index_base, ...plain } = spec;
   assert.ok(!renderVizSvg(plain, rows).includes('data-role="index-base-line"'), "no index_base: ordinary small multiples");
@@ -233,12 +278,15 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
 }
 
 // ---- other chart types are byte-identical to the base commit -----------------------------------------
+// No silent skips: if the base commit cannot be extracted, or the old renderer throws on a fixture, the test fails.
 const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", BASE_COMMIT, "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-if (archive.status === 0) {
+assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow clone lacks it; fetch full history): ${String(archive.stderr ?? "").slice(0, 200)}`);
+{
   const dir = mkdtempSync(join(tmpdir(), "round3-base-"));
   process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, "b.tar"), archive.stdout);
-  spawnSync("tar", ["-xf", join(dir, "b.tar"), "-C", dir]);
+  const untar = spawnSync("tar", ["-xf", join(dir, "b.tar"), "-C", dir]);
+  assert.equal(untar.status, 0, "extracting the base commit failed");
   const old = await import(pathToFileURL(join(dir, "runtime/pi/viz.mjs")).href);
   const names = ["华北", "华东", "华南", "西北", "东北", "西南"];
   const cats = names.map((region, i) => ({ region, v: 10 + i * 7, w: 5 + i * 3 }));
@@ -254,14 +302,93 @@ if (archive.status === 0) {
       [{ ...base, language, reader_task: "correlation", chart_type: "scatter", x_field: "v", y_field: "w", label_field: "region", unit: "%" }, cats],
     ];
     for (const [spec, data] of same) {
-      let before;
-      try { before = old.renderVizSvg(spec, data); } catch { continue; }
+      const before = old.renderVizSvg(spec, data); // a throw here fails the test
       const after = renderVizSvg(spec, data);
-      // scatter gains auto labels on purpose; everything else must match to the byte (en horizontal_bar etc.)
-      if (spec.chart_type === "scatter") continue;
-      if (language === "zh" && /\d{5,}/.test(before)) continue; // zh large-value scaling changed on purpose
+      // scatter gains auto labels on purpose (up to 8, with a leader line when a label lands far from its point): remove exactly those
+      // elements from the new SVG and the rest must equal the base byte for byte. The base has no such element, so nothing it drew is hidden.
+      if (spec.chart_type === "scatter") {
+        const isAdded = (line) => /^<text data-role="auto-label" /.test(line) || /^<line data-role="direct-label-leader" /.test(line);
+        assert.ok(!before.split("\n").some(isAdded), `${language} scatter: the base draws no auto label or leader`);
+        const lines = after.split("\n");
+        assert.equal(lines.filter(isAdded).length, 4, `${language} scatter: the four extremes gain a label (and no leader at this size)`);
+        assert.deepEqual(lines.filter(isAdded).map((l) => l.replace(/^.*>([^<]*)<\/text>$/, "$1")), ["西南", "华北", "东北", "华东"], `${language} scatter: which points are named, in order`);
+        assert.equal(lines.filter((l) => !isAdded(l)).join("\n"), before, `${language} scatter: apart from the added labels, unchanged`);
+        assert.equal(checkAutoLabels(after, spec, data, `${language} scatter`), 4, `${language} scatter: all four auto-labels checked against their points`);
+        continue;
+      }
       assert.equal(after, before, `${language} ${spec.chart_type} unchanged`);
     }
   }
+  // large values: en is byte-identical; zh changes only in the value-label text nodes, from the comma-grouped integer to
+  // the shared 亿 label with the decimal count the chart needs (every difference pinned below, nothing else may differ)
+  {
+    const big = names.map((region, i) => ({ region, v: [3.5e9, 1.2e9, 8.4e8, 1.1e8, 2.2e5, 86000][i], w: [4e9, 1e9, 9e8, 1e8, 2e5, 9e4][i] }));
+    const NEW_LABEL = { "3,500,000,000": "35.000亿", "1,200,000,000": "12.000亿", "840,000,000": "8.400亿", "110,000,000": "1.100亿", "220,000": "0.002亿", "86,000": "0.001亿",
+      "4,000,000,000": "40.000亿", "1,000,000,000": "10.000亿", "900,000,000": "9.000亿", "100,000,000": "1.000亿", "200,000": "0.002亿", "90,000": "0.001亿" };
+    const textNodes = (svg) => [...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+    // Everything but the text content is compared byte for byte: the text content of every <text> is emptied (it is pinned below as a
+    // full list), and only the attributes named for a chart (tag name + attribute) have their values masked.
+    const maskAttr = (svg, allowed) => svg.replace(/<([a-zA-Z]+)( [^>]*)?>/g, (tag, name) => tag.replace(/ ([\w:-]+)="[^"]*"/g, (attrText, attrName) => (allowed.includes(`${name} ${attrName}`) ? ` ${attrName}="*"` : attrText)));
+    const comparable = (svg, allowed) => maskAttr(svg.replace(/(<text [^>]*>)[^<]*(<\/text>)/g, "$1$2"), allowed);
+    // chart_type -> [spec fields, the full expected zh text list, how many of those texts changed, the attributes allowed to differ]
+    const fixtures = [
+      ["horizontal_bar", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" },
+        ["Round three", "synthetic", "0", "10亿", "20亿", "30亿 元", "华北", "35.000亿 元", "华东", "12.000亿", "华南", "8.400亿", "西北", "1.100亿", "东北", "0.002亿", "西南", "0.001亿", "数据来源：synthetic fixture"], 6,
+        // wider labels move the value-label and axis-tick x positions and shorten the bars: nothing else may move
+        ["text x", "rect width"]],
+      ["dot", { reader_task: "ranking", category_field: "region", value_field: "v", sort: "desc" },
+        ["Round three", "synthetic", "0", "10亿", "20亿", "30亿 元", "华北", "35.000亿 元", "华东", "12.000亿", "华南", "8.400亿", "西北", "1.100亿", "东北", "0.002亿", "西南", "0.001亿", "数据来源：synthetic fixture"], 6, []],
+      ["slope", { reader_task: "change", category_field: "region", start_field: "v", end_field: "w" },
+        ["Round three", "synthetic", "v", "w", "华北 35.000亿 元", "40.000亿", "华东 12.000亿", "10.000亿", "华南 8.400亿", "9.000亿", "西北 1.100亿", "1.000亿", "东北 0.002亿", "0.002亿", "西南 0.001亿", "0.001亿", "数据来源：synthetic fixture"], 12, []],
+    ];
+    for (const [chart_type, extra, expected, expectedChanged, allowed] of fixtures) {
+      const spec = (language) => ({ ...base, language, chart_type, unit: "元", ...extra });
+      assert.equal(renderVizSvg(spec("en"), big), old.renderVizSvg(spec("en"), big), `en ${chart_type} large values unchanged`);
+      const [before, after] = [old.renderVizSvg(spec("zh"), big), renderVizSvg(spec("zh"), big)];
+      const [a, b] = [textNodes(before), textNodes(after)];
+      assert.deepEqual(b, expected, `zh ${chart_type}: the full text list`);
+      assert.equal(a.length, b.length, `zh ${chart_type}: same number of text nodes`);
+      let changed = 0;
+      a.forEach((text, i) => {
+        if (text === b[i]) return;
+        const m = /^(.*?)(-?[\d,]{5,})( 元)?$/.exec(text);
+        assert.ok(m && NEW_LABEL[m[2]], `zh ${chart_type}: unexpected old text ${JSON.stringify(text)}`);
+        assert.equal(b[i], `${m[1]}${NEW_LABEL[m[2]]}${m[3] ?? ""}`, `zh ${chart_type}: ${JSON.stringify(text)} becomes the shared 亿 label`);
+        changed += 1;
+      });
+      assert.equal(changed, expectedChanged, `zh ${chart_type}: exactly ${expectedChanged} labels changed (${changed})`);
+      assert.equal(comparable(after, allowed), comparable(before, allowed), `zh ${chart_type}: nothing but the label text${allowed.length ? ` and ${allowed.join(", ")}` : ""} differs`);
+    }
+  }
+}
+// Auto-labels at their own points, visible; a crowded fixture needs a leader. Two planted regressions must each fail the check.
+{
+  const names12 = ["华北", "华东", "华南", "西北", "东北", "西南", "华中", "中原", "江南", "塞北", "岭南", "关中"];
+  const crowded = names12.map((region, i) => ({ region, v: 50 + (i % 3) * 0.4 + i * 0.05, w: 50 + (i % 4) * 0.3 }));
+  crowded.push({ region: "远点", v: 90, w: 10 }, { region: "另一点", v: 10, w: 90 });
+  const spec = { ...base, reader_task: "correlation", chart_type: "scatter", x_field: "v", y_field: "w", label_field: "region", unit: "%" };
+  const svg = renderVizSvg(spec, crowded);
+  const n = checkAutoLabels(svg, spec, crowded, "crowded scatter");
+  assert.ok(n >= 5, `crowded scatter: auto-labels checked (${n})`);
+  assert.ok(svg.split("\n").some((l, i, a) => /^<text data-role="auto-label" /.test(l) && /^<line data-role="direct-label-leader" /.test(a[i - 1] ?? "")), "crowded scatter: at least one auto-label needs a leader");
+  // planted regression 1: two labels' positions swapped
+  const lines = svg.split("\n");
+  const idx = lines.map((l, i) => (/^<text data-role="auto-label" /.test(l) ? i : -1)).filter((i) => i >= 0);
+  const swapped = [...lines];
+  const pos = (l) => [attr(l, "x"), attr(l, "y")];
+  const [a, b] = [idx[0], idx[1]];
+  const [pa, pb] = [pos(lines[a]), pos(lines[b])];
+  swapped[a] = lines[a].replace(`x="${pa[0]}" y="${pa[1]}"`, `x="${pb[0]}" y="${pb[1]}"`);
+  swapped[b] = lines[b].replace(`x="${pb[0]}" y="${pb[1]}"`, `x="${pa[0]}" y="${pa[1]}"`);
+  assert.throws(() => checkAutoLabels(swapped.join("\n"), spec, crowded, "swapped"), /own point|starts at its own point/, "swapped labels are caught");
+  // planted regression 2: one label with opacity 0
+  const faded = [...lines];
+  faded[idx[0]] = lines[idx[0]].replace(" fill=", ' opacity="0" fill=');
+  assert.throws(() => checkAutoLabels(faded.join("\n"), spec, crowded, "faded"), /is visible/, "an opacity-0 label is caught");
+  // a leader that starts at the wrong point is caught too
+  const li = lines.findIndex((l) => /^<line data-role="direct-label-leader" /.test(l));
+  const moved = [...lines];
+  moved[li] = lines[li].replace(`x1="${attr(lines[li], "x1")}"`, `x1="${Number(attr(lines[li], "x1")) + 40}"`);
+  assert.throws(() => checkAutoLabels(moved.join("\n"), spec, crowded, "moved leader"), /starts at its own point/, "a leader from another point is caught");
 }
 console.log("ok test_viz_round3_conventions");

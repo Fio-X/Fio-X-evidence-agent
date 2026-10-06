@@ -138,8 +138,18 @@ const EXPECTED_DESCRIPTIONS = {
 // its mask (scripts/lib_viz_form_wiring.mjs) removes exactly the three chart_type values, the fourteen form fields, the three form
 // names in the category_names description and the three form guideline lines from both sides before they are compared.
 // test_viz_plan_schema.mjs asserts that wiring against schemas/newsroom-viz-spec.schema.json.
+// `added` lists properties that did not exist in the baseline at all (removed from the switch-off copy); `described` lists paths where the
+// field exists in both and only a description was added (cleared on both sides).
+const DIMENSION_ENUM_PATH = ["properties", "modules", "items", "properties", "explanatory_dimension", "enum"];
 const APPROVED_LATER = {
-  newsroom_viz_plan: { commit: "b38a345 and the form wiring", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"], ["properties", "map_extent"]], addedWhy: "round-3 opt-in chart fields and the opt-in world choropleth mode", mask: formWiringMask },
+  newsroom_viz_plan: { commit: "b38a345 and the form wiring", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"]], addedWhy: "round-3 opt-in chart fields (the world choropleth field map_extent is behind NEWSROOM_MAP_WORLD, off by default, and absent here)", mask: formWiringMask },
+  // One explanatory_dimension vocabulary (fast-fail-1003 item 3): these two take every story-graph value. +25 B and +15 B.
+  newsroom_semantic_novelty: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
+  newsroom_infographic_plan: {
+    commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH,
+    // quantity_kind gets one guidance clause (fast-fail-1003 item 4): +130 B (113 B of text). The enum next to it stays pinned.
+    described: [{ commit: "fast-fail-1003 item 4", path: ["properties", "modules", "items", "properties", "quantitative_encoding", "properties", "quantity_kind", "description"] }],
+  },
 };
 // Properties an approved later change added: they must be absent from the baseline and present in the switch-off
 // definition, and are then removed from the switch-off copy before the comparison with a4d4cb0.
@@ -154,12 +164,15 @@ const withAddedRemoved = (tool, paths) => {
   });
   return { tool: { ...tool, parameters }, present };
 };
-const withPathCleared = (tool, path, mask) => {
+const withPathsCleared = (tool, paths, mask) => {
   const parameters = JSON.parse(JSON.stringify(tool.parameters));
-  let node = parameters;
-  for (const key of path.slice(0, -1)) node = node?.[key];
-  const had = node && path[path.length - 1] in node;
-  if (had) node[path[path.length - 1]] = null;
+  const had = paths.map((path) => {
+    let node = parameters;
+    for (const key of path.slice(0, -1)) node = node?.[key];
+    const present = Boolean(node) && path[path.length - 1] in node;
+    if (node) node[path[path.length - 1]] = null; // cleared whether or not it was there, so a described path compares equal
+    return present;
+  });
   return { had, slim: slim({ ...tool, parameters }, mask) };
 };
 function checkDefinitions(mod, { quiet = false } = {}) {
@@ -185,9 +198,12 @@ function checkDefinitions(mod, { quiet = false } = {}) {
         const offTool = withAddedRemoved(current, added), baseTool = withAddedRemoved(base.get(name), added);
         assert.ok(offTool.present.every(Boolean), `${where}: ${name} has the added properties ${added.map((p) => p.join(".")).join(", ")} (${approved.addedWhy})`);
         assert.ok(baseTool.present.every((x) => !x), `${where}: a4d4cb0 has none of the added properties`);
-        const [o, b] = [withPathCleared(offTool.tool, approved.path, approved.mask), withPathCleared(base.get(name), approved.path, approved.mask)];
-        assert.ok(o.had && b.had, `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
-        assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${approved.path.join(".")} (approved change ${approved.commit})`);
+        const described = approved.described ?? [];
+        const paths = [approved.path, ...described.map((a) => a.path)];
+        const [o, b] = [withPathsCleared(offTool.tool, paths, approved.mask), withPathsCleared(base.get(name), paths, approved.mask)];
+        assert.ok(o.had[0] && b.had[0], `${where}: ${name} still has ${approved.path.join(".")} (approved change ${approved.commit})`);
+        for (const [i, a] of described.entries()) assert.ok(o.had[i + 1] && !b.had[i + 1], `${where}: ${name} has ${a.path.join(".")} now and did not in the baseline (approved change ${a.commit}); drop the entry if it is reverted`);
+        assert.equal(o.slim, b.slim, `${where}: switch off == baseline for ${name} outside ${paths.map((path) => path.join(".")).join(" and ")} (approved changes ${[approved, ...described].map((a) => a.commit).join(", ")})`);
         assert.notEqual(slim(current), slim(base.get(name)), `${where}: ${name} differs from the baseline at ${approved.path.join(".")} (approved change ${approved.commit}); drop the entry if it is reverted`);
       }
     }

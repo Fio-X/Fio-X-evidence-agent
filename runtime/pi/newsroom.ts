@@ -9,6 +9,7 @@ import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
+import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { PAGE_TOP_GUIDANCE, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
@@ -16,7 +17,7 @@ import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationS
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
-import { assessStoryGraph } from "./story_graph.mjs";
+import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection } from "./editorial_grammar.mjs";
 import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -30,7 +31,7 @@ import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
@@ -50,6 +51,8 @@ const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
 const MAX_DATASET_BYTES = 25_000_000;
 const sourceAccessCircuit = createSourceAccessCircuit(3);
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const downloadTimeoutGuard = createDownloadTimeoutGuard(DOWNLOAD_TIMEOUT_MS);
 
 // DuckDB returns two useful identifiers for a computation: the content-addressed
 // artifact filename and the deterministic hash of its rows.  Models frequently
@@ -203,6 +206,10 @@ const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_con
 const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
 const EDITORIAL_HINT_VERIFIED_LIMIT = 12;
 const EDITORIAL_HINT_CLAIM_TEXT_CHARS = 60;
+// Always on, not a speed switch: wording only. A level of a stock (people, money) is a stock, so it meets the stock
+// checks in editorial_validators.mjs; stock_change, count, rate, share and index follow; only the rest is other.
+// The enum and the validators that read it are unchanged. At most 160 bytes.
+const QUANTITY_KIND_HINT = "Level of a stock (people, money): stock; its change: stock_change; items or events: count; ratio: rate; part of whole: share; true index: index; else other.";
 
 // The suffix after the unchanged first sentence of the story-graph refusal. It is built only after the unchanged
 // check has decided to refuse, reads claims.jsonl and writes nothing. Every pair that failed the check is listed,
@@ -504,6 +511,13 @@ const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   network: ["node_link", "adjacency_matrix", "chord"],
 };
 
+// The block below names the charts that fit the relation; this names the relations that fit the chart,
+// read from the same table, so the model can change the chart or the claim in one turn.
+function grammarFitClause(chartType: string): string {
+  const relations = Object.keys(STRICT_GRAMMAR_FORMS).filter((relation) => STRICT_GRAMMAR_FORMS[relation].includes(chartType));
+  return `; ${chartType} fits: ${relations.length ? relations.join(", ") : "no relation in the strict grammar"}`;
+}
+
 function assertEditorialGrammar(semanticGate: any, chartType: string) {
   if (!semanticGate || semanticGate.enforcement !== "strict") return;
   if (semanticGate.status === "BLOCK") {
@@ -513,7 +527,7 @@ function assertEditorialGrammar(semanticGate: any, chartType: string) {
   const relation = String(semanticGate.claim_spec?.relation ?? "");
   const allowed = STRICT_GRAMMAR_FORMS[relation];
   if (allowed && !allowed.includes(chartType)) {
-    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'`);
+    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'${grammarFitClause(chartType)}`);
   }
 }
 
@@ -1309,7 +1323,9 @@ async function assertPublicUrl(url: URL) {
   assertResolvedAddressesSafe(addresses, url.protocol);
 }
 
-async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>) {
+// deferSuccess: the caller reads the body itself and records the success once the body is complete, so a body that
+// never finishes counts against the host like a header that never arrives.
+async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>, options: { deferSuccess?: boolean } = {}) {
   let current: URL | undefined;
   try {
     current = new URL(urlText);
@@ -1322,7 +1338,7 @@ async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<s
           await response.body?.cancel();
           throw new Error(`HTTP ${response.status}`);
         }
-        sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
+        if (!options.deferSuccess) sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
         return response;
       }
       const location = response.headers.get("location");
@@ -3108,16 +3124,31 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const root = artifactRoot();
       if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
+      // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
+      // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
+      const request = { method: "GET", url: params.url, body: "" };
+      const requestHost = downloadTimeoutGuard.hostOf(params.url);
+      // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
+      // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
+      if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
+      const startedAt = Date.now();
+      let timedOut = false;
+      let bodyPhase = false;
+      // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
+      let answeredHost = requestHost;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30_000);
+      const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
       const abortForwarder = () => controller.abort();
       signal?.addEventListener("abort", abortForwarder, { once: true });
       try {
-        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" });
+        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
+        bodyPhase = true;
+        answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
         if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
         const declaredLength = Number(response.headers.get("content-length") || 0);
         if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
         const { bytes } = await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false });
+        sourceAccessCircuit.recordSuccess(answeredHost);
 
         const pathName = new URL(response.url).pathname;
         const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
@@ -3175,6 +3206,13 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           bytes: bytes.byteLength,
           sha256,
         });
+      } catch (error: any) {
+        // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
+        // counted against the host inside safeFetch; a timeout while the body is read is counted here.
+        // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
+        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
+        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
+        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
       } finally {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abortForwarder);
@@ -3631,7 +3669,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       extent_padding_ratio: Type.Optional(Type.Number({ minimum: 0, maximum: 0.35 })),
       reference_path: Type.Optional(StringEnum(["none", "great_circle"] as const)),
       locator_inset: Type.Optional(Type.Boolean()),
-      map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })),
+      // world mode is model-visible only with NEWSROOM_MAP_WORLD=1 (off by default)
+      ...(mapWorldEnabled() ? { map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })) } : {}),
       inset: Type.Optional(Type.Object({
         iso3: Type.Optional(Type.Array(Type.String())),
         auto: Type.Optional(Type.Boolean()),
@@ -3692,8 +3731,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       y_scale: Type.Optional(StringEnum(["linear", "log"] as const)),
       x_label: Type.Optional(Type.String()),
       y_label: Type.Optional(Type.String()),
-      rank_cutoff: Type.Optional(Type.Integer({ minimum: 2, maximum: 30, description: "slope only: set when start_field and end_field hold ranks (1 = best). Draws a bump chart with rank 1 on top, one row per rank up to N, and anyone outside the top N on an N+1 row with their true rank." })),
-      index_base: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "small_multiples line only: set when value_field is an index rebased to this value (for example 100). Draws a labelled base line, y tick labels and an end value in each panel." })),
+      rank_cutoff: Type.Optional(Type.Integer({ minimum: 2, maximum: 30, description: "slope only: set when start_field and end_field hold ranks (1 = best, positive integers; an empty end means outside the ranking). Draws a bump chart with rank 1 on top, one row per rank up to N, and anyone outside the top N on an N+1 row with their true rank." })),
+      index_base: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "small_multiples line only: set when value_field is an index rebased to this value (for example 100): one x value (the base period) must equal it in every panel, so rebase in SQL. Draws a base line labelled with that period, y tick labels and an end value in each panel." })),
     })),
     async execute(_id, rawParams, signal) {
       // Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1): the plan SQL runs and the
@@ -3770,7 +3809,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         editorial_plan: semanticGate.editorial_plan,
         language: params.language ?? "en",
         mixed_period_strategy: params.mixed_period_strategy ?? "reject",
-        // stacked_bar_100 orders its bars by the highlight segment unless the caller says otherwise; every other type keeps the row order.
+        // stacked_bar_100 orders its bars by one segment's value, descending, unless the caller says otherwise (sort); every other type keeps the
+        // row order. The segment (viz.mjs stackedPlan) is sort_segment if set, else the first entry of segment_order, else highlight_segment,
+        // else the first segment in the SQL rows.
         sort: params.sort ?? (params.chart_type === "stacked_bar_100" ? "desc" : "none"),
         highlight_values: params.highlight_values ?? [],
         direct_labels: params.direct_labels ?? true,
@@ -4439,7 +4480,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     id: Type.String(),
     kind: StringEnum(["evidence", "claim", "mechanism", "context", "outcome", "uncertainty"] as const),
     summary: Type.String(),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "relationship"] as const),
+    explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
     claim_ids: Type.Optional(Type.Array(Type.String(), editorialHint(EDITORIAL_HINT_CLAIM_IDS, { maxItems: 20 }))),
     evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     module_hint: Type.Optional(Type.String()),
@@ -4546,7 +4587,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       concept_ref: optionalWhenCompact(Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF))),
       modules: Type.Array(Type.Object({
         id: Type.String(), reader_question_id: Type.String(), claim_set: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), new_information: Type.String(),
-        explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"] as const),
+        explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
         dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), justification: Type.Optional(Type.String()),
       }), { minItems: 2, maxItems: 30 }),
     }),
@@ -4687,7 +4728,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     reader_question_id: Type.Optional(Type.String()),
     claim_set: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     new_information: Type.Optional(Type.String()),
-    explanatory_dimension: Type.Optional(StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome"] as const)),
+    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS])),
     visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const)),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
@@ -4700,7 +4741,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       field: Type.String(), role: StringEnum(["quantitative", "categorical", "identity", "emphasis", "uncertainty"] as const),
     }), ruleHint(RULE_HINT_CHANNELS, { maxItems: 12 }))),
     quantitative_encoding: Type.Optional(Type.Object({
-      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const),
+      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const, { description: QUANTITY_KIND_HINT }),
       mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width", "color"] as const),
       scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const),
       baseline_policy: StringEnum(["zero", "symmetric_zero", "included", "not_applicable"] as const),
@@ -5156,7 +5197,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     dek: Type.Optional(Type.String()),
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"] as const),
+    explanatory_dimension: StringEnum([...PUBLICATION_DIMENSIONS]),
     width: Type.Optional(StringEnum(["full", "wide", "half", "third"] as const)),
     computation_ref: Type.Optional(Type.String()),
     result_hash: Type.Optional(Type.String()),
@@ -5284,7 +5325,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           binding = { kind: "asset", ref: module.asset_ref, result_hash: sha256Text(clean), field_mapping: fieldMapping };
         }
         if (dataBearing && !binding) throw new Error(`Publication module '${module.id}' requires an immutable evidence binding`);
-        const rest: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        const rest: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete rest.computation_ref; delete rest.result_hash; delete rest.field_mapping_json; delete rest.view_spec_json;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(rest.type)) && !rest.view_spec && !rest.spec && !rest.map_ref && !rest.analysis_ref) rest.view_spec = { visual_type: rest.visual_type ?? "statistical" };
         const accessibility = dataBearing ? {
@@ -5382,7 +5423,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           try { fieldMapping = JSON.parse(module.field_mapping_json); } catch { throw new Error(`Portable module '${module.id}' field_mapping_json is not valid JSON`); }
           if (!fieldMapping || typeof fieldMapping !== "object" || Array.isArray(fieldMapping)) throw new Error(`Portable module '${module.id}' field_mapping_json must be an object`);
         }
-        const planned: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        const planned: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
         if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };

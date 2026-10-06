@@ -199,3 +199,23 @@ console.log("PASS newsroom_viz_plan registers the full measure_semantics schema 
   }
   console.log("PASS one single-sentence guideline per new form, with its required fields and viz.mjs's limits");
 }
+
+// ---- 5. the round-3 opt-in fields: exact definitions pinned (this file does not import the implementation's text) ----
+// A changed type, range or description must change this file too. map_extent is absent unless NEWSROOM_MAP_WORLD is exactly "1".
+{
+  const clean = (field) => JSON.parse(JSON.stringify(field, (k, x) => (k === "__optional" ? undefined : x)));
+  const PINNED = {
+    rank_cutoff: { type: "integer", minimum: 2, maximum: 30, description: "slope only: set when start_field and end_field hold ranks (1 = best, positive integers; an empty end means outside the ranking). Draws a bump chart with rank 1 on top, one row per rank up to N, and anyone outside the top N on an N+1 row with their true rank." },
+    index_base: { type: "number", exclusiveMinimum: 0, description: "small_multiples line only: set when value_field is an index rebased to this value (for example 100): one x value (the base period) must equal it in every panel, so rebase in SQL. Draws a base line labelled with that period, y tick labels and an end value in each panel." },
+  };
+  const PINNED_WORLD = { type: "string", enum: ["world"], description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." };
+  const same = (got, want, what) => must(JSON.stringify(got) === JSON.stringify(want), `${what} definition changed:\n  got  ${JSON.stringify(got)}\n  want ${JSON.stringify(want)}`);
+  const off = (await tools()).get("newsroom_viz_plan").parameters.properties;
+  for (const [name, want] of Object.entries(PINNED)) same(clean(off[name]), want, name);
+  must(!("map_extent" in off), "map_extent is in the plan schema with NEWSROOM_MAP_WORLD unset");
+  for (const value of ["0", "true", "yes", ""]) must(!("map_extent" in (await tools({ NEWSROOM_MAP_WORLD: value })).get("newsroom_viz_plan").parameters.properties), `map_extent is in the plan schema with NEWSROOM_MAP_WORLD=${JSON.stringify(value)}`);
+  const on = (await tools({ NEWSROOM_MAP_WORLD: "1" })).get("newsroom_viz_plan").parameters.properties;
+  same(clean(on.map_extent), PINNED_WORLD, "map_extent (NEWSROOM_MAP_WORLD=1)");
+  for (const [name, want] of Object.entries(PINNED)) same(clean(on[name]), want, `${name} (NEWSROOM_MAP_WORLD=1)`);
+  console.log("PASS rank_cutoff, index_base and map_extent definitions are pinned");
+}

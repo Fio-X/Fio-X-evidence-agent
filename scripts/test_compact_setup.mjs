@@ -132,7 +132,31 @@ const slim = (tool, mask) => JSON.stringify({ parameters: tool.parameters, descr
   // revertNameLocalization, which refuses a surface that does not carry exactly those edits; and the wiring of strip_plot,
   // stacked_bar_100 and mirrored_bar (scripts/lib_viz_form_wiring.mjs masks exactly that; test_viz_plan_schema.mjs asserts it).
   // Every other tool, and everything else of the viz tools, must equal the baseline.
-  for (const [name, tool] of base) assert.equal(slim(revertNameLocalization(off.get(name)), maskFor(name)), slim(tool, maskFor(name)), `switch off: ${name} is byte-identical to the integration head`);
+  // Approved differences since the integration head (fast-fail-1003): item 3, one explanatory_dimension vocabulary (semantic novelty and
+  // the infographic plan take every story-graph value) and item 4 (one guidance clause on the infographic plan's quantity_kind). Only
+  // these paths may differ, and each must really differ (drop the entry if it is reverted); everything else stays byte-identical.
+  const MODULE = ["properties", "modules", "items", "properties"];
+  const DIMENSION_ENUM = [...MODULE, "explanatory_dimension", "enum"];
+  const QUANTITY_KIND_DESCRIPTION = [...MODULE, "quantitative_encoding", "properties", "quantity_kind", "description"];
+  const APPROVED = { newsroom_semantic_novelty: [DIMENSION_ENUM], newsroom_infographic_plan: [DIMENSION_ENUM, QUANTITY_KIND_DESCRIPTION] };
+  const parentOf = (tool, path) => path.slice(0, -1).reduce((node, key) => node?.[key], tool.parameters);
+  const withoutApproved = (tool, mask) => {
+    const parameters = JSON.parse(JSON.stringify(tool.parameters));
+    for (const path of APPROVED[tool.name]) {
+      const parent = path.slice(0, -1).reduce((node, key) => node?.[key], parameters);
+      assert.ok(parent && typeof parent === "object", `${tool.name} keeps ${path.slice(0, -1).join(".")}`);
+      parent[path.at(-1)] = null;
+    }
+    return slim({ ...tool, parameters }, mask);
+  };
+  for (const [name, tool] of base) {
+    const current = revertNameLocalization(off.get(name)), mask = maskFor(name);
+    if (!APPROVED[name]) { assert.equal(slim(current, mask), slim(tool, mask), `switch off: ${name} is byte-identical to the integration head`); continue; }
+    assert.equal(withoutApproved(current, mask), withoutApproved(tool, mask), `switch off: ${name} is byte-identical to the integration head outside ${APPROVED[name].map((path) => path.at(-1)).join(" and ")}`);
+    assert.ok(Array.isArray(parentOf(current, DIMENSION_ENUM).enum) && Array.isArray(parentOf(tool, DIMENSION_ENUM).enum), `${name} keeps its explanatory_dimension enum`);
+    assert.notDeepEqual(parentOf(current, DIMENSION_ENUM).enum, parentOf(tool, DIMENSION_ENUM).enum, `${name}: the explanatory_dimension enum differs from the integration head (approved change)`);
+    if (APPROVED[name].includes(QUANTITY_KIND_DESCRIPTION)) assert.ok(typeof parentOf(current, QUANTITY_KIND_DESCRIPTION).description === "string" && parentOf(tool, QUANTITY_KIND_DESCRIPTION).description === undefined, `${name}: quantity_kind has a description now and had none (approved change)`);
+  }
   const on = register(mod, { [SWITCH]: "1" });
   assert.deepEqual([...on.keys()], [...off.keys()]);
   const changed = [...off.keys()].filter((n) => slim(on.get(n)) !== slim(off.get(n))).sort();
