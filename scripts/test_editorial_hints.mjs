@@ -142,7 +142,7 @@ const EXPECTED_DESCRIPTIONS = {
 // field exists in both and only a description was added (cleared on both sides).
 const DIMENSION_ENUM_PATH = ["properties", "modules", "items", "properties", "explanatory_dimension", "enum"];
 const APPROVED_LATER = {
-  newsroom_viz_plan: { commit: "b38a345 and the form wiring", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"], ["properties", "map_extent"]], addedWhy: "round-3 opt-in chart fields and the opt-in world choropleth mode", mask: formWiringMask },
+  newsroom_viz_plan: { commit: "b38a345 and the form wiring", path: ["properties", "measure_semantics"], added: [["properties", "rank_cutoff"], ["properties", "index_base"]], addedWhy: "round-3 opt-in chart fields (the world choropleth field map_extent is behind NEWSROOM_MAP_WORLD, off by default, and absent here)", mask: formWiringMask },
   // One explanatory_dimension vocabulary (fast-fail-1003 item 3): these two take every story-graph value. +25 B and +15 B.
   newsroom_semantic_novelty: { commit: "fast-fail-1003 item 3", path: DIMENSION_ENUM_PATH },
   newsroom_infographic_plan: {

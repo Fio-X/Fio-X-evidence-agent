@@ -3,6 +3,9 @@
 // a LIMIT in the SQL blocked, at most 8 text labels (range ends + highlight_values), the fixed
 // Equal Earth frame without Antarctica, and render QA still passing. Synthetic rows only.
 import assert from "node:assert/strict";
+// World mode is behind NEWSROOM_MAP_WORLD (off by default); this suite covers the mode itself, so it needs the switch on:
+// NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs (test_map_world_switch.mjs covers the off state).
+assert.equal(process.env.NEWSROOM_MAP_WORLD, "1", "run test_map_world.mjs with NEWSROOM_MAP_WORLD=1");
 import { lintVizSpec, renderVizBundle, validateVizSpec } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
