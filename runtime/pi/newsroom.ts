@@ -253,6 +253,11 @@ async function readConceptSetArtifact(conceptRef: string) {
 function preflightEnabled() {
   return process.env.NEWSROOM_SPEED_PREFLIGHT === "1";
 }
+// NEWSROOM_SPEED_REPORT_ALL=1: the plan tool reports the independent problems it finds (the editorial grammar build and every hero_stat
+// problem that does not depend on another) in one refusal, the first problem's text unchanged. No check is removed or reordered. Off: nothing changes.
+function reportAllEnabled() {
+  return process.env.NEWSROOM_SPEED_REPORT_ALL === "1";
+}
 // NEWSROOM_SPEED_COMPACT_SETUP=1: shared concept defaults and inferred setup refs (see compact_setup.mjs). Off: nothing changes.
 function compactSetupEnabled() {
   return process.env.NEWSROOM_SPEED_COMPACT_SETUP === "1";
@@ -2497,8 +2502,46 @@ async function fillHeroModules(modules: any[]): Promise<any[]> {
   if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
   const records = await verifiedClaimRecords();
   const out: any[] = [];
-  for (const module of modules) out.push(module?.type === "hero_stat" ? await fillHeroModule(module, await heroClaimContext(String(module.claim_id ?? ""), records), modules) : module);
-  return out;
+  const problems: string[] = [];
+  let first: unknown;
+  for (const module of modules) {
+    if (module?.type !== "hero_stat") { out.push(module); continue; }
+    const context = await heroClaimContext(String(module.claim_id ?? ""), records);
+    if (!reportAllEnabled()) { out.push(await fillHeroModule(module, context, modules)); continue; }
+    try { out.push(await fillHeroModule(module, context, modules)); } catch (error: any) {
+      first ??= error;
+      problems.push(...heroProblemsOf(module, context, error));
+    }
+  }
+  if (!problems.length) return out;
+  // One problem: the very error the off path throws. Several: every code the off path would have thrown first stays, one per line.
+  if (problems.length === 1) throw first;
+  throw new Error(problems.join("\n"));
+}
+
+/** The first refusal fillHeroModule threw for a module, then the label/detail refusals that do not depend on the value (the loop below reads only the text). */
+function heroProblemsOf(module: any, context: HeroClaimContext | null, firstError: any): string[] {
+  const problems = [String(firstError?.message ?? firstError)];
+  if (!context?.bindings) return problems;
+  const id = String(module.id);
+  const claimId = String(module.claim_id ?? "");
+  for (const field of ["label", "detail"]) {
+    const source = typeof module[`${field}_template`] === "string" ? module[`${field}_template`] : module[field];
+    if (source === undefined || source === null) continue;
+    const refusal = heroTextRefusal(id, field, String(source), claimId, context);
+    if (refusal && !problems.includes(refusal)) problems.push(refusal);
+  }
+  return problems;
+}
+
+/** The refusal for a typed number or number word in a hero label/detail source, or null. Shared by the fill and the all-problems report. */
+function heroTextRefusal(id: string, field: string, src: string, claimId: string, context: HeroClaimContext): string | null {
+  if (/[{}]/.test(src.replace(/\{[^{}]*\}/g, ""))) return `HERO_TEMPLATE_INVALID: hero_stat '${id}' ${field} has an unmatched { or }`;
+  const near = literalNumberIn(src);
+  if (near !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}`;
+  const wordedNear = numberWordIn(src);
+  if (wordedNear !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`;
+  return null;
 }
 
 /** The filled form of one hero_stat; throws the first refusal. Filling a stored (already filled) module gives the same module. */
@@ -2529,11 +2572,8 @@ async function fillHeroModule(module: any, context: HeroClaimContext | null, mod
     const source = hasTemplate ? module[templateKey] : module[field];
     if (source === undefined || source === null) continue;
     const src = String(source);
-    if (/[{}]/.test(src.replace(/\{[^{}]*\}/g, ""))) throw new Error(`HERO_TEMPLATE_INVALID: hero_stat '${id}' ${field} has an unmatched { or }`);
-    const near = literalNumberIn(src);
-    if (near !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}`);
-    const wordedNear = numberWordIn(src);
-    if (wordedNear !== null) throw new Error(`HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`);
+    const textRefusal = heroTextRefusal(id, field, src, claimId, context);
+    if (textRefusal) throw new Error(textRefusal);
     const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
     let filled = src;
     for (const placeholder of new Set(placeholders)) {
@@ -4706,7 +4746,15 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         if (filled.filled.length) params = inSchemaOrder(filled.params, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
       }
       const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
-      const editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
+      let editorialGrammar: any;
+      if (reportAllEnabled()) {
+        try { editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry); } catch (grammarError: any) {
+          // The hero fill reads nothing the grammar build writes, so its problems are reported with this one.
+          let heroError: any = null;
+          try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))); } catch (error: any) { heroError = error; }
+          throw heroError ? new Error(`${grammarError.message}\n${heroError.message}`) : grammarError;
+        }
+      } else editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
       const specCore = {
         schema_version: "1.5.0",
         layout: params.layout ?? "feature",

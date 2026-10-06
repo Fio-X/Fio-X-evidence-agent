@@ -42,6 +42,7 @@ const SWITCHES = [
   { name: "CLAIM_SQL_LINT", env: "NEWSROOM_CLAIM_SQL_LINT" }, // refuses only; every forged case must still be refused with it on
   { name: "PLAN_PATCH", env: "NEWSROOM_SPEED_PLAN_PATCH", requires: [ATOMIC] }, // after a refusal, send only the change; adds a tool and a hint line, never loosens a check
   { name: "CHAIN_PATCH", env: "NEWSROOM_SPEED_CHAIN_PATCH", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"] },
+  { name: "REPORT_ALL", env: "NEWSROOM_SPEED_REPORT_ALL" }, // refuses only; reports the independent plan problems together, so every refused case must still be refused
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const CONFIGS = [
