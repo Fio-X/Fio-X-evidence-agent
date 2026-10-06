@@ -10,6 +10,15 @@ export class PatchError extends Error {
 }
 const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const sorted = (value) => (Array.isArray(value) ? value.map(sorted) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])])) : value);
+/** One refusal for several problems: the message lists them all, and the error keeps the first problem's own properties (its code, name, ...) and class. */
+export function combinedError(first, message) {
+  if (!(first instanceof Error)) return new Error(message);
+  const error = Object.create(Object.getPrototypeOf(first));
+  for (const key of Reflect.ownKeys(first)) if (key !== "message" && key !== "stack") Object.defineProperty(error, key, Object.getOwnPropertyDescriptor(first, key));
+  Object.defineProperty(error, "message", { value: message, writable: true, configurable: true, enumerable: false });
+  Object.defineProperty(error, "stack", { value: `${error.name}: ${message}\n${String(first.stack ?? "").split("\n").slice(1).join("\n")}`, writable: true, configurable: true, enumerable: false });
+  return error;
+}
 export const canonicalJson = (value) => JSON.stringify(sorted(value));
 export const sha256Of = (value) => createHash("sha256").update(canonicalJson(value)).digest("hex");
 const deepEqual = (a, b) => canonicalJson(a) === canonicalJson(b);

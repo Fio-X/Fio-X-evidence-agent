@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
-const { applyJsonPatch, PatchError, sha256Of } = await import(join(ROOT, "runtime/pi/patch_retry.mjs"));
+const { applyJsonPatch, PatchError, combinedError, sha256Of } = await import(join(ROOT, "runtime/pi/patch_retry.mjs"));
 const { checkSchema } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -292,5 +292,25 @@ await ok("a plan without problems is stored identically with the switch off and 
   assert.equal(planCount(a.art), 1);
   assert.equal(readdirSync(join(artB, "infographics/plans"))[0], res.details.planRef.split("/").pop());
   assert.equal(res.details.planRef.split("/").pop(), readdirSync(join(a.art, "infographics/plans"))[0]);
+});
+await ok("the combined error keeps the first problem's own properties and class", async () => {
+  const first = Object.assign(new PatchError("PATCH_TEST_FAILED", "first"), { detail: { at: "/modules/0" } });
+  const both = combinedError(first, "PATCH_TEST_FAILED: first\nHERO_TYPED_NUMBER: second");
+  assert.ok(both instanceof PatchError && both instanceof Error);
+  assert.equal(both.code, first.code);
+  assert.equal(both.name, first.name);
+  assert.deepEqual(both.detail, first.detail);
+  assert.deepEqual(Object.keys(both), Object.keys(first));
+  assert.equal(both.message, "PATCH_TEST_FAILED: first\nHERO_TYPED_NUMBER: second");
+  assert.ok(both.stack.startsWith(`${first.name}: PATCH_TEST_FAILED: first\n`));
+  const plain = Object.assign(new Error("EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE: x"), { code: "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE" });
+  assert.equal(combinedError(plain, "a\nb").code, "EDITORIAL_GRAMMAR_PRIMARY_INELIGIBLE");
+  assert.equal(combinedError("not an error", "a\nb").message, "a\nb");
+  // Through the real plan tool: two hero problems, and the thrown error is still an Error with the listed codes.
+  const plan = heroPlan({ label: "Top 5 regions", value_from: "{max.value}" }, (p) => { p.modules.push({ id: "hero2", type: "hero_stat", span: "third", label: "Second value", claim_id: "c-bound", story_node_ids: ["n-change"], story_role: "evidence", value: "9" }); p.mobile_module_order = [...p.mobile_module_order, "hero2"]; return p; });
+  useSwitch(on); freshRun("ra-p1");
+  const thrown = await on.get("newsroom_infographic_plan").execute("p", keyOrder(on, plan)).then(() => null, (e) => e);
+  assert.ok(thrown instanceof Error);
+  assert.deepEqual(codes(thrown.message), ["HERO_TYPED_NUMBER", "HERO_VALUE_FROM_REQUIRED"]);
 });
 console.log(`report all: ${results.length} checks -- PASS`);
