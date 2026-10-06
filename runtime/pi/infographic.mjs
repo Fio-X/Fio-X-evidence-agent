@@ -124,7 +124,7 @@ export const INFOGRAPHIC_SCENE_PATTERNS = ["hero_sidecar_stack", "hero_with_rail
 export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const INFOGRAPHIC_VISUAL_GRAMMARS = ["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"];
 
-const VISUAL_GRAMMAR_FORMS = Object.freeze({
+export const VISUAL_GRAMMAR_FORMS = Object.freeze({
   rank: new Set(["horizontal_bar", "dot"]),
   change: new Set(["dumbbell", "slope"]),
   trend: new Set(["line", "multi_line", "small_multiples", "streamgraph"]),
