@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { visualChannelOwnerValidator } from "../runtime/pi/editorial_validators.mjs";
-import { trimmedSvgInfo } from "../runtime/pi/infographic.mjs";
+import { critiqueInfographic, trimmedSvgInfo } from "../runtime/pi/infographic.mjs";
 import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -105,4 +105,40 @@ assert.deepEqual(rules(page(chart.replace('x="30.9"', 'x="60"'), "1"), "1"), [],
 const flat = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200"><text x="30" y="20" font-size="12">80%</text></svg>`;
 assert.equal(rules(flat, "1").length, 0, "no nested svg: nothing to add");
 console.log(`K102: off-trim page reports ${hit.length} (${hit[0].message.slice(0, 120)}...)`);
+
+// ---------------------------------------------------------------- K103 NEWSROOM_PAGE_MODULE_ORDER_CHECK
+const ORDER = "NEWSROOM_PAGE_MODULE_ORDER_CHECK";
+// Synthetic pages: the critique reads the placed boxes and the plan order (modules numbered 01, 02, 03 in plan order).
+const planModules = (extra = []) => [
+  { id: "a", type: "visual", emphasis: "primary" }, { id: "b", type: "visual", emphasis: "primary" }, { id: "c", type: "text", emphasis: "primary" }, ...extra,
+];
+const box = (id, x, y, w = 600, h = 300) => ({ id, module: { id }, x, y, w, h });
+const composedWith = (boxes, extra = {}) => ({ svg: `<svg data-viewport="desktop"><g data-role="infographic-visual"/>Sources and methods</svg>`, width: 1440, height: 2000, boxes, ...extra });
+const specFor = (schema_version, modules) => ({ schema_version, title: "t", dek: "d", alt: "a page", modules, quality_target: "editorial" });
+const orderIssues = (schema_version, modules, boxes, env, extra) => withEnv(ORDER, env, () => critiqueInfographic(specFor(schema_version, modules), { desktop: composedWith(boxes, extra) }).issues.filter((i) => i.code === "module_ordinal_out_of_order"));
+const wrong = [box("b", 40, 100), box("a", 40, 500), box("c", 40, 900)];      // top to bottom: 02, 01, 03
+const right = [box("a", 40, 100), box("b", 40, 500), box("c", 40, 900)];      // 01, 02, 03
+for (const version of ["1.5.0", "1.0.0"]) {
+  const hit = orderIssues(version, planModules(), wrong, "1");
+  assert.equal(hit.length, 1, `${version}: page laid out 02, 01, 03 gives one warning`);
+  assert.equal(hit[0].severity, "warning", `${version}: it is a warning, not a blocker`);
+  assert.deepEqual([hit[0].modules, hit[0].ordinals], [["b", "a"], [2, 1]], `${version}: it names the two modules and their numbers`);
+  assert.deepEqual(orderIssues(version, planModules(), right, "1"), [], `${version}: in-order page: no warning`);
+  assert.deepEqual(orderIssues(version, planModules(), wrong, undefined), [], `${version}: switch off: no warning`);
+  assert.deepEqual(orderIssues(version, planModules(), wrong, "0"), [], `${version}: any value other than "1" is off`);
+  const withSwitch = withEnv(ORDER, "1", () => critiqueInfographic(specFor(version, planModules()), { desktop: composedWith(wrong) }));
+  const without = critiqueInfographic(specFor(version, planModules()), { desktop: composedWith(wrong) });
+  assert.equal(withSwitch.passed, without.passed, `${version}: passed is unchanged`);
+  assert.equal(withSwitch.score, without.score, `${version}: score is unchanged`);
+  assert.deepEqual(withSwitch.issues.filter((i) => i.code !== "module_ordinal_out_of_order"), without.issues, `${version}: no other issue changes`);
+}
+// Reading order inside a row is left to right; a row is boxes whose tops are within 4 px.
+assert.deepEqual(orderIssues("1.5.0", planModules(), [box("a", 40, 100, 400), box("b", 520, 102, 400), box("c", 40, 600)], "1"), [], "two numbers side by side, left to right: no warning");
+assert.equal(orderIssues("1.5.0", planModules(), [box("b", 520, 100, 400), box("a", 40, 102, 400), box("c", 40, 600)], "1").length, 0, "the same row listed in any order is sorted left to right");
+assert.equal(orderIssues("1.5.0", planModules(), [box("a", 520, 100, 400), box("b", 40, 102, 400), box("c", 40, 600)], "1").length, 1, "02 left of 01 in one row: one warning");
+// Modules that print no number do not take part: a section header, a hero stat, a hero visual and a decorative illustration.
+const extras = [{ id: "h", type: "section_header" }, { id: "s", type: "hero_stat" }, { id: "v", type: "visual", emphasis: "hero" }, { id: "d", type: "illustration" }];
+const mixed = [box("h", 40, 20), box("s", 40, 60), box("v", 40, 100), box("a", 40, 400), box("d", 40, 700), box("b", 40, 1000), box("c", 40, 1300)];
+assert.deepEqual(orderIssues("1.5.0", planModules(extras), mixed, "1", { decorative_module_ids: ["d"] }), [], "unnumbered modules are ignored");
+console.log("K103: wrong order warns once, in-order page and switch off do not, passed/score unchanged");
 console.log("ok");
