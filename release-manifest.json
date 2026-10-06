@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791312030,
-  "source_commit": "e2cb0a54aa6497c8668d53fa3bc501fc17de0dfa",
+  "created_at_epoch": 1791312031,
+  "source_commit": "0f12609c02ee991e81149b4c29183b8def570507",
   "source_tree": {
-    "file_count": 1072,
-    "bytes": 70182411,
-    "sha256": "4a4ef4816746bea698a14430a3d5ce7ba8c1d38fb551745ab834d361e898d5f1",
+    "file_count": 1068,
+    "bytes": 69254645,
+    "sha256": "87e7790c4a7f7796fb0f11c0d9c703759c418f78ca95bfd181b0bc360449de22",
     "files": [
       {
         "path": ".env.example",
@@ -1602,16 +1602,6 @@
         "path": "runtime/pi/networkx_reduce.py",
         "sha256": "18eac359ea45e77751c01f589766305fec2db3ac8fd5a468fb2e32e868eaa8dd",
         "bytes": 3795
-      },
-      {
-        "path": "runtime/pi/newsroom.ts",
-        "sha256": "bee9cedba8d04cab6f07a0a76a9605e229091447d7d77aecb019c15851afc45b",
-        "bytes": 461940
-      },
-      {
-        "path": "runtime/pi/newsroom.ts",
-        "sha256": "bee9cedba8d04cab6f07a0a76a9605e229091447d7d77aecb019c15851afc45b",
-        "bytes": 461940
       },
       {
         "path": "runtime/pi/newsroom.ts",
@@ -5189,16 +5179,6 @@
         "bytes": 1943
       },
       {
-        "path": "source-integrity.json",
-        "sha256": "5e1ee472b445b5e4080fa95d56de559fcedec655f417cb4e5e52d8ddd28193b3",
-        "bytes": 1943
-      },
-      {
-        "path": "source-integrity.json",
-        "sha256": "5e1ee472b445b5e4080fa95d56de559fcedec655f417cb4e5e52d8ddd28193b3",
-        "bytes": 1943
-      },
-      {
         "path": "src/agent/core.rs",
         "sha256": "4d59a7e03f47cdc0e5c531475a890d6085d3a4cddd84b5a2102a807569ef5089",
         "bytes": 25985
@@ -5453,5 +5433,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "a5971357095a8d545cda5b0e5c5903b811150f0bdd6e914ceedf0039d5df4506"
+  "manifest_sha256": "636133087f45faa94b2a0e0e83c10a984734692df5be1ff41a05a76a872b6a17"
 }
