@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791274959,
-  "source_commit": "9dfe66b441cd23a07f9a9b358de6eace3755a997",
+  "created_at_epoch": 1791300432,
+  "source_commit": "9160233e55654d8a036d88dea82f88fcf829998e",
   "source_tree": {
-    "file_count": 1055,
-    "bytes": 68900763,
-    "sha256": "5e3412deded010328e0c5be3aa11b967c882bb1d6bfb97aa28c5f1ccfbf779c9",
+    "file_count": 1064,
+    "bytes": 69166973,
+    "sha256": "1915d4ce0f101e6f4904004905e52f8f79d961adf3d4ecd8b97a84aa0735af58",
     "files": [
       {
         "path": ".env.example",
@@ -1044,6 +1044,16 @@
         "bytes": 758
       },
       {
+        "path": "fixtures/speed-off/tool-defs-8a75560.json",
+        "sha256": "bcd20581416c230eaccd68adc6234d9e7487d0d92c5e61f7d9657862b69d2bc8",
+        "bytes": 63613
+      },
+      {
+        "path": "fixtures/speed-off/tools-arg-8a75560.json",
+        "sha256": "a07220859f319d9508fc40123f7d34162874440e6f994301e40cebfc1ce10f44",
+        "bytes": 21535
+      },
+      {
         "path": "fixtures/v09-realdata/eia-us-crude-imports-2024.csv",
         "sha256": "3979dc1935732c22035881a743f0dc91a184f17084dd9d2b36b60fca05baaa8d",
         "bytes": 507
@@ -1530,8 +1540,8 @@
       },
       {
         "path": "runtime/pi/infographic.mjs",
-        "sha256": "a71ce8c0608d2a044fe437c380800e6610b56d31ec6ea47b9bf6707acc6bbac7",
-        "bytes": 163947
+        "sha256": "c2301e34983afd5f03fb2bec19d98d7f193d6b4925423085aa1684f4db19c1d9",
+        "bytes": 164208
       },
       {
         "path": "runtime/pi/label_layout.mjs",
@@ -1590,8 +1600,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "3f2d240a736b7a9f80d4f9839252b18aad2961cf828d185515a806b4728c85d6",
-        "bytes": 425766
+        "sha256": "5814a8a3cc994d9d775a593793b8daa5c7789fadd5b114949098aea15f5a76e9",
+        "bytes": 439183
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -1607,6 +1617,11 @@
         "path": "runtime/pi/parallel_scheduler.mjs",
         "sha256": "68695551dd21415b5a2f1ddf9e00ff7b21e194336f9239828feec82d3da0c788",
         "bytes": 18572
+      },
+      {
+        "path": "runtime/pi/patch_retry.mjs",
+        "sha256": "d7304520a4b6f14d4e383f287a0e5906a53f8f0938b7498decd7185d708f9e1e",
+        "bytes": 7287
       },
       {
         "path": "runtime/pi/pdf_extract.mjs",
@@ -1765,8 +1780,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "40c289dde09c0f5503a32b2b269d3ec1224c3e01588c04a693a1cdd3fe94c7f9",
-        "bytes": 656869
+        "sha256": "0341faa8d33250dfb71a6d68ac455fc70bf1e76e7566c52910b755ec9de09376",
+        "bytes": 657869
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -3329,9 +3344,19 @@
         "bytes": 919
       },
       {
+        "path": "scripts/test_fill_copied_refs.mjs",
+        "sha256": "1409761c3aea69ef8e5a9385da36ee39096e9f25ca2b1acbc4765969a4076c33",
+        "bytes": 28573
+      },
+      {
         "path": "scripts/test_final_qualification_contract.py",
         "sha256": "ddbe208392662de705f0301a8a10e5bc45d244d5b033b78b12323d2cbd2fe68c",
         "bytes": 9692
+      },
+      {
+        "path": "scripts/test_first_try_text.mjs",
+        "sha256": "b7f715ad92e9a80feea61069fb8a54d1d5a4ecdf3a8f4dcfbda9cbb8819ed384",
+        "bytes": 28967
       },
       {
         "path": "scripts/test_flow_aggregation_v19.mjs",
@@ -3754,6 +3779,11 @@
         "bytes": 5263
       },
       {
+        "path": "scripts/test_patch_retry.mjs",
+        "sha256": "46eebd52ec36b2dfd32224f7d7d183905524240de9930a9727b8f27f70b55011",
+        "bytes": 42220
+      },
+      {
         "path": "scripts/test_pdf_derived_chain.mjs",
         "sha256": "afcf698ba4437f16f5e3e2af6086c650bdd4121eed491ac914650c3d2c572772",
         "bytes": 17407
@@ -3909,6 +3939,11 @@
         "bytes": 1120
       },
       {
+        "path": "scripts/test_render_1006.mjs",
+        "sha256": "59d37b9bef0db20bc55b0ec103c5b41637add4a200f0f666e24c4776729ee23d",
+        "bytes": 5065
+      },
+      {
         "path": "scripts/test_render_cache_v124.mjs",
         "sha256": "0b1d1f8edf1c60674e6ae8de3c27c532ddf867a543c9c6606a2485b25cf2d5af",
         "bytes": 481
@@ -3957,6 +3992,11 @@
         "path": "scripts/test_renderer_router_v113.mjs",
         "sha256": "361930d861e6bafcfcc35f8ed0b90c20f12881ed99de59724c409db008a4c983",
         "bytes": 687
+      },
+      {
+        "path": "scripts/test_report_all.mjs",
+        "sha256": "f18fcc8d7b959160c47376a83f9b2ad7ab9dd0862d129515bfcbdbdea1e12ac5",
+        "bytes": 29599
       },
       {
         "path": "scripts/test_rich_illustration.mjs",
@@ -4070,8 +4110,8 @@
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
-        "sha256": "1608b1e1edd816ac4c45437013309c51fe046a0e84b62c4d30845bc49db3fa72",
-        "bytes": 59687
+        "sha256": "e456588df302338bd76f66bba85df2491d6926709318970ebf5811b9a701cde4",
+        "bytes": 60814
       },
       {
         "path": "scripts/test_stat_row.mjs",
@@ -4097,6 +4137,11 @@
         "path": "scripts/test_subject_set.mjs",
         "sha256": "e021510163092ea9f607c602da365a18813f186d0d8579010259dffd5f08698e",
         "bytes": 8580
+      },
+      {
+        "path": "scripts/test_tool_defs_unchanged.mjs",
+        "sha256": "9fb6a374724630ed7b7d4aa7e543e1a418fcdb435f0d4696d016c26651e1cfca",
+        "bytes": 5799
       },
       {
         "path": "scripts/test_tool_result_budget_integration.mjs",
@@ -5110,7 +5155,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "5f031017adb96c0839deadb525fce4921e235aabc6d5f37f1c1d11df142f8354",
+        "sha256": "78f7dd9c9402dd4fd6eabe0e1b35b3361cf5423ffe42908e6e35ae13f0642c63",
         "bytes": 1943
       },
       {
@@ -5160,8 +5205,8 @@
       },
       {
         "path": "src/audit.rs",
-        "sha256": "24c64159270668ddc8c252a22b48321ab9ff8b2815cd6b266cbc7df6a6b35bd5",
-        "bytes": 34032
+        "sha256": "49eb415d5a2df4d1ebccab1894ae81dcaa7f6b4f38e0ecbf72a1193cfa2e5ce2",
+        "bytes": 41039
       },
       {
         "path": "src/cli.rs",
@@ -5195,8 +5240,8 @@
       },
       {
         "path": "src/commands/investigate.rs",
-        "sha256": "65b466e2e0550d45ea4c824af0cc48cf49726f53464968c9d983ba1d6afc94e3",
-        "bytes": 26905
+        "sha256": "31510b0f37f5e52ba5bdd2b034ccd2155e5f46b2fe4e67147650f96a8a27911f",
+        "bytes": 28880
       },
       {
         "path": "src/commands/investigate_v2.rs",
@@ -5250,18 +5295,18 @@
       },
       {
         "path": "src/pi.rs",
-        "sha256": "e7f676a6e5eb4915108c981ba21661d3003e0a5ab9fd6b434a2ab237a249cd91",
-        "bytes": 97579
+        "sha256": "a20cfaddda10f0d72aa454834e832aba8601f5f8a278d8a5e044873de8c9bde7",
+        "bytes": 105144
       },
       {
         "path": "src/prompt.rs",
-        "sha256": "a3aaef76bb58cf37fbc328dfee1f93a003de9efc834f29d775f9a5f7a9b1451e",
-        "bytes": 40336
+        "sha256": "be18430b97d6054d3c5320c87a32ed00743ebe66caa0cdd48277f1c823107ebb",
+        "bytes": 41297
       },
       {
         "path": "src/runtime.rs",
-        "sha256": "b010e886e313ba07ed374f9845260f6d4800998af19abbc4c85808b7f9f2f9eb",
-        "bytes": 20615
+        "sha256": "78ad40be46d8a4dfad92397d0faf92bb601cb4ca0cfb57655dc008572b3ef9a4",
+        "bytes": 20854
       },
       {
         "path": "src/tool_registry.rs",
@@ -5368,5 +5413,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "9a2f424f82d5bde7decdf6891588f7315c52836c4fba982712d9cfb78978fe9a"
+  "manifest_sha256": "b349a3cf3a3bf8655696bfab53aeee37ae8136105b24920bedd42fc0fd593f59"
 }
