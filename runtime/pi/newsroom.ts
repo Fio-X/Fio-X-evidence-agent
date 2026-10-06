@@ -2774,6 +2774,38 @@ async function lintInfographicPlan(spec: any) {
   return { lint, assets, mobilePages, verifiedRecords };
 }
 
+// NEWSROOM_SPEED_PRECHECK_ALL=1, page chain only: after the claim/manifest check refused, the other modules that check refuses and the
+// page lint blockers of the stored plan (the chain never reached the lint). Read-only; the stop code and verdict are not touched.
+async function chainStopWithPageLint(message: string, planRef: string): Promise<string> {
+  const plan = await readArtifactJson(planRef, "infographics/plans/");
+  const lines: string[] = [];
+  for (const module of plan.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+    const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+    const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+    const text = !manifestClaims.length
+      ? `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`
+      : moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))
+        ? `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`
+        : null;
+    if (text && !message.includes(text)) lines.push(`[claim/manifest] ${text}`);
+  }
+  const notChecked: string[] = ["render, critic and preview: the chain stops before them"];
+  try {
+    const registry = await loadEditorialGrammarRegistry();
+    const { lint } = await lintInfographicPlan(plan);
+    const context = { visualGrammarForms: VISUAL_GRAMMAR_FORMS, visualGrammars: INFOGRAPHIC_VISUAL_GRAMMARS, enums: {}, registry, selectedGrammarIds: [plan.editorial_grammar?.primary, ...(plan.editorial_grammar?.supporting ?? [])].filter(Boolean).map(String) };
+    for (const blocker of lint.blockers ?? []) {
+      lines.push(`[page lint] ${blocker}`);
+      for (const hint of allowedValueHints(String(blocker), context)) lines.push(`   allowed values: ${hint}`);
+    }
+  } catch (error: any) { notChecked.push(`page lint: it could not run on this plan (${String(error?.message ?? error).split("\n")[0].slice(0, 200)})`); }
+  if (lines.length === 0 && notChecked.length === 1) return message;
+  const numbered = lines.reduce((out: string[], line) => { out.push(line.startsWith("   ") ? line : `${out.filter((entry) => !entry.startsWith("   ")).length + 1}. ${line}`); return out; }, []);
+  return [message, "Other problems found by running the checks the chain skipped (each keeps its own text, in stage order). Fix them together before calling again:", ...numbered, "Not checked (the stop prevents these from running; this is not a pass):", ...notChecked.map((entry) => `- ${entry}`)].join("\n");
+}
+
 // NEWSROOM_SPEED_PRECHECK_ALL=1, plan tool only. Called after the unchanged plan checks refused the call: it runs every other
 // pre-draw check that can still run (the plan checks below the refusal, and the page lint over the plan as proposed, in memory)
 // and returns one refusal. The first problem keeps its own text, code and class (combinedError). Nothing is written, no check is
@@ -3104,6 +3136,11 @@ function registerInfographicChain(pi: ExtensionAPI) {
             : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
         },
       });
+      // NEWSROOM_SPEED_PRECHECK_ALL=1: the claim/manifest check stops the chain before the page lint runs; the stop text then also lists
+      // every module that check refuses and what the page lint says about the plan. The verdict and the stop code are the same.
+      if (precheckAllEnabled() && outcome.status !== "COMPLETE" && outcome.code === "CLAIM_MANIFEST_MISMATCH" && state.planRef) {
+        try { outcome.message = await chainStopWithPageLint(String(outcome.message), String(state.planRef)); } catch { /* keep the stop text as it is */ }
+      }
       return chainResultFor(outcome, {
         chain: name,
         textResult,
