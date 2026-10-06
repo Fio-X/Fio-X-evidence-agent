@@ -15,7 +15,7 @@
     ".git",
     "release-manifest.json"
   ],
-  "file_count": 1064,
+  "file_count": 1065,
   "generated_visuals_excluded": true,
   "import_strategy": "fill-missing-preserve-hardened-head",
   "materialization": {
@@ -40,5 +40,5 @@
     "upstream_hardening_archive_sha256": "13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c",
     "verification_evidence": "ci-evidence/source-import-verification.json"
   },
-  "source_tree_sha256": "2a829f62a7c8acd6857add251a550404e5bdc1c3dcfe9cac3d8df8b29dbd3f4c"
+  "source_tree_sha256": "a70e0fe4a1ae5c74825311eb538bf12ff1c65eba986876317327e3d80661eb0a"
 }
