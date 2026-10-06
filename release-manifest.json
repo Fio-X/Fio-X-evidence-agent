@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791312031,
-  "source_commit": "0f12609c02ee991e81149b4c29183b8def570507",
+  "created_at_epoch": 1791312374,
+  "source_commit": "d3d60b514446ff0ea311f8a629e68f5569807e57",
   "source_tree": {
     "file_count": 1068,
-    "bytes": 69254645,
-    "sha256": "87e7790c4a7f7796fb0f11c0d9c703759c418f78ca95bfd181b0bc360449de22",
+    "bytes": 69256201,
+    "sha256": "2e320069f2cadafae9b065dca9fbf2d46eafc3c7f941b34d5b7c9b105cc217a0",
     "files": [
       {
         "path": ".env.example",
@@ -4130,8 +4130,8 @@
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
-        "sha256": "fa9e6b361de01bde11164ba9063c9f41a94d50db8ea83d7d2ca073b2e6718f1e",
-        "bytes": 61031
+        "sha256": "28d39d17e571f19a1d72425cbb0891ce842237af0d424e8cc9a42bccdaeafe1f",
+        "bytes": 62587
       },
       {
         "path": "scripts/test_stat_row.mjs",
@@ -5175,7 +5175,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "5e1ee472b445b5e4080fa95d56de559fcedec655f417cb4e5e52d8ddd28193b3",
+        "sha256": "4657c545a3c244684c7f20c021ce62e3ca0c5420f53d4ef291e837523477bf5a",
         "bytes": 1943
       },
       {
@@ -5431,7 +5431,7 @@
     "cold_story_gate": null,
     "browser_cpu": null,
     "browser_gpu": null,
-    "final_dossier": null
+    "final_dossier": "outputs/v113-final-qualification.json"
   },
-  "manifest_sha256": "636133087f45faa94b2a0e0e83c10a984734692df5be1ff41a05a76a872b6a17"
+  "manifest_sha256": "19eef6325ff25e57aa39f772922139fddeac02203d29cba70db33795b1d4867b"
 }
