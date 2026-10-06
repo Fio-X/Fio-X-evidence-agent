@@ -96,7 +96,7 @@ import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
 import { PATCH_MAX_OPS, PatchError, applyJsonPatch, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
-import { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
+import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -270,6 +270,39 @@ async function compactSetupRefs(tool: string, params: any) {
   return filled.params;
 }
 const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_SPEED_FILL_COPIED_REFS=1: code copies a reference the model left out when exactly one artifact can be meant:
+// story_graph_ref (the only story graph), the lint's plan_ref (the only plan) and the grammar's project_id (the story graph's own story_id).
+// A value the model gave is left for today's checks; zero or several candidates refuse with the reason. Never fills selected_concept_id, claim ids or story nodes.
+function fillCopiedEnabled() {
+  return process.env.NEWSROOM_SPEED_FILL_COPIED_REFS === "1";
+}
+const optionalWhenFillCopied = (schema: any) => (fillCopiedEnabled() ? Type.Optional(schema) : schema);
+async function onlyArtifactRef(tool: string, field: string, dir: string, none: string) {
+  const found = await candidates(preflightIo, dir, () => true);
+  if (found.truncated) throw preflightError(tool, [`${field} is missing and could not be derived: more than 200 artifacts to scan; supply it explicitly`]);
+  if (found.found.length === 1) return found.found[0];
+  throw preflightError(tool, [`${field} is missing and could not be derived: ${found.found.length ? `${found.found.length} candidates (${found.found.slice(0, 4).join(", ")}${found.found.length > 4 ? ", ..." : ""}); supply the one you mean` : none}`]);
+}
+async function fillStoryGraphRef(tool: string, params: any) {
+  if (!fillCopiedEnabled() || params?.story_graph_ref !== undefined) return params;
+  return { ...params, story_graph_ref: await onlyArtifactRef(tool, "story_graph_ref", "editorial/story-graphs/", "no editorial/story-graphs artifact exists; call newsroom_story_graph first") };
+}
+// project_id is copied from the story graph's story_id only when it already passes the schema's 1-120 character rule.
+// The schema no longer requires it, so a field that cannot be copied is refused here, as the schema would have.
+async function fillProjectId(params: any) {
+  const grammar = params?.editorial_grammar;
+  if (!fillCopiedEnabled() || !grammar || typeof grammar !== "object" || grammar.project_id !== undefined) return params;
+  let why = "story_graph_ref is needed to find the story id";
+  if (params.story_graph_ref !== undefined) {
+    why = "the story graph's story_id is not 1-120 characters, or the graph cannot be read; supply project_id";
+    try {
+      const graph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
+      const id = graph?.story_id;
+      if (typeof id === "string" && id.length >= 1 && id.length <= 120) return { ...params, editorial_grammar: { ...grammar, project_id: id } };
+    } catch { /* reported below */ }
+  }
+  throw preflightError("newsroom_infographic_plan", [`editorial_grammar.project_id is missing and could not be derived: ${why}`]);
+}
 // Fill the references a later page stage can read off the artifacts it already
 // names, then list every unmet precondition together. Switch off: untouched.
 async function preflightStage(tool: string, params: any) {
@@ -2801,7 +2834,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
       visual_thesis: Type.Optional(planProperties.visual_thesis ?? Type.String()),
     }),
     async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
-      const planParams: any = { ...(params ?? {}) };
+      const planParams: any = await fillStoryGraphRef("newsroom_infographic_chain", { ...(params ?? {}) });
       if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
         // Copied verbatim from the StoryGraph artifact; an unreadable graph leaves the
         // fields absent so the plan step fails exactly as a direct call would.
@@ -4661,7 +4694,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   });
 
   const editorialGrammarParameters = Type.Object({
-    project_id: Type.String(),
+    project_id: optionalWhenFillCopied(Type.String()),
     primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const),
     supporting: Type.Array(StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const), { maxItems: 2 }),
     available_renderer_capabilities: Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
@@ -4702,7 +4735,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       primary_message: Type.String(),
       reader_question: optionalWhenPreflight(Type.String()),
       visual_thesis: optionalWhenPreflight(Type.String()),
-      story_graph_ref: Type.String(),
+      story_graph_ref: optionalWhenFillCopied(Type.String()),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
       quality_target: Type.Optional(StringEnum(["publishable", "award"] as const)),
@@ -4737,7 +4770,13 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
       modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
     }),
-    async execute(_id, rawParams, signal?: AbortSignal) {
+    async execute(_id, givenParams, signal?: AbortSignal) {
+      let rawParams = givenParams;
+      if (fillCopiedEnabled()) {
+        const withGraph = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
+        const copied = await fillProjectId(withGraph);
+        if (copied !== givenParams) rawParams = inSchemaOrder(copied, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
+      }
       let params = rawParams;
       let unresolvedRefs: Record<string, string> = {};
       if (preflightEnabled()) {
@@ -4838,8 +4877,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     label: "Lint magazine infographic",
     description: "Validate magazine hierarchy, claim provenance, responsive visual availability, and upstream visualization critic status before page composition.",
     promptSnippet: "Run deterministic magazine-page quality checks",
-    parameters: Type.Object({ plan_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: optionalWhenFillCopied(Type.String()) }),
+    async execute(_id, givenParams) {
+      const params = fillCopiedEnabled() && givenParams?.plan_ref === undefined
+        ? { ...givenParams, plan_ref: await onlyArtifactRef("newsroom_infographic_lint", "plan_ref", "infographics/plans/", "no infographics/plans artifact exists; call newsroom_infographic_plan first") }
+        : givenParams;
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const { lint, assets, mobilePages, verifiedRecords } = await lintInfographicPlan(spec);
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
