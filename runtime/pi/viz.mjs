@@ -5,7 +5,7 @@ import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -1079,6 +1079,16 @@ function autoValueDecimals(values) {
 // literally set style_id:"house", which is most of them now that "house" is
 // the default resolved style. Returning null here defers 100% to that
 // untouched mechanism, exactly as before fix 2.
+//
+// Shared-scale guarantees (what a reader may rely on, whatever the unit or sign):
+//   1. a non-zero value never prints as zero (0, 0.00亿, -0.00亿);
+//   2. no value loses or flips its sign;
+//   3. two different values print differently, whenever 3 decimals in the printed unit can show the difference;
+//   4. to meet 1-3 the shared decimal count is raised, up to 3;
+//   5. a value that 3 decimals still cannot show (it would print as zero) prints in its own unit (zh: its own
+//      万/亿/万亿, below 1万 a plain number; en: significant digits) - the one case where a chart mixes units.
+// `decimals` (spec.decimals or the auto count) is the count in the PRINTED unit: zh 10000.123 with decimals 3
+// prints 1.000万, not 10000.123. The count is a floor that rules 1-4 may raise; it is never lowered.
 function resolveChartDecimals(spec, values) {
   if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return null;
   const explicit = spec?.decimals;
@@ -1091,13 +1101,43 @@ function resolveChartDecimals(spec, values) {
     const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
     const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
     const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
-    return { zhScale: { div, suffix }, decimals: hasExplicit ? explicit : auto };
+    return { zhScale: { div, suffix }, decimals: raiseSharedDecimals(finite, hasExplicit ? explicit : auto, div) };
   }
-  if (hasExplicit) return explicit;
+  if (hasExplicit) return raiseSharedDecimals(finite, explicit, 1);
   const auto = autoValueDecimals(finite);
-  // every labelled value in the thousands: no decimals at all, decided per chart
-  if (finite.length && finite.every((v) => Math.abs(v) >= 1000) && auto !== null && auto > 0) return 0;
-  return auto;
+  // every labelled value in the thousands: no decimals at all, decided per chart - unless that would print two
+  // different values the same (1000.1 and 1000.2), which rule 3 forbids
+  if (finite.length && finite.every((v) => Math.abs(v) >= 1000) && auto !== null && auto > 0 && raiseSharedDecimals(finite, 0, 1) === 0) return 0;
+  return auto === null ? auto : raiseSharedDecimals(finite, auto, 1);
+}
+
+// The smallest count in [start, 3] at which no non-zero value prints as zero and no two values that 3 decimals
+// can tell apart print the same; 3 when nothing smaller does (see the guarantees above).
+function raiseSharedDecimals(values, start, div) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  const at = (v, d) => (v / div).toFixed(d);
+  for (let d = Math.min(3, Math.max(0, start)); d < 3; d++) {
+    const seen = new Map();
+    let ok = true;
+    for (const v of finite) {
+      const short = at(v, d);
+      const full = at(v, 3);
+      if (v !== 0 && Number(short) === 0 && Number(full) !== 0) { ok = false; break; }
+      if (!seen.has(short)) seen.set(short, full);
+      else if (seen.get(short) !== full) { ok = false; break; }
+    }
+    if (ok) return d;
+  }
+  return 3;
+}
+
+// A value that the shared count cannot show without printing zero: significant digits, never zero, sign kept.
+function tinyValueText(value) {
+  const abs = Math.abs(value);
+  if (abs >= 1) return String(Number(value.toPrecision(4)));
+  const decimals = Math.min(20, 1 - Math.floor(Math.log10(abs)));
+  const text = value.toFixed(decimals).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return Number(text) === 0 ? value.toExponential(1) : text;
 }
 
 // Chart-level formatter: resolves the shared unit / decimal count once from all
@@ -1110,12 +1150,17 @@ export function chartValueFormatter(spec, values) {
 // zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
 // four significant digits (161.1万, -325.6万, 1.611亿, 1611万), never a trailing
 // zero. Exported so a hero number can print through the same formatter.
-export function zhScaleText(value) {
+// minDecimals keeps an explicit shared count: the result never shows fewer decimals than that.
+export function zhScaleText(value, minDecimals = 0) {
   const abs = Math.abs(value);
   const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
   const v = abs / div;
   const d = v >= 1000 ? 0 : v >= 100 ? 1 : v >= 10 ? 2 : 3;
-  const text = (value < 0 ? "-" : "") + String(Number((v).toFixed(d)));
+  let digits = String(Number(v.toFixed(d)));
+  const have = digits.includes(".") ? digits.split(".")[1].length : 0;
+  const want = Math.min(3, Math.max(0, minDecimals));
+  if (have < want) digits = v.toFixed(want); // from the value: never pad a rounded string
+  const text = (value < 0 ? "-" : "") + digits;
   return `${text}${suffix}`;
 }
 
@@ -1125,11 +1170,14 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
   // not 83%) so every value label in a chart shares the same decimal
   // count - the default style's own trailing-zero-stripping behaviour
   // below is untouched so its output stays byte-identical.
-  if (DECIMAL_MODE !== "default" && unit === "%") return `${value.toFixed(1)}%`;
+  if (DECIMAL_MODE !== "default" && unit === "%") return value !== 0 && Number(value.toFixed(1)) === 0 ? `${tinyValueText(value)}%` : `${value.toFixed(1)}%`;
   const abs = Math.abs(value);
   let text;
   if (decimals && typeof decimals === "object" && decimals.zhScale) {
-    text = (value / decimals.zhScale.div).toFixed(decimals.decimals) + decimals.zhScale.suffix;
+    text = (value / decimals.zhScale.div).toFixed(decimals.decimals);
+    // rule 5: a value the shared unit cannot show at 3 decimals prints in its own unit
+    if (value !== 0 && Number(text) === 0) text = abs >= 10_000 ? zhScaleText(value) : tinyValueText(value);
+    else text += decimals.zhScale.suffix;
     if (unit === "%") return `${text}%`;
     return unit && !/^[£$€¥]$/.test(unit) ? `${text} ${unit}` : unit ? `${unit}${text}` : text;
   }
@@ -1141,7 +1189,9 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     // same number of decimal places (0.720 must stay "0.720", not "0.72").
     text = value.toFixed(decimals);
     if (lang === "zh" && abs >= 10_000) {
-      text = zhScaleText(value);
+      text = zhScaleText(value, decimals);
+    } else if (value !== 0 && Number(text) === 0) {
+      text = tinyValueText(value);
     }
     // Fix 2 follow-up (b): toFixed() never groups the integer part, and a
     // resolved decimals count takes this branch instead of the magnitude
@@ -1496,6 +1546,16 @@ export function validateVizSpec(spec) {
   if (spec.decimals !== undefined && (!Number.isInteger(spec.decimals) || spec.decimals < 0 || spec.decimals > 3)) errors.push("decimals must be an integer between 0 and 3");
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
+  // world mode is behind NEWSROOM_MAP_WORLD (off by default): a spec that sets map_extent is refused on any chart
+  if (spec.map_extent !== undefined && !mapWorldEnabled()) errors.push("MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar");
+  if (spec.index_base !== undefined) {
+    if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
+    else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
+  }
+  if (spec.rank_cutoff !== undefined) {
+    if (spec.chart_type !== "slope") errors.push("RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff only applies to chart_type slope; drop rank_cutoff for this chart");
+    else if (!(Number.isInteger(spec.rank_cutoff) && spec.rank_cutoff >= 2 && spec.rank_cutoff <= 30)) errors.push("RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff must be an integer from 2 to 30");
+  }
   if (spec.chart_type === "parallel_sets") {
     if (!Array.isArray(spec.dimension_fields) || spec.dimension_fields.length < 2 || spec.dimension_fields.length > 5) errors.push("parallel_sets requires dimension_fields with 2 to 5 field names");
     else if (spec.dimension_fields.some((field) => !String(field ?? "").trim())) errors.push("parallel_sets dimension_fields must be non-empty strings");
@@ -1556,7 +1616,7 @@ export function validateVizSpec(spec) {
       }
     }
     // map_extent: opt-in whole-world mode; the only accepted value is "world".
-    if (spec.map_extent !== undefined && spec.map_extent !== "world") errors.push("choropleth map_extent must be 'world' when provided");
+    if (spec.map_extent !== undefined && mapWorldEnabled() && spec.map_extent !== "world") errors.push("choropleth map_extent must be 'world' when provided");
     // inset (task: zoom inset for regions too small to label on the main
     // map): opt-in, so its absence changes nothing. Either an explicit ISO3
     // list (`iso3`) or automatic selection (`auto: true`), never both -
@@ -1822,7 +1882,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       if (!fieldExists(rows, annotation.match_field)) blockers.push(`annotations[${index}] match_field '${annotation.match_field}' is absent from query output`);
       else if (!rows.some((row) => String(row[annotation.match_field]) === String(annotation.match_value))) blockers.push(`annotations[${index}] target '${annotation.match_value}' was not found in '${annotation.match_field}'`);
     }
-    if (["point", "node"].includes(annotation.type) && ["strip_plot", "mirrored_bar"].includes(spec.chart_type)) {
+    if (["point", "node"].includes(annotation.type) && ["strip_plot", "mirrored_bar", "stacked_bar_100"].includes(spec.chart_type)) {
       blockers.push(`annotations[${index}] ${annotation.type} is not supported on chart_type '${spec.chart_type}'; ${spec.chart_type === "strip_plot" ? "it draws no annotations, so name an extreme with label_field and label_extremes instead" : "it draws no annotations and nothing needs adding"}`);
     }
     if (annotation.type === "reference_line") {
@@ -1965,9 +2025,18 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
 
+  if (spec.chart_type === "slope" && Number.isInteger(spec.rank_cutoff) && Array.isArray(rows)) {
+    const bad = nonIntegerRankRows(spec, rows);
+    if (bad.length) blockers.push(`RANK_NOT_INTEGER: with rank_cutoff, ${spec.start_field} and ${spec.end_field} must hold ranks that are positive integers (or be empty for outside the ranking); not rounded; rows: ${bad.slice(0, 8).join("; ")}${bad.length > 8 ? `; and ${bad.length - 8} more` : ""}. Compute integer ranks in SQL (RANK() or ROW_NUMBER()), or drop rank_cutoff`);
+  }
+
   if (spec.chart_type === "small_multiples") {
     if (!spec.panel_mark || !["line", "dot"].includes(spec.panel_mark)) {
       blockers.push("small_multiples requires panel_mark='line' or panel_mark='dot'");
+    }
+    if (spec.index_base !== undefined && spec.panel_mark === "line" && Number.isFinite(spec.index_base) && spec.index_base > 0 && Array.isArray(rows) && rows.length) {
+      const period = indexBasePeriod(spec, rows);
+      if (period.missing) blockers.push(`INDEX_BASE_NOT_IN_DATA: no x value equals index_base ${spec.index_base} in every panel (panels without it: ${period.missing.join(", ")}); rebase in SQL so each series equals ${spec.index_base} at the base period, or drop index_base`);
     }
   }
 
@@ -2059,7 +2128,7 @@ export function lintVizSpec(spec, rows, context = {}) {
       const gaps = model.segments
         .map((segment) => ({ segment, bars: model.entities.filter((entity) => !entity.cells.has(segment)).map((entity) => entity.key) }))
         .filter((item) => item.bars.length > 0);
-      if (gaps.length) blockers.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' has no row for ${item.bars.length} bar(s): ${item.bars.slice(0, 5).map((bar) => `'${bar}'`).join(", ")}${item.bars.length > 5 ? ", ..." : ""}`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; if the true value is zero, return an explicit 0 row for it from SQL, otherwise fetch the missing rows (a missing segment is never filled in)`);
+      if (gaps.length) blockers.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' has no row for ${item.bars.length} bar(s): ${item.bars.slice(0, 5).map((bar) => `'${bar}'`).join(", ")}${item.bars.length > 5 ? ", ..." : ""}`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; if the source data records this segment as zero, select that row from the data; a zero written into the SQL (a constant, a VALUES list or a COALESCE) is a filled-in fact; otherwise fetch the missing rows (a missing segment is never filled in)`);
     }
   }
   if (spec.chart_type === "mirrored_bar" && Array.isArray(rows) && rows.length > 0) {
@@ -2326,8 +2395,8 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
     add("warning", "title_names_unhighlighted", hint, HIGHLIGHT_HINT_CRITIC_PENALTY, hint);
   } else if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
   if ((spec.highlight_values ?? []).length > 4) add("warning", "too_many_highlights", "Too many marks compete for attention.", 10, "Reduce highlights to one primary focus and a small number of comparisons.");
-  if (spec.chart_type === "mirrored_bar") {
-    // mirrored_bar draws no annotations, so there is nothing to add.
+  if (spec.chart_type === "mirrored_bar" || spec.chart_type === "stacked_bar_100") {
+    // mirrored_bar and stacked_bar_100 draw no annotations, so there is nothing to add.
   } else if (annotations(spec).length === 0 && rows.length >= 8 && spec.chart_type === "strip_plot") add("info", "no_annotation", "strip_plot draws no annotations; it labels its extreme points instead.", 4, "To name an outlier, set label_field and label_extremes; no annotation is needed.");
   else if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
   if (annotations(spec).length > 4) add("warning", "annotation_density", "More than four annotations are likely to compete with the data.", 9, "Keep only annotations that identify, compare, summarize, or explain the governing claim.");
@@ -2428,13 +2497,13 @@ export function vizLang(spec) {
 const VIZ_STRINGS = {
   en: {
     stripMedianKey: "Line: median",
-    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (b) => `base = ${b}`, rankOutside: (r) => `#${r}`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
+    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `#${r}`, rankNone: "unranked", rankCutNote: (cut, shown, hidden) => `Showing only the ${shown} items that ranked in the top ${cut} in either period${hidden ? `; another ${hidden} were outside the top ${cut} in both periods and are not drawn` : ""}.`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
     stackedRoundingNote: "Figures may not add up to 100% because of rounding",
   },
   zh: {
     stripMedianKey: "\u7AD6\u7EBF\uFF1A\u4E2D\u4F4D\u6570",
-    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (b) => `\u57FA\u671F = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
+    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankNone: "\u699C\u5916", rankCutNote: (cut, shown, hidden) => `\u53EA\u663E\u793A\u4EFB\u4E00\u671F\u8FDB\u5165\u524D ${cut} \u540D\u7684 ${shown} \u9879${hidden ? `\uFF1B\u53E6\u6709 ${hidden} \u9879\u4E24\u671F\u90FD\u4E0D\u5728\u524D ${cut} \u540D\uFF0C\u672A\u753B\u51FA` : ""}\u3002`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
     stackedRoundingNote: "\u56E0\u56DB\u820D\u4E94\u5165\uFF0C\u5404\u9879\u76F8\u52A0\u53EF\u80FD\u4E0D\u7B49\u4E8E100%",
   },
@@ -4024,6 +4093,23 @@ function renderMirroredBar(spec, rows) {
 // between two end labels sharing the same x column.
 const END_LABEL_MIN_GAP = 18;
 
+const UNRANKED = 1e9;
+const isMissingRank = (v) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
+// the rows whose start or end field holds a rank that is not a positive integer (a missing end is allowed)
+export function nonIntegerRankRows(spec, rows) {
+  const bad = [];
+  rows.forEach((row, i) => {
+    const fields = [spec.start_field, spec.end_field].filter((field) => {
+      const v = row[field];
+      if (isMissingRank(v)) return false;
+      const x = typeof v === "number" ? v : Number(v);
+      return !(Number.isInteger(x) && x >= 1);
+    });
+    if (fields.length) bad.push(`${String(row[spec.category_field] ?? `row ${i + 1}`)} (${fields.map((field) => `${field}=${String(row[field])}`).join(", ")})`);
+  });
+  return bad;
+}
+
 // Rank slope (bump chart). Opt-in through spec.rank_cutoff = N: the start and
 // end fields hold ranks (1 = best). Axis inverted so rank 1 is on top; one
 // ordinal row per rank 1..N, and an entity outside the top N at one end sits on
@@ -4032,12 +4118,20 @@ const END_LABEL_MIN_GAP = 18;
 // 新进, one that drops out 跌出. An entity outside the top N at both ends is not
 // drawn (it is in neither list).
 function renderRankSlope(spec, rows, cutoff) {
+  // Lint refuses these ranks (RANK_NOT_INTEGER), but render only checks that some lint passed for this plan and data, so a PASS
+  // recorded before the rule existed must not draw them: refuse here too, on the same rows, and never round or drop.
+  const notRanks = nonIntegerRankRows(spec, rows);
+  if (notRanks.length) throw new Error(`RANK_NOT_INTEGER: with rank_cutoff, ${spec.start_field} and ${spec.end_field} must hold ranks that are positive integers (or be empty for outside the ranking); not rounded; rows: ${notRanks.slice(0, 8).join("; ")}${notRanks.length > 8 ? `; and ${notRanks.length - 8} more` : ""}`);
   const lang = vizLang(spec);
   const T = VIZ_STRINGS[lang];
-  const rankOf = (v) => { const r = n(v); return r !== null && r >= 1 ? Math.round(r) : null; };
-  const entries = rows
-    .map((row, i) => ({ row, i, a: rankOf(row[spec.start_field]), b: rankOf(row[spec.end_field]) }))
-    .filter((e) => e.a !== null && e.b !== null && (e.a <= cutoff || e.b <= cutoff));
+  // Ranks are positive integers (lint refuses anything else, RANK_NOT_INTEGER); a missing end means "outside the
+  // ranking" and sorts after every real rank on the N+1 row.
+  const rankOf = (v) => (isMissingRank(v) ? UNRANKED : Number(v));
+  const all = rows.map((row, i) => ({ row, i, a: rankOf(row[spec.start_field]), b: rankOf(row[spec.end_field]) }));
+  const entries = all.filter((e) => e.a <= cutoff || e.b <= cutoff);
+  const hiddenCount = all.length - entries.length;
+  // the chart says what it cut
+  spec = { ...spec, note: [spec.note, T.rankCutNote(cutoff, entries.length, hiddenCount)].filter(Boolean).join(" ") };
   const outsideCount = (key) => entries.filter((e) => e[key] > cutoff).length;
   const stack = Math.max(1, outsideCount("a"), outsideCount("b"));
   const ROW = 30, STACK = 17;
@@ -4047,7 +4141,7 @@ function renderRankSlope(spec, rows, cutoff) {
   const name = (e) => resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, lang);
   const joinColor = HOUSE_STYLE_ACTIVE ? PALETTE.ink : PALETTE.accent2;
   const leaveColor = PALETTE.accent;
-  const rankText = (r) => (r > cutoff ? T.rankOutside(r) : String(r));
+  const rankText = (r) => (r === UNRANKED ? T.rankNone : r > cutoff ? T.rankOutside(r) : String(r));
   f.parts.push(`<text x="${left}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.start_label ?? spec.start_field)}</text>`);
   f.parts.push(`<text x="${right}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.end_label ?? spec.end_field)}</text>`);
   // faint ordinal row guides: one per rank, the last one is the "N+1" row
@@ -4460,7 +4554,34 @@ function placeIndexLabel(candidates, text, anchor, bold, marks, bounds, others) 
   return null;
 }
 
-function renderSmallMultiples(spec, rows) {
+// The base period of a rebased index: the one x value at which every panel's value equals index_base (relative
+// tolerance 1e-9). Returns { x } (first such x in axis order) or { missing: [panels...] }, naming the panels that
+// do not hold the base period the most panels share (every panel when no panel holds the base at all).
+const INDEX_BASE_TOLERANCE = 1e-9;
+export function indexBasePeriod(spec, rows) {
+  const base = n(spec.index_base);
+  const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
+  const holders = new Map();
+  for (const facet of facets) {
+    for (const r of rows) {
+      if (String(r[spec.facet_field]) !== facet) continue;
+      const v = n(r[spec.value_field]);
+      if (v === null || Math.abs(v - base) > INDEX_BASE_TOLERANCE * Math.abs(base)) continue;
+      const key = String(r[spec.x_field]);
+      if (!holders.has(key)) holders.set(key, new Set());
+      holders.get(key).add(facet);
+    }
+  }
+  const common = [...holders.entries()].filter(([, set]) => set.size === facets.length).map(([key]) => key);
+  if (common.length) {
+    const order = sortX(unique(rows.map((r) => r[spec.x_field])));
+    return { x: order.find((v) => common.includes(String(v))) };
+  }
+  const best = [...holders.values()].reduce((m, set) => (set.size > m.size ? set : m), new Set());
+  return { missing: facets.filter((facet) => !best.has(facet)) };
+}
+
+function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
   // Rebased index panels (opt-in spec.index_base, e.g. 100): 7+ panels go 3-4
   // columns wide, every panel gets a labelled base line and an end value, and
@@ -4468,6 +4589,15 @@ function renderSmallMultiples(spec, rows) {
   const indexBase = spec.panel_mark !== "dot" && n(spec.index_base) !== null && n(spec.index_base) > 0 ? n(spec.index_base) : null;
   const cols = facets.length === 1 ? 1 : indexBase !== null && facets.length >= 7 ? (facets.length >= 10 ? 4 : 3) : 2;
   const gapX = 34, gapY = 44;
+  // a rebased index names its base period, never a bare "base": <x> = <base>, e.g. 2023-01 = 100
+  let baseText = "";
+  if (indexBase !== null) {
+    const period = indexBasePeriod(spec, rows);
+    if (period.missing) throw new Error(`INDEX_BASE_NOT_IN_DATA: no x value holds index_base ${indexBase} in every panel (panels without it: ${period.missing.join(", ")})`);
+    baseText = VIZ_STRINGS[vizLang(spec)].indexBase(String(period.x), fmtSpec(spec, indexBase, "", 0));
+  }
+  // when no panel has a clear spot for the label it goes on its own row above the first row of panels
+  const rowShift = labelRow ? 18 : 0;
 
   if (spec.panel_mark === "dot") {
     const groups = facets.map((facet) => rows.filter((r) => String(r[spec.facet_field]) === facet));
@@ -4531,7 +4661,7 @@ function renderSmallMultiples(spec, rows) {
   const idxLeft = indexBase !== null ? 54 + 40 : 70;
   const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
   const rowsN = Math.ceil(facets.length / cols);
-  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20);
+  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20 + rowShift);
   const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
   // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
@@ -4547,7 +4677,7 @@ function renderSmallMultiples(spec, rows) {
   let indexBaseNamed = false;
   facets.forEach((facet, fi) => {
     const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowShift + rowN * (panelH + gapY);
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -4598,8 +4728,8 @@ function renderSmallMultiples(spec, rows) {
         }
       }
       // the base is named once, in the first panel where a clear spot exists; every panel still draws the line
-      if (!indexBaseNamed) {
-        const by = yScale(indexBase), text = VIZ_STRINGS[vizLang(spec)].indexBase(fmtSpec(spec, indexBase, "", 0));
+      if (!indexBaseNamed && !labelRow) {
+        const by = yScale(indexBase), text = baseText;
         const cands = [];
         for (const fx of [0, 0.25, 0.5, 0.75]) for (const dy of [-5, 13, -19, 27]) cands.push({ x: x0 + 4 + fx * panelW, y: by + dy });
         const spot = placeIndexLabel(cands, text, "start", false, marks, bounds, others);
@@ -4622,6 +4752,10 @@ function renderSmallMultiples(spec, rows) {
     });
     tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
   });
+  if (indexBase !== null && !indexBaseNamed) {
+    if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
+    f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 

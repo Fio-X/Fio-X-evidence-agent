@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # test_viz_round3_conventions compares against a base commit
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
@@ -89,6 +91,14 @@ jobs:
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs
+          node scripts/test_shared_scale_never_hides.mjs
+          node scripts/test_zh_number_scale.mjs
+          node scripts/test_viz_round3_conventions.mjs
+          node scripts/test_index_base_period.mjs
+          node scripts/test_rank_cutoff_disclosure.mjs
+          node scripts/test_viz_plan_schema.mjs
+          node scripts/test_map_world_switch.mjs
+          NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           python3 scripts/test_migration_flow_fixture.py
           python3 scripts/test_migration_story_ir.py
           node scripts/test_migration_story_ir.mjs
@@ -189,6 +199,7 @@ jobs:
         run: |
           node scripts/test_content_addressing.mjs
           node scripts/test_stream_limits.mjs
+          node scripts/test_fast_fail_errors.mjs
           node scripts/test_pdf_extract.mjs
           node scripts/test_cjk_viz.mjs
           node scripts/test_viz_ticks.mjs

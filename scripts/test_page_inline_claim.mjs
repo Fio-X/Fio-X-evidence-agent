@@ -343,9 +343,25 @@ const maskMeasureSemantics = (name, parameters) => (["newsroom_viz_plan", "newsr
 // newsroom_viz_chain, and two viz_plan guideline sentences (zh-names-1003). `current: true` puts the old wording back with
 // revertNameLocalization, which refuses a surface that lacks exactly those edits; the form wiring is masked by maskFor (forms-1003).
 // Everything else is still compared byte for byte.
+// The second and third intended differences (fast-fail-1003): item 3, one explanatory_dimension vocabulary (semantic novelty and the infographic
+// plan take every story-graph value) and item 4 (one guidance clause on the infographic plan's quantity_kind). Only the enum of that field and
+// that one description are masked, in the baseline and in the current tree alike. It is a loud failure if either field moves.
+const maskApprovedChanges = (name, parameters) => {
+  if (!["newsroom_semantic_novelty", "newsroom_infographic_plan"].includes(name)) return parameters;
+  const masked = JSON.parse(JSON.stringify(parameters));
+  const module = masked?.properties?.modules?.items?.properties;
+  assert.ok(Array.isArray(module?.explanatory_dimension?.enum), `${name} keeps its explanatory_dimension enum`);
+  module.explanatory_dimension.enum = "masked";
+  if (name === "newsroom_infographic_plan") {
+    const kind = module?.quantitative_encoding?.properties?.quantity_kind;
+    assert.ok(Array.isArray(kind?.enum), `${name} keeps its quantity_kind enum`);
+    kind.description = "masked";
+  }
+  return masked;
+};
 const surface = (tools, { current = false } = {}) => [...tools.entries()].map(([name, tool]) => {
   const t = current ? revertNameLocalization(tool) : tool;
-  return [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: withoutPageTopSentences(t.promptGuidelines), parameters: maskMeasureSemantics(name, t.parameters) }, maskFor(name))];
+  return [name, JSON.stringify({ label: t.label, description: t.description, promptSnippet: t.promptSnippet, promptGuidelines: withoutPageTopSentences(t.promptGuidelines), parameters: maskApprovedChanges(name, maskMeasureSemantics(name, t.parameters)) }, maskFor(name))];
 });
 const baselineDir = baselineSource();
 const baseline = baselineDir ? (await loadTree("baseline", baselineDir)).mod : null;
@@ -392,7 +408,7 @@ if (baseline) {
       const env = { ...ON_ENV, NEWSROOM_TOOL_PROFILE: profile, NEWSROOM_PHASE: phase };
       const [before, after] = [register(baseline, { ...env, NEWSROOM_SPEED_INLINE_CLAIM: undefined }), register(mod, env)];
       assert.deepEqual([...after.keys()], [...before.keys()], `${profile}/${phase}: same tools in the same order`);
-      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, withoutPageTopSentences(after.get(name).promptGuidelines), after.get(name).parameters]) !== JSON.stringify([before.get(name).description, withoutPageTopSentences(before.get(name).promptGuidelines), before.get(name).parameters]));
+      const changed = [...after.keys()].filter((name) => JSON.stringify([after.get(name).description, withoutPageTopSentences(after.get(name).promptGuidelines), maskApprovedChanges(name, after.get(name).parameters)]) !== JSON.stringify([before.get(name).description, withoutPageTopSentences(before.get(name).promptGuidelines), maskApprovedChanges(name, before.get(name).parameters)]));
       assert.deepEqual(changed.sort(), ["newsroom_viz_chain", "newsroom_viz_plan", "record_claim"], `${profile}/${phase}: only these tools change`);
       const [plan0, plan1, rc0, rc1, chain1] = [before.get("newsroom_viz_plan"), revertNameLocalization(after.get("newsroom_viz_plan")), before.get("record_claim"), after.get("record_claim"), revertNameLocalization(after.get("newsroom_viz_chain"))];
       // record_claim: same description and schema, one more guideline.
