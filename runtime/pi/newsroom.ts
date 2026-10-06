@@ -509,6 +509,20 @@ function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
 
 const SEMANTIC_REQUIRED_READER_TASKS = new Set(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole"]);
 
+// NEWSROOM_SCATTER_PAIRED_MEASURES=1 (K110): a scatter's two axes are declared one measure each and compared as a pair (same objects,
+// same period, aggregation and temporal basis); units and phenomena may differ and each axis shows its own declared unit.
+// Off (anything but exactly "1"): the tool definitions and every refusal are byte-identical to what they were without this switch.
+const scatterPairedEnabled = () => process.env.NEWSROOM_SCATTER_PAIRED_MEASURES === "1";
+const SCATTER_PAIR_CHART = "scatter";
+const SCATTER_PAIR_RELATION = "relationship";
+const SCATTER_PAIR_ENTITY_FIELD = "entity_field";
+const SCATTER_PAIR_PERIOD_FIELD = "period_field";
+const SCATTER_PAIR_HINT = `For a ${SCATTER_PAIR_CHART} chart, declare one measure_semantics entry per axis (field = x_field and y_field, claim_spec relation ${SCATTER_PAIR_RELATION}, exactly those two measure_ids, no derived_metric) and set ${SCATTER_PAIR_ENTITY_FIELD} and ${SCATTER_PAIR_PERIOD_FIELD}. The two axes must cover the same objects (one row per ${SCATTER_PAIR_ENTITY_FIELD} value) and the same single period (one ${SCATTER_PAIR_PERIOD_FIELD} value in every row, equal to any date, start or end a measure states); their units and phenomena may differ and each axis shows its own declared unit.`;
+const SCATTER_PAIR_ENTITY_HINT = `${SCATTER_PAIR_CHART} only: the field naming the object each point stands for; it must be in every row, non-empty and unique across rows (one point per object).`;
+const SCATTER_PAIR_PERIOD_HINT = `${SCATTER_PAIR_CHART}: the field holding the single period every row covers; it must be in every row and have one value.`;
+const scatterPairHint = (base: any): any => (scatterPairedEnabled() ? { ...(base ?? {}), description: [base?.description, SCATTER_PAIR_HINT].filter(Boolean).join(" ") } : base);
+const scatterPeriodHint = (base: any): any => (scatterPairedEnabled() ? { ...(base ?? {}), description: [base?.description, SCATTER_PAIR_PERIOD_HINT].filter(Boolean).join(" ") } : base);
+
 const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   rank: ["horizontal_bar", "dot"],
   comparison: ["horizontal_bar", "dot", "dumbbell", "slope", "small_multiples", "mirrored_bar"],
@@ -527,6 +541,52 @@ const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
 function grammarFitClause(chartType: string): string {
   const relations = Object.keys(STRICT_GRAMMAR_FORMS).filter((relation) => STRICT_GRAMMAR_FORMS[relation].includes(chartType));
   return `; ${chartType} fits: ${relations.length ? relations.join(", ") : "no relation in the strict grammar"}`;
+}
+
+// K110: a paired scatter shows each axis's own declared unit. An absent x_unit or y_unit is filled from that axis's declaration;
+// one that differs is refused with the declared unit named. The chart's required `unit` stays: it is the fallback for the y axis
+// and feeds the unit checks, but no longer has to equal either axis.
+function scatterPairAxisUnits(semanticGate: any, params: any): { x_unit: string; y_unit: string } {
+  const pair = semanticGate.scatter_pair;
+  const unitOf = (id: string) => String((semanticGate.measures ?? []).find((measure: any) => measure.id === id)?.unit ?? "");
+  const out: any = {};
+  for (const [axis, id] of [["x", pair.x_measure], ["y", pair.y_measure]] as const) {
+    const declared = unitOf(id);
+    const given = params[`${axis}_unit`];
+    if (given != null && String(given).trim() && String(given).trim() !== declared) {
+      throw new Error(`SCATTER_AXIS_UNIT_MISMATCH: ${axis}_unit '${String(given).trim()}' differs from the unit declared for the ${axis} axis (measure '${id}'): '${declared}'; omit ${axis}_unit or set it to '${declared}'`);
+    }
+    out[`${axis}_unit`] = declared;
+  }
+  return out;
+}
+
+// K110 fix: with the switch on, a scatter whose declarations do not form a pair is refused, naming every failed condition at once.
+// Built from the same constants as SCATTER_PAIR_HINT; today's comparison never runs for a scatter.
+function scatterPairFailures(semanticGate: any, params: any): string[] {
+  const claim = semanticGate.claim_spec ?? {};
+  const measures: any[] = semanticGate.measures ?? [];
+  const ids: string[] = Array.isArray(claim.measure_ids) ? claim.measure_ids : [];
+  const xField = String(params.x_field ?? "").trim();
+  const yField = String(params.y_field ?? "").trim();
+  const failed: string[] = [];
+  if (claim.relation !== SCATTER_PAIR_RELATION) failed.push(`claim_spec relation is '${claim.relation ?? ""}': set it to ${SCATTER_PAIR_RELATION}`);
+  if (new Set(ids).size !== 2) failed.push(`claim_spec names ${new Set(ids).size} distinct measure ids (target, baseline and context together): name exactly two, one per axis`);
+  if (measures.length !== 2) failed.push(`${measures.length} measure_semantics entries are declared: declare exactly two, one per axis, and no others`);
+  if (!xField || !yField || xField === yField) failed.push(`x_field and y_field must be two different fields (x_field '${xField}', y_field '${yField}')`);
+  else {
+    const fields = ids.map((id) => measures.find((measure: any) => measure.id === id)?.field);
+    const oneToOne = fields.length === 2 && ((fields[0] === xField && fields[1] === yField) || (fields[1] === xField && fields[0] === yField));
+    if (!oneToOne) failed.push(`the two measures' fields (${fields.map((f) => `'${f ?? ""}'`).join(", ")}) must be x_field '${xField}' and y_field '${yField}', one each`);
+  }
+  if (claim.derived_metric) failed.push(`claim_spec has a derived_metric: remove it, a ${SCATTER_PAIR_CHART} compares its two axes directly`);
+  return failed;
+}
+
+function assertScatterPairFields(params: any) {
+  const missing = [SCATTER_PAIR_ENTITY_FIELD, SCATTER_PAIR_PERIOD_FIELD].filter((field) => !String(params[field] ?? "").trim());
+  if (missing.length) throw new Error(`SCATTER_PAIRING_FIELDS_REQUIRED: a ${SCATTER_PAIR_CHART} with one measure per axis requires ${missing.join(" and ")}: ${SCATTER_PAIR_ENTITY_FIELD} names the object of each point (one row per object), ${SCATTER_PAIR_PERIOD_FIELD} the single period every row covers`);
+  if (params[SCATTER_PAIR_ENTITY_FIELD] === params[SCATTER_PAIR_PERIOD_FIELD]) throw new Error(`SCATTER_PAIRING_FIELDS_REQUIRED: ${SCATTER_PAIR_ENTITY_FIELD} and ${SCATTER_PAIR_PERIOD_FIELD} must be two different fields`);
 }
 
 function assertEditorialGrammar(semanticGate: any, chartType: string) {
@@ -3894,7 +3954,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         scope: Type.Optional(Type.String()),
         evidence_ref: Type.Optional(Type.String()),
         value: Type.Optional(Type.Number()),
-      }), { minItems: 1, maxItems: 24, description: "Per-field measure declarations. A count or calendar-year value_field is spelled as a plain integer." })),
+      }), scatterPairHint({ minItems: 1, maxItems: 24, description: "Per-field measure declarations. A count or calendar-year value_field is spelled as a plain integer." }))),
       claim_spec: Type.Optional(Type.Object({
         claim_id: Type.Optional(Type.String({ description: "Optional in draft mode; required for a verified claim-bound plan" })),
         relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const, ruleHint(RULE_HINT_RELATION)),
@@ -3982,7 +4042,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       compare_layout: Type.Optional(StringEnum(["overlay", "side_by_side"] as const, { description: "mirrored_bar: second period as an outline (overlay, default) or a second pyramid (side_by_side)" })),
       left_series: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Number()], { description: "mirrored_bar: series_field value on the left (default: first in row order)" })),
       current_period: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Number()], { description: "mirrored_bar: period drawn filled (default: later)" })),
-      period_field: Type.Optional(Type.String({ minLength: 1, description: "mirrored_bar: optional field holding at most 2 periods to compare" })),
+      period_field: Type.Optional(Type.String(scatterPeriodHint({ minLength: 1, description: "mirrored_bar: optional field holding at most 2 periods to compare" }))),
+      ...(scatterPairedEnabled() ? { entity_field: Type.Optional(Type.String({ minLength: 1, description: SCATTER_PAIR_ENTITY_HINT })) } : {}),
       measure_kind: Type.Optional(StringEnum(["year", "count", "index", "level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "duration", "distance", "price"] as const, { description: "What the value_field measures, so numbers are spelled correctly: 'year' (a calendar year such as 2017) and 'count' (a whole-number tally) print as plain integers - never '2.0k' or '3.0' - and choropleth legends use whole-number steps. A year-like unit on measure_kind 'index' is also read as a calendar year. Omit for ordinary quantities." })),
       category_names: Type.Optional(StringEnum(["worldbank", "iso3", "iso2", "iso4217"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth/strip_plot/stacked_bar_100, facet_field for small_multiples, series_field for multi_line, label_field for scatter, source_field and target_field for sankey/alluvial): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes, 'iso2' when values are exact ISO 3166-1 alpha-2 economy codes, 'iso4217' when values are exact ISO 4217 currency codes (not for choropleth). On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
       annotations: Type.Optional(Type.Array(Type.Object({
@@ -4046,10 +4107,23 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       if (SEMANTIC_REQUIRED_READER_TASKS.has(params.reader_task) && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
         throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec`);
       }
-      const semanticGate = evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
+      // K110 (off unless NEWSROOM_SCATTER_PAIRED_MEASURES=1): only a call whose own chart_type is scatter must declare; a scatter that
+      // meets every pairing condition is compared as two axes and its refusals below name the field or unit to change.
+      const scatterPaired = scatterPairedEnabled() && params.chart_type === SCATTER_PAIR_CHART;
+      if (scatterPaired && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
+        throw new Error(`SEMANTIC_DECLARATION_REQUIRED: chart_type '${SCATTER_PAIR_CHART}' requires measure_semantics and claim_spec: one measure per axis (field = x_field and y_field)`);
+      }
+      const semanticGate = scatterPaired
+        ? evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null }, { scatterPair: { chart_type: params.chart_type, x_field: params.x_field, y_field: params.y_field } })
+        : evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
+      if (scatterPaired && !semanticGate.scatter_pair) {
+        throw new Error(`SCATTER_PAIRING_REQUIRED: a ${SCATTER_PAIR_CHART} chart's declarations do not form a pair of axes: ${scatterPairFailures(semanticGate, params).map((failure, index) => `(${index + 1}) ${failure}`).join("; ")}. ${SCATTER_PAIR_HINT}`);
+      }
+      const scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null;
       if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
       if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
       assertEditorialGrammar(semanticGate, params.chart_type);
+      if (scatterPaired && semanticGate.scatter_pair) assertScatterPairFields(params);
       const errors = validateVizSpec(normalizedParams);
       if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
       let verifiedClaim: any = null;
@@ -4072,6 +4146,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         publishable: verificationMode === "verified",
         verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
+        ...(scatterAxisUnits ?? {}),
         // Value-label decimals come from the shared chart formatter. The tool schema has no decimals field, and a value that reaches
         // here anyway (an unvalidated caller) is dropped, so a plan never carries one: 29.6 and 30.4 must not both print as 30.
         decimals: undefined,

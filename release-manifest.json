@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791313697,
-  "source_commit": "16b39a34b43458428ad2df132832f71e61742dd9",
+  "created_at_epoch": 1791314712,
+  "source_commit": "e72411c74db213f90771d896bf4af21cf2531242",
   "source_tree": {
-    "file_count": 1068,
-    "bytes": 69256691,
-    "sha256": "2f02183279b4f0ef006cdd1fc50f64ae992eb6fbe6483a54843ea6a3055fb927",
+    "file_count": 1073,
+    "bytes": 69433666,
+    "sha256": "310607a340a8151263406701a274450b1114dec9dfd83866c6edf3cd53557905",
     "files": [
       {
         "path": ".env.example",
@@ -1500,8 +1500,8 @@
       },
       {
         "path": "runtime/pi/editorial_semantics.mjs",
-        "sha256": "a6d5a39ef390140a51dddfaa5e7b118ccc45008cbb043835458ee0801794c22a",
-        "bytes": 7462
+        "sha256": "2f994767855111863d3c148394a9567880861b29f8ede7b7fc886e3e0e0ba302",
+        "bytes": 8841
       },
       {
         "path": "runtime/pi/editorial_validators.mjs",
@@ -1575,8 +1575,8 @@
       },
       {
         "path": "runtime/pi/measure_semantics.mjs",
-        "sha256": "97f9a2872a8eb4fddd591d24ab7d102383eed5df603b855830eaddb6bec6e2c5",
-        "bytes": 8205
+        "sha256": "0aef28f2580f5e1fdeaa77544d95ba1aa87edfab151ef1063a4696f18bd05f9d",
+        "bytes": 10696
       },
       {
         "path": "runtime/pi/model_spec.mjs",
@@ -1605,8 +1605,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "bee9cedba8d04cab6f07a0a76a9605e229091447d7d77aecb019c15851afc45b",
-        "bytes": 461940
+        "sha256": "a00415058e1e866273afd7d37007a02757cd715428b658611b696d7eb444aae2",
+        "bytes": 469383
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -1785,8 +1785,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "0341faa8d33250dfb71a6d68ac455fc70bf1e76e7566c52910b755ec9de09376",
-        "bytes": 657869
+        "sha256": "287f782dfae256b7333a89dba1446a7631d77bb287c8cc9bf8e06b9e056ba935",
+        "bytes": 662629
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -1845,8 +1845,8 @@
       },
       {
         "path": "runtime/visual/editorial_semantics.mjs",
-        "sha256": "77dcb9e017230d9766c819646b75d3a1aa1eabd48bf9334027f5fbbcf2c410e0",
-        "bytes": 7383
+        "sha256": "792583517c887fc9ba7c10bd6119dbdc952cf4ae185f2efc2ea3477f464c5265",
+        "bytes": 8762
       },
       {
         "path": "runtime/visual/map_spec.mjs",
@@ -1855,8 +1855,8 @@
       },
       {
         "path": "runtime/visual/measure_semantics.mjs",
-        "sha256": "5c4f7f1bab9d2a3183a286796d7c77545a446ce52392daa229ce3d87a0a8b1e7",
-        "bytes": 8128
+        "sha256": "790900825d0db4888b12e62b6c3f7d89cbebad63c1aaf6c4ae9c216f661abd76",
+        "bytes": 10619
       },
       {
         "path": "runtime/visual/model_spec.mjs",
@@ -4069,6 +4069,11 @@
         "bytes": 5110
       },
       {
+        "path": "scripts/test_scatter_paired.mjs",
+        "sha256": "4d1d2847b1886f8ae71fd52d4dbe0c174495a4dcb1984feb8a6f9a830ee724fc",
+        "bytes": 27447
+      },
+      {
         "path": "scripts/test_scientific_map_layers.mjs",
         "sha256": "4eeaff029feed531f3ec3adae518e9e7b3dfc23cfba73dbd958012411bfdb5b8",
         "bytes": 13270
@@ -4130,8 +4135,18 @@
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
-        "sha256": "28d39d17e571f19a1d72425cbb0891ce842237af0d424e8cc9a42bccdaeafe1f",
-        "bytes": 62587
+        "sha256": "3609fc55d42d7e8c17d3fc6ab81719776463dcb9eeff68df3f8feb7a15ac5d6a",
+        "bytes": 62762
+      },
+      {
+        "path": "scripts/test_speed_switch_gates.mjs",
+        "sha256": "3609fc55d42d7e8c17d3fc6ab81719776463dcb9eeff68df3f8feb7a15ac5d6a",
+        "bytes": 62762
+      },
+      {
+        "path": "scripts/test_speed_switch_gates.mjs",
+        "sha256": "3609fc55d42d7e8c17d3fc6ab81719776463dcb9eeff68df3f8feb7a15ac5d6a",
+        "bytes": 62762
       },
       {
         "path": "scripts/test_stat_row.mjs",
@@ -5175,7 +5190,17 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "763df1c714407929a30416247d12d717d5d8cabfd58069595f7439cbb75b9206",
+        "sha256": "b2466e5d0c9f60ceed576841c3017cce9517747ea99fa71ad07d9acfa0eccf93",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "b2466e5d0c9f60ceed576841c3017cce9517747ea99fa71ad07d9acfa0eccf93",
+        "bytes": 1943
+      },
+      {
+        "path": "source-integrity.json",
+        "sha256": "b2466e5d0c9f60ceed576841c3017cce9517747ea99fa71ad07d9acfa0eccf93",
         "bytes": 1943
       },
       {
@@ -5433,5 +5458,5 @@
     "browser_gpu": null,
     "final_dossier": "outputs/v113-final-qualification.json"
   },
-  "manifest_sha256": "c2221c0d63dead43550480db4923750115fe08b2b097eae8cab1c4b918efc709"
+  "manifest_sha256": "b8d2443ef8339c977aa38928037d90922303f2b71f2f78bcd16023dca868092d"
 }

@@ -1531,6 +1531,59 @@ function requiredFields(spec) {
   return [...common, ...(byType[spec.chart_type] ?? [])];
 }
 
+// K110: checks on the chart's own rows for a scatter whose two axes were paired at plan time (spec.semantic_gate.scatter_pair, only
+// present when NEWSROOM_SCATTER_PAIRED_MEASURES=1 made the plan). One point per object, one period for every row.
+// Limit: a join that put two sources' different years under one period column cannot be seen here; the recorded query shows it.
+const SCATTER_PERIOD_JOINERS = ["-", "–", "—", "/", " to ", "~"];
+function scatterPeriodMatches(declared, rowPeriod) {
+  const row = String(rowPeriod).trim();
+  const tokens = [declared.date, declared.start, declared.end].filter((v) => v != null && String(v).trim()).map((v) => String(v).trim());
+  const forms = new Set(tokens);
+  if (declared.start && declared.end) for (const j of SCATTER_PERIOD_JOINERS) forms.add(`${String(declared.start).trim()}${j}${String(declared.end).trim()}`);
+  if (forms.has(row)) return true;
+  return tokens.some((token) => /^\d{4}$/.test(row) && (token.startsWith(`${row}-`) || token.startsWith(`${row}/`)));
+}
+export function scatterPairBlockers(spec, rows) {
+  const out = [];
+  const entityField = String(spec.entity_field ?? "").trim();
+  const periodField = String(spec.period_field ?? "").trim();
+  const shown = (values) => values.slice(0, 5).map((v) => `'${v}'`).join(", ") + (values.length > 5 ? `, … (${values.length} in all)` : "");
+  if (!entityField) out.push("Scatter pairing requires entity_field (the field naming the object of each point)");
+  if (!periodField) out.push("Scatter pairing requires period_field (the field holding the single period every row covers)");
+  if (entityField && entityField === periodField) out.push("Scatter pairing: entity_field and period_field must be two different fields");
+  if (entityField && !fieldExists(rows, entityField)) out.push(`Field '${entityField}' (entity_field) is absent from query output`);
+  if (periodField && !fieldExists(rows, periodField)) out.push(`Field '${periodField}' (period_field) is absent from query output`);
+  const blank = (v) => v === null || v === undefined || String(v).trim() === "";
+  if (entityField && fieldExists(rows, entityField)) {
+    const empty = rows.filter((row) => blank(row[entityField])).length;
+    if (empty) out.push(`Scatter pairing: entity_field '${entityField}' is empty in ${empty} of ${rows.length} rows; every point must name its object`);
+    const seen = new Map();
+    for (const row of rows) if (!blank(row[entityField])) seen.set(String(row[entityField]).trim(), (seen.get(String(row[entityField]).trim()) ?? 0) + 1);
+    const repeated = [...seen].filter(([, count]) => count > 1).map(([name]) => name);
+    if (repeated.length) out.push(`Scatter pairing: entity_field '${entityField}' repeats ${shown(repeated)}; one point per object, so keep one row each (one period, no duplicate join rows)`);
+  }
+  if (periodField && fieldExists(rows, periodField)) {
+    const empty = rows.filter((row) => blank(row[periodField])).length;
+    if (empty) out.push(`Scatter pairing: period_field '${periodField}' is empty in ${empty} of ${rows.length} rows`);
+    const periods = [...new Set(rows.filter((row) => !blank(row[periodField])).map((row) => String(row[periodField]).trim()))];
+    if (periods.length > 1) out.push(`Scatter pairing: period_field '${periodField}' holds ${periods.length} periods (${shown(periods)}); every row must cover the same single period`);
+    if (periods.length === 1 && !empty) {
+      const pair = spec.semantic_gate.scatter_pair;
+      for (const [axis, id] of [["x", pair.x_measure], ["y", pair.y_measure]]) {
+        const measure = (spec.semantic_gate.measures ?? []).find((m) => m.id === id);
+        const declared = measure?.temporal_basis ?? {};
+        const isoLike = (v) => /^\d{4}(-\d{2}(-\d{2})?)?$/.test(String(v ?? "").trim());
+        if (declared.start && declared.end && isoLike(declared.start) && isoLike(declared.end) && String(declared.start).trim() > String(declared.end).trim()) {
+          out.push(`Scatter pairing: the ${axis} axis (measure '${id}') declares a period that starts after it ends (${declared.start} to ${declared.end}); swap start and end`);
+        } else if ((declared.date || declared.start || declared.end) && !scatterPeriodMatches(declared, periods[0])) {
+          out.push(`Scatter pairing: the ${axis} axis (measure '${id}') declares ${[declared.date, declared.start && declared.end ? `${declared.start} to ${declared.end}` : declared.start ?? declared.end].filter(Boolean).join(" / ")} but the rows' period is '${periods[0]}'; make the declaration and the rows state the same period`);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 export function validateVizSpec(spec) {
   const errors = [];
   if (!spec || typeof spec !== "object") return ["Visualization spec must be an object"];
@@ -1859,6 +1912,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (fieldExists(rows, spec.x_field) && numericCount(rows, spec.x_field) !== rows.length) blockers.push(`Scatter x_field '${spec.x_field}' must be numeric`);
     if (fieldExists(rows, spec.y_field) && numericCount(rows, spec.y_field) !== rows.length) blockers.push(`Scatter y_field '${spec.y_field}' must be numeric`);
   }
+  if (spec.chart_type === "scatter" && spec.semantic_gate?.scatter_pair) blockers.push(...scatterPairBlockers(spec, rows));
   if (spec.x_scale === "log" && spec.x_field && rows.some((row) => (n(row[spec.x_field]) ?? 0) <= 0)) blockers.push(`Log x_scale requires positive values in '${spec.x_field}'`);
   if (spec.y_scale === "log" && spec.y_field && rows.some((row) => (n(row[spec.y_field]) ?? 0) <= 0)) blockers.push(`Log y_scale requires positive values in '${spec.y_field}'`);
 
