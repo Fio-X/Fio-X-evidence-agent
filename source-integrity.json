@@ -40,5 +40,5 @@
     "upstream_hardening_archive_sha256": "13a68016a7e129164555cd3a450364f871c14e92b1957ef1c9cce727cfe8632c",
     "verification_evidence": "ci-evidence/source-import-verification.json"
   },
-  "source_tree_sha256": "e20f5c3b3fa5b253a52ad1bc385a722eef63be2b2d68fda760d74494acd0e166"
+  "source_tree_sha256": "f5d9d2c59ca542af1246d14553012d002532155053344889fa0d420fd5d86397"
 }
