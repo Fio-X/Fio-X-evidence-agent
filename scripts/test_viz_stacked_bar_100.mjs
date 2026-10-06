@@ -879,8 +879,10 @@ console.log("stacked_bar_100: segment names (once, centred, above the first bar)
   // A segment missing from some bars blocks; the task fit warns.
   const gaps = rowsOf([["甲", { X: 60, Y: 40 }], ["乙", { X: 100 }], ["丙", { X: 100 }]]);
   refused("a segment missing from some bars", {}, gaps, "segment 'Y' has no row for 2 bar(s): '乙', '丙'");
-  assert.ok(blockersOf({}, gaps).some((m) => m.includes("explicit 0 row") && m.includes("SQL")), "the missing-segment blocker says to return an explicit 0 row from SQL");
-  accepted("an explicit 0 row for the missing segment", {}, rowsOf([["甲", { X: 60, Y: 40 }], ["乙", { X: 100, Y: 0 }], ["丙", { X: 100, Y: 0 }]]));
+  const gapMessage = blockersOf({}, gaps).find((m) => m.includes("segment 'Y' has no row"));
+  assert.ok(gapMessage.includes("select that row from the data") && gapMessage.includes("a constant, a VALUES list or a COALESCE") && gapMessage.includes("filled-in fact"), "the missing-segment blocker says to select a recorded zero from the data and calls a typed zero a filled-in fact");
+  assert.ok(!/explicit 0 row|return an explicit/.test(gapMessage), "the missing-segment blocker no longer asks for a typed 0 row");
+  accepted("a zero row that comes from the data for the missing segment", {}, rowsOf([["甲", { X: 60, Y: 40 }], ["乙", { X: 100, Y: 0 }], ["丙", { X: 100, Y: 0 }]]));
   assert.deepEqual(warningsOf(two(60, 40)), [], "no warning when every bar has every segment");
   assert.ok(!warningsOf(two(60, 40)).some((m) => m.includes("unusual fit")), "part_to_whole: a fit for this form");
   assert.ok(warningsOf(two(60, 40), { reader_task: "comparison" }).some((m) => m.includes("'stacked_bar_100' is an unusual fit for reader task 'comparison'")), "comparison: not in this form's task set");
