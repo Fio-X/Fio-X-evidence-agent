@@ -513,7 +513,11 @@ try {
     for (const key of ["anyOf", "allOf", "oneOf"]) if (Array.isArray(node[key])) for (const sub of node[key]) found.push(...findEnumsInParameters(sub));
     return found;
   }
-  assert.deepEqual(Object.keys(enumsByTool).sort(), ["newsroom_infographic_plan", "newsroom_portable_publication", "newsroom_publication_plan", "newsroom_semantic_novelty", "newsroom_story_graph"], "a new tool taking explanatory_dimension must join this test");
+  // The chain tool is registered only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC=1 and NEWSROOM_SPEED_ATOMIC_ARTIFACT=1 (newsroom.ts registerInfographicChain)
+  // and copies the plan tool's parameters, so the expected set follows both switches.
+  const chainRegistered = process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC === "1" && process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT === "1";
+  const expectedEnumTools = ["newsroom_infographic_plan", "newsroom_portable_publication", "newsroom_publication_plan", "newsroom_semantic_novelty", "newsroom_story_graph", ...(chainRegistered ? ["newsroom_infographic_chain"] : [])].sort();
+  assert.deepEqual(Object.keys(enumsByTool).sort(), expectedEnumTools, "a new tool taking explanatory_dimension must join this test");
   for (const [name, found] of Object.entries(enumsByTool)) {
     assert.equal(found.length, 1, `${name} declares explanatory_dimension once`);
     for (const value of STORY) assert.ok(found[0].includes(value), `${name} accepts '${value}'`);
