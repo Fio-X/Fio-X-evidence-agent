@@ -18,9 +18,11 @@ export const CONTRACT_LITERALS = Object.freeze({
 const list = (values) => [...values].join(", ");
 
 export function loadGrammarRegistrySync(baseUrl) {
-  try {
-    return JSON.parse(readFileSync(new URL("../../config/editorial-grammar-registry.json", baseUrl), "utf8"));
-  } catch { return null; }
+  // Source tree: runtime/pi/ beside config/. Materialized artifact: runtime/ beside config/.
+  for (const rel of ["../../config/editorial-grammar-registry.json", "../config/editorial-grammar-registry.json"]) {
+    try { return JSON.parse(readFileSync(new URL(rel, baseUrl), "utf8")); } catch { /* try the next place */ }
+  }
+  return null;
 }
 
 // inputs: { readerTasks: Set (SEMANTIC_REQUIRED_READER_TASKS), visualGrammarForms: map of Set (VISUAL_GRAMMAR_FORMS), registry }

@@ -36,6 +36,7 @@ const VISUAL_BACKENDS_RUNTIME: &str = include_str!("../runtime/pi/visual_backend
 const BACKEND_POLICY_RUNTIME: &str = include_str!("../runtime/pi/backend_policy.mjs");
 const MEASURE_SEMANTICS_RUNTIME: &str = include_str!("../runtime/pi/measure_semantics.mjs");
 const EDITORIAL_SEMANTICS_RUNTIME: &str = include_str!("../runtime/pi/editorial_semantics.mjs");
+const CONTRACT_TEXT_RUNTIME: &str = include_str!("../runtime/pi/contract_text.mjs");
 const VISUAL_SKILL_BUNDLE_RUNTIME: &str = include_str!("../runtime/pi/visual_skill_bundle.mjs");
 const EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME: &str =
     include_str!("../runtime/pi/editorial_design_system_bundle.mjs");
@@ -148,6 +149,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let backend_policy_path = runtime_dir.join("backend_policy.mjs");
     let measure_semantics_path = runtime_dir.join("measure_semantics.mjs");
     let editorial_semantics_path = runtime_dir.join("editorial_semantics.mjs");
+    let contract_text_path = runtime_dir.join("contract_text.mjs");
     let visual_skill_bundle_path = runtime_dir.join("visual_skill_bundle.mjs");
     let editorial_design_system_bundle_path =
         runtime_dir.join("editorial_design_system_bundle.mjs");
@@ -239,6 +241,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&backend_policy_path, BACKEND_POLICY_RUNTIME)?;
     write_if_changed(&measure_semantics_path, MEASURE_SEMANTICS_RUNTIME)?;
     write_if_changed(&editorial_semantics_path, EDITORIAL_SEMANTICS_RUNTIME)?;
+    write_if_changed(&contract_text_path, CONTRACT_TEXT_RUNTIME)?;
     write_if_changed(&visual_skill_bundle_path, VISUAL_SKILL_BUNDLE_RUNTIME)?;
     write_if_changed(
         &editorial_design_system_bundle_path,
