@@ -597,6 +597,48 @@ mod completion_tests {
     }
 
     #[test]
+    fn a_page_whose_only_page_call_is_a_stopped_patch_call_stays_not_verified() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = InvestigationBundle::create(root.path(), SCMP_LONG_IMAGE_GOAL).unwrap();
+        let steps: Vec<_> = ["newsroom_infographic_plan", "newsroom_infographic_lint"]
+            .iter()
+            .map(|tool| json!({"tool": tool, "params": {"plan_ref": "p"}, "details": {"passed": true}}))
+            .collect();
+        let stopped = json!({"chain":"newsroom_infographic_chain","chainStatus":"STOPPED","failedAt":"newsroom_infographic_lint","stopCode":"BLOCKED","steps":steps});
+        let events = [
+            json!({"type":"tool_execution_start","toolCallId":"c1","toolName":"newsroom_infographic_chain_patch","args":{}}),
+            json!({"type":"tool_execution_end","toolCallId":"c1","toolName":"newsroom_infographic_chain_patch","isError":false,"result":{"content":[],"details":stopped}}),
+        ];
+        let text: String = events.iter().map(|e| format!("{e}\n")).collect();
+        fs::write(&bundle.events_path, text).unwrap();
+        let audit = audit::build(&bundle.events_path, &bundle.tools_path).unwrap();
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        // Plan and lint count; everything after the stop still does not.
+        for tool in [
+            "newsroom_infographic_render",
+            "newsroom_infographic_critic",
+            "newsroom_publication_plan",
+            "newsroom_publication_render",
+            "newsroom_publication_qa",
+        ] {
+            assert!(
+                gaps.iter().any(|gap| gap.contains(tool)),
+                "{tool}: {gaps:?}"
+            );
+        }
+        assert!(!gaps
+            .iter()
+            .any(|gap| gap.contains("newsroom_infographic_plan")));
+    }
+
+    #[test]
     fn explicit_visual_story_profile_requires_the_chain_for_any_goal() {
         let goal = "show a chart of exports";
         assert!(!completion_chain_required(goal, false, None));

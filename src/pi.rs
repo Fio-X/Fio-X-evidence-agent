@@ -65,6 +65,16 @@ pub const PLAN_EDIT_ENV: &str = "NEWSROOM_SPEED_PLAN_EDIT";
 /// Only exactly "1" counts, and only with the chart chain and atomic writes on;
 /// the runtime reads the same name and applies the same conditions.
 pub const INLINE_CLAIM_ENV: &str = "NEWSROOM_SPEED_INLINE_CLAIM";
+/// Patch retry of a refused plan or page-chain call; each needs atomic writes, the chain one also the page chain.
+pub const PLAN_PATCH_ENV: &str = "NEWSROOM_SPEED_PLAN_PATCH";
+pub const CHAIN_PATCH_ENV: &str = "NEWSROOM_SPEED_CHAIN_PATCH";
+/// Runtime-only switches: one combined plan/chain report, copied references, first-try rule text.
+pub const REPORT_ALL_ENV: &str = "NEWSROOM_SPEED_REPORT_ALL";
+pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
+pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
+/// Runtime-only tools that exist when the patch switches are on; not in the registry.
+pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
+pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
 /// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
 pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
 pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
@@ -86,6 +96,11 @@ fn inline_claim_on() -> bool {
     std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
 }
 
+// The runtime only accepts exactly "1" for the five switches below.
+fn exact_one(name: &str) -> bool {
+    std::env::var(name).ok().as_deref() == Some("1")
+}
+
 /// The turn-saving switches the parent environment asks for.
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
@@ -97,6 +112,11 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         preflight: env_switch(PREFLIGHT_ENV),
         plan_edit: env_switch(PLAN_EDIT_ENV),
         inline_claim: inline_claim_on() && chain_viz,
+        plan_patch: exact_one(PLAN_PATCH_ENV) && atomic_artifact_on(),
+        chain_patch: exact_one(CHAIN_PATCH_ENV) && atomic_artifact_on() && exact_one(CHAIN_INFOGRAPHIC_ENV),
+        report_all: exact_one(REPORT_ALL_ENV),
+        fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
+        first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
     }
 }
 
@@ -771,6 +791,13 @@ impl PiConfig {
         if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
             names.push(PLAN_EDIT_TOOL);
         }
+        // Each patch tool re-runs the tool it wraps, so it is offered only where that tool is.
+        if self.speed.plan_patch && names.contains(&"newsroom_infographic_plan") {
+            names.push(PLAN_PATCH_TOOL);
+        }
+        if self.speed.chain_patch && names.contains(&INFOGRAPHIC_CHAIN_TOOL) {
+            names.push(CHAIN_PATCH_TOOL);
+        }
         names.join(",")
     }
 
@@ -942,6 +969,19 @@ impl PiConfig {
             cmd.env(INLINE_CLAIM_ENV, "1");
         } else {
             cmd.env_remove(INLINE_CLAIM_ENV);
+        }
+        for (on, name) in [
+            (self.speed.plan_patch, PLAN_PATCH_ENV),
+            (self.speed.chain_patch, CHAIN_PATCH_ENV),
+            (self.speed.report_all, REPORT_ALL_ENV),
+            (self.speed.fill_copied_refs, FILL_COPIED_REFS_ENV),
+            (self.speed.first_try_text, FIRST_TRY_TEXT_ENV),
+        ] {
+            if on {
+                cmd.env(name, "1");
+            } else {
+                cmd.env_remove(name);
+            }
         }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
@@ -2200,6 +2240,129 @@ mod tests {
         ] {
             assert!(!is_visualization_ref(bad), "{bad:?}");
         }
+    }
+
+    /// `--tools` for every profile, with the older speed switches off and on; the five
+    /// newer switches stay at their default (off).
+    fn tools_arg_cases() -> std::collections::BTreeMap<String, String> {
+        let older_on = crate::prompt::PromptSpeed {
+            parallel_hints: true,
+            compute_batch: true,
+            chain_viz: true,
+            chain_infographic: true,
+            preflight: true,
+            plan_edit: true,
+            inline_claim: true,
+            ..Default::default()
+        };
+        let mut cases = std::collections::BTreeMap::new();
+        for profile in ["investigate", "visual", "publication", "visual-story", "competition", "full"] {
+            for hide in [false, true] {
+                for (mode, speed) in [("older-off", Default::default()), ("older-on", older_on)] {
+                    let mut config = visual_story_config(hide, profile);
+                    config.speed = speed;
+                    cases.insert(format!("{profile}/{mode}/hide-lieflat={hide}"), config.tools_arg());
+                }
+            }
+        }
+        cases
+    }
+
+    #[test]
+    fn tools_arg_with_the_newer_switches_off_matches_the_base() {
+        let cases = tools_arg_cases();
+        if let Ok(path) = std::env::var("NEWSROOM_WRITE_TOOLS_ARG_GOLDEN") {
+            std::fs::write(path, serde_json::to_string_pretty(&cases).unwrap() + "\n").unwrap();
+            return;
+        }
+        let golden: std::collections::BTreeMap<String, String> = serde_json::from_str(
+            include_str!("../fixtures/speed-off/tools-arg-8a75560.json"),
+        )
+        .unwrap();
+        assert_eq!(cases, golden);
+    }
+
+    #[test]
+    fn patch_tools_are_offered_only_with_their_switch_and_the_tool_they_wrap() {
+        for profile in ["investigate", "visual", "publication", "competition", "full", "visual-story"] {
+            let mut base = visual_story_config(false, profile);
+            base.speed.chain_infographic = true;
+            let without = base.tools_arg();
+            let names = |c: &PiConfig| c.tools_arg().split(',').map(str::to_string).collect::<Vec<_>>();
+            assert!(!names(&base).iter().any(|n| n == PLAN_PATCH_TOOL || n == CHAIN_PATCH_TOOL));
+            let mut on = base.clone();
+            on.speed.plan_patch = true;
+            on.speed.chain_patch = true;
+            let has_plan = without.split(',').any(|n| n == "newsroom_infographic_plan");
+            let expected = if has_plan {
+                format!("{without},{PLAN_PATCH_TOOL},{CHAIN_PATCH_TOOL}")
+            } else {
+                without.clone()
+            };
+            assert_eq!(on.tools_arg(), expected, "{profile}");
+            // The chain patch needs the page chain itself to be offered.
+            let mut no_chain = on.clone();
+            no_chain.speed.chain_infographic = false;
+            assert!(!names(&no_chain).iter().any(|n| n == CHAIN_PATCH_TOOL), "{profile}");
+        }
+    }
+
+    #[test]
+    fn the_five_patch_era_switches_are_owned_like_preflight() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let all = [PLAN_PATCH_ENV, CHAIN_PATCH_ENV, REPORT_ALL_ENV, FILL_COPIED_REFS_ENV, FIRST_TRY_TEXT_ENV];
+        let clear = || {
+            for k in all.iter().chain([&ATOMIC_ARTIFACT_ENV, &CHAIN_INFOGRAPHIC_ENV]) {
+                std::env::remove_var(k);
+            }
+        };
+        let marker = |config: &PiConfig, key: &str| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        clear();
+        // A stray export does not reach Pi: the config decides, and off means removed.
+        for k in all {
+            std::env::set_var(k, "1");
+        }
+        let config = visual_story_config(false, "visual-story");
+        for k in all {
+            assert_eq!(marker(&config, k), Some(None), "{k}");
+        }
+        // Read once from the parent environment: exactly "1", and the patch tools need atomic writes.
+        let speed = speed_switches_from_env();
+        assert!(!speed.plan_patch && !speed.chain_patch, "no atomic writes");
+        assert!(speed.report_all && speed.fill_copied_refs && speed.first_try_text);
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        let speed = speed_switches_from_env();
+        assert!(speed.plan_patch && !speed.chain_patch, "chain patch needs the page chain");
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        assert!(speed_switches_from_env().chain_patch);
+        for value in ["true", "0", "", "yes"] {
+            for k in all {
+                std::env::set_var(k, value);
+            }
+            let speed = speed_switches_from_env();
+            assert!(
+                !speed.plan_patch && !speed.chain_patch && !speed.report_all && !speed.fill_copied_refs && !speed.first_try_text,
+                "{value:?}"
+            );
+        }
+        let mut on = visual_story_config(false, "visual-story");
+        on.speed.plan_patch = true;
+        on.speed.chain_patch = true;
+        on.speed.report_all = true;
+        on.speed.fill_copied_refs = true;
+        on.speed.first_try_text = true;
+        for k in all {
+            assert_eq!(marker(&on, k), Some(Some("1".to_string())), "{k}");
+        }
+        clear();
     }
 
     #[test]

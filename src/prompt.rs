@@ -53,6 +53,22 @@ pub struct PromptSpeed {
     /// `record_claim`'s gates, so no `record_claim` turn comes first. The prompt
     /// adds a short paragraph saying so; tool guidance is added by the runtime.
     pub inline_claim: bool,
+    /// `NEWSROOM_SPEED_PLAN_PATCH=1` (only with atomic writes): offer
+    /// `newsroom_infographic_plan_patch`, which re-runs a refused plan call with
+    /// an RFC 6902 patch. The tool carries its own guidance; the prompt does not change.
+    pub plan_patch: bool,
+    /// `NEWSROOM_SPEED_CHAIN_PATCH=1` (only with atomic writes and the page
+    /// chain): offer `newsroom_infographic_chain_patch`, the same for the page chain.
+    pub chain_patch: bool,
+    /// `NEWSROOM_SPEED_REPORT_ALL=1`: the plan and the page chain report every
+    /// independent grammar and hero problem together. Runtime only.
+    pub report_all: bool,
+    /// `NEWSROOM_SPEED_FILL_COPIED_REFS=1`: the runtime copies a reference the
+    /// call left out when exactly one artifact can be meant. Runtime only.
+    pub fill_copied_refs: bool,
+    /// `NEWSROOM_SPEED_FIRST_TRY_TEXT=1`: extra rule text in some tool
+    /// descriptions. Runtime only.
+    pub first_try_text: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
