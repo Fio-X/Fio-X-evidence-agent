@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791274959,
-  "source_commit": "9dfe66b441cd23a07f9a9b358de6eace3755a997",
+  "created_at_epoch": 1791312360,
+  "source_commit": "c6fe6dbb1899f4d96c3834bb6a85abdb3365d80a",
   "source_tree": {
-    "file_count": 1055,
-    "bytes": 68900763,
-    "sha256": "5e3412deded010328e0c5be3aa11b967c882bb1d6bfb97aa28c5f1ccfbf779c9",
+    "file_count": 1058,
+    "bytes": 68969954,
+    "sha256": "afc073526add656b26cefabb002a1b9e00a47ab963fddbade775872d2a4d54be",
     "files": [
       {
         "path": ".env.example",
@@ -1485,13 +1485,13 @@
       },
       {
         "path": "runtime/pi/editorial_semantics.mjs",
-        "sha256": "a6d5a39ef390140a51dddfaa5e7b118ccc45008cbb043835458ee0801794c22a",
-        "bytes": 7462
+        "sha256": "2f994767855111863d3c148394a9567880861b29f8ede7b7fc886e3e0e0ba302",
+        "bytes": 8841
       },
       {
         "path": "runtime/pi/editorial_validators.mjs",
-        "sha256": "e1e2b1abee205194033e17c37530dba4b219469362ce623d74185a4fc6cbd097",
-        "bytes": 15718
+        "sha256": "966f39461d16a96364f91da2e7fd69277c72612d387337fcbe95b7af36532fdc",
+        "bytes": 16191
       },
       {
         "path": "runtime/pi/evidence_gate.mjs",
@@ -1530,8 +1530,8 @@
       },
       {
         "path": "runtime/pi/infographic.mjs",
-        "sha256": "a71ce8c0608d2a044fe437c380800e6610b56d31ec6ea47b9bf6707acc6bbac7",
-        "bytes": 163947
+        "sha256": "e74c0cf9791a92070e3ceda2372f854b221915fa682202b5fec4964e5222cba8",
+        "bytes": 166026
       },
       {
         "path": "runtime/pi/label_layout.mjs",
@@ -1560,8 +1560,8 @@
       },
       {
         "path": "runtime/pi/measure_semantics.mjs",
-        "sha256": "97f9a2872a8eb4fddd591d24ab7d102383eed5df603b855830eaddb6bec6e2c5",
-        "bytes": 8205
+        "sha256": "0aef28f2580f5e1fdeaa77544d95ba1aa87edfab151ef1063a4696f18bd05f9d",
+        "bytes": 10696
       },
       {
         "path": "runtime/pi/model_spec.mjs",
@@ -1590,8 +1590,8 @@
       },
       {
         "path": "runtime/pi/newsroom.ts",
-        "sha256": "3f2d240a736b7a9f80d4f9839252b18aad2961cf828d185515a806b4728c85d6",
-        "bytes": 425766
+        "sha256": "75f56996fc80b26564640cc7a980b76c02b74e2b49149a1b234a4ea461a6cd77",
+        "bytes": 431943
       },
       {
         "path": "runtime/pi/number_shadow.mjs",
@@ -1670,8 +1670,8 @@
       },
       {
         "path": "runtime/pi/render_qa_geometry.mjs",
-        "sha256": "c46b742d0d129fe4bf7cf6e7156cb7f1c7fa606eda8545e45a22e05c94cc6dfc",
-        "bytes": 86592
+        "sha256": "858ca913d06ec5bc52b77537610de22ec85f3a39a5724010023a5b78299b26eb",
+        "bytes": 88992
       },
       {
         "path": "runtime/pi/render_qa_labels.mjs",
@@ -1765,8 +1765,8 @@
       },
       {
         "path": "runtime/pi/viz.mjs",
-        "sha256": "40c289dde09c0f5503a32b2b269d3ec1224c3e01588c04a693a1cdd3fe94c7f9",
-        "bytes": 656869
+        "sha256": "287f782dfae256b7333a89dba1446a7631d77bb287c8cc9bf8e06b9e056ba935",
+        "bytes": 662629
       },
       {
         "path": "runtime/qgis/templates/README.md",
@@ -1825,8 +1825,8 @@
       },
       {
         "path": "runtime/visual/editorial_semantics.mjs",
-        "sha256": "77dcb9e017230d9766c819646b75d3a1aa1eabd48bf9334027f5fbbcf2c410e0",
-        "bytes": 7383
+        "sha256": "792583517c887fc9ba7c10bd6119dbdc952cf4ae185f2efc2ea3477f464c5265",
+        "bytes": 8762
       },
       {
         "path": "runtime/visual/map_spec.mjs",
@@ -1835,8 +1835,8 @@
       },
       {
         "path": "runtime/visual/measure_semantics.mjs",
-        "sha256": "5c4f7f1bab9d2a3183a286796d7c77545a446ce52392daa229ce3d87a0a8b1e7",
-        "bytes": 8128
+        "sha256": "790900825d0db4888b12e62b6c3f7d89cbebad63c1aaf6c4ae9c216f661abd76",
+        "bytes": 10619
       },
       {
         "path": "runtime/visual/model_spec.mjs",
@@ -3044,6 +3044,11 @@
         "bytes": 12051
       },
       {
+        "path": "scripts/test_checks_1006.mjs",
+        "sha256": "deef1b1a9e75840d1c28805fdc5cf6c30b7d6a86ed196aa0aa881b67bad73544",
+        "bytes": 15268
+      },
+      {
         "path": "scripts/test_choropleth.mjs",
         "sha256": "592ccec2152c84b304633feecd20c396c98cfb0281b8e2e4de1a59bdc574c14c",
         "bytes": 92903
@@ -3909,6 +3914,11 @@
         "bytes": 1120
       },
       {
+        "path": "scripts/test_render_1006.mjs",
+        "sha256": "59d37b9bef0db20bc55b0ec103c5b41637add4a200f0f666e24c4776729ee23d",
+        "bytes": 5065
+      },
+      {
         "path": "scripts/test_render_cache_v124.mjs",
         "sha256": "0b1d1f8edf1c60674e6ae8de3c27c532ddf867a543c9c6606a2485b25cf2d5af",
         "bytes": 481
@@ -4009,6 +4019,11 @@
         "bytes": 5110
       },
       {
+        "path": "scripts/test_scatter_paired.mjs",
+        "sha256": "3cc790f0b0c3379c29cd60099223e802afc630db51dae813237c146429622084",
+        "bytes": 24054
+      },
+      {
         "path": "scripts/test_scientific_map_layers.mjs",
         "sha256": "4eeaff029feed531f3ec3adae518e9e7b3dfc23cfba73dbd958012411bfdb5b8",
         "bytes": 13270
@@ -4070,8 +4085,8 @@
       },
       {
         "path": "scripts/test_speed_switch_gates.mjs",
-        "sha256": "1608b1e1edd816ac4c45437013309c51fe046a0e84b62c4d30845bc49db3fa72",
-        "bytes": 59687
+        "sha256": "9d908f087093c9eccafba397b6f8dc267ceb2d8c27afef275e381306c6db3936",
+        "bytes": 59862
       },
       {
         "path": "scripts/test_stat_row.mjs",
@@ -5110,7 +5125,7 @@
       },
       {
         "path": "source-integrity.json",
-        "sha256": "5f031017adb96c0839deadb525fce4921e235aabc6d5f37f1c1d11df142f8354",
+        "sha256": "462b9991a7bf11eb23552cd3fac114379eb1b11bc855db2160859e9de680723f",
         "bytes": 1943
       },
       {
@@ -5368,5 +5383,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "9a2f424f82d5bde7decdf6891588f7315c52836c4fba982712d9cfb78978fe9a"
+  "manifest_sha256": "7ffdd8845919727952d51aea9b69686374f534625757a56340ecd83b40b67e05"
 }
