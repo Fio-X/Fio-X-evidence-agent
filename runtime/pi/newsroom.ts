@@ -11,13 +11,14 @@ import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { PAGE_TOP_GUIDANCE, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
 import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
+import { contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection } from "./editorial_grammar.mjs";
 import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
@@ -201,6 +202,17 @@ const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverg
 const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples/mirrored_bar; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
 const RULE_HINT_QUESTIONS = "Send at least 3 questions, and fill at least one of surprises, mechanisms or spatial_dimensions; otherwise the decision is REVISE.";
 const RULE_HINT_CHANNELS = "Each channel may be owned by one field only.";
+// NEWSROOM_SPEED_CONTRACT_TEXT=1: wording only, same shape as the rule hints above. The statements come from
+// contract_text.mjs, which builds them from the checks' own sets (see there). Off (anything but exactly "1"): the
+// registered tool definitions are byte-identical to what they were without this switch.
+const contractTextEnabled = () => process.env.NEWSROOM_SPEED_CONTRACT_TEXT === "1";
+let contractCache: any = null;
+const contractHint = (key: string, base?: any): any => {
+  if (!contractTextEnabled()) return base;
+  contractCache ??= contractStatements({ readerTasks: SEMANTIC_REQUIRED_READER_TASKS, visualGrammarForms: VISUAL_GRAMMAR_FORMS, registry: loadGrammarRegistrySync(import.meta.url) });
+  const text = contractCache[key];
+  return text ? { ...(base ?? {}), description: [base?.description, text].filter(Boolean).join(" ") } : base;
+};
 const EDITORIAL_HINT_CLAIM_IDS = "Only claim_ids whose record_claim result read \"VERIFIED by system replay\". A claim recorded without computation_refs never verifies, and citing it refuses the whole graph.";
 const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_concepts (editorial/concepts/...), not the discovery or story-graph path. Run that tool first.";
 const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
@@ -3566,8 +3578,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
     parameters: withInlineClaimSchema(Type.Object({
-      reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const),
-      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const)),
+      reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const, contractHint("readerTask")),
+      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole"))),
       story_graph_ref: Type.Optional(Type.String()),
       story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
@@ -4603,7 +4615,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         asset_class: StringEnum(["published_gis", "archival_photo", "verified_diagram", "portrait_or_object_photo", "expert_explanation", "geographic_coordinates", "historical_series", "human_scale_reference", "vector_illustration", "verified_3d"] as const),
         status: StringEnum(["blocking", "required", "optional"] as const),
         available: Type.Boolean(), purpose: Type.String(),
-        source_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
+        source_refs: Type.Optional(Type.Array(Type.String(), contractHint("assetAvailable", { maxItems: 20 }))),
         production_lane: Type.Optional(StringEnum(["software_schematic", "human_vector", "human_illustration", "gis_render", "photo_collage", "verified_3d", "generated_disclosed"] as const)),
         evidence_needed: Type.Optional(Type.String()), rejection_reason: Type.Optional(Type.String()),
       }), { minItems: 1, maxItems: 20 }),
@@ -4684,15 +4696,15 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     label: Type.Optional(Type.String()),
     tone: Type.Optional(StringEnum(["accent", "dark", "light"] as const)),
     value: Type.Optional(Type.Union([Type.String(), Type.Number()])),
-    unit: Type.Optional(Type.String()),
+    unit: Type.Optional(Type.String(heroGateOn() ? contractHint("heroUnit") : undefined)),
     detail: Type.Optional(Type.String()),
     ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." + firstTry(FIRST_TRY.heroRequired + FIRST_TRY.heroYears) })) } : {}),
     claim_id: Type.Optional(Type.String()),
-    claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
+    claim_ids: Type.Optional(Type.Array(Type.String(), contractHint("moduleClaimIds", { maxItems: 12 }))),
     manifest_ref: Type.Optional(Type.String()),
     asset_ref: Type.Optional(Type.String()),
     critic_ref: Type.Optional(Type.String()),
-    alt: Type.Optional(Type.String()),
+    alt: Type.Optional(Type.String(contractHint("moduleAlt"))),
     credit: Type.Optional(Type.String()),
     heading: Type.Optional(Type.String()),
     body: Type.Optional(Type.String()),
@@ -4713,7 +4725,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     claim_set: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     new_information: Type.Optional(Type.String()),
     explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS])),
-    visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const)),
+    visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const, contractHint("visualGrammar"))),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
     graphic_object_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 40 })),
@@ -4727,7 +4739,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     quantitative_encoding: Type.Optional(Type.Object({
       quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const, { description: QUANTITY_KIND_HINT }),
       mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width", "color"] as const),
-      scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const),
+      scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const, contractHint("scaleType")),
       baseline_policy: StringEnum(["zero", "symmetric_zero", "included", "not_applicable"] as const),
       domain_min: Type.Optional(Type.Number()), domain_max: Type.Optional(Type.Number()),
       area_proportional: Type.Optional(Type.Boolean()), uncertainty_disclosed: Type.Boolean(), disclosure: Type.Optional(Type.String()),
@@ -4736,7 +4748,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const editorialGrammarParameters = Type.Object({
     project_id: describedString(FIRST_TRY.projectId),
-    primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const),
+    primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const, contractHint("primaryGrammar")),
     supporting: Type.Array(StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const), { maxItems: 2 }),
     available_renderer_capabilities: Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
     evidence_features: Type.Array(StringEnum(["spatial_structure", "quantity", "human_scale_reference", "process_or_causal_relation", "comparable_entities", "comparable_timepoints", "origin_destination_relation", "verified_locations"] as const), { minItems: 1 }),
@@ -4766,7 +4778,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       kicker: Type.Optional(Type.String()),
       title: Type.String(),
       dek: Type.String(),
-      alt: Type.String(),
+      alt: Type.String(contractHint("planAlt")),
       byline: Type.Optional(Type.String()),
       date_label: Type.Optional(Type.String()),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Page language; defaults to 'en'. Every visual module's chart language must match this field, and infographic.mjs localizes its own functional labels (for example SOURCES & METHODS) to it; brand strings stay in English.", default: "en" })),
@@ -4793,7 +4805,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         scenes: Type.Array(Type.Object({
           id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const),
           eyebrow: Type.Optional(Type.String()), title: Type.Optional(Type.String()), dek: Type.Optional(Type.String()),
-          anchor_module_id: Type.String(), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
+          anchor_module_id: Type.String(contractHint("sceneAnchor")), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
           primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const),
           hero_object_id: Type.String(), supporting_claim_ids: Type.Array(Type.String(), { maxItems: 12 }),
           scene_budget: Type.Object({
@@ -4809,7 +4821,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         key_field: Type.String({ description: "Field of that computation's rows that identifies a subject." }),
         cutoff_date: Type.String({ description: "The single data cutoff date for the page; every chart on the page must state this same cutoff_date; a chart that states a different one, or none, blocks lint." }),
       }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
-      modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
+      modules: Type.Array(infographicModuleParameters, contractHint("modules", { minItems: 3, maxItems: 12 })),
     }),
     async execute(_id, givenParams, signal?: AbortSignal) {
       let rawParams = givenParams;
