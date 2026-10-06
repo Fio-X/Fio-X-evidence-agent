@@ -226,7 +226,7 @@ function hasSourcesMethodsLabel(svg, spec) {
   return pageLang(spec) === "zh" ? svg.includes(t.sourcesMethods) : (svg.includes("SOURCES &amp; METHODS") || svg.includes("SOURCES & METHODS"));
 }
 
-function svgInfo(svg) {
+export function svgInfo(svg) {
   const match = String(svg ?? "").match(/<svg\b[^>]*viewBox=["']([^"']+)["'][^>]*>([\s\S]*)<\/svg>\s*$/i);
   if (!match) throw new Error("Embedded visualization is not a valid viewBox SVG");
   const nums = match[1].trim().split(/\s+/).map(Number);
@@ -298,7 +298,7 @@ function pathBottom(d) {
 // units), so the blank padding a chart carries at the bottom does not become
 // page spacing. Scale and width are unchanged; only blank rows are dropped.
 const CHART_INK_PAD = 3;
-function trimmedSvgInfo(svg) {
+export function trimmedSvgInfo(svg) {
   const info = svgInfo(svg);
   const bottom = svgInkBottom(info);
   const left = svgInkLeft(info);
@@ -324,7 +324,9 @@ function svgInkLeft(info) {
       // Anchored text reaches left by an over-estimate of its width (CJK 1 em, other glyphs 0.65 em), so the cut is never too deep.
       const anchor = tag.match(/text-anchor=["'](start|middle|end)/i)?.[1]?.toLowerCase() ?? "start";
       const chars = [...String(m[3]).replace(/<[^>]*>/g, "")];
-      const w = chars.reduce((sum, ch) => sum + (/[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 1 : 0.65), 0) * (num(tag, "font-size") ?? 16);
+      // Opt-in (NEWSROOM_PAGE_TRIM_TEXT_SAFE=1): every glyph counts a full em, an upper bound for any sans advance ("80%" is about 2 em, more than 3 x 0.65).
+      const nonCjkEm = process.env.NEWSROOM_PAGE_TRIM_TEXT_SAFE === "1" ? 1 : 0.65;
+      const w = chars.reduce((sum, ch) => sum + (/[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 1 : nonCjkEm), 0) * (num(tag, "font-size") ?? 16);
       take((num(tag, "x") ?? 0) - (anchor === "end" ? w : anchor === "middle" ? w / 2 : 0));
     } else if (kind === "line") take(Math.min(num(tag, "x1") ?? 0, num(tag, "x2") ?? 0) - stroke);
     else if (kind === "rect") { if (!/\sfill=["'](?:#fff(?:fff)?|white)["']/i.test(tag) || /\sstroke=["'](?!none)/i.test(tag)) take((num(tag, "x") ?? 0) - stroke); }

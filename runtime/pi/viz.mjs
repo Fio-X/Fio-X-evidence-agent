@@ -4396,8 +4396,25 @@ function renderLine(spec, rows, multi = false) {
   });
   const labelEvery = Math.max(1, Math.ceil(xValues.length / 8));
   const directLabels = [];
+  // Opt-in (NEWSROOM_LINE_TICK_AVOID_OVERLAP=1): the first and last labels
+  // are kept; a label between them is dropped when its box would touch one
+  // already kept. Every data point is still drawn; only labels are dropped.
+  const avoidTickOverlap = process.env.NEWSROOM_LINE_TICK_AVOID_OVERLAP === "1";
+  const tickLabelKept = new Set();
+  if (avoidTickOverlap && xValues.length > 0) {
+    const gap = 4;
+    const boxOf = (i) => { const w = estimateTextWidth(String(xValues[i]), 12, false), c = xScale(xValues[i]); return [c - w / 2 - gap / 2, c + w / 2 + gap / 2]; };
+    const placed = [0, xValues.length - 1].map((i) => boxOf(i));
+    tickLabelKept.add(0); tickLabelKept.add(xValues.length - 1);
+    for (let i = 1; i < xValues.length - 1; i++) {
+      if (i % labelEvery !== 0) continue;
+      const [a, b] = boxOf(i);
+      if (placed.some(([pa, pb]) => a < pb && pa < b)) continue;
+      placed.push([a, b]); tickLabelKept.add(i);
+    }
+  }
   xValues.forEach((xv, i) => {
-    if (i % labelEvery !== 0 && i !== xValues.length - 1) return;
+    if (avoidTickOverlap ? !tickLabelKept.has(i) : (i % labelEvery !== 0 && i !== xValues.length - 1)) return;
     f.parts.push(`<text x="${xScale(xv)}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`);
   });
   // Fix 2: every end label in this chart (one per series) shares one
