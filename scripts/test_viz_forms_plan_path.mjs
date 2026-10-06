@@ -99,3 +99,38 @@ const entityOrder = (svg) => {
   assert.ok(!("decimals" in spec), "a decimals value passed to the handler is not recorded in the plan");
   console.log("decimals is dropped from the plan path -- PASS");
 }
+
+// 3. Value labels share one decimal count per chart, as the other house charts do (chartValueFormatter / resolveChartDecimals).
+// Values 30, 29.1, 12, 7.25, 2.5 and 2: every label prints one decimal. Adding 0.004 must not print as 0: strip_plot and
+// mirrored_bar raise the shared count so every label still agrees; stacked_bar_100 keeps its own 0/1 count (it is a share, and
+// its rounding note reads it) and prints the value its count cannot show in its own precision. A percent unit stays outside
+// the shared count by the stage-1 formatter's own rule, so only the stacked form (which always prints %) is checked with it.
+{
+  const labelsOf = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]).filter((t) => /\d\.\d/.test(t));
+  const decimalsOf = (text) => text.match(/\d+\.(\d+)/)[1].length;
+  // the printed number is the one with a decimal point (a strip_plot label may start with a name such as "u6")
+  const numberOf = (text) => Number(text.match(/-?\d+\.\d+/)[0]);
+  const common = { schema_version: "0.9.0", takeaway: "t", alt: "A chart of synthetic values for the shared decimals test.", source_note: "s", claim_id: "c", sql: "SELECT 1", highlight_values: [], annotations: [], direct_labels: true };
+  const forms = {
+    strip_plot: (unit, values) => [{ ...common, reader_task: "distribution", title: "Spread", unit, chart_type: "strip_plot", category_field: "g", value_field: "v", label_field: "u", label_extremes: Math.min(6, values.length) },
+      values.map((v, i) => ({ g: i < 3 ? "A" : "B", u: `u${i}`, v }))],
+    mirrored_bar: (unit, values) => [{ ...common, reader_task: "comparison", title: "Mirror", unit, chart_type: "mirrored_bar", category_field: "band", series_field: "side", value_field: "share" },
+      values.flatMap((v, i) => [{ band: `b${i}`, side: "L", share: v }, { band: `b${i}`, side: "R", share: v }])],
+    stacked_bar_100: (unit, values) => [{ ...common, schema_version: "0.7.0", reader_task: "part_to_whole", title: "Stack", unit, chart_type: "stacked_bar_100", category_field: "c", series_field: "s", value_field: "v", highlight_segment: "H", segment_order: ["H", "O"] },
+      values.flatMap((v, i) => [{ c: `e${i}`, s: "H", v }, { c: `e${i}`, s: "O", v: 100 - v }])],
+  };
+  const SIX = [30, 29.1, 12, 7.25, 2.5, 2];
+  for (const [form, build] of Object.entries(forms)) {
+    const six = labelsOf(renderVizSvg(...build("pts", SIX)));
+    assert.equal(six.length, form === "mirrored_bar" ? 12 : 6, `${form}: one label per value (two sides on mirrored_bar), got ${JSON.stringify(six)}`);
+    assert.deepEqual([...new Set(six.map(decimalsOf))], [1], `${form}: one shared decimal count ${JSON.stringify(six)}`);
+    const seven = labelsOf(renderVizSvg(...build("pts", [...SIX, 0.004])));
+    const tiny = seven.find((t) => numberOf(t) === 0.004);
+    assert.ok(tiny, `${form}: 0.004 is shown as itself, not as 0: ${JSON.stringify(seven)}`);
+    assert.ok(seven.every((t) => numberOf(t) !== 0), `${form}: no label prints as zero ${JSON.stringify(seven)}`);
+    if (form !== "stacked_bar_100") assert.deepEqual([...new Set(seven.map(decimalsOf))], [3], `${form}: the shared count is raised for every label ${JSON.stringify(seven)}`);
+  }
+  const pct = labelsOf(renderVizSvg(...forms.stacked_bar_100("%", [...SIX, 0.004])));
+  assert.ok(pct.every((t) => t.endsWith("%")) && pct.some((t) => numberOf(t) === 0.004), `stacked_bar_100 with a percent unit: ${JSON.stringify(pct)}`);
+  console.log("shared value decimals on the three new forms -- PASS");
+}
