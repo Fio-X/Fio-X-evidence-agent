@@ -893,6 +893,7 @@ function walkSvgTree(svgText, styleRules) {
     return { x, y, isChunkStart };
   }
 
+  const clipStack = [];
   function finalizeTextNode(node, style, matrix, elementId, ownPos) {
     const text = String(node.text ?? "").trim();
     if (!text) return;
@@ -913,6 +914,8 @@ function walkSvgTree(svgText, styleRules) {
       // P4: optional "x0,y0,x1,y1" box (in the text's own user space) of the
       // chart panel this text belongs to; see ruleTextOutsidePanel.
       panelBox: parsePanelBox((node.attrs || {})["data-panel-box"]),
+      // NEWSROOM_PAGE_QA_NESTED_CLIP: visible boxes (outer space) of the nested <svg>s this text sits in, innermost last.
+      clipBoxes: clipStack.length ? clipStack.slice() : null,
       // <text> itself always starts a chunk; a tspan only does when it set
       // its own x (see resolveTspanPosition) - default true so a <text>
       // node (ownPos built inline in visit(), no isChunkStart field) still
@@ -1165,6 +1168,7 @@ function walkSvgTree(svgText, styleRules) {
     }
 
     let childMatrix = selfMatrix;
+    let pushedClip = false;
     if (node.tag === "svg" && node !== svgRoot) {
       if (selfMatrix === null) {
         childMatrix = null;
@@ -1176,6 +1180,16 @@ function walkSvgTree(svgText, styleRules) {
         } else {
           childMatrix = multiply(vbMatrix, selfMatrix);
         }
+      }
+      // A nested <svg> clips to its own viewport (x, y, width, height in its parent's space); record that box for the text inside.
+      const attrs = node.attrs || {};
+      const vx = attrs.x !== undefined ? parseFloat(attrs.x) : 0;
+      const vy = attrs.y !== undefined ? parseFloat(attrs.y) : 0;
+      const vw = attrs.width !== undefined ? parseCssLength(attrs.width) : NaN;
+      const vh = attrs.height !== undefined ? parseCssLength(attrs.height) : NaN;
+      if (selfMatrix !== null && [vx, vy, vw, vh].every(Number.isFinite) && vw > 0 && vh > 0) {
+        clipStack.push({ id: elementId, box: transformedBox({ x: vx, y: vy, w: vw, h: vh }, selfMatrix) });
+        pushedClip = true;
       }
     }
     const ownEndCursor = TEXT_BEARING.has(node.tag) ? cursorAfterOwnText(node, style, ownPos) : textCursor;
@@ -1193,6 +1207,7 @@ function walkSvgTree(svgText, styleRules) {
       const childPos = visit(child, style, childMatrix, childInsideDefs, childInsideDecoration, runningCursor);
       if (childPos && (Number.isFinite(childPos.x) || Number.isFinite(childPos.y))) runningCursor = { ...childPos, fresh: false };
     }
+    if (pushedClip) clipStack.pop();
     // Hand the caller (this node's *parent*, iterating its own children in
     // document order) the position a same-line sibling should continue from:
     // this node's own text advances the cursor (cursorAfterOwnText above);
@@ -1229,6 +1244,32 @@ function ruleTextOutsideViewbox(texts, viewBox, options) {
         element: node.id,
         bbox: box,
       });
+    }
+  }
+  return failures;
+}
+
+// NEWSROOM_PAGE_QA_NESTED_CLIP=1 (or options.checkNestedClip): text_outside_viewbox only knows the outer canvas, but a nested <svg>
+// (a chart embedded in a page module) clips to its own viewport, so a label cut there passed. Each text inside a nested <svg> must
+// also lie inside that svg's box (estimated ink box, same estimate and tolerance as text_outside_viewbox). Off: no failures from here.
+function ruleTextOutsideNestedSvg(texts, options) {
+  if (!(options.checkNestedClip ?? process.env.NEWSROOM_PAGE_QA_NESTED_CLIP === "1")) return [];
+  const tol = options.viewboxTolerance;
+  const failures = [];
+  for (const node of texts) {
+    if (node.unresolved || !node.clipBoxes) continue;
+    const box = estimateDisplayBox(node);
+    for (const clip of node.clipBoxes) {
+      const c = clip.box;
+      if (box.x < c.x - tol || box.y < c.y - tol || box.x + box.w > c.x + c.w + tol || box.y + box.h > c.y + c.h + tol) {
+        failures.push({
+          rule: "text_outside_nested_svg",
+          message: `text "${truncate(node.text)}" estimated box [${fmt(box.x)}, ${fmt(box.y)}, ${fmt(box.x + box.w)}, ${fmt(box.y + box.h)}] falls outside its nested svg's visible box [${fmt(c.x)}, ${fmt(c.y)}, ${fmt(c.x + c.w)}, ${fmt(c.y + c.h)}] and is cut off`,
+          element: node.id,
+          bbox: box,
+        });
+        break;
+      }
     }
   }
   return failures;
@@ -1677,6 +1718,7 @@ export function checkSvgGeometry(svgText, options = {}) {
   const failures = [
     ...ruleTextOutsideViewbox(texts, viewBox, opts),
     ...ruleTextOutsidePanel(texts, opts),
+    ...ruleTextOutsideNestedSvg(texts, opts),
     ...ruleTextOverlap(texts, opts),
     ...ruleFontBelowFloor(texts, opts),
     ...ruleIndistinctAdjacentMarks(rects, opts),

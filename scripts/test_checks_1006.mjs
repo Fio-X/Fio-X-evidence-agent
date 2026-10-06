@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { visualChannelOwnerValidator } from "../runtime/pi/editorial_validators.mjs";
+import { trimmedSvgInfo } from "../runtime/pi/infographic.mjs";
+import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const withEnv = (name, value, fn) => { const old = process.env[name]; if (value === undefined) delete process.env[name]; else process.env[name] = value; try { return fn(); } finally { if (old === undefined) delete process.env[name]; else process.env[name] = old; } };
@@ -76,4 +78,31 @@ assert.deepEqual(onList.channels, ["position", "position_x", "position_y", "leng
 assert.match(onList.list.description, /horizontal field as position_x.*vertical field as position_y/, "on: the hint says which axis is which");
 assert.match((await channelList({ [AXES]: "1", NEWSROOM_SPEED_RULE_HINTS: "1" })).list.description, /^Each channel may be owned by one field only\. A line or scatter chart/, "on + rule hints: both sentences");
 console.log("K105: validator and tool definition ok");
+
+// ---------------------------------------------------------------- K102 NEWSROOM_PAGE_QA_NESTED_CLIP
+const CLIP = "NEWSROOM_PAGE_QA_NESTED_CLIP", TRIM = "NEWSROOM_PAGE_TRIM_TEXT_SAFE";
+// The V218 fixture (scripts/test_render_1006.mjs): an end-anchored "80%" tick whose ink starts left of the old trim.
+const chart = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200"><text x="30.9" y="20" text-anchor="end" font-size="12">80%</text><line x1="40" y1="14" x2="390" y2="14" stroke="#ccc" stroke-width="1"/><polyline points="40,100 200,60 390,30" fill="none" stroke="#333" stroke-width="2"/></svg>`;
+// The page embeds a chart the way embedVisual does: a nested svg at the module box, viewBox = the trimmed region, xMinYMin meet.
+function page(svg, trimEnv, boxW = 400) {
+  const info = withEnv(TRIM, trimEnv, () => trimmedSvgInfo(svg));
+  const targetH = boxW * (info.height / info.width);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600"><rect x="0" y="0" width="800" height="600" fill="#fff"/><svg data-role="infographic-visual" data-module-id="m1" x="60" y="100" width="${boxW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="xMinYMin meet">${info.inner}</svg></svg>`;
+}
+const rules = (svg, env) => withEnv(CLIP, env, () => checkSvgGeometry(svg).failures);
+const offPage = page(chart, undefined), onPage = page(chart, "1");
+assert.deepEqual(rules(offPage, undefined).map((f) => f.rule), [], "switch off, trim off: today the page QA passes the cut-off label");
+assert.deepEqual(rules(offPage, "0").map((f) => f.rule), [], "any value other than \"1\" is off");
+const hit = rules(offPage, "1");
+assert.deepEqual(hit.map((f) => f.rule), ["text_outside_nested_svg"], "switch on, trim off: the cut-off label is reported");
+assert.match(hit[0].message, /"80%"/, "the report names the label");
+assert.deepEqual(rules(onPage, "1").map((f) => f.rule), [], "switch on, trim fix on: nothing reported");
+assert.deepEqual(rules(onPage, undefined).map((f) => f.rule), [], "switch off, trim fix on: nothing reported");
+// The switch does not change any other finding.
+assert.deepEqual(checkSvgGeometry(offPage).failures, withEnv(CLIP, "1", () => checkSvgGeometry(offPage).failures.filter((f) => f.rule !== "text_outside_nested_svg")), "the other findings are the same with the switch on");
+// A text well inside a nested svg, and a page with no nested svg, are untouched.
+assert.deepEqual(rules(page(chart.replace('x="30.9"', 'x="60"'), "1"), "1"), [], "label inside the box: no report");
+const flat = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200"><text x="30" y="20" font-size="12">80%</text></svg>`;
+assert.equal(rules(flat, "1").length, 0, "no nested svg: nothing to add");
+console.log(`K102: off-trim page reports ${hit.length} (${hit[0].message.slice(0, 120)}...)`);
 console.log("ok");
