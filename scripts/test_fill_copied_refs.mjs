@@ -1,4 +1,4 @@
-// P3 (NEWSROOM_SPEED_FILL_COPIED_REFS): code copies story_graph_ref, the lint's plan_ref and project_id when they are omitted and exactly one candidate exists.
+// P3 (NEWSROOM_SPEED_FILL_COPIED_REFS): code copies story_graph_ref and the lint's plan_ref when they are omitted and exactly one candidate exists.
 // Real plan tool on a temp artifact root (fixtures from test_hero_value_tool_path.mjs). Offline.
 // (the typebox/compile stub below is only used by the shared tree builder: of the real
 // Compile cannot be checked here (see the report); the wiring, the order of the checks and the fail-closed path are.
@@ -199,11 +199,11 @@ const run = async (tools, tool, params, art) => { useSwitch(tools); try { return
 const norm = (r) => String(r.message).split(r.art).join("<art>");
 const planOnce = async (tools, plan, mutateRoot) => { const art = freshRun("fc"); mutateRoot?.(art); const r = await run(tools, "newsroom_infographic_plan", keyOrder(tools, plan)); return { art, ...r }; };
 
-await ok("schema: off keeps the three fields required; on makes exactly them optional; only exactly '1' turns it on", async () => {
+await ok("schema: off keeps the two fields required; on makes exactly them optional (project_id stays required); only exactly '1' turns it on", async () => {
   const req = (tools) => ({ plan: tools.get("newsroom_infographic_plan").parameters.required, grammar: tools.get("newsroom_infographic_plan").parameters.properties.editorial_grammar.required, lint: tools.get("newsroom_infographic_lint").parameters.required });
   const a = req(off), b = req(on);
   assert.ok(a.plan.includes("story_graph_ref") && a.grammar.includes("project_id") && a.lint.includes("plan_ref"));
-  assert.ok(!b.plan.includes("story_graph_ref") && !b.grammar.includes("project_id") && !b.lint.includes("plan_ref"));
+  assert.ok(!b.plan.includes("story_graph_ref") && b.grammar.includes("project_id") && !b.lint.includes("plan_ref"));
   assert.deepEqual(b.plan.concat("story_graph_ref").sort(), a.plan.slice().sort());
   assert.ok(b.plan.includes("selected_concept_id") && b.plan.includes("modules") && b.plan.includes("intent"), "nothing else is relaxed");
   for (const value of ["true", "0", "", "2", "on"]) {
@@ -211,21 +211,28 @@ await ok("schema: off keeps the three fields required; on makes exactly them opt
     assert.equal(JSON.stringify(req(t)), JSON.stringify(a), value);
   }
 });
-await ok("plan: story_graph_ref and project_id omitted, one story graph: stored plan equals the plan from the full call", async () => {
+await ok("plan: story_graph_ref omitted, one story graph: stored plan equals the plan from the full call", async () => {
   const full = await planOnce(off, planWith());
   assert.equal(full.message, null, full.message);
-  const filled = await planOnce(on, without(planWith(), "story_graph_ref", "project_id"));
+  const filled = await planOnce(on, without(planWith(), "story_graph_ref"));
   assert.equal(filled.message, null, filled.message);
   assert.deepEqual(plansIn(filled.art), plansIn(full.art));
   assert.equal(filled.res.details.planRef, full.res.details.planRef);
 });
-await ok("plan: each field alone is filled too", async () => {
+await ok("plan: story_graph_ref alone is filled", async () => {
   const full = await planOnce(off, planWith());
-  for (const k of ["story_graph_ref", "project_id"]) {
-    const r = await planOnce(on, without(planWith(), k));
-    assert.equal(r.message, null, `${k}: ${r.message}`);
-    assert.equal(r.res.details.planRef, full.res.details.planRef, k);
-  }
+  const r = await planOnce(on, without(planWith(), "story_graph_ref"));
+  assert.equal(r.message, null, r.message);
+  assert.equal(r.res.details.planRef, full.res.details.planRef);
+});
+await ok("plan: project_id omitted is refused by the schema with the same message, switch on or off; the tool never fills it", async () => {
+  const noId = planWith(); delete noId.editorial_grammar.project_id;
+  const msgs = (tools) => checkSchema(tools.get("newsroom_infographic_plan").parameters, noId).filter((m) => /project_id/.test(m));
+  assert.ok(msgs(off).length > 0, "off: schema refuses");
+  assert.deepEqual(msgs(on), msgs(off), "on: the same refusal");
+  const a = await planOnce(off, noId), b = await planOnce(on, noId);
+  assert.equal(a.message, b.message, "the tool itself acts the same on and off");
+  for (const r of [a, b]) for (const f of plansIn(r.art)) assert.equal(JSON.parse(readFileSync(join(r.art, "infographics/plans", f), "utf8")).editorial_grammar?.project_id, undefined, "nothing was filled in");
 });
 await ok("plan: a value the model gave is never replaced (wrong story_graph_ref and another project_id go to today's checks)", async () => {
   const wrong = planWith(); wrong.story_graph_ref = "editorial/story-graphs/other.json";
@@ -246,14 +253,6 @@ await ok("plan: zero or several story graphs refuse with the reason, nothing wri
   const none = await planOnce(on, without(planWith(), "story_graph_ref"), (art) => rmSync(join(art, "editorial/story-graphs/migration.json")));
   assert.match(none.message ?? "", /story_graph_ref is missing and could not be derived: no editorial\/story-graphs artifact exists; call newsroom_story_graph first/);
   assert.equal(plansIn(none.art).length, 0);
-});
-await ok("plan: a story_id that is not 1-120 characters is not copied; the plan is refused as today", async () => {
-  const long = await planOnce(on, without(planWith(), "project_id"), (art) => { const f = join(art, "editorial/story-graphs/migration.json"); const g = JSON.parse(readFileSync(f, "utf8")); g.story_id = "x".repeat(121); writeFileSync(f, JSON.stringify(g)); });
-  assert.match(long.message ?? "", /editorial_grammar\.project_id is missing and could not be derived/);
-  assert.equal(plansIn(long.art).length, 0);
-  const empty = await planOnce(on, without(planWith(), "project_id"), (art) => { const f = join(art, "editorial/story-graphs/migration.json"); const g = JSON.parse(readFileSync(f, "utf8")); delete g.story_id; writeFileSync(f, JSON.stringify(g)); });
-  assert.match(empty.message ?? "", /project_id is missing and could not be derived/, "a graph with no story_id: refused, nothing invented");
-  assert.equal(plansIn(empty.art).length, 0);
 });
 await ok("never filled: selected_concept_id, claim ids and story nodes stay the model's; omitting them is refused", async () => {
   const noConcept = await planOnce(on, without(planWith(), "selected_concept_id"));
@@ -295,7 +294,7 @@ await ok("chain schema: story_graph_ref optional only with the switch on", async
   const a = (await registerFor({ env: chainEnv })).get("newsroom_infographic_chain");
   const b = (await registerFor({ env: { ...chainEnv, [SW]: "1" } })).get("newsroom_infographic_chain");
   assert.ok(a && b, "chain registered");
-  const plan = without(planWith(), "story_graph_ref", "project_id");
+  const plan = without(planWith(), "story_graph_ref");
   assert.ok(checkSchema(a.parameters, plan).some((m) => /story_graph_ref/.test(m)));
   assert.ok(!checkSchema(b.parameters, plan).some((m) => /story_graph_ref/.test(m)));
 });
