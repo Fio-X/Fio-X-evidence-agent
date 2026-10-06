@@ -423,7 +423,7 @@ try {
   // The block is byte-for-byte what it was, plus one trailing clause.
   assert.equal(
     await blockOf("comparison", "diverging_bar"),
-    "EDITORIAL_GRAMMAR_BLOCKED: relation 'comparison' requires one of horizontal_bar, dot, dumbbell, slope, small_multiples; got 'diverging_bar'; diverging_bar fits: anomaly",
+    "EDITORIAL_GRAMMAR_BLOCKED: relation 'comparison' requires one of horizontal_bar, dot, dumbbell, slope, small_multiples, mirrored_bar; got 'diverging_bar'; diverging_bar fits: anomaly",
   );
   assert.equal(
     await blockOf("rank", "small_multiples"),
