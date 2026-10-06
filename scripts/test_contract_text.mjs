@@ -35,8 +35,8 @@ assert.ok(build({ visualGrammarForms: forms }).visualGrammar.includes("rank: zz_
 const reg2 = JSON.parse(JSON.stringify(registry)); reg2.grammars[0].required_evidence = ["zz_feature"];
 assert.ok(build({ registry: reg2 }).primaryGrammar.includes("zz_feature"));
 assert.equal(build({ registry: null }).primaryGrammar, undefined, "no registry: statement omitted");
-for (const [key, field, text] of [["planAltMin", "planAlt", 31], ["illustrationAltMin", "moduleAlt", 21], ["minContentModules", "modules", 5], ["maxSidecars", "sceneAnchor", 4]]) {
-  assert.ok(build({ literals: { ...CONTRACT_LITERALS, [key]: text } })[field].includes(String(text)), `${key} flows into ${field}`);
+for (const [key, field, text] of [["planAltMin", "planAlt", 31], ["illustrationAltMin", "moduleAlt", 21], ["minContentModules", "modules", 5], ["maxSidecars", "sceneAnchor", 4], ["minNodeCoverage", "modules", 0.7]]) {
+  assert.ok(build({ literals: { ...CONTRACT_LITERALS, [key]: text } })[field].includes(String(key === "minNodeCoverage" ? Math.round(text * 100) : text)), `${key} flows into ${field}`);
 }
 
 // 3. Drift: each literal kept here is still the literal in the check.
@@ -48,6 +48,9 @@ has(infographic, new RegExp(`contentModules\\.length < ${L.minContentModules}\\)
 has(infographic, new RegExp(`visualModules\\.length \\+ illustrationModules\\.length < ${L.minVisualModules}\\)`), "visual module minimum");
 has(infographic, new RegExp(`mappedDimensions\\.size < ${L.minStoryDimensions}\\)`), "story dimension minimum");
 has(infographic, new RegExp(`nonSupportRelations\\.size < ${L.minNonSupportRelations}\\)`), "non-supports relation minimum");
+has(infographic, new RegExp(`node_coverage < ${L.minNodeCoverage}\\)`), "node coverage minimum");
+has(infographic, /\["resolution", "explanation"\]\.includes\(module\.story_role\)/, "resolution roles");
+has(src("runtime/pi/story_graph.mjs"), /resolvedAnswers=graph\.answer_node_ids\.filter\(\(id\)=>resolution\.has\(id\)\)/, "resolved answers");
 has(infographic, new RegExp(`sidecars\\.length > ${L.maxSidecars}`), "sidecar maximum");
 has(infographic, /relation !== "supports"/, "non-supports relation rule");
 has(infographic, /\["visual", "illustration"\]\.includes\(moduleById\.get\(anchor\)\?\.type\)/, "scene anchor type");
