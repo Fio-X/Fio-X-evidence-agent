@@ -213,6 +213,16 @@ const contractHint = (key: string, base?: any): any => {
   const text = contractCache[key];
   return text ? { ...(base ?? {}), description: [base?.description, text].filter(Boolean).join(" ") } : base;
 };
+// NEWSROOM_CHANNEL_AXES=1: the channel list also offers position_x / position_y. Off (anything but exactly "1"): the
+// tool definition is byte-identical to what it was without this switch.
+const channelAxesEnabled = () => process.env.NEWSROOM_CHANNEL_AXES === "1";
+const CHANNEL_AXES_HINT = "A line or scatter chart declares its horizontal field as position_x and its vertical field as position_y.";
+const VISUAL_CHANNEL_NAMES = ["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const;
+const VISUAL_CHANNEL_NAMES_AXES = ["position", "position_x", "position_y", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const;
+const channelListOptions = (base: any): any => {
+  const hinted = ruleHint(RULE_HINT_CHANNELS, base);
+  return channelAxesEnabled() ? { ...hinted, description: [hinted?.description, CHANNEL_AXES_HINT].filter(Boolean).join(" ") } : hinted;
+};
 const EDITORIAL_HINT_CLAIM_IDS = "Only claim_ids whose record_claim result read \"VERIFIED by system replay\". A claim recorded without computation_refs never verifies, and citing it refuses the whole graph.";
 const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_concepts (editorial/concepts/...), not the discovery or story-graph path. Run that tool first.";
 const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
@@ -4997,9 +5007,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       id: Type.String(), target_object_id: Type.String(), text: Type.String(), claim_id: Type.String(),
     }), { maxItems: 8 })),
     visual_channels: Type.Optional(Type.Array(Type.Object({
-      channel: StringEnum(["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const),
+      channel: StringEnum((channelAxesEnabled() ? VISUAL_CHANNEL_NAMES_AXES : VISUAL_CHANNEL_NAMES) as any),
       field: Type.String(), role: StringEnum(["quantitative", "categorical", "identity", "emphasis", "uncertainty"] as const),
-    }), ruleHint(RULE_HINT_CHANNELS, { maxItems: 12 }))),
+    }), channelListOptions({ maxItems: 12 }))),
     quantitative_encoding: Type.Optional(Type.Object({
       quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const, { description: QUANTITY_KIND_HINT }),
       mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width", "color"] as const),
