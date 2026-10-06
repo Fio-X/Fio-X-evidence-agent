@@ -66,6 +66,7 @@ const NUMBER_SHADOW_RUNTIME: &str = include_str!("../runtime/pi/number_shadow.mj
 const COMPACT_SETUP_RUNTIME: &str = include_str!("../runtime/pi/compact_setup.mjs");
 const NUMBER_WORDS_RUNTIME: &str = include_str!("../runtime/pi/number_words.mjs");
 const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
+const PATCH_RETRY_RUNTIME: &str = include_str!("../runtime/pi/patch_retry.mjs");
 const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
 const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
@@ -182,6 +183,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let compact_setup_path = runtime_dir.join("compact_setup.mjs");
     let number_words_path = runtime_dir.join("number_words.mjs");
     let preflight_path = runtime_dir.join("preflight.mjs");
+    let patch_retry_path = runtime_dir.join("patch_retry.mjs");
     let shadow_path = runtime_dir.join("shadow.mjs");
     let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
@@ -270,6 +272,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&compact_setup_path, COMPACT_SETUP_RUNTIME)?;
     write_if_changed(&number_words_path, NUMBER_WORDS_RUNTIME)?;
     write_if_changed(&preflight_path, PREFLIGHT_RUNTIME)?;
+    write_if_changed(&patch_retry_path, PATCH_RETRY_RUNTIME)?;
     write_if_changed(&shadow_path, SHADOW_RUNTIME)?;
     write_if_changed(&tool_chain_path, TOOL_CHAIN_RUNTIME)?;
     write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
@@ -328,6 +331,7 @@ mod tests {
             "compact_setup.mjs",
             "number_shadow.mjs",
             "number_words.mjs",
+            "patch_retry.mjs",
             "preflight.mjs",
             "shadow.mjs",
             "tool_chain.mjs",
