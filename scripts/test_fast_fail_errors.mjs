@@ -630,7 +630,9 @@ try {
   assert.equal(kind.description, CLAUSE);
   assert.equal(Buffer.byteLength(CLAUSE), 156, "156 bytes, 43 more than the 113-byte clause it replaces");
   assert.deepEqual([...new Set(kind.description.match(/\b(?:stock_change|stock|count|rate|share|index|other)\b/g))].sort(), ["count", "index", "other", "rate", "share", "stock", "stock_change"].sort(), "the clause names exactly the seven values that carry meaning for a measured quantity");
-  for (const [key, field] of Object.entries(encoding.properties)) if (key !== "quantity_kind") assert.equal(field.description, undefined, `${key} gained no description`);
+  // NEWSROOM_SPEED_CONTRACT_TEXT=1 (wording only) gives scale_type exactly one sentence; every other field still has none.
+  const SCALE_TYPE_CONTRACT_TEXT = "log needs domain_min > 0 and domain_max > domain_min; horizontal_bar and diverging_bar need baseline_policy zero or symmetric_zero.";
+  for (const [key, field] of Object.entries(encoding.properties)) if (key !== "quantity_kind") assert.equal(field.description, key === "scale_type" && process.env.NEWSROOM_SPEED_CONTRACT_TEXT === "1" ? SCALE_TYPE_CONTRACT_TEXT : undefined, `${key} gained no description`);
   check("quantity_kind carries one clause of 156 bytes that maps a level of a stock to stock, its change to stock_change, items or events to count, a ratio to rate, a part of a whole to share and a true index to index; the enum is unchanged");
 }
 
