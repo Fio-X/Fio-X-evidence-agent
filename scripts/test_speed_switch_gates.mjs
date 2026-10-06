@@ -40,6 +40,7 @@ const SWITCHES = [
   { name: "RULE_HINTS", env: "NEWSROOM_SPEED_RULE_HINTS" },
   { name: "COMPACT_SETUP", env: "NEWSROOM_SPEED_COMPACT_SETUP" },
   { name: "CLAIM_SQL_LINT", env: "NEWSROOM_CLAIM_SQL_LINT" }, // refuses only; every forged case must still be refused with it on
+  { name: "SCATTER_PAIRED", env: "NEWSROOM_SCATTER_PAIRED_MEASURES" }, // refuses only; scatter calls are checked per axis, every forged case must still be refused with it on
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const CONFIGS = [

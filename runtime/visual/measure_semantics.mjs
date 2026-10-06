@@ -153,3 +153,46 @@ export function compareMeasureSemantics(aInput,bInput){
   }
   return result(COMPARABILITY.DIRECT,[],[]);
 }
+
+// Scatter pairing (NEWSROOM_SCATTER_PAIRED_MEASURES=1, called only by the caller that opts in): the two measures sit on the
+// two axes of one scatter, one point per object. They may differ in phenomenon, unit, kind, denominator and basis, because
+// each axis carries its own declaration. They must still cover the same period, share the aggregation, and keep the
+// temporal-basis and observation-status rules compareMeasureSemantics applies.
+export const SCATTER_PAIR_IGNORED=Object.freeze(['phenomenon','unit','denominator','adjustment','price_basis','seasonal_adjustment','base_period','measure_kind']);
+
+export function compareScatterAxes(aInput,bInput){
+  const a=normalizeMeasureSemantic(aInput,0), b=normalizeMeasureSemantic(bInput,1);
+  const incompatible=[];
+  const contextual=[];
+  if(a.aggregation!==b.aggregation) incompatible.push('aggregation_mismatch');
+
+  const ta=a.temporal_basis.type, tb=b.temporal_basis.type;
+  if(ta!==tb){
+    const structural=ta==='structural'||tb==='structural';
+    const benchmarkKind=CONTEXTUAL_KIND_PAIRS.has(pairKey(a.measure_kind,b.measure_kind));
+    const referenceStatus=a.observation_status==='reference'||b.observation_status==='reference';
+    if(structural&&(benchmarkKind||referenceStatus)) contextual.push(referenceStatus?'climatological_or_historical_reference':'structural_benchmark');
+    else incompatible.push('temporal_basis_mismatch');
+  }
+  for(const key of ['date','start','end']){
+    const av=a.temporal_basis[key], bv=b.temporal_basis[key];
+    if((av!=null||bv!=null)&&av!==bv){ incompatible.push('period_mismatch'); break; }
+  }
+
+  if(a.observation_status!==b.observation_status){
+    const key=pairKey(a.observation_status,b.observation_status);
+    if(CONTEXTUAL_STATUS_PAIRS.has(key)) contextual.push('observation_status_mismatch');
+    else incompatible.push('observation_status_mismatch');
+  }
+
+  if(incompatible.length){
+    const repair=[];
+    if(incompatible.includes('temporal_basis_mismatch')||incompatible.includes('period_mismatch')) repair.push('split_panels','align_temporal_basis');
+    if(incompatible.includes('aggregation_mismatch')) repair.push('normalize_measure_definition');
+    return result(COMPARABILITY.INCOMPATIBLE,[...new Set(incompatible)],[...new Set(repair)]);
+  }
+  if(contextual.length){
+    return result(COMPARABILITY.CONTEXTUAL,[...new Set(contextual)],['encode_as_reference_or_context','visually_distinguish_semantic_roles']);
+  }
+  return result(COMPARABILITY.DIRECT,[],[]);
+}
