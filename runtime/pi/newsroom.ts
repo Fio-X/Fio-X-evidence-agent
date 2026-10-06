@@ -294,7 +294,7 @@ const FIRST_TRY = {
 const firstTry = (text: string) => (firstTryTextEnabled() ? text : "");
 const describedString = (text: string) => (firstTryTextEnabled() ? Type.String({ description: text }) : Type.String());
 // NEWSROOM_SPEED_FILL_COPIED_REFS=1: code copies a reference the model left out when exactly one artifact can be meant:
-// story_graph_ref (the only story graph), the lint's plan_ref (the only plan) and the grammar's project_id (the story graph's own story_id).
+// story_graph_ref (the only story graph) and the lint's plan_ref (the only plan). project_id is never filled: an id for the page is the model's to give.
 // A value the model gave is left for today's checks; zero or several candidates refuse with the reason. Never fills selected_concept_id, claim ids or story nodes.
 function fillCopiedEnabled() {
   return process.env.NEWSROOM_SPEED_FILL_COPIED_REFS === "1";
@@ -309,22 +309,6 @@ async function onlyArtifactRef(tool: string, field: string, dir: string, none: s
 async function fillStoryGraphRef(tool: string, params: any) {
   if (!fillCopiedEnabled() || params?.story_graph_ref !== undefined) return params;
   return { ...params, story_graph_ref: await onlyArtifactRef(tool, "story_graph_ref", "editorial/story-graphs/", "no editorial/story-graphs artifact exists; call newsroom_story_graph first") };
-}
-// project_id is copied from the story graph's story_id only when it already passes the schema's 1-120 character rule.
-// The schema no longer requires it, so a field that cannot be copied is refused here, as the schema would have.
-async function fillProjectId(params: any) {
-  const grammar = params?.editorial_grammar;
-  if (!fillCopiedEnabled() || !grammar || typeof grammar !== "object" || grammar.project_id !== undefined) return params;
-  let why = "story_graph_ref is needed to find the story id";
-  if (params.story_graph_ref !== undefined) {
-    why = "the story graph's story_id is not 1-120 characters, or the graph cannot be read; supply project_id";
-    try {
-      const graph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
-      const id = graph?.story_id;
-      if (typeof id === "string" && id.length >= 1 && id.length <= 120) return { ...params, editorial_grammar: { ...grammar, project_id: id } };
-    } catch { /* reported below */ }
-  }
-  throw preflightError("newsroom_infographic_plan", [`editorial_grammar.project_id is missing and could not be derived: ${why}`]);
 }
 // Fill the references a later page stage can read off the artifacts it already
 // names, then list every unmet precondition together. Switch off: untouched.
@@ -4751,7 +4735,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   });
 
   const editorialGrammarParameters = Type.Object({
-    project_id: optionalWhenFillCopied(describedString(FIRST_TRY.projectId)),
+    project_id: describedString(FIRST_TRY.projectId),
     primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const),
     supporting: Type.Array(StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const), { maxItems: 2 }),
     available_renderer_capabilities: Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
@@ -4830,8 +4814,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, givenParams, signal?: AbortSignal) {
       let rawParams = givenParams;
       if (fillCopiedEnabled()) {
-        const withGraph = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
-        const copied = await fillProjectId(withGraph);
+        const copied = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
         if (copied !== givenParams) rawParams = inSchemaOrder(copied, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
       }
       let params = rawParams;
