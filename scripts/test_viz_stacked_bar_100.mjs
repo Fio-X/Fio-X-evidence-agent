@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHART_TYPES, HOUSE_PALETTES, fmtSpec, isWideChar, lintVizSpec, renderVizBundle, renderVizMobileSvg, renderVizSvg, validateVizSpec } from "../runtime/pi/viz.mjs";
+import { CHART_TYPES, HOUSE_PALETTES, critiqueViz, fmtSpec, isWideChar, lintVizSpec, renderVizBundle, renderVizMobileSvg, renderVizSvg, validateVizSpec } from "../runtime/pi/viz.mjs";
 import { resolveEconomyDisplayName } from "../runtime/pi/economy_names.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS } from "../runtime/pi/render_qa_geometry.mjs";
@@ -932,6 +932,23 @@ console.log("stacked_bar_100: segment names (once, centred, above the first bar)
   assert.ok(mixed.blockers.some((m) => m.includes("'WLD'") && m.includes("aggregate")), mixed.blockers.join("; "));
   const unknown = lintIso(["USA", "CHN", "XXQ"]);
   assert.ok(unknown.blockers.some((m) => m.includes("cannot resolve") && m.includes("'XXQ'")), unknown.blockers.join("; "));
+}
+
+// Annotations: stacked_bar_100 draws none, so a point/node annotation blocks and the nudge does not ask for one.
+{
+  const CONTEXT = { verified_claim_ids: ["claim-stacked"] };
+  const rows = rowsOf(Array.from({ length: 5 }, (_, i) => [`第${i + 1}国`, { X: 60, Y: 40 }]));
+  const note = { type: "point", text: "第1国", match_field: "c", match_value: "第1国", claim_id: "claim-stacked" };
+  for (const type of ["point", "node"]) {
+    const lint = lintVizSpec(spec({ annotations: [{ ...note, type }] }), rows, CONTEXT);
+    assert.equal(lint.passed, false, `a ${type} annotation on stacked_bar_100 blocks`);
+    assert.ok(lint.blockers.some((m) => m.includes(`${type} is not supported on chart_type 'stacked_bar_100'`) && m.includes("it draws no annotations")), lint.blockers.join("; "));
+  }
+  assert.ok(rows.length >= 8, "the fixture has the 8 rows that used to trigger the nudge");
+  const clean = spec({});
+  const findings = critiqueViz(clean, rows, lintVizSpec(clean, rows, CONTEXT), "");
+  assert.ok(!JSON.stringify(findings).includes("no_annotation"), "no annotation nudge for a form that draws none");
+  console.log("stacked_bar_100: point/node annotations block, no add-an-annotation nudge -- PASS");
 }
 
 console.log("stacked_bar_100: ok");
