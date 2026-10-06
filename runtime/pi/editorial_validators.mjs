@@ -72,11 +72,13 @@ export function visualChannelOwnerValidator(spec, assets = {}) {
     if (spec.schema_version === '1.5.0' && channels.length === 0) issues.push(issue(validator, 'ERROR', 'visual_channel.owner_required', `visual module '${module.id}' must declare visual channel ownership`, `/modules/${moduleIndex}/visual_channels`));
     for (const [channelIndex, owner] of channels.entries()) {
       const channel = String(owner.channel ?? '');
-      if (seen.has(channel)) issues.push(issue(validator, 'ERROR', 'visual_channel.single_owner', `channel '${channel}' in module '${module.id}' has multiple owners`, `/modules/${moduleIndex}/visual_channels/${channelIndex}/channel`, { first_owner: seen.get(channel), second_owner: owner.field }));
+      // NEWSROOM_CHANNEL_AXES=1: position_x and position_y are two channels; plain position conflicts with either.
+      const clash = process.env.NEWSROOM_CHANNEL_AXES === '1' && channel.startsWith('position') ? [...seen.keys()].find((key) => key === channel || (key.startsWith('position') && (key === 'position' || channel === 'position'))) : (seen.has(channel) ? channel : undefined);
+      if (clash !== undefined) issues.push(issue(validator, 'ERROR', 'visual_channel.single_owner', `channel '${channel}' in module '${module.id}' has multiple owners`, `/modules/${moduleIndex}/visual_channels/${channelIndex}/channel`, { first_owner: seen.get(clash), second_owner: owner.field }));
       else seen.set(channel, owner.field);
     }
     const quantitative = channels.filter((owner) => owner.role === 'quantitative');
-    const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle'].includes(owner.channel));
+    const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle', ...(process.env.NEWSROOM_CHANNEL_AXES === '1' ? ['position_x', 'position_y'] : [])].includes(owner.channel));
     if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref])) {
       issues.push(issue(validator, 'ERROR', 'visual_channel.color_only_quantity', `visual module '${module.id}' encodes quantity only through low-precision channels`, `/modules/${moduleIndex}/visual_channels`));
     }

@@ -2243,6 +2243,37 @@ function boxesOverlap(a, b, padding = 0) {
   return a.x < b.x + b.w - padding && a.x + a.w > b.x + padding && a.y < b.y + b.h - padding && a.y + a.h > b.y + padding;
 }
 
+// NEWSROOM_PAGE_MODULE_ORDER_CHECK=1: the printed module numbers (plan order, see editorialOrdinalMap) must increase in the order a
+// reader meets the modules: rows top to bottom (boxes whose tops are within ROW_TOLERANCE_PX share a row), left to right inside a row.
+// The layout may move a scene's anchor ahead of its sidecars, so the two orders can disagree. Returns at most one warning (no score
+// penalty, never a blocker); [] when the switch is not exactly "1".
+const ROW_TOLERANCE_PX = 4;
+function moduleOrderWarnings(spec, composed) {
+  if (process.env.NEWSROOM_PAGE_MODULE_ORDER_CHECK !== "1") return [];
+  const decorative = new Set(composed.decorative_module_ids ?? []);
+  const ordinals = new Map();
+  let ordinal = 1;
+  for (const module of spec.modules ?? []) {
+    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || decorative.has(String(module.id))) continue;
+    ordinals.set(String(module.id), ordinal++);
+  }
+  const placed = (composed.boxes ?? []).filter((box) => ordinals.has(String(box.id))).sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows = [];
+  for (const box of placed) {
+    const row = rows.at(-1);
+    if (row && box.y - row[0].y <= ROW_TOLERANCE_PX) row.push(box);
+    else rows.push([box]);
+  }
+  const reading = rows.flatMap((row) => row.sort((a, b) => a.x - b.x));
+  for (let i = 1; i < reading.length; i++) {
+    const before = ordinals.get(String(reading[i - 1].id)), after = ordinals.get(String(reading[i].id));
+    if (after <= before) {
+      return [{ severity: "warning", code: "module_ordinal_out_of_order", modules: [reading[i - 1].id, reading[i].id], ordinals: [before, after] }];
+    }
+  }
+  return [];
+}
+
 function critiqueLegacyOne(spec, composed, mobile) {
   const issues = [];
   let score = 100;
@@ -2256,6 +2287,7 @@ function critiqueLegacyOne(spec, composed, mobile) {
       if (boxesOverlap(a, boxes[j], 1)) { issues.push({ severity: "blocker", code: "module_overlap", modules: [a.id, boxes[j].id] }); score -= 30; }
     }
   }
+  issues.push(...moduleOrderWarnings(spec, composed));
   const visualCount = spec.modules.filter((m) => m.type === "visual" || m.type === "illustration").length;
   const heroCount = spec.modules.filter((m) => m.type === "hero_stat").length;
   if (visualCount < 2) { issues.push({ severity: "warning", code: "too_few_visuals" }); score -= 8; }
@@ -2309,6 +2341,7 @@ function critiqueAwardOne(spec, composed, mobile) {
       }
     }
   }
+  issues.push(...moduleOrderWarnings(spec, composed));
   if (!hasSourcesMethodsLabel(composed.svg, spec)) {
     issues.push({ severity: "blocker", code: "source_strip_missing" }); geometryPenalty += 30;
   }
