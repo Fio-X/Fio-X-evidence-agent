@@ -189,6 +189,7 @@ jobs:
         run: |
           node scripts/test_content_addressing.mjs
           node scripts/test_stream_limits.mjs
+          node scripts/test_fast_fail_errors.mjs
           node scripts/test_pdf_extract.mjs
           node scripts/test_cjk_viz.mjs
           node scripts/test_viz_ticks.mjs

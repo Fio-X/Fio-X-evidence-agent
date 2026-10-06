@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
+import { STORY_DIMENSIONS, unsupportedDimensionError } from './story_graph.mjs';
 
 export const EDITORIAL_DISCOVERY_SCHEMA_VERSION = '0.1.0';
 export const VISUAL_CONCEPT_SET_SCHEMA_VERSION = '0.1.0';
 export const SEMANTIC_NOVELTY_SCHEMA_VERSION = '0.1.0';
 export const DISCOVERY_DECISIONS = ['RESEARCH_MORE', 'REVISE', 'KILL', 'CONTINUE'];
-export const EXPLANATORY_DIMENSIONS = ['trend', 'rank', 'spatial', 'mechanism', 'comparison', 'distribution', 'uncertainty', 'human_scale', 'method', 'context'];
+// Same vocabulary as the story graph (see story_graph.mjs); scoring below only compares values for equality.
+export const EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const CONCEPT_FRAMINGS = ['spatial', 'temporal', 'mechanism', 'comparison', 'human_scale', 'object_scene', 'progressive_reveal'];
 
 function text(value) { return String(value ?? '').trim(); }
@@ -201,7 +203,7 @@ export function scoreSemanticNovelty(input) {
     if (!module.reader_question_id) errors.push(`module '${module.id || '?'}' requires reader_question_id`);
     if (!module.claim_set.length) errors.push(`module '${module.id || '?'}' requires claim_set`);
     if (!module.new_information) errors.push(`module '${module.id || '?'}' requires new_information`);
-    if (!EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(`module '${module.id || '?'}' has unsupported explanatory_dimension '${module.explanatory_dimension}'`);
+    if (!EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(unsupportedDimensionError(`module '${module.id || '?'}'`, module.explanatory_dimension, EXPLANATORY_DIMENSIONS));
   }
   if (errors.length) throw new Error(errors.join('; '));
   const pairwise = [];

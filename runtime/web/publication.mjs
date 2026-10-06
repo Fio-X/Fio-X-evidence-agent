@@ -43,7 +43,7 @@ export function validatePublicationSpec(spec, options = {}){
     if(!m.id||ids.has(m.id)) errors.push(`modules[${i}].id missing or duplicate`); else ids.add(m.id);
     if(!MODULE_TYPES.has(m.type)) errors.push(`modules[${i}].type unsupported`);
     if(!Array.isArray(m.story_node_ids)||!m.story_node_ids.length) errors.push(`modules[${i}].story_node_ids required`);
-    if(!DIMENSIONS.has(m.explanatory_dimension)) errors.push(`modules[${i}].explanatory_dimension unsupported`);
+    if(!DIMENSIONS.has(m.explanatory_dimension)) errors.push(`modules[${i}].explanatory_dimension unsupported; allowed: ${[...DIMENSIONS].join(', ')}`);
     if(spec.schema_version!=='0.3.0' && ['plotly','d3','sigma','model'].includes(m.type)&&(!m.spec||typeof m.spec!=='object')) errors.push(`modules[${i}].spec required`);
     if(spec.schema_version==='0.3.0'){
       const dataBearing=!['text'].includes(m.type);

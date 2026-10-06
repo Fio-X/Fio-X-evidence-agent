@@ -4,6 +4,21 @@ export const STORY_GRAPH_SCHEMA_VERSION = '0.1.0';
 export const STORY_NODE_KINDS = ['evidence','claim','mechanism','context','outcome','uncertainty'];
 export const STORY_EDGE_RELATIONS = ['supports','causes','contributes_to','explains','contrasts_with','qualifies','locates','precedes','benchmarks'];
 export const STORY_DIMENSIONS = ['trend','rank','spatial','mechanism','comparison','distribution','uncertainty','human_scale','method','context','outcome','relationship'];
+// One explanatory_dimension vocabulary. STORY_DIMENSIONS is the reference: every tool that takes
+// explanatory_dimension for a module (story graph, semantic novelty, infographic plan, publication
+// plan) accepts all of it. The publication plan also knows the kinds only a rendered page can use
+// (flow, network, hierarchy, model). A value a tool has no handling for stays refused there, and the
+// refusal lists what is allowed. The publication order is the one its tool schema has always shown the model.
+export const PUBLICATION_DIMENSIONS = [...STORY_DIMENSIONS.filter((d)=>d!=='relationship'),'flow','network','relationship','hierarchy','model'];
+// The mapping the publication plan applies where a story-graph value meets the style registry,
+// which has no profile for 'relationship' (it has one for 'network').
+const DIMENSION_BOUNDARY_MAP = Object.freeze({relationship:'network'});
+export function mapExplanatoryDimension(value){
+  return typeof value==='string' && Object.hasOwn(DIMENSION_BOUNDARY_MAP,value) ? DIMENSION_BOUNDARY_MAP[value] : value;
+}
+export function unsupportedDimensionError(subject,value,allowed){
+  return `${subject} has unsupported explanatory_dimension '${value}'; allowed: ${allowed.join(', ')}`;
+}
 
 function text(value){ return String(value ?? '').trim(); }
 function uniq(values){ return [...new Set((values ?? []).map((v)=>text(v)).filter(Boolean))]; }
@@ -56,7 +71,7 @@ export function validateStoryGraph(input){
     else ids.add(node.id);
     if(!STORY_NODE_KINDS.includes(node.kind)) errors.push(`story node '${node.id || '?'}' has unsupported kind '${node.kind}'`);
     if(!node.summary) errors.push(`story node '${node.id || '?'}' requires summary`);
-    if(!STORY_DIMENSIONS.includes(node.explanatory_dimension)) errors.push(`story node '${node.id || '?'}' has unsupported explanatory_dimension '${node.explanatory_dimension}'`);
+    if(!STORY_DIMENSIONS.includes(node.explanatory_dimension)) errors.push(unsupportedDimensionError(`story node '${node.id || '?'}'`,node.explanatory_dimension,STORY_DIMENSIONS));
   }
   for(const edge of graph.edges){
     if(!ids.has(edge.from)) errors.push(`story edge references missing from node '${edge.from}'`);

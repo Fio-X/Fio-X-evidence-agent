@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, COMPACT_VIEW_W } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
-import { evaluateQuestionClosure } from "./story_graph.mjs";
+import { evaluateQuestionClosure, STORY_DIMENSIONS, unsupportedDimensionError } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
 import { evaluateClaimSupport } from "./evidence_gate.mjs";
 import { buildCandidates, extractNumbers, matchNumber } from "./number_shadow.mjs";
@@ -120,7 +120,8 @@ export const INFOGRAPHIC_STORY_ROLES = ["hook", "context", "evidence", "turn", "
 export const INFOGRAPHIC_EMPHASIS = ["hero", "primary", "secondary", "support"];
 export const INFOGRAPHIC_LAYOUT_STRATEGIES = ["balanced", "anchor", "rhythm"];
 export const INFOGRAPHIC_SCENE_PATTERNS = ["hero_sidecar_stack", "hero_with_rail"];
-export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome"];
+// Same vocabulary as the story graph (see story_graph.mjs).
+export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const INFOGRAPHIC_VISUAL_GRAMMARS = ["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"];
 
 const VISUAL_GRAMMAR_FORMS = Object.freeze({
@@ -455,7 +456,7 @@ export function validateInfographicSpec(spec) {
     if (module?.story_role !== undefined && !INFOGRAPHIC_STORY_ROLES.includes(module.story_role)) errors.push(`module '${module?.id ?? "?"}' has unsupported story_role '${module.story_role}'`);
     if (module?.priority !== undefined && (!Number.isInteger(module.priority) || module.priority < 1 || module.priority > 5)) errors.push(`module '${module?.id ?? "?"}' priority must be an integer from 1 to 5`);
     if (module?.emphasis !== undefined && !INFOGRAPHIC_EMPHASIS.includes(module.emphasis)) errors.push(`module '${module?.id ?? "?"}' has unsupported emphasis '${module.emphasis}'`);
-    if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(`module '${module?.id ?? "?"}' has unsupported explanatory_dimension '${module.explanatory_dimension}'`);
+    if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(unsupportedDimensionError(`module '${module?.id ?? "?"}'`, module.explanatory_dimension, INFOGRAPHIC_EXPLANATORY_DIMENSIONS));
     if (module?.visual_grammar !== undefined && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module.visual_grammar)) errors.push(`module '${module?.id ?? "?"}' has unsupported visual_grammar '${module.visual_grammar}'`);
     if (module?.story_node_ids !== undefined && (!Array.isArray(module.story_node_ids) || module.story_node_ids.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' story_node_ids must contain non-empty story node ids`);
     if (["1.4.0", "1.5.0"].includes(spec.schema_version) && ["visual","illustration","hero_stat","text"].includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
