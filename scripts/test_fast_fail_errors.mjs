@@ -449,6 +449,8 @@ try {
     for (const relation of Object.keys(table)) {
       if (table[relation].includes(chart)) continue;
       const message = await blockOf(relation === "relationship" ? "relationship" : relation, chart);
+      // NEWSROOM_SCATTER_PAIRED_MEASURES=1: a scatter that is not a pair is refused first by the scatter check, which names the same wrong relation.
+      if (chart === "scatter" && process.env.NEWSROOM_SCATTER_PAIRED_MEASURES === "1") { assert.ok(message?.startsWith("SCATTER_PAIRING_REQUIRED:") && message.includes(`relation is '${relation}'`), `${relation} blocks scatter: ${message}`); continue; }
       assert.ok(message?.startsWith(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${table[relation].join(", ")}; got '${chart}'`), `${relation} blocks ${chart}: ${message}`);
       assert.ok(message.endsWith(`; ${chart} fits: ${fits.join(", ")}`), message);
     }
