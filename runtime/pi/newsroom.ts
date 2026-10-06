@@ -95,6 +95,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
+import { PATCH_MAX_OPS, PatchError, applyJsonPatch, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
@@ -348,7 +349,89 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
     }};
   }
   registeredTools.set(name, tool);
+  if (name === "newsroom_infographic_plan" && planPatchEnabled()) tool = withRejectionStore(tool, PLAN_PATCH);
+  wrappedTools.set(name, tool);
   pi.registerTool(tool);
+}
+
+// NEWSROOM_SPEED_PLAN_PATCH=1 / NEWSROOM_SPEED_CHAIN_PATCH=1: a refused call's raw parameters are kept, and a
+// patch tool takes only the change (RFC 6902) against them. The patched parameters get the strict schema
+// check, then run through the same tool as a full call, so every other check runs again. Off: nothing changes.
+const planPatchEnabled = () => process.env.NEWSROOM_SPEED_PLAN_PATCH === "1" && atomicArtifactWritesEnabled(); // like the chains, only with atomic writes
+const chainPatchEnabled = () => process.env.NEWSROOM_SPEED_CHAIN_PATCH === "1" && atomicArtifactWritesEnabled();
+type PatchKind = { tool: string; patchTool: string; rejections: string; patches: string };
+const PLAN_PATCH: PatchKind = { tool: "newsroom_infographic_plan", patchTool: "newsroom_infographic_plan_patch", rejections: "infographics/plan-rejections/", patches: "infographics/plan-patches/" };
+const CHAIN_PATCH: PatchKind = { tool: "newsroom_infographic_chain", patchTool: "newsroom_infographic_chain_patch", rejections: "infographics/chain-rejections/", patches: "infographics/chain-patches/" };
+// The tool as Pi runs it (with the rejection store), so a patch runs the call exactly as a full call would.
+const wrappedTools = new Map<string, any>();
+
+async function storeRejection(kind: PatchKind, raw: any): Promise<string | null> {
+  const ref = `${kind.rejections}${sha256Of(raw)}.json`;
+  // Raw params only: stored before any fill, so a retry is filled again from the artifacts it names.
+  return (await writeArtifactIfAbsent(ref, { schema_version: "0.1.0", kind: "rejected_call", tool: kind.tool, params: raw })) ? ref : null;
+}
+const patchHint = (kind: PatchKind, ref: string) => `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+
+function withRejectionStore(tool: any, kind: PatchKind) {
+  const original = tool.execute.bind(tool);
+  return { ...tool, async execute(id: string, params: any, signal?: AbortSignal, ...rest: any[]) {
+    const raw = structuredClone(params ?? {});
+    let result: any;
+    try {
+      result = await original(id, params, signal, ...rest);
+    } catch (error: any) {
+      if (signal?.aborted || !(error instanceof Error)) throw error;
+      let ref: string | null = null;
+      try { ref = await storeRejection(kind, raw); } catch { /* the refusal still stands */ }
+      if (ref) error.message += patchHint(kind, ref);
+      throw error;
+    }
+    // A chain returns a STOPPED result instead of throwing; its refusal is kept the same way.
+    if (kind === CHAIN_PATCH && result?.details?.chainStatus === "STOPPED" && !signal?.aborted) {
+      let ref: string | null = null;
+      try { ref = await storeRejection(kind, raw); } catch { /* the refusal still stands */ }
+      if (ref) result = { ...result, content: result.content.map((block: any, index: number) => (index === 0 && block?.type === "text" ? { ...block, text: block.text + patchHint(kind, ref!) } : block)) };
+    }
+    return result;
+  } };
+}
+
+function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const target = wrappedTools.get(kind.tool);
+  // The chain is not a registry tool; it exists only where the plan tool does, so that is the phase/profile check.
+  if (!target || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const label = kind === PLAN_PATCH ? "plan" : "page chain";
+  pi.registerTool({
+    name: kind.patchTool,
+    label: `Send only the change to a refused ${label} call`,
+    description: `After ${kind.tool} refused a call, change only what the refusal named and run the call again, without re-sending it. patch_of is the reference in the refusal's 'Send only the change' line. patch is a list of RFC 6902 ops (add, replace, remove, test) on that call's parameters; a test op must come before any op on an array element, and the whole patch is refused if any op fails. The patched call goes through the same strict parameter check and every ${kind.tool} check as a full call.`,
+    promptSnippet: `Re-run a refused ${kind.tool} call by sending only the change`,
+    promptGuidelines: [`Use this instead of re-sending the whole ${kind.tool} call after it names the problem.`],
+    parameters: Type.Object({
+      patch_of: Type.String(),
+      patch: Type.Array(Type.Object({
+        op: StringEnum(["add", "replace", "remove", "test"] as const),
+        path: Type.String(),
+        value: Type.Optional(Type.Any()),
+      }), { minItems: 1, maxItems: PATCH_MAX_OPS }),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) {
+      const sha = String(params.patch_of ?? "").replace(kind.rejections, "").replace(/\.json$/, "");
+      if (!/^[0-9a-f]{64}$/.test(sha)) throw new PatchError("PATCH_BASE_NOT_FOUND", `patch_of must be a reference printed in a ${kind.tool} refusal`);
+      let stored: any;
+      try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
+      const patched = applyJsonPatch(stored.params, params.patch);
+      let Compile: any;
+      try { Compile = (await import("typebox/compile")).Compile; } catch { Compile = undefined; }
+      const issues = strictSchemaIssues(Compile, registeredTools.get(kind.tool)?.parameters ?? target.parameters, patched);
+      if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
+      const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: params.patch })}.json`;
+      await writeArtifactIfAbsent(patchRef, { schema_version: "0.1.0", kind: "call_patch", tool: kind.tool, patch_of: `${kind.rejections}${sha}.json`, ops: params.patch, patched_params_sha256: sha256Of(patched) });
+      return wrappedTools.get(kind.tool).execute(`${id}:${kind.tool}`, patched, signal, onUpdate, ctx);
+    },
+  });
 }
 
 
@@ -2662,7 +2745,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
   if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
   const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
   const planProperties = planTool.parameters?.properties ?? {};
-  pi.registerTool({
+  const chainTool = {
     name,
     label: "Plan, lint, render, critique and preview a magazine infographic",
     description: "Takes the same parameters as newsroom_infographic_plan and runs newsroom_infographic_plan, _lint, _render, _critic and _preview in the same call, filling only the plan/lint/manifest/critic references they return. reader_question and visual_thesis may be omitted: they are copied verbatim from the StoryGraph named by story_graph_ref (a value you supply is never overridden and must match it). It stops at the first blocker, failed render QA, DRAFT plan, visual manifest not bound to its module's claim, or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. It returns the preview image; you must still inspect it and call newsroom_infographic_vision_critic yourself.",
@@ -2725,11 +2808,16 @@ function registerInfographicChain(pi: ExtensionAPI) {
         handoff: (final: any) => `Next: inspect the returned image, then call newsroom_infographic_vision_critic with manifest_ref=${final.manifestRef}, preview_ref=${final.previewRef}, deterministic_critic_ref=${final.criticRef} and your own passed/score/confidence/rubric/issues.`,
       });
     },
-  });
+  };
+  const registered = chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
+  wrappedTools.set(name, registered);
+  pi.registerTool(registered);
+  if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
 }
 
 export default function newsroomExtension(pi: ExtensionAPI) {
   registeredTools.clear();
+  wrappedTools.clear();
   // Orphaned temp files from a writer that was killed mid-write (switch on only).
   if (atomicArtifactWritesEnabled()) void cleanupStaleArtifactTmp().catch(() => {});
   registerScopedTool(pi, {
@@ -5630,6 +5718,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
 
   registerInfographicChain(pi);
+  if (planPatchEnabled()) registerPatchTool(pi, PLAN_PATCH);
   registerPlanEdit(pi);
 
   registerScopedTool(pi, {
