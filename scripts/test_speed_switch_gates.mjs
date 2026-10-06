@@ -62,6 +62,7 @@ const CONFIGS = [
   // The proposed sets for the in-session simulation (14 from the 2b allow list + contract text + precheck-all, then + the three checks).
   { name: "proposed-16", env: Object.fromEntries(PROPOSED_16.map((k) => [k, "1"])), profile: "visual-story" },
   { name: "proposed-19", env: Object.fromEntries([...PROPOSED_16, "NEWSROOM_CHANNEL_AXES", "NEWSROOM_PAGE_QA_NESTED_CLIP", "NEWSROOM_PAGE_MODULE_ORDER_CHECK"].map((k) => [k, "1"])), profile: "visual-story" },
+  { name: "proposed-20", env: Object.fromEntries([...PROPOSED_16, "NEWSROOM_CHANNEL_AXES", "NEWSROOM_PAGE_QA_NESTED_CLIP", "NEWSROOM_PAGE_MODULE_ORDER_CHECK", "NEWSROOM_SCATTER_PAIRED_MEASURES"].map((k) => [k, "1"])), profile: "visual-story" },
   // Inline claim with one dependency missing in turn (it must then do nothing): only case 10 runs here.
   { name: "inline-no-chain", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", [ATOMIC]: "1" }, onlyCases: [10] },
   { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }, onlyCases: [10] },
