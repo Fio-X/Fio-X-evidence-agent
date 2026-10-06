@@ -98,7 +98,7 @@ function basemapProvenanceDefaults(basemapId: unknown) {
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
 import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
 import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
-import { PATCH_MAX_OPS, PatchError, applyJsonPatch, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
+import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
 import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
@@ -2581,7 +2581,7 @@ async function fillHeroModules(modules: any[]): Promise<any[]> {
   if (!problems.length) return out;
   // One problem: the very error the off path throws. Several: every code the off path would have thrown first stays, one per line.
   if (problems.length === 1) throw first;
-  throw new Error(problems.join("\n"));
+  throw combinedError(first, problems.join("\n"));
 }
 
 /** The first refusal fillHeroModule threw for a module, then the label/detail refusals that do not depend on the value (the loop below reads only the text). */
@@ -4848,7 +4848,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           // The hero fill reads nothing the grammar build writes, so its problems are reported with this one.
           let heroError: any = null;
           try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))); } catch (error: any) { heroError = error; }
-          throw heroError ? new Error(`${grammarError.message}\n${heroError.message}`) : grammarError;
+          throw heroError ? combinedError(grammarError, `${grammarError.message}\n${heroError.message}`) : grammarError;
         }
       } else editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
       const specCore = {
