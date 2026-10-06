@@ -46,13 +46,21 @@ const SWITCHES = [
   { name: "PRECHECK_ALL", env: "NEWSROOM_SPEED_PRECHECK_ALL" }, // refuses only, after the unchanged checks refused; lists every other pre-draw problem, so every refused case must still be refused with the same codes
   { name: "FILL_COPIED_REFS", env: "NEWSROOM_SPEED_FILL_COPIED_REFS" }, // copies story_graph_ref, the lint plan_ref and project_id only when omitted and unique; a field it cannot copy is refused
   { name: "FIRST_TRY_TEXT", env: "NEWSROOM_SPEED_FIRST_TRY_TEXT" }, // text only: adds sentences to descriptions and one refusal, so every refused case must still be refused
+  { name: "CONTRACT_TEXT", env: "NEWSROOM_SPEED_CONTRACT_TEXT" }, // wording only: the tool definitions gain sentences built from the checks' own sets
+  { name: "CHANNEL_AXES", env: "NEWSROOM_CHANNEL_AXES" }, // the channel list also offers position_x / position_y; wording and one enum value, no check loosened
+  { name: "PAGE_QA_NESTED_CLIP", env: "NEWSROOM_PAGE_QA_NESTED_CLIP" }, // page check: refuses only (text clipped by a nested svg)
+  { name: "PAGE_MODULE_ORDER_CHECK", env: "NEWSROOM_PAGE_MODULE_ORDER_CHECK" }, // page check: refuses only (module numbers out of reading order)
   { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
+const PROPOSED_16 = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
 const CONFIGS = [
   { name: "off", env: {} },
   ...SWITCHES.map((s) => ({ name: s.name + (s.pending ? "(pending)" : ""), env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
   { name: "all-on", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])) },
   { name: "all-on@visual-story", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])), profile: "visual-story" },
+  // The proposed sets for the in-session simulation (14 from the 2b allow list + contract text + precheck-all, then + the three checks).
+  { name: "proposed-16", env: Object.fromEntries(PROPOSED_16.map((k) => [k, "1"])), profile: "visual-story" },
+  { name: "proposed-19", env: Object.fromEntries([...PROPOSED_16, "NEWSROOM_CHANNEL_AXES", "NEWSROOM_PAGE_QA_NESTED_CLIP", "NEWSROOM_PAGE_MODULE_ORDER_CHECK"].map((k) => [k, "1"])), profile: "visual-story" },
   // Inline claim with one dependency missing in turn (it must then do nothing): only case 10 runs here.
   { name: "inline-no-chain", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", [ATOMIC]: "1" }, onlyCases: [10] },
   { name: "inline-no-atomic", env: { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }, onlyCases: [10] },
