@@ -270,6 +270,22 @@ async function compactSetupRefs(tool: string, params: any) {
   return filled.params;
 }
 const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_SPEED_FIRST_TRY_TEXT=1: a few sentences added to tool descriptions and to one refusal so a call can pass the first time.
+// Text only: no schema, check or result changes. Off: the same text as before.
+function firstTryTextEnabled() {
+  return process.env.NEWSROOM_SPEED_FIRST_TRY_TEXT === "1";
+}
+const FIRST_TRY = {
+  stepStatus: "Required on every step: pending, in_progress, completed or blocked.",
+  claimNumberWords: ' Number words ("three", "三个", "second largest") are refused like typed digits; select the number in the SQL and write a placeholder.',
+  copyFromGraph: "Copy verbatim from the story graph named by story_graph_ref.",
+  projectId: "A short id for this page, 1 to 120 characters.",
+  heroRequired: " Required for every hero_stat.",
+  heroYears: " A year or a range of years counts as a typed number; if the claim has no placeholder for it, reword without it.",
+  heroTypedNumberError: "; if the claim has no placeholder for it, reword without the number",
+};
+const firstTry = (text: string) => (firstTryTextEnabled() ? text : "");
+const describedString = (text: string) => (firstTryTextEnabled() ? Type.String({ description: text }) : Type.String());
 // NEWSROOM_SPEED_FILL_COPIED_REFS=1: code copies a reference the model left out when exactly one artifact can be meant:
 // story_graph_ref (the only story graph), the lint's plan_ref (the only plan) and the grammar's project_id (the story graph's own story_id).
 // A value the model gave is left for today's checks; zero or several candidates refuse with the reason. Never fills selected_concept_id, claim ids or story nodes.
@@ -2322,7 +2338,7 @@ function withInlineClaimSchema(shared: any) {
     else if (key === "source_note") entries.push([key, Type.Optional(Type.String({ description: "Source attribution; with claim it defaults to the host and series label recorded when the data file was downloaded, or the name of a user-supplied file" }))]);
     else entries.push([key, schema]);
     if (key === "claim_id") {
-      entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.` }))]);
+      entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.${firstTry(FIRST_TRY.claimNumberWords)}` }))]);
       entries.push(["claim_kind", Type.Optional(StringEnum(CLAIM_KINDS, { description: "Required with claim; same meaning as record_claim claim_kind" }))]);
       entries.push(["claim_caveat", Type.Optional(Type.String({ description: "Caveat recorded with the claim: a provisional latest year, definition changes the data flags, the series' method, or reference periods that differ between rows; no other data values, trends or causes" }))]);
     }
@@ -2571,7 +2587,7 @@ function heroProblemsOf(module: any, context: HeroClaimContext | null, firstErro
 function heroTextRefusal(id: string, field: string, src: string, claimId: string, context: HeroClaimContext): string | null {
   if (/[{}]/.test(src.replace(/\{[^{}]*\}/g, ""))) return `HERO_TEMPLATE_INVALID: hero_stat '${id}' ${field} has an unmatched { or }`;
   const near = literalNumberIn(src);
-  if (near !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}`;
+  if (near !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}${firstTry(FIRST_TRY.heroTypedNumberError)}`;
   const wordedNear = numberWordIn(src);
   if (wordedNear !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`;
   return null;
@@ -2923,7 +2939,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       steps: Type.Array(Type.Object({
         id: Type.String(),
         action: Type.String({ description: "Observable task or deliverable, not hidden reasoning" }),
-        status: StringEnum(["pending", "in_progress", "completed", "blocked"] as const),
+        status: StringEnum(["pending", "in_progress", "completed", "blocked"] as const, firstTryTextEnabled() ? { description: FIRST_TRY.stepStatus } : {}),
       }), { minItems: 1, maxItems: 10 }),
       revision_note: Type.Optional(Type.String({ description: "What changed in this plan revision" })),
       trigger: Type.Optional(StringEnum(["initial_goal", "tool_error", "evidence_conflict", "insufficient_information", "user_followup", "validation_failure", "other"] as const)),
@@ -4645,7 +4661,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     value: Type.Optional(Type.Union([Type.String(), Type.Number()])),
     unit: Type.Optional(Type.String()),
     detail: Type.Optional(Type.String()),
-    ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." })) } : {}),
+    ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." + firstTry(FIRST_TRY.heroRequired + FIRST_TRY.heroYears) })) } : {}),
     claim_id: Type.Optional(Type.String()),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
     manifest_ref: Type.Optional(Type.String()),
@@ -4694,7 +4710,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   });
 
   const editorialGrammarParameters = Type.Object({
-    project_id: optionalWhenFillCopied(Type.String()),
+    project_id: optionalWhenFillCopied(describedString(FIRST_TRY.projectId)),
     primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const),
     supporting: Type.Array(StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const), { maxItems: 2 }),
     available_renderer_capabilities: Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
@@ -4733,8 +4749,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
       intent: Type.String(),
       primary_message: Type.String(),
-      reader_question: optionalWhenPreflight(Type.String()),
-      visual_thesis: optionalWhenPreflight(Type.String()),
+      reader_question: optionalWhenPreflight(describedString(FIRST_TRY.copyFromGraph)),
+      visual_thesis: optionalWhenPreflight(describedString(FIRST_TRY.copyFromGraph)),
       story_graph_ref: optionalWhenFillCopied(Type.String()),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
