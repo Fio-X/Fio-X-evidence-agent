@@ -94,6 +94,26 @@ const CHAIN_STOP_CODES: &[&str] = &[
     "TOOL_NOT_ENABLED",
 ];
 
+/// Patch tools (runtime/pi/newsroom.ts `registerPatchTool`) and the tool each runs. A patch
+/// call is read exactly like a call of the wrapped tool; a tool name not listed here is not.
+const PATCH_WRAPS: [(&str, &str); 2] = [
+    (
+        "newsroom_infographic_plan_patch",
+        "newsroom_infographic_plan",
+    ),
+    (
+        "newsroom_infographic_chain_patch",
+        "newsroom_infographic_chain",
+    ),
+];
+
+fn wrapped_tool(outer_tool: &str) -> &str {
+    PATCH_WRAPS
+        .iter()
+        .find(|(patch, _)| *patch == outer_tool)
+        .map_or(outer_tool, |(_, wrapped)| wrapped)
+}
+
 /// Inner calls of a finished chain call, read only from the outer call's own
 /// result in the main event stream. Anything missing or malformed yields no
 /// inner calls at all: an incomplete record is never partly believed.
@@ -104,13 +124,38 @@ fn chain_inner_calls(
     start_seq: usize,
     end_seq: usize,
 ) -> Vec<ToolCall> {
-    let Some((_, expected)) = CHAIN_STEPS.iter().find(|(name, _)| *name == outer_tool) else {
-        return Vec::new();
-    };
+    let patched = wrapped_tool(outer_tool) != outer_tool;
+    let outer_tool = wrapped_tool(outer_tool);
     if event.get("isError").and_then(Value::as_bool) != Some(false) {
         return Vec::new();
     }
     let Some(details) = event.pointer("/result/details").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    // A patched plan call is a plan call: only the wrapped plan tool's own success
+    // details (a plan reference and a module count) make it one.
+    if patched && outer_tool == "newsroom_infographic_plan" {
+        let ok = details
+            .get("planRef")
+            .and_then(Value::as_str)
+            .is_some_and(|r| !r.is_empty())
+            && details.get("modules").is_some_and(Value::is_u64);
+        return if ok {
+            vec![ToolCall {
+                id: format!("{outer_id}:{outer_tool}"),
+                tool: outer_tool.to_string(),
+                args: Value::Null,
+                is_error: Some(false),
+                start_seq,
+                end_seq,
+                capability_class: capability_class(outer_tool),
+                parent_call_id: Some(outer_id.to_string()),
+            }]
+        } else {
+            Vec::new()
+        };
+    }
+    let Some((_, expected)) = CHAIN_STEPS.iter().find(|(name, _)| *name == outer_tool) else {
         return Vec::new();
     };
     if details.get("chain").and_then(Value::as_str) != Some(outer_tool) {
@@ -889,5 +934,152 @@ mod tests {
             json!({"type":"tool_execution_start","toolCallId":"x","toolName":"newsroom_viz_chain","args":{}}),
         ];
         assert_eq!(inner_count(&build_fixture(start_only)), 0);
+    }
+
+    const PAGE: [&str; 5] = [
+        "newsroom_infographic_plan",
+        "newsroom_infographic_lint",
+        "newsroom_infographic_render",
+        "newsroom_infographic_critic",
+        "newsroom_infographic_preview",
+    ];
+    const PAGE_PATCH: &str = "newsroom_infographic_chain_patch";
+
+    fn page_done(steps: &[&str]) -> Value {
+        json!({"chain":"newsroom_infographic_chain","chainStatus":"COMPLETE","steps":chain_steps(steps)})
+    }
+
+    fn page_stopped_at_lint() -> Value {
+        json!({"chain":"newsroom_infographic_chain","chainStatus":"STOPPED","failedAt":"newsroom_infographic_lint","stopCode":"BLOCKED","steps":chain_steps(&PAGE[..2])})
+    }
+
+    fn inner_tools(summary: &AuditSummary) -> Vec<&str> {
+        summary
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+            .map(|call| call.tool.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_chain_patch_call_that_completes_all_five_steps_counts_as_complete() {
+        let patched = build_fixture(chain_call(PAGE_PATCH, PAGE_PATCH, false, page_done(&PAGE)));
+        let direct = build_fixture(chain_call(
+            "c1",
+            "newsroom_infographic_chain",
+            false,
+            page_done(&PAGE),
+        ));
+        assert_eq!(inner_tools(&patched), PAGE);
+        assert_eq!(inner_tools(&patched), inner_tools(&direct));
+        assert_eq!(patched.failed_tool_calls, 0);
+        for call in patched
+            .calls
+            .iter()
+            .filter(|call| call.parent_call_id.is_some())
+        {
+            assert_eq!(call.is_error, Some(false));
+            assert_eq!(call.parent_call_id.as_deref(), Some(PAGE_PATCH));
+        }
+    }
+
+    #[test]
+    fn a_chain_patch_call_that_stops_at_lint_counts_as_stopped_at_lint() {
+        let patched = build_fixture(chain_call("p1", PAGE_PATCH, false, page_stopped_at_lint()));
+        assert_eq!(inner_tools(&patched), &PAGE[..2]);
+        assert_eq!(patched.tools.get("newsroom_infographic_render"), None);
+        // The same record from a direct chain call reads the same way.
+        let direct = build_fixture(chain_call(
+            "p1",
+            "newsroom_infographic_chain",
+            false,
+            page_stopped_at_lint(),
+        ));
+        assert_eq!(inner_tools(&patched), inner_tools(&direct));
+    }
+
+    #[test]
+    fn a_malformed_patch_record_yields_no_inner_calls() {
+        let mut shapes: Vec<(&str, bool, Value)> = vec![
+            ("outer error", true, page_done(&PAGE)),
+            (
+                "complete but a step is missing",
+                false,
+                page_done(&PAGE[..4]),
+            ),
+            (
+                "step out of order",
+                false,
+                page_done(&[PAGE[1], PAGE[0], PAGE[2], PAGE[3], PAGE[4]]),
+            ),
+            (
+                "wrong chain name",
+                false,
+                json!({"chain":PAGE_PATCH,"chainStatus":"COMPLETE","steps":chain_steps(&PAGE)}),
+            ),
+            (
+                "viz chain name",
+                false,
+                json!({"chain":"newsroom_viz_chain","chainStatus":"COMPLETE","steps":chain_steps(&PAGE)}),
+            ),
+            (
+                "unknown stop code",
+                false,
+                json!({"chain":"newsroom_infographic_chain","chainStatus":"STOPPED","failedAt":PAGE[2],"stopCode":"MADE_UP","steps":chain_steps(&PAGE[..2])}),
+            ),
+            ("details missing", false, Value::Null),
+        ];
+        shapes.push((
+            "steps not an array",
+            false,
+            json!({"chain":"newsroom_infographic_chain","chainStatus":"COMPLETE","steps":{}}),
+        ));
+        for (label, is_error, details) in shapes {
+            let summary = build_fixture(chain_call("m1", PAGE_PATCH, is_error, details));
+            assert_eq!(inner_count(&summary), 0, "{label}");
+            assert_eq!(summary.tool_calls, 1, "{label}");
+        }
+        // A plan patch counts only with the plan tool's own success details.
+        for details in [
+            Value::Null,
+            json!({}),
+            json!({"planRef":"","modules":3}),
+            json!({"planRef":"infographics/plans/x.json"}),
+        ] {
+            let summary = build_fixture(chain_call(
+                "m2",
+                "newsroom_infographic_plan_patch",
+                false,
+                details,
+            ));
+            assert_eq!(inner_count(&summary), 0);
+        }
+    }
+
+    #[test]
+    fn a_tool_name_not_in_the_patch_table_is_ignored() {
+        for tool in [
+            "newsroom_viz_chain_patch",
+            "newsroom_infographic_chain_patch2",
+            "x_newsroom_infographic_chain_patch",
+            "newsroom_infographic_render_patch",
+        ] {
+            let summary = build_fixture(chain_call("i1", tool, false, page_done(&PAGE)));
+            assert_eq!(inner_count(&summary), 0, "{tool}");
+            assert_eq!(summary.tool_calls, 1, "{tool}");
+        }
+    }
+
+    #[test]
+    fn a_successful_plan_patch_counts_as_one_plan_call() {
+        let details = json!({"planRef":"infographics/plans/x.json","modules":4});
+        let summary = build_fixture(chain_call(
+            "pp",
+            "newsroom_infographic_plan_patch",
+            false,
+            details,
+        ));
+        assert_eq!(inner_tools(&summary), ["newsroom_infographic_plan"]);
     }
 }
