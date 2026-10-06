@@ -13,6 +13,7 @@ export const CONTRACT_LITERALS = Object.freeze({
   minStoryDimensions: 2,
   minNonSupportRelations: 1,
   maxSidecars: 3,
+  minNodeCoverage: 0.6,
 });
 
 const list = (values) => [...values].join(", ");
@@ -37,6 +38,7 @@ export function contractStatements({ readerTasks, visualGrammarForms, registry, 
     out.visualGrammar = `Visual modules only. The module's chart_type must be one of these for its grammar (${rows.join("; ")}).`;
   }
   out.modules = `The page needs at least ${literals.minContentModules} claim-bearing content modules, at least ${literals.minVisualModules} visual or illustration modules together, modules covering at least ${literals.minStoryDimensions} story dimensions, and at least ${literals.minNonSupportRelations} story-graph edge whose relation is not 'supports'.`;
+  out.modules += ` Story-graph closure: every story_node_ids entry must be a node of the story graph; every entry node and every answer node must appear in some module's story_node_ids; every answer node must appear in a module whose story_role is resolution or explanation; and the modules together must cover at least ${Math.round(literals.minNodeCoverage * 100)}% of the story-graph nodes.`;
   out.sceneAnchor = `Must be a visual or illustration module; sidecar_module_ids holds 1 to ${literals.maxSidecars} unique module ids.`;
   out.deliveryRole = "infographic_module also needs story_graph_ref and story_node_ids.";
   out.heroUnit = "hero_stat only: empty, or a unit the hero's claim itself shows; the refusal lists the allowed ones.";
