@@ -165,7 +165,7 @@ async function differential(name, params, { sets = { base, head: off }, ...opts 
   assert.ok(!r.changed.some((f) => f.startsWith("visualizations/plans/")), `${name}: a refusal wrote a plan`);
   if (!params.claim) assert.deepEqual(r.changed.filter((f) => f === "claims.jsonl"), [], `${name}: a refusal wrote a claim`);
   for (const bad of ["0", "", "true"]) { const x = await run(sets.head, params, bad, opts); assert.equal(x.message, b.message, `${name}: a non-"1" value changed the message`); }
-  if (r.message !== b.message) { multi++; assert.match(r.message, /\nAlso refused in this call \(\d+ more independent problems?; nothing was recorded\):\n\(2\) /); }
+  if (r.message !== b.message) { multi++; assert.match(r.message, /\nAlso refused in this call \(\d+ more independent problems?; no claim or plan was recorded[^)]*\):\n\(2\) /); }
   console.log(`  ${name}: ${r.message === b.message ? "one problem, same text" : `${r.message.split("\n").length - 2} more listed`}`);
   return { b, o, r };
 }
@@ -211,6 +211,18 @@ for (const [name, params] of Object.entries(SCATTERS)) for (const [label, env] o
   const { r } = await differential("aborted signal + rule 5", noCategory, { signal: ac.signal });
   assert.ok(!/Also refused/.test(r.message), "an aborted call listed more problems");
 }
+// a cancel in the middle of collection: the abort rethrows at once and replaces the earlier collected error (current behaviour, not a validation message)
+{
+  const sqlAndRule5 = { ...noCategory, sql: "DELETE FROM x" };
+  const first = (await run(off, sqlAndRule5, "1")).message;
+  assert.match(first, /\nAlso refused in this call/, "the fixture must collect two problems without an abort");
+  let reads = 0;
+  const lateAbort = { get aborted() { reads++; return reads > 1; } }; // clean on the first check, aborted when the second failure is kept
+  const r = await run(off, sqlAndRule5, "1", { signal: lateAbort });
+  assert.equal(r.ok, false);
+  assert.ok(!/Also refused/.test(r.message), "an abort in the middle still listed the earlier problem");
+  assert.notEqual(r.message, first.split("\nAlso refused")[0], "the abort did not replace the earlier collected error");
+}
 // the inline claim path: the preparation (query, claim text) runs once, before the checks, as before; the claim and plan are recorded only after every check passed
 const TEMPLATE = "Region {max.amount.region} has the largest amount at {max.amount} units and {min.amount.region} the smallest at {min.amount} units.";
 const { claim_id: _drop, takeaway: _t, alt: _a, ...inlineBase } = good;
@@ -228,6 +240,12 @@ const INLINE_CASES = {
   "inline: ranking with the runtime's claim id": { ...inline, reader_task: "ranking", measure_semantics: ms, claim_spec: { relation: "rank", reader_task: "ranking", target_measure: "amt", measure_ids: ["amt"] } },
   "inline: ranking with an unknown target_measure and rule 5": { ...inline, category_field: undefined, reader_task: "ranking", measure_semantics: ms, claim_spec: { relation: "rank", reader_task: "ranking", target_measure: "amount", measure_ids: ["amt"] } },
 };
+// INLINE_CLAIM on with an existing claim_id: alt and source_note stay required (validateVizSpec), on every arm
+for (const [name, params] of Object.entries({ "inline on, claim_id given, no alt": { ...good, alt: undefined }, "inline on, claim_id given, no source_note": { ...good, source_note: undefined } })) {
+  const o = await run(headChain, params, undefined, { env: CHAIN_ENV }), r = await run(headChain, params, "1", { env: CHAIN_ENV });
+  assert.equal(o.ok, false, `${name}: accepted`); assert.equal(r.ok, false, `${name}: accepted with the list-all switch`);
+  assert.deepEqual(r.changed.filter((f) => /plans?\//.test(f)), [], `${name}: a plan was written`);
+}
 for (const [name, params] of Object.entries(INLINE_CASES)) await differential(name, params, { sets: { base: baseChain, head: headChain }, env: CHAIN_ENV });
 // a duplicate claim is reused: the second call of the same inline plan gives the same verdict and the same files as the old code
 await differential("inline: the same plan twice (the claim is reused)", inline, { sets: { base: baseChain, head: headChain }, env: CHAIN_ENV, times: 2 });
@@ -301,10 +319,10 @@ console.log(`PASS viz_plan report-all: ${refused} refused and ${accepted} accept
   assert.match(await planDesc(hintsOn, "story_graph_ref"), /passed narrative closure/);
   assert.match(await planDesc(hintsOn, "claim_spec", "properties", "target_measure"), /Optional\. When given.*measure_semantics\[\]\.id/);
   assert.ok(!/field name/.test(await planDesc(hintsOn, "claim_spec", "properties", "target_measure")), "a valid measure id may be spelled like a field");
-  assert.match(await planDesc(hintsOn, "claim_spec", "properties", "claim_id"), /verified plan.*must equal claim_id.*optional in a draft/);
+  assert.match(await planDesc(hintsOn, "claim_spec", "properties", "claim_id"), /claim_spec is declared and the plan is verified.*present and equal to claim_id.*draft plan it is compared only when both/);
   assert.match(await planDesc(hintsOn, "category_field"), /present and nonempty/);
   const bindingHint = await planDesc(hintsOn, "claim_id");
-  assert.match(bindingHint, /same data\/ or sources\/ files/); assert.match(bindingHint, /read_json\('computations/); assert.match(bindingHint, /never reword the claim/);
+  assert.match(bindingHint, /shared compatible evidence/); assert.match(bindingHint, /permitted computation relation/); assert.match(bindingHint, /no CTE, JOIN/); assert.ok(!/same hashes/.test(bindingHint)); assert.match(bindingHint, /read_json\('computations/); assert.match(bindingHint, /never reword the claim/);
   const enumText = await planDesc(hintsOn, "claim_spec", "properties", "reader_task");
   assert.ok(!/…|\.\.\./.test(enumText), "the enum is written out in full");
   for (const v of (await load(COPY_HEAD, { NEWSROOM_TOOL_PROFILE: "full" })).get("newsroom_viz_plan").parameters.properties.reader_task.enum) assert.ok(enumText.includes(v), `${v} missing from the written-out enum`);

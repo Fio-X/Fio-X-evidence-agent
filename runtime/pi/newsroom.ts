@@ -203,9 +203,9 @@ const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank hori
 const RULE_HINT_STORY_REF = "Required when delivery_role=infographic_module: the story_graph_ref returned by newsroom_story_graph; that graph must have passed narrative closure.";
 const RULE_HINT_STORY_NODES = "Required when delivery_role=infographic_module: ids of nodes that exist in that story graph.";
 const RULE_HINT_TARGET_MEASURE = "Optional. When given, it must be one of the declared measure_semantics[].id values.";
-const RULE_HINT_SPEC_CLAIM_ID = "For a verified plan (claim_id given), claim_spec.claim_id must equal claim_id; it stays optional in a draft plan.";
+const RULE_HINT_SPEC_CLAIM_ID = "When claim_spec is declared and the plan is verified (claim_id given), strict semantics require claim_spec.claim_id to be present and equal to claim_id; in a draft plan it is compared only when both are given.";
 const RULE_HINT_CATEGORY_FIELD = "Must be present and nonempty for the chart types that list category_field (horizontal_bar, dot, ...); see value_field for the list.";
-const RULE_HINT_PLAN_CLAIM_ID = "Lint needs both: this chart's SQL and the claim's computation read the same data/ or sources/ files (same hashes), and the chart reads the claim's stored computation (FROM read_json('computations/...')), uses the same SQL, or shows only values contained in the claim's rows. Prefer reading the stored computation; never reword the claim to pass.";
+const RULE_HINT_PLAN_CLAIM_ID = "Lint needs both: shared compatible evidence (this chart's SQL and one of the claim's computations read a common data/ or sources/ file, and no file they both read has a different hash) plus a permitted computation relation: the chart is rooted in the claim's stored computation (one plain SELECT directly FROM read_json('computations/<hash>.json') using its columns or simple COUNT/SUM/AVG/MIN/MAX of them; no CTE, JOIN, UNION, subquery, window, HAVING, DISTINCT, literal or arithmetic, and no other file read), or uses the same SQL, or shows only values contained in the claim's rows. Prefer the rooted form; never reword the claim to pass.";
 const VIZ_PLAN_READER_TASKS = ["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const;
 // With RULE_HINTS on, claim_spec.reader_task names the enum values instead of the example that listed a value outside the enum.
 const claimSpecReaderTaskOptions = (base: any): any => (ruleHintsEnabled() ? { ...base, description: `Use the same controlled value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence.` } : base);
@@ -2438,7 +2438,7 @@ function withInlineClaimSchema(shared: any) {
   for (const [key, schema] of Object.entries(shared.properties ?? {}) as Array<[string, any]>) {
     if (key === "takeaway") entries.push([key, Type.Optional(Type.String({ description: "One-sentence intended reader takeaway; required unless the call carries claim, from which the runtime writes it (a value passed with claim is replaced)" }))]);
     else if (key === "alt") entries.push([key, Type.Optional(Type.String({ description: "Standalone accessible description of the visual and its main takeaway; required unless the call carries claim, from which the runtime writes it as the title followed by the claim (a value passed with claim is replaced)" }))]);
-    else if (key === "source_note") entries.push([key, Type.Optional(Type.String({ description: "Source attribution; with claim it defaults to the host and series label recorded when the data file was downloaded, or the name of a user-supplied file" }))]);
+    else if (key === "source_note") entries.push([key, Type.Optional(Type.String({ description: "Source attribution; required unless the call carries claim, which defaults it to the host and series label recorded when the data file was downloaded, or the name of a user-supplied file (if none is recorded the call is refused: then pass source_note)" }))]);
     else entries.push([key, schema]);
     if (key === "claim_id") {
       entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.${firstTry(FIRST_TRY.claimNumberWords)}` }))]);
@@ -4098,7 +4098,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const throwCollected = () => {
         if (!collected?.length) return;
         if (collected.length === 1) throw collected[0];
-        throw combinedError(collected[0], `${collected[0]?.message ?? collected[0]}\nAlso refused in this call (${collected.length - 1} more independent problem${collected.length === 2 ? "" : "s"}; nothing was recorded):\n${collected.slice(1).map((error, index) => `(${index + 2}) ${error?.message ?? error}`).join("\n")}`);
+        throw combinedError(collected[0], `${collected[0]?.message ?? collected[0]}\nAlso refused in this call (${collected.length - 1} more independent problem${collected.length === 2 ? "" : "s"}; no claim or plan was recorded, though inline preparation may have queried rows and cached them):\n${collected.slice(1).map((error, index) => `(${index + 2}) ${error?.message ?? error}`).join("\n")}`);
       };
       attempt(() => validateReadOnlySql(params.sql));
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
