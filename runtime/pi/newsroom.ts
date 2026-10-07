@@ -200,12 +200,12 @@ const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(
 const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows (strip_plot: 600), so aggregate in SQL first.";
 const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";
 const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples/mirrored_bar; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
-const RULE_HINT_STORY_REF = "Required when delivery_role=infographic_module: the story_graph_ref returned by newsroom_story_graph, which must have passed.";
+const RULE_HINT_STORY_REF = "Required when delivery_role=infographic_module: the story_graph_ref returned by newsroom_story_graph; that graph must have passed narrative closure.";
 const RULE_HINT_STORY_NODES = "Required when delivery_role=infographic_module: ids of nodes that exist in that story graph.";
-const RULE_HINT_TARGET_MEASURE = "Must equal the id of one measure_semantics entry, not a field name.";
-const RULE_HINT_SPEC_CLAIM_ID = "Must equal the plan's claim_id.";
-const RULE_HINT_CATEGORY_FIELD = "Required by chart_type; see value_field for the list.";
-const RULE_HINT_PLAN_CLAIM_ID = "Record the claim from this chart's own query (same SQL or the same rows); a claim computed from other data is refused at lint.";
+const RULE_HINT_TARGET_MEASURE = "Optional. When given, it must be one of the declared measure_semantics[].id values.";
+const RULE_HINT_SPEC_CLAIM_ID = "For a verified plan (claim_id given), claim_spec.claim_id must equal claim_id; it stays optional in a draft plan.";
+const RULE_HINT_CATEGORY_FIELD = "Must be present and nonempty for the chart types that list category_field (horizontal_bar, dot, ...); see value_field for the list.";
+const RULE_HINT_PLAN_CLAIM_ID = "Lint needs both: this chart's SQL and the claim's computation read the same data/ or sources/ files (same hashes), and the chart reads the claim's stored computation (FROM read_json('computations/...')), uses the same SQL, or shows only values contained in the claim's rows. Prefer reading the stored computation; never reword the claim to pass.";
 const VIZ_PLAN_READER_TASKS = ["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const;
 // With RULE_HINTS on, claim_spec.reader_task names the enum values instead of the example that listed a value outside the enum.
 const claimSpecReaderTaskOptions = (base: any): any => (ruleHintsEnabled() ? { ...base, description: `Use the same controlled value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence.` } : base);
@@ -4091,8 +4091,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       // NEWSROOM_SPEED_VIZ_REPORT_ALL=1: `attempt` records a failed check and goes on; the checks that read a failed check's result are
       // skipped (declared, semanticGate). Off: `attempt` just runs the check, so the first failure throws exactly as before.
       const collected: any[] | null = vizReportAllEnabled() ? [] : null;
-      const attempt = (check: () => void) => { if (!collected) return check(); try { check(); } catch (error) { collected.push(error); } };
-      const attemptAsync = async (check: () => Promise<void>) => { if (!collected) return check(); try { await check(); } catch (error) { collected.push(error); } };
+      // A cancel or abort is not a validation message: it rethrows at once.
+      const keep = (error: any) => { if (signal?.aborted || error?.name === "AbortError") throw error; collected!.push(error); };
+      const attempt = (check: () => void) => { if (!collected) return check(); try { check(); } catch (error) { keep(error); } };
+      const attemptAsync = async (check: () => Promise<void>) => { if (!collected) return check(); try { await check(); } catch (error) { keep(error); } };
       const throwCollected = () => {
         if (!collected?.length) return;
         if (collected.length === 1) throw collected[0];
@@ -4166,7 +4168,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
             throw new Error(`SCATTER_PAIRING_REQUIRED: a ${SCATTER_PAIR_CHART} chart's declarations do not form a pair of axes: ${scatterPairFailures(semanticGate, params).map((failure, index) => `(${index + 1}) ${failure}`).join("; ")}. ${SCATTER_PAIR_HINT}`);
           }
         });
-        scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null;
+        attempt(() => { scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null; });
         attempt(() => {
           if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
         });
