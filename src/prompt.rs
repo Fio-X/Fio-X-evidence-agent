@@ -344,20 +344,62 @@ pub fn required_visual_modes(text: &str) -> Vec<(&'static str, &'static [&'stati
 
     let lower = text.to_lowercase();
     let mut required = Vec::new();
-    let contains_any = |terms: &[&str]| terms.iter().any(|term| lower.contains(term));
-    if contains_any(&["map", "地图", "gis", "geographic"]) {
+    // Chinese terms and the space-padded " vs " stay plain substrings; other
+    // English terms match as whole words so "GISTEMP" does not contain "gis"
+    // and "treemap" does not contain "map".  Inflections are listed explicitly.
+    let contains_any = |terms: &[&str]| {
+        terms.iter().any(|term| {
+            if !term.is_ascii() || term.starts_with(' ') || term.ends_with(' ') {
+                lower.contains(term)
+            } else {
+                contains_phrase(&lower, term)
+            }
+        })
+    };
+    if contains_any(&[
+        "map",
+        "maps",
+        "basemap",
+        "basemaps",
+        "地图",
+        "gis",
+        "geographic",
+        "geographical",
+        "geographically",
+    ]) {
         required.push(("map/spatial", SPATIAL));
     }
-    if contains_any(&["sankey", "桑基"]) {
+    if contains_any(&["sankey", "sankeys", "桑基"]) {
         required.push(("sankey/flow", FLOW));
     }
-    if contains_any(&["network graph", "network diagram", "网络图", "关系网络"]) {
+    if contains_any(&[
+        "network graph",
+        "network graphs",
+        "network diagram",
+        "network diagrams",
+        "网络图",
+        "关系网络",
+    ]) {
         required.push(("network", NETWORK));
     }
-    if contains_any(&["trend", "趋势"]) {
+    if contains_any(&[
+        "trend",
+        "trends",
+        "trending",
+        "trendline",
+        "trendlines",
+        "趋势",
+    ]) {
         required.push(("trend", TREND));
     }
-    if contains_any(&["composition", "breakdown", "构成", "组成"]) {
+    if contains_any(&[
+        "composition",
+        "compositions",
+        "breakdown",
+        "breakdowns",
+        "构成",
+        "组成",
+    ]) {
         // “Sankey composition” / “Sankey 构成” describes the question the
         // Sankey answers, not necessarily a second composition chart.  Keep a
         // standalone composition request strict, while allowing the adjacent
@@ -385,7 +427,10 @@ pub fn required_visual_modes(text: &str) -> Vec<(&'static str, &'static [&'stati
     }
     if contains_any(&[
         "comparison",
+        "comparisons",
         "compare",
+        "compares",
+        "compared",
         "versus",
         " vs ",
         "对比",
@@ -704,6 +749,68 @@ mod tests {
         let retry_contract = visual_mode_contract("世界地图、Sankey 和年代比较");
         assert!(retry_contract.contains("primary editorial grammar ROUTE_SPINE"));
         assert!(retry_contract.contains("Add THEN_NOW"));
+    }
+
+    fn mode_labels(text: &str) -> Vec<&'static str> {
+        required_visual_modes(text)
+            .iter()
+            .map(|(label, _)| *label)
+            .collect()
+    }
+
+    #[test]
+    fn english_visual_mode_terms_do_not_match_inside_longer_words() {
+        for word in [
+            "GISTEMP",
+            "logistics",
+            "registry",
+            "legislation",
+            "treemap",
+            "heatmap",
+            "roadmap",
+            "bitmap",
+        ] {
+            assert_eq!(
+                mode_labels(&format!("Make a chart from the {word} data")),
+                Vec::<&str>::new(),
+                "{word} must not trigger a visual mode"
+            );
+        }
+        assert_eq!(
+            mode_labels(
+                "用本地 NASA GISTEMP 气温距平数据做一张图，说明 1980–2025 年全球气温怎么变化。"
+            ),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn english_visual_mode_terms_keep_words_and_inflections() {
+        for (text, label) in [
+            ("draw a map of GDP", "map/spatial"),
+            ("draw maps of GDP", "map/spatial"),
+            ("a GIS layer", "map/spatial"),
+            ("(GIS)", "map/spatial"),
+            ("geographic spread", "map/spatial"),
+            ("geographical spread", "map/spatial"),
+            ("show the trend", "trend"),
+            ("show trends", "trend"),
+            ("trending upward", "trend"),
+            ("a trendline of GDP", "trend"),
+            ("draw trendlines", "trend"),
+            ("a basemap of Europe", "map/spatial"),
+            ("two basemaps", "map/spatial"),
+            ("compared with 2000", "comparison"),
+            ("comparisons by year", "comparison"),
+            ("compare 2000 and 2020", "comparison"),
+            ("a vs b", "comparison"),
+            ("sankey breakdowns", "composition"),
+        ] {
+            assert!(
+                mode_labels(text).contains(&label),
+                "{text:?} should still require {label}"
+            );
+        }
     }
 
     #[test]
