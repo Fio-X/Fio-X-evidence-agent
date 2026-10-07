@@ -43,6 +43,7 @@ const SWITCHES = [
   { name: "PLAN_PATCH", env: "NEWSROOM_SPEED_PLAN_PATCH", requires: [ATOMIC] }, // after a refusal, send only the change; adds a tool and a hint line, never loosens a check
   { name: "CHAIN_PATCH", env: "NEWSROOM_SPEED_CHAIN_PATCH", requires: [ATOMIC, "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC"] },
   { name: "REPORT_ALL", env: "NEWSROOM_SPEED_REPORT_ALL" }, // refuses only; reports the independent plan problems together, so every refused case must still be refused
+  { name: "VIZ_REPORT_ALL", env: "NEWSROOM_SPEED_VIZ_REPORT_ALL" }, // refuses only; newsroom_viz_plan lists the independent problems together, so every refused case must still be refused and nothing may be written
   { name: "PRECHECK_ALL", env: "NEWSROOM_SPEED_PRECHECK_ALL" }, // refuses only, after the unchanged checks refused; lists every other pre-draw problem, so every refused case must still be refused with the same codes
   { name: "FILL_COPIED_REFS", env: "NEWSROOM_SPEED_FILL_COPIED_REFS" }, // copies story_graph_ref, the lint plan_ref and project_id only when omitted and unique; a field it cannot copy is refused
   { name: "FIRST_TRY_TEXT", env: "NEWSROOM_SPEED_FIRST_TRY_TEXT" }, // text only: adds sentences to descriptions and one refusal, so every refused case must still be refused

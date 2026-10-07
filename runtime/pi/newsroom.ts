@@ -200,6 +200,15 @@ const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(
 const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows (strip_plot: 600), so aggregate in SQL first.";
 const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";
 const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples/mirrored_bar; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
+const RULE_HINT_STORY_REF = "Required when delivery_role=infographic_module: the story_graph_ref returned by newsroom_story_graph, which must have passed.";
+const RULE_HINT_STORY_NODES = "Required when delivery_role=infographic_module: ids of nodes that exist in that story graph.";
+const RULE_HINT_TARGET_MEASURE = "Must equal the id of one measure_semantics entry, not a field name.";
+const RULE_HINT_SPEC_CLAIM_ID = "Must equal the plan's claim_id.";
+const RULE_HINT_CATEGORY_FIELD = "Required by chart_type; see value_field for the list.";
+const RULE_HINT_PLAN_CLAIM_ID = "Record the claim from this chart's own query (same SQL or the same rows); a claim computed from other data is refused at lint.";
+const VIZ_PLAN_READER_TASKS = ["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const;
+// With RULE_HINTS on, claim_spec.reader_task names the enum values instead of the example that listed a value outside the enum.
+const claimSpecReaderTaskOptions = (base: any): any => (ruleHintsEnabled() ? { ...base, description: `Use the same controlled value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence.` } : base);
 const RULE_HINT_QUESTIONS = "Send at least 3 questions, and fill at least one of surprises, mechanisms or spatial_dimensions; otherwise the decision is REVISE.";
 const RULE_HINT_CHANNELS = "Each channel may be owned by one field only.";
 // NEWSROOM_SPEED_CONTRACT_TEXT=1: wording only, same shape as the rule hints above. The statements come from
@@ -286,6 +295,13 @@ function preflightEnabled() {
 // problem that does not depend on another) in one refusal, the first problem's text unchanged. No check is removed or reordered. Off: nothing changes.
 function reportAllEnabled() {
   return process.env.NEWSROOM_SPEED_REPORT_ALL === "1";
+}
+// NEWSROOM_SPEED_VIZ_REPORT_ALL=1: a refused newsroom_viz_plan call lists every independent problem found by the checks that read only the call
+// (and the story graph file), in the old order and with the first problem's text, code and class unchanged. A check that needs an earlier one
+// to have passed (the semantic gate's claim_id compares and grammar, which read its result) is skipped when that one failed. Nothing runs SQL or
+// writes to collect problems, and the inline claim is recorded only after the list is empty. Off (anything but exactly "1"): nothing changes.
+function vizReportAllEnabled() {
+  return process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL === "1";
 }
 // NEWSROOM_SPEED_PRECHECK_ALL=1: when the plan call is refused, the refusal also lists every other pre-draw check that can still run
 // (planPrecheckAll). It runs only after the unchanged checks have refused, so no verdict or code changes. Off: nothing changes.
@@ -3912,10 +3928,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
     parameters: withInlineClaimSchema(Type.Object({
-      reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const, contractHint("readerTask")),
+      reader_task: StringEnum(VIZ_PLAN_READER_TASKS, contractHint("readerTask")),
       delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole"))),
-      story_graph_ref: Type.Optional(Type.String()),
-      story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+      story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
+      story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
       chart_type: StringEnum(["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar"] as const),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Chart language; defaults to 'en'. Every string the renderer adds on its own (note/source prefixes, axis and legend words) follows this field; the model's own title/subtitle copy must still be written in this language.", default: "en" })),
@@ -3929,7 +3945,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       alt: Type.String({ description: "Standalone accessible description of the visual and its main takeaway" }),
       source_note: Type.String(),
       note: Type.Optional(Type.String()),
-      claim_id: Type.Optional(Type.String({ description: "Verified claim_id previously returned by record_claim; required in verified mode and omitted for draft mode" })),
+      claim_id: Type.Optional(Type.String(ruleHint(RULE_HINT_PLAN_CLAIM_ID, { description: "Verified claim_id previously returned by record_claim; required in verified mode and omitted for draft mode" }))),
       sql: Type.String(ruleHint(RULE_HINT_SQL, { description: "Read-only SQL whose rows directly encode the visual" })),
       unit: Type.String({ description: "Quantitative unit, such as %, TWh, MtCO2, index points, or USD" }),
       measure_semantics: Type.Optional(Type.Array(Type.Object({
@@ -3956,16 +3972,16 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         value: Type.Optional(Type.Number()),
       }), scatterPairHint({ minItems: 1, maxItems: 24, description: "Per-field measure declarations. A count or calendar-year value_field is spelled as a plain integer." }))),
       claim_spec: Type.Optional(Type.Object({
-        claim_id: Type.Optional(Type.String({ description: "Optional in draft mode; required for a verified claim-bound plan" })),
+        claim_id: Type.Optional(Type.String(ruleHint(RULE_HINT_SPEC_CLAIM_ID, { description: "Optional in draft mode; required for a verified claim-bound plan" }))),
         relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const, ruleHint(RULE_HINT_RELATION)),
-        reader_task: Type.String({ description: "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." }),
-        target_measure: Type.Optional(Type.String()),
+        reader_task: Type.String(claimSpecReaderTaskOptions({ description: "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." })),
+        target_measure: Type.Optional(Type.String(ruleHint(RULE_HINT_TARGET_MEASURE))),
         baseline_measure: Type.Optional(Type.String()),
         context_measures: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })),
         measure_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })),
         derived_metric: Type.Optional(StringEnum(["percent_change", "absolute_change", "percentage_point_change", "ratio"] as const)),
       })),
-      category_field: Type.Optional(Type.String()),
+      category_field: Type.Optional(Type.String(ruleHint(RULE_HINT_CATEGORY_FIELD))),
       cutoff_date: Type.Optional(Type.String({ description: "Optional data cutoff date this chart states. If the infographic page declares subject_set.cutoff_date, every chart on the page must state that same date: a different value or a missing one blocks the page lint." })),
       x_field: Type.Optional(Type.String()),
       y_field: Type.Optional(Type.String()),
@@ -4072,7 +4088,17 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const inline = inlineClaimEnabled() ? await prepareInlineClaim(rawParams, signal) : null;
       if (inlineClaimEnabled() && !inline && !String(rawParams.takeaway ?? "").trim()) throw new Error("INLINE_CLAIM_TAKEAWAY_REQUIRED: takeaway is required unless the call carries claim, from which the runtime writes it");
       const params = inline ? inline.params : rawParams;
-      validateReadOnlySql(params.sql);
+      // NEWSROOM_SPEED_VIZ_REPORT_ALL=1: `attempt` records a failed check and goes on; the checks that read a failed check's result are
+      // skipped (declared, semanticGate). Off: `attempt` just runs the check, so the first failure throws exactly as before.
+      const collected: any[] | null = vizReportAllEnabled() ? [] : null;
+      const attempt = (check: () => void) => { if (!collected) return check(); try { check(); } catch (error) { collected.push(error); } };
+      const attemptAsync = async (check: () => Promise<void>) => { if (!collected) return check(); try { await check(); } catch (error) { collected.push(error); } };
+      const throwCollected = () => {
+        if (!collected?.length) return;
+        if (collected.length === 1) throw collected[0];
+        throw combinedError(collected[0], `${collected[0]?.message ?? collected[0]}\nAlso refused in this call (${collected.length - 1} more independent problem${collected.length === 2 ? "" : "s"}; nothing was recorded):\n${collected.slice(1).map((error, index) => `(${index + 2}) ${error?.message ?? error}`).join("\n")}`);
+      };
+      attempt(() => validateReadOnlySql(params.sql));
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
         projection: "natural_earth_1",
@@ -4093,39 +4119,68 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
       const verificationMode = params.claim_id ? "verified" : "draft";
-      if (verificationMode === "verified" && !String(params.claim_id ?? "").trim()) {
-        throw new Error("VERIFIED_CLAIM_REQUIRED: publishable plans require claim_id; omit claim_id for exploratory rendering");
-      }
+      let declared = true; // false once a declaration check failed: the semantic gate would then read declarations that are not there
+      attempt(() => {
+        if (verificationMode === "verified" && !String(params.claim_id ?? "").trim()) {
+          throw new Error("VERIFIED_CLAIM_REQUIRED: publishable plans require claim_id; omit claim_id for exploratory rendering");
+        }
+      });
       if (deliveryRole === "infographic_module") {
-        if (!params.story_graph_ref || !Array.isArray(params.story_node_ids) || !params.story_node_ids.length) throw new Error("INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required");
-        const storyGraph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
-        if (!storyGraph.passed) throw new Error("INFOGRAPHIC_MODULE_STORY_GRAPH_BLOCKED: story graph has not passed narrative closure");
-        const validNodes = new Set((storyGraph.nodes ?? []).map((node: any) => String(node.id)));
-        const unknown = params.story_node_ids.filter((id: string) => !validNodes.has(String(id)));
-        if (unknown.length) throw new Error(`INFOGRAPHIC_MODULE_UNKNOWN_STORY_NODES: ${unknown.join(", ")}`);
+        await attemptAsync(async () => {
+          if (!params.story_graph_ref || !Array.isArray(params.story_node_ids) || !params.story_node_ids.length) throw new Error("INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required");
+          const storyGraph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
+          if (!storyGraph.passed) throw new Error("INFOGRAPHIC_MODULE_STORY_GRAPH_BLOCKED: story graph has not passed narrative closure");
+          const validNodes = new Set((storyGraph.nodes ?? []).map((node: any) => String(node.id)));
+          const unknown = params.story_node_ids.filter((id: string) => !validNodes.has(String(id)));
+          if (unknown.length) throw new Error(`INFOGRAPHIC_MODULE_UNKNOWN_STORY_NODES: ${unknown.join(", ")}`);
+        });
       }
-      if (SEMANTIC_REQUIRED_READER_TASKS.has(params.reader_task) && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
-        throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec`);
-      }
+      attempt(() => {
+        if (SEMANTIC_REQUIRED_READER_TASKS.has(params.reader_task) && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
+          declared = false;
+          throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec`);
+        }
+      });
       // K110 (off unless NEWSROOM_SCATTER_PAIRED_MEASURES=1): only a call whose own chart_type is scatter must declare; a scatter that
       // meets every pairing condition is compared as two axes and its refusals below name the field or unit to change.
       const scatterPaired = scatterPairedEnabled() && params.chart_type === SCATTER_PAIR_CHART;
-      if (scatterPaired && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
-        throw new Error(`SEMANTIC_DECLARATION_REQUIRED: chart_type '${SCATTER_PAIR_CHART}' requires measure_semantics and claim_spec: one measure per axis (field = x_field and y_field)`);
+      attempt(() => {
+        if (scatterPaired && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
+          declared = false;
+          throw new Error(`SEMANTIC_DECLARATION_REQUIRED: chart_type '${SCATTER_PAIR_CHART}' requires measure_semantics and claim_spec: one measure per axis (field = x_field and y_field)`);
+        }
+      });
+      // The semantic gate throws on the first problem it finds, so its own problems are one entry; the checks that read its result need it.
+      let semanticGate: any = null;
+      if (declared) {
+        attempt(() => {
+          semanticGate = scatterPaired
+            ? evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null }, { scatterPair: { chart_type: params.chart_type, x_field: params.x_field, y_field: params.y_field } })
+            : evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
+        });
       }
-      const semanticGate = scatterPaired
-        ? evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null }, { scatterPair: { chart_type: params.chart_type, x_field: params.x_field, y_field: params.y_field } })
-        : evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
-      if (scatterPaired && !semanticGate.scatter_pair) {
-        throw new Error(`SCATTER_PAIRING_REQUIRED: a ${SCATTER_PAIR_CHART} chart's declarations do not form a pair of axes: ${scatterPairFailures(semanticGate, params).map((failure, index) => `(${index + 1}) ${failure}`).join("; ")}. ${SCATTER_PAIR_HINT}`);
+      let scatterAxisUnits: any = null;
+      if (semanticGate) {
+        attempt(() => {
+          if (scatterPaired && !semanticGate.scatter_pair) {
+            throw new Error(`SCATTER_PAIRING_REQUIRED: a ${SCATTER_PAIR_CHART} chart's declarations do not form a pair of axes: ${scatterPairFailures(semanticGate, params).map((failure, index) => `(${index + 1}) ${failure}`).join("; ")}. ${SCATTER_PAIR_HINT}`);
+          }
+        });
+        scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null;
+        attempt(() => {
+          if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
+        });
+        attempt(() => {
+          if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
+        });
+        attempt(() => assertEditorialGrammar(semanticGate, params.chart_type));
+        attempt(() => { if (scatterPaired && semanticGate.scatter_pair) assertScatterPairFields(params); });
       }
-      const scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null;
-      if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
-      if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
-      assertEditorialGrammar(semanticGate, params.chart_type);
-      if (scatterPaired && semanticGate.scatter_pair) assertScatterPairFields(params);
-      const errors = validateVizSpec(normalizedParams);
-      if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
+      attempt(() => {
+        const errors = validateVizSpec(normalizedParams);
+        if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
+      });
+      throwCollected();
       let verifiedClaim: any = null;
       let claimText = "";
       if (inline) {
