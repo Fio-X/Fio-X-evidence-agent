@@ -67,6 +67,18 @@ fn completion_chain_required(topic: &str, split_classifier: bool, profile: Optio
     is_complex_visual_request(topic, split_classifier) || profile == Some("visual-story")
 }
 
+/// A composed closing text is only for a run whose completion does not need the infographic,
+/// publication and browser-QA chain, whether the topic or the tool profile asks for it.
+fn compose_allowed(topic: &str, split_classifier: bool, profile: &str) -> bool {
+    !completion_chain_required(topic, split_classifier, Some(profile))
+        && compose_answer::eligible(
+            topic,
+            is_complex_visual_request(topic, split_classifier),
+            prompt::requires_html(topic),
+            prompt::requires_png(topic),
+        )
+}
+
 fn visual_completion_gaps(
     bundle: &InvestigationBundle,
     topic: &str,
@@ -324,6 +336,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         runtime_started.elapsed().as_millis()
     );
 
+    let tool_profile = effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier);
     let mut config = PiConfig {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
@@ -336,19 +349,13 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         artifact_dir: Some(bundle.dir.clone()),
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: false,
-        tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier),
+        tool_profile: tool_profile.clone(),
         hide_lieflat,
         speed,
-        compose: (speed.compose_answer
-            && compose_answer::eligible(
-                &topic,
-                is_complex_visual_request(&topic, split_classifier),
-                prompt::requires_html(&topic),
-                prompt::requires_png(&topic),
-            ))
-        .then(|| compose_answer::ComposeSpec {
-            chinese: prompt::language_instruction(&topic).contains("Simplified Chinese"),
-        }),
+        compose: (speed.compose_answer && compose_allowed(&topic, split_classifier, &tool_profile))
+            .then(|| compose_answer::ComposeSpec {
+                chinese: prompt::language_instruction(&topic).contains("Simplified Chinese"),
+            }),
     };
     let reported_provider = config.effective_provider();
 
@@ -512,14 +519,22 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 #[cfg(test)]
 mod completion_tests {
     use super::{
-        completion_chain_required, is_transient_completion_provider_error, lieflat_hidden_for,
-        missing_visual_modes, visual_completion_gaps_for_profile,
+        completion_chain_required, compose_allowed, is_transient_completion_provider_error,
+        lieflat_hidden_for, missing_visual_modes, visual_completion_gaps_for_profile,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
     use crate::pi;
     use serde_json::json;
     use std::fs;
+
+    #[test]
+    fn composed_closing_text_never_replaces_a_visual_story_completion_chain() {
+        let simple = "Show the GISTEMP anomaly as one line chart";
+        assert!(compose_allowed(simple, false, "investigate"));
+        // An explicit visual-story profile requires the chain even for a simple topic.
+        assert!(!compose_allowed(simple, false, "visual-story"));
+    }
 
     const SCMP_LONG_IMAGE_GOAL: &str = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
 
