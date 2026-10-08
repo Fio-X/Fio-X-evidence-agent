@@ -208,6 +208,7 @@ const editorialHint = (description: string, base?: any): any => (editorialHintsE
 const HELD_CHART_TYPES: readonly string[] = ["hierarchy_tree", "geo_flow_map", "cartographic_flow_map", "trajectory_profile"];
 // Default off (exactly "1" turns it on): off, the registered tool definitions and the execute paths are byte-identical to what
 // they were before the hold. The switch is read where the tools register and where a plan is accepted.
+const zhSourceLineEnabled = () => process.env.NEWSROOM_ZH_SOURCE_LINE === "1";
 const heldChartTypesEnabled = () => process.env.NEWSROOM_HELD_CHART_TYPES === "1";
 const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? ""));
 // Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
@@ -2307,7 +2308,8 @@ function inlineNoteText(value: unknown) {
  *  file the SQL reads came from and the series label recorded with it when it
  *  was downloaded (untrusted source metadata), or the name of a file the user
  *  supplied. Null when no data file has an origin record. */
-export async function inlineSourceNote(sourceRefs: string[]) {
+/** `language` only matters with NEWSROOM_ZH_SOURCE_LINE=1: a zh chart then names a local file in Chinese. */
+export async function inlineSourceNote(sourceRefs: string[], language?: string) {
   const root = artifactRoot();
   const dataRefs = sourceRefs.filter((ref) => ref.startsWith("data/"));
   if (!root || !dataRefs.length) return null;
@@ -2335,7 +2337,7 @@ export async function inlineSourceNote(sourceRefs: string[]) {
     const label = labelOf(origin);
     // A user-supplied file has no download URL or series label.
     const supplied = origin.origin === "local_file" ? inlineNoteText(origin.original_filename) : "";
-    const note = host && label ? `${host}: ${label}` : host || label || (supplied && `User-supplied file ${supplied}`);
+    const note = host && label ? `${host}: ${label}` : host || label || (supplied && (language === "zh" && zhSourceLineEnabled() ? `本地数据文件 ${supplied}` : `User-supplied file ${supplied}`));
     if (note && !notes.includes(note)) notes.push(note);
   }
   return notes.length ? [...notes.join("; ")].slice(0, 160).join("") : null;
@@ -2437,7 +2439,7 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   if (!support.passed || !rawSupport.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${[...new Set([...support.reasons, ...rawSupport.reasons])].join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
   let sourceNote: string | null = null;
   if (plan.source_note === undefined) {
-    sourceNote = await inlineSourceNote(sourceRefs);
+    sourceNote = await inlineSourceNote(sourceRefs, plan.language);
     if (!sourceNote) throw new Error("INLINE_CLAIM_SOURCE_NOTE_REQUIRED: source_note is required here because no publisher host or series label is recorded for the data the SQL reads");
   }
   const claim: InlineClaim = {
