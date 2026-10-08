@@ -112,4 +112,33 @@ const credit = (svg) => /按数据范围/.test(svg) ? 'data' : /世界范围/.te
   assert(render({}, [plain, rowsBar]) === render({ NEWSROOM_NOTE_URL_LINE: '1' }, [plain, rowsBar]), 'URL-free footers must not change with the switch on');
   ok('URL line: own line (12px, the QA floor), sentence kept, off/"0"/"true" byte-identical, URL-free charts unchanged');
 }
+
+// B4b line-break punctuation rule (W3C clreq / GB/T 15834): no line starts with closing punctuation or ends with an opening bracket; nothing is dropped.
+{
+  const url = 'https://example.org/data/table?id=1&year=2023_latest_developments';
+  const rows = star(5, [50, 40, 30, 20, 10]);
+  const CLOSE = /^[）」』》】〕〉，。、；：！？…)\]!?,.;:]/u, OPEN = /[（「『《【〔〈(\[]$/u;
+  const lead = '能源统计里的伙伴是「country of origin for both intra- and extra-EU imports」';
+  const notes = [`${lead}（${url}）。另有 10.7% 的进口没有具体来源国（未说明 6%、其他美洲国家 3.1%、其他非洲国家 1.6%），未画在地图上。`, ...[0, 1, 2, 3, 4, 5, 6, 7].map((k) => `${'说明'.repeat(k * 5 + 20)}（甲乙丙）、「丁戊」，${'己'.repeat(k + 3)}。${'庚'.repeat(31 + k)}（${url}）。${'辛'.repeat(40 - k)}《壬》；癸！`)];
+  for (const [i, note] of notes.entries()) {
+    const spec = mk({ flow_map_labels: 'leader', route_provenance_note: note }, rows);
+    setEnv({ NEWSROOM_FLOW_MAP_LABELS: '1', NEWSROOM_NOTE_URL_LINE: '1' });
+    const svg = renderVizBundle(spec, rows).desktop, lines = texts(svg, 'cartographic-provenance-note').map((t) => t.replace(/&amp;/g, '&'));
+    assert(lines.length >= 2, `note ${i}: expected a wrapped note`);
+    assert(lines.join('').replace(/\s/g, '') === note.replace(/\s/g, ''), `note ${i}: characters dropped or changed: ${JSON.stringify(lines)}`);
+    for (const l of lines) assert(!CLOSE.test(l) && !OPEN.test(l.trimEnd()), `note ${i}: bad line edge: ${l.slice(0, 20)}…${l.slice(-6)}`);
+    assert(lines.some((l) => l.includes(url)), `note ${i}: URL split across lines`);
+    const qa = runRenderQa({ desktop: svg });
+    assert(qa.passed, `note ${i}: render QA failed: ${JSON.stringify(qa.viewports.desktop.geometry.failures.slice(0, 3)).slice(0, 400)}`);
+    setEnv({ NEWSROOM_FLOW_MAP_LABELS: '1' });
+    const off = renderVizBundle(spec, rows).desktop;
+    setEnv({ NEWSROOM_FLOW_MAP_LABELS: '1', NEWSROOM_NOTE_URL_LINE: '0' });
+    assert(off === renderVizBundle(spec, rows).desktop, `note ${i}: only "1" may turn the rule on`);
+  }
+  // the bracketed URL sits on one line with its bracket and full stop
+  setEnv({ NEWSROOM_FLOW_MAP_LABELS: '1', NEWSROOM_NOTE_URL_LINE: '1' });
+  const l0 = texts(renderVizBundle(mk({ flow_map_labels: 'leader', route_provenance_note: notes[0] }, rows), rows).desktop, 'cartographic-provenance-note').map((t) => t.replace(/&amp;/g, '&'));
+  assert(l0.includes(`（${url}）。`), `bracketed URL line: ${JSON.stringify(l0)}`);
+  ok('line-break rule: no line starts with closing punctuation or ends with an opening bracket, text unchanged, URL keeps its bracket and full stop, off byte-identical');
+}
 console.log('flow_map round 3 part B tests passed');
