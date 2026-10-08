@@ -80,6 +80,7 @@ pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
 pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
 /// Parent-only: the CLI composes a single chart's closing text; the Pi child never reads it.
 pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
+pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -113,7 +114,8 @@ fn exact_one(name: &str) -> bool {
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
     crate::prompt::PromptSpeed {
-        parallel_hints: env_switch(PARALLEL_HINTS_ENV),
+        // Plan progress is only useful when the first plan call rides with the first research calls.
+        parallel_hints: env_switch(PARALLEL_HINTS_ENV) || exact_one(PLAN_PROGRESS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
         chain_viz,
         chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
@@ -129,6 +131,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
         data_profile: exact_one(DATA_PROFILE_ENV),
         compose_answer: exact_one(COMPOSE_ANSWER_ENV),
+        plan_progress: exact_one(PLAN_PROGRESS_ENV),
     }
 }
 
@@ -611,6 +614,28 @@ impl ReadyChart {
     }
 }
 
+const PLAN_PROGRESS_FILE: &str = "plan-progress.json";
+
+/// One `plan-progress.json` line per finished tool call, copied from that tool event's own id,
+/// name and error flag. It is a record of what ran, not a plan: `plan.json` and the audit's
+/// plan-call count are untouched, and an event without a call id yields no line.
+fn plan_progress_entry(event: &Value, seq: u64) -> Option<Value> {
+    if event.get("type").and_then(Value::as_str) != Some("tool_execution_end") {
+        return None;
+    }
+    let call_id = event.get("toolCallId").and_then(Value::as_str)?;
+    let tool = event.get("toolName").and_then(Value::as_str)?;
+    Some(json!({
+        "seq": seq,
+        "tool_call_id": call_id,
+        "tool": tool,
+        "is_error": event.get("isError").and_then(Value::as_bool).unwrap_or(false),
+        "status": if event.get("isError").and_then(Value::as_bool).unwrap_or(false) { "failed" } else { "completed" },
+        "source": "tool_execution_end",
+        "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    }))
+}
+
 /// Tracks rendered charts whose deterministic critic passed, so the first one
 /// can be announced before the model finishes the rest of the run. The notice
 /// is progress output only: it grants no verification, completion or
@@ -952,6 +977,11 @@ impl PiConfig {
         } else {
             cmd.env_remove(PARALLEL_HINTS_ENV);
         }
+        if self.speed.plan_progress {
+            cmd.env(PLAN_PROGRESS_ENV, "1");
+        } else {
+            cmd.env_remove(PLAN_PROGRESS_ENV);
+        }
         if self.speed.compute_batch {
             cmd.env(COMPUTE_BATCH_ENV, "1");
         } else {
@@ -1205,6 +1235,7 @@ pub async fn run_prompt(
         // set, the next model turn is aborted and no later model text is used or shown.
         let mut composed_answer: Option<String> = None;
         let mut compose_abort_sent = false;
+        let mut plan_progress_seq = 0u64;
 
         let mut line = Vec::new();
         loop {
@@ -1273,6 +1304,22 @@ pub async fn run_prompt(
                 }
                 writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
                 file.flush()?;
+            }
+            // Routine plan progress comes from real tool events only, never from model text.
+            if config.speed.plan_progress {
+                if let (Some(root), Some(entry)) = (
+                    config.artifact_dir.as_deref(),
+                    plan_progress_entry(&event, plan_progress_seq + 1),
+                ) {
+                    plan_progress_seq += 1;
+                    if let Ok(mut file) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(root.join(PLAN_PROGRESS_FILE))
+                    {
+                        let _ = writeln!(file, "{entry}");
+                    }
+                }
             }
             // Progress only: the notice changes no state, status or completion check.
             if let Some(chart) = chart_watch.as_mut().and_then(|watch| watch.observe(&event)) {
@@ -1903,6 +1950,49 @@ mod tests {
             crate::prompt::PromptSpeed::default()
         );
         std::env::remove_var(DATA_PROFILE_ENV);
+    }
+
+    #[test]
+    fn plan_progress_lines_come_only_from_tool_end_events_and_never_from_text() {
+        let end = json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c9", "isError": true});
+        let line = plan_progress_entry(&end, 3).unwrap();
+        assert_eq!(line["tool_call_id"], "c9");
+        assert_eq!(line["tool"], "duckdb_query");
+        assert_eq!(line["seq"], 3);
+        assert_eq!(line["status"], "failed");
+        for other in [
+            json!({"type": "tool_execution_start", "toolName": "x", "toolCallId": "c1"}),
+            json!({"type": "message_update", "assistantMessageEvent": {"delta": "plan: done"}}),
+            json!({"type": "tool_execution_end", "toolName": "x"}),
+        ] {
+            assert!(plan_progress_entry(&other, 1).is_none());
+        }
+    }
+
+    #[test]
+    fn plan_progress_switch_is_exactly_one_and_turns_parallel_hints_on_with_it() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(PLAN_PROGRESS_ENV);
+        std::env::remove_var(PARALLEL_HINTS_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(PLAN_PROGRESS_ENV, not_one);
+            assert_eq!(
+                speed_switches_from_env(),
+                crate::prompt::PromptSpeed::default()
+            );
+        }
+        std::env::set_var(PLAN_PROGRESS_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.plan_progress && on.parallel_hints);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                plan_progress: false,
+                parallel_hints: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(PLAN_PROGRESS_ENV);
     }
 
     #[test]
