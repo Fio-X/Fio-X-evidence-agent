@@ -2345,6 +2345,9 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (spec.geometry_semantics === 'abstract_od' && flowMapLabelsEnabled()) {
       const style = resolveFlowMapStyle(spec, selected);
       if (style.reason) warnings.push(style.reason);
+      const seenPairs = new Map();
+      for (const row of selected) { const k = `${row[spec.source_field] ?? ''}→${row[spec.target_field] ?? ''}`; seenPairs.set(k, (seenPairs.get(k) ?? 0) + 1); }
+      for (const [k, c] of seenPairs) if (c > 1) warnings.push(`duplicate route ${k} appears ${c} times; the rows are drawn separately and never merged, so check whether the data double-counts this flow`);
       const ties = flowNumberTies(spec, selected.map((row) => n(row[spec.value_field]) ?? 0).filter((v) => v > 0), fmtSpec);
       if (ties.length) warnings.push(`flow map prints the same text (${[...new Set(ties.map((t) => t[2]))].join(', ')}) for ${ties.length} pair(s) of adjacent ranks even at the decimals cap; do not claim an order between those ranks in the title, subtitle or note`);
       const unit = String(spec.unit ?? '');
@@ -2837,12 +2840,45 @@ let LAYOUT_W = DESKTOP_VIEW_W;
 // Characters per wrapped line, scaled to the plot's text width (932 at desktop).
 const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16, Math.floor((chars * (LAYOUT_W - 108)) / 932)));
 
-function frame(spec, bodyHeight, minHeight = 420) {
+const noteUrlLineEnabled = () => process.env.NEWSROOM_NOTE_URL_LINE === "1";
+const FOOTER_URL_RE = /https?:\/\/[^\s，。；、）)」]+/;
+// Greedy wrap by measured width that never breaks inside a run of digits, Latin letters or a URL: breaks only at spaces or between CJK characters.
+function wrapUnbreakable(text, size = 12) {
+  const maxW = LAYOUT_W - 108, lines = [], toks = String(text).match(/https?:\/\/\S+|[A-Za-z0-9][A-Za-z0-9.,%:/_+'\-]*|\s+|[\s\S]/gu) ?? [];
+  let cur = "";
+  for (const tok of toks) {
+    if (/^\s+$/.test(tok)) { if (cur) cur += " "; continue; }
+    if (cur && textUnits(cur + tok) * size * 0.56 > maxW) { lines.push(cur.trimEnd()); cur = ""; }
+    cur += tok;
+  }
+  if (cur.trim()) lines.push(cur.trimEnd());
+  return lines;
+}
+// Footer lines as {t, size}. With urlLine on, each URL sits on its own small line and the sentence around it is wrapped without splitting it.
+function footerBlock(text, urlLine) {
+  const out = [];
+  if (!urlLine || !FOOTER_URL_RE.test(text)) { for (const t of wrapUnbreakable(text)) out.push({ t, size: 12 }); return out; }
+  for (const part of String(text).split(new RegExp(`(${FOOTER_URL_RE.source})`))) {
+    if (!part.trim()) continue;
+    if (FOOTER_URL_RE.test(part) && part.match(FOOTER_URL_RE)[0] === part) out.push({ t: part, size: 10.5 });
+    else for (const t of wrapUnbreakable(part.trim())) out.push({ t, size: 12 });
+  }
+  return out;
+}
+// Only a URL-bearing note or source takes the new block path; every other footer keeps the old wrapText path unchanged.
+const footerUrlBlock = (text) => (noteUrlLineEnabled() && FOOTER_URL_RE.test(text) ? footerBlock(text, true) : null);
+function emitFooterBlock(parts, block, y) {
+  block.forEach((l, i) => parts.push(`<text x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
+  return block.length * 16;
+}
+
+function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
   const width = LAYOUT_W;
   const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
+  const lang = vizLang(spec), noteBlock = spec.note ? footerUrlBlock(`${VIZ_STRINGS[lang].note}${spec.note}`) : null, srcBlock = footerUrlBlock(sourceAttribution(spec.source_note, lang));
+  const footer = 70 + (noteBlock ? noteBlock.length * 16 : spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16;
   const height = Math.max(minHeight, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
@@ -2865,12 +2901,17 @@ function frame(spec, bodyHeight, minHeight = 420) {
   };
 }
 
-function addFooter(parts, spec, footerTop) {
+function addFooter(parts, spec, footerTop, extraBlock = []) {
   const t = VIZ_STRINGS[vizLang(spec)];
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
-  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
-  svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
+  if (spec.note) { const nb = footerUrlBlock(`${t.note}${spec.note}`); y += nb ? emitFooterBlock(parts, nb, y) : svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) }); }
+  // The flow map's route_provenance_note: under the chart beside the note, never inside the map panel.
+  extraBlock.forEach((l, i) => parts.push(`<text data-role="cartographic-provenance-note" x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
+  y += extraBlock.length * 16;
+  const attr = sourceAttribution(spec.source_note, vizLang(spec)), sb = footerUrlBlock(attr);
+  if (sb) emitFooterBlock(parts, sb, y + 3);
+  else svgTextLines(parts, attr, 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
 }
 
 // Strips any leading source-label prefix the input data already carries
@@ -6495,15 +6536,14 @@ function resolveFlowMapStyle(spec, routeRows) {
 }
 function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
   const bodyH = mobile ? 470 : 540;
-  const f = mobile ? mobileFrame(spec, bodyH) : frame(spec, bodyH);
+  // route_provenance_note (flow-map labels only) moves to the note block under the chart, so the map height never depends on it.
+  const provBlock = !mobile && flowMapLabelsEnabled() && spec.geometry_semantics === 'abstract_od' ? footerBlock(String(spec.route_provenance_note ?? '').trim(), noteUrlLineEnabled()).filter((l) => l.t) : [];
+  const f = mobile ? mobileFrame(spec, bodyH) : frame(spec, bodyH, 420, provBlock.length);
   let routeRows=selectRoutes(rows,spec,flowMapLabelsEnabled()&&spec.geometry_semantics==='abstract_od');
   const flowLabels = !mobile && spec.geometry_semantics === 'abstract_od' ? resolveFlowMapStyle(spec, routeRows).style : null;
   const left = mobile ? 36 : 60, right = mobile ? 610 : (flowLabels === 'ledger' ? LEDGER_MAP_RIGHT : 980), top = f.bodyTop + 20;
-  // The provenance note gets its own lines under the map, wrapped to the map panel width (flow-map labels only).
-  const noteLines = [];
-  if (flowLabels) { let cur = ''; for (const ch of String(spec.route_provenance_note ?? '').trim()) { if (cur && textUnits(cur + ch) * 12.5 * .56 > right - left) { noteLines.push(cur); cur = ''; } cur += ch; } if (cur) noteLines.push(cur); }
-  const bottom = f.bodyBottom - (flowLabels ? 90 + noteLines.length * 18 : 74);
-  // No silent drop: when even two ledger columns cannot list every flow, draw only the listed ones and say what was left out.
+  const bottom = f.bodyBottom - (flowLabels ? 90 : 74);
+  // No silent drop: when even two ledger columns cannot list every flow, draw only the listed ones and say how many were left out.
   let flowCut=null;
   if(flowLabels==='ledger'){
     const pos=routeRows.filter(r=>(n(r[spec.value_field])??0)>0);
@@ -6574,7 +6614,7 @@ function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
   if(!flowLabels&&spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
   if(!flowLabels&&pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
   if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
-  const keyY=bottom+18; if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total:rows.filter(r=>(n(r[spec.value_field])??0)>0).length,flowCut,noteLines,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
+  const keyY=bottom+18; if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total:rows.filter(r=>(n(r[spec.value_field])??0)>0).length,flowCut,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop,provBlock);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
   f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
   const disclosure=geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??''); f.parts.push(`<text data-role="cartographic-disclosure" x="${right}" y="${bottom+40}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.muted}">${esc(textUnits(disclosure)>(mobile?92:132)?sliceUnits(disclosure,mobile?91:131)+'…':disclosure)}</text>`);
   f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}</text>`);
@@ -6583,11 +6623,11 @@ function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
 
 // Chinese-first key, width legend, disclosure and credit line for the
 // flow_map_labels layer (viz.mjs renderCartographicFlowMap).
-function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total,flowCut,noteLines,zh}){
+function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total,flowCut,zh}){
   const font=12.5,w=(t)=>textUnits(t)*font*.56;
   const widthT=zh?`线宽${spec.unit?`（${spec.unit}）`:''}：`:`width${spec.unit?` (${spec.unit})`:''}: `;
   let x=left+(zh?112:150)+w(widthT)+10;const sw=[];
-  for(const v of widthSamples(max)){const h=flowWidth(v,max),label=fmtSpec(spec,v,'');sw.push(`<rect data-role="legend-swatch" x="${x}" y="${(keyY-4-h/2).toFixed(1)}" width="26" height="${h.toFixed(1)}" fill="#8a9096" fill-opacity=".62"/><text x="${x+32}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(label)}</text>`);x+=32+w(label)+22;}
+  for(const v of widthSamples(max)){const h=flowWidth(v,max),label=fmtSpec(spec,v,'');sw.push(`<rect data-role="legend-swatch" x="${x}" y="${(keyY-4-h/2).toFixed(1)}" width="26" height="${h.toFixed(1)}" fill="#8a9096" fill-opacity=".62"/><text data-role="legend-tick" x="${x+32}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(label)}</text>`);x+=32+w(label)+22;}
   const startT=zh?'起点':'origin',endT=zh?'终点':'destination';
   parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${startT}</text><text x="${left+(zh?42:62)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">→</text><circle cx="${left+(zh?64:82)}" cy="${keyY-3}" r="3.5" fill="${PALETTE.accent}"/><text x="${left+(zh?71:89)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${endT}</text><text x="${left+(zh?112:150)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${widthT}</text>${sw.join('')}</g>`);
   const disclosure=zh?'弧线表示起点与终点之间的关系，不代表实际运输路线。':geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??'');
@@ -6595,8 +6635,7 @@ function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,f
   const n=flowRoutes.length,cutT=flowCut?(zh?`；另有 ${flowCut.count} 条放不下未画`:`; ${flowCut.count} more do not fit and are not drawn`):'',drawn=(zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`))+cutT;
   const bm=getBasemap(spec.basemap_id),credit=zh?`底图：${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'按数据范围':'世界范围'}`:`${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}`;
   parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+58}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(drawn)} · ${esc(credit)}</text>`);
-  noteLines.forEach((ln,k)=>parts.push(`<text data-role="cartographic-provenance-note" x="${left}" y="${bottom+76+k*18}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(ln)}</text>`));
-  if(flowOut?.overflow)parts.push(`<text x="${left}" y="${bottom+76+noteLines.length*18}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(flowOut.overflow)}</text>`);
+  if(flowOut?.overflow)parts.push(`<text x="${left}" y="${bottom+76}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(flowOut.overflow)}</text>`);
 }
 
 function renderTrajectoryProfile(spec,rows,mobile=false){
