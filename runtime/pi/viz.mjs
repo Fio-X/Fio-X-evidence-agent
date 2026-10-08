@@ -6017,6 +6017,8 @@ function quadHitsBox(q,b) {
 // NEWSROOM_SANKEY_OTHER_NOTE=1 (default off; off = byte-identical SVG): the merged "other" node is named
 // apart from every data node in its column, the chart footer names the nodes it holds (names only), and a
 // highlight that names only a target marks that target's largest incoming flow.
+// Desktop-only larger Sankey: taller node bars and thicker bands. Exact "1"; anything else keeps today's output.
+function biggerChartsEnabled(){ return process.env.NEWSROOM_BIGGER_CHARTS==="1"; }
 function sankeyOtherNoteEnabled(){ return process.env.NEWSROOM_SANKEY_OTHER_NOTE==="1"; }
 function sankeyColumnName(li,maxLevel,zh){
   if(li===0) return zh?"左列":"left column";
@@ -6125,9 +6127,10 @@ function renderSankey(spec, rows, mobile=false) {
   const displayNameOf=(id)=> String(id).startsWith("__other_") ? (mergedLabels.get(String(id))??otherLabel) : resolveEconomyDisplayName(stripNodePrefix(id), spec.category_names, vizLang(spec));
 
   const nodeValues=[...layout.nodes.values()].map((node)=>Math.max(node.in,node.out)); const maxNode=Math.max(...nodeValues,1);
-  const barHeight=(node)=>Math.max(22,Math.min(100,(Math.max(node.in,node.out)/maxNode)*130));
+  const bigger=!mobile&&biggerChartsEnabled();
+  const barHeight=bigger?(node)=>Math.max(22,Math.min(140,(Math.max(node.in,node.out)/maxNode)*180)):(node)=>Math.max(22,Math.min(100,(Math.max(node.in,node.out)/maxNode)*130));
   const neededH=Math.max(...layout.levels.map((level)=>level.reduce((sum,node)=>sum+barHeight(node),0)+gap*Math.max(0,level.length-1)),120);
-  const bodyH=neededH+(mobile?96:88);
+  const bodyH=neededH+(mobile?96:88)+(!mobile&&biggerChartsEnabled()?16:0); // larger bars leave a through node less room for its label above it
 
   // Reserve side margins for the actually measured label widths (name bold
   // 14px, value 12.5px) instead of a fixed constant, so a long country name
@@ -6157,7 +6160,7 @@ function renderSankey(spec, rows, mobile=false) {
   layout.levels.forEach((level,li)=>{const totalH=bottom-top, usable=totalH-gap*Math.max(0,level.length-1), raw=level.map(barHeight), sum=raw.reduce((a,b)=>a+b,0), scale=sum>usable?usable/sum:1;let y=top+(usable-sum*scale)/2;level.forEach((node,i)=>{const h=raw[i]*scale;positions.set(node.id,{x:xAt(li),y,h});y+=h+gap;});});
 
   const maxFlow=Math.max(...flowRows.map((r)=>n(r[spec.value_field])??0),1);
-  const strokeWidthOf=(row)=>Math.max(1.5,(Math.max(0,n(row[spec.value_field])??0)/maxFlow)*(mobile?22:30));
+  const strokeWidthOf=(row)=>Math.max(1.5,(Math.max(0,n(row[spec.value_field])??0)/maxFlow)*(mobile?22:bigger?44:30));
 
   // Crossing minimization (Task C): order each node's outgoing links by
   // their target's own vertical order, and each node's incoming links by
