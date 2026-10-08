@@ -8,9 +8,14 @@
 - 地图 chain：chart_type 填 choropleth；reader_task 与 claim_spec.reader_task 填 spatial；visual_family 填 spatial；data_topology 填 tabular；category_field 填国家代码列，category_names 填 iso3；measure_kind 填 share；unit 填 %；delivery_role 填 infographic_module；claim_spec.relation 填 geography。
 - 地图 SQL：只取国家代码和份额两列，去掉没有国家代码的行和地区合计行；份额不是百分数时在 SQL 里换成百分数；表里只有数量时用 数量 / SUM(数量) OVER () 算成百分数；按份额从大到小排。注释写明分母口径，含不含分不到国家的部分。
 - 地图说法：用 {max.份额列.代码列}、{max.份额列|小数位数}、{份额列@代码列=代码|小数位数} 这类占位符；measure_semantics 写明 denominator，claim_caveat 写分母口径；highlight_values 写正文要点名的那个国家代码。
-- 第五轮发 newsroom_infographic_plan：layout 填 feature；主语法填 ROUTE_SPINE，supporting 留空；evidence_features 只写数据里真有的 origin_destination_relation、verified_locations、spatial_structure、quantity。
+- 第五轮发 newsroom_infographic_plan：layout 填 feature；带上 story_graph_ref、editorial_discovery_ref、visual_concept_ref、selected_concept_id、novelty_ref、asset_plan_ref；editorial_grammar 的 primary 填 ROUTE_SPINE，supporting 填空数组，available_renderer_capabilities 填 svg，cognitive_goals 填 ORIENT、MEASURE、COMPARE；evidence_features 只写数据里真有的 origin_destination_relation、verified_locations、spatial_structure、quantity，有边表又有国家代码表时这四项都有。被退回时只按退回的提示改，不换语法。
+- 模块：桑基模块 visual_grammar 填 flow，地图模块填 spatial；每个 visual 模块都写 manifest_ref、critic_ref、claim_ids、visual_channels 和 quantitative_encoding。
+- 桑基模块通道：connection 对 flow_id、role 填 identity；length 对值列、role 填 quantitative；color 对起点列、role 填 emphasis。quantitative_encoding：quantity_kind 填 observed_flow，mark_semantics 填 flow_width，scale_type 填 linear，baseline_policy 填 zero。
+- 地图模块通道：color 对份额列、role 填 quantitative；shape 对国家代码列、role 填 identity。quantitative_encoding：quantity_kind 填 share，mark_semantics 填 color，scale_type 填 linear，baseline_policy 填 not_applicable，uncertainty_disclosed 填 true，disclosure 写分不到国家的部分。
+- 每个模块都写 story_node_ids；故事图里的每个节点（背景入口、证据、说法、不确定、结论）都至少被一个模块用到，背景入口节点放进桑基模块。
 - 场景：两个 hero_with_rail 场景，各以一张图为主角、配一段文字；场景标题写读者的问题，不要和图标题用同一句话；最后一个文字模块写「合起来看」的结论。
-- 页顶大数字：value_from 一字不差地抄某个说法里的占位符，unit 只写占位符后面那段汉字单位；label 和 detail 不写数字，也不写数字词。
+- 页顶大数字：type 填 hero_stat，claim_id 填那条已核实说法的 id，value_from 一字不差地抄这条说法里的占位符，unit 只写占位符后面那段汉字单位；label 和 detail 不写数字，也不写「第一」这类数字词。
+- 文字模块的正文不放占位符，也不写数字，用故事的话讲。
 - 正文、注释、图上文字都不用「大多数」「多数」「过半」「近年来」「目前」「最新」这类词，也不写流程用语。
 - 第六到第九轮依次各发一次 newsroom_infographic_lint、render、critic、preview，每次带上前一步返回的 ref。
 - 第十轮看预览图发 newsroom_infographic_vision_critic：照实打分、照实写问题；不过关就按问题改计划重来，不改数据。
