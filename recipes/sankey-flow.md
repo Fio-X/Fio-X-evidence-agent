@@ -1,0 +1,10 @@
+- 第一轮同时发两个调用：newsroom_update_plan 写目标和步骤；duckdb_query 读程序给的数据路径，取起点、终点、数值三列的全部行，按终点、起点排序。
+- 第二轮只发一次 newsroom_viz_chain，设计、检查、出图、自查一次完成；不要分开调 newsroom_viz_plan、lint、render、critic。
+- chain 参数一次填全：chart_type 填 sankey；reader_task 与 claim_spec.reader_task 都填 flow；visual_family 填 flow；data_topology 填 flow_edges；flow_conservation 填 strict；aggregation_policy 填 none；source_field、target_field、value_field 填三列的列名；unit、language、title、subtitle、note、sql 都要填。
+- measure_semantics 写一条：measure_kind 填 flow，temporal_basis 写数据覆盖的期间，observation_status 按数据性质填；claim_spec 的 target_measure 指向它的 id，relation 填 flow。
+- 说法写在 chain 的 claim 里，claim_kind 填 quantitative；数字全用占位符 {值列@起点列=节点名|小数位数} 或 {值列@终点列=节点名|小数位数}，一个数字都不手打，年份也不打；单位写汉字。
+- 中间节点进出必须相等；不等时先查数据、在结论里说明，不改数。
+- highlight_values 写要突出那股流的起点和终点两个节点名；只写终点不会亮。
+- 小节点可能被渲染器并成「其他」：标题、副标题、注释、说法和结论都不点名小节点，SQL 也不给小节点改名。
+- 第三轮写结论：只引用已核实的说法和图的文件路径；写明单位口径、是否估算、数据出处是否已知。
+- 每次复用都重算、重新核实、过全部闸门；配方不授予核实状态。
