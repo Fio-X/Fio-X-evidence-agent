@@ -47,4 +47,15 @@ for (const [name, rows] of Object.entries(shapes)) for (const unit of ["%", "吨
   assert.equal(texts(on).filter((t) => /\d.*(%|吨)/.test(t)).length, 0, `${label}: no number carries a unit`);
   assert.ok(texts(on).includes(lo.toFixed(1)) && texts(on).includes(hi.toFixed(1)), `${label}: legend ends are the data min and max`);
 }
+// fixed decimals: values that tie at the stated precision keep it (no collision raise); a tiny non-zero value still never prints 0.0
+{
+  const tie = rowsOf((i, j) => 3.1 + i * 0.01 + j * 0.001);
+  const on = withSwitch("1", () => render(spec({ unit: "吨/人" }), tie));
+  const nums = texts(on).filter((tx) => /^\d+\.\d+$/.test(tx));
+  assert.ok(nums.length > 0 && nums.every((tx) => /^\d+\.\d$/.test(tx)), `ties keep one decimal: ${[...new Set(nums)].slice(0, 5)}`);
+  const tiny = rowsOf((i, j) => (i === 0 && j === 0 ? 0.001 : 12 + i + j));
+  const onTiny = withSwitch("1", () => render(spec({ unit: "吨/人" }), tiny));
+  assert.ok(texts(onTiny).some((tx) => tx === "0.001"), "a non-zero value never prints as 0.0");
+  assert.ok(!texts(onTiny).includes("0.0"), "no 0.0 for the non-zero value");
+}
 console.log("PASS heatmap tidy");
