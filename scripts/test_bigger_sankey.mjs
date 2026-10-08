@@ -11,6 +11,9 @@ const rowsOf = (list) => list.map(([source, target, value]) => ({ source, target
 const render = (sp, rows, mobile = false) => { const b = renderVizBundle(sp, rows, { mobilePages: mobile }); return mobile ? b.mobile : b.desktop; };
 const qa = (svg) => { const v = runRenderQa({ desktop: svg }).viewports.desktop; return [...(v.geometry?.failures ?? []), ...(v.contrast?.failures ?? [])].map((f) => f.rule); };
 const withSwitch = (value, fn) => { const old = process.env.NEWSROOM_BIGGER_CHARTS; if (value === undefined) delete process.env.NEWSROOM_BIGGER_CHARTS; else process.env.NEWSROOM_BIGGER_CHARTS = value; try { return fn(); } finally { if (old === undefined) delete process.env.NEWSROOM_BIGGER_CHARTS; else process.env.NEWSROOM_BIGGER_CHARTS = old; } };
+const countBy = (rules) => rules.reduce((m, r) => m.set(r, (m.get(r) ?? 0) + 1), new Map());
+// For every rule, the switch-on issue count must not exceed the switch-off count.
+const assertNoMoreIssues = (offSvg, onSvg, label) => { const off = countBy(qa(offSvg)); for (const [rule, n] of countBy(qa(onSvg))) assert.ok(n <= (off.get(rule) ?? 0), `${label}: ${rule} ${n} on > ${off.get(rule) ?? 0} off`); };
 const height = (svg) => Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)[1]);
 
 const shapes = {
@@ -26,9 +29,7 @@ for (const [name, rows] of Object.entries(shapes)) {
   const on = withSwitch("1", () => render(spec(), rows));
   assert.notEqual(on, base, `${name}: the switch changes the chart`);
   assert.ok(height(on) >= height(base), `${name}: never shorter`);
-  assert.deepEqual(qa(base), qa(base), name);
-  assert.deepEqual(qa(on).filter((r) => !qa(base).includes(r)), [], `${name}: render QA adds no rejection`);
-  assert.ok(!qa(on).includes("text_crosses_data_mark") || qa(base).includes("text_crosses_data_mark"), `${name}: no text_crosses_data_mark`);
+  assertNoMoreIssues(base, on, name);
   // mobile is never touched
   assert.equal(withSwitch("1", () => render(spec(), rows, true)), withSwitch(undefined, () => render(spec(), rows, true)), `${name}: mobile unchanged`);
 }
@@ -38,7 +39,7 @@ const csv = "/Users/fio/code/PJ004-local-docs/demo-1008/data-complex/11-germany-
 if (existsSync(csv)) {
   const de = readFileSync(csv, "utf8").trim().split("\n").slice(1).map((l) => l.split(",")).map(([source, target, value]) => ({ source, target, value: Number(value) }));
   const off = withSwitch(undefined, () => render(spec(), de)), on = withSwitch("1", () => render(spec(), de));
-  assert.deepEqual(qa(on).filter((r) => !qa(off).includes(r)), [], "Germany: render QA adds no rejection");
+  assertNoMoreIssues(off, on, "Germany");
   console.log(`Germany height off ${height(off)} on ${height(on)}; QA off [${qa(off)}] on [${qa(on)}]`);
   if (process.env.OUT) { mkdirSync(process.env.OUT, { recursive: true }); writeFileSync(`${process.env.OUT}/de-off.svg`, off); writeFileSync(`${process.env.OUT}/de-on.svg`, on); }
 }
