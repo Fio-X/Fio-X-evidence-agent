@@ -134,6 +134,7 @@ export function layoutFlowMapLabels(ctx) {
       if (c.x - BADGE_R < bounds.left + 2 || c.x + BADGE_R > bounds.right - 2 || c.y - BADGE_R < bounds.top + 2 || c.y + BADGE_R > bounds.bottom - 2) return false;
       if (arcs.some((arc) => arc.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) <= arc.hw + STROKE_PAD + BADGE_R + 1))) return false;
       if (dots.some((d) => Math.hypot(d.x - c.x, d.y - c.y) <= d.r + BADGE_R + 2)) return false;
+      if (leaders.some((l) => segHitsRect({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, { x: c.x - BADGE_R, y: c.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }))) return false;
       return !placedDiscs.some((q) => Math.hypot(q.x - c.x, q.y - c.y) <= BADGE_R * 2 + 3);
     };
     const order = arcs.map((arc, i) => ({ arc, i })).sort((p, q) => q.arc.value - p.arc.value);
