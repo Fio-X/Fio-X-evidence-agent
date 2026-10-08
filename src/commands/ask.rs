@@ -19,6 +19,7 @@ pub async fn run(args: AskArgs) -> Result<()> {
         tool_profile: args.pi.tool_profile,
         hide_lieflat: false,
         speed: Default::default(),
+        compose: None,
     };
 
     run_prompt(&config, &prompt, None).await?;
