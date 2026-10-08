@@ -4776,7 +4776,9 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   // One facet whose range dwarfs the rest squashes every other panel on the shared scale: with at least 4 facets, no
   // reference line, and a shared span at least 3x the span without the facet that narrows it most, that facet moves to its
   // own panel under the grid (its own vertical scale, said in a note) and the rest share the narrower domain.
+  // Default off (NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL=1 turns it on): off, the SVG is byte-identical to what it was without this.
   const outlier = (() => {
+    if (process.env.NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL !== "1") return null;
     if (facets.length < 4 || refLines.length) return null;
     const span = (d) => d[1] - d[0];
     let best = null;

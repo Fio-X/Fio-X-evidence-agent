@@ -7,6 +7,10 @@ import { lintVizSpec, renderVizBundle, renderVizSvg } from "../runtime/pi/viz.mj
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { estimateTextWidth } from "../runtime/pi/render_qa_geometry.mjs";
 
+// the outlier panel is behind NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL (exact "1", default off); the assertions below run with it on
+const SWITCH = "NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL";
+process.env[SWITCH] = "1";
+
 const spec = (o = {}) => ({ schema_version: "0.9.0", reader_task: "change", takeaway: "各系列走势", chart_type: "small_multiples", panel_mark: "line", title: "各系列走势", subtitle: "合成数据", alt: "A synthetic small-multiples chart with one line panel for each series.", source_note: "合成数据", claim_id: "claim-so", sql: "SELECT 1", unit: "点", language: "zh", facet_field: "series", x_field: "month", value_field: "value", highlight_values: [], annotations: [], direct_labels: true, ...o });
 const months = Array.from({ length: 12 }, (_, i) => `2024-${String(i + 1).padStart(2, "0")}`);
 const series = (name, f) => months.map((month, i) => ({ series: name, month, value: f(i) }));
@@ -149,4 +153,15 @@ assert.match(renderVizSvg(spec({ index_base: 100 }), nearRows(justOver)), NOTE_Z
 assert.ok(!NOTE_ZH.test(renderVizSvg(...CASES["ratio just under 3"])), "ratio just under 3 does not split");
 // mobile is never split
 assert.ok(!NOTE_ZH.test(String(renderVizBundle(shapeA.spec, shapeA.rows).mobile?.svg ?? renderVizBundle(shapeA.spec, shapeA.rows).mobile ?? "")), "mobile is untouched");
+// switch off (unset, and anything but "1"): the outlier fixtures render byte-identical to fb44c18, desktop and mobile
+const OFF_PINNED = { A: "e78166d88d65bd5c/f33c26c91d62cb81", B: "bc99f7853f709fab/567a08543fba5ddd" };
+const bundleHash = (sp, rows) => { const b = renderVizBundle(sp, rows); return sha(typeof b.desktop === "string" ? b.desktop : b.desktop.svg) + "/" + sha(typeof b.mobile === "string" ? b.mobile : b.mobile?.svg ?? ""); };
+for (const off of [undefined, "0", "true"]) {
+  if (off === undefined) delete process.env[SWITCH]; else process.env[SWITCH] = off;
+  assert.equal(bundleHash(shapeA.spec, shapeA.rows), OFF_PINNED.A, `switch ${off}: shape A byte-identical to fb44c18`);
+  assert.equal(bundleHash(shapeB.spec, shapeB.rows), OFF_PINNED.B, `switch ${off}: shape B byte-identical to fb44c18`);
+  assert.ok(!NOTE_ZH.test(renderVizSvg(shapeA.spec, shapeA.rows)), `switch ${off}: no outlier panel`);
+}
+process.env[SWITCH] = "1";
+assert.notEqual(bundleHash(shapeA.spec, shapeA.rows), OFF_PINNED.A, "switch on changes shape A");
 console.log("small multiples outlier panel: ok");
