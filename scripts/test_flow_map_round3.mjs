@@ -29,9 +29,9 @@ process.env.NEWSROOM_FLOW_MAP_LABELS = '1';
 const accounted = (svg, n, label) => {
   const flows = count(svg, 'cartographic-flow'), valueRows = count(svg, 'flow-ledger-value');
   assert(flows === valueRows, `${label}: ${flows} drawn flows but ${valueRows} ledger rows`);
-  const m = svg.match(/另有 (\d+) 条放不下未画，合计 (\S+)/);
+  const m = svg.match(/另有 (\d+) 条放不下未画/);
   assert(flows + (m ? +m[1] : 0) === n, `${label}: drawn ${flows} + left out ${m ? m[1] : 0} != ${n}`);
-  return { flows, left: m ? +m[1] : 0, total: m?.[2] };
+  return { flows, left: m ? +m[1] : 0 };
 };
 for (const n of [30, 60, 76]) {
   const rows = star(n, (i) => `来源国${String(i).padStart(2, '0')}`), spec = mk({ flow_map_labels: 'ledger' }, rows);
@@ -40,8 +40,8 @@ for (const n of [30, 60, 76]) {
   const a = accounted(svg, n, `${n} flows`);
   const unmarked = count(svg, 'annotation-marker') / 1; // ledger discs + map badges
   assert(unmarked >= a.flows, `${n} flows: fewer badges than flows`);
-  if (a.left) { const sum = rows.map((r) => r.value).sort((x, y) => y - x).slice(a.flows).reduce((s, v) => s + v, 0); assert(a.total === fmtSpec(spec, sum, ''), `${n}: left-out total ${a.total} != ${fmtSpec(spec, sum, '')} (${sum})`); }
-  ok(`no silent drop at ${n} flows: drawn ${a.flows}, left out ${a.left}${a.left ? ` (total ${a.total})` : ''}`);
+  if (a.left) assert(!/合计/.test(svg), `${n} flows: the footer must not print a computed total`);
+  ok(`no silent drop at ${n} flows: drawn ${a.flows}, left out ${a.left}`);
 }
 {
   const rows = star(30, (i) => `来源国${String(i).padStart(2, '0')}`), svg = renderVizBundle(mk({ flow_map_labels: 'ledger' }, rows), rows).desktop;
