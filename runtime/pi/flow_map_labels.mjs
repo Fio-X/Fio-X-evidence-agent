@@ -9,6 +9,11 @@
 // and against every node dot and arrowhead. Filled plates and leader lines are
 // never used to cover data.
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// The plan tool only offers the field when NEWSROOM_FLOW_MAP_LABELS=1, so the tool
+// definitions the model sees stay byte-identical while the switch is off.
+export function flowMapLabelsEnabled() {
+  return process.env.NEWSROOM_FLOW_MAP_LABELS === "1";
+}
 export const FLOW_MAP_LABEL_STYLES = ["leader", "ledger"];
 export const LEDGER_MAP_RIGHT = 700;
 export const LEDGER_PANEL_X = 724;
@@ -51,6 +56,13 @@ function orient(a, b, c) { return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x
 function segCross(a, b, c, d) {
   const o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
   return ((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0));
+}
+
+// Does the segment p-q touch the rectangle (with a 2px margin)? Sampled; leaders are short.
+function segHitsRect(p, q, r) {
+  const n = Math.max(2, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 2));
+  for (let i = 0; i <= n; i++) { const t = i / n; if (rectPointDist(r, { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }) <= 2) return true; }
+  return false;
 }
 
 export function layoutFlowMapLabels(ctx) {
@@ -144,12 +156,15 @@ export function layoutFlowMapLabels(ctx) {
     for (const c of cands) {
       const b = c.box;
       if (!inBounds(b) || rectHitsAnyArc(b) || rectHitsDot(b) || placed.some((q) => rectsOverlap(b, q.box, 2))) continue;
+      // render QA refuses a leader that crosses any text: keep earlier leaders off this box
+      if (placed.some((q) => q.leader && segHitsRect({ x: q.leader.x1, y: q.leader.y1 }, { x: q.leader.x2, y: q.leader.y2 }, b))) continue;
       let leader = null, cross = 0;
       if (c.ring > 0) {
         const qx = clamp(node.x, b.x, b.x + b.w), qy = clamp(node.y, b.y, b.y + b.h);
         leader = { x1: node.x, y1: node.y, x2: qx, y2: qy };
         cross = leaderCrossings({ x: node.x, y: node.y }, { x: qx, y: qy });
         if (cross > 1) continue;
+        if (placed.some((q) => segHitsRect({ x: node.x, y: node.y }, { x: qx, y: qy }, q.box))) continue;
       }
       const score = cross * 1000 + c.ring * 10;
       if (!best || score < best.score) best = { ...c, leader, cross, score };
