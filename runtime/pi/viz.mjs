@@ -159,7 +159,7 @@ export const HOUSE_PALETTES = {
     // one lighter tint (faint) reserved for "Other" - mirrors the "one
     // accent, everything else grey steps" house rule instead of reusing the
     // legacy blue-grey ramp's own hex values.
-    waffleGreySteps: ["#666666", "#757575", "#9E9E9E", "#BDBDBD", "#F2F2F2"],
+    waffleGreySteps: ["#404040", "#646464", "#8B8B8B", "#B9B9B9", "#F2F2F2"],
   },
 };
 
@@ -4364,6 +4364,32 @@ function layoutLineEndLabel(name, valueText, pointX, trueEdge, gap, pxPerUnit) {
   ];
 }
 
+// NEWSROOM_LINE_END_LABEL_FIT (default off): lines for a single-series end label
+// that would cross the canvas's right edge, or null when the label already
+// fits (the caller then draws exactly what it always drew). Same 8 px margin
+// as the multi-series label (layoutLineEndLabel); the text is only broken,
+// never edited. Break before an opening bracket first, else at a space, and
+// never so that a line starts with a unit sign that belongs to the number
+// before it (% per-mille ° etc.); with no usable break, or a first line that
+// is still too wide, every line is right-aligned to the edge.
+const LINE_END_LABEL_NO_LINE_START = /^[%\u2030\u2031\u00B0\u2103\u2109\u2032\u2033]/u;
+function lineEndLabelBreak(text) {
+  const ok = (i) => i > 0 && !LINE_END_LABEL_NO_LINE_START.test(text.slice(i).trimStart());
+  const bracket = text.search(/[\uFF08(]/u);
+  if (ok(bracket)) return bracket;
+  for (let i = text.indexOf(" "); i > 0; i = text.indexOf(" ", i + 1)) if (ok(i)) return i;
+  return -1;
+}
+function fitLineEndLabel(text, x, trueEdge) {
+  const safeEdge = trueEdge - 8;
+  const width = (t) => estimateTextWidth(t, 12, true);
+  if (x + width(text) <= safeEdge) return null;
+  const cut = lineEndLabelBreak(text);
+  const parts = cut > 0 ? [text.slice(0, cut).trimEnd(), text.slice(cut).trimStart()] : [text];
+  if (parts.every((t) => x + width(t) <= safeEdge)) return parts.map((t) => ({ text: t, x }));
+  return parts.map((t) => ({ text: t, x: safeEdge, anchor: "end" }));
+}
+
 function renderLine(spec, rows, multi = false) {
   let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
@@ -4556,7 +4582,19 @@ function renderLine(spec, rows, multi = false) {
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      const endText = fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals);
+      const endX = Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8), endY = yScale(n(last[spec.value_field])) - 8;
+      const endAttrs = `font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}"`;
+      // Opt-in (NEWSROOM_LINE_END_LABEL_FIT=1): a single-line end label whose
+      // estimated box would cross the right edge is split at its first space
+      // (value above, unit below; no text is dropped or changed) and, when a
+      // line still would not fit, both lines are right-aligned to the edge.
+      const fit = process.env.NEWSROOM_LINE_END_LABEL_FIT === "1" ? fitLineEndLabel(endText, endX, LAYOUT_W) : null;
+      if (fit) {
+        fit.forEach((line, k) => f.parts.push(`<text data-role="direct-label" x="${line.x}" y="${endY - 14 * (fit.length - 1 - k)}"${line.anchor ? ` text-anchor="${line.anchor}"` : ""} ${endAttrs}>${esc(line.text)}</text>`));
+      } else {
+        f.parts.push(`<text data-role="direct-label" x="${endX}" y="${endY}" ${endAttrs}>${esc(endText)}</text>`);
+      }
     }
   });
   if (multi && spec.direct_labels !== false) {
@@ -4743,25 +4781,50 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
   const idxLeft = indexBase !== null ? 54 + 40 : 70;
-  const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
-  const rowsN = Math.ceil(facets.length / cols);
-  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20 + rowShift);
-  const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
+  const panelH = 230 + refMargin;
+  const valuesOf = (list) => list.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
+  const domainOf = (values) => extent(indexBase !== null ? [...values, indexBase] : values, false);
+  const allY = valuesOf(rows);
+  const yDomain = domainOf(allY);
+  // One facet whose range dwarfs the rest squashes every other panel on the shared scale: with at least 4 facets, no
+  // reference line, and a shared span at least 3x the span without the facet that narrows it most, that facet moves to its
+  // own panel under the grid (its own vertical scale, said in a note) and the rest share the narrower domain.
+  // Default off (NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL=1 turns it on): off, the SVG is byte-identical to what it was without this.
+  const outlier = (() => {
+    if (process.env.NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL !== "1") return null;
+    if (facets.length < 4 || refLines.length) return null;
+    const span = (d) => d[1] - d[0];
+    let best = null;
+    for (const facet of facets) {
+      const rest = valuesOf(rows.filter((r) => String(r[spec.facet_field]) !== String(facet)));
+      if (!rest.length) continue;
+      const domain = domainOf(rest);
+      if (!best || span(domain) < span(best.domain)) best = { facet, domain };
+    }
+    if (!best || !(span(yDomain) >= 3 * span(best.domain))) return null;
+    const own = valuesOf(rows.filter((r) => String(r[spec.facet_field]) === String(best.facet)));
+    return own.length ? { ...best, ownDomain: domainOf(own) } : null;
+  })();
+  const gridFacets = outlier ? facets.filter((facet) => facet !== outlier.facet) : facets;
+  const gridDomain = outlier ? outlier.domain : yDomain;
+  // the grid's columns follow the facets that stay in it
+  const gridCols = gridFacets.length === 1 ? 1 : indexBase !== null && gridFacets.length >= 7 ? (gridFacets.length >= 10 ? 4 : 3) : 2;
+  const panelW = indexBase !== null && gridCols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (gridCols - 1) * gapX) / gridCols) : 430;
+  const rowsN = Math.ceil(gridFacets.length / gridCols);
+  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + (outlier ? gapY + panelH : 0) + 20 + rowShift);
   // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
-  const idxTicks = (() => {
-    if (indexBase === null) return [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]];
-    const span = yDomain[1] - yDomain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  const ticksFor = (domain, nice = indexBase !== null) => {
+    if (!nice) return [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
+    const span = domain[1] - domain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
     const step = [1, 2, 5, 10].map((m) => m * mag).find((c) => c >= raw);
     const out = [];
-    for (let v = Math.ceil((yDomain[0] - 1e-9) / step) * step; v <= yDomain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
-    if (!out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
+    for (let v = Math.ceil((domain[0] - 1e-9) / step) * step; v <= domain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    if (indexBase !== null && !out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
     return out.sort((a, b) => a - b);
-  })();
+  };
+  const idxTicks = ticksFor(gridDomain);
   let indexBaseNamed = false;
-  facets.forEach((facet, fi) => {
-    const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowShift + rowN * (panelH + gapY);
+  const drawFacet = (facet, fi, col, x0, y0, yDomain, idxTicks, panelW, axisLabels = false, boxLeft = x0 - gapX + 2) => {
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -4777,11 +4840,16 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
     if (indexBase !== null) {
       const by = yScale(indexBase);
       f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
-      if (col === 0) {
+      if (col === 0 || axisLabels) {
         idxTicks.forEach((tick) => {
           f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
         });
       }
+    }
+    if (indexBase === null && axisLabels) {
+      idxTicks.forEach((tick) => {
+        f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
+      });
     }
     const sorted = [...group].sort((a, b) => xMap.get(String(a[spec.x_field])) - xMap.get(String(b[spec.x_field])));
     if (xs.length > 1) {
@@ -4834,8 +4902,36 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
         f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase, i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 34))}</text>`);
       }
     });
-    tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+    tagPanelTexts(f.parts, facetPartStart, [boxLeft, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+  };
+  gridFacets.forEach((facet, fi) => {
+    const col = fi % gridCols, rowN = Math.floor(fi / gridCols);
+    drawFacet(facet, fi, col, idxLeft + col * (panelW + gapX), f.bodyTop + rowShift + rowN * (panelH + gapY), gridDomain, idxTicks, panelW);
   });
+  if (outlier) {
+    const gridW = gridCols * panelW + (gridCols - 1) * gapX;
+    const y0 = f.bodyTop + rowShift + rowsN * (panelH + gapY);
+    const name = resolveEconomyDisplayName(outlier.facet, spec.category_names, vizLang(spec));
+    // y labels come from tickValues on the panel's own domain: at least 3 inside it, plus the base when one is set
+    let ownTicks = [];
+    for (const count of [4, 6, 8, 12, 16, 24]) {
+      ownTicks = tickValues(outlier.ownDomain, count).filter((v) => v >= outlier.ownDomain[0] - 1e-9 && v <= outlier.ownDomain[1] + 1e-9);
+      if (ownTicks.length >= 3) break;
+    }
+    if (ownTicks.length < 3) ownTicks = [outlier.ownDomain[0], (outlier.ownDomain[0] + outlier.ownDomain[1]) / 2, outlier.ownDomain[1]];
+    if (indexBase !== null && !ownTicks.some((v) => Math.abs(v - indexBase) < 1e-9 * Math.max(1, Math.abs(indexBase)))) ownTicks.push(indexBase);
+    ownTicks.sort((a, b) => a - b);
+    // keep the widest y label 2 px inside the panel box: move the panel's left edge right by any shortfall
+    const boxLeft = idxLeft - gapX + 2;
+    const labelW = Math.max(...ownTicks.map((tick) => estimateTextWidth(tickLabelSpec(spec, tick, ""), 12, false)));
+    const shift = Math.max(0, Math.ceil(boxLeft + 2 + 6 + 2 + labelW - idxLeft));
+    const x0 = idxLeft + shift;
+    const noteStart = f.parts.length;
+    const note = vizLang(spec) === "zh" ? `${name}与其他各项数值相差悬殊，单独成图，纵轴刻度与上面各图不同` : `${name} is far outside the others' range, so it has its own panel with a different vertical scale.`;
+    f.parts.push(`<text data-role="outlier-note" x="${x0}" y="${y0 - 14}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(note)}</text>`);
+    tagPanelTexts(f.parts, noteStart, [boxLeft, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
+    drawFacet(outlier.facet, gridFacets.length, 0, x0, y0, outlier.ownDomain, ownTicks, gridW - shift, true, boxLeft);
+  }
   if (indexBase !== null && !indexBaseNamed) {
     if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
     f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
@@ -6685,6 +6781,9 @@ function fmtWafflePercent(value) {
   return `${value.toFixed(1)}%`;
 }
 
+// Outline of the lightest grey (a #F2F2F2 cell alone is 1.14:1 against white).
+const WAFFLE_OUTLINE = "#8B8B8B";
+
 // Single-grid waffle: one 10x10 grid (100 cells, largest-remainder
 // apportionment above so the integer cell counts always sum to exactly
 // 100 regardless of rounding) shared by all of the spec's categories,
@@ -6712,14 +6811,45 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
     ...visible.map((e) => ({ row: e.row, value: e.value, highlighted: e.highlighted })),
     ...(hasOther ? [{ row: null, value: otherValue, highlighted: false }] : []),
   ];
-  let greyIdx = 0;
-  const colors = entries.map((e) => {
-    if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
-    if (e.highlighted) return PALETTE.accent;
-    const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
-    greyIdx += 1;
-    return color;
-  });
+  let colors;
+  let strokeIdx = -1; // the entry that takes the lightest grey also gets an outline
+  if (HOUSE_STYLE_ACTIVE) {
+    // A literal row named 其他/其它/Other/Others is the catch-all too (when no
+    // merged bucket exists), highlighted or not: it is drawn last, takes the
+    // lightest grey, or the accent when highlighted.
+    // Rows keep today's order otherwise. A highlighted row keeps the accent.
+    const isLiteralOther = (e) => e.row !== null && /^(其他|其它|others?)$/i.test(String(e.row[spec.category_field] ?? "").trim());
+    if (!hasOther) {
+      const at = entries.findIndex(isLiteralOther);
+      if (at >= 0 && at < entries.length - 1) entries.push(...entries.splice(at, 1));
+    }
+    const catchAll = entries.findIndex((e, k) => e.row === null || (!hasOther && k === entries.length - 1 && isLiteralOther(e)));
+    const named = entries.map((e, k) => (k !== catchAll && !e.highlighted ? k : -1)).filter((k) => k >= 0);
+    // Exactly two plain rows read best two steps apart; otherwise darkest first.
+    const stepOf = named.length === 2 ? [0, 2] : named.map((_k, i) => i);
+    const lightest = WAFFLE_GREYS.length - 1;
+    colors = entries.map((e, k) => {
+      if (k === catchAll) {
+        if (e.highlighted) return PALETTE.accent; // a highlighted catch-all keeps the accent and has no outline
+        strokeIdx = k;
+        return WAFFLE_GREYS[lightest];
+      }
+      if (e.highlighted) return PALETTE.accent;
+      return WAFFLE_GREYS[Math.min(stepOf[named.indexOf(k)], lightest)];
+    });
+    // With no catch-all, a fifth plain row is the one that takes the lightest grey.
+    if (catchAll < 0 && named.length === WAFFLE_GREYS.length) strokeIdx = named[named.length - 1];
+  } else {
+    let greyIdx = 0;
+    colors = entries.map((e) => {
+      if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
+      if (e.highlighted) return PALETTE.accent;
+      const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
+      greyIdx += 1;
+      return color;
+    });
+  }
+  const outline = (k) => (k === strokeIdx ? ` stroke="${WAFFLE_OUTLINE}" stroke-width="1"` : "");
   const cellCounts = largestRemainderCells(entries.map((e) => e.value));
   const cell = mobile ? 20 : 28;
   const gap = mobile ? 2 : 3;
@@ -6750,7 +6880,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
       const c = cursor % 10;
       const x = left + c * (cell + gap);
       const y = gridTop + r * (cell + gap);
-      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"/>`);
+      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"${outline(k)}/>`);
     }
   });
   const legendLeft = mobile ? left : left + grid + gutter;
@@ -6765,7 +6895,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
   const valueRightX = nameX + maxNameWidth + 16 + 56; // fixed-width value column, right-aligned
   entries.forEach((e, k) => {
     const rowY = legendTop + k * legendRowHeight;
-    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"/>`);
+    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"${outline(k)}/>`);
     f.parts.push(`<text x="${nameX}" y="${rowY + 10}" font-family="${FONT_SANS}" font-size="13" font-weight="600" fill="${PALETTE.ink}">${esc(names[k])}</text>`);
     f.parts.push(`<text data-cell-count="${cellCounts[k]}" x="${valueRightX}" y="${rowY + 10}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtWafflePercent(e.value))}</text>`);
   });
