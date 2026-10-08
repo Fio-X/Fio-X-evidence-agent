@@ -4,6 +4,7 @@ mod audit;
 mod cli;
 mod commands;
 mod config;
+mod data_profile;
 mod hash;
 mod interactive;
 mod llm;
