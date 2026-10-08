@@ -1122,7 +1122,9 @@ pub async fn run_prompt(
         .collect();
     let started = Instant::now();
     let mut telemetry = RunTelemetry::new();
-    eprintln!("[agent] phase=startup elapsed_ms=0");
+    if !crate::step_lines::enabled() {
+        eprintln!("[agent] phase=startup elapsed_ms=0");
+    }
     let mut command = config.command();
     #[cfg(unix)]
     command.process_group(0);
@@ -1190,6 +1192,8 @@ pub async fn run_prompt(
         let mut extension_errors: Vec<String> = Vec::new();
         // Only a run with chart claims filled from rows names its first chart early.
         let mut chart_watch = config.speed.inline_claim.then(ChartReadyWatch::default);
+        // NEWSROOM_STEP_LINES=1: one named line per finished tool call (stderr only; changes no state).
+        let mut step_tracker = crate::step_lines::enabled().then(crate::step_lines::StepTracker::default);
 
         let mut line = Vec::new();
         loop {
@@ -1210,7 +1214,9 @@ pub async fn run_prompt(
                         else if !prompt_accepted { "startup" }
                         else if active_work { "active-work" } else { "rpc-wait" };
                     if now >= next_heartbeat {
-                        eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        if !crate::step_lines::enabled() {
+                            eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        }
                         next_heartbeat = now + heartbeat;
                     }
                     let expired = if !total.is_zero() && started.elapsed() >= total { Some("total") }
@@ -1258,6 +1264,18 @@ pub async fn run_prompt(
                 }
                 writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
                 file.flush()?;
+            }
+            // Step lines come first so the chart-out line sits right above `[agent] chart_ready`.
+            if let Some(tracker) = step_tracker.as_mut() {
+                match event.get("type").and_then(Value::as_str) {
+                    Some("tool_execution_start") => tracker.on_start(&event, crate::step_lines::secs_now()),
+                    Some("tool_execution_end") => {
+                        for line in tracker.on_end(&event, crate::step_lines::secs_now(), crate::step_lines::language_zh()) {
+                            eprintln!("{line}");
+                        }
+                    }
+                    _ => {}
+                }
             }
             // Progress only: the notice changes no state, status or completion check.
             if let Some(chart) = chart_watch.as_mut().and_then(|watch| watch.observe(&event)) {
@@ -1374,16 +1392,20 @@ pub async fn run_prompt(
                 }
                 Some("tool_execution_start") => {
                     active_work = true;
-                    eprintln!(
-                        "[agent] phase=tool-running elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
+                    if !crate::step_lines::enabled() {
+                        eprintln!(
+                            "[agent] phase=tool-running elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("tool_execution_end") => {
-                    eprintln!(
-                        "[agent] phase=tool-complete elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
+                    if !crate::step_lines::enabled() {
+                        eprintln!(
+                            "[agent] phase=tool-complete elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("turn_start") => {
                     // A new model/tool turn is active even when the provider
@@ -1494,13 +1516,15 @@ pub async fn run_prompt(
         }
 
         let rpc_ms = started.elapsed().as_millis();
-        eprintln!(
-            "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
-            rpc_ms,
-            first_text_ms
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "N/A".into())
-        );
+        if !crate::step_lines::enabled() {
+            eprintln!(
+                "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
+                rpc_ms,
+                first_text_ms
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "N/A".into())
+            );
+        }
         let token_value = |key: &str| {
             session_stats
                 .as_ref()
@@ -1692,7 +1716,11 @@ async fn send_json(
         tokio::select! {
             _ = tokio::signal::ctrl_c() => bail!("Pi RPC cancelled by user"),
             result = &mut write => { result.context("Pi RPC write timeout")??; break; },
-            _ = tokio::time::sleep(heartbeat) => eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis()),
+            _ = tokio::time::sleep(heartbeat) => {
+                if !crate::step_lines::enabled() {
+                    eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis());
+                }
+            }
         }
     }
     Ok(())

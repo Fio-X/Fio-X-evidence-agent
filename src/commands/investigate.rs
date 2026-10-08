@@ -264,14 +264,17 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
     let run_started = Instant::now();
     let split_classifier = complex_visual_routing_ab_enabled();
     let topic = args.topic.join(" ");
+    crate::step_lines::begin(&topic);
 
     let output_root = output::resolve_output_dir(&args.out)?;
     output::announce_and_confirm(&output_root, args.confirm_output)?;
 
-    eprintln!(
-        "[agent] phase=preparing elapsed_ms={}",
-        run_started.elapsed().as_millis()
-    );
+    if !crate::step_lines::enabled() {
+        eprintln!(
+            "[agent] phase=preparing elapsed_ms={}",
+            run_started.elapsed().as_millis()
+        );
+    }
     let bundle = InvestigationBundle::create(&output_root, &topic)?;
     let mut local_data = Vec::new();
     for source in &args.data {
@@ -295,10 +298,12 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         "draft",
         None,
     )?;
-    eprintln!(
-        "[agent] phase=runtime-initialization elapsed_ms={}",
-        run_started.elapsed().as_millis()
-    );
+    if !crate::step_lines::enabled() {
+        eprintln!(
+            "[agent] phase=runtime-initialization elapsed_ms={}",
+            run_started.elapsed().as_millis()
+        );
+    }
     let runtime_started = Instant::now();
     let extension = runtime::materialize_extension(&bundle.dir)?;
     eprintln!(
@@ -429,6 +434,14 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                     "\n[qualification] investigation completed without enough observable planning/tool evidence; inspect tools.json"
                 );
             }
+            // Step lines on: the verdict is computed here so the closing line sits right above primary_artifact.
+            let early_verdict = if crate::step_lines::enabled() {
+                let verdict = verify::post_run_verdict(&bundle.dir).await;
+                crate::step_lines::print_final(verdict.is_none());
+                Some(verdict)
+            } else {
+                None
+            };
             match bundle.primary_artifact()? {
                 Some((path, kind)) => {
                     eprintln!(
@@ -450,7 +463,10 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                 persistence_started.elapsed().as_millis(),
                 run_started.elapsed().as_millis()
             );
-            let verified = verify::announce_post_run_verdict(&bundle.dir).await;
+            let verified = match early_verdict {
+                Some(verdict) => verify::announce_verdict(verdict),
+                None => verify::announce_post_run_verdict(&bundle.dir).await,
+            };
             Ok((bundle.dir, verified))
         }
         Err(error) => {

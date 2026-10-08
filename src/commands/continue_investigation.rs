@@ -45,17 +45,22 @@ fn effective_tool_profile(requested: &str, text: &str, recorded: Option<&str>) -
 
 pub async fn run(args: ContinueArgs) -> Result<()> {
     let run_started = Instant::now();
-    eprintln!(
-        "[agent] phase=preparing elapsed_ms={}",
-        run_started.elapsed().as_millis()
-    );
+    if !crate::step_lines::enabled() {
+        eprintln!(
+            "[agent] phase=preparing elapsed_ms={}",
+            run_started.elapsed().as_millis()
+        );
+    }
     let bundle = InvestigationBundle::open(&args.artifact)?;
     let topic = bundle.topic()?;
     let message = args.message.join(" ");
-    eprintln!(
-        "[agent] phase=runtime-initialization elapsed_ms={}",
-        run_started.elapsed().as_millis()
-    );
+    crate::step_lines::begin(&message);
+    if !crate::step_lines::enabled() {
+        eprintln!(
+            "[agent] phase=runtime-initialization elapsed_ms={}",
+            run_started.elapsed().as_millis()
+        );
+    }
     let runtime_started = Instant::now();
     let extension = runtime::materialize_extension(&bundle.dir)?;
     eprintln!(
@@ -133,6 +138,14 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 status,
                 Some(&audit),
             )?;
+            // Step lines on: the verdict is computed here so the closing line sits right above primary_artifact.
+            let early_verdict = if crate::step_lines::enabled() {
+                let verdict = verify::post_run_verdict(&bundle.dir).await;
+                crate::step_lines::print_final(verdict.is_none());
+                Some(verdict)
+            } else {
+                None
+            };
             match bundle.primary_artifact()? {
                 Some((path, kind)) => {
                     eprintln!(
@@ -148,7 +161,10 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 persistence_started.elapsed().as_millis(),
                 run_started.elapsed().as_millis()
             );
-            let verified = verify::announce_post_run_verdict(&bundle.dir).await;
+            let verified = match early_verdict {
+                Some(verdict) => verify::announce_verdict(verdict),
+                None => verify::announce_post_run_verdict(&bundle.dir).await,
+            };
             verify::exit_if_not_verified(verified);
             Ok(())
         }
