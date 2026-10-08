@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // A small-multiples line chart where one facet's range dwarfs the rest: that facet moves to its own panel under the grid
-// (own vertical scale, a note says so) and the other facets share the narrower scale. Every other chart is byte-identical to a5f56b3.
+// (own vertical scale, a note says so) and the other facets share the narrower scale. Every other chart is byte-identical to fb44c18.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { lintVizSpec, renderVizBundle, renderVizSvg } from "../runtime/pi/viz.mjs";
@@ -22,7 +22,7 @@ const qaOf = (svg) => { const q = runRenderQa({ desktop: svg }).viewports.deskto
 const NOTE_ZH = /与其他各项数值相差悬殊，单独成图，纵轴刻度与上面各图不同/;
 
 // ---- split shapes ---------------------------------------------------------------------------------------------------------
-const shapeA = { spec: spec({ index_base: 100 }), rows: [...["S1", "S2", "S3", "S4", "S5"].map((n, k) => series(n, wave(100 + k, 6 + k))).flat(), ...series("S6", (i) => 100 + i * 28)] };
+const shapeA = { spec: spec({ index_base: 100 }), rows: [...["S1", "S2", "S3", "S4", "S5"].map((n, k) => series(n, wave(100, 6 + k))).flat(), ...series("S6", (i) => 100 + i * 28)] };
 const shapeB = { spec: spec({ unit: "万吨" }), rows: [...["甲", "乙", "丙"].map((n, k) => series(n, wave(20 + 2 * k, 4))).flat(), ...series("丁", (i) => 10 + i * 17)] };
 if (process.env.MEASURE) { // spans (share of plot height) of shapes A and B, also run at a5f56b3 for the before numbers
   for (const [n, { spec: sp, rows }] of [["A", shapeA], ["B", shapeB]]) console.log(n, geometry(renderVizSvg(sp, rows)).map((v) => (v / PLOT_H).toFixed(2)).join(" "));
@@ -91,7 +91,7 @@ const thousands = { spec: spec({ unit: "点" }), rows: [...["甲", "乙", "丙",
 { // the grid counts columns from the facets that stay in it
   const titleXs = (svg) => new Set([...svg.matchAll(/<text [^>]*? x="([^"]+)" y="[^"]+" font-family="[^"]+" font-size="14" font-weight="700"/g)].map((m) => m[1]));
   for (const [total, wantCols] of [[7, 2], [10, 3]]) {
-    const rowsN = [...Array(total - 1)].map((_, k) => series(`F${k + 1}`, wave(100 + k, 4 + (k % 3)))).flat().concat(series("OUT", (i) => 100 + i * 28));
+    const rowsN = [...Array(total - 1)].map((_, k) => series(`F${k + 1}`, wave(100, 4 + (k % 3)))).flat().concat(series("OUT", (i) => 100 + i * 28));
     const svg = renderVizSvg(spec({ index_base: 100 }), rowsN);
     assert.match(svg, NOTE_ZH, `${total} index facets: split`);
     assert.equal(titleXs(svg).size, wantCols, `${total} index facets: grid has ${wantCols} columns`);
@@ -99,10 +99,10 @@ const thousands = { spec: spec({ unit: "点" }), rows: [...["甲", "乙", "丙",
   }
 }
 
-// ---- byte-identical to a5f56b3 -------------------------------------------------------------------------------------------------
-const three = [...series("甲", wave(100, 5)), ...series("乙", wave(101, 6)), ...series("丙", (i) => 100 + i * 40)];
-const twoSame = [...["甲", "乙", "丙", "丁"].slice(0, 2).map((n, k) => series(n, wave(100 + k, 5))).flat(), ...series("丙", (i) => 100 + i * 30), ...series("丁", (i) => 100 + i * 32)];
-const calm = ["甲", "乙", "丙", "丁"].map((n, k) => series(n, wave(100 + k, 5 + 2 * k))).flat();
+// ---- byte-identical to fb44c18 -------------------------------------------------------------------------------------------------
+const three = [...series("甲", wave(100, 5)), ...series("乙", wave(100, 6)), ...series("丙", (i) => 100 + i * 40)];
+const twoSame = [...["甲", "乙", "丙", "丁"].slice(0, 2).map((n, k) => series(n, wave(100, 5))).flat(), ...series("丙", (i) => 100 + i * 30), ...series("丁", (i) => 100 + i * 32)];
+const calm = ["甲", "乙", "丙", "丁"].map((n, k) => series(n, wave(100, 5 + 2 * k))).flat();
 // shape A's grid with the sixth facet's peak tuned so the shared span is a chosen multiple of the span without it
 const ratioOf = (rows) => {
   const spanWithout = (skip) => { const v = rows.filter((r) => r.series !== skip).map((r) => r.value); return (Math.max(...v, 100) - Math.min(...v, 100)) * 1.16; };
@@ -110,9 +110,10 @@ const ratioOf = (rows) => {
   const full = (Math.max(...all, 100) - Math.min(...all, 100)) * 1.16;
   return full / Math.min(...[...new Set(rows.map((r) => r.series))].map(spanWithout));
 };
-const nearRows = (peak) => [...["S1", "S2", "S3", "S4", "S5"].map((n, k) => series(n, wave(100 + k, 6 + k))).flat(), ...series("S6", (i) => 100 + (i / 11) * peak)];
+const nearRows = (peak) => [...["S1", "S2", "S3", "S4", "S5"].map((n, k) => series(n, wave(100, 6 + k))).flat(), ...series("S6", (i) => 100 + (i / 11) * peak)];
 const peakFor = (target) => { let lo = 1, hi = 1000; for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (ratioOf(nearRows(mid)) < target) lo = mid; else hi = mid; } return [lo, hi]; };
-const [justUnder, justOver] = peakFor(3);
+// 1% either side of 3: a ratio within float noise of 3 would decide on rounding, not on the rule
+const justUnder = peakFor(2.99)[0], justOver = peakFor(3.01)[1];
 assert.ok(ratioOf(nearRows(justUnder)) < 3 && ratioOf(nearRows(justUnder)) > 2.97, "ratio just under 3");
 assert.ok(ratioOf(nearRows(justOver)) >= 3 && ratioOf(nearRows(justOver)) < 3.03, "ratio just over 3");
 const CASES = {
@@ -121,19 +122,19 @@ const CASES = {
   "no outlier, 4 facets": [spec({ index_base: 100 }), calm],
   "ratio just under 3": [spec({ index_base: 100 }), nearRows(justUnder)],
   "reference_line": [spec({ index_base: 100, annotations: [{ type: "reference_line", value: 130, text: "目标", claim_id: "claim-so" }] }), shapeA.rows],
-  "dot panels": [spec({ panel_mark: "dot", index_base: 100 }), shapeA.rows],
+  "dot panels": [spec({ panel_mark: "dot" }), shapeA.rows],
   "no index, 3 facets with an outlier": [spec(), three],
   "no index, 5 facets, no outlier": [spec({ unit: "万吨" }), [...["甲", "乙", "丙", "丁", "戊"].map((n, k) => series(n, wave(20 + k, 4 + k))).flat()]],
 };
-// SHA-256 (first 16 hex) of the desktop SVG at a5f56b3, recorded before the change
+// SHA-256 (first 16 hex) of the desktop SVG at fb44c18, recorded before the change
 const PINNED = process.env.PRINT_HASHES ? {} : {
-  "3 facets with an outlier": "cf1a5cc9047cc912/e33d6596007fc514",
-  "two outliers moving the same way": "66a6c0684579d1ce/5bd4f5d2de2debfd",
-  "no outlier, 4 facets": "a8c3578a7859af5d/78f67d66d10d0676",
-  "ratio just under 3": "ef66049564c8d533/5aa04ea7326ce6e5",
-  "reference_line": "9c3dfe9cfb3d1f1b/a4d420d6bb09e12f",
-  "dot panels": "b1a38bdb2026de0b/f34d4910884538ce",
-  "no index, 3 facets with an outlier": "63c42c6e79aa8425/e33d6596007fc514",
+  "3 facets with an outlier": "2c48f736801a3430/854f45c60d21ba30",
+  "two outliers moving the same way": "5109637fe6e55ff0/7b8f121dbe0d863e",
+  "no outlier, 4 facets": "a3adb4332c90fb9c/08f78e2a6ed3e22d",
+  "ratio just under 3": "065a03b16d157dd8/e8e7d16ebf80171f",
+  "reference_line": "e5b8fc2035546a3f/3f06c53a44503ffe",
+  "dot panels": "ea143657c92c3672/2406306ed5c25937",
+  "no index, 3 facets with an outlier": "228b3a926f32270c/854f45c60d21ba30",
   "no index, 5 facets, no outlier": "6fbbcb0f05c0e036/b7722bcf72bb6f74"
 };
 const hashes = {};
@@ -142,7 +143,7 @@ for (const [name, [sp, rows]] of Object.entries(CASES)) {
   hashes[name] = sha(typeof bundle.desktop === "string" ? bundle.desktop : bundle.desktop.svg) + "/" + sha(typeof bundle.mobile === "string" ? bundle.mobile : bundle.mobile?.svg ?? "");
 }
 if (process.env.PRINT_HASHES) { console.log(JSON.stringify(hashes, null, 2)); process.exit(0); }
-for (const [name, hash] of Object.entries(hashes)) assert.equal(hash, PINNED[name], `${name}: byte-identical to a5f56b3`);
+for (const [name, hash] of Object.entries(hashes)) assert.equal(hash, PINNED[name], `${name}: byte-identical to fb44c18`);
 // just over 3 splits, with the same grid
 assert.match(renderVizSvg(spec({ index_base: 100 }), nearRows(justOver)), NOTE_ZH, "ratio just over 3 splits");
 assert.ok(!NOTE_ZH.test(renderVizSvg(...CASES["ratio just under 3"])), "ratio just under 3 does not split");
