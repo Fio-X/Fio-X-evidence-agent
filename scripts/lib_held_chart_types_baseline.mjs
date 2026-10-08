@@ -12,7 +12,7 @@
 // The edits are data below, not a regex over "anything that mentions a held type".
 import assert from "node:assert/strict";
 
-const BEFORE_ENUM = Object.freeze(["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth"]);
+const BEFORE_ENUM = Object.freeze(["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar"]);
 export const HELD_CHART_TYPES = Object.freeze(["hierarchy_tree", "geo_flow_map", "cartographic_flow_map", "trajectory_profile"]);
 const ENUM = Object.freeze({ before: BEFORE_ENUM, after: Object.freeze(BEFORE_ENUM.filter((type) => !HELD_CHART_TYPES.includes(type))) });
 // Plan values that fit only held chart types (viz.mjs's inferVisualFamily / inferDataTopology), taken out of the plan's
