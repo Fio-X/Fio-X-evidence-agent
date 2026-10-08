@@ -30,6 +30,19 @@ const RECIPES: [Recipe; 2] = [
     },
 ];
 
+/// A recipe that needs several tables at once; checked before the single-table recipes and wins over them.
+const MULTI_RECIPES: [MultiRecipe; 1] = [MultiRecipe {
+    name: "flow-with-origin-map",
+    body: include_str!("../recipes/flow-with-origin-map.md"),
+    matches: is_flow_with_origin,
+}];
+
+struct MultiRecipe {
+    name: &'static str,
+    body: &'static str,
+    matches: fn(&[TableShape]) -> bool,
+}
+
 /// A recipe the program loaded: its name and the sha256 of the exact text appended to the prompt.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Loaded {
@@ -58,12 +71,30 @@ fn is_year_value_table(shape: &TableShape) -> bool {
     numeric_others == 1 && text <= 2
 }
 
-/// Columns named source, target and value; source and target are text, value is the only numeric column.
+/// Columns named source and target (text) and exactly one numeric column, whatever its name
+/// (value, value_ktoe, value_GtC, ...); at least two rows.
 fn is_edge_table(shape: &TableShape) -> bool {
-    let (Some(source), Some(target), Some(value)) = (column(shape, "source"), column(shape, "target"), column(shape, "value")) else {
+    let (Some(source), Some(target)) = (column(shape, "source"), column(shape, "target")) else {
         return false;
     };
-    shape.rows >= 2 && !source.numeric && !target.numeric && value.numeric && shape.columns.iter().filter(|c| c.numeric).count() == 1
+    shape.rows >= 2 && !source.numeric && !target.numeric && shape.columns.iter().filter(|c| c.numeric).count() == 1
+}
+
+/// A partner table: a text column holding ISO country codes (name contains "iso3" or is "iso_code")
+/// and at least one numeric column.
+fn is_origin_table(shape: &TableShape) -> bool {
+    let coded = shape.columns.iter().any(|c| {
+        let name = c.name.to_ascii_lowercase();
+        !c.numeric && (name.contains("iso3") || name == "iso_code")
+    });
+    coded && shape.columns.iter().any(|c| c.numeric)
+}
+
+/// One edge table and, in another table, country-coded partners with a value: a flow page that also needs a map.
+fn is_flow_with_origin(shapes: &[TableShape]) -> bool {
+    shapes.iter().enumerate().any(|(i, edges)| {
+        is_edge_table(edges) && shapes.iter().enumerate().any(|(j, other)| i != j && is_origin_table(other))
+    })
 }
 
 /// The one recipe that matches, or `None` when none or more than one does (across all tables).
@@ -91,14 +122,30 @@ fn select_from<'r>(recipes: &'r [Recipe], shapes: &[TableShape]) -> Option<&'r R
     }
 }
 
+/// The multi-table recipe that matches, when exactly one does.
+fn select_multi(shapes: &[TableShape]) -> Option<&'static MultiRecipe> {
+    let hits: Vec<&'static MultiRecipe> = MULTI_RECIPES.iter().filter(|r| (r.matches)(shapes)).collect();
+    if hits.len() == 1 {
+        hits.first().copied()
+    } else {
+        None
+    }
+}
+
 /// Recipe text for the declared local files, from their measured shape only.
 /// Each pair is the path the model sees and the file to read it from.
 pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
     let shapes: Vec<TableShape> = files.iter().filter_map(|(_, source)| shape_csv(source)).collect();
-    let recipe = select(&shapes)?;
-    let text = format!("{RECIPES_HEADING}{}", recipe.body);
+    let (name, body) = match select_multi(&shapes) {
+        Some(multi) => (multi.name, multi.body),
+        None => {
+            let recipe = select(&shapes)?;
+            (recipe.name, recipe.body)
+        }
+    };
+    let text = format!("{RECIPES_HEADING}{body}");
     Some(Loaded {
-        name: recipe.name,
+        name,
         sha256: sha256_bytes(text.as_bytes()),
         text,
     })
@@ -186,13 +233,51 @@ mod tests {
 
     #[test]
     fn recipe_bodies_hold_no_digits_paths_or_ids() {
-        for recipe in &RECIPES {
-            let all = format!("{RECIPES_HEADING}{}", recipe.body);
-            assert!(!all.chars().any(|c| c.is_ascii_digit()), "{}: digit in recipe text", recipe.name);
+        let bodies = RECIPES.iter().map(|r| (r.name, r.body)).chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body)));
+        for (name, body) in bodies {
+            let recipe = (name, body);
+            let all = format!("{RECIPES_HEADING}{}", recipe.1);
+            // The code-system name "iso3" is the one allowed digit; any other digit could be copied as a number.
+            let without_code_name = all.replace("iso3", "");
+            assert!(!without_code_name.chars().any(|c| c.is_ascii_digit()), "{}: digit in recipe text", recipe.0);
             for bad in ["/Users", "PJ004", "http", "README", ".md", "SKILL"] {
-                assert!(!all.contains(bad), "{}: contains {bad}", recipe.name);
+                assert!(!all.contains(bad), "{}: contains {bad}", recipe.0);
             }
-            assert!(!recipe.body.starts_with("---"), "{}: frontmatter", recipe.name);
+            assert!(!recipe.1.starts_with("---"), "{}: frontmatter", recipe.0);
         }
+    }
+
+    // Real headers of the Germany energy and import-partner tables, with a few rows each.
+    const ENERGY: &str = "source,target,value_ktoe\nC:renewables,transport,2979.849\nC:renewables,K:difference,15.333\nK:difference,heat,10.5\n";
+    const OIL: &str = "partner_geo,partner_iso3,value,unit,share,partner_name\nUS,USA,14189,THS_T,0.18380,United States\nNO,NOR,13713,THS_T,0.17764,Norway\n";
+
+    #[test]
+    fn an_edge_table_with_any_name_for_its_one_numeric_column_loads_the_sankey_recipe() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(section(&[write(dir.path(), "e.csv", ENERGY)]).unwrap().name, "sankey-flow");
+        let gtc = "source,target,value_GtC\nA,B,3.5\nB,C,1.5\n";
+        assert_eq!(section(&[write(dir.path(), "g.csv", gtc)]).unwrap().name, "sankey-flow");
+        // Two numeric columns, or a numeric source column: nothing.
+        let two = "source,target,value_a,value_b\nA,B,3.5,1.5\nB,C,1.5,2.5\n";
+        assert!(section(&[write(dir.path(), "two.csv", two)]).is_none());
+        let numeric_source = "source,target,value\n1,B,3.5\n2,C,1.5\n";
+        assert!(section(&[write(dir.path(), "n.csv", numeric_source)]).is_none());
+    }
+
+    #[test]
+    fn edges_plus_a_country_coded_partner_table_load_the_map_recipe_and_it_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = [write(dir.path(), "e.csv", ENERGY), write(dir.path(), "oil.csv", OIL)];
+        assert_eq!(section(&files).unwrap().name, "flow-with-origin-map");
+        let reversed = [files[1].clone(), files[0].clone()];
+        assert_eq!(section(&reversed).unwrap().name, "flow-with-origin-map");
+        // Edges alone keep the sankey recipe; the partner table alone loads nothing.
+        assert_eq!(section(&files[..1]).unwrap().name, "sankey-flow");
+        assert!(section(&files[1..]).is_none());
+        // A partner table whose code column is numeric, or has no iso name, is not a map source.
+        let plain = "country,code,value\nUnited States,US,3.5\nNorway,NO,1.5\n";
+        assert_eq!(section(&[files[0].clone(), write(dir.path(), "p.csv", plain)]).unwrap().name, "sankey-flow");
+        let iso_code = "name,ISO_CODE,amount\nUnited States,USA,3.5\n";
+        assert_eq!(section(&[files[0].clone(), write(dir.path(), "q.csv", iso_code)]).unwrap().name, "flow-with-origin-map");
     }
 }
