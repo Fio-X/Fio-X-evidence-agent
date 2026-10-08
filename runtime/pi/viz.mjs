@@ -158,7 +158,7 @@ export const HOUSE_PALETTES = {
     // one lighter tint (faint) reserved for "Other" - mirrors the "one
     // accent, everything else grey steps" house rule instead of reusing the
     // legacy blue-grey ramp's own hex values.
-    waffleGreySteps: ["#666666", "#757575", "#9E9E9E", "#BDBDBD", "#F2F2F2"],
+    waffleGreySteps: ["#404040", "#646464", "#8B8B8B", "#B9B9B9", "#F2F2F2"],
   },
 };
 
@@ -6673,6 +6673,9 @@ function fmtWafflePercent(value) {
   return `${value.toFixed(1)}%`;
 }
 
+// Outline of the lightest grey (a #F2F2F2 cell alone is 1.14:1 against white).
+const WAFFLE_OUTLINE = "#8B8B8B";
+
 // Single-grid waffle: one 10x10 grid (100 cells, largest-remainder
 // apportionment above so the integer cell counts always sum to exactly
 // 100 regardless of rounding) shared by all of the spec's categories,
@@ -6700,14 +6703,45 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
     ...visible.map((e) => ({ row: e.row, value: e.value, highlighted: e.highlighted })),
     ...(hasOther ? [{ row: null, value: otherValue, highlighted: false }] : []),
   ];
-  let greyIdx = 0;
-  const colors = entries.map((e) => {
-    if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
-    if (e.highlighted) return PALETTE.accent;
-    const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
-    greyIdx += 1;
-    return color;
-  });
+  let colors;
+  let strokeIdx = -1; // the entry that takes the lightest grey also gets an outline
+  if (HOUSE_STYLE_ACTIVE) {
+    // A literal row named 其他/其它/Other/Others is the catch-all too (when no
+    // merged bucket exists), highlighted or not: it is drawn last, takes the
+    // lightest grey, or the accent when highlighted.
+    // Rows keep today's order otherwise. A highlighted row keeps the accent.
+    const isLiteralOther = (e) => e.row !== null && /^(其他|其它|others?)$/i.test(String(e.row[spec.category_field] ?? "").trim());
+    if (!hasOther) {
+      const at = entries.findIndex(isLiteralOther);
+      if (at >= 0 && at < entries.length - 1) entries.push(...entries.splice(at, 1));
+    }
+    const catchAll = entries.findIndex((e, k) => e.row === null || (!hasOther && k === entries.length - 1 && isLiteralOther(e)));
+    const named = entries.map((e, k) => (k !== catchAll && !e.highlighted ? k : -1)).filter((k) => k >= 0);
+    // Exactly two plain rows read best two steps apart; otherwise darkest first.
+    const stepOf = named.length === 2 ? [0, 2] : named.map((_k, i) => i);
+    const lightest = WAFFLE_GREYS.length - 1;
+    colors = entries.map((e, k) => {
+      if (k === catchAll) {
+        if (e.highlighted) return PALETTE.accent; // a highlighted catch-all keeps the accent and has no outline
+        strokeIdx = k;
+        return WAFFLE_GREYS[lightest];
+      }
+      if (e.highlighted) return PALETTE.accent;
+      return WAFFLE_GREYS[Math.min(stepOf[named.indexOf(k)], lightest)];
+    });
+    // With no catch-all, a fifth plain row is the one that takes the lightest grey.
+    if (catchAll < 0 && named.length === WAFFLE_GREYS.length) strokeIdx = named[named.length - 1];
+  } else {
+    let greyIdx = 0;
+    colors = entries.map((e) => {
+      if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
+      if (e.highlighted) return PALETTE.accent;
+      const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
+      greyIdx += 1;
+      return color;
+    });
+  }
+  const outline = (k) => (k === strokeIdx ? ` stroke="${WAFFLE_OUTLINE}" stroke-width="1"` : "");
   const cellCounts = largestRemainderCells(entries.map((e) => e.value));
   const cell = mobile ? 20 : 28;
   const gap = mobile ? 2 : 3;
@@ -6738,7 +6772,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
       const c = cursor % 10;
       const x = left + c * (cell + gap);
       const y = gridTop + r * (cell + gap);
-      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"/>`);
+      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"${outline(k)}/>`);
     }
   });
   const legendLeft = mobile ? left : left + grid + gutter;
@@ -6753,7 +6787,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
   const valueRightX = nameX + maxNameWidth + 16 + 56; // fixed-width value column, right-aligned
   entries.forEach((e, k) => {
     const rowY = legendTop + k * legendRowHeight;
-    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"/>`);
+    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"${outline(k)}/>`);
     f.parts.push(`<text x="${nameX}" y="${rowY + 10}" font-family="${FONT_SANS}" font-size="13" font-weight="600" fill="${PALETTE.ink}">${esc(names[k])}</text>`);
     f.parts.push(`<text data-cell-count="${cellCounts[k]}" x="${valueRightX}" y="${rowY + 10}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtWafflePercent(e.value))}</text>`);
   });
