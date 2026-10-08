@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "scripts/fixtures/speed-off/dry-run-prompt-sha.json").read_text())
-SWITCHES = ["NEWSROOM_SPEED_PLAN_PROGRESS", "NEWSROOM_SPEED_DATA_PROFILE", "NEWSROOM_SPEED_COMPOSE_ANSWER", "NEWSROOM_SPEED_PARALLEL_HINTS"]
+SWITCHES = ["NEWSROOM_SPEED_PLAN_PROGRESS", "NEWSROOM_SPEED_DATA_PROFILE", "NEWSROOM_SPEED_RECIPES", "NEWSROOM_SPEED_COMPOSE_ANSWER", "NEWSROOM_SPEED_PARALLEL_HINTS"]
 binary = os.environ.get("NEWS_BIN") or str(ROOT / "target/release/news")
 if not Path(binary).exists():
     subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=ROOT, check=True)

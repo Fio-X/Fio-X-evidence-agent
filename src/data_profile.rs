@@ -46,6 +46,84 @@ fn clip(cell: &str) -> String {
     }
 }
 
+/// Header, rows and the number of skipped title lines of a plain CSV file.
+fn read_table(path: &Path) -> Option<(Vec<String>, Vec<Vec<String>>, usize)> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut lines: Vec<Vec<String>> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| split_csv_line(l.trim_start_matches('\u{feff}')))
+        .collect();
+    // One title line above the header is skipped only when the two lines after it have the same
+    // field count as each other (a stable row width); a ragged header is never mistaken for one.
+    let skipped_titles = usize::from(
+        lines.len() >= 3 && lines[0].len() != lines[1].len() && lines[1].len() == lines[2].len(),
+    );
+    lines.drain(..skipped_titles);
+    let mut lines = lines.into_iter();
+    let header = lines.next()?;
+    let rows: Vec<Vec<String>> = lines.collect();
+    Some((header, rows, skipped_titles))
+}
+
+/// What one column holds, measured from the rows: the same facts the profile prints.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColumnShape {
+    pub name: String,
+    /// Every non-empty value parses as a number (and there is at least one).
+    pub numeric: bool,
+    /// Every non-empty value is a plain integer with no sign, point or exponent.
+    pub integer: bool,
+    pub distinct: usize,
+    pub min: f64,
+    pub max: f64,
+}
+
+/// The measured shape of one CSV file; nothing from the request or the model.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableShape {
+    pub rows: usize,
+    pub columns: Vec<ColumnShape>,
+}
+
+/// Shape of one CSV file, or `None` when it is not a plain CSV, is too large to profile, or has no header.
+pub fn shape_csv(path: &Path) -> Option<TableShape> {
+    if path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() != Some("csv") {
+        return None;
+    }
+    if std::fs::metadata(path).ok()?.len() > MAX_FILE_BYTES {
+        return None;
+    }
+    let (header, rows, _) = read_table(path)?;
+    let columns = header
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let values: Vec<&str> = rows
+                .iter()
+                .filter_map(|r| r.get(i))
+                .map(|v| v.trim())
+                .filter(|v| !v.is_empty())
+                .collect();
+            let numbers: Vec<f64> = values.iter().filter_map(|v| v.parse::<f64>().ok()).collect();
+            let numeric = !values.is_empty() && numbers.len() == values.len();
+            let integer = numeric && values.iter().all(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()));
+            let mut distinct: Vec<&str> = values.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            ColumnShape {
+                name: name.trim().to_string(),
+                numeric,
+                integer,
+                distinct: distinct.len(),
+                min: numbers.iter().cloned().fold(f64::INFINITY, f64::min),
+                max: numbers.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            }
+        })
+        .collect();
+    Some(TableShape { rows: rows.len(), columns })
+}
+
 /// Profile text for one CSV file, or `None` when it cannot be read as a plain CSV.
 pub fn profile_csv(display_path: &str, path: &Path) -> Option<String> {
     if path
@@ -62,21 +140,7 @@ pub fn profile_csv(display_path: &str, path: &Path) -> Option<String> {
             "- {display_path}: skipped: file too large to profile (over {MAX_FILE_BYTES} bytes)\n"
         ));
     }
-    let text = std::fs::read_to_string(path).ok()?;
-    let mut lines: Vec<Vec<String>> = text
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| split_csv_line(l.trim_start_matches('\u{feff}')))
-        .collect();
-    // One title line above the header is skipped only when the two lines after it have the same
-    // field count as each other (a stable row width); a ragged header is never mistaken for one.
-    let skipped_titles = usize::from(
-        lines.len() >= 3 && lines[0].len() != lines[1].len() && lines[1].len() == lines[2].len(),
-    );
-    lines.drain(..skipped_titles);
-    let mut lines = lines.into_iter();
-    let header = lines.next()?;
-    let rows: Vec<Vec<String>> = lines.collect();
+    let (header, rows, skipped_titles) = read_table(path)?;
     let shown = header.len().min(MAX_COLUMNS);
     let mut out = format!(
         "- {display_path}: {} rows, {} columns\n",

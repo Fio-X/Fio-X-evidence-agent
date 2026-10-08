@@ -247,6 +247,16 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
                 .collect();
             prompt.push_str(&crate::data_profile::profile_section(&files));
         }
+        if speed.recipes {
+            let files: Vec<(String, PathBuf)> = declared_local_data
+                .iter()
+                .cloned()
+                .zip(args.data.iter().cloned())
+                .collect();
+            if let Some(recipe) = crate::recipes::section(&files) {
+                prompt.push_str(&recipe.text);
+            }
+        }
         print!("{prompt}");
         return Ok(());
     }
@@ -294,7 +304,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         "[agent] phase=preparing elapsed_ms={}",
         run_started.elapsed().as_millis()
     );
-    let bundle = InvestigationBundle::create(&output_root, &topic)?;
+    let mut bundle = InvestigationBundle::create(&output_root, &topic)?;
     let mut local_data = Vec::new();
     for source in &args.data {
         local_data.push(bundle.import_data(source)?);
@@ -315,6 +325,17 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
             .map(|shown| (shown.clone(), bundle.dir.join(shown)))
             .collect();
         prompt.push_str(&crate::data_profile::profile_section(&files));
+    }
+    if speed.recipes {
+        // The shape comes from the imported copy the model will query, not from the request text.
+        let files: Vec<(String, PathBuf)> = local_data
+            .iter()
+            .map(|shown| (shown.clone(), bundle.dir.join(shown)))
+            .collect();
+        if let Some(recipe) = crate::recipes::section(&files) {
+            prompt.push_str(&recipe.text);
+            bundle.recipe = Some((recipe.name.to_string(), recipe.sha256));
+        }
     }
     bundle.write_prompt(&prompt)?;
     let reported_provider = PiConfig::normalize_provider(args.pi.provider.as_deref());

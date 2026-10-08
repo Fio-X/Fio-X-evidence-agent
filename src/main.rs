@@ -12,6 +12,7 @@ mod llm;
 mod output;
 mod pi;
 mod prompt;
+mod recipes;
 mod runtime;
 mod tool_registry;
 mod verify;
