@@ -194,4 +194,30 @@ for (const value of [undefined, "0", "true"]) {
   const message = await plainPlan.execute("t", { chart_type: HELD_CHART_TYPES[0], sql: "SELECT 1" }).then(() => "", (error) => error.message);
   assert.ok(!/CHART_TYPE_HELD|PLAN_VALUE_HELD/.test(message), `switch ${value}: no held refusal`);
 }
+// the wrapper's setting (hold on, speed rule hints on): no string anywhere in any tool definition names a held chart type, and
+// no held plan value is an enum value of the plan or chain. Guards heldHintText(), whose two replace() calls would silently stop
+// matching if their source sentences were edited.
+{
+  const wrapped = await tools({ ...withChain, NEWSROOM_SPEED_RULE_HINTS: "1" });
+  const strings = [];
+  const walk = (value, where) => {
+    if (typeof value === "string") strings.push([where, value]);
+    else if (Array.isArray(value)) value.forEach((item, index) => walk(item, `${where}[${index}]`));
+    else if (value && typeof value === "object") for (const [key, item] of Object.entries(value)) walk(item, `${where}.${key}`);
+  };
+  for (const [name, tool] of wrapped) walk({ name: tool.name, label: tool.label, description: tool.description, promptSnippet: tool.promptSnippet, promptGuidelines: tool.promptGuidelines, parameters: tool.parameters }, name);
+  assert.ok(strings.length > 500 && wrapped.has("newsroom_viz_plan") && wrapped.has("newsroom_viz_chain"), `the walk covers the whole tool set (${strings.length} strings)`);
+  const mentions = [];
+  for (const [where, text] of strings) for (const type of HELD_CHART_TYPES) if (text.includes(type)) mentions.push(`${type} in ${where}`);
+  assert.deepEqual(mentions, [], `no held chart type is named in any tool definition: ${mentions.join("; ")}`);
+  for (const name of ["newsroom_viz_plan", "newsroom_viz_chain"]) for (const [field, values] of Object.entries(HELD_PLAN_VALUES)) {
+    const offered = wrapped.get(name).parameters.properties[field]?.enum ?? [];
+    assert.deepEqual(offered.filter((value) => values.includes(value)), [], `${name}.${field} offers no held value`);
+  }
+  // control: with the hold off the same walk does see the held names and values, so the empty result above is not blindness
+  const open = await tools({ ...withChain, NEWSROOM_SPEED_RULE_HINTS: "1", NEWSROOM_HELD_CHART_TYPES: "0" });
+  const openText = JSON.stringify([...open.values()].map((tool) => [tool.description, tool.promptGuidelines, tool.parameters]));
+  for (const type of HELD_CHART_TYPES) assert.ok(openText.includes(type), `control: ${type} is named when the hold is off`);
+  for (const [field, values] of Object.entries(HELD_PLAN_VALUES)) for (const value of values) assert.ok(open.get("newsroom_viz_plan").parameters.properties[field].enum.includes(value), `control: ${field} '${value}' is offered when the hold is off`);
+}
 console.log("held chart types: ok");
