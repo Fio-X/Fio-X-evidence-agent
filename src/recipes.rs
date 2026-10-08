@@ -17,7 +17,7 @@ struct Recipe {
     matches: fn(&TableShape) -> bool,
 }
 
-const RECIPES: [Recipe; 2] = [
+const RECIPES: [Recipe; 3] = [
     Recipe {
         name: "line-over-years",
         body: include_str!("../recipes/line-over-years.md"),
@@ -28,14 +28,27 @@ const RECIPES: [Recipe; 2] = [
         body: include_str!("../recipes/sankey-flow.md"),
         matches: is_edge_table,
     },
+    Recipe {
+        name: "heatmap-grid",
+        body: include_str!("../recipes/heatmap-grid.md"),
+        matches: is_entity_year_grid,
+    },
 ];
 
 /// A recipe that needs several tables at once; checked before the single-table recipes and wins over them.
-const MULTI_RECIPES: [MultiRecipe; 1] = [MultiRecipe {
-    name: "flow-with-origin-map",
-    body: include_str!("../recipes/flow-with-origin-map.md"),
-    matches: is_flow_with_origin,
-}];
+const MULTI_RECIPES: [MultiRecipe; 2] = [
+    MultiRecipe {
+        name: "flow-with-origin-map",
+        body: include_str!("../recipes/flow-with-origin-map.md"),
+        matches: is_flow_with_origin,
+    },
+    // Disjoint from the map recipe: it needs that no table carries country codes.
+    MultiRecipe {
+        name: "flow-with-grid",
+        body: include_str!("../recipes/flow-with-grid.md"),
+        matches: is_flow_with_grid,
+    },
+];
 
 struct MultiRecipe {
     name: &'static str,
@@ -95,6 +108,33 @@ fn is_flow_with_origin(shapes: &[TableShape]) -> bool {
     shapes.iter().enumerate().any(|(i, edges)| {
         is_edge_table(edges) && shapes.iter().enumerate().any(|(j, other)| i != j && is_origin_table(other))
     })
+}
+
+/// A complete names-by-years grid: one year column (three to nine distinct years), exactly one other numeric column,
+/// a text name column with five to forty distinct names, rows = names x years, and no country-code column.
+/// The year count range is disjoint from the line recipe (ten or more).
+fn is_entity_year_grid(shape: &TableShape) -> bool {
+    let years: Vec<_> = shape
+        .columns
+        .iter()
+        .filter(|c| c.name.to_ascii_lowercase().contains("year") && c.integer && (3..=9).contains(&c.distinct) && c.min >= 1000.0 && c.max <= 2200.0)
+        .collect();
+    if years.len() != 1 {
+        return false;
+    }
+    let numeric_others = shape.columns.iter().filter(|c| c.numeric && c.name != years[0].name).count();
+    let coded = shape.columns.iter().any(|c| {
+        let name = c.name.to_ascii_lowercase();
+        !c.numeric && (name.contains("iso3") || name == "iso_code")
+    });
+    numeric_others == 1
+        && !coded
+        && shape.columns.iter().any(|c| !c.numeric && (5..=40).contains(&c.distinct) && shape.rows == c.distinct * years[0].distinct)
+}
+
+/// An edge table and a names-by-years grid with no country-coded table anywhere (else the map recipe takes it).
+fn is_flow_with_grid(shapes: &[TableShape]) -> bool {
+    shapes.iter().any(is_edge_table) && shapes.iter().any(is_entity_year_grid) && !shapes.iter().any(is_origin_table)
 }
 
 /// The one recipe that matches, or `None` when none or more than one does (across all tables).
@@ -279,5 +319,45 @@ mod tests {
         assert_eq!(section(&[files[0].clone(), write(dir.path(), "p.csv", plain)]).unwrap().name, "sankey-flow");
         let iso_code = "name,ISO_CODE,amount\nUnited States,USA,3.5\n";
         assert_eq!(section(&[files[0].clone(), write(dir.path(), "q.csv", iso_code)]).unwrap().name, "flow-with-origin-map");
+    }
+
+    // Fifteen names by eight years in one numeric column: the heatmap grid; the line topic is not a grid.
+    fn grid_csv(names: usize, years: usize) -> String {
+        let mut text = String::from("country,year,co2_per_capita\n");
+        for n in 0..names {
+            for y in 0..years {
+                text.push_str(&format!("Country{n},{},{}.5\n", 1990 + y * 5, n + y));
+            }
+        }
+        text
+    }
+
+    #[test]
+    fn a_names_by_years_grid_loads_heatmap_grid_and_the_line_topic_stays_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let grid = write(dir.path(), "grid.csv", &grid_csv(15, 8));
+        assert_eq!(section(&[grid]).unwrap().name, "heatmap-grid");
+        // Ten years is the line recipe's ground; a ragged grid, too few names or a code column load nothing.
+        let line = write(dir.path(), "line.csv", &grid_csv(1, 12).replace("country", "name"));
+        assert_eq!(section(&[line]).unwrap().name, "line-over-years");
+        let ragged = grid_csv(15, 8).lines().take(100).collect::<Vec<_>>().join("\n") + "\n";
+        assert!(section(&[write(dir.path(), "ragged.csv", &ragged)]).is_none());
+        assert!(section(&[write(dir.path(), "few.csv", &grid_csv(3, 8))]).is_none());
+        let coded = grid_csv(15, 8).replace("country,year", "country,iso3,year").lines().enumerate().map(|(i, l)| if i == 0 { l.to_string() } else { l.replacen(",", ",XXX,", 1) }).collect::<Vec<_>>().join("\n") + "\n";
+        assert!(section(&[write(dir.path(), "coded.csv", &coded)]).is_none());
+    }
+
+    #[test]
+    fn an_edge_table_plus_a_grid_loads_flow_with_grid_unless_a_code_table_is_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let edges = write(dir.path(), "e.csv", ENERGY);
+        let grid = write(dir.path(), "g.csv", &grid_csv(15, 8));
+        assert_eq!(section(&[edges.clone(), grid.clone()]).unwrap().name, "flow-with-grid");
+        assert_eq!(section(&[grid.clone(), edges.clone()]).unwrap().name, "flow-with-grid");
+        // The map recipe keeps winning when a country-coded table exists.
+        let oil = write(dir.path(), "oil.csv", OIL);
+        assert_eq!(section(&[edges.clone(), grid.clone(), oil.clone()]).unwrap().name, "flow-with-origin-map");
+        assert_eq!(section(&[edges, oil]).unwrap().name, "flow-with-origin-map");
+        // Case one's Germany tables are unchanged by the new recipes.
     }
 }
