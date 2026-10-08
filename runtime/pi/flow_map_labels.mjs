@@ -168,7 +168,7 @@ export function layoutFlowMapLabels(ctx) {
           let cross = 0, leader = null;
           if (ti > 0) {
             const ux = c.px - c.x, uy = c.py - c.y, ul = Math.hypot(ux, uy) || 1;
-            leader = { x1: c.x + (ux / ul) * BADGE_R, y1: c.y + (uy / ul) * BADGE_R, x2: c.px, y2: c.py };
+            leader = { x1: c.x + (ux / ul) * (BADGE_R + 3), y1: c.y + (uy / ul) * (BADGE_R + 3), x2: c.px, y2: c.py };
             if (placedDiscs.some((q) => segHitsRect({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, { x: q.x - BADGE_R, y: q.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }))) continue;
             if (leaders.some((q) => segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, { x: q.x1, y: q.y1 }, { x: q.x2, y: q.y2 }))) continue;
             for (const [ai, other] of arcs.entries()) if (ai !== own) for (let k = 1; k < other.pts.length; k++) if (segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, other.pts[k - 1], other.pts[k])) cross++;
