@@ -21,7 +21,14 @@ cpSync(join(ROOT, "config"), join(tmp, "config"), { recursive: true });
 stub("typebox", "const builder = () => ({});\nexport const Type = new Proxy({}, { get: () => builder });\n");
 stub("@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
 const pi = join(tmp, "runtime", "pi");
-writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
+// The plan tool refuses four chart types while they are held back (see test_held_chart_types.mjs). This test checks the
+// basemap source of the cartographic flow map, whose renderer is still there and whose type goes back once fixed, so only
+// this test copy lifts the hold; the shipped module is unchanged.
+const stripped = stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" });
+const heldList = /const HELD_CHART_TYPES\s*=\s*\[[^\]]*\];/g;
+const heldMatches = stripped.match(heldList) ?? [];
+if (heldMatches.length !== 1) throw new Error(`test_basemap_defaults_runtime: expected exactly one HELD_CHART_TYPES list in the stripped newsroom.ts, found ${heldMatches.length}`);
+writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripped.replace(heldList, "const HELD_CHART_TYPES = [];"));
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
 
