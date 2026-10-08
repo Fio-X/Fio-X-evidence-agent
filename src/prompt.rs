@@ -73,6 +73,9 @@ pub struct PromptSpeed {
     /// profile of the local CSV files (columns, ranges, first rows) to the
     /// prompt. The prompt text here does not change; the profile is not evidence.
     pub data_profile: bool,
+    /// `NEWSROOM_SPEED_COMPOSE_ANSWER=1`: the caller lets the CLI compose the
+    /// closing text of a plain single-chart run. The prompt text does not change.
+    pub compose_answer: bool,
 }
 
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";

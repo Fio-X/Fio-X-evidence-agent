@@ -2,6 +2,7 @@ use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::InvestigateArgs;
 use crate::commands::verify;
+use crate::compose_answer;
 use crate::pi::{self, run_prompt, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
 use anyhow::{bail, Result};
@@ -338,6 +339,16 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier),
         hide_lieflat,
         speed,
+        compose: (speed.compose_answer
+            && compose_answer::eligible(
+                &topic,
+                is_complex_visual_request(&topic, split_classifier),
+                prompt::requires_html(&topic),
+                prompt::requires_png(&topic),
+            ))
+        .then(|| compose_answer::ComposeSpec {
+            chinese: prompt::language_instruction(&topic).contains("Simplified Chinese"),
+        }),
     };
     let reported_provider = config.effective_provider();
 
