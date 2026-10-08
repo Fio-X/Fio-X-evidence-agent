@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
+const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SYSTEM_DATE_LABEL"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ---- loader: one type-stripped copy of the runtime, a fresh module instance per configuration -----------
 const stub = (dir, name, source) => {
@@ -487,5 +487,33 @@ await ok("switch =0: tool definitions carry no value_from and equal the default 
   must(strip(on) === strip(off), "the tool list with value_from stripped differs between gate on and off");
   const keys = (tools) => Object.keys(tools.get("newsroom_infographic_plan").parameters.properties.modules.items.properties).filter((k) => k !== "value_from");
   must(JSON.stringify(keys(on)) === JSON.stringify(keys(off)), "module properties differ beyond value_from");
+});
+// ---- NEWSROOM_SYSTEM_DATE_LABEL: the date line is the run date, never model text ----
+const datedPlan = async (env, date) => {
+  const art = freshRun("date");
+  const plan = pagePlan({ withQuestion: true });
+  if (date !== undefined) plan.date_label = date;
+  const tools = await registerFor({ env });
+  const planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan));
+  return { tools, stored: JSON.parse(readFileSync(join(art, refOf(planned, "planRef")), "utf8")) };
+};
+const today = (() => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
+await ok("date switch on: a model-typed date is replaced by the run date", async () => {
+  const { stored } = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: "1" }, "2025-01-08");
+  must(stored.date_label === today, `date_label ${JSON.stringify(stored.date_label)}, expected ${today}`);
+});
+await ok("date switch on: no date given still gets the run date", async () => {
+  const { stored } = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: "1" }, undefined);
+  must(stored.date_label === today, `date_label ${JSON.stringify(stored.date_label)}, expected ${today}`);
+});
+await ok("date switch off: the plan keeps the given date_label and no date is added", async () => {
+  const given = await datedPlan({}, "2025-01-08");
+  must(given.stored.date_label === "2025-01-08", `date_label ${JSON.stringify(given.stored.date_label)}`);
+  const none = await datedPlan({}, undefined);
+  must(!("date_label" in none.stored), "a date_label was added with the switch off");
+  for (const value of ["", "0", "true"]) {
+    const other = await datedPlan({ NEWSROOM_SYSTEM_DATE_LABEL: value }, "2025-01-08");
+    must(other.stored.date_label === "2025-01-08", `NEWSROOM_SYSTEM_DATE_LABEL=${JSON.stringify(value)} changed the date`);
+  }
 });
 console.log(`hero value gate, tool path: ${results.length} checks -- PASS`);
