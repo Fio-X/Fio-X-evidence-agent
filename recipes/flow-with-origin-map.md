@@ -1,6 +1,6 @@
 - 第一轮同时发：newsroom_update_plan 写目标和步骤；对程序给的每份数据各发一次 duckdb_query（SELECT *），看清列名、单位、期间和行数。
 - 第二轮同时发 newsroom_editorial_discovery 和 newsroom_story_graph。故事图：一个背景节点作入口；流向、地图各一个证据节点加一个说法节点；一个不确定节点写分不到国家的部分；一个结论节点作答案；所有节点用边连通。
-- 第三轮发 newsroom_visual_concepts，按工具要求的个数写方案，其中一个是「桑基图讲流向＋世界地图讲来源国」，后面就选它。
+- 第三轮发 newsroom_visual_concepts，一次写满八个方案（少于八个会被拒），至少用三种 framing，framing 只从 spatial、temporal、mechanism、comparison、human_scale、object_scene、progressive_reveal 里选；每个方案都写 concept_id、reader_question、editorial_premise、visual_metaphor、hero_scene、framing、why_memorable、media_mix、hero_evidence_refs（至少一条数据路径）、supporting_evidence_refs、asset_requirements、risk_flags、reporting_gaps，后四项没有内容就写空数组，risk_flags 和 reporting_gaps 的每一项都是一句字符串；每个文字字段只写一句短话；其中一个是「桑基图讲流向＋世界地图讲来源国」，后面就选它。
 - 第四轮四个调用一起发：newsroom_semantic_novelty、newsroom_asset_requirements（国家代码列，production_lane 填 gis_render）、地图和桑基各一次 newsroom_viz_chain。
 - 桑基 chain：chart_type 填 sankey；reader_task 与 claim_spec.reader_task 填 flow；visual_family 填 flow；data_topology 填 flow_edges；flow_conservation 填 strict；aggregation_policy 填 none；delivery_role 填 infographic_module；带上 story_graph_ref 和对应的 story_node_ids；source_field、target_field、value_field、unit、title、subtitle、note、sql 都要填。
 - 桑基 SQL：层多、节点多时只取一层（来源到同一类去向），用 WHERE 筛出，节点少时可以全画；很小的去向在 SQL 里并成「其他」再求和，注释写明「其他」包括哪些；加一列 flow_id，等于起点 || '→' || 终点。
