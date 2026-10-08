@@ -78,6 +78,7 @@ pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
 pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
 /// Prompt-only: a program-measured profile of local CSV files; the Pi child never reads it.
 pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
+pub const RECIPES_ENV: &str = "NEWSROOM_SPEED_RECIPES";
 /// Parent-only: the CLI composes a single chart's closing text; the Pi child never reads it.
 pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
 pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
@@ -130,6 +131,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
         first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
         data_profile: exact_one(DATA_PROFILE_ENV),
+        recipes: exact_one(RECIPES_ENV),
         compose_answer: exact_one(COMPOSE_ANSWER_ENV),
         plan_progress: exact_one(PLAN_PROGRESS_ENV),
     }
@@ -1956,6 +1958,25 @@ mod tests {
             crate::prompt::PromptSpeed::default()
         );
         std::env::remove_var(DATA_PROFILE_ENV);
+    }
+
+    #[test]
+    fn recipes_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(RECIPES_ENV);
+        assert_eq!(speed_switches_from_env(), crate::prompt::PromptSpeed::default());
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(RECIPES_ENV, not_one);
+            assert!(!speed_switches_from_env().recipes, "{not_one:?}");
+        }
+        std::env::set_var(RECIPES_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.recipes);
+        assert_eq!(
+            crate::prompt::PromptSpeed { recipes: false, ..on },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(RECIPES_ENV);
     }
 
     #[test]

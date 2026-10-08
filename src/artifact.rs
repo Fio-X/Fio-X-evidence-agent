@@ -23,6 +23,9 @@ pub struct InvestigationBundle {
     pub claims_path: PathBuf,
     pub manifest_path: PathBuf,
     pub session_dir: PathBuf,
+    /// Name and sha256 of the method recipe appended to the first prompt (`NEWSROOM_SPEED_RECIPES`),
+    /// set by the caller; a bundle reopened later reads it back from the manifest instead.
+    pub recipe: Option<(String, String)>,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,6 +42,15 @@ struct Manifest<'a> {
     autonomy: Autonomy,
     evidence: Evidence,
     delivery: Delivery,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recipe: Option<RecipeRecord>,
+}
+
+/// The recipe the program appended to the first prompt: its name and the sha256 of the text sent.
+#[derive(Debug, Serialize)]
+struct RecipeRecord {
+    name: String,
+    sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -181,6 +193,7 @@ impl InvestigationBundle {
             claims_path: dir.join("claims.jsonl"),
             manifest_path: dir.join("story.json"),
             session_dir: dir.join("session"),
+            recipe: None,
             dir,
         })
     }
@@ -518,6 +531,11 @@ impl InvestigationBundle {
                 infographics: relative_files(&self.dir, "infographics")?,
             },
             delivery,
+            recipe: self
+                .recipe
+                .clone()
+                .or_else(|| existing_recipe(&self.manifest_path))
+                .map(|(name, sha256)| RecipeRecord { name, sha256 }),
         };
 
         let json = serde_json::to_string_pretty(&manifest)?;
@@ -786,6 +804,13 @@ fn existing_created_at(path: &Path) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
     value.get("created_at")?.as_str().map(str::to_owned)
+}
+
+fn existing_recipe(path: &Path) -> Option<(String, String)> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    let recipe = value.get("recipe")?;
+    Some((recipe.get("name")?.as_str()?.to_owned(), recipe.get("sha256")?.as_str()?.to_owned()))
 }
 
 fn relative_files(root: &Path, child: &str) -> Result<Vec<String>> {

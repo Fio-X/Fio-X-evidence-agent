@@ -73,6 +73,9 @@ pub struct PromptSpeed {
     /// profile of the local CSV files (columns, ranges, first rows) to the
     /// prompt. The prompt text here does not change; the profile is not evidence.
     pub data_profile: bool,
+    /// `NEWSROOM_SPEED_RECIPES=1`: the caller appends at most one method recipe, picked by the
+    /// program from the measured table shape, to the prompt. The prompt text here does not change.
+    pub recipes: bool,
     /// `NEWSROOM_SPEED_COMPOSE_ANSWER=1`: the caller lets the CLI compose the
     /// closing text of a plain single-chart run. The prompt text does not change.
     pub compose_answer: bool,
