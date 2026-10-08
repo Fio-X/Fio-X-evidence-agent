@@ -34,6 +34,6 @@
 <text x="463" y="576" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#69727a">Some energy exits as</text>
 <text x="463" y="590" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#69727a">losses</text>
 <line x1="42" y1="695" x2="598" y2="695" stroke="#d9dde1"/>
-<text x="42" y="720" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#c9473d">SCHEMATIC / NOT TO SCALE</text>
+<text x="42" y="720" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#c9473d">SCHEMATIC / NOT TO SCALE</text>
 <text x="42" y="743" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#69727a">Source / basis: Synthetic regression fixture</text>
 </svg>
