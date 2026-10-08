@@ -468,3 +468,58 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
   }
   return { passed: failures.length === 0, checked: joined.length, failures, list_only_markers: listOnly };
 }
+
+/**
+ * NEWSROOM_HEATMAP_VALUE_LABELS=1 proof for a desktop heatmap: EVERY cell with a non-null value has exactly one cell rect
+ * and exactly one value text that is the exact formatted value (heatmapCellText), centred inside that cell, at or above
+ * the 12px floor. A cell without a label (labels are dropped when cellW <= 48 or cellH <= 30) fails. Contrast is proven by
+ * render_qa.mjs, which fails this check when the viewport's contrast check has any failure.
+ * @param {string} svgText
+ * @param {{rows: object[], x_field: string, y_field: string, value_field: string}} options
+ * @param {{parseXml: Function, cellText: (value: number) => string}} deps
+ */
+export function checkHeatmapValueLabels(svgText, options, deps) {
+  const { parseXml, cellText } = deps;
+  const rows = Array.isArray(options?.rows) ? options.rows : [];
+  const nodes = walk(parseXml(svgText), []);
+  const key = (x, y) => `${x}\u0000${y}`;
+  const cells = new Map();
+  for (const n of nodes.filter((c) => c.tag === "rect" && c.attrs["data-role"] === "heatmap-cell")) {
+    const k = key(n.attrs["data-x"], n.attrs["data-y"]);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(n);
+  }
+  const texts = new Map();
+  for (const n of nodes.filter((c) => c.tag === "text" && c.attrs["data-role"] === "heatmap-cell-value")) {
+    const k = key(n.attrs["data-x"], n.attrs["data-y"]);
+    if (!texts.has(k)) texts.set(k, []);
+    texts.get(k).push(n);
+  }
+  const failures = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const raw = row?.[options?.value_field];
+    const value = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+    if (!Number.isFinite(value)) continue;
+    const k = key(String(row[options.x_field]), String(row[options.y_field]));
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const name = `${row[options.y_field]} / ${row[options.x_field]}`;
+    const rect = cells.get(k) ?? [];
+    const labels = texts.get(k) ?? [];
+    if (rect.length !== 1) { failures.push({ rule: "heatmap_cell_missing", message: `${name} has ${rect.length} rendered cells, expected one` }); continue; }
+    if (labels.length === 0) { failures.push({ rule: "value_label_missing", message: `${name} has no visible value label` }); continue; }
+    if (labels.length > 1) { failures.push({ rule: "value_label_duplicate", message: `${name} has ${labels.length} value labels; it must be labelled exactly once` }); continue; }
+    const label = labels[0];
+    const shown = labelText(label), expected = cellText(value);
+    if (shown !== expected) failures.push({ rule: "value_label_mismatch", message: `${name} shows '${shown}', expected '${expected}'` });
+    const size = Number(label.attrs["font-size"]);
+    if (!(size >= 12)) failures.push({ rule: "value_label_font_below_floor", message: `${name} label is ${label.attrs["font-size"] ?? "unsized"}px, below 12px` });
+    const cx = Number(rect[0].attrs.x), cy = Number(rect[0].attrs.y), cw = Number(rect[0].attrs.width), ch = Number(rect[0].attrs.height);
+    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), half = glyphWidth(shown, size) / 2;
+    const inside = tx - half >= cx - 0.01 && tx + half <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
+    if (!inside) failures.push({ rule: "value_label_outside_cell", message: `${name} label does not fit inside its cell` });
+  }
+  if (seen.size === 0) failures.push({ rule: "value_label_missing", message: "the heatmap has no cell with a value to prove" });
+  return { passed: failures.length === 0, failures };
+}

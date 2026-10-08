@@ -48,6 +48,18 @@ export function annotationTargetValidator(spec) {
 // quantity encoding gets today.
 function choroplethValueLabelsProven(asset) {
   if (!asset || asset.manifest?.chart_type !== 'choropleth') return false;
+  return valueLabelsProvenPerViewport(asset);
+}
+
+// Same proof for a heatmap, behind NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1", default off): every non-null cell must show
+// its exact formatted value as legible text (render_qa_labels.mjs checkHeatmapValueLabels). Nothing else is loosened.
+function heatmapValueLabelsProven(asset) {
+  if (process.env.NEWSROOM_HEATMAP_VALUE_LABELS !== '1') return false;
+  if (!asset || asset.manifest?.chart_type !== 'heatmap') return false;
+  return valueLabelsProvenPerViewport(asset);
+}
+
+function valueLabelsProvenPerViewport(asset) {
   const qa = asset.renderQa;
   if (!qa || typeof qa !== 'object') return false;
   const viewportSvg = { desktop: asset.desktopSvg, ...(asset.mobileSvg !== undefined ? { mobile: asset.mobileSvg } : {}) };
@@ -79,7 +91,7 @@ export function visualChannelOwnerValidator(spec, assets = {}) {
     }
     const quantitative = channels.filter((owner) => owner.role === 'quantitative');
     const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle', ...(process.env.NEWSROOM_CHANNEL_AXES === '1' ? ['position_x', 'position_y'] : [])].includes(owner.channel));
-    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref])) {
+    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref]) && !heatmapValueLabelsProven(assets[module.manifest_ref])) {
       issues.push(issue(validator, 'ERROR', 'visual_channel.color_only_quantity', `visual module '${module.id}' encodes quantity only through low-precision channels`, `/modules/${moduleIndex}/visual_channels`));
     }
   }
