@@ -2,6 +2,8 @@
 // leftover-tie warning, deterministic ties, disclosure and footer count.
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL } from '../runtime/pi/cartography.mjs';
 import { fmtSpec, lintVizSpec, renderVizBundle, validateVizSpec } from '../runtime/pi/viz.mjs';
+import { LEDGER_MAP_RIGHT } from '../runtime/pi/flow_map_labels.mjs';
+import { textUnits } from '../runtime/pi/viz.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const assert = (c, m) => { if (!c) throw new Error(m); };
@@ -85,8 +87,21 @@ for (const n of [30, 60, 76]) {
 {
   const rows = [...star(10), { source: '零来源', target: '德国', source_lat: 0, source_lon: 0, target_lat: 51, target_lon: 10, value: 0 }];
   const spec = mk({ flow_map_labels: 'ledger', route_provenance_note: '依据：演示数据。' }, rows), svg = renderVizBundle(spec, rows).desktop;
-  assert(svg.includes('依据：演示数据。'), 'route_provenance_note dropped from the disclosure');
+  assert(svg.includes('依据：演示数据。'), 'route_provenance_note dropped');
+  assert(/data-role="cartographic-provenance-note"[^>]*>依据：演示数据。</.test(svg), 'note is not on its own line');
   assert(/图中共 10 条/.test(svg) && !/仅画/.test(svg), 'footer count includes a row removed for value <= 0');
   ok('provenance note kept; footer count excludes value <= 0 rows');
+}
+// 7. a 120-character note wraps inside the map panel; render QA passes for both styles
+for (const style of ['ledger', 'leader']) {
+  const rows = style === 'ledger' ? star(12) : star(5), note = ('依据：' + '联合国统计司公布的双边贸易数据，按进口国申报口径整理，未含转口与未申报部分，'.repeat(4)).slice(0, 120);
+  assert(note.length === 120, 'note length');
+  const spec = mk({ flow_map_labels: style, route_provenance_note: note }, rows), svg = renderVizBundle(spec, rows).desktop, qa = runRenderQa({ desktop: svg });
+  assert(qa.passed, `${style} 120-char note: render QA ${JSON.stringify(qa.viewports.desktop.geometry.failures.slice(0, 3)).slice(0, 400)}`);
+  const lines = [...svg.matchAll(/data-role="cartographic-provenance-note" x="([\d.]+)"[^>]*>([^<]*)</g)];
+  assert(lines.length >= 2 && lines.map((m) => m[2]).join('') === note, `${style}: note not wrapped over lines intact`);
+  const right = style === 'ledger' ? LEDGER_MAP_RIGHT : 980;
+  for (const m of lines) assert(60 + textUnits(m[2]) * 12.5 * 0.56 <= right + 0.5, `${style}: note line crosses the panel edge`);
+  ok(`${style}: 120-char note wraps over ${lines.length} lines inside the panel, render QA passes`);
 }
 console.log('flow_map round 3 part A tests passed');
