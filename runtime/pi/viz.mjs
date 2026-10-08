@@ -4917,6 +4917,10 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
     tagPanelTexts(f.parts, noteStart, [boxLeft, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
     drawFacet(outlier.facet, gridFacets.length, 0, x0, y0, outlier.ownDomain, ownTicks, gridW - shift, true, boxLeft);
   }
+  if (indexBase !== null && !indexBaseNamed) {
+    if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
+    f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
