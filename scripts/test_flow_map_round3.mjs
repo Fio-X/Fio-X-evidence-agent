@@ -92,16 +92,38 @@ for (const n of [30, 60, 76]) {
   assert(/图中共 10 条/.test(svg) && !/仅画/.test(svg), 'footer count includes a row removed for value <= 0');
   ok('provenance note kept; footer count excludes value <= 0 rows');
 }
-// 7. a 120-character note wraps inside the map panel; render QA passes for both styles
+// 7. route_provenance_note lives in the note block under the chart: the map is as tall with a 600-character note as with none;
+//    every character of it is kept; wrapping never splits digits, Latin words or a URL; render QA passes for both styles
+const oceanH = (svg) => +svg.match(/data-role="cartographic-ocean"[^>]* height="([\d.]+)"/)[1];
+const noteText = (svg) => [...svg.matchAll(/data-role="cartographic-provenance-note"[^>]*>([^<]*)</g)].map((m) => m[1]);
 for (const style of ['ledger', 'leader']) {
-  const rows = style === 'ledger' ? star(12) : star(5), note = ('依据：' + '联合国统计司公布的双边贸易数据，按进口国申报口径整理，未含转口与未申报部分，'.repeat(4)).slice(0, 120);
-  assert(note.length === 120, 'note length');
-  const spec = mk({ flow_map_labels: style, route_provenance_note: note }, rows), svg = renderVizBundle(spec, rows).desktop, qa = runRenderQa({ desktop: svg });
-  assert(qa.passed, `${style} 120-char note: render QA ${JSON.stringify(qa.viewports.desktop.geometry.failures.slice(0, 3)).slice(0, 400)}`);
-  const lines = [...svg.matchAll(/data-role="cartographic-provenance-note" x="([\d.]+)"[^>]*>([^<]*)</g)];
-  assert(lines.length >= 2 && lines.map((m) => m[2]).join('') === note, `${style}: note not wrapped over lines intact`);
-  const right = style === 'ledger' ? LEDGER_MAP_RIGHT : 980;
-  for (const m of lines) assert(60 + textUnits(m[2]) * 12.5 * 0.56 <= right + 0.5, `${style}: note line crosses the panel edge`);
-  ok(`${style}: 120-char note wraps over ${lines.length} lines inside the panel, render QA passes`);
+  const rows = style === 'ledger' ? star(12) : star(5);
+  const long = ('依据：联合国统计司 UN Comtrade 数据库 2023 年 HS 2709 双边贸易记录 1,234.5 万吨，按进口国申报口径整理 https://comtradeplus.un.org/TradeFlow?Frequency=A&Flows=X&CommodityCodes=2709 ，未含转口与未申报部分。').repeat(4).slice(0, 600);
+  assert(long.length === 600, 'note length');
+  const none = renderVizBundle(mk({ flow_map_labels: style }, rows), rows).desktop, withNote = renderVizBundle(mk({ flow_map_labels: style, route_provenance_note: long }, rows), rows).desktop;
+  assert(oceanH(none) === oceanH(withNote), `${style}: map height ${oceanH(withNote)} with a 600-char note differs from ${oceanH(none)} with none`);
+  const lines = noteText(withNote), joined = lines.join('').replace(/&amp;/g, '&');
+  assert(lines.length >= 3, `${style}: note did not wrap`);
+  assert(joined.replace(/\s/g, '') === long.replace(/\s/g, ''), `${style}: provenance text was cut or changed`);
+  for (const tok of ['UN Comtrade', '2709', '1,234.5', 'https://comtradeplus.un.org/TradeFlow?Frequency=A&amp;Flows=X&amp;CommodityCodes=2709']) assert(lines.some((l) => l.includes(tok)), `${style}: "${tok}" was split over lines`);
+  const qa = runRenderQa({ desktop: withNote });
+  assert(qa.passed, `${style}: render QA ${JSON.stringify(qa.viewports.desktop.geometry.failures.slice(0, 3)).slice(0, 400)}`);
+  for (const l of lines) assert(54 + textUnits(l.replace(/&amp;/g, '&')) * 12 * 0.56 <= 1040 - 54 + 0.5, `${style}: note line crosses the page edge`);
+  ok(`${style}: 600-char note stays out of the map (height ${oceanH(withNote)}), ${lines.length} lines, nothing split, render QA passes`);
+}
+
+// 8. a repeated source -> target is a lint warning, never merged or dropped
+{
+  const rows = star(5), dup = [...rows, { ...rows[1], value: rows[1].value + 1 }];
+  const w = JSON.stringify(lintVizSpec(mk({ flow_map_labels: 'leader' }, dup), dup));
+  assert(/duplicate route/.test(w) && w.includes('来源1→德国'), 'duplicate source→target not named in a lint warning');
+  assert(!/duplicate route/.test(JSON.stringify(lintVizSpec(mk({ flow_map_labels: 'leader' }, rows), rows))), 'duplicate warning without a duplicate');
+  ok('duplicate route lint names the pair');
+}
+// 9. width-legend tick texts carry a legend role
+{
+  const rows = star(5), svg = renderVizBundle(mk({ flow_map_labels: 'leader' }, rows), rows).desktop;
+  assert(count(svg, 'legend-tick') >= 2 && count(svg, 'legend-swatch') === count(svg, 'legend-tick'), 'legend ticks lack data-role="legend-tick"');
+  ok('legend tick texts carry data-role="legend-tick"');
 }
 console.log('flow_map round 3 part A tests passed');
