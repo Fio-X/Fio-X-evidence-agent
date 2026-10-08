@@ -16,8 +16,8 @@ import { lintVizSpec, renderVizBundle } from "../runtime/pi/viz.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ALL = HELD_CHART_TYPE_EDITS.enum.before;
 const KEPT = ALL.filter((type) => !HELD_CHART_TYPES.includes(type));
-assert.equal(ALL.length, 25);
-assert.equal(KEPT.length, 21);
+assert.equal(ALL.length, 28);
+assert.equal(KEPT.length, 24);
 
 // ---- tool registration with stand-ins for the two packages, as test_viz_plan_schema.mjs does --------------------------
 const tree = mkdtempSync(join(tmpdir(), "held-types-"));
@@ -59,8 +59,8 @@ const off = await tools(withChain);
 for (const [label, set] of [["hints off", off], ["hints on", on]]) {
   const plan = set.get("newsroom_viz_plan"), chain = set.get("newsroom_viz_chain");
   assert.ok(plan && chain, `${label}: plan and chain are registered`);
-  assert.deepEqual(plan.parameters.properties.chart_type.enum, KEPT, `${label}: plan enum keeps the other 21 in order`);
-  assert.deepEqual(chain.parameters.properties.chart_type.enum, KEPT, `${label}: chain enum keeps the other 21 in order`);
+  assert.deepEqual(plan.parameters.properties.chart_type.enum, KEPT, `${label}: plan enum keeps the other 24 in order`);
+  assert.deepEqual(chain.parameters.properties.chart_type.enum, KEPT, `${label}: chain enum keeps the other 24 in order`);
 }
 const planOff = off.get("newsroom_viz_plan");
 assert.ok(planOff.description.includes("Supports statistical charts plus flows, networks, temporal structures, choropleth maps and explanatory process graphics."));
