@@ -153,15 +153,17 @@ pub fn compose(root: &Path, chart: &ChartFiles, spec: &ComposeSpec) -> Result<St
             }
         ));
     }
-    out.push_str(&format!(
-        "\n{}（{} {claim_id}，status verified）：\n{statement}\n",
-        if zh { "结论" } else { "Finding" },
-        if zh {
-            "系统核验"
-        } else {
-            "system-verified"
-        },
-    ));
+    // Written before the run's final verification, so it says only what the claim passed when the
+    // chart was made and points to verification.json for the run's result.
+    out.push_str(&if zh {
+        format!(
+            "\n结论（{claim_id}，该结论在制图时已通过核验检查；本次运行的最终核验结果见 verification.json）：\n{statement}\n"
+        )
+    } else {
+        format!(
+            "\nFinding（{claim_id}，passed its check when the chart was made；the run's final verification result is in verification.json）：\n{statement}\n"
+        )
+    });
     if !source.is_empty() {
         out.push_str(&format!(
             "\n{}{source}\n",
@@ -228,14 +230,25 @@ mod tests {
         );
         let text = compose(dir.path(), &chart(), &ComposeSpec { chinese: true }).unwrap();
         assert!(text.contains("出生率从 40 降到 11.2。"), "{text}");
-        assert!(text.contains("claim-1，status verified"), "{text}");
+        assert!(
+            text.contains("claim-1，该结论在制图时已通过核验检查"),
+            "{text}"
+        );
+        assert!(text.contains("最终核验结果见 verification.json"), "{text}");
+        assert!(
+            !text.contains("status verified") && !text.contains("系统核验 claim"),
+            "{text}"
+        );
         assert!(text.contains("数据来源：Our World in Data"), "{text}");
         let finding = text.find("出生率").unwrap();
         let heading = text.find("未经系统核验").unwrap();
         assert!(finding < heading && text.find("2024 年为估算").unwrap() > heading);
         let english = compose(dir.path(), &chart(), &ComposeSpec { chinese: false }).unwrap();
         assert!(
-            english.contains("system-verified claim-1") && english.contains("Note (not verified")
+            english.contains("claim-1，passed its check when the chart was made")
+                && english.contains("verification.json")
+                && !english.contains("system-verified claim-1")
+                && english.contains("Note (not verified")
         );
     }
 
