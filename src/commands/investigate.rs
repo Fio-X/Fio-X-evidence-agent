@@ -218,13 +218,22 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
             .map(|name| format!("data/{name}"))
             .collect();
         let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
-        let prompt = prompt::investigation_with_options(
+        let speed = pi::speed_switches_from_env();
+        let mut prompt = prompt::investigation_with_options(
             &topic,
             &declared_local_data,
             split_classifier,
             hide_lieflat,
-            pi::speed_switches_from_env(),
+            speed,
         );
+        if speed.data_profile {
+            let files: Vec<(String, PathBuf)> = declared_local_data
+                .iter()
+                .cloned()
+                .zip(args.data.iter().cloned())
+                .collect();
+            prompt.push_str(&crate::data_profile::profile_section(&files));
+        }
         print!("{prompt}");
         return Ok(());
     }
@@ -279,13 +288,21 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
     }
     let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
     let speed = pi::speed_switches_from_env();
-    let prompt = prompt::investigation_with_options(
+    let mut prompt = prompt::investigation_with_options(
         &topic,
         &local_data,
         split_classifier,
         hide_lieflat,
         speed,
     );
+    if speed.data_profile {
+        let files: Vec<(String, PathBuf)> = local_data
+            .iter()
+            .cloned()
+            .zip(args.data.iter().cloned())
+            .collect();
+        prompt.push_str(&crate::data_profile::profile_section(&files));
+    }
     bundle.write_prompt(&prompt)?;
     let reported_provider = PiConfig::normalize_provider(args.pi.provider.as_deref());
     bundle.write_manifest(

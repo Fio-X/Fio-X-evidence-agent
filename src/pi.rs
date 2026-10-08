@@ -72,6 +72,8 @@ pub const CHAIN_PATCH_ENV: &str = "NEWSROOM_SPEED_CHAIN_PATCH";
 pub const REPORT_ALL_ENV: &str = "NEWSROOM_SPEED_REPORT_ALL";
 pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
 pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
+/// Prompt-only: a program-measured profile of local CSV files; the Pi child never reads it.
+pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -119,6 +121,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         report_all: exact_one(REPORT_ALL_ENV),
         fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
         first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
+        data_profile: exact_one(DATA_PROFILE_ENV),
     }
 }
 
@@ -1800,6 +1803,31 @@ mod tests {
             visual_story_config(false, "visual-story").tools_arg(),
             crate::tool_registry::tools_for_profile("visual-story").unwrap()
         );
+    }
+
+    #[test]
+    fn data_profile_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(DATA_PROFILE_ENV);
+        assert_eq!(
+            speed_switches_from_env(),
+            crate::prompt::PromptSpeed::default()
+        );
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(DATA_PROFILE_ENV, not_one);
+            assert!(!speed_switches_from_env().data_profile, "{not_one:?}");
+        }
+        std::env::set_var(DATA_PROFILE_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.data_profile);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                data_profile: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(DATA_PROFILE_ENV);
     }
 
     #[test]
