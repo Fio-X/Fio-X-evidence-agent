@@ -38,6 +38,10 @@ pub struct PiConfig {
     /// by the non-v2 `investigate` command from the parent environment;
     /// every other caller leaves it at the default (all off).
     pub speed: crate::prompt::PromptSpeed,
+    /// Set only by the non-v2 `investigate` command for a plain single-chart request when
+    /// `NEWSROOM_SPEED_COMPOSE_ANSWER=1`: once the chart is complete and its claim system-verified,
+    /// the CLI writes the closing text from the artifacts and ends the model loop there.
+    pub compose: Option<crate::compose_answer::ComposeSpec>,
 }
 
 /// Env var that is both the opt-in switch read by `investigate` and the
@@ -74,6 +78,8 @@ pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
 pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
 /// Prompt-only: a program-measured profile of local CSV files; the Pi child never reads it.
 pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
+/// Parent-only: the CLI composes a single chart's closing text; the Pi child never reads it.
+pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -122,6 +128,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
         first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
         data_profile: exact_one(DATA_PROFILE_ENV),
+        compose_answer: exact_one(COMPOSE_ANSWER_ENV),
     }
 }
 
@@ -1192,7 +1199,12 @@ pub async fn run_prompt(
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
         // Only a run with chart claims filled from rows names its first chart early.
-        let mut chart_watch = config.speed.inline_claim.then(ChartReadyWatch::default);
+        let mut chart_watch =
+            (config.speed.inline_claim || config.compose.is_some()).then(ChartReadyWatch::default);
+        // The closing text composed from the artifacts when the one chart is complete; once
+        // set, the next model turn is aborted and no later model text is used or shown.
+        let mut composed_answer: Option<String> = None;
+        let mut compose_abort_sent = false;
 
         let mut line = Vec::new();
         loop {
@@ -1264,12 +1276,48 @@ pub async fn run_prompt(
             }
             // Progress only: the notice changes no state, status or completion check.
             if let Some(chart) = chart_watch.as_mut().and_then(|watch| watch.observe(&event)) {
-                if !CHART_NOTICE_SENT.swap(true, Ordering::Relaxed) {
-                    let root = config.artifact_dir.as_deref().unwrap_or(Path::new(""));
+                let root = config.artifact_dir.as_deref().unwrap_or(Path::new(""));
+                if config.speed.inline_claim && !CHART_NOTICE_SENT.swap(true, Ordering::Relaxed) {
                     eprintln!(
                         "{}",
                         chart_ready_line(started.elapsed().as_millis(), root, &chart)
                     );
+                }
+                if let Some(spec) = config
+                    .compose
+                    .as_ref()
+                    .filter(|_| composed_answer.is_none())
+                {
+                    let files = crate::compose_answer::ChartFiles {
+                        desktop: chart.desktop.clone(),
+                        compact: chart.compact.clone(),
+                        mobile: chart.mobile.clone(),
+                        manifest: chart.manifest.clone(),
+                    };
+                    let composed = crate::compose_answer::compose(root, &files, spec);
+                    let mut record = json!({
+                        "type": "newsroom_composed_answer",
+                        "schema_version": "0.1.0",
+                        "manifest_ref": chart.manifest,
+                        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+                    });
+                    match &composed {
+                        Ok(_) => record["source"] = json!("runtime"),
+                        Err(error) => {
+                            record["source"] = json!("model");
+                            record["reason"] = json!(format!("{error:#}"));
+                        }
+                    }
+                    if let Some(file) = log.as_mut() {
+                        writeln!(file, "{}", serde_json::to_string(&record)?)?;
+                        file.flush()?;
+                    }
+                    eprintln!(
+                        "[agent] composed_answer elapsed_ms={} source={}",
+                        started.elapsed().as_millis(),
+                        if composed.is_ok() { "runtime" } else { "model" }
+                    );
+                    composed_answer = composed.ok();
                 }
             }
 
@@ -1368,8 +1416,10 @@ pub async fn run_prompt(
                                 if first_text_ms.is_none() {
                                     first_text_ms = Some(started.elapsed().as_millis());
                                 }
-                                print!("{delta}");
-                                std::io::stdout().flush().ok();
+                                if composed_answer.is_none() {
+                                    print!("{delta}");
+                                    std::io::stdout().flush().ok();
+                                }
                                 streamed_answer.push_str(delta);
                             }
                         }
@@ -1393,6 +1443,22 @@ pub async fn run_prompt(
                     // emits no visible text while it is thinking.
                     active_work = true;
                     telemetry.turn_started(now_ms);
+                    if composed_answer.is_some() && !compose_abort_sent {
+                        // The one chart is complete and its closing text is composed, so
+                        // this turn could only restate it.
+                        send_json(
+                            &mut stdin,
+                            &json!({"id": "news-compose-abort", "type": "abort"}),
+                            finish,
+                        )
+                        .await?;
+                        compose_abort_sent = true;
+                        finish_started.get_or_insert_with(Instant::now);
+                        eprintln!(
+                            "[agent] phase=compose-abort elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("turn_end") => {
                     // Re-enable the idle boundary between turns. Tool and
@@ -1474,7 +1540,14 @@ pub async fn run_prompt(
             );
         }
 
-        let answer = final_answer.unwrap_or(streamed_answer);
+        let answer = match composed_answer {
+            Some(text) => {
+                print!("{text}");
+                std::io::stdout().flush().ok();
+                text
+            }
+            None => final_answer.unwrap_or(streamed_answer),
+        };
         if let Some(failure) = telemetry.pending.clone() {
             // The settled final turn is a provider error: the run did not
             // complete, even when partial text was streamed. Keep the text.
@@ -1722,6 +1795,7 @@ mod tests {
             tool_profile: "investigate".to_string(),
             hide_lieflat: false,
             speed: Default::default(),
+            compose: None,
         };
         assert_eq!(
             cfg.display_runtime(),
@@ -1745,6 +1819,7 @@ mod tests {
             tool_profile: profile.to_string(),
             hide_lieflat,
             speed: Default::default(),
+            compose: None,
         }
     }
 
@@ -1828,6 +1903,27 @@ mod tests {
             crate::prompt::PromptSpeed::default()
         );
         std::env::remove_var(DATA_PROFILE_ENV);
+    }
+
+    #[test]
+    fn compose_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(COMPOSE_ANSWER_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(COMPOSE_ANSWER_ENV, not_one);
+            assert!(!speed_switches_from_env().compose_answer, "{not_one:?}");
+        }
+        std::env::set_var(COMPOSE_ANSWER_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.compose_answer);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                compose_answer: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(COMPOSE_ANSWER_ENV);
     }
 
     #[test]

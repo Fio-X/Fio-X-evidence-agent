@@ -3,6 +3,7 @@ mod artifact;
 mod audit;
 mod cli;
 mod commands;
+mod compose_answer;
 mod config;
 mod data_profile;
 mod hash;
