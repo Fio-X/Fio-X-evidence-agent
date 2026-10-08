@@ -5890,6 +5890,34 @@ function stripNodePrefix(id) {
 function flowGreyLink() { return PALETTE.context; } // non-highlighted link tone
 const FLOW_GREY_NODE = "#9E9E9E"; // near-neutral node bar for a non-highlighted node, per the approved redesign spec
 
+// The flow band sankeyPath() draws, as a strip of quads: the centreline is
+// sampled densely and each sample is offset by half the stroke width along
+// its normal, so the edges are the band's own, not a bounding box.
+function sankeyBandQuads(x1,y1,x2,y2,sw,steps=80) {
+  const pts=[];
+  for(let i=0;i<=steps;i++){
+    const t=i/steps, a=sankeyPointAt(x1,y1,x2,y2,Math.max(0,t-0.001)), b=sankeyPointAt(x1,y1,x2,y2,Math.min(1,t+0.001)), c=sankeyPointAt(x1,y1,x2,y2,t);
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, nx=-dy/len, ny=dx/len;
+    pts.push([{x:c.x+nx*sw/2,y:c.y+ny*sw/2},{x:c.x-nx*sw/2,y:c.y-ny*sw/2}]);
+  }
+  const quads=[];
+  for(let i=0;i<steps;i++) quads.push([pts[i][0],pts[i+1][0],pts[i+1][1],pts[i][1]]);
+  return quads;
+}
+
+// Whether a convex quad and an axis-aligned box overlap (separating axes).
+function quadHitsBox(q,b) {
+  if (Math.max(...q.map((p)=>p.x))<=b.x || Math.min(...q.map((p)=>p.x))>=b.x+b.w) return false;
+  if (Math.max(...q.map((p)=>p.y))<=b.y || Math.min(...q.map((p)=>p.y))>=b.y+b.h) return false;
+  const corners=[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
+  for (let i=0;i<4;i++) {
+    const p=q[i], r=q[(i+1)%4], ax=-(r.y-p.y), ay=r.x-p.x;
+    const qs=q.map((v)=>v.x*ax+v.y*ay), bs=corners.map((v)=>v.x*ax+v.y*ay);
+    if (Math.max(...qs)<=Math.min(...bs) || Math.max(...bs)<=Math.min(...qs)) return false;
+  }
+  return true;
+}
+
 function renderSankey(spec, rows, mobile=false) {
   const width=mobile?640:1040, nodeW=mobile?16:20;
   const gap=Math.max(12, mobile?20:16);
@@ -6101,28 +6129,64 @@ function renderSankey(spec, rows, mobile=false) {
     // ends exactly at (x1,y1)/(x2,y2), flush against the node's straight
     // edge, with no protrusion.
     f.parts.push(`<path data-role="flow-link" data-flow-key="${esc(flowKey)}" d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="butt" pointer-events="none"/>`);
-    // Only the single highlighted flow gets an inline value, placed ON its
-    // own centreline near whichever end (source t~0.22, or target t~0.78)
+    // Only the single highlighted flow gets an inline value, on paper beside
+    // its own band near whichever end (source t~0.22, or target t~0.78)
     // isn't already claimed - every other flow's value lives only in its
     // node labels, so the diagram never shows an ambiguous floating number.
     if (highlighted) {
       const text=fmtLocalizedUnit(spec, v);
       const fontSize=mobile?12:12.5;
       const boxW=text.length*fontSize*0.8+8;
-      const linkRgb=compositeOverWhite(hexToRgb(color), opacity);
-      const style=labelStyleOnFill(linkRgb);
-      const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round"`:"";
+      // The label sits on paper beside its band, never on it, in the accent's
+      // text-safe shade with no halo. A candidate is clear when its box keeps
+      // 2px from every node label box, other value label, node bar and every
+      // flow band (this one included), and its own band is at least 1px nearer
+      // than any other (gap: text box to centreline, less half the width);
+      // when no candidate qualifies, no inline label is drawn.
+      const labelFill=textSafeColor(PALETTE.accent);
+      const clearance=2;
+      const inflate=(b)=>({x:b.x-clearance,y:b.y-clearance,w:b.w+2*clearance,h:b.h+2*clearance});
+      const barBoxes=[...positions.values()].map((p)=>({x:p.x,y:p.y,w:nodeW,h:p.h}));
+      const bandInfo=flowRows.map((r)=>{
+        const pa2=positions.get(String(r[spec.source_field])), pb2=positions.get(String(r[spec.target_field]));
+        if(!pa2||!pb2) return null;
+        const bx1=pa2.x+nodeW, by1=rowY1.get(r)??pa2.y+pa2.h/2, bx2=pb2.x, by2=rowY2.get(r)??pb2.y+pb2.h/2, bsw=strokeWidthOf(r);
+        return { own:r===row, sw:bsw, quads:sankeyBandQuads(bx1,by1,bx2,by2,bsw), line:Array.from({length:161},(_,i)=>sankeyPointAt(bx1,by1,bx2,by2,i/160)) };
+      }).filter(Boolean);
+      const bands=bandInfo.map((b)=>b.quads);
+      const bandGap=(tb,b)=>Math.min(...b.line.map((p)=>Math.hypot(Math.max(tb.x-p.x,0,p.x-(tb.x+tb.w)),Math.max(tb.y-p.y,0,p.y-(tb.y+tb.h)))))-b.sw/2;
+      const ownIsNearest=(cx,baseY)=>{
+        const tw=estimateTextWidth(text,fontSize,true);
+        const tb={x:cx-tw/2,y:baseY-fontSize*ASCENT_RATIO,w:tw,h:fontSize*(ASCENT_RATIO+DESCENT_RATIO)};
+        const ownGap=bandGap(tb,bandInfo.find((b)=>b.own));
+        return bandInfo.every((b)=>b.own||bandGap(tb,b)>=ownGap+1);
+      };
+      const isClear=(box)=>{
+        const wide=inflate(box);
+        if (wide.x<0||wide.x+wide.w>width) return false;
+        if (valueLabelBoxes.some((o)=>boxesOverlap(wide,o))||barBoxes.some((o)=>boxesOverlap(wide,o))) return false;
+        return !bands.some((quads)=>quads.some((q)=>quadHitsBox(q,wide)));
+      };
       let placed=null;
-      for (const t of [0.22, 0.78, 0.5]) {
+      candidates: for (const t of [0.22, 0.78, 0.5, 0.35, 0.65]) {
         const pt=sankeyPointAt(x1,y1,x2,y2,t);
-        const preferredY=t<0.5 ? pt.y-sw/2-5 : pt.y+sw/2+13;
-        const placedY=resolveLabelCollisionY(pt.x, preferredY, boxW, fontSize, valueLabelBoxes, top+10, bottom-4);
-        const box={x:pt.x-boxW/2, y:placedY-fontSize-3, w:boxW, h:fontSize+7};
-        if (!valueLabelBoxes.some((o)=>boxesOverlap(box,o))) { placed={x:pt.x,y:placedY,box}; break; }
+        const above=t<0.5;
+        for (const side of [above, !above]) {
+          const preferredY=side ? pt.y-sw/2-5 : pt.y+sw/2+13;
+          const placedY=resolveLabelCollisionY(pt.x, preferredY, boxW+2*clearance, fontSize, valueLabelBoxes, top+10, bottom-4);
+          // Today's nudge first; a band that slopes under the box needs more room than
+          // a flat one, so the box then moves away from its band in 2px steps.
+          for (let push=0; push<=8; push+=2) {
+            const y=placedY+(side ? -push : push);
+            const box={x:pt.x-boxW/2, y:y-fontSize-3, w:boxW, h:fontSize+7};
+            if (y<top+10 || y>bottom-4) break;
+            if (isClear(box)&&ownIsNearest(pt.x,y)) { placed={x:pt.x,y,box}; break candidates; }
+          }
+        }
       }
       if (placed) {
         valueLabelBoxes.push(placed.box);
-        f.parts.push(`<text data-role="flow-value-label" data-flow-key="${esc(flowKey)}" x="${placed.x}" y="${placed.y}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${fontSize}" font-weight="700" fill="${style.fill}" paint-order="stroke fill"${halo}>${esc(text)}</text>`);
+        f.parts.push(`<text data-role="flow-value-label" data-flow-key="${esc(flowKey)}" x="${placed.x}" y="${placed.y}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${fontSize}" font-weight="700" fill="${labelFill}">${esc(text)}</text>`);
       }
     }
   });
