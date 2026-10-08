@@ -53,7 +53,11 @@ const mapAt = source.indexOf("const STRICT_GRAMMAR_FORMS");
 const fnAt = source.indexOf("function assertEditorialGrammar", mapAt);
 const fnEnd = source.indexOf("\n}\n", fnAt) + 3;
 assert.ok(mapAt >= 0 && fnAt > mapAt && fnEnd > fnAt, "STRICT_GRAMMAR_FORMS and assertEditorialGrammar are found in newsroom.ts");
-const { STRICT_GRAMMAR_FORMS, assertEditorialGrammar } = new Function(`${stripTypeScriptTypes(source.slice(mapAt, fnEnd), { mode: "strip" })}\nreturn { STRICT_GRAMMAR_FORMS, assertEditorialGrammar };`)();
+// assertEditorialGrammar also calls isHeldChartType (K71), defined earlier in newsroom.ts: cut it out with its list.
+const heldAt = source.indexOf("const HELD_CHART_TYPES");
+const heldEnd = source.indexOf("\n", source.indexOf("const isHeldChartType", heldAt)) + 1;
+assert.ok(heldAt >= 0 && heldEnd > heldAt, "HELD_CHART_TYPES and isHeldChartType are found in newsroom.ts");
+const { STRICT_GRAMMAR_FORMS, assertEditorialGrammar, isHeldChartType } = new Function(`${stripTypeScriptTypes(source.slice(heldAt, heldEnd) + source.slice(mapAt, fnEnd), { mode: "strip" })}\nreturn { STRICT_GRAMMAR_FORMS, assertEditorialGrammar, isHeldChartType };`)();
 const relationEnum = source.match(/relation: StringEnum\(\[([^\]]+)\] as const, ruleHint\(RULE_HINT_RELATION\)\)/);
 assert.ok(relationEnum, "the claim_spec relation enum is found in newsroom.ts");
 const RELATIONS = relationEnum[1].split(",").map((entry) => entry.trim().replace(/^"|"$/g, ""));
@@ -87,7 +91,9 @@ console.log(`PASS strict editorial grammar: ${strictChecks} form x relation chec
 const hint = source.match(/const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: ([^"]+)\.";/);
 assert.ok(hint, "RULE_HINT_RELATION is found in newsroom.ts");
 const fromHint = Object.fromEntries(hint[1].split("; ").map((clause) => { const [relation, forms] = clause.split(" "); return [relation, forms.split("/")]; }));
-assert.deepEqual(fromHint, STRICT_GRAMMAR_FORMS, "RULE_HINT_RELATION lists exactly what STRICT_GRAMMAR_FORMS allows");
+// the wording leaves out the chart types K71 holds back from the model
+const offered = Object.fromEntries(Object.entries(STRICT_GRAMMAR_FORMS).map(([relation, forms]) => [relation, forms.filter((form) => !isHeldChartType(form))]));
+assert.deepEqual(fromHint, offered, "RULE_HINT_RELATION lists exactly what STRICT_GRAMMAR_FORMS allows, less the held chart types");
 console.log(`PASS RULE_HINT_RELATION mirrors STRICT_GRAMMAR_FORMS (${Object.keys(fromHint).length} relations)`);
 
 console.log(JSON.stringify({ status: "PASS", page_checks: pageChecks, strict_checks: strictChecks }));
