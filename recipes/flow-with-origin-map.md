@@ -1,0 +1,18 @@
+- 第一轮同时发：newsroom_update_plan 写目标和步骤；对程序给的每份数据各发一次 duckdb_query（SELECT *），看清列名、单位、期间和行数。
+- 第二轮同时发 newsroom_editorial_discovery 和 newsroom_story_graph。故事图：一个背景节点作入口；流向、地图各一个证据节点加一个说法节点；一个不确定节点写没有国家代码的部分；一个结论节点作答案；所有节点用边连通。
+- 第三轮发 newsroom_visual_concepts，按工具要求的个数写方案，其中一个是「桑基图讲流向＋世界地图讲来源国」，后面就选它。
+- 第四轮四个调用一起发：newsroom_semantic_novelty、newsroom_asset_requirements（国家代码列，production_lane 填 gis_render）、地图和桑基各一次 newsroom_viz_chain。
+- 桑基 chain：chart_type 填 sankey；reader_task 与 claim_spec.reader_task 填 flow；visual_family 填 flow；data_topology 填 flow_edges；flow_conservation 填 strict；aggregation_policy 填 none；delivery_role 填 infographic_module；带上 story_graph_ref 和对应的 story_node_ids；source_field、target_field、value_field、unit、title、subtitle、note、sql 都要填。
+- 桑基 SQL：多层流向表只取一层（来源到同一类去向），用 WHERE 筛出；很小的去向在 SQL 里并成「其他」再求和，注释写明「其他」包括哪些；加一列 flow_id，等于起点 || '→' || 终点。
+- 桑基说法：claim_kind 填 quantitative；数字全用占位符 {值列@flow_id=起点→终点|小数位数}，一个数字都不手打，年份也不打；单位写汉字；highlight_values 写要突出那股流的起点和终点。
+- 地图 chain：chart_type 填 choropleth；reader_task 与 claim_spec.reader_task 填 spatial；visual_family 填 spatial；data_topology 填 tabular；category_field 填国家代码列，category_names 填 iso3；measure_kind 填 share；unit 填 %；delivery_role 填 infographic_module；claim_spec.relation 填 geography。
+- 地图 SQL：只取国家代码和份额两列，去掉没有国家代码的行；份额不是百分数时在 SQL 里换成百分数；按份额从大到小排。注释写明分母含不含未报告来源国的部分。
+- 地图说法：用 {max.份额列.代码列}、{max.份额列|小数位数}、{份额列@代码列=代码|小数位数} 这类占位符；measure_semantics 写明 denominator，claim_caveat 写分母口径；highlight_values 写正文要点名的那个国家代码。
+- 第五轮发 newsroom_infographic_plan：layout 填 feature；主语法填 ROUTE_SPINE，supporting 留空；evidence_features 只写数据里真有的 origin_destination_relation、verified_locations、spatial_structure、quantity。
+- 场景：两个 hero_with_rail 场景，各以一张图为主角、配一段文字；场景标题写读者的问题，不要和图标题用同一句话；最后一个文字模块写「合起来看」的结论。
+- 页顶大数字：value_from 一字不差地抄某个说法里的占位符，unit 只写占位符后面那段汉字单位；label 和 detail 不写数字，也不写数字词。
+- 正文、注释、图上文字都不用「大多数」「多数」「过半」「近年来」「目前」「最新」这类词，也不写流程用语。
+- 第六到第九轮依次各发一次 newsroom_infographic_lint、render、critic、preview，每次带上前一步返回的 ref。
+- 第十轮看预览图发 newsroom_infographic_vision_critic：照实打分、照实写问题；不过关就按问题改计划重来，不改数据。
+- 最后写结论：只引用已核实的说法、两张图和整页的文件路径；写明单位口径、并进「其他」的成员和未报告的部分。
+- 每次复用都重算、重新核实、过全部闸门；配方不授予核实状态。
