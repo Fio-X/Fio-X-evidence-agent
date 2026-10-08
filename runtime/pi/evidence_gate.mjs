@@ -32,7 +32,7 @@ export function isSystemVerifiedClaim(claim) {
 }
 
 const AUTO_VERIFIABLE_CLAIM_KINDS = new Set(["descriptive", "quantitative", "comparative", "uncertainty"]);
-const UNSUPPORTED_INFERENCE_LANGUAGE = /\b(caus(?:e|ed|al)|driv(?:e|en)|because|labou?r|war|conflict)\b|驱动|导致|因为|劳动力|战争|冲突|反映.{0,12}(原因|危机|政策)/iu;
+const UNSUPPORTED_INFERENCE_LANGUAGE = /\b(caus(?:e|ed|al)|driv(?:e|en)|because|labou?r|war|conflict)\b|驱动|导致|因为|劳动力|战争|冲突|反映.{0,12}(原因|危机|政策)|造成|引起|由于(?!统计口径|口径|四舍五入|舍入|取整|数据缺失|缺测|数据修订|统计修订|数据调整|统计调整|季节调整)|归因|致使|促使|所致|(?<!来|数据|资料)源于|\b(?:(?:due to|owing to)(?!\s+(?:rounding|round-off|data revisions?|missing data|missing values|changes? in (?:definition|methodology)|methodology))|thanks to|led to|leads? to|result(?:s|ed|ing)? in)\b/iu;
 
 export function evaluateClaimSupport({ requested_status, claim_kind, claim } = {}) {
   const reasons = [];
