@@ -76,19 +76,20 @@ async function refuses(label, s, pattern, { extra, signal, before = tree(s.art) 
 delete process.env.NEWSROOM_CLAIM_SQL_LINT;
 
 const { fillClaimTemplate } = mod;
-for (const sw of [false, true]) {
-  if (sw) process.env.NEWSROOM_SPEED_DATA_PROFILE = "1"; else delete process.env.NEWSROOM_SPEED_DATA_PROFILE;
-  const label = sw ? "switch on" : "switch off";
+// The claim resolver never reads the switch or the profile, so there is one pass, not an on/off loop.
+process.env.NEWSROOM_SPEED_DATA_PROFILE = "1";
+{
   // The recorded query returns Chad only; 92.8 and Liberia are in the data file and so in the profile, in no query row.
   const s = await story((ref) => `SELECT country, year, share FROM '${ref}' WHERE country = 'Chad'`);
   const before = tree(s.art);
   const rows = [{ country: "Chad", year: 2022, share: 70 }];
+  const cols = ["country", "year", "share"];
   // A profile number typed into the claim is refused as a typed number.
-  assert.throws(() => fillClaimTemplate("Liberia's share was 92.8 percent, the highest listed.", rows, ["country", "year", "share"]), /CLAIM_TEMPLATE_ERROR|typed|placeholder/i, `typed profile number refused (${label})`);
+  assert.throws(() => fillClaimTemplate("Liberia's share was 92.8 percent, the highest listed.", rows, cols), /^Error: CLAIM_TEMPLATE_ERROR: the claim has a typed number/, "typed profile number refused");
   // A placeholder that reaches for a row the recorded query does not hold is refused too.
-  assert.throws(() => fillClaimTemplate("Liberia's share was {share@country=Liberia} percent.", rows, ["country", "year", "share"]), /CLAIM_TEMPLATE_ERROR|no result row|rows? (have|has)/i, `placeholder outside the recorded rows refused (${label})`);
-  assert.deepEqual(tree(s.art), before, `${label}: nothing was written`);
-  assert.equal(claims(s.art).length, 0, `${label}: no claim line`);
-  check(`a number that is only in the data profile cannot be typed or looked up into a claim (${label})`);
+  assert.throws(() => fillClaimTemplate("Liberia's share was {share@country=Liberia} percent.", rows, cols), /^Error: CLAIM_TEMPLATE_ERROR: \{share@country=Liberia\}: no result row has country = Liberia/, "placeholder outside the recorded rows refused");
+  assert.deepEqual(tree(s.art), before, "nothing was written");
+  assert.equal(claims(s.art).length, 0, "no claim line");
+  check("a number that is only in the data profile cannot be typed or looked up into a claim");
 }
 console.log(`data profile stays unverified: ${passed} checks PASS`);
