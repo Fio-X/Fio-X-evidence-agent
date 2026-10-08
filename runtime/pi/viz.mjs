@@ -5007,6 +5007,15 @@ function renderScatter(spec, rows) {
 
 // Desktop heatmap tidy-up (exact "1", default off): the colour domain and legend ends are the data's own min and max,
 // cells carry bare numbers on the shared decimal count, and the unit is said once beside the legend.
+function heatmapFixedDecimals(spec, values, count) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (HOUSE_STYLE_ACTIVE && spec?.unit !== "%" && vizLang(spec) === "zh" && finite.some((v) => Math.abs(v) >= 10_000)) {
+    const top = Math.max(...finite.map((v) => Math.abs(v)));
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    return { zhScale: { div, suffix }, decimals: count };
+  }
+  return count;
+}
 function heatmapTidyEnabled(){ return process.env.NEWSROOM_HEATMAP_TIDY==="1"; }
 
 function renderHeatmap(spec, rows) {
@@ -5019,7 +5028,10 @@ function renderHeatmap(spec, rows) {
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const tidy = heatmapTidyEnabled();
   const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
-  const tidyDecimals = tidy ? (resolveChartDecimals(spec, vals) ?? (Number.isInteger(spec.decimals) ? spec.decimals : 1)) : null;
+  // An explicit spec.decimals is kept as written (heatmap-only exception: ties at the stated precision are normal in a
+  // grid, the colour carries the rest). A non-zero value still never prints as zero: fmt() falls back to its own digits.
+  const explicitDecimals = Number.isInteger(spec.decimals) && spec.decimals >= 0 && spec.decimals <= 3 ? spec.decimals : null;
+  const tidyDecimals = !tidy ? null : explicitDecimals === null ? (resolveChartDecimals(spec, vals) ?? 1) : heatmapFixedDecimals(spec, vals, explicitDecimals);
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
   const mixChannels = (t) => {
     const a = [242, 243, 244], b = [209, 73, 63];
