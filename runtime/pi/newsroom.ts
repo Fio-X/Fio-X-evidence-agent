@@ -159,6 +159,13 @@ const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record
     },
   },
   {
+    // The CLI records routine progress from real tool events (plan-progress.json); plan.json stays the model's.
+    env: "NEWSROOM_SPEED_PLAN_PROGRESS",
+    tools: {
+      newsroom_update_plan: "Routine step status is recorded by the program from the tool results; call newsroom_update_plan only to set the first plan, change the goal, or after a failure.",
+    },
+  },
+  {
     // Only where the chain and atomic writes are also on (inlineClaimEnabled).
     env: "NEWSROOM_SPEED_INLINE_CLAIM",
     when: () => inlineClaimEnabled(),

@@ -38,6 +38,10 @@ pub struct PiConfig {
     /// by the non-v2 `investigate` command from the parent environment;
     /// every other caller leaves it at the default (all off).
     pub speed: crate::prompt::PromptSpeed,
+    /// Set only by the non-v2 `investigate` command for a plain single-chart request when
+    /// `NEWSROOM_SPEED_COMPOSE_ANSWER=1`: once the chart is complete and its claim system-verified,
+    /// the CLI writes the closing text from the artifacts and ends the model loop there.
+    pub compose: Option<crate::compose_answer::ComposeSpec>,
 }
 
 /// Env var that is both the opt-in switch read by `investigate` and the
@@ -72,6 +76,11 @@ pub const CHAIN_PATCH_ENV: &str = "NEWSROOM_SPEED_CHAIN_PATCH";
 pub const REPORT_ALL_ENV: &str = "NEWSROOM_SPEED_REPORT_ALL";
 pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
 pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
+/// Prompt-only: a program-measured profile of local CSV files; the Pi child never reads it.
+pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
+/// Parent-only: the CLI composes a single chart's closing text; the Pi child never reads it.
+pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
+pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -105,7 +114,8 @@ fn exact_one(name: &str) -> bool {
 pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
     crate::prompt::PromptSpeed {
-        parallel_hints: env_switch(PARALLEL_HINTS_ENV),
+        // Plan progress is only useful when the first plan call rides with the first research calls.
+        parallel_hints: env_switch(PARALLEL_HINTS_ENV) || exact_one(PLAN_PROGRESS_ENV),
         compute_batch: env_switch(COMPUTE_BATCH_ENV),
         chain_viz,
         chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
@@ -119,6 +129,9 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         report_all: exact_one(REPORT_ALL_ENV),
         fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
         first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
+        data_profile: exact_one(DATA_PROFILE_ENV),
+        compose_answer: exact_one(COMPOSE_ANSWER_ENV),
+        plan_progress: exact_one(PLAN_PROGRESS_ENV),
     }
 }
 
@@ -601,6 +614,34 @@ impl ReadyChart {
     }
 }
 
+const PLAN_PROGRESS_FILE: &str = "plan-progress.json";
+
+/// One `plan-progress.json` line per finished tool call, copied from that tool event's own id,
+/// name and error flag. It is a record of what ran, not a plan: `plan.json` and the audit's
+/// plan-call count are untouched, and an event without a call id yields no line.
+fn plan_progress_entry(event: &Value, seq: u64) -> Option<Value> {
+    if event.get("type").and_then(Value::as_str) != Some("tool_execution_end") {
+        return None;
+    }
+    let call_id = event.get("toolCallId").and_then(Value::as_str)?;
+    let tool = event.get("toolName").and_then(Value::as_str)?;
+    let is_error = event.get("isError").and_then(Value::as_bool);
+    Some(json!({
+        "seq": seq,
+        "tool_call_id": call_id,
+        "tool": tool,
+        "is_error": is_error,
+        // A missing isError is unknown, never completed.
+        "status": match is_error {
+            Some(true) => "failed",
+            Some(false) => "completed",
+            None => "unknown",
+        },
+        "source": "tool_execution_end",
+        "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    }))
+}
+
 /// Tracks rendered charts whose deterministic critic passed, so the first one
 /// can be announced before the model finishes the rest of the run. The notice
 /// is progress output only: it grants no verification, completion or
@@ -942,6 +983,11 @@ impl PiConfig {
         } else {
             cmd.env_remove(PARALLEL_HINTS_ENV);
         }
+        if self.speed.plan_progress {
+            cmd.env(PLAN_PROGRESS_ENV, "1");
+        } else {
+            cmd.env_remove(PLAN_PROGRESS_ENV);
+        }
         if self.speed.compute_batch {
             cmd.env(COMPUTE_BATCH_ENV, "1");
         } else {
@@ -1122,7 +1168,9 @@ pub async fn run_prompt(
         .collect();
     let started = Instant::now();
     let mut telemetry = RunTelemetry::new();
-    eprintln!("[agent] phase=startup elapsed_ms=0");
+    if !crate::step_lines::enabled() {
+        eprintln!("[agent] phase=startup elapsed_ms=0");
+    }
     let mut command = config.command();
     #[cfg(unix)]
     command.process_group(0);
@@ -1189,7 +1237,15 @@ pub async fn run_prompt(
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
         // Only a run with chart claims filled from rows names its first chart early.
-        let mut chart_watch = config.speed.inline_claim.then(ChartReadyWatch::default);
+        let mut chart_watch =
+            (config.speed.inline_claim || config.compose.is_some()).then(ChartReadyWatch::default);
+        // NEWSROOM_STEP_LINES=1: one named line per finished tool call (stderr only; changes no state).
+        let mut step_tracker = crate::step_lines::enabled().then(crate::step_lines::StepTracker::default);
+        // The closing text composed from the artifacts when the one chart is complete; once
+        // set, the next model turn is aborted and no later model text is used or shown.
+        let mut composed_answer: Option<String> = None;
+        let mut compose_abort_sent = false;
+        let mut plan_progress_seq = 0u64;
 
         let mut line = Vec::new();
         loop {
@@ -1210,7 +1266,9 @@ pub async fn run_prompt(
                         else if !prompt_accepted { "startup" }
                         else if active_work { "active-work" } else { "rpc-wait" };
                     if now >= next_heartbeat {
-                        eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        if !crate::step_lines::enabled() {
+                            eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        }
                         next_heartbeat = now + heartbeat;
                     }
                     let expired = if !total.is_zero() && started.elapsed() >= total { Some("total") }
@@ -1259,14 +1317,78 @@ pub async fn run_prompt(
                 writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
                 file.flush()?;
             }
+            // Step lines come first so the chart-out line sits right above `[agent] chart_ready`.
+            if let Some(tracker) = step_tracker.as_mut() {
+                match event.get("type").and_then(Value::as_str) {
+                    Some("tool_execution_start") => tracker.on_start(&event, crate::step_lines::secs_now()),
+                    Some("tool_execution_end") => {
+                        for line in tracker.on_end(&event, crate::step_lines::secs_now(), crate::step_lines::language_zh()) {
+                            eprintln!("{line}");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // Routine plan progress comes from real tool events only, never from model text.
+            if config.speed.plan_progress {
+                if let (Some(root), Some(entry)) = (
+                    config.artifact_dir.as_deref(),
+                    plan_progress_entry(&event, plan_progress_seq + 1),
+                ) {
+                    plan_progress_seq += 1;
+                    if let Ok(mut file) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(root.join(PLAN_PROGRESS_FILE))
+                    {
+                        let _ = writeln!(file, "{entry}");
+                    }
+                }
+            }
             // Progress only: the notice changes no state, status or completion check.
             if let Some(chart) = chart_watch.as_mut().and_then(|watch| watch.observe(&event)) {
-                if !CHART_NOTICE_SENT.swap(true, Ordering::Relaxed) {
-                    let root = config.artifact_dir.as_deref().unwrap_or(Path::new(""));
+                let root = config.artifact_dir.as_deref().unwrap_or(Path::new(""));
+                if config.speed.inline_claim && !CHART_NOTICE_SENT.swap(true, Ordering::Relaxed) {
                     eprintln!(
                         "{}",
                         chart_ready_line(started.elapsed().as_millis(), root, &chart)
                     );
+                }
+                if let Some(spec) = config
+                    .compose
+                    .as_ref()
+                    .filter(|_| composed_answer.is_none())
+                {
+                    let files = crate::compose_answer::ChartFiles {
+                        desktop: chart.desktop.clone(),
+                        compact: chart.compact.clone(),
+                        mobile: chart.mobile.clone(),
+                        manifest: chart.manifest.clone(),
+                    };
+                    let composed = crate::compose_answer::compose(root, &files, spec);
+                    let mut record = json!({
+                        "type": "newsroom_composed_answer",
+                        "schema_version": "0.1.0",
+                        "manifest_ref": chart.manifest,
+                        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+                    });
+                    match &composed {
+                        Ok(_) => record["source"] = json!("runtime"),
+                        Err(error) => {
+                            record["source"] = json!("model");
+                            record["reason"] = json!(format!("{error:#}"));
+                        }
+                    }
+                    if let Some(file) = log.as_mut() {
+                        writeln!(file, "{}", serde_json::to_string(&record)?)?;
+                        file.flush()?;
+                    }
+                    eprintln!(
+                        "[agent] composed_answer elapsed_ms={} source={}",
+                        started.elapsed().as_millis(),
+                        if composed.is_ok() { "runtime" } else { "model" }
+                    );
+                    composed_answer = composed.ok();
                 }
             }
 
@@ -1365,8 +1487,10 @@ pub async fn run_prompt(
                                 if first_text_ms.is_none() {
                                     first_text_ms = Some(started.elapsed().as_millis());
                                 }
-                                print!("{delta}");
-                                std::io::stdout().flush().ok();
+                                if composed_answer.is_none() {
+                                    print!("{delta}");
+                                    std::io::stdout().flush().ok();
+                                }
                                 streamed_answer.push_str(delta);
                             }
                         }
@@ -1374,22 +1498,42 @@ pub async fn run_prompt(
                 }
                 Some("tool_execution_start") => {
                     active_work = true;
-                    eprintln!(
-                        "[agent] phase=tool-running elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
+                    if !crate::step_lines::enabled() {
+                        eprintln!(
+                            "[agent] phase=tool-running elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("tool_execution_end") => {
-                    eprintln!(
-                        "[agent] phase=tool-complete elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
+                    if !crate::step_lines::enabled() {
+                        eprintln!(
+                            "[agent] phase=tool-complete elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("turn_start") => {
                     // A new model/tool turn is active even when the provider
                     // emits no visible text while it is thinking.
                     active_work = true;
                     telemetry.turn_started(now_ms);
+                    if composed_answer.is_some() && !compose_abort_sent {
+                        // The one chart is complete and its closing text is composed, so
+                        // this turn could only restate it.
+                        send_json(
+                            &mut stdin,
+                            &json!({"id": "news-compose-abort", "type": "abort"}),
+                            finish,
+                        )
+                        .await?;
+                        compose_abort_sent = true;
+                        finish_started.get_or_insert_with(Instant::now);
+                        eprintln!(
+                            "[agent] phase=compose-abort elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("turn_end") => {
                     // Re-enable the idle boundary between turns. Tool and
@@ -1471,7 +1615,14 @@ pub async fn run_prompt(
             );
         }
 
-        let answer = final_answer.unwrap_or(streamed_answer);
+        let answer = match composed_answer {
+            Some(text) => {
+                print!("{text}");
+                std::io::stdout().flush().ok();
+                text
+            }
+            None => final_answer.unwrap_or(streamed_answer),
+        };
         if let Some(failure) = telemetry.pending.clone() {
             // The settled final turn is a provider error: the run did not
             // complete, even when partial text was streamed. Keep the text.
@@ -1494,13 +1645,15 @@ pub async fn run_prompt(
         }
 
         let rpc_ms = started.elapsed().as_millis();
-        eprintln!(
-            "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
-            rpc_ms,
-            first_text_ms
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "N/A".into())
-        );
+        if !crate::step_lines::enabled() {
+            eprintln!(
+                "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
+                rpc_ms,
+                first_text_ms
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "N/A".into())
+            );
+        }
         let token_value = |key: &str| {
             session_stats
                 .as_ref()
@@ -1692,7 +1845,11 @@ async fn send_json(
         tokio::select! {
             _ = tokio::signal::ctrl_c() => bail!("Pi RPC cancelled by user"),
             result = &mut write => { result.context("Pi RPC write timeout")??; break; },
-            _ = tokio::time::sleep(heartbeat) => eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis()),
+            _ = tokio::time::sleep(heartbeat) => {
+                if !crate::step_lines::enabled() {
+                    eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis());
+                }
+            }
         }
     }
     Ok(())
@@ -1719,6 +1876,7 @@ mod tests {
             tool_profile: "investigate".to_string(),
             hide_lieflat: false,
             speed: Default::default(),
+            compose: None,
         };
         assert_eq!(
             cfg.display_runtime(),
@@ -1742,6 +1900,7 @@ mod tests {
             tool_profile: profile.to_string(),
             hide_lieflat,
             speed: Default::default(),
+            compose: None,
         }
     }
 
@@ -1800,6 +1959,102 @@ mod tests {
             visual_story_config(false, "visual-story").tools_arg(),
             crate::tool_registry::tools_for_profile("visual-story").unwrap()
         );
+    }
+
+    #[test]
+    fn data_profile_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(DATA_PROFILE_ENV);
+        assert_eq!(
+            speed_switches_from_env(),
+            crate::prompt::PromptSpeed::default()
+        );
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(DATA_PROFILE_ENV, not_one);
+            assert!(!speed_switches_from_env().data_profile, "{not_one:?}");
+        }
+        std::env::set_var(DATA_PROFILE_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.data_profile);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                data_profile: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(DATA_PROFILE_ENV);
+    }
+
+    #[test]
+    fn plan_progress_lines_come_only_from_tool_end_events_and_never_from_text() {
+        let end = json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c9", "isError": true});
+        let line = plan_progress_entry(&end, 3).unwrap();
+        assert_eq!(line["tool_call_id"], "c9");
+        assert_eq!(line["tool"], "duckdb_query");
+        assert_eq!(line["seq"], 3);
+        assert_eq!(line["status"], "failed");
+        let ok = json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c10", "isError": false});
+        assert_eq!(plan_progress_entry(&ok, 4).unwrap()["status"], "completed");
+        let unknown =
+            json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c11"});
+        let line = plan_progress_entry(&unknown, 5).unwrap();
+        assert_eq!(line["status"], "unknown");
+        assert!(line["is_error"].is_null());
+        for other in [
+            json!({"type": "tool_execution_start", "toolName": "x", "toolCallId": "c1"}),
+            json!({"type": "message_update", "assistantMessageEvent": {"delta": "plan: done"}}),
+            json!({"type": "tool_execution_end", "toolName": "x"}),
+        ] {
+            assert!(plan_progress_entry(&other, 1).is_none());
+        }
+    }
+
+    #[test]
+    fn plan_progress_switch_is_exactly_one_and_turns_parallel_hints_on_with_it() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(PLAN_PROGRESS_ENV);
+        std::env::remove_var(PARALLEL_HINTS_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(PLAN_PROGRESS_ENV, not_one);
+            assert_eq!(
+                speed_switches_from_env(),
+                crate::prompt::PromptSpeed::default()
+            );
+        }
+        std::env::set_var(PLAN_PROGRESS_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.plan_progress && on.parallel_hints);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                plan_progress: false,
+                parallel_hints: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(PLAN_PROGRESS_ENV);
+    }
+
+    #[test]
+    fn compose_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(COMPOSE_ANSWER_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(COMPOSE_ANSWER_ENV, not_one);
+            assert!(!speed_switches_from_env().compose_answer, "{not_one:?}");
+        }
+        std::env::set_var(COMPOSE_ANSWER_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.compose_answer);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                compose_answer: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(COMPOSE_ANSWER_ENV);
     }
 
     #[test]
