@@ -5022,7 +5022,25 @@ function heatmapTidyDecimals(spec, vals){
   // An explicit spec.decimals is kept as written (heatmap-only exception: ties at the stated precision are normal in a
   // grid, the colour carries the rest). A non-zero value still never prints as zero: fmt() falls back to its own digits.
   const explicitDecimals = Number.isInteger(spec.decimals) && spec.decimals >= 0 && spec.decimals <= 3 ? spec.decimals : null;
-  return explicitDecimals === null ? (resolveChartDecimals(spec, vals) ?? 1) : heatmapFixedDecimals(spec, vals, explicitDecimals);
+  return explicitDecimals === null ? heatmapBaseDecimals(spec, vals) : heatmapFixedDecimals(spec, vals, explicitDecimals);
+}
+// The real chart path never carries spec.decimals, so the tidy heatmap's own default is the shared formatter's BASE
+// precision - fmt()'s magnitude rule applied once, to the largest value (>=100: none, 10..100: one, below 10: two) -
+// without resolveChartDecimals' collision raise: ties at the stated precision are normal in a grid and the colour carries
+// the rest (rule 3's raise turned a 0.668-22.087 grid into three decimals). Rule 5 still holds: fmt() never prints a
+// non-zero value as zero. A "%" unit or house style off keeps one decimal, as before.
+function heatmapBaseDecimals(spec, vals){
+  if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return 1;
+  const finite = vals.filter((v) => Number.isFinite(v));
+  if (!finite.length) return 1;
+  const top = Math.max(...finite.map((v) => Math.abs(v)));
+  if (vizLang(spec) === "zh" && top >= 10_000) {
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+    const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+    return { zhScale: { div, suffix }, decimals: auto };
+  }
+  return top >= 100 ? 0 : top >= 10 ? 1 : top > 0 ? 2 : 1;
 }
 // What a heatmap cell prints for a value, exactly as renderHeatmap spells it (render QA proves it against the SVG).
 export function heatmapCellText(spec, rows, value){
