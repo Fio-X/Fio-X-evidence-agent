@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { FLOW_MAP_LABEL_STYLES, LEDGER_MAP_RIGHT, arrowSize, flowMapLabelsEnabled, flowMapStyleFor, flowWidth, layoutFlowMapLabels, widthSamples } from "./flow_map_labels.mjs";
+import { FLOW_MAP_LABEL_STYLES, LEDGER_MAP_RIGHT, arrowSize, flowMapLabelsEnabled, flowMapStyleFor, flowNumberTies, flowWidth, layoutFlowMapLabels, ledgerGeometry, widthSamples } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
 import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
@@ -1643,8 +1643,8 @@ export function validateVizSpec(spec) {
       }
     }
     if (spec.extent_mode !== undefined && !["world","data"].includes(spec.extent_mode)) errors.push('extent_mode must be world or data');
-    if (spec.flow_map_labels !== undefined && !FLOW_MAP_LABEL_STYLES.includes(spec.flow_map_labels)) errors.push('flow_map_labels must be leader or ledger');
-    if (spec.flow_map_labels !== undefined && spec.geometry_semantics !== 'abstract_od') errors.push('flow_map_labels is supported only with geometry_semantics=abstract_od');
+    if (flowMapLabelsEnabled() && spec.flow_map_labels !== undefined && !FLOW_MAP_LABEL_STYLES.includes(spec.flow_map_labels)) errors.push('flow_map_labels must be leader or ledger');
+    if (flowMapLabelsEnabled() && spec.flow_map_labels !== undefined && spec.geometry_semantics !== 'abstract_od') errors.push('flow_map_labels is supported only with geometry_semantics=abstract_od');
     if (spec.map_task !== undefined && !['global_context','regional_route','local_context','local_port','airport_detail','infrastructure_detail'].includes(spec.map_task)) errors.push('unsupported map_task');
     if (spec.extent_min_span_deg !== undefined && (!(Number(spec.extent_min_span_deg) >= 0) || Number(spec.extent_min_span_deg) > 60)) errors.push('extent_min_span_deg must be between 0 and 60');
     if (spec.reference_path !== undefined && !["none","great_circle"].includes(spec.reference_path)) errors.push('reference_path must be none or great_circle');
@@ -2311,7 +2311,7 @@ export function lintVizSpec(spec, rows, context = {}) {
   }
   if (spec.chart_type === "cartographic_flow_map") {
     if (rows.some((row) => (n(row[spec.value_field]) ?? -1) < 0)) blockers.push('cartographic_flow_map does not allow negative flow weights');
-    const selected = selectRoutes(rows, spec);
+    const selected = selectRoutes(rows, spec, flowMapLabelsEnabled() && spec.geometry_semantics === 'abstract_od');
     if (spec.flow_layer_field) {
       const layerValues = selected.map((row) => String(row[spec.flow_layer_field] ?? '').trim()).filter(Boolean);
       const layerSet = [...new Set(layerValues)];
@@ -2342,9 +2342,11 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
     if (spec.aggregation_policy !== 'top_n' && rows.length > 80) blockers.push(`cartographic_flow_map has ${rows.length} routes; set aggregation_policy=top_n or split the story`);
     if (selected.length > 45) warnings.push(`cartographic_flow_map renders ${selected.length} routes; route density may exceed a static editorial frame`);
-    if (spec.geometry_semantics === 'abstract_od' && (FLOW_MAP_LABEL_STYLES.includes(spec.flow_map_labels) || flowMapLabelsEnabled())) {
+    if (spec.geometry_semantics === 'abstract_od' && flowMapLabelsEnabled()) {
       const style = resolveFlowMapStyle(spec, selected);
       if (style.reason) warnings.push(style.reason);
+      const ties = flowNumberTies(spec, selected.map((row) => n(row[spec.value_field]) ?? 0).filter((v) => v > 0), fmtSpec);
+      if (ties.length) warnings.push(`flow map prints the same text (${[...new Set(ties.map((t) => t[2]))].join(', ')}) for ${ties.length} pair(s) of adjacent ranks even at the decimals cap; do not claim an order between those ranks in the title, subtitle or note`);
       const unit = String(spec.unit ?? '');
       if (vizLang(spec) === 'zh' && unit) {
         const peak = Math.max(0, ...selected.map((row) => n(row[spec.value_field]) ?? 0));
@@ -6485,18 +6487,30 @@ function parallelSetsLayout(spec, rows, mobile=false) {
   return {dims,weight,total,axisCats};
 }
 
-// flow_map_labels: the style a map gets, or null when the layer is off (no spec field and the flag unset).
+// flow_map_labels: the style a map gets, or null when the layer is off. NEWSROOM_FLOW_MAP_LABELS=1 is the only way on: a spec field alone does nothing.
 function resolveFlowMapStyle(spec, routeRows) {
-  if (!FLOW_MAP_LABEL_STYLES.includes(spec.flow_map_labels) && !flowMapLabelsEnabled()) return { style: null, reason: null };
+  if (!flowMapLabelsEnabled()) return { style: null, reason: null };
   const pairs = routeRows.filter((row) => (n(row[spec.value_field]) ?? 0) > 0).map((row) => [String(row[spec.source_field] ?? ''), String(row[spec.target_field] ?? '')]);
   return flowMapStyleFor(pairs, spec.flow_map_labels);
 }
-function renderCartographicFlowMap(spec, rows, mobile=false) {
+function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
   const bodyH = mobile ? 470 : 540;
   const f = mobile ? mobileFrame(spec, bodyH) : frame(spec, bodyH);
-  const routeRows=selectRoutes(rows,spec);
+  let routeRows=selectRoutes(rows,spec,flowMapLabelsEnabled()&&spec.geometry_semantics==='abstract_od');
   const flowLabels = !mobile && spec.geometry_semantics === 'abstract_od' ? resolveFlowMapStyle(spec, routeRows).style : null;
   const left = mobile ? 36 : 60, right = mobile ? 610 : (flowLabels === 'ledger' ? LEDGER_MAP_RIGHT : 980), top = f.bodyTop + 20, bottom = f.bodyBottom - (flowLabels ? 90 : 74);
+  // No silent drop: when even two ledger columns cannot list every flow, draw only the listed ones and say what was left out.
+  let flowCut=null;
+  if(flowLabels==='ledger'){
+    const pos=routeRows.filter(r=>(n(r[spec.value_field])??0)>0);
+    const geo=ledgerGeometry({spec,routes:pos.map(r=>({value:n(r[spec.value_field])??0,sourceName:String(r[spec.source_field]??''),targetName:String(r[spec.target_field]??'')})),bounds:{left,right,top,bottom},textUnits,fmtSpec,zh:vizLang(spec)==='zh'});
+    const keepN=Math.min(geo.rows.length,keepTop??Infinity);
+    if(keepN<pos.length){
+      const keep=new Set(geo.order.slice(0,keepN).map(o=>o.i)), left_=pos.filter((_,i)=>!keep.has(i));
+      flowCut={count:left_.length,sum:left_.reduce((a,r)=>a+(n(r[spec.value_field])??0),0)};
+      routeRows=routeRows.filter(r=>!left_.includes(r));
+    }
+  }
   const trajectoryCache=new Map();
   const extentLines=[];
   for(const row of routeRows){
@@ -6550,11 +6564,13 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
   });
   f.parts.push('</g>');
   let flowOut=null;
-  if(flowLabels){flowOut=layoutFlowMapLabels({spec,style:flowLabels,routes:flowRoutes,bounds:{left,right,top,bottom},esc,textUnits,fmtSpec,PALETTE,FONT_SANS,zh:vizLang(spec)==='zh'});f.parts.push(...flowOut.parts);}
+  if(flowLabels){flowOut=layoutFlowMapLabels({spec,style:flowLabels,routes:flowRoutes,bounds:{left,right,top,bottom},esc,textUnits,fmtSpec,PALETTE,FONT_SANS,zh:vizLang(spec)==='zh'});f.parts.push(...flowOut.parts);
+    // Badge placement can add a 「图上未标」 line to some rows; if that pushes a flow off the ledger, draw again with only the flows that are listed.
+    if(flowLabels==='ledger'&&flowOut.diag.ledger_cut>0)return renderCartographicFlowMap(spec,rows,mobile,flowOut.diag.ledger_rows);}
   if(!flowLabels&&spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
   if(!flowLabels&&pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
   if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
-  const keyY=bottom+18; if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total:rows.length,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
+  const keyY=bottom+18; if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total:rows.filter(r=>(n(r[spec.value_field])??0)>0).length,flowCut,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
   f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
   const disclosure=geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??''); f.parts.push(`<text data-role="cartographic-disclosure" x="${right}" y="${bottom+40}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.muted}">${esc(textUnits(disclosure)>(mobile?92:132)?sliceUnits(disclosure,mobile?91:131)+'…':disclosure)}</text>`);
   f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}</text>`);
@@ -6563,16 +6579,16 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
 
 // Chinese-first key, width legend, disclosure and credit line for the
 // flow_map_labels layer (viz.mjs renderCartographicFlowMap).
-function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total,zh}){
+function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total,flowCut,zh}){
   const font=12.5,w=(t)=>textUnits(t)*font*.56;
   const widthT=zh?`线宽${spec.unit?`（${spec.unit}）`:''}：`:`width${spec.unit?` (${spec.unit})`:''}: `;
   let x=left+(zh?112:150)+w(widthT)+10;const sw=[];
   for(const v of widthSamples(max)){const h=flowWidth(v,max),label=fmtSpec(spec,v,'');sw.push(`<rect data-role="legend-swatch" x="${x}" y="${(keyY-4-h/2).toFixed(1)}" width="26" height="${h.toFixed(1)}" fill="#8a9096" fill-opacity=".62"/><text x="${x+32}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(label)}</text>`);x+=32+w(label)+22;}
   const startT=zh?'起点':'origin',endT=zh?'终点':'destination';
   parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${startT}</text><text x="${left+(zh?42:62)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">→</text><circle cx="${left+(zh?64:82)}" cy="${keyY-3}" r="3.5" fill="${PALETTE.accent}"/><text x="${left+(zh?71:89)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${endT}</text><text x="${left+(zh?112:150)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${widthT}</text>${sw.join('')}</g>`);
-  const disclosure=zh?'弧线表示起点与终点之间的关系，不代表实际运输路线。':geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??'');
+  const note=String(spec.route_provenance_note??'').trim(),disclosure=zh?`弧线表示起点与终点之间的关系，不代表实际运输路线。${note?` ${note}`:''}`:geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??'');
   parts.push(`<text data-role="cartographic-disclosure" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.muted}">${esc(disclosure)}</text>`);
-  const n=flowRoutes.length,drawn=zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`);
+  const n=flowRoutes.length,cutT=flowCut?(zh?`；另有 ${flowCut.count} 条放不下未画，合计 ${fmtSpec(spec,flowCut.sum,'')}${spec.unit?` ${spec.unit}`:''}`:`; ${flowCut.count} more do not fit and are not drawn, ${fmtSpec(spec,flowCut.sum,'')}${spec.unit?` ${spec.unit}`:''} in total`):'',drawn=(zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`))+cutT;
   const bm=getBasemap(spec.basemap_id),credit=zh?`底图：${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'按数据范围':'世界范围'}`:`${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}`;
   parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+58}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(drawn)} · ${esc(credit)}</text>`);
   if(flowOut?.overflow)parts.push(`<text x="${left}" y="${bottom+76}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(flowOut.overflow)}</text>`);

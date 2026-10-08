@@ -8,6 +8,7 @@ import { fmtSpec, lintVizSpec, renderVizBundle, validateVizSpec } from '../runti
 import { flowMapStyleFor, flowNumberTexts } from '../runtime/pi/flow_map_labels.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
+process.env.NEWSROOM_FLOW_MAP_LABELS = '1'; // the layer is on only with the switch; the off checks below unset it around the render
 const ROOT = new URL('..', import.meta.url).pathname;
 const assert = (c, m) => { if (!c) throw new Error(m); };
 const csv = (p) => { const [h, ...ls] = readFileSync(p, 'utf8').trim().split(/\r?\n/); const f = h.split(','); return ls.map((l) => { const v = l.split(','); return Object.fromEntries(f.map((k, i) => [k, /^-?\d+(\.\d+)?$/.test(v[i]) ? Number(v[i]) : v[i]])); }); };
@@ -39,7 +40,7 @@ for (const [name, [spec0, rows]] of Object.entries(cases)) {
     const spec = { ...spec0, flow_map_labels: style, highlight_values: [hl.source, hl.target] };
     const v = validateVizSpec(spec); assert(v.length === 0, `${name}/${style} validate: ${v.join('|')}`);
     const svg = renderVizBundle(spec, rows).desktop;
-    const qa = runRenderQa({ desktop: svg }); assert(qa.passed, `${name}/${style} render QA failed (${qa.failure_count})`);
+    const qa = runRenderQa({ desktop: svg }); assert(qa.passed, `${name}/${style} render QA failed (${qa.failure_count}) ${JSON.stringify(qa).slice(0,900)}`);
     // Chinese chrome, none of the English defaults
     for (const t of ['起点', '终点', '线宽', '弧线表示起点与终点之间的关系']) assert(svg.includes(t), `${name}/${style} missing ${t}`);
     assert(!/observed start|destination \/|Arcs encode/.test(svg), `${name}/${style} English default string left`);
@@ -87,11 +88,13 @@ for (const [name, [spec0, rows]] of Object.entries(cases)) {
     console.log(`ok ${name}/${style}: ${rows.length} arcs, QA pass, ${svg.length} bytes`);
   }
   // flag absent: no new chrome, and (when BASE_WT is given) identical to the code without the feature
+  delete process.env.NEWSROOM_FLOW_MAP_LABELS;
   const off = renderVizBundle(spec0, rows).desktop; assert(!off.includes('legend-swatch') && !off.includes('annotation-marker'), `${name} flag off draws flag-only parts`);
   if (process.env.BASE_WT) {
     const old = await import(`${process.env.BASE_WT}/runtime/pi/viz.mjs`);
     assert(old.renderVizBundle(spec0, rows).desktop === off, `${name} flag-off output differs from base`); console.log(`ok ${name}: flag-off byte-identical to base`);
   }
+  process.env.NEWSROOM_FLOW_MAP_LABELS = '1';
 }
 // style selection: a star of at most 8 flows gets names with leaders, everything else the ledger
 {
@@ -117,7 +120,6 @@ for (const [name, [spec0, rows]] of Object.entries(cases)) {
   const w2 = lintVizSpec({ ...cases.eia6[0], unit: '万吨', flow_map_labels: 'ledger' }, cases.eia6[1].map((r) => ({ ...r, value: r.value * 100 }))); assert((w2.warnings ?? []).some((w) => /already carries 万\/亿/.test(w)), 'stacked 万 not warned');
   const w3 = lintVizSpec({ ...cases.eia6[0], flow_map_labels: 'ledger' }, cases.eia6[1]); assert(!(w3.warnings ?? []).some((w) => /carries/.test(w)), 'clean unit warned');
   console.log('ok unit warnings');
-  delete process.env.NEWSROOM_FLOW_MAP_LABELS;
 }
 // adjacent ranks never show the same number
 {
