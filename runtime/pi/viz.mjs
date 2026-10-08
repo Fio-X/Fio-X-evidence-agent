@@ -5008,6 +5008,16 @@ function renderScatter(spec, rows) {
 // Desktop heatmap tidy-up (exact "1", default off): the colour domain and legend ends are the data's own min and max,
 // cells carry bare numbers on the shared decimal count, and the unit is said once beside the legend.
 function heatmapTidyEnabled(){ return process.env.NEWSROOM_HEATMAP_TIDY==="1"; }
+// Shared decimal count of the tidy heatmap (cells and legend); render QA re-derives the expected cell text from it.
+function heatmapTidyDecimals(spec, vals){ return resolveChartDecimals(spec, vals) ?? (Number.isInteger(spec.decimals) ? spec.decimals : 1); }
+// What a heatmap cell prints for a value, exactly as renderHeatmap spells it (render QA proves it against the SVG).
+export function heatmapCellText(spec, rows, value){
+  const vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null);
+  return heatmapTidyEnabled() ? fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals)) : fmtSpec(spec, value, spec.unit);
+}
+// NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1"): desktop cells carry data-role/data-x/data-y/data-value so render QA can prove
+// every cell shows its value (editorial_validators.mjs heatmapValueLabelsProven).
+function heatmapValueLabelsEnabled(){ return process.env.NEWSROOM_HEATMAP_VALUE_LABELS==="1"; }
 
 function renderHeatmap(spec, rows) {
   const xs = unique(rows.map((r) => r[spec.x_field]));
@@ -5019,7 +5029,8 @@ function renderHeatmap(spec, rows) {
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const tidy = heatmapTidyEnabled();
   const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
-  const tidyDecimals = tidy ? (resolveChartDecimals(spec, vals) ?? (Number.isInteger(spec.decimals) ? spec.decimals : 1)) : null;
+  const tidyDecimals = tidy ? heatmapTidyDecimals(spec, vals) : null;
+  const proofOn = heatmapValueLabelsEnabled();
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
   const mixChannels = (t) => {
     const a = [242, 243, 244], b = [209, 73, 63];
@@ -5036,11 +5047,12 @@ function renderHeatmap(spec, rows) {
       const value = index.get(`${xv}\u0000${yv}`); if (value === null || value === undefined) return;
       const t = (value - min) / (max - min || 1);
       const x = left + xi * cellW, y = top + yi * cellH;
-      f.parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
+      const cellAttrs = proofOn ? ` data-role="heatmap-cell" data-x="${esc(xv)}" data-y="${esc(yv)}" data-value="${value}"` : "";
+      f.parts.push(`<rect${cellAttrs} x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
+        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
