@@ -161,7 +161,7 @@ pub fn compose(root: &Path, chart: &ChartFiles, spec: &ComposeSpec) -> Result<St
         )
     } else {
         format!(
-            "\nFinding（{claim_id}，passed its check when the chart was made；the run's final verification result is in verification.json）：\n{statement}\n"
+            "\nFinding ({claim_id}, passed its check when the chart was made; the run's final verification result is in verification.json):\n{statement}\n"
         )
     });
     if !source.is_empty() {
@@ -245,7 +245,7 @@ mod tests {
         assert!(finding < heading && text.find("2024 年为估算").unwrap() > heading);
         let english = compose(dir.path(), &chart(), &ComposeSpec { chinese: false }).unwrap();
         assert!(
-            english.contains("claim-1，passed its check when the chart was made")
+            english.contains("(claim-1, passed its check when the chart was made;")
                 && english.contains("verification.json")
                 && !english.contains("system-verified claim-1")
                 && english.contains("Note (not verified")
