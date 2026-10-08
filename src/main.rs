@@ -14,6 +14,7 @@ mod pi;
 mod prompt;
 mod recipes;
 mod runtime;
+mod step_lines;
 mod tool_registry;
 mod verify;
 
