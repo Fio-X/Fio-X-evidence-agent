@@ -873,6 +873,78 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     return sorted(set(failures))
 
 
+def _heatmap_leading_number_with_scale(text: str) -> float | None:
+    # A heatmap cell prints a bare number, with a trailing zh scale word (wan = 10^4, yi = 10^8) when the
+    # renderer scaled it (viz.mjs heatmapFixedDecimals); any other suffix leaves the scale alone.
+    m = _LEADING_NUMBER_RE.match(text)
+    if not m:
+        return None
+    number = float(m.group(1))
+    rest = text[m.end():]
+    if rest.startswith("\u4ebf"):
+        return number * 100_000_000.0
+    if rest.startswith("\u4e07"):
+        return number * 10_000.0
+    return number
+
+
+def verify_heatmap_labels_from_svg(svg_text: str) -> list[str]:
+    # NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one
+    # rendered viewport's SVG: every heatmap-cell rect (data-x, data-y, data-value) has exactly one
+    # heatmap-cell-value text for the same (x, y) whose number matches the cell's own data-value, is at least
+    # 12px, and sits inside the cell; a label with no cell fails. Written fresh - it never calls into
+    # runtime/pi/render_qa_labels.mjs - and mirrors Rust's verify_heatmap_labels_from_svg.
+    failures: list[str] = []
+    cells: dict[tuple[str, str], list[tuple[float, dict]]] = {}
+    for m in re.finditer(r"<rect\b[^>]*?/?>", svg_text, re.S):
+        attrs = _choropleth_tag_attrs(m.group(0))
+        if attrs.get("data-role") != "heatmap-cell":
+            continue
+        try:
+            value = float(attrs.get("data-value", ""))
+        except ValueError:
+            failures.append(f"a heatmap cell ({attrs.get('data-y')} / {attrs.get('data-x')}) has no readable data-value")
+            continue
+        cells.setdefault((attrs.get("data-x", ""), attrs.get("data-y", "")), []).append((value, attrs))
+    labels: dict[tuple[str, str], list[tuple[str, dict]]] = {}
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("heatmap-cell-value",)):
+        attrs = _choropleth_tag_attrs(tag)
+        labels.setdefault((attrs.get("data-x", ""), attrs.get("data-y", "")), []).append((_choropleth_label_body_text(body), attrs))
+    if not cells:
+        failures.append("the heatmap has no cell with a value to prove")
+    for key, found in cells.items():
+        name = f"{key[1]} / {key[0]}"
+        if len(found) != 1:
+            failures.append(f"{name} has {len(found)} heatmap cells (expected exactly 1)")
+            continue
+        expected, rect = found[0]
+        texts = labels.get(key, [])
+        if len(texts) != 1:
+            failures.append(f"{name} has {len(texts)} rendered value labels (expected exactly 1)")
+            continue
+        text, tattrs = texts[0]
+        shown = _heatmap_leading_number_with_scale(text)
+        if shown is None:
+            failures.append(f"{name}'s rendered value label '{text}' has no readable number")
+        elif abs(shown - expected) > max(abs(expected) * 0.01, 0.05):
+            failures.append(f"{name}'s rendered value label '{text}' does not match its cell's data-value {expected}")
+        try:
+            size = float(tattrs.get("font-size", ""))
+            tx, ty = float(tattrs["x"]), float(tattrs["y"])
+            cx, cy, cw, ch = (float(rect[k]) for k in ("x", "y", "width", "height"))
+        except (KeyError, ValueError):
+            failures.append(f"{name}'s value label or cell is missing numeric geometry")
+            continue
+        if size < 12:
+            failures.append(f"{name}'s value label is {size}px, below 12px")
+        if not (cx <= tx <= cx + cw and cy <= ty <= cy + ch):
+            failures.append(f"{name}'s value label is outside its cell")
+    for key in labels:
+        if key not in cells:
+            failures.append(f"{key[1]} / {key[0]} has a rendered value label but no matching heatmap cell in the SVG")
+    return sorted(set(failures))
+
+
 def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infographic_plan_ref: str, infographic_critics: list, infographic_vision_critics: list, report: "Report") -> None:
     # The gate this worktree adds: a top-level publication's
     # infographic_plan_ref (already confirmed by the caller to resolve to an
@@ -1273,6 +1345,31 @@ def verify(root: Path) -> Report:
                                         report.check(False, f"choropleth visualization {manifest_ref} failed reading {viewport} SVG for independent value-labels re-derivation: {exc}")
                     except Exception as exc:
                         report.check(False, f"choropleth visualization {manifest_ref} render_qa_ref verification failed: {exc}")
+            # Heatmap-only, NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1", default off): a viewport whose render_qa
+            # report CLAIMS a passing value_labels proof is re-derived from the SVG bytes on disk and bound to
+            # them by sha256 - the JS lint's exemption is never the only gate. Adds strictness only.
+            if manifest.get("chart_type") == "heatmap" and os.environ.get("NEWSROOM_HEATMAP_VALUE_LABELS") == "1":
+                heat_qa_ref = manifest.get("render_qa_ref")
+                if isinstance(heat_qa_ref, str) and heat_qa_ref.startswith("visualizations/qa/"):
+                    try:
+                        heat_qa_path = safe_ref(root, heat_qa_ref)
+                        if heat_qa_path.is_file():
+                            heat_viewports = load_json(heat_qa_path).get("viewports") or {}
+                            for viewport, heat_report in heat_viewports.items():
+                                if not isinstance((heat_report or {}).get("value_labels"), dict) or heat_report["value_labels"].get("passed") is not True:
+                                    continue
+                                svg_ref = viz_variants.get(viewport)
+                                if not isinstance(svg_ref, str):
+                                    report.check(False, f"heatmap visualization {manifest_ref} claims value_labels for unlisted viewport {viewport}")
+                                    continue
+                                svg_path = safe_ref(root, svg_ref)
+                                if not svg_path.is_file():
+                                    continue
+                                report.check(sha256_file(svg_path) == heat_report.get("svg_sha256"), f"heatmap visualization {manifest_ref} {viewport} SVG hash does not match render_qa report")
+                                for failure in verify_heatmap_labels_from_svg(svg_path.read_text(encoding="utf-8")):
+                                    report.check(False, f"heatmap visualization {manifest_ref} {viewport} independent value-labels re-derivation failed: {failure}")
+                    except Exception as exc:
+                        report.check(False, f"heatmap visualization {manifest_ref} value-labels re-derivation failed: {exc}")
             if isinstance(lint_ref, str):
                 try:
                     lint_path = safe_ref(root, lint_ref)

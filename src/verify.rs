@@ -1444,6 +1444,10 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             // JS lint that ran at plan time somehow let one through.
             let is_choropleth =
                 manifest.get("chart_type").and_then(Value::as_str) == Some("choropleth");
+            // Heatmap proof claims are re-derived only behind NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1").
+            let is_heatmap_proof = manifest.get("chart_type").and_then(Value::as_str)
+                == Some("heatmap")
+                && std::env::var("NEWSROOM_HEATMAP_VALUE_LABELS").as_deref() == Ok("1");
             if draft {
                 // A listed compact variant is never exempt from render QA.
                 report.check(
@@ -1464,6 +1468,7 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                         ],
                         false,
                         is_choropleth,
+                        is_heatmap_proof,
                         report,
                     );
                 }
@@ -1485,6 +1490,7 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                         ],
                         true,
                         is_choropleth,
+                        is_heatmap_proof,
                         report,
                     );
                 }
@@ -1815,6 +1821,155 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     failures
 }
 
+/// Like attr_value, but only matches a whole attribute name (` x="` never matches inside `data-x="`).
+fn whole_attr_value<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
+    attr_value(tag, &format!(" {attr}")).or_else(|| attr_value(tag, &format!("\n{attr}")))
+}
+
+/// A heatmap cell's printed number, with the renderer's trailing zh scale word applied (wan = 10^4, yi = 10^8);
+/// any other suffix leaves the number's own scale alone. None when there is no leading number.
+fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    if i < bytes.len() && bytes[i] == b'-' {
+        i += 1;
+    }
+    let digits_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+    if i == digits_start {
+        return None;
+    }
+    let number: f64 = text[..i].parse().ok()?;
+    let rest = &text[i..];
+    let scale = if rest.starts_with('\u{4ebf}') {
+        100_000_000.0
+    } else if rest.starts_with('\u{4e07}') {
+        10_000.0
+    } else {
+        1.0
+    };
+    Some(number * scale)
+}
+
+/// NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one rendered
+/// viewport's SVG: every `heatmap-cell` rect (data-x, data-y, data-value) has exactly one `heatmap-cell-value` text
+/// for the same (x, y) whose number matches the cell's own data-value, is at least 12px, and sits inside the cell;
+/// a label with no cell fails. Written fresh - it never calls into render_qa_labels.mjs - and mirrors the Python
+/// verifier's verify_heatmap_labels_from_svg. Returns the failure messages (empty means the proof holds).
+fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
+    let mut failures = Vec::new();
+    let mut cells: BTreeMap<(String, String), Vec<(f64, [Option<f64>; 4])>> = BTreeMap::new();
+    let mut idx = 0;
+    while let Some(rel) = svg_text[idx..].find("<rect") {
+        let start = idx + rel;
+        let after = start + "<rect".len();
+        if !svg_text[after..].starts_with(|c: char| c.is_whitespace() || c == '>') {
+            idx = after;
+            continue;
+        }
+        let Some(gt_rel) = svg_text[start..].find('>') else {
+            break;
+        };
+        let tag_end = start + gt_rel + 1;
+        let tag = &svg_text[start..tag_end];
+        idx = tag_end;
+        if attr_value(tag, "data-role") != Some("heatmap-cell") {
+            continue;
+        }
+        let key = (
+            attr_value(tag, "data-x").unwrap_or("").to_owned(),
+            attr_value(tag, "data-y").unwrap_or("").to_owned(),
+        );
+        let Some(value) = attr_value(tag, "data-value").and_then(|v| v.parse::<f64>().ok()) else {
+            failures.push(format!("{} / {} has no readable data-value", key.1, key.0));
+            continue;
+        };
+        let num = |name: &str| whole_attr_value(tag, name).and_then(|v| v.parse::<f64>().ok());
+        cells
+            .entry(key)
+            .or_default()
+            .push((value, [num("x"), num("y"), num("width"), num("height")]));
+    }
+    let mut labels: BTreeMap<(String, String), Vec<(String, Option<f64>, Option<f64>, Option<f64>)>> =
+        BTreeMap::new();
+    for node in find_text_nodes_with_role(svg_text, &["heatmap-cell-value"]) {
+        let key = (
+            attr_value(node.tag, "data-x").unwrap_or("").to_owned(),
+            attr_value(node.tag, "data-y").unwrap_or("").to_owned(),
+        );
+        let num = |name: &str| whole_attr_value(node.tag, name).and_then(|v| v.parse::<f64>().ok());
+        labels.entry(key).or_default().push((
+            label_body_text(node.body),
+            num("font-size"),
+            num("x"),
+            num("y"),
+        ));
+    }
+    if cells.is_empty() {
+        failures.push("the heatmap has no cell with a value to prove".to_owned());
+    }
+    for (key, found) in &cells {
+        let name = format!("{} / {}", key.1, key.0);
+        if found.len() != 1 {
+            failures.push(format!("{name} has {} heatmap cells (expected exactly 1)", found.len()));
+            continue;
+        }
+        let (expected, rect) = &found[0];
+        let texts = labels.get(key).map(Vec::as_slice).unwrap_or(&[]);
+        if texts.len() != 1 {
+            failures.push(format!(
+                "{name} has {} rendered value labels (expected exactly 1)",
+                texts.len()
+            ));
+            continue;
+        }
+        let (text, size, tx, ty) = &texts[0];
+        match heatmap_leading_number_with_scale(text) {
+            Some(shown) => {
+                if (shown - expected).abs() > (expected.abs() * 0.01).max(0.05) {
+                    failures.push(format!(
+                        "{name}'s rendered value label '{text}' does not match its cell's data-value {expected}"
+                    ));
+                }
+            }
+            None => failures.push(format!(
+                "{name}'s rendered value label '{text}' has no readable number"
+            )),
+        }
+        let (Some(size), Some(tx), Some(ty), [Some(cx), Some(cy), Some(cw), Some(ch)]) =
+            (size, tx, ty, rect)
+        else {
+            failures.push(format!("{name}'s value label or cell is missing numeric geometry"));
+            continue;
+        };
+        if *size < 12.0 {
+            failures.push(format!("{name}'s value label is {size}px, below 12px"));
+        }
+        if !(*cx <= *tx && *tx <= cx + cw && *cy <= *ty && *ty <= cy + ch) {
+            failures.push(format!("{name}'s value label is outside its cell"));
+        }
+    }
+    for key in labels.keys() {
+        if !cells.contains_key(key) {
+            failures.push(format!(
+                "{} / {} has a rendered value label but no matching heatmap cell in the SVG",
+                key.1, key.0
+            ));
+        }
+    }
+    failures.sort();
+    failures.dedup();
+    failures
+}
+
 /// Validates one manifest's `render_qa_ref`: it must be a safe reference
 /// under `qa_prefix` pointing at an existing JSON file with the known render
 /// QA report schema_version, and for every named viewport, the report's
@@ -1839,6 +1994,7 @@ fn check_render_qa_ref(
     variants: &[(&str, &str)],
     require_passed: bool,
     require_choropleth_value_labels: bool,
+    heatmap_value_labels: bool,
     report: &mut VerificationReport,
 ) {
     if !qa_ref.starts_with(qa_prefix) {
@@ -1948,6 +2104,27 @@ fn check_render_qa_ref(
                     // value_labels.passed boolean alone, even sha256-bound -
                     // independently re-derive the same proof from these SVG
                     // bytes on disk.
+                    // Heatmap (NEWSROOM_HEATMAP_VALUE_LABELS=1): a viewport whose report claims a passing
+                    // value_labels proof is re-derived from these SVG bytes the same way.
+                    if heatmap_value_labels
+                        && qa
+                            .pointer(&format!("/viewports/{viewport}/value_labels/passed"))
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                    {
+                        match fs::read_to_string(&svg_path) {
+                            Ok(svg_text) => {
+                                for failure in verify_heatmap_labels_from_svg(&svg_text) {
+                                    report.error(format!(
+                                        "{name} {viewport} independent value-labels re-derivation failed: {failure}"
+                                    ));
+                                }
+                            }
+                            Err(error) => report.error(format!(
+                                "{name} failed reading {viewport} SVG {svg_reference} for independent value-labels re-derivation: {error}"
+                            )),
+                        }
+                    }
                     if require_choropleth_value_labels {
                         match fs::read_to_string(&svg_path) {
                             Ok(svg_text) => {
@@ -2199,6 +2376,7 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
                 "infographics/qa/",
                 &[("desktop", desktop_ref), ("mobile", mobile_ref)],
                 true,
+                false,
                 false,
                 report,
             );
@@ -4935,6 +5113,122 @@ mod tests {
         manifest["chart_type"] = Value::String("choropleth".to_owned());
         fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
         temp
+    }
+
+    // -----------------------------------------------------------------
+    // heatmap value-labels re-derivation (NEWSROOM_HEATMAP_VALUE_LABELS=1)
+    // -----------------------------------------------------------------
+
+    /// One heatmap cell (value 66.6) with its value label controllable.
+    fn heatmap_cell_svg(label: Option<&str>, font_size: &str, label_x: &str) -> String {
+        let text = label.map(|body| format!(
+            "<text data-role=\"heatmap-cell-value\" data-x=\"2020\" data-y=\"A\" x=\"{label_x}\" y=\"25\" text-anchor=\"middle\" font-size=\"{font_size}\">{body}</text>"
+        )).unwrap_or_default();
+        format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><title>Fixture</title><desc>Fixture heatmap.</desc><rect data-role=\"heatmap-cell\" data-x=\"2020\" data-y=\"A\" data-value=\"66.6\" x=\"10\" y=\"10\" width=\"40\" height=\"30\"/>{text}</svg>"
+        )
+    }
+
+    static HEATMAP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Runs `body` with NEWSROOM_HEATMAP_VALUE_LABELS set (or removed) and restores it afterwards.
+    fn with_heatmap_switch<T>(value: Option<&str>, body: impl FnOnce() -> T) -> T {
+        let _guard = HEATMAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_HEATMAP_VALUE_LABELS").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_HEATMAP_VALUE_LABELS", v),
+            None => std::env::remove_var("NEWSROOM_HEATMAP_VALUE_LABELS"),
+        }
+        let out = body();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_HEATMAP_VALUE_LABELS", v),
+            None => std::env::remove_var("NEWSROOM_HEATMAP_VALUE_LABELS"),
+        }
+        out
+    }
+
+    /// Like build_choropleth_svg_fixture, for a heatmap: the report is honestly sha256-bound to the SVG bytes and
+    /// claims value_labels.passed (`claims_passed`) on both viewports.
+    fn build_heatmap_svg_fixture(svg: &str, claims_passed: bool) -> tempfile::TempDir {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        fs::write(root.join("visualizations/x.svg"), svg).unwrap();
+        fs::write(root.join("visualizations/x.mobile.svg"), svg).unwrap();
+        let sha = sha256_bytes(svg.as_bytes());
+        let qa = render_qa_report_json_choropleth(&sha, &sha, claims_passed);
+        fs::write(root.join("visualizations/qa/x.json"), serde_json::to_string(&qa).unwrap()).unwrap();
+        let manifest_path = root.join("visualizations/x.json");
+        let mut manifest: Value = read_json(&manifest_path).unwrap();
+        manifest["chart_type"] = Value::String("heatmap".to_owned());
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        temp
+    }
+
+    fn heatmap_errors(svg: &str, claims_passed: bool, switch: Option<&str>) -> Vec<String> {
+        let temp = build_heatmap_svg_fixture(svg, claims_passed);
+        with_heatmap_switch(switch, || {
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            report.errors
+        })
+    }
+
+    #[test]
+    fn heatmap_labels_from_svg_passes_when_every_cell_is_labelled_once() {
+        assert_eq!(
+            verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "12", "30")),
+            Vec::<String>::new()
+        );
+        // a zh scale word applies: 6.66 wan is 66600, not 6.66
+        let wan = heatmap_cell_svg(Some("6.7\u{4e07}"), "12", "30").replace("66.6", "66600");
+        assert_eq!(verify_heatmap_labels_from_svg(&wan), Vec::<String>::new());
+    }
+
+    #[test]
+    fn heatmap_labels_from_svg_fails_each_way_a_cell_can_be_unproven() {
+        let missing = verify_heatmap_labels_from_svg(&heatmap_cell_svg(None, "12", "30"));
+        assert!(missing.iter().any(|f| f.contains("0 rendered value labels")), "{missing:?}");
+        let wrong = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("12.3"), "12", "30"));
+        assert!(wrong.iter().any(|f| f.contains("does not match")), "{wrong:?}");
+        let small = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "9", "30"));
+        assert!(small.iter().any(|f| f.contains("below 12px")), "{small:?}");
+        let outside = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "12", "90"));
+        assert!(outside.iter().any(|f| f.contains("outside its cell")), "{outside:?}");
+        let nothing = verify_heatmap_labels_from_svg("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+        assert!(nothing.iter().any(|f| f.contains("no cell with a value")), "{nothing:?}");
+        let orphan = heatmap_cell_svg(Some("66.6"), "12", "30").replace("data-x=\"2020\" data-y=\"A\" x=\"30\"", "data-x=\"2021\" data-y=\"A\" x=\"30\"");
+        assert!(verify_heatmap_labels_from_svg(&orphan).iter().any(|f| f.contains("no matching heatmap cell")));
+    }
+
+    #[test]
+    fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on() {
+        let svg = heatmap_cell_svg(None, "12", "30");
+        let on = heatmap_errors(&svg, true, Some("1"));
+        assert!(on.iter().any(|e| e.contains("independent value-labels re-derivation failed")), "{on:?}");
+        for off in [None, Some("0"), Some("true"), Some("")] {
+            assert_eq!(heatmap_errors(&svg, true, off), Vec::<String>::new(), "switch {off:?}");
+        }
+    }
+
+    #[test]
+    fn heatmap_with_real_labels_or_no_claim_verifies_with_the_switch_on() {
+        let good = heatmap_cell_svg(Some("66.6"), "12", "30");
+        assert_eq!(heatmap_errors(&good, true, Some("1")), Vec::<String>::new());
+        // no claim of a proof: nothing to re-derive, the heatmap verifies as it always did
+        let unlabelled = heatmap_cell_svg(None, "12", "30");
+        assert_eq!(heatmap_errors(&unlabelled, false, Some("1")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on() {
+        let temp = build_heatmap_svg_fixture(&heatmap_cell_svg(Some("66.6"), "12", "30"), true);
+        fs::write(temp.path().join("visualizations/x.svg"), heatmap_cell_svg(Some("66.6"), "12", "31")).unwrap();
+        let errors = with_heatmap_switch(Some("1"), || {
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            report.errors
+        });
+        assert!(errors.iter().any(|e| e.contains("hash does not match")), "{errors:?}");
     }
 
     #[test]
