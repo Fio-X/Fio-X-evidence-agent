@@ -29,6 +29,23 @@ for (const claim of [
   assert.ok(!check(claim).reasons.includes(BLOCK), `must pass: ${claim}`);
 }
 
+// English causal phrases added in the same batch.
+for (const claim of [
+  "Fertility fell due to later marriage",
+  "Higher prices led to weaker demand",
+  "The policy will result in fewer births",
+]) {
+  assert.ok(check(claim).reasons.includes(BLOCK), `must block: ${claim}`);
+}
+for (const claim of [
+  "Totals may not add to 100 due to rounding",
+  "Figures differ from earlier releases due to data revisions",
+  "Some countries are omitted due to missing data",
+  "Germany ranks first in EU imports, about one third of the total.",
+]) {
+  assert.ok(!check(claim).reasons.includes(BLOCK), `must pass: ${claim}`);
+}
+
 // Existing words still block.
 for (const claim of ["导致出生率下降", "战争冲击了供应", "Output was caused by demand"]) {
   assert.ok(check(claim).reasons.includes(BLOCK), `still blocks: ${claim}`);
