@@ -323,6 +323,18 @@ const recorded = (dir) => [...(existsSync(join(dir, "claims.jsonl")) ? ["claims.
   assert.equal(await inlineSourceNote(["data/h.csv"]), "ourworldindata.org: Inflation of consumer prices", "the series name, without its description or unit");
   writeOrigin(dir, "data/f.csv", { origin: "local_file", original_filename: "my-data.csv", sha256: "f" });
   assert.equal(await inlineSourceNote(["data/f.csv"]), "User-supplied file my-data.csv", "a local import names its file");
+  // K167: zh wording only with the switch; off or en stays byte-identical.
+  assert.equal(await inlineSourceNote(["data/f.csv"], "zh"), "User-supplied file my-data.csv", "switch off: zh is unchanged");
+  process.env.NEWSROOM_ZH_SOURCE_LINE = "1";
+  assert.equal(await inlineSourceNote(["data/f.csv"], "zh"), "本地数据文件 my-data.csv", "switch on: zh names the local file in Chinese");
+  assert.equal(await inlineSourceNote(["data/f.csv"], "en"), "User-supplied file my-data.csv", "switch on: en is unchanged");
+  assert.equal(await inlineSourceNote(["data/f.csv"]), "User-supplied file my-data.csv", "switch on: no language is en");
+  process.env.NEWSROOM_ZH_SOURCE_LINE = "true";
+  assert.equal(await inlineSourceNote(["data/f.csv"], "zh"), "User-supplied file my-data.csv", "only exactly 1 turns it on");
+  writeOrigin(dir, "data/b2.csv", { final_url: "https://fred.stlouisfed.org/x.csv", source_label: "Unemployment Rate" });
+  process.env.NEWSROOM_ZH_SOURCE_LINE = "1";
+  assert.equal(await inlineSourceNote(["data/b2.csv"], "zh"), "fred.stlouisfed.org: Unemployment Rate", "a publisher note is not translated");
+  delete process.env.NEWSROOM_ZH_SOURCE_LINE;
   writeOrigin(dir, "data/g.csv", { origin: "local_file" });
   assert.equal(await inlineSourceNote(["data/g.csv"]), null, "a local import without a name");
   check("source note: host and series label of the download record, the name of a supplied file, nothing when no origin names the file");
