@@ -74,7 +74,8 @@ pub struct PromptSpeed {
 const PARALLEL_HINTS_PARAGRAPH: &str = "\n\nParallel tool calls: put tool calls that do not depend on each other in the same assistant message so they run together, for example several candidate sources to fetch_url or download_data, or newsroom_update_plan together with the first research calls. Only split calls across turns when a call's parameters come from an earlier result. The up to three fallback URLs above are independent and can be requested in one turn. Never send the same call twice in one turn.\n";
 
 /// Adjustable: one sentence appended to the chart guidance in the visual delivery contract.
-const EMPHASIS_GUIDANCE: &str = "\nWhen a chart's title names a category or series, put that exact value in highlight_values.";
+const EMPHASIS_GUIDANCE: &str =
+    "\nWhen a chart's title names a category or series, put that exact value in highlight_values.";
 
 /// Adjustable: appended after the complex visual delivery contract only.
 const HERO_STAT_REFERENCE_GUIDANCE: &str = "\nGive each hero_stat a short reference point in its label or detail, such as the same measure in another period, the total, or the next-ranked item, using only numbers from the rows of the claim it cites; if those rows hold none, leave the reference out instead of adding a number.";
@@ -498,15 +499,31 @@ mod tests {
 
     #[test]
     fn chain_switches_add_only_their_own_paragraph() {
-        let off = investigation_with_options("制作一个信息图", &[], false, false, PromptSpeed::default());
-        let viz = PromptSpeed { chain_viz: true, ..PromptSpeed::default() };
-        let page = PromptSpeed { chain_infographic: true, ..PromptSpeed::default() };
+        let off =
+            investigation_with_options("制作一个信息图", &[], false, false, PromptSpeed::default());
+        let viz = PromptSpeed {
+            chain_viz: true,
+            ..PromptSpeed::default()
+        };
+        let page = PromptSpeed {
+            chain_infographic: true,
+            ..PromptSpeed::default()
+        };
         let with_viz = investigation_with_options("制作一个信息图", &[], false, false, viz);
         let with_page = investigation_with_options("制作一个信息图", &[], false, false, page);
         assert_eq!(with_viz.len(), off.len() + CHAIN_VIZ_PARAGRAPH.len());
-        assert_eq!(with_page.len(), off.len() + CHAIN_INFOGRAPHIC_PARAGRAPH.len());
-        assert!(with_viz.contains("newsroom_viz_chain") && !with_viz.contains("newsroom_infographic_chain"));
-        assert!(with_page.contains("newsroom_infographic_chain") && !with_page.contains("newsroom_viz_chain"));
+        assert_eq!(
+            with_page.len(),
+            off.len() + CHAIN_INFOGRAPHIC_PARAGRAPH.len()
+        );
+        assert!(
+            with_viz.contains("newsroom_viz_chain")
+                && !with_viz.contains("newsroom_infographic_chain")
+        );
+        assert!(
+            with_page.contains("newsroom_infographic_chain")
+                && !with_page.contains("newsroom_viz_chain")
+        );
         assert!(off.contains("newsroom_viz_plan") && !off.contains("_chain"));
     }
 

@@ -113,7 +113,9 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         plan_edit: env_switch(PLAN_EDIT_ENV),
         inline_claim: inline_claim_on() && chain_viz,
         plan_patch: exact_one(PLAN_PATCH_ENV) && atomic_artifact_on(),
-        chain_patch: exact_one(CHAIN_PATCH_ENV) && atomic_artifact_on() && exact_one(CHAIN_INFOGRAPHIC_ENV),
+        chain_patch: exact_one(CHAIN_PATCH_ENV)
+            && atomic_artifact_on()
+            && exact_one(CHAIN_INFOGRAPHIC_ENV),
         report_all: exact_one(REPORT_ALL_ENV),
         fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
         first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
@@ -1924,7 +1926,10 @@ mod tests {
         let mut config = visual_story_config(false, "investigate");
         assert!(speed_switches_from_env().plan_edit);
         assert_eq!(edit_marker(&config), Some(None));
-        assert!(!config.tools_arg().split(',').any(|name| name == PLAN_EDIT_TOOL));
+        assert!(!config
+            .tools_arg()
+            .split(',')
+            .any(|name| name == PLAN_EDIT_TOOL));
         config.speed.plan_edit = true;
         assert_eq!(edit_marker(&config), Some(Some("1".to_string())));
         std::env::remove_var(PLAN_EDIT_ENV);
@@ -2256,12 +2261,22 @@ mod tests {
             ..Default::default()
         };
         let mut cases = std::collections::BTreeMap::new();
-        for profile in ["investigate", "visual", "publication", "visual-story", "competition", "full"] {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "visual-story",
+            "competition",
+            "full",
+        ] {
             for hide in [false, true] {
                 for (mode, speed) in [("older-off", Default::default()), ("older-on", older_on)] {
                     let mut config = visual_story_config(hide, profile);
                     config.speed = speed;
-                    cases.insert(format!("{profile}/{mode}/hide-lieflat={hide}"), config.tools_arg());
+                    cases.insert(
+                        format!("{profile}/{mode}/hide-lieflat={hide}"),
+                        config.tools_arg(),
+                    );
                 }
             }
         }
@@ -2275,21 +2290,34 @@ mod tests {
             std::fs::write(path, serde_json::to_string_pretty(&cases).unwrap() + "\n").unwrap();
             return;
         }
-        let golden: std::collections::BTreeMap<String, String> = serde_json::from_str(
-            include_str!("../fixtures/speed-off/tools-arg-8a75560.json"),
-        )
-        .unwrap();
+        let golden: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(include_str!("../fixtures/speed-off/tools-arg-8a75560.json"))
+                .unwrap();
         assert_eq!(cases, golden);
     }
 
     #[test]
     fn patch_tools_are_offered_only_with_their_switch_and_the_tool_they_wrap() {
-        for profile in ["investigate", "visual", "publication", "competition", "full", "visual-story"] {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+        ] {
             let mut base = visual_story_config(false, profile);
             base.speed.chain_infographic = true;
             let without = base.tools_arg();
-            let names = |c: &PiConfig| c.tools_arg().split(',').map(str::to_string).collect::<Vec<_>>();
-            assert!(!names(&base).iter().any(|n| n == PLAN_PATCH_TOOL || n == CHAIN_PATCH_TOOL));
+            let names = |c: &PiConfig| {
+                c.tools_arg()
+                    .split(',')
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            };
+            assert!(!names(&base)
+                .iter()
+                .any(|n| n == PLAN_PATCH_TOOL || n == CHAIN_PATCH_TOOL));
             let mut on = base.clone();
             on.speed.plan_patch = true;
             on.speed.chain_patch = true;
@@ -2303,16 +2331,28 @@ mod tests {
             // The chain patch needs the page chain itself to be offered.
             let mut no_chain = on.clone();
             no_chain.speed.chain_infographic = false;
-            assert!(!names(&no_chain).iter().any(|n| n == CHAIN_PATCH_TOOL), "{profile}");
+            assert!(
+                !names(&no_chain).iter().any(|n| n == CHAIN_PATCH_TOOL),
+                "{profile}"
+            );
         }
     }
 
     #[test]
     fn the_five_patch_era_switches_are_owned_like_preflight() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let all = [PLAN_PATCH_ENV, CHAIN_PATCH_ENV, REPORT_ALL_ENV, FILL_COPIED_REFS_ENV, FIRST_TRY_TEXT_ENV];
+        let all = [
+            PLAN_PATCH_ENV,
+            CHAIN_PATCH_ENV,
+            REPORT_ALL_ENV,
+            FILL_COPIED_REFS_ENV,
+            FIRST_TRY_TEXT_ENV,
+        ];
         let clear = || {
-            for k in all.iter().chain([&ATOMIC_ARTIFACT_ENV, &CHAIN_INFOGRAPHIC_ENV]) {
+            for k in all
+                .iter()
+                .chain([&ATOMIC_ARTIFACT_ENV, &CHAIN_INFOGRAPHIC_ENV])
+            {
                 std::env::remove_var(k);
             }
         };
@@ -2340,7 +2380,10 @@ mod tests {
         assert!(speed.report_all && speed.fill_copied_refs && speed.first_try_text);
         std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
         let speed = speed_switches_from_env();
-        assert!(speed.plan_patch && !speed.chain_patch, "chain patch needs the page chain");
+        assert!(
+            speed.plan_patch && !speed.chain_patch,
+            "chain patch needs the page chain"
+        );
         std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
         assert!(speed_switches_from_env().chain_patch);
         for value in ["true", "0", "", "yes"] {
@@ -2349,7 +2392,11 @@ mod tests {
             }
             let speed = speed_switches_from_env();
             assert!(
-                !speed.plan_patch && !speed.chain_patch && !speed.report_all && !speed.fill_copied_refs && !speed.first_try_text,
+                !speed.plan_patch
+                    && !speed.chain_patch
+                    && !speed.report_all
+                    && !speed.fill_copied_refs
+                    && !speed.first_try_text,
                 "{value:?}"
             );
         }
