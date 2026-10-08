@@ -18,6 +18,7 @@ const BASELINE_REF = "bc1ccfd";
 const SWITCHES = {
   NEWSROOM_SPEED_PARALLEL_HINTS: ["newsroom_update_plan", "fetch_url", "download_data"],
   NEWSROOM_SPEED_COMPUTE_BATCH: ["duckdb_query", "record_claim"],
+  NEWSROOM_SPEED_PLAN_PROGRESS: ["newsroom_update_plan"],
 };
 const ALL_SWITCHES = Object.keys(SWITCHES);
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
@@ -108,9 +109,12 @@ try {
   assert.match(batch.get("record_claim").promptGuidelines.at(-1), /computation_ref/);
   assert.equal(visible(batch.get("fetch_url")), visible(definitions(baseline, "investigate", []).get("fetch_url")), "compute batch leaves research tools alone (fetch_url has no listed change)");
   const both = definitions(current, "investigate", ALL_SWITCHES);
-  for (const name of Object.values(SWITCHES).flat()) {
-    assert.equal(both.get(name).promptGuidelines.length, (definitions(current, "investigate", []).get(name).promptGuidelines ?? []).length + 1, `${name}: both switches add one sentence each`);
+  for (const name of new Set(Object.values(SWITCHES).flat())) {
+    const added = Object.values(SWITCHES).filter((tools) => tools.includes(name)).length;
+    assert.equal(both.get(name).promptGuidelines.length, (definitions(current, "investigate", []).get(name).promptGuidelines ?? []).length + added, `${name}: each switch that names it adds one sentence`);
   }
+  const progress = definitions(current, "investigate", ["NEWSROOM_SPEED_PLAN_PROGRESS"]);
+  assert.match(progress.get("newsroom_update_plan").promptGuidelines.at(-1), /recorded by the program/);
   console.log(JSON.stringify({ status: "PASS", definitions_compared: compared }));
 } finally {
   rmSync(tmp, { recursive: true, force: true });
