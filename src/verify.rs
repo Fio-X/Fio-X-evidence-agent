@@ -829,7 +829,10 @@ fn collect_sql_reads(ast: &Value) -> SqlReads {
 const DERIVED_PREFIX: &str = "data/derived/";
 
 fn is_hex64(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// `data/derived/<sha>.pdf-rows.json` -> `<sha>` when the path has that shape.
@@ -845,7 +848,8 @@ fn derived_rows_sha(path: &str) -> Option<&str> {
 /// Returns the source PDF path on success.
 fn verify_derived_input(root: &Path, path: &str) -> std::result::Result<String, String> {
     let sha = derived_rows_sha(path).ok_or("not a recognised derived table path")?;
-    let rows_hash = sha256_file(&root.join(path)).map_err(|e| format!("derived table unreadable: {e}"))?;
+    let rows_hash =
+        sha256_file(&root.join(path)).map_err(|e| format!("derived table unreadable: {e}"))?;
     let meta_path = root.join(path.trim_end_matches(".json").to_owned() + ".meta.json");
     let meta = read_json(&meta_path).map_err(|e| format!("derived metadata unreadable: {e}"))?;
     let text = |key: &str| meta.get(key).and_then(Value::as_str).unwrap_or("");
@@ -859,26 +863,41 @@ fn verify_derived_input(root: &Path, path: &str) -> std::result::Result<String, 
         return Err("derived table is not named for its source sha256".into());
     }
     let source = text("source_file");
-    let in_data = source.strip_prefix("data/").is_some_and(|rest| !rest.contains('/'));
-    if !in_data || !source.rsplit('/').next().unwrap_or("").starts_with(&format!("{sha}.")) {
+    let in_data = source
+        .strip_prefix("data/")
+        .is_some_and(|rest| !rest.contains('/'));
+    if !in_data
+        || !source
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .starts_with(&format!("{sha}."))
+    {
         return Err("source_file is not the content-addressed PDF".into());
     }
-    let source_hash = sha256_file(&root.join(source)).map_err(|e| format!("source PDF unreadable: {e}"))?;
+    let source_hash =
+        sha256_file(&root.join(source)).map_err(|e| format!("source PDF unreadable: {e}"))?;
     if source_hash != sha {
         return Err("source PDF bytes do not match source_sha256".into());
     }
-    let origins = fs::read_dir(root.join("data").join("origins")).map_err(|e| format!("no download records: {e}"))?;
+    let origins = fs::read_dir(root.join("data").join("origins"))
+        .map_err(|e| format!("no download records: {e}"))?;
     for entry in origins.flatten() {
         let origin_path = entry.path();
         if origin_path.extension().and_then(|v| v.to_str()) != Some("json") {
             continue;
         }
-        let Ok(origin) = read_json(&origin_path) else { continue };
+        let Ok(origin) = read_json(&origin_path) else {
+            continue;
+        };
         let derived = origin.get("derived_text");
         if origin.get("file").and_then(Value::as_str) == Some(source)
             && origin.get("sha256").and_then(Value::as_str) == Some(sha)
             && derived.and_then(|d| d.get("file")).and_then(Value::as_str) == Some(path)
-            && derived.and_then(|d| d.get("rows_sha256")).and_then(Value::as_str) == Some(rows_hash.as_str())
+            && derived
+                .and_then(|d| d.get("rows_sha256"))
+                .and_then(Value::as_str)
+                == Some(rows_hash.as_str())
         {
             return Ok(source.to_owned());
         }
@@ -889,7 +908,9 @@ fn verify_derived_input(root: &Path, path: &str) -> std::result::Result<String, 
 /// Every table under data/derived/ must pass the chain check, so an altered
 /// or orphaned derived file is reported even when no computation reads it.
 fn verify_derived_tables(root: &Path, report: &mut VerificationReport) {
-    let Ok(entries) = fs::read_dir(root.join("data").join("derived")) else { return };
+    let Ok(entries) = fs::read_dir(root.join("data").join("derived")) else {
+        return;
+    };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.ends_with(".pdf-rows.meta.json") {
@@ -897,7 +918,9 @@ fn verify_derived_tables(root: &Path, report: &mut VerificationReport) {
         }
         let rel = format!("{DERIVED_PREFIX}{name}");
         if let Err(reason) = verify_derived_input(root, &rel) {
-            report.error(format!("derived table {rel} failed its provenance chain: {reason}"));
+            report.error(format!(
+                "derived table {rel} failed its provenance chain: {reason}"
+            ));
         }
     }
 }
@@ -1340,7 +1363,9 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                     || viz_hashes
                         .map(|h| h.contains_key("compact_sha256"))
                         .unwrap_or(false),
-                format!("visualization {name} lists a compact variant without hashes.compact_sha256"),
+                format!(
+                    "visualization {name} lists a compact variant without hashes.compact_sha256"
+                ),
             );
             for viewport in ["desktop", "mobile", "compact"] {
                 if viewport != "desktop" && !variants.contains_key(viewport) {
@@ -1422,7 +1447,8 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             if draft {
                 // A listed compact variant is never exempt from render QA.
                 report.check(
-                    !render_qa_ref.is_empty() || !variants.map(|v| v.contains_key("compact")).unwrap_or(false),
+                    !render_qa_ref.is_empty()
+                        || !variants.map(|v| v.contains_key("compact")).unwrap_or(false),
                     format!("visualization {name} lists a compact variant without a render_qa_ref"),
                 );
                 if !render_qa_ref.is_empty() {
@@ -4539,7 +4565,8 @@ mod tests {
 
     fn rewrite_viz_manifest(temp: &tempfile::TempDir, edit: impl FnOnce(&mut Value)) {
         let path = temp.path().join("visualizations/x.json");
-        let mut manifest: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         edit(&mut manifest);
         fs::write(path, serde_json::to_string(&manifest).unwrap()).unwrap();
     }
@@ -4585,7 +4612,10 @@ mod tests {
     fn compact_variant_without_compact_sha256_fails_closed() {
         let temp = build_compact_fixture();
         rewrite_viz_manifest(&temp, |m| {
-            m["hashes"].as_object_mut().unwrap().remove("compact_sha256");
+            m["hashes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("compact_sha256");
         });
         let errors = compact_errors(&temp);
         assert!(
@@ -4615,7 +4645,9 @@ mod tests {
         fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
         let errors = compact_errors(&temp);
         assert!(
-            errors.iter().any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
+            errors
+                .iter()
+                .any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
             "{errors:?}"
         );
     }
@@ -4629,7 +4661,9 @@ mod tests {
         fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
         let errors = compact_errors(&temp);
         assert!(
-            errors.iter().any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
+            errors
+                .iter()
+                .any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
             "{errors:?}"
         );
     }
@@ -6730,7 +6764,12 @@ mod tests {
         let temp = build_infographic_fixture(true, true);
         set_infographic_claim_ids(temp.path(), &[]);
         let errors = infographic_errors(temp.path());
-        assert!(!errors.iter().any(|e| e.contains("claim_id is not verified")), "{errors:?}");
+        assert!(
+            !errors
+                .iter()
+                .any(|e| e.contains("claim_id is not verified")),
+            "{errors:?}"
+        );
     }
 
     fn claim_line(claim_id: &str, status: &str) -> String {
@@ -6753,7 +6792,10 @@ mod tests {
     }
 
     fn write_claim_lines(root: &Path, lines: &[(&str, &str)]) {
-        let text: String = lines.iter().map(|(id, status)| format!("{}\n", claim_line(id, status))).collect();
+        let text: String = lines
+            .iter()
+            .map(|(id, status)| format!("{}\n", claim_line(id, status)))
+            .collect();
         fs::write(root.join("claims.jsonl"), text).unwrap();
     }
 
@@ -6768,7 +6810,9 @@ mod tests {
         );
         write_claim_lines(temp.path(), &[("c-x", "contested"), ("c-x", "verified")]);
         assert!(
-            !infographic_errors(temp.path()).iter().any(|e| e.contains("claim_id is not verified")),
+            !infographic_errors(temp.path())
+                .iter()
+                .any(|e| e.contains("claim_id is not verified")),
             "contested then verified must count as verified"
         );
     }
@@ -6778,10 +6822,15 @@ mod tests {
         let temp = build_viz_fixture(true, true);
         let id = "claim-render-qa-fixture";
         write_claim_lines(temp.path(), &[(id, "verified"), (id, "contested")]);
-        assert_error(&viz_errors(temp.path()), &format!("claim_id is not verified: {id}"));
+        assert_error(
+            &viz_errors(temp.path()),
+            &format!("claim_id is not verified: {id}"),
+        );
         write_claim_lines(temp.path(), &[(id, "contested"), (id, "verified")]);
         assert!(
-            !viz_errors(temp.path()).iter().any(|e| e.contains("claim_id is not verified")),
+            !viz_errors(temp.path())
+                .iter()
+                .any(|e| e.contains("claim_id is not verified")),
             "contested then verified must count as verified"
         );
     }
@@ -6800,7 +6849,10 @@ mod tests {
     fn verify_claims_refuses_a_record_without_a_claim_id() {
         let temp = tempfile::tempdir().unwrap();
         let good = claim_line("c-x", "verified");
-        write_claims_text(temp.path(), &format!("{good}\n{{\"status\":\"contested\"}}\n"));
+        write_claims_text(
+            temp.path(),
+            &format!("{good}\n{{\"status\":\"contested\"}}\n"),
+        );
         assert_error(
             &claims_errors(temp.path()),
             "claims.jsonl line 2 is not a claim record with a non-empty string claim_id",
@@ -6871,7 +6923,10 @@ mod tests {
                 serde_json::json!({"claim_id": id, "status": "verified"})
             ),
         );
-        assert_error(&viz_errors(viz.path()), &format!("claim_id is not verified: {id}"));
+        assert_error(
+            &viz_errors(viz.path()),
+            &format!("claim_id is not verified: {id}"),
+        );
     }
 
     #[test]
@@ -7223,7 +7278,13 @@ mod tests {
             "derived_text": { "file": rows_path, "rows_sha256": rows_sha },
         });
         fs::write(&origin_path, origin.to_string()).unwrap();
-        DerivedFixture { temp, sha, rows_path, meta_path, origin_path }
+        DerivedFixture {
+            temp,
+            sha,
+            rows_path,
+            meta_path,
+            origin_path,
+        }
     }
 
     fn rewrite_json(path: &Path, edit: impl FnOnce(&mut Value)) {
@@ -7233,7 +7294,8 @@ mod tests {
     }
 
     fn derived_error(fixture: &DerivedFixture) -> String {
-        verify_derived_input(fixture.temp.path(), &fixture.rows_path).expect_err("tampered chain must fail")
+        verify_derived_input(fixture.temp.path(), &fixture.rows_path)
+            .expect_err("tampered chain must fail")
     }
 
     #[test]
@@ -7261,7 +7323,10 @@ mod tests {
     fn derived_input_rejects_missing_origin() {
         let fixture = derived_fixture();
         fs::remove_file(&fixture.origin_path).unwrap();
-        assert_eq!(derived_error(&fixture), "no download record binds this table to the PDF");
+        assert_eq!(
+            derived_error(&fixture),
+            "no download record binds this table to the PDF"
+        );
     }
 
     #[test]
@@ -7270,36 +7335,66 @@ mod tests {
         rewrite_json(&fixture.origin_path, |origin| {
             origin.as_object_mut().unwrap().remove("derived_text");
         });
-        assert_eq!(derived_error(&fixture), "no download record binds this table to the PDF");
+        assert_eq!(
+            derived_error(&fixture),
+            "no download record binds this table to the PDF"
+        );
     }
 
     #[test]
     fn derived_input_rejects_edited_rows_bytes() {
         let fixture = derived_fixture();
-        fs::write(fixture.temp.path().join(&fixture.rows_path), br#"[{"page":1,"line":1,"x":0,"text":"Alphx  10"}]"#).unwrap();
-        assert_eq!(derived_error(&fixture), "derived table bytes do not match rows_sha256");
+        fs::write(
+            fixture.temp.path().join(&fixture.rows_path),
+            br#"[{"page":1,"line":1,"x":0,"text":"Alphx  10"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            derived_error(&fixture),
+            "derived table bytes do not match rows_sha256"
+        );
     }
 
     #[test]
     fn derived_input_rejects_a_changed_source_pdf() {
         let fixture = derived_fixture();
-        fs::write(fixture.temp.path().join(format!("data/{}.data", fixture.sha)), b"%PDF-1.4 tampered").unwrap();
-        assert_eq!(derived_error(&fixture), "source PDF bytes do not match source_sha256");
+        fs::write(
+            fixture
+                .temp
+                .path()
+                .join(format!("data/{}.data", fixture.sha)),
+            b"%PDF-1.4 tampered",
+        )
+        .unwrap();
+        assert_eq!(
+            derived_error(&fixture),
+            "source PDF bytes do not match source_sha256"
+        );
     }
 
     #[test]
     fn derived_input_rejects_a_wrong_source_sha() {
         let fixture = derived_fixture();
-        rewrite_json(&fixture.meta_path, |meta| meta["source_sha256"] = Value::from("0".repeat(64)));
-        assert_eq!(derived_error(&fixture), "derived table is not named for its source sha256");
+        rewrite_json(&fixture.meta_path, |meta| {
+            meta["source_sha256"] = Value::from("0".repeat(64))
+        });
+        assert_eq!(
+            derived_error(&fixture),
+            "derived table is not named for its source sha256"
+        );
     }
 
     #[test]
     fn derived_input_rejects_a_rows_file_that_names_another_table() {
         let fixture = derived_fixture();
         let other = format!("data/derived/{}.pdf-rows.json", "1".repeat(64));
-        rewrite_json(&fixture.meta_path, |meta| meta["rows_file"] = Value::from(other));
-        assert_eq!(derived_error(&fixture), "derived metadata does not describe this table");
+        rewrite_json(&fixture.meta_path, |meta| {
+            meta["rows_file"] = Value::from(other)
+        });
+        assert_eq!(
+            derived_error(&fixture),
+            "derived metadata does not describe this table"
+        );
     }
 
     #[test]
@@ -7314,8 +7409,14 @@ mod tests {
         ] {
             let fixture = derived_fixture();
             let source = source.replace(&"a".repeat(64), &fixture.sha);
-            rewrite_json(&fixture.meta_path, |meta| meta["source_file"] = Value::from(source.clone()));
-            assert_eq!(derived_error(&fixture), "source_file is not the content-addressed PDF", "{source}");
+            rewrite_json(&fixture.meta_path, |meta| {
+                meta["source_file"] = Value::from(source.clone())
+            });
+            assert_eq!(
+                derived_error(&fixture),
+                "source_file is not the content-addressed PDF",
+                "{source}"
+            );
         }
     }
 
@@ -7328,6 +7429,8 @@ mod tests {
         fs::remove_file(&fixture.origin_path).unwrap();
         verify_derived_tables(fixture.temp.path(), &mut report);
         assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
-        assert!(report.errors[0].contains("failed its provenance chain: no download record binds this table to the PDF"));
+        assert!(report.errors[0].contains(
+            "failed its provenance chain: no download record binds this table to the PDF"
+        ));
     }
 }

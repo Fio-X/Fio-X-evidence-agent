@@ -57,8 +57,7 @@ const MAP_SPEC_RUNTIME: &str = include_str!("../runtime/pi/map_spec.mjs");
 const SCIENTIFIC_MAP_RUNTIME: &str = include_str!("../runtime/pi/scientific_map.mjs");
 const BASEMAP_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/basemap_registry.mjs");
 const FLOW_LAYOUT_RUNTIME: &str = include_str!("../runtime/pi/flow_layout.mjs");
-const MAP_REFERENCE_LAYERS_RUNTIME: &str =
-    include_str!("../runtime/pi/map_reference_layers.mjs");
+const MAP_REFERENCE_LAYERS_RUNTIME: &str = include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
 const ASOF_PROBE_RUNTIME: &str = include_str!("../runtime/pi/asof_probe.mjs");
@@ -339,7 +338,10 @@ mod tests {
             "shadow.mjs",
             "tool_chain.mjs",
         ] {
-            assert!(root.path().join("runtime").join(module).is_file(), "{module} missing");
+            assert!(
+                root.path().join("runtime").join(module).is_file(),
+                "{module} missing"
+            );
         }
         assert!(root
             .path()
