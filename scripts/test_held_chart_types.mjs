@@ -42,6 +42,7 @@ let imports = 0;
 async function tools(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_")) delete process.env[key];
   process.env.NEWSROOM_TOOL_PROFILE = "full";
+  process.env.NEWSROOM_HELD_CHART_TYPES = "1"; // the hold is default off; this test is about the hold
   Object.assign(process.env, env);
   const out = new Map();
   const mod = await import(`${pathToFileURL(COPY).href}?v=${++imports}`);
@@ -185,4 +186,12 @@ assert.throws(() => revertHeldChartTypes({ ...planNow, promptGuidelines: [...pla
 assert.throws(() => revertHeldChartTypes({ ...chainNow, description: chainNow.description + " " + HELD_CHART_TYPE_EDITS.description[0].after }), /'description: plan tool' 1 time\(s\), expected 0/, "the chain must not carry the plan's description edit");
 assert.throws(() => revertHeldChartTypes({ ...planNow, parameters: { ...planNow.parameters, extra: [...KEPT] } }), /'enum' 2 time\(s\), expected 1/, "an extra copy of the enum edit is refused");
 assert.equal(revertHeldChartTypes({ name: "other_tool", parameters: {} }).name, "other_tool", "other tools are returned as they are");
+// default off: with the switch unset, or anything but exact "1", no chart type is held and no CHART_TYPE_HELD is raised
+for (const value of [undefined, "0", "true"]) {
+  const plain = await tools({ NEWSROOM_HELD_CHART_TYPES: value });
+  const plainPlan = plain.get("newsroom_viz_plan");
+  for (const type of HELD_CHART_TYPES) assert.ok(JSON.stringify(plainPlan.parameters).includes(`"${type}"`), `switch ${value}: ${type} is offered`);
+  const message = await plainPlan.execute("t", { chart_type: HELD_CHART_TYPES[0], sql: "SELECT 1" }).then(() => "", (error) => error.message);
+  assert.ok(!/CHART_TYPE_HELD|PLAN_VALUE_HELD/.test(message), `switch ${value}: no held refusal`);
+}
 console.log("held chart types: ok");
