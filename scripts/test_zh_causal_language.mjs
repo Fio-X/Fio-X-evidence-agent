@@ -14,6 +14,9 @@ for (const claim of [
   "补贴退坡促使新能源车销量增速放缓",
   "这一波降温主要是极端天气所致",
   "人口流出源于就业机会减少",
+  "由于调整关税，进口骤降",
+  "由于修订税率，进口骤降",
+  "增长主要源于出口",
 ]) {
   assert.ok(check(claim).reasons.includes(BLOCK), `must block: ${claim}`);
 }
@@ -23,6 +26,10 @@ for (const claim of [
   "由于统计口径调整，2019 年起不可比",
   "由于四舍五入，合计不等于 100%",
   "由于数据缺失，2020 年部分国家未列入",
+  "数据源于国家统计局",
+  "数据来源于国家统计局",
+  "本图数据源于联合国人口司",
+  "由于数据修订，2019 年数值有变",
   "2023 年出生率为 6.4‰，较 2013 年下降 3.2 个千分点",
   "德国进口量居欧盟第一，占进口总量的三分之一左右",
 ]) {
@@ -34,6 +41,7 @@ for (const claim of [
   "Fertility fell due to later marriage",
   "Higher prices led to weaker demand",
   "The policy will result in fewer births",
+  "Imports fell due to revisions to the tariff code",
 ]) {
   assert.ok(check(claim).reasons.includes(BLOCK), `must block: ${claim}`);
 }
@@ -41,6 +49,7 @@ for (const claim of [
   "Totals may not add to 100 due to rounding",
   "Figures differ from earlier releases due to data revisions",
   "Some countries are omitted due to missing data",
+  "Figures differ due to data revisions",
   "Germany ranks first in EU imports, about one third of the total.",
 ]) {
   assert.ok(!check(claim).reasons.includes(BLOCK), `must pass: ${claim}`);
