@@ -500,7 +500,7 @@ console.log("stacked_bar_100: segment names (once, centred, above the first bar)
   }
   assert.equal(byFill.size, 5, "all five fills carry labels");
   assert.deepEqual([...byFill].map(([fill, text]) => `${fill.toLowerCase()}:${text}`).sort(), [
-    "#666666:#ffffff", "#757575:#ffffff", "#9e9e9e:#1a1a1a", "#bdbdbd:#1a1a1a", "#d0021b:#ffffff",
+    "#404040:#ffffff", "#646464:#ffffff", "#8b8b8b:#1a1a1a", "#b9b9b9:#1a1a1a", "#d0021b:#ffffff",
   ], "white on the accent and the dark greys, ink on the mid and light greys");
 
   // Sweep one thin segment from 1.0% to 6.0% in 0.1 steps: its label appears exactly when it fits.
