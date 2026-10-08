@@ -6507,7 +6507,7 @@ function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
     const keepN=Math.min(geo.rows.length,keepTop??Infinity);
     if(keepN<pos.length){
       const keep=new Set(geo.order.slice(0,keepN).map(o=>o.i)), left_=pos.filter((_,i)=>!keep.has(i));
-      flowCut={count:left_.length,sum:left_.reduce((a,r)=>a+(n(r[spec.value_field])??0),0)};
+      flowCut={count:left_.length};
       routeRows=routeRows.filter(r=>!left_.includes(r));
     }
   }
@@ -6588,7 +6588,7 @@ function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,f
   parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${startT}</text><text x="${left+(zh?42:62)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">→</text><circle cx="${left+(zh?64:82)}" cy="${keyY-3}" r="3.5" fill="${PALETTE.accent}"/><text x="${left+(zh?71:89)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${endT}</text><text x="${left+(zh?112:150)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${widthT}</text>${sw.join('')}</g>`);
   const note=String(spec.route_provenance_note??'').trim(),disclosure=zh?`弧线表示起点与终点之间的关系，不代表实际运输路线。${note?` ${note}`:''}`:geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??'');
   parts.push(`<text data-role="cartographic-disclosure" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.muted}">${esc(disclosure)}</text>`);
-  const n=flowRoutes.length,cutT=flowCut?(zh?`；另有 ${flowCut.count} 条放不下未画，合计 ${fmtSpec(spec,flowCut.sum,'')}${spec.unit?` ${spec.unit}`:''}`:`; ${flowCut.count} more do not fit and are not drawn, ${fmtSpec(spec,flowCut.sum,'')}${spec.unit?` ${spec.unit}`:''} in total`):'',drawn=(zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`))+cutT;
+  const n=flowRoutes.length,cutT=flowCut?(zh?`；另有 ${flowCut.count} 条放不下未画`:`; ${flowCut.count} more do not fit and are not drawn`):'',drawn=(zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`))+cutT;
   const bm=getBasemap(spec.basemap_id),credit=zh?`底图：${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'按数据范围':'世界范围'}`:`${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}`;
   parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+58}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(drawn)} · ${esc(credit)}</text>`);
   if(flowOut?.overflow)parts.push(`<text x="${left}" y="${bottom+76}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(flowOut.overflow)}</text>`);
