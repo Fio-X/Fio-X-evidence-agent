@@ -36,6 +36,49 @@ export function widthSamples(max) {
   return [...new Set([max * 0.9, max * 0.3, max * 0.1].map(nice).filter((v) => v > 0))].sort((a, b) => b - a);
 }
 
+// Which label style a map gets, from its data. A star (every flow shares one origin or one destination) of at most
+// 8 flows reads best with names beside the dots; everything else gets the numbered ledger. A requested style is kept
+// when it fits; a "leader" that does not fit falls back to the ledger with a reason (a lint warning, never an error).
+export function flowMapStyleFor(pairs, requested) {
+  const n = pairs.length, srcs = new Set(pairs.map((p) => p[0])), tgts = new Set(pairs.map((p) => p[1]));
+  const star = n >= 1 && (srcs.size === 1 || tgts.size === 1), fits = star && n <= 8, auto = fits ? "leader" : "ledger";
+  if (!FLOW_MAP_LABEL_STYLES.includes(requested)) return { style: auto, reason: null };
+  if (requested === "leader" && !fits) return { style: "ledger", reason: `flow_map_labels 'leader' fits only a star of at most 8 flows (every flow shares one origin or one destination); this map has ${n} flows${star ? "" : " with no shared end"}, so the ledger style is used` };
+  return { style: requested, reason: null };
+}
+// The end every flow shares, when there are at least two flows and one end is common to all of them.
+export function sharedEnd(routes) {
+  if (routes.length < 2) return null;
+  const tgts = new Set(routes.map((r) => r.targetName)), srcs = new Set(routes.map((r) => r.sourceName));
+  if (tgts.size === 1) return { side: "target", name: routes[0].targetName };
+  if (srcs.size === 1) return { side: "source", name: routes[0].sourceName };
+  return null;
+}
+// Numbers for rows in rank order (values descending). Adjacent rows with different values never print the same text:
+// when two would, every row gains one decimal, then at most one more. The unit is not part of the text.
+export function flowNumberTexts(spec, values, fmtSpec) {
+  const texts = (d) => values.map((v) => fmtSpec(spec, v, "", d));
+  const collide = (t) => t.some((x, i) => i > 0 && values[i] !== values[i - 1] && x === t[i - 1]);
+  let t = texts(null);
+  if (!collide(t)) return t;
+  const n0 = Math.max(0, ...t.map((x) => (/\.(\d+)/.exec(x)?.[1].length ?? 0)));
+  for (let d = n0 + 1; d <= n0 + 2; d++) { t = texts(d); if (!collide(t)) break; }
+  return t;
+}
+// Wrap a name onto lines of at most maxW, breaking after an arrow when one is near; never truncates.
+function wrapName(text, maxW, wUnits) {
+  const lines = []; let cur = "";
+  for (const ch of [...text]) {
+    if (cur && wUnits(cur + ch) > maxW) {
+      const k = cur.lastIndexOf("→");
+      if (k >= 0 && k < cur.length - 1) { lines.push(cur.slice(0, k + 1)); cur = cur.slice(k + 1); } else { lines.push(cur); cur = ""; }
+    }
+    cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 function sampleArc(a, c, b, step = 2.5) {
   const len = Math.hypot(c.x - a.x, c.y - a.y) + Math.hypot(b.x - c.x, b.y - c.y);
   const n = Math.max(12, Math.ceil(len / step)), pts = [];
@@ -67,7 +110,7 @@ function segHitsRect(p, q, r) {
 
 export function layoutFlowMapLabels(ctx) {
   const { spec, routes, bounds, esc, textUnits, fmtSpec, PALETTE, FONT_SANS, zh } = ctx;
-  const style = spec.flow_map_labels, font = 12.5;
+  const style = ctx.style ?? spec.flow_map_labels, font = 12.5;
   const arcs = routes.map((r) => ({ ...r, pts: sampleArc(r.a, r.control, r.b), hw: r.sw / 2 }));
   // Round obstacles: every node dot, and each arrowhead.
   const dots = [];
@@ -79,8 +122,14 @@ export function layoutFlowMapLabels(ctx) {
   const diag = { style, arcs: routes.length, names_placed: 0, names_overflow: [], badges_placed: 0, badges_unplaced: [], leader_crossings: 0 };
   const parts = [];
 
+  const wUnits = (t) => textUnits(t) * font * 0.56;
+  // One shared decimal count, so adjacent ranks never print the same number (values arrive in rank order).
+  const numByValue = new Map();
+  { const sorted = [...new Set(arcs.map((a) => a.value))].sort((x, y) => y - x); const texts = flowNumberTexts(spec, sorted, fmtSpec); sorted.forEach((v, k) => numByValue.set(v, texts[k])); }
+  const shared = sharedEnd(routes);
+
   if (style === "ledger") {
-    const placedDiscs = [];
+    const placedDiscs = [], leaders = [];
     const discFree = (c) => {
       if (c.x - BADGE_R < bounds.left + 2 || c.x + BADGE_R > bounds.right - 2 || c.y - BADGE_R < bounds.top + 2 || c.y + BADGE_R > bounds.bottom - 2) return false;
       if (arcs.some((arc) => arc.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) <= arc.hw + STROKE_PAD + BADGE_R + 1))) return false;
@@ -89,45 +138,73 @@ export function layoutFlowMapLabels(ctx) {
     };
     const order = arcs.map((arc, i) => ({ arc, i })).sort((p, q) => q.arc.value - p.arc.value);
     const rank = new Map(order.map((o, k) => [o.i, k + 1]));
-    for (const { arc, i } of order) {
-      const side = arc.hw + STROKE_PAD + BADGE_R + 3;
-      const cands = [];
-      for (const p of arc.pts) {
-        if (p.t < 0.02 || p.t > 0.98) continue;
-        const j = Math.min(arc.pts.indexOf(p) + 1, arc.pts.length - 1), k = Math.max(arc.pts.indexOf(p) - 1, 0);
-        const dx = arc.pts[j].x - arc.pts[k].x, dy = arc.pts[j].y - arc.pts[k].y, len = Math.hypot(dx, dy) || 1;
-        for (const sgn of [1, -1]) cands.push({ x: p.x + (-dy / len) * side * sgn, y: p.y + (dx / len) * side * sgn, score: Math.min(p.t, 1 - p.t) + (p.t > 0.5 ? 0.05 : 0) });
+    // Ledger rows first: the name wraps, the number never does (right-aligned on the row's first line).
+    const px = LEDGER_PANEL_X, pr = 980;
+    const rowsM = order.map(({ arc, i }) => ({ arc, i, n: rank.get(i), num: numByValue.get(arc.value), name: shared ? (shared.side === "target" ? arc.sourceName : arc.targetName) : `${arc.sourceName}→${arc.targetName}` }));
+    const numW = Math.max(...rowsM.map((r) => wUnits(r.num)), 0), nameW = pr - (px + 26) - numW - 12;
+    const y0 = bounds.top + 34, yCap = bounds.bottom + 6;
+    const lay = (lineH, pad) => rowsM.map((r) => ({ ...r, lines: wrapName(r.name, nameW, wUnits), lineH, pad }));
+    let rowsL = lay(16, 8);
+    const rowH = (r, extra) => (r.lines.length + extra) * r.lineH + r.pad;
+    if (rowsL.reduce((a, r) => a + rowH(r, 0), 0) > yCap - y0) rowsL = lay(15, 4);
+    const shownRows = []; let yy = y0;
+    for (const r of rowsL) { if (yy + rowH(r, 0) > yCap) break; shownRows.push(r); yy += rowH(r, 0); }
+    const shownSet = new Set(shownRows.map((r) => r.i));
+    // Badges: beside the arc first; else a short leader to the nearest free spot; else the row says it is not on the map.
+    const place = ({ arc, i }) => {
+      const side = arc.hw + STROKE_PAD + BADGE_R + 3, own = arcs.indexOf(arc);
+      for (const [ti, dist] of [side, side + 10, side + 22, side + 36, side + 52].entries()) {
+        const cands = [];
+        arc.pts.forEach((p, k) => {
+          if (p.t < 0.02 || p.t > 0.98 || (ti > 0 && k % 3)) return;
+          const j = Math.min(k + 1, arc.pts.length - 1), kk = Math.max(k - 1, 0);
+          const dx = arc.pts[j].x - arc.pts[kk].x, dy = arc.pts[j].y - arc.pts[kk].y, len = Math.hypot(dx, dy) || 1;
+          for (const sgn of [1, -1]) cands.push({ x: p.x + (-dy / len) * dist * sgn, y: p.y + (dx / len) * dist * sgn, px: p.x, py: p.y, score: Math.min(p.t, 1 - p.t) + (p.t > 0.5 ? 0.05 : 0) });
+        });
+        let best = null;
+        for (const c of cands) {
+          if (!discFree(c)) continue;
+          let cross = 0, leader = null;
+          if (ti > 0) {
+            const ux = c.px - c.x, uy = c.py - c.y, ul = Math.hypot(ux, uy) || 1;
+            leader = { x1: c.x + (ux / ul) * BADGE_R, y1: c.y + (uy / ul) * BADGE_R, x2: c.px, y2: c.py };
+            if (placedDiscs.some((q) => segHitsRect({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, { x: q.x - BADGE_R, y: q.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }))) continue;
+            if (leaders.some((q) => segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, { x: q.x1, y: q.y1 }, { x: q.x2, y: q.y2 }))) continue;
+            for (const [ai, other] of arcs.entries()) if (ai !== own) for (let k = 1; k < other.pts.length; k++) if (segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, other.pts[k - 1], other.pts[k])) cross++;
+            if (cross > 1) continue;
+          }
+          const score = cross * 1000 + c.score;
+          if (!best || score < best.score) best = { ...c, leader, score };
+        }
+        if (best) { placedDiscs.push(best); if (best.leader) { leaders.push(best.leader); diag.badge_leaders = (diag.badge_leaders ?? 0) + 1; } arc.badge = { x: best.x, y: best.y, n: rank.get(i), leader: best.leader }; diag.badges_placed++; return true; }
       }
-      cands.sort((p, q) => p.score - q.score);
-      const hit = cands.find(discFree);
-      if (hit) { placedDiscs.push(hit); arc.badge = { x: hit.x, y: hit.y, n: rank.get(i) }; diag.badges_placed++; }
-      else diag.badges_unplaced.push(rank.get(i));
-    }
+      diag.badges_unplaced.push(rank.get(i)); return false;
+    };
+    for (const r of shownRows) place(r);
+    const unplaced = new Set(diag.badges_unplaced);
+    for (const arc of arcs) if (arc.badge?.leader) { const l = arc.badge.leader; parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${l.x1.toFixed(1)}" y1="${l.y1.toFixed(1)}" x2="${l.x2.toFixed(1)}" y2="${l.y2.toFixed(1)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`); }
     for (const arc of arcs) if (arc.badge) {
       parts.push(`<circle data-role="annotation-marker" cx="${arc.badge.x.toFixed(1)}" cy="${arc.badge.y.toFixed(1)}" r="${BADGE_R}" fill="#ffffff" stroke="${arc.highlight ? PALETTE.accent : PALETTE.ink}" stroke-width="${arc.highlight ? 2 : 1.2}"/>`);
       parts.push(`<text data-role="annotation-marker-label" x="${arc.badge.x.toFixed(1)}" y="${(arc.badge.y + 4.2).toFixed(1)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="${PALETTE.ink}">${arc.badge.n}</text>`);
     }
-    // Ranked ledger panel to the right of the map.
-    const px = LEDGER_PANEL_X, pr = 980, panelW = pr - px - 26;
-    parts.push(`<text x="${px}" y="${bounds.top + 12}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${zh ? "按数值从大到小" : "Ranked by value"}</text>`);
-    let y = bounds.top + 34, shown = 0;
-    for (const { arc, i } of order) {
-      const label = `${arc.sourceName}→${arc.targetName}`, val = fmtSpec(spec, arc.value, spec.unit);
-      const lw = textUnits(label) * font * 0.56, vw = textUnits(val) * font * 0.56;
-      const two = lw + vw + 10 > panelW, h = two ? 40 : 24;
-      if (y + h > bounds.bottom + 10) break;
-      const n = rank.get(i), cy = y + 2;
-      parts.push(`<circle data-role="annotation-marker" cx="${px + 9}" cy="${cy + 4}" r="${BADGE_R}" fill="#ffffff" stroke="${arc.highlight ? PALETTE.accent : PALETTE.ink}" stroke-width="${arc.highlight ? 2 : 1.2}"/><text data-role="annotation-marker-label" x="${px + 9}" y="${cy + 8.2}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="${PALETTE.ink}">${n}</text>`);
-      if (two) {
-        parts.push(`<text x="${px + 26}" y="${cy + 8}" font-family="${FONT_SANS}" font-size="${font}" font-weight="${arc.highlight ? 800 : 600}" fill="${PALETTE.ink}">${esc(label)}</text><text x="${px + 26}" y="${cy + 24}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(val)}</text>`);
-      } else {
-        parts.push(`<text x="${px + 26}" y="${cy + 8}" font-family="${FONT_SANS}" font-size="${font}" font-weight="${arc.highlight ? 800 : 600}" fill="${PALETTE.ink}">${esc(label)}</text><text x="${pr}" y="${cy + 8}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(val)}</text>`);
-      }
-      y += h; shown++;
+    // Ranked ledger panel to the right of the map. The unit is given once, in the header.
+    const unitTail = spec.unit ? ` · ${spec.unit}` : "";
+    const header = shared ? (shared.side === "target" ? (zh ? `来源（流向${shared.name}）` : `Origin (to ${shared.name})`) : (zh ? `去向（来自${shared.name}）` : `Destination (from ${shared.name})`)) : (zh ? "按数值从大到小" : "Ranked by value");
+    parts.push(`<text data-role="flow-ledger-header" x="${px}" y="${bounds.top + 12}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(header + unitTail)}</text>`);
+    let y = y0;
+    for (const r of shownRows) {
+      const { arc, n: num } = r, b1 = y + 12, off = unplaced.has(num);
+      parts.push(`<circle data-role="annotation-marker" cx="${px + 9}" cy="${y + 8}" r="${BADGE_R}" fill="#ffffff" stroke="${arc.highlight ? PALETTE.accent : PALETTE.ink}" stroke-width="${arc.highlight ? 2 : 1.2}"/><text data-role="annotation-marker-label" x="${px + 9}" y="${y + 12.2}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="${PALETTE.ink}">${num}</text>`);
+      r.lines.forEach((ln, k) => parts.push(`<text data-role="flow-ledger-name" x="${px + 26}" y="${b1 + k * r.lineH}" font-family="${FONT_SANS}" font-size="${font}" font-weight="${arc.highlight ? 800 : 600}" fill="${PALETTE.ink}">${esc(ln)}</text>`));
+      parts.push(`<text data-role="flow-ledger-value" x="${pr}" y="${b1}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(r.num)}</text>`);
+      if (off) parts.push(`<text x="${px + 26}" y="${b1 + r.lines.length * r.lineH}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${zh ? "图上未标" : "not marked on the map"}</text>`);
+      y += rowH(r, off ? 1 : 0);
     }
-    diag.ledger_rows = shown; diag.ledger_cut = order.length - shown;
+    diag.ledger_rows = shownRows.length; diag.ledger_cut = order.length - shownRows.length;
     if (diag.ledger_cut > 0) parts.push(`<text x="${px}" y="${y + 12}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${zh ? `其余 ${diag.ledger_cut} 条未列出` : `${diag.ledger_cut} more not listed`}</text>`);
-    return { parts, diag, overflow: "" };
+    const offList = [...unplaced].sort((a, b) => a - b);
+    const overflow = offList.length ? (zh ? `图上未标：第 ${offList.join("、")} 条弧线（地图上没有空位），见右侧列表` : `Not marked on the map (no free spot): ${offList.map((k) => `#${k}`).join(", ")}; see the ledger`) : "";
+    return { parts, diag, overflow };
   }
 
   // style "leader": names beside the dots, short leaders into free space, no truncation.
@@ -143,7 +220,7 @@ export function layoutFlowMapLabels(ctx) {
   const placed = [], list = [...nodes.values()].sort((p, q) => q.weight - p.weight);
   const dirs = [[1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1], [0, -1], [0, 1]];
   for (const node of list) {
-    const text = node.src === 1 && node.tgt === 0 ? `${node.name} ${fmtSpec(spec, node.srcValue, "")}` : node.name;
+    const text = node.src === 1 && node.tgt === 0 ? `${node.name} ${numByValue.get(node.srcValue)}` : node.name;
     const w = Math.max(25, textUnits(text) * font * 0.56 + 8), h = font + 8, g = 6;
     const cands = [];
     for (const [dx, dy] of dirs) cands.push({ box: { x: dx === 0 ? node.x - w / 2 : dx > 0 ? node.x + g : node.x - g - w, y: dy === 0 ? node.y - h / 2 : dy < 0 ? node.y - g - h : node.y + g, w, h }, ring: 0 });
