@@ -2853,8 +2853,10 @@ const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16,
 const noteUrlLineEnabled = () => process.env.NEWSROOM_NOTE_URL_LINE === "1";
 const FOOTER_URL_RE = /https?:\/\/[^\s，。；、）)」]+/;
 // Greedy wrap by measured width that never breaks inside a run of digits, Latin letters or a URL: breaks only at spaces or between CJK characters.
+const KINSOKU_OPEN = /^[（「『《【〔〈(\[]$/u, KINSOKU_CLOSE = /^[）」』》】〕〉，。、；：！？…)\]!?,.;:]$/u;
 function wrapUnbreakable(text, size = 12) {
   const maxW = LAYOUT_W - 108, lines = [], toks = String(text).match(/https?:\/\/\S+|[A-Za-z0-9][A-Za-z0-9.,%:/_+'\-]*|\s+|[\s\S]/gu) ?? [];
+  if (noteUrlLineEnabled()) return wrapKinsoku(toks, maxW, size);
   let cur = "";
   for (const tok of toks) {
     if (/^\s+$/.test(tok)) { if (cur) cur += " "; continue; }
@@ -2864,15 +2866,45 @@ function wrapUnbreakable(text, size = 12) {
   if (cur.trim()) lines.push(cur.trimEnd());
   return lines;
 }
+// Same wrap, plus the line-start / line-end rules of W3C clreq and GB/T 15834: no line starts with closing punctuation or ends with an opening bracket; the neighbouring token moves with it.
+function wrapKinsoku(toks, maxW, size) {
+  const lines = [], width = (arr) => textUnits(arr.join("")) * size * 0.56, flush = (arr) => { const t = arr.join("").trim(); if (t) lines.push(t); };
+  let cur = [];
+  for (const tok of toks) {
+    if (/^\s+$/.test(tok)) { if (cur.length) cur.push(" "); continue; }
+    if (!cur.length || width([...cur, tok]) <= maxW) { cur.push(tok); continue; }
+    const carry = [];
+    if (KINSOKU_CLOSE.test(tok)) {
+      while (cur.length > 1 && (cur.at(-1) === " " || KINSOKU_CLOSE.test(cur.at(-1)))) carry.unshift(cur.pop());
+      if (cur.length > 1) carry.unshift(cur.pop());
+    }
+    while (cur.length > 1 && (cur.at(-1) === " " || KINSOKU_OPEN.test(cur.at(-1)))) carry.unshift(cur.pop());
+    flush(cur);
+    cur = carry.length && carry.join("").trim() ? carry : [];
+    while (cur[0] === " ") cur.shift();
+    cur.push(tok);
+  }
+  flush(cur);
+  return lines;
+}
 // Footer lines as {t, size}. With urlLine on, each URL sits on a line of its own and the sentence around it is wrapped without splitting it. (Render QA's 12px font floor stops it being any smaller.)
 function footerBlock(text, urlLine) {
   const out = [];
   if (!urlLine || !FOOTER_URL_RE.test(text)) { for (const t of wrapUnbreakable(text)) out.push({ t, size: 12 }); return out; }
-  for (const part of String(text).split(new RegExp(`(${FOOTER_URL_RE.source})`))) {
-    if (!part.trim()) continue;
-    if (FOOTER_URL_RE.test(part) && part.match(FOOTER_URL_RE)[0] === part) out.push({ t: part, size: 12 });
-    else for (const t of wrapUnbreakable(part.trim())) out.push({ t, size: 12 });
-  }
+  const parts = String(text).split(new RegExp(`(${FOOTER_URL_RE.source})`)), isUrl = (x) => FOOTER_URL_RE.test(x) && x.match(FOOTER_URL_RE)[0] === x;
+  const bound = parts.map(() => ["", ""]);
+  parts.forEach((part, i) => {
+    if (!isUrl(part)) return;
+    // clreq / GB/T 15834: an opening bracket before the URL and the closing punctuation after it stay on the URL's line.
+    const before = i > 0 && !isUrl(parts[i - 1]) ? parts[i - 1].match(/[（「『《【〔〈(\[]+\s*$/u)?.[0] ?? "" : "", after = i + 1 < parts.length && !isUrl(parts[i + 1]) ? parts[i + 1].match(/^[）」』》】〕〉，。、；：！？…)\]!?,.;:]+/u)?.[0] ?? "" : "";
+    bound[i] = [before.trim(), after];
+    if (before) parts[i - 1] = parts[i - 1].slice(0, parts[i - 1].length - before.length);
+    if (after) parts[i + 1] = parts[i + 1].slice(after.length);
+  });
+  parts.forEach((part, i) => {
+    if (isUrl(part)) out.push({ t: `${bound[i][0]}${part}${bound[i][1]}`, size: 12 });
+    else if (part.trim()) for (const t of wrapUnbreakable(part.trim())) out.push({ t, size: 12 });
+  });
   return out;
 }
 // Only a URL-bearing note or source takes the new block path; every other footer keeps the old wrapText path unchanged.
