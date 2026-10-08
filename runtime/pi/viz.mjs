@@ -158,7 +158,7 @@ export const HOUSE_PALETTES = {
     // one lighter tint (faint) reserved for "Other" - mirrors the "one
     // accent, everything else grey steps" house rule instead of reusing the
     // legacy blue-grey ramp's own hex values.
-    waffleGreySteps: ["#666666", "#757575", "#9E9E9E", "#BDBDBD", "#F2F2F2"],
+    waffleGreySteps: ["#404040", "#646464", "#8B8B8B", "#B9B9B9", "#F2F2F2"],
   },
 };
 
@@ -4351,6 +4351,32 @@ function layoutLineEndLabel(name, valueText, pointX, trueEdge, gap, pxPerUnit) {
   ];
 }
 
+// NEWSROOM_LINE_END_LABEL_FIT (default off): lines for a single-series end label
+// that would cross the canvas's right edge, or null when the label already
+// fits (the caller then draws exactly what it always drew). Same 8 px margin
+// as the multi-series label (layoutLineEndLabel); the text is only broken,
+// never edited. Break before an opening bracket first, else at a space, and
+// never so that a line starts with a unit sign that belongs to the number
+// before it (% per-mille ° etc.); with no usable break, or a first line that
+// is still too wide, every line is right-aligned to the edge.
+const LINE_END_LABEL_NO_LINE_START = /^[%\u2030\u2031\u00B0\u2103\u2109\u2032\u2033]/u;
+function lineEndLabelBreak(text) {
+  const ok = (i) => i > 0 && !LINE_END_LABEL_NO_LINE_START.test(text.slice(i).trimStart());
+  const bracket = text.search(/[\uFF08(]/u);
+  if (ok(bracket)) return bracket;
+  for (let i = text.indexOf(" "); i > 0; i = text.indexOf(" ", i + 1)) if (ok(i)) return i;
+  return -1;
+}
+function fitLineEndLabel(text, x, trueEdge) {
+  const safeEdge = trueEdge - 8;
+  const width = (t) => estimateTextWidth(t, 12, true);
+  if (x + width(text) <= safeEdge) return null;
+  const cut = lineEndLabelBreak(text);
+  const parts = cut > 0 ? [text.slice(0, cut).trimEnd(), text.slice(cut).trimStart()] : [text];
+  if (parts.every((t) => x + width(t) <= safeEdge)) return parts.map((t) => ({ text: t, x }));
+  return parts.map((t) => ({ text: t, x: safeEdge, anchor: "end" }));
+}
+
 function renderLine(spec, rows, multi = false) {
   let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
@@ -4543,7 +4569,19 @@ function renderLine(spec, rows, multi = false) {
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      const endText = fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals);
+      const endX = Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8), endY = yScale(n(last[spec.value_field])) - 8;
+      const endAttrs = `font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}"`;
+      // Opt-in (NEWSROOM_LINE_END_LABEL_FIT=1): a single-line end label whose
+      // estimated box would cross the right edge is split at its first space
+      // (value above, unit below; no text is dropped or changed) and, when a
+      // line still would not fit, both lines are right-aligned to the edge.
+      const fit = process.env.NEWSROOM_LINE_END_LABEL_FIT === "1" ? fitLineEndLabel(endText, endX, LAYOUT_W) : null;
+      if (fit) {
+        fit.forEach((line, k) => f.parts.push(`<text data-role="direct-label" x="${line.x}" y="${endY - 14 * (fit.length - 1 - k)}"${line.anchor ? ` text-anchor="${line.anchor}"` : ""} ${endAttrs}>${esc(line.text)}</text>`));
+      } else {
+        f.parts.push(`<text data-role="direct-label" x="${endX}" y="${endY}" ${endAttrs}>${esc(endText)}</text>`);
+      }
     }
   });
   if (multi && spec.direct_labels !== false) {
@@ -4730,25 +4768,50 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
   const idxLeft = indexBase !== null ? 54 + 40 : 70;
-  const panelW = indexBase !== null && cols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (cols - 1) * gapX) / cols) : 430, panelH = 230 + refMargin;
-  const rowsN = Math.ceil(facets.length / cols);
-  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20 + rowShift);
-  const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const yDomain = extent(indexBase !== null ? [...allY, indexBase] : allY, false);
+  const panelH = 230 + refMargin;
+  const valuesOf = (list) => list.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
+  const domainOf = (values) => extent(indexBase !== null ? [...values, indexBase] : values, false);
+  const allY = valuesOf(rows);
+  const yDomain = domainOf(allY);
+  // One facet whose range dwarfs the rest squashes every other panel on the shared scale: with at least 4 facets, no
+  // reference line, and a shared span at least 3x the span without the facet that narrows it most, that facet moves to its
+  // own panel under the grid (its own vertical scale, said in a note) and the rest share the narrower domain.
+  // Default off (NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL=1 turns it on): off, the SVG is byte-identical to what it was without this.
+  const outlier = (() => {
+    if (process.env.NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL !== "1") return null;
+    if (facets.length < 4 || refLines.length) return null;
+    const span = (d) => d[1] - d[0];
+    let best = null;
+    for (const facet of facets) {
+      const rest = valuesOf(rows.filter((r) => String(r[spec.facet_field]) !== String(facet)));
+      if (!rest.length) continue;
+      const domain = domainOf(rest);
+      if (!best || span(domain) < span(best.domain)) best = { facet, domain };
+    }
+    if (!best || !(span(yDomain) >= 3 * span(best.domain))) return null;
+    const own = valuesOf(rows.filter((r) => String(r[spec.facet_field]) === String(best.facet)));
+    return own.length ? { ...best, ownDomain: domainOf(own) } : null;
+  })();
+  const gridFacets = outlier ? facets.filter((facet) => facet !== outlier.facet) : facets;
+  const gridDomain = outlier ? outlier.domain : yDomain;
+  // the grid's columns follow the facets that stay in it
+  const gridCols = gridFacets.length === 1 ? 1 : indexBase !== null && gridFacets.length >= 7 ? (gridFacets.length >= 10 ? 4 : 3) : 2;
+  const panelW = indexBase !== null && gridCols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (gridCols - 1) * gapX) / gridCols) : 430;
+  const rowsN = Math.ceil(gridFacets.length / gridCols);
+  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + (outlier ? gapY + panelH : 0) + 20 + rowShift);
   // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
-  const idxTicks = (() => {
-    if (indexBase === null) return [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]];
-    const span = yDomain[1] - yDomain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  const ticksFor = (domain, nice = indexBase !== null) => {
+    if (!nice) return [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
+    const span = domain[1] - domain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
     const step = [1, 2, 5, 10].map((m) => m * mag).find((c) => c >= raw);
     const out = [];
-    for (let v = Math.ceil((yDomain[0] - 1e-9) / step) * step; v <= yDomain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
-    if (!out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
+    for (let v = Math.ceil((domain[0] - 1e-9) / step) * step; v <= domain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    if (indexBase !== null && !out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
     return out.sort((a, b) => a - b);
-  })();
+  };
+  const idxTicks = ticksFor(gridDomain);
   let indexBaseNamed = false;
-  facets.forEach((facet, fi) => {
-    const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = idxLeft + col * (panelW + gapX), y0 = f.bodyTop + rowShift + rowN * (panelH + gapY);
+  const drawFacet = (facet, fi, col, x0, y0, yDomain, idxTicks, panelW, axisLabels = false, boxLeft = x0 - gapX + 2) => {
     const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
@@ -4764,11 +4827,16 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
     if (indexBase !== null) {
       const by = yScale(indexBase);
       f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
-      if (col === 0) {
+      if (col === 0 || axisLabels) {
         idxTicks.forEach((tick) => {
           f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
         });
       }
+    }
+    if (indexBase === null && axisLabels) {
+      idxTicks.forEach((tick) => {
+        f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
+      });
     }
     const sorted = [...group].sort((a, b) => xMap.get(String(a[spec.x_field])) - xMap.get(String(b[spec.x_field])));
     if (xs.length > 1) {
@@ -4821,8 +4889,36 @@ function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
         f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase, i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 34))}</text>`);
       }
     });
-    tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+    tagPanelTexts(f.parts, facetPartStart, [boxLeft, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+  };
+  gridFacets.forEach((facet, fi) => {
+    const col = fi % gridCols, rowN = Math.floor(fi / gridCols);
+    drawFacet(facet, fi, col, idxLeft + col * (panelW + gapX), f.bodyTop + rowShift + rowN * (panelH + gapY), gridDomain, idxTicks, panelW);
   });
+  if (outlier) {
+    const gridW = gridCols * panelW + (gridCols - 1) * gapX;
+    const y0 = f.bodyTop + rowShift + rowsN * (panelH + gapY);
+    const name = resolveEconomyDisplayName(outlier.facet, spec.category_names, vizLang(spec));
+    // y labels come from tickValues on the panel's own domain: at least 3 inside it, plus the base when one is set
+    let ownTicks = [];
+    for (const count of [4, 6, 8, 12, 16, 24]) {
+      ownTicks = tickValues(outlier.ownDomain, count).filter((v) => v >= outlier.ownDomain[0] - 1e-9 && v <= outlier.ownDomain[1] + 1e-9);
+      if (ownTicks.length >= 3) break;
+    }
+    if (ownTicks.length < 3) ownTicks = [outlier.ownDomain[0], (outlier.ownDomain[0] + outlier.ownDomain[1]) / 2, outlier.ownDomain[1]];
+    if (indexBase !== null && !ownTicks.some((v) => Math.abs(v - indexBase) < 1e-9 * Math.max(1, Math.abs(indexBase)))) ownTicks.push(indexBase);
+    ownTicks.sort((a, b) => a - b);
+    // keep the widest y label 2 px inside the panel box: move the panel's left edge right by any shortfall
+    const boxLeft = idxLeft - gapX + 2;
+    const labelW = Math.max(...ownTicks.map((tick) => estimateTextWidth(tickLabelSpec(spec, tick, ""), 12, false)));
+    const shift = Math.max(0, Math.ceil(boxLeft + 2 + 6 + 2 + labelW - idxLeft));
+    const x0 = idxLeft + shift;
+    const noteStart = f.parts.length;
+    const note = vizLang(spec) === "zh" ? `${name}与其他各项数值相差悬殊，单独成图，纵轴刻度与上面各图不同` : `${name} is far outside the others' range, so it has its own panel with a different vertical scale.`;
+    f.parts.push(`<text data-role="outlier-note" x="${x0}" y="${y0 - 14}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(note)}</text>`);
+    tagPanelTexts(f.parts, noteStart, [boxLeft, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
+    drawFacet(outlier.facet, gridFacets.length, 0, x0, y0, outlier.ownDomain, ownTicks, gridW - shift, true, boxLeft);
+  }
   if (indexBase !== null && !indexBaseNamed) {
     if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
     f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
@@ -5890,6 +5986,34 @@ function stripNodePrefix(id) {
 function flowGreyLink() { return PALETTE.context; } // non-highlighted link tone
 const FLOW_GREY_NODE = "#9E9E9E"; // near-neutral node bar for a non-highlighted node, per the approved redesign spec
 
+// The flow band sankeyPath() draws, as a strip of quads: the centreline is
+// sampled densely and each sample is offset by half the stroke width along
+// its normal, so the edges are the band's own, not a bounding box.
+function sankeyBandQuads(x1,y1,x2,y2,sw,steps=80) {
+  const pts=[];
+  for(let i=0;i<=steps;i++){
+    const t=i/steps, a=sankeyPointAt(x1,y1,x2,y2,Math.max(0,t-0.001)), b=sankeyPointAt(x1,y1,x2,y2,Math.min(1,t+0.001)), c=sankeyPointAt(x1,y1,x2,y2,t);
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, nx=-dy/len, ny=dx/len;
+    pts.push([{x:c.x+nx*sw/2,y:c.y+ny*sw/2},{x:c.x-nx*sw/2,y:c.y-ny*sw/2}]);
+  }
+  const quads=[];
+  for(let i=0;i<steps;i++) quads.push([pts[i][0],pts[i+1][0],pts[i+1][1],pts[i][1]]);
+  return quads;
+}
+
+// Whether a convex quad and an axis-aligned box overlap (separating axes).
+function quadHitsBox(q,b) {
+  if (Math.max(...q.map((p)=>p.x))<=b.x || Math.min(...q.map((p)=>p.x))>=b.x+b.w) return false;
+  if (Math.max(...q.map((p)=>p.y))<=b.y || Math.min(...q.map((p)=>p.y))>=b.y+b.h) return false;
+  const corners=[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
+  for (let i=0;i<4;i++) {
+    const p=q[i], r=q[(i+1)%4], ax=-(r.y-p.y), ay=r.x-p.x;
+    const qs=q.map((v)=>v.x*ax+v.y*ay), bs=corners.map((v)=>v.x*ax+v.y*ay);
+    if (Math.max(...qs)<=Math.min(...bs) || Math.max(...bs)<=Math.min(...qs)) return false;
+  }
+  return true;
+}
+
 function renderSankey(spec, rows, mobile=false) {
   const width=mobile?640:1040, nodeW=mobile?16:20;
   const gap=Math.max(12, mobile?20:16);
@@ -6101,28 +6225,64 @@ function renderSankey(spec, rows, mobile=false) {
     // ends exactly at (x1,y1)/(x2,y2), flush against the node's straight
     // edge, with no protrusion.
     f.parts.push(`<path data-role="flow-link" data-flow-key="${esc(flowKey)}" d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="butt" pointer-events="none"/>`);
-    // Only the single highlighted flow gets an inline value, placed ON its
-    // own centreline near whichever end (source t~0.22, or target t~0.78)
+    // Only the single highlighted flow gets an inline value, on paper beside
+    // its own band near whichever end (source t~0.22, or target t~0.78)
     // isn't already claimed - every other flow's value lives only in its
     // node labels, so the diagram never shows an ambiguous floating number.
     if (highlighted) {
       const text=fmtLocalizedUnit(spec, v);
       const fontSize=mobile?12:12.5;
       const boxW=text.length*fontSize*0.8+8;
-      const linkRgb=compositeOverWhite(hexToRgb(color), opacity);
-      const style=labelStyleOnFill(linkRgb);
-      const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round"`:"";
+      // The label sits on paper beside its band, never on it, in the accent's
+      // text-safe shade with no halo. A candidate is clear when its box keeps
+      // 2px from every node label box, other value label, node bar and every
+      // flow band (this one included), and its own band is at least 1px nearer
+      // than any other (gap: text box to centreline, less half the width);
+      // when no candidate qualifies, no inline label is drawn.
+      const labelFill=textSafeColor(PALETTE.accent);
+      const clearance=2;
+      const inflate=(b)=>({x:b.x-clearance,y:b.y-clearance,w:b.w+2*clearance,h:b.h+2*clearance});
+      const barBoxes=[...positions.values()].map((p)=>({x:p.x,y:p.y,w:nodeW,h:p.h}));
+      const bandInfo=flowRows.map((r)=>{
+        const pa2=positions.get(String(r[spec.source_field])), pb2=positions.get(String(r[spec.target_field]));
+        if(!pa2||!pb2) return null;
+        const bx1=pa2.x+nodeW, by1=rowY1.get(r)??pa2.y+pa2.h/2, bx2=pb2.x, by2=rowY2.get(r)??pb2.y+pb2.h/2, bsw=strokeWidthOf(r);
+        return { own:r===row, sw:bsw, quads:sankeyBandQuads(bx1,by1,bx2,by2,bsw), line:Array.from({length:161},(_,i)=>sankeyPointAt(bx1,by1,bx2,by2,i/160)) };
+      }).filter(Boolean);
+      const bands=bandInfo.map((b)=>b.quads);
+      const bandGap=(tb,b)=>Math.min(...b.line.map((p)=>Math.hypot(Math.max(tb.x-p.x,0,p.x-(tb.x+tb.w)),Math.max(tb.y-p.y,0,p.y-(tb.y+tb.h)))))-b.sw/2;
+      const ownIsNearest=(cx,baseY)=>{
+        const tw=estimateTextWidth(text,fontSize,true);
+        const tb={x:cx-tw/2,y:baseY-fontSize*ASCENT_RATIO,w:tw,h:fontSize*(ASCENT_RATIO+DESCENT_RATIO)};
+        const ownGap=bandGap(tb,bandInfo.find((b)=>b.own));
+        return bandInfo.every((b)=>b.own||bandGap(tb,b)>=ownGap+1);
+      };
+      const isClear=(box)=>{
+        const wide=inflate(box);
+        if (wide.x<0||wide.x+wide.w>width) return false;
+        if (valueLabelBoxes.some((o)=>boxesOverlap(wide,o))||barBoxes.some((o)=>boxesOverlap(wide,o))) return false;
+        return !bands.some((quads)=>quads.some((q)=>quadHitsBox(q,wide)));
+      };
       let placed=null;
-      for (const t of [0.22, 0.78, 0.5]) {
+      candidates: for (const t of [0.22, 0.78, 0.5, 0.35, 0.65]) {
         const pt=sankeyPointAt(x1,y1,x2,y2,t);
-        const preferredY=t<0.5 ? pt.y-sw/2-5 : pt.y+sw/2+13;
-        const placedY=resolveLabelCollisionY(pt.x, preferredY, boxW, fontSize, valueLabelBoxes, top+10, bottom-4);
-        const box={x:pt.x-boxW/2, y:placedY-fontSize-3, w:boxW, h:fontSize+7};
-        if (!valueLabelBoxes.some((o)=>boxesOverlap(box,o))) { placed={x:pt.x,y:placedY,box}; break; }
+        const above=t<0.5;
+        for (const side of [above, !above]) {
+          const preferredY=side ? pt.y-sw/2-5 : pt.y+sw/2+13;
+          const placedY=resolveLabelCollisionY(pt.x, preferredY, boxW+2*clearance, fontSize, valueLabelBoxes, top+10, bottom-4);
+          // Today's nudge first; a band that slopes under the box needs more room than
+          // a flat one, so the box then moves away from its band in 2px steps.
+          for (let push=0; push<=8; push+=2) {
+            const y=placedY+(side ? -push : push);
+            const box={x:pt.x-boxW/2, y:y-fontSize-3, w:boxW, h:fontSize+7};
+            if (y<top+10 || y>bottom-4) break;
+            if (isClear(box)&&ownIsNearest(pt.x,y)) { placed={x:pt.x,y,box}; break candidates; }
+          }
+        }
       }
       if (placed) {
         valueLabelBoxes.push(placed.box);
-        f.parts.push(`<text data-role="flow-value-label" data-flow-key="${esc(flowKey)}" x="${placed.x}" y="${placed.y}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${fontSize}" font-weight="700" fill="${style.fill}" paint-order="stroke fill"${halo}>${esc(text)}</text>`);
+        f.parts.push(`<text data-role="flow-value-label" data-flow-key="${esc(flowKey)}" x="${placed.x}" y="${placed.y}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${fontSize}" font-weight="700" fill="${labelFill}">${esc(text)}</text>`);
       }
     }
   });
@@ -6571,6 +6731,9 @@ function fmtWafflePercent(value) {
   return `${value.toFixed(1)}%`;
 }
 
+// Outline of the lightest grey (a #F2F2F2 cell alone is 1.14:1 against white).
+const WAFFLE_OUTLINE = "#8B8B8B";
+
 // Single-grid waffle: one 10x10 grid (100 cells, largest-remainder
 // apportionment above so the integer cell counts always sum to exactly
 // 100 regardless of rounding) shared by all of the spec's categories,
@@ -6598,14 +6761,45 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
     ...visible.map((e) => ({ row: e.row, value: e.value, highlighted: e.highlighted })),
     ...(hasOther ? [{ row: null, value: otherValue, highlighted: false }] : []),
   ];
-  let greyIdx = 0;
-  const colors = entries.map((e) => {
-    if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
-    if (e.highlighted) return PALETTE.accent;
-    const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
-    greyIdx += 1;
-    return color;
-  });
+  let colors;
+  let strokeIdx = -1; // the entry that takes the lightest grey also gets an outline
+  if (HOUSE_STYLE_ACTIVE) {
+    // A literal row named 其他/其它/Other/Others is the catch-all too (when no
+    // merged bucket exists), highlighted or not: it is drawn last, takes the
+    // lightest grey, or the accent when highlighted.
+    // Rows keep today's order otherwise. A highlighted row keeps the accent.
+    const isLiteralOther = (e) => e.row !== null && /^(其他|其它|others?)$/i.test(String(e.row[spec.category_field] ?? "").trim());
+    if (!hasOther) {
+      const at = entries.findIndex(isLiteralOther);
+      if (at >= 0 && at < entries.length - 1) entries.push(...entries.splice(at, 1));
+    }
+    const catchAll = entries.findIndex((e, k) => e.row === null || (!hasOther && k === entries.length - 1 && isLiteralOther(e)));
+    const named = entries.map((e, k) => (k !== catchAll && !e.highlighted ? k : -1)).filter((k) => k >= 0);
+    // Exactly two plain rows read best two steps apart; otherwise darkest first.
+    const stepOf = named.length === 2 ? [0, 2] : named.map((_k, i) => i);
+    const lightest = WAFFLE_GREYS.length - 1;
+    colors = entries.map((e, k) => {
+      if (k === catchAll) {
+        if (e.highlighted) return PALETTE.accent; // a highlighted catch-all keeps the accent and has no outline
+        strokeIdx = k;
+        return WAFFLE_GREYS[lightest];
+      }
+      if (e.highlighted) return PALETTE.accent;
+      return WAFFLE_GREYS[Math.min(stepOf[named.indexOf(k)], lightest)];
+    });
+    // With no catch-all, a fifth plain row is the one that takes the lightest grey.
+    if (catchAll < 0 && named.length === WAFFLE_GREYS.length) strokeIdx = named[named.length - 1];
+  } else {
+    let greyIdx = 0;
+    colors = entries.map((e) => {
+      if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
+      if (e.highlighted) return PALETTE.accent;
+      const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
+      greyIdx += 1;
+      return color;
+    });
+  }
+  const outline = (k) => (k === strokeIdx ? ` stroke="${WAFFLE_OUTLINE}" stroke-width="1"` : "");
   const cellCounts = largestRemainderCells(entries.map((e) => e.value));
   const cell = mobile ? 20 : 28;
   const gap = mobile ? 2 : 3;
@@ -6636,7 +6830,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
       const c = cursor % 10;
       const x = left + c * (cell + gap);
       const y = gridTop + r * (cell + gap);
-      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"/>`);
+      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"${outline(k)}/>`);
     }
   });
   const legendLeft = mobile ? left : left + grid + gutter;
@@ -6651,7 +6845,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
   const valueRightX = nameX + maxNameWidth + 16 + 56; // fixed-width value column, right-aligned
   entries.forEach((e, k) => {
     const rowY = legendTop + k * legendRowHeight;
-    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"/>`);
+    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"${outline(k)}/>`);
     f.parts.push(`<text x="${nameX}" y="${rowY + 10}" font-family="${FONT_SANS}" font-size="13" font-weight="600" fill="${PALETTE.ink}">${esc(names[k])}</text>`);
     f.parts.push(`<text data-cell-count="${cellCounts[k]}" x="${valueRightX}" y="${rowY + 10}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtWafflePercent(e.value))}</text>`);
   });

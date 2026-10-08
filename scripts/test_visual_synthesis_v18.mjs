@@ -125,6 +125,8 @@ const causalLint=lintInfographicSpec(unboundCausal,assets,{...context,verified_c
 assert.equal(causalLint.passed,false);
 assert.ok(causalLint.blockers.some(x=>x==='unbound_causal_editorial_language:dek'));
 assert.ok(causalLint.blockers.some(x=>x==='unbound_causal_editorial_language:visual_thesis'));
+const zhCausalLint=lintInfographicSpec({...spec,dek:'老龄化加速造成劳动年龄人口持续萎缩'},assets,{...context,verified_claim_records:nonCausalRecords});
+assert.ok(zhCausalLint.blockers.some(x=>x==='unbound_causal_editorial_language:dek'),zhCausalLint.blockers.join(' | '));
 const bundle=composeInfographicBundle(spec,assets);
 const critic=critiqueInfographic(spec,bundle);
 assert.equal(critic.passed,true,JSON.stringify(critic));
