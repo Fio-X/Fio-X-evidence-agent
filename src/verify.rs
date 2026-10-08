@@ -3607,7 +3607,7 @@ fn verified_claim_ids(root: &Path) -> Result<HashSet<String>> {
         .collect())
 }
 
-fn is_system_verified_claim(value: &Value) -> bool {
+pub(crate) fn is_system_verified_claim(value: &Value) -> bool {
     let verification = match value.get("verification") {
         Some(value) => value,
         None => return false,

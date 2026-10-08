@@ -348,6 +348,7 @@ fn visual_story_pi_config(
         tool_profile: "visual-story".to_string(),
         hide_lieflat: false,
         speed: Default::default(),
+        compose: None,
     }
 }
 
