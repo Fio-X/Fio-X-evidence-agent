@@ -108,6 +108,41 @@ function segHitsRect(p, q, r) {
   return false;
 }
 
+// Rank order of the flows: value descending, ties by "origin→destination" text, then by input position, so rank and style never depend on row order.
+const nameKey = (r) => `${r.sourceName}→${r.targetName}`;
+const rankCmp = (p, q) => (q.r.value - p.r.value) || (nameKey(p.r) < nameKey(q.r) ? -1 : nameKey(p.r) > nameKey(q.r) ? 1 : 0) || (p.i - q.i);
+// Adjacent ranks (values descending) that still print the same text at the decimals cap: rank numbers whose order the page must not claim.
+export function flowNumberTies(spec, values, fmtSpec) {
+  const sorted = [...new Set(values)].sort((x, y) => y - x), t = flowNumberTexts(spec, sorted, fmtSpec);
+  return sorted.map((v, k) => (k > 0 && t[k] === t[k - 1] ? [sorted[k - 1], v, t[k]] : null)).filter(Boolean);
+}
+// The ranked ledger beside the map: which flows get a row, in how many columns, and where. One column first, then two; when
+// two columns still do not hold every flow, only the first `rows.length` flows (in rank order) are listed, and the caller
+// draws only those. Names wrap, numbers never do (right-aligned on the row's first line).
+export function ledgerGeometry({ spec, routes, bounds, textUnits, fmtSpec, zh, extra = new Set() }) {
+  const font = 12.5, wUnits = (t) => textUnits(t) * font * 0.56, px = LEDGER_PANEL_X, pr = 980, gutter = 12;
+  const order = routes.map((r, i) => ({ r, i })).sort(rankCmp);
+  const sortedValues = [...new Set(routes.map((r) => r.value))].sort((x, y) => y - x), texts = flowNumberTexts(spec, sortedValues, fmtSpec);
+  const numByValue = new Map(sortedValues.map((v, k) => [v, texts[k]]));
+  const shared = sharedEnd(routes);
+  const y0 = bounds.top + 34, yCap = bounds.bottom + 6;
+  const base = order.map(({ r, i }, k) => ({ i, n: k + 1, value: r.value, num: numByValue.get(r.value), name: shared ? (shared.side === "target" ? r.sourceName : r.targetName) : nameKey(r) }));
+  const numW = Math.max(...base.map((r) => wUnits(r.num)), 0);
+  let best = null;
+  for (const [cols, lineH, pad] of [[1, 16, 8], [1, 15, 4], [2, 16, 8], [2, 15, 4]]) {
+    const colW = cols === 1 ? pr - px : (pr - px - gutter) / 2, nameW = colW - 26 - numW - (cols === 1 ? 12 : 8);
+    const rows = []; const yy = [y0, y0]; let col = 0;
+    for (const b of base) {
+      const lines = wrapName(b.name, nameW, wUnits), h = (lines.length + (extra.has(b.n) ? 1 : 0)) * lineH + pad;
+      if (yy[col] + h > yCap) { if (cols === 2 && col === 0) col = 1; else break; if (yy[col] + h > yCap) break; }
+      rows.push({ ...b, lines, lineH, pad, col, colX: px + col * (colW + gutter), colW, y: yy[col] }); yy[col] += h;
+    }
+    best = { cols, rows, cut: base.length - rows.length, numByValue, shared, order, px, pr };
+    if (!best.cut) break;
+  }
+  return best;
+}
+
 export function layoutFlowMapLabels(ctx) {
   const { spec, routes, bounds, esc, textUnits, fmtSpec, PALETTE, FONT_SANS, zh } = ctx;
   const style = ctx.style ?? spec.flow_map_labels, font = 12.5;
@@ -137,20 +172,8 @@ export function layoutFlowMapLabels(ctx) {
       if (leaders.some((l) => segHitsRect({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, { x: c.x - BADGE_R, y: c.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }))) return false;
       return !placedDiscs.some((q) => Math.hypot(q.x - c.x, q.y - c.y) <= BADGE_R * 2 + 3);
     };
-    const order = arcs.map((arc, i) => ({ arc, i })).sort((p, q) => q.arc.value - p.arc.value);
-    const rank = new Map(order.map((o, k) => [o.i, k + 1]));
-    // Ledger rows first: the name wraps, the number never does (right-aligned on the row's first line).
-    const px = LEDGER_PANEL_X, pr = 980;
-    const rowsM = order.map(({ arc, i }) => ({ arc, i, n: rank.get(i), num: numByValue.get(arc.value), name: shared ? (shared.side === "target" ? arc.sourceName : arc.targetName) : `${arc.sourceName}→${arc.targetName}` }));
-    const numW = Math.max(...rowsM.map((r) => wUnits(r.num)), 0), nameW = pr - (px + 26) - numW - 12;
-    const y0 = bounds.top + 34, yCap = bounds.bottom + 6;
-    const lay = (lineH, pad) => rowsM.map((r) => ({ ...r, lines: wrapName(r.name, nameW, wUnits), lineH, pad }));
-    let rowsL = lay(16, 8);
-    const rowH = (r, extra) => (r.lines.length + extra) * r.lineH + r.pad;
-    if (rowsL.reduce((a, r) => a + rowH(r, 0), 0) > yCap - y0) rowsL = lay(15, 4);
-    const shownRows = []; let yy = y0;
-    for (const r of rowsL) { if (yy + rowH(r, 0) > yCap) break; shownRows.push(r); yy += rowH(r, 0); }
-    const shownSet = new Set(shownRows.map((r) => r.i));
+    const geo0 = ledgerGeometry({ spec, routes, bounds, textUnits, fmtSpec, zh });
+    const order = geo0.order.map(({ i }) => ({ arc: arcs[i], i })), rank = new Map(order.map((o, k) => [o.i, k + 1])), px = geo0.px, pr = geo0.pr, y0 = bounds.top + 34;
     // Badges: beside the arc first; else a short leader to the nearest free spot; else the row says it is not on the map.
     const place = ({ arc, i }) => {
       const side = arc.hw + STROKE_PAD + BADGE_R + 3, own = arcs.indexOf(arc);
@@ -181,8 +204,11 @@ export function layoutFlowMapLabels(ctx) {
       }
       diag.badges_unplaced.push(rank.get(i)); return false;
     };
-    for (const r of shownRows) place(r);
+    for (const r of order) place(r);
     const unplaced = new Set(diag.badges_unplaced);
+    // A flow with no spot on the map gets an extra 「图上未标」 line in its row, so the rows are laid out again with that line counted.
+    const geo = unplaced.size ? ledgerGeometry({ spec, routes, bounds, textUnits, fmtSpec, zh, extra: unplaced }) : geo0;
+    const shownRows = geo.rows.map((r) => ({ ...r, arc: arcs[r.i] }));
     for (const arc of arcs) if (arc.badge?.leader) { const l = arc.badge.leader; parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${l.x1.toFixed(1)}" y1="${l.y1.toFixed(1)}" x2="${l.x2.toFixed(1)}" y2="${l.y2.toFixed(1)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`); }
     for (const arc of arcs) if (arc.badge) {
       parts.push(`<circle data-role="annotation-marker" cx="${arc.badge.x.toFixed(1)}" cy="${arc.badge.y.toFixed(1)}" r="${BADGE_R}" fill="#ffffff" stroke="${arc.highlight ? PALETTE.accent : PALETTE.ink}" stroke-width="${arc.highlight ? 2 : 1.2}"/>`);
@@ -192,17 +218,18 @@ export function layoutFlowMapLabels(ctx) {
     const unitTail = spec.unit ? ` · ${spec.unit}` : "";
     const header = shared ? (shared.side === "target" ? (zh ? `来源（流向${shared.name}）` : `Origin (to ${shared.name})`) : (zh ? `去向（来自${shared.name}）` : `Destination (from ${shared.name})`)) : (zh ? "按数值从大到小" : "Ranked by value");
     parts.push(`<text data-role="flow-ledger-header" x="${px}" y="${bounds.top + 12}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(header + unitTail)}</text>`);
-    let y = y0;
+    let yEnd = y0;
     for (const r of shownRows) {
-      const { arc, n: num } = r, b1 = y + 12, off = unplaced.has(num);
-      parts.push(`<circle data-role="annotation-marker" cx="${px + 9}" cy="${y + 8}" r="${BADGE_R}" fill="#ffffff" stroke="${arc.highlight ? PALETTE.accent : PALETTE.ink}" stroke-width="${arc.highlight ? 2 : 1.2}"/><text data-role="annotation-marker-label" x="${px + 9}" y="${y + 12.2}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="${PALETTE.ink}">${num}</text>`);
-      r.lines.forEach((ln, k) => parts.push(`<text data-role="flow-ledger-name" x="${px + 26}" y="${b1 + k * r.lineH}" font-family="${FONT_SANS}" font-size="${font}" font-weight="${arc.highlight ? 800 : 600}" fill="${PALETTE.ink}">${esc(ln)}</text>`));
-      parts.push(`<text data-role="flow-ledger-value" x="${pr}" y="${b1}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(r.num)}</text>`);
-      if (off) parts.push(`<text x="${px + 26}" y="${b1 + r.lines.length * r.lineH}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${zh ? "图上未标" : "not marked on the map"}</text>`);
-      y += rowH(r, off ? 1 : 0);
+      const { arc, n: num } = r, b1 = r.y + 12, off = unplaced.has(num), cx = r.colX + 9, nx = r.colX + 26, vx = r.colX + r.colW;
+      parts.push(`<circle data-role="annotation-marker" cx="${cx}" cy="${r.y + 8}" r="${BADGE_R}" fill="#ffffff" stroke="${arc.highlight ? PALETTE.accent : PALETTE.ink}" stroke-width="${arc.highlight ? 2 : 1.2}"/><text data-role="annotation-marker-label" x="${cx}" y="${r.y + 12.2}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="${PALETTE.ink}">${num}</text>`);
+      r.lines.forEach((ln, k) => parts.push(`<text data-role="flow-ledger-name" x="${nx}" y="${b1 + k * r.lineH}" font-family="${FONT_SANS}" font-size="${font}" font-weight="${arc.highlight ? 800 : 600}" fill="${PALETTE.ink}">${esc(ln)}</text>`));
+      parts.push(`<text data-role="flow-ledger-value" x="${vx}" y="${b1}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(r.num)}</text>`);
+      if (off) parts.push(`<text x="${nx}" y="${b1 + r.lines.length * r.lineH}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${zh ? "图上未标" : "not marked on the map"}</text>`);
+      yEnd = Math.max(yEnd, r.y + (r.lines.length + (off ? 1 : 0)) * r.lineH + r.pad);
     }
-    diag.ledger_rows = shownRows.length; diag.ledger_cut = order.length - shownRows.length;
-    if (diag.ledger_cut > 0) parts.push(`<text x="${px}" y="${y + 12}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${zh ? `其余 ${diag.ledger_cut} 条未列出` : `${diag.ledger_cut} more not listed`}</text>`);
+    diag.ledger_rows = shownRows.length; diag.ledger_cut = geo.cut; diag.ledger_cols = geo.cols;
+    // Safety net for a caller that passes more flows than fit: say so on the panel, never drop silently.
+    if (geo.cut > 0) parts.push(`<text x="${px}" y="${yEnd + 12}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${zh ? `其余 ${geo.cut} 条未列出` : `${geo.cut} more not listed`}</text>`);
     const offList = [...unplaced].sort((a, b) => a - b);
     const overflow = offList.length ? (zh ? `图上未标：第 ${offList.join("、")} 条弧线（地图上没有空位），见右侧列表` : `Not marked on the map (no free spot): ${offList.map((k) => `#${k}`).join(", ")}; see the ledger`) : "";
     return { parts, diag, overflow };
@@ -214,14 +241,15 @@ export function layoutFlowMapLabels(ctx) {
     for (const [role, p, name] of [["s", arc.a, arc.sourceName], ["t", arc.b, arc.targetName]]) {
       const key = `${name}`;
       const node = nodes.get(key) ?? { name, x: p.x, y: p.y, weight: 0, src: 0, tgt: 0, srcValue: 0 };
-      node.weight += arc.value; if (role === "s") { node.src++; node.srcValue = arc.value; } else node.tgt++;
+      node.weight += arc.value; node.srcValue = arc.value; if (role === "s") node.src++; else node.tgt++;
       nodes.set(key, node);
     }
   }
   const placed = [], list = [...nodes.values()].sort((p, q) => q.weight - p.weight);
   const dirs = [[1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1], [0, -1], [0, 1]];
   for (const node of list) {
-    const text = node.src === 1 && node.tgt === 0 ? `${node.name} ${numByValue.get(node.srcValue)}` : node.name;
+    // An end that appears in exactly one flow (an origin, or a destination of a shared-origin star) prints that flow's value; a hub prints none.
+    const text = node.src + node.tgt === 1 ? `${node.name} ${numByValue.get(node.srcValue)}` : node.name;
     const w = Math.max(25, textUnits(text) * font * 0.56 + 8), h = font + 8, g = 6;
     const cands = [];
     for (const [dx, dy] of dirs) cands.push({ box: { x: dx === 0 ? node.x - w / 2 : dx > 0 ? node.x + g : node.x - g - w, y: dy === 0 ? node.y - h / 2 : dy < 0 ? node.y - g - h : node.y + g, w, h }, ring: 0 });
