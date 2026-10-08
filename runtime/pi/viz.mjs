@@ -6014,6 +6014,45 @@ function quadHitsBox(q,b) {
   return true;
 }
 
+// NEWSROOM_SANKEY_OTHER_NOTE=1 (default off; off = byte-identical SVG): the merged "other" node is named
+// apart from every data node in its column, the chart footer names the nodes it holds (names only), and a
+// highlight that names only a target marks that target's largest incoming flow.
+function sankeyOtherNoteEnabled(){ return process.env.NEWSROOM_SANKEY_OTHER_NOTE==="1"; }
+function sankeyColumnName(li,maxLevel,zh){
+  if(li===0) return zh?"左列":"left column";
+  if(li===maxLevel) return zh?"右列":"right column";
+  return zh?`第${li+1}列`:`column ${li+1}`;
+}
+// One entry per merged column: {label, column, members:[names]} - names only, no values.
+export function sankeyMergeSummary(spec, rows){
+  return sankeyMergeNotes(spec,rows);
+}
+function sankeyMergeNotes(spec, rows){
+  const zh=vizLang(spec)==="zh";
+  const grandTotal=Math.max(rows.reduce((sum,r)=>sum+Math.max(0,n(r[spec.value_field])??0),0),1);
+  const otherLabel=zh?"其他":"Other";
+  const prelim=flowLayout(rows,spec), notes=[];
+  prelim.levels.forEach((level,li)=>{
+    const nameOf=(node)=>resolveEconomyDisplayName(stripNodePrefix(node.id), spec.category_names, vizLang(spec));
+    const candidates=level.filter((node)=>Math.max(node.in,node.out)/grandTotal<0.03);
+    if(candidates.length<2) return;
+    const used=new Set(level.filter((node)=>!candidates.includes(node)).map((node)=>nameOf(node).trim().toLowerCase()));
+    let label=otherLabel;
+    for(let k=0; used.has(label.toLowerCase()); k++) label=zh?`其他（合并${k?k+1:""}）`:`Other (combined${k?` ${k+1}`:""})`;
+    notes.push({label,column:sankeyColumnName(li,prelim.maxLevel,zh),members:candidates.map(nameOf)});
+  });
+  return notes;
+}
+function sankeyOtherFootnote(spec, rows){
+  const zh=vizLang(spec)==="zh";
+  const notes=sankeyMergeNotes(spec,rows);
+  if(!notes.length) return "";
+  return notes.map((m)=>{
+    const head=m.label===(zh?"其他":"Other") ? (zh?`其他（${m.column}）`:`Other (${m.column})`) : (zh?m.label.replace(/）$/,`，${m.column}）`):m.label.replace(/\)$/,`, ${m.column})`));
+    return `${head}${zh?"：":": "}${m.members.join(zh?"、":", ")}`;
+  }).join(zh?"；":"; ");
+}
+
 function renderSankey(spec, rows, mobile=false) {
   const width=mobile?640:1040, nodeW=mobile?16:20;
   const gap=Math.max(12, mobile?20:16);
@@ -6025,12 +6064,23 @@ function renderSankey(spec, rows, mobile=false) {
   // only actually merges when it holds >=2 such candidates (merging a
   // single small node would just rename it, not declutter anything).
   const prelim=flowLayout(rows,spec);
+  const noteOn=sankeyOtherNoteEnabled();
   const mergedIdFor=new Map(); // original node id -> synthetic "other" id
   const mergedMembers=new Map(); // synthetic id -> [{id,name,value}]
+  const mergedLabels=new Map(); // synthetic id -> label (NEWSROOM_SANKEY_OTHER_NOTE=1 only)
+  const mergedColumns=new Map(); // synthetic id -> column index (NEWSROOM_SANKEY_OTHER_NOTE=1 only)
   prelim.levels.forEach((level,li)=>{
+    const nameOf=(node)=>resolveEconomyDisplayName(stripNodePrefix(node.id), spec.category_names, vizLang(spec));
     const candidates=level.filter((node)=>Math.max(node.in,node.out)/grandTotal<0.03);
     if(candidates.length<2) return;
     const syntheticId=`__other_L${li}__`;
+    if(noteOn){
+      const used=new Set(level.filter((node)=>!candidates.includes(node)).map((node)=>nameOf(node).trim().toLowerCase()));
+      const zh=vizLang(spec)==="zh";
+      let label=otherLabel;
+      for(let k=0; used.has(label.toLowerCase()); k++) label=zh?`其他（合并${k?k+1:""}）`:`Other (combined${k?` ${k+1}`:""})`;
+      mergedLabels.set(syntheticId,label); mergedColumns.set(syntheticId,li);
+    }
     for(const node of candidates){
       mergedIdFor.set(node.id,syntheticId);
       if(!mergedMembers.has(syntheticId)) mergedMembers.set(syntheticId,[]);
@@ -6072,7 +6122,7 @@ function renderSankey(spec, rows, mobile=false) {
       if(String(level[i].id).startsWith("__other_")){ const [node]=level.splice(i,1); level.push(node); }
     }
   });
-  const displayNameOf=(id)=> String(id).startsWith("__other_") ? otherLabel : resolveEconomyDisplayName(stripNodePrefix(id), spec.category_names, vizLang(spec));
+  const displayNameOf=(id)=> String(id).startsWith("__other_") ? (mergedLabels.get(String(id))??otherLabel) : resolveEconomyDisplayName(stripNodePrefix(id), spec.category_names, vizLang(spec));
 
   const nodeValues=[...layout.nodes.values()].map((node)=>Math.max(node.in,node.out)); const maxNode=Math.max(...nodeValues,1);
   const barHeight=(node)=>Math.max(22,Math.min(100,(Math.max(node.in,node.out)/maxNode)*130));
@@ -6098,7 +6148,10 @@ function renderSankey(spec, rows, mobile=false) {
   });
   const leftMargin=Math.max(60,maxLeftWidth+18), rightMargin=Math.max(60,maxRightWidth+18);
 
-  const f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH), left=leftMargin, right=width-rightMargin, top=f.bodyTop+28, bottom=f.bodyBottom-28;
+  // With the note on, the merged nodes' members join the chart note, so the frame grows the footer for it.
+  const footnote=noteOn&&mergedIdFor.size?sankeyOtherFootnote(spec,rows):"";
+  const frameSpec=footnote?{...spec,note:[spec.note,footnote].filter(Boolean).join(vizLang(spec)==="zh"?" ":" ")}:spec;
+  const f=mobile?mobileFrame(frameSpec,bodyH):frame(frameSpec,bodyH), left=leftMargin, right=width-rightMargin, top=f.bodyTop+28, bottom=f.bodyBottom-28;
   const levels=Math.max(layout.maxLevel+1,2), xAt=(level)=>left+(right-left-nodeW)*(level/Math.max(1,levels-1));
   const positions=new Map();
   layout.levels.forEach((level,li)=>{const totalH=bottom-top, usable=totalH-gap*Math.max(0,level.length-1), raw=level.map(barHeight), sum=raw.reduce((a,b)=>a+b,0), scale=sum>usable?usable/sum:1;let y=top+(usable-sum*scale)/2;level.forEach((node,i)=>{const h=raw[i]*scale;positions.set(node.id,{x:xAt(li),y,h});y+=h+gap;});});
@@ -6192,11 +6245,25 @@ function renderSankey(spec, rows, mobile=false) {
     const cur=maxRowForSource.get(a);
     if(!cur||v>cur.v) maxRowForSource.set(a,{row,v});
   }
+  const maxRowForTarget=new Map();
+  if(noteOn) for (const row of flowRows) {
+    const b=String(row[spec.target_field]);
+    const v=Math.max(0,n(row[spec.value_field])??0);
+    const cur=maxRowForTarget.get(b);
+    if(!cur||v>cur.v) maxRowForTarget.set(b,{row,v});
+  }
   const isHighlightedRow=(row)=>{
     if(highlightSet.size===0) return false;
     const a=String(row[spec.source_field]);
     const sourceHighlighted=highlightSet.has(a)||highlightSet.has(stripNodePrefix(a));
-    if(!sourceHighlighted) return false;
+    if(!sourceHighlighted){
+      // Target only (note on): mirror the source-only rule - the target's largest incoming flow.
+      if(!noteOn) return false;
+      const b=String(row[spec.target_field]);
+      if(!(highlightSet.has(b)||highlightSet.has(stripNodePrefix(b)))) return false;
+      if(bySource.has(b)) return false; // a through node keeps the source rule (its largest outgoing flow)
+      return maxRowForTarget.get(b)?.row===row;
+    }
     const explicitTargets=explicitTargetsForSource.get(a);
     if(explicitTargets&&explicitTargets.size>0) return explicitTargets.has(String(row[spec.target_field]));
     return maxRowForSource.get(a)?.row===row;
@@ -6367,7 +6434,7 @@ function renderSankey(spec, rows, mobile=false) {
     });
   });
   addPointlessFlowAnnotations(f.parts,spec,positions,nodeW,f.annotationLayout,mobile);
-  (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
+  (mobile?addMobileFooter:addFooter)(f.parts,frameSpec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
 function addPointlessFlowAnnotations(parts,spec,positions,nodeW,layout,mobile){for(const annotation of annotations(spec)){if(annotation.type!=="node")continue;const p=positions.get(String(annotation.match_value));if(!p)continue;const lines=wrapText(annotationLabel(annotation,mobile?26:34),mobile?26:34).slice(0,3),cx=p.x+nodeW/2,above=p.y>90,step=mobile?15:16,anchorY=above?p.y-18:p.y+p.h+24,baseY=above?anchorY-(lines.length-1)*step:anchorY;parts.push(`<line data-role="annotation-leader" x1="${cx}" y1="${above?p.y:p.y+p.h}" x2="${cx}" y2="${above?anchorY+7:anchorY-13}" stroke="${PALETTE.muted}" stroke-width="1"/>`);lines.forEach((line,i)=>parts.push(`<text data-role="annotation" x="${cx}" y="${baseY+i*step}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.ink}">${esc(line)}</text>`));}}

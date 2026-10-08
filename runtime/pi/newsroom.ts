@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, 
 import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, validateVizSpec } from "./viz.mjs";
 import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
@@ -209,6 +209,8 @@ const HELD_CHART_TYPES: readonly string[] = ["hierarchy_tree", "geo_flow_map", "
 // Default off (exactly "1" turns it on): off, the registered tool definitions and the execute paths are byte-identical to what
 // they were before the hold. The switch is read where the tools register and where a plan is accepted.
 const zhSourceLineEnabled = () => process.env.NEWSROOM_ZH_SOURCE_LINE === "1";
+const sankeyOtherNoteEnabled = () => process.env.NEWSROOM_SANKEY_OTHER_NOTE === "1";
+const SANKEY_HIGHLIGHT_DESCRIPTION = "Nodes to highlight. For sankey/alluvial: a source and a target named together highlight the flow between them; a source alone highlights its largest outgoing flow; a target alone highlights its largest incoming flow.";
 const heldChartTypesEnabled = () => process.env.NEWSROOM_HELD_CHART_TYPES === "1";
 const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? ""));
 // Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
@@ -4126,7 +4128,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       reference_period_field: Type.Optional(Type.String()),
       mixed_period_strategy: Type.Optional(StringEnum(["reject", "facet", "explicit"] as const)),
       sort: Type.Optional(StringEnum(["asc", "desc", "none"] as const)),
-      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
+      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, ...(sankeyOtherNoteEnabled() ? { description: SANKEY_HIGHLIGHT_DESCRIPTION } : {}) })),
       direct_labels: Type.Optional(Type.Boolean()),
       // strip_plot, stacked_bar_100 and mirrored_bar fields. Names, enums and ranges equal schemas/newsroom-viz-spec.schema.json
       // (scripts/test_viz_plan_schema.mjs compares them); viz.mjs validateVizSpec and lintVizSpec stay the authority on every data rule.
@@ -4523,6 +4525,10 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         source_note: spec.source_note,
         alt: spec.alt,
       });
+      // NEWSROOM_SANKEY_OTHER_NOTE=1: say which nodes the merged "other" node holds (names only).
+      const mergedNote = sankeyOtherNoteEnabled() && (spec.chart_type === "sankey" || spec.chart_type === "alluvial")
+        ? sankeyMergeSummary(spec, rows).map((m: { label: string; column: string; members: string[] }) => `\nMerged nodes: ${m.label} (${m.column}) holds ${m.members.join(", ")}`).join("")
+        : "";
       return textResult(
         mobilePages
           ? `Rendered responsive newsroom visualization.
@@ -4531,14 +4537,14 @@ Mobile SVG: ${mobileSvgRef}
 Manifest: ${manifestRef}
 Render QA: PASS (${renderQaRef})
 Verification: ${systemVerified ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
-Data hash: ${currentHash}
+Data hash: ${currentHash}${mergedNote}
 Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`
           : `Rendered newsroom visualization (desktop only; phone-facing mobile page is off).
 Desktop SVG: ${desktopSvgRef}
 Manifest: ${manifestRef}
 Render QA: PASS (${renderQaRef})
 Verification: ${systemVerified ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
-Data hash: ${currentHash}
+Data hash: ${currentHash}${mergedNote}
 Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`,
         {
           svgRef: desktopSvgRef,
