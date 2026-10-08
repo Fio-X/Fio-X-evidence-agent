@@ -325,6 +325,13 @@ const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Option
 function firstTryTextEnabled() {
   return process.env.NEWSROOM_SPEED_FIRST_TRY_TEXT === "1";
 }
+// NEWSROOM_SPEED_FIRST_TRY_ALL=1 (default off): a refused newsroom_viz_plan / newsroom_viz_chain call names every problem it has, each with
+// its exact fix, so the next call can pass. It reports all problems of the claim template in one pass, checks reader_task here instead of
+// in the framework validator, keeps checking claim ids after a missing declaration, and states the whole placeholder grammar. It only changes
+// which refusal text comes back and when; no check is added, removed or relaxed, and nothing is repaired.
+function firstTryAllEnabled() {
+  return process.env.NEWSROOM_SPEED_FIRST_TRY_ALL === "1";
+}
 const FIRST_TRY = {
   stepStatus: "Required on every step: pending, in_progress, completed or blocked.",
   claimNumberWords: ' Number words ("three", "三个", "second largest") are refused like typed digits; select the number in the SQL and write a placeholder.',
@@ -2204,6 +2211,29 @@ function literalNumberIn(template: string) {
   return null;
 }
 
+// The whole placeholder grammar in one place (NEWSROOM_SPEED_FIRST_TRY_ALL): what a placeholder may be and the usual wrong forms.
+const CLAIM_TEMPLATE_FULL_GRAMMAR = `${CLAIM_TEMPLATE_GRAMMAR}. Rules: every number, years included, is a placeholder, and a number word is refused like a digit; a placeholder holds one selector only, so no arithmetic or expression ({a - b}, {a / b}): compute it in the SQL as a column (AS name) and select that column; column names are plain aliases of letters, digits and _ and are not dotted (write {first.year}, not {first.value.year}); max and min rank a measure column of the plan, and {max.measure.other} reads another column of that row; a bare column names no row; |N (0-4) comes last inside the braces`;
+
+/** NEWSROOM_SPEED_FIRST_TRY_ALL: every problem of a claim template in one pass, each with its fix. Same checks as fillClaimTemplate
+ *  (it calls the same resolver per placeholder); returns the messages without the CLAIM_TEMPLATE_ERROR prefix, empty when the template is fine. */
+export function claimTemplateProblems(template: string, rows: Record<string, unknown>[], measures: string[] = [], names: ClaimNames | null = null): string[] {
+  const strip = (error: any) => String(error?.message ?? error).replace(/^CLAIM_TEMPLATE_ERROR: /, "");
+  const problems: string[] = [];
+  if (typeof template !== "string" || !template.trim()) return ["the claim is empty"];
+  if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) problems.push("the claim has an unmatched { or }; every placeholder is one pair of braces around one selector");
+  const typed = literalNumberIn(template);
+  if (typed !== null) problems.push(`the claim has a typed number (near "${typed}"); every number, years included, must be a placeholder so that no number is transcribed`);
+  const worded = numberWordIn(template);
+  if (worded !== null) problems.push(`the claim has a number word (near "${worded}"); a number written in words is still a number no row backs. Drop it, or select it in the SQL (for example COUNT(*) AS n) and write a placeholder such as {first.n}. A scale or unit word right after a placeholder, as in {max.x} million, is fine`);
+  if (!Array.isArray(rows) || rows.length === 0) { problems.push("the plan SQL returned no rows, so no placeholder can be filled"); return problems; }
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))];
+  const ranked = measures.filter((name) => columns.includes(name));
+  for (const match of template.matchAll(/\{([^{}]*)\}/g)) {
+    try { resolveClaimPlaceholder(match[0], match[1], rows, columns, ranked, names); } catch (error) { problems.push(strip(error)); }
+  }
+  return problems;
+}
+
 /** Fill a claim template from SQL result rows. Every placeholder selects one
  *  value of one row; the bindings record which, for audit. `measures` are the
  *  plan's value columns: when any is in the result, max and min rank only
@@ -2337,6 +2367,19 @@ async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
   inlineClaimAborted(signal);
   const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
   inlineClaimAborted(signal);
+  if (firstTryAllEnabled()) {
+    const problems = claimTemplateProblems(template, rows, inlineClaimMeasures(rawParams), chartNameDisplay(plan, rows));
+    if (problems.length) {
+      // Nothing is recorded: the handler collects this refusal beside the plan's own, then refuses the whole call. The stand-in params only
+      // keep the claim-id and text checks from reporting a claim the runtime has not made yet.
+      const error: any = new Error(`CLAIM_TEMPLATE_ERROR: ${problems.length === 1 ? problems[0] : `${problems.length} problems in the claim, each with its fix: ${problems.map((problem, index) => `(${index + 1}) ${problem}`).join(" ")}`}. Placeholder grammar: ${CLAIM_TEMPLATE_FULL_GRAMMAR}`);
+      const pending = "claim_pending";
+      const standIn: any = { ...plan, claim_id: pending, takeaway: String(plan.takeaway ?? pending), alt: String(plan.alt ?? pending), source_note: String(plan.source_note ?? pending) };
+      if (standIn.claim_spec && typeof standIn.claim_spec === "object" && !Array.isArray(standIn.claim_spec)) standIn.claim_spec = { ...standIn.claim_spec, claim_id: pending };
+      if (Array.isArray(standIn.annotations)) standIn.annotations = standIn.annotations.map((a: any) => a && typeof a === "object" && !String(a.claim_id ?? "").trim() ? { ...a, claim_id: pending } : a);
+      return { params: standIn, claim: null as any, refusal: error };
+    }
+  }
   const resultHash = hashRows(rows);
   const computationRef = computationRelativePath(safeSql, snapshot.hash, resultHash);
   const record = buildComputationRecord({ sql: safeSql, inputSnapshot: snapshot, derivedInputs: derived, resultHash, rows });
@@ -2441,7 +2484,7 @@ function withInlineClaimSchema(shared: any) {
     else if (key === "source_note") entries.push([key, Type.Optional(Type.String({ description: "Source attribution; required unless the call carries claim, which defaults it to the host and series label recorded when the data file was downloaded, or the name of a user-supplied file (if none is recorded the call is refused: then pass source_note)" }))]);
     else entries.push([key, schema]);
     if (key === "claim_id") {
-      entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.${firstTry(FIRST_TRY.claimNumberWords)}` }))]);
+      entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${firstTryAllEnabled() ? CLAIM_TEMPLATE_FULL_GRAMMAR : CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.${firstTry(FIRST_TRY.claimNumberWords)}` }))]);
       entries.push(["claim_kind", Type.Optional(StringEnum(CLAIM_KINDS, { description: "Required with claim; same meaning as record_claim claim_kind" }))]);
       entries.push(["claim_caveat", Type.Optional(Type.String({ description: "Caveat recorded with the claim: a provisional latest year, definition changes the data flags, the series' method, or reference periods that differ between rows; no other data values, trends or causes" }))]);
     }
@@ -3928,7 +3971,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
     parameters: withInlineClaimSchema(Type.Object({
-      reader_task: StringEnum(VIZ_PLAN_READER_TASKS, contractHint("readerTask")),
+      reader_task: firstTryAllEnabled() ? Type.Optional(Type.String({ description: `Required: exactly one of ${VIZ_PLAN_READER_TASKS.join(", ")} (checked by the runtime; claim_spec.reader_task repeats it)` })) : StringEnum(VIZ_PLAN_READER_TASKS, contractHint("readerTask")),
       delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole"))),
       story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
       story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
@@ -3949,7 +3992,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       sql: Type.String(ruleHint(RULE_HINT_SQL, { description: "Read-only SQL whose rows directly encode the visual" })),
       unit: Type.String({ description: "Quantitative unit, such as %, TWh, MtCO2, index points, or USD" }),
       measure_semantics: Type.Optional(Type.Array(Type.Object({
-        id: Type.String(),
+        id: Type.String(...(firstTryAllEnabled() ? [{ description: "A short key you choose (for example m1); claim_spec target_measure, baseline_measure, context_measures and measure_ids must repeat these keys; a claim id or a label is not a key" }] : [])),
         field: Type.Optional(Type.String()),
         phenomenon: Type.String(),
         unit: Type.String(),
@@ -3974,7 +4017,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       claim_spec: Type.Optional(Type.Object({
         claim_id: Type.Optional(Type.String(ruleHint(RULE_HINT_SPEC_CLAIM_ID, { description: "Optional in draft mode; required for a verified claim-bound plan" }))),
         relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const, ruleHint(RULE_HINT_RELATION)),
-        reader_task: Type.String(claimSpecReaderTaskOptions({ description: "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." })),
+        reader_task: Type.String(claimSpecReaderTaskOptions({ description: firstTryAllEnabled() ? `Use the same value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence and not a relation.` : "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." })),
         target_measure: Type.Optional(Type.String(ruleHint(RULE_HINT_TARGET_MEASURE))),
         baseline_measure: Type.Optional(Type.String()),
         context_measures: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })),
@@ -4090,7 +4133,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const params = inline ? inline.params : rawParams;
       // NEWSROOM_SPEED_VIZ_REPORT_ALL=1: `attempt` records a failed check and goes on; the checks that read a failed check's result are
       // skipped (declared, semanticGate). Off: `attempt` just runs the check, so the first failure throws exactly as before.
-      const collected: any[] | null = vizReportAllEnabled() ? [] : null;
+      const collected: any[] | null = vizReportAllEnabled() || firstTryAllEnabled() ? [] : null;
       // A cancel or abort is not a validation message: it rethrows at once.
       const keep = (error: any) => { if (signal?.aborted || error?.name === "AbortError") throw error; collected!.push(error); };
       const attempt = (check: () => void) => { if (!collected) return check(); try { check(); } catch (error) { keep(error); } };
@@ -4100,6 +4143,13 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         if (collected.length === 1) throw collected[0];
         throw combinedError(collected[0], `${collected[0]?.message ?? collected[0]}\nAlso refused in this call (${collected.length - 1} more independent problem${collected.length === 2 ? "" : "s"}; no claim or plan was recorded, though inline preparation may have queried rows and cached them):\n${collected.slice(1).map((error, index) => `(${index + 2}) ${error?.message ?? error}`).join("\n")}`);
       };
+      // NEWSROOM_SPEED_FIRST_TRY_ALL: the claim template's refusal joins the plan's own; reader_task is checked here with its exact fix.
+      if ((inline as any)?.refusal) collected!.push((inline as any).refusal);
+      attempt(() => {
+        if (!firstTryAllEnabled()) return;
+        const value = String(params.reader_task ?? "");
+        if (!(VIZ_PLAN_READER_TASKS as readonly string[]).includes(value)) throw new Error(`READER_TASK_INVALID: reader_task ${value ? `'${value}' is not a reader task` : "is required"}; set it to exactly one of ${VIZ_PLAN_READER_TASKS.join(", ")}, and set claim_spec.reader_task to the same value (claim_spec.relation is a different field)`);
+      });
       attempt(() => validateReadOnlySql(params.sql));
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
@@ -4140,7 +4190,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       attempt(() => {
         if (SEMANTIC_REQUIRED_READER_TASKS.has(params.reader_task) && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
           declared = false;
-          throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec`);
+          const missing = firstTryAllEnabled() ? [!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length ? "measure_semantics (one entry per measure)" : "", !normalizedParams.claim_spec ? "claim_spec" : ""].filter(Boolean) : [];
+          throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec${missing.length ? `; this call is missing ${missing.join(" and ")}` : ""}`);
         }
       });
       // K110 (off unless NEWSROOM_SCATTER_PAIRED_MEASURES=1): only a call whose own chart_type is scatter must declare; a scatter that
@@ -4156,9 +4207,25 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       let semanticGate: any = null;
       if (declared) {
         attempt(() => {
+          try {
           semanticGate = scatterPaired
             ? evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null }, { scatterPair: { chart_type: params.chart_type, x_field: params.x_field, y_field: params.y_field } })
             : evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
+          } catch (error: any) {
+            // NEWSROOM_SPEED_FIRST_TRY_ALL: the same refusal, plus the ids the call itself declared so the fix is exact.
+            if (firstTryAllEnabled() && /^claim_spec references unknown measure: /.test(String(error?.message ?? ""))) {
+              const ids = (Array.isArray(normalizedParams.measure_semantics) ? normalizedParams.measure_semantics : []).map((measure: any) => String(measure?.id ?? ""));
+              throw combinedError(error, `${error.message}; measure_semantics declares the ids: ${ids.join(", ")}. target_measure, baseline_measure, context_measures and measure_ids in claim_spec must repeat those ids exactly (an id is a short key you chose, not a claim id or a label)`);
+            }
+            throw error;
+          }
+        });
+      }
+      // NEWSROOM_SPEED_FIRST_TRY_ALL: the claim-id comparison reads only the call, so it still runs when the declaration check refused.
+      if (firstTryAllEnabled() && !semanticGate) {
+        attempt(() => {
+          const specId = (normalizedParams.claim_spec as any)?.claim_id;
+          if (verificationMode === "verified" && normalizedParams.claim_spec && String(specId ?? "") !== String(params.claim_id)) throw new Error(`claim_spec.claim_id '${specId ?? ""}' must match verified claim_id '${params.claim_id}'`);
         });
       }
       let scatterAxisUnits: any = null;
@@ -4175,13 +4242,26 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         attempt(() => {
           if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
         });
-        attempt(() => assertEditorialGrammar(semanticGate, params.chart_type));
+        attempt(() => {
+          try { assertEditorialGrammar(semanticGate, params.chart_type); } catch (error: any) {
+            // NEWSROOM_SPEED_FIRST_TRY_ALL: the same refusal with the two ways to fix it named; the check itself is unchanged.
+            if (!firstTryAllEnabled() || !/^EDITORIAL_GRAMMAR_BLOCKED: /.test(String(error?.message ?? ""))) throw error;
+            const fits = Object.keys(STRICT_GRAMMAR_FORMS).filter((name) => STRICT_GRAMMAR_FORMS[name].includes(params.chart_type));
+            const allowed = STRICT_GRAMMAR_FORMS[String(semanticGate.claim_spec?.relation ?? "")] ?? [];
+            throw combinedError(error, `${error.message}. To fix, either set chart_type to one of ${allowed.join(", ")}, or set claim_spec.relation to a relation that fits ${params.chart_type} (a relation value such as ${fits.join(", ") || "none"}, not a reader_task)`);
+          }
+        });
         attempt(() => { if (scatterPaired && semanticGate.scatter_pair) assertScatterPairFields(params); });
       }
       attempt(() => {
         const errors = validateVizSpec(normalizedParams);
         if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
       });
+      // NEWSROOM_SPEED_FIRST_TRY_ALL: the existing record check for a claim_id passed in the call runs before the refusal is thrown, so its
+      // refusal joins the others; it only reads the claim records, writes nothing, and the same check runs again below when nothing was refused.
+      if (firstTryAllEnabled() && !inline && params.claim_id) {
+        await attemptAsync(async () => { requireVerifiedClaim(await verifiedClaimRecords(), params.claim_id); });
+      }
       throwCollected();
       let verifiedClaim: any = null;
       let claimText = "";
