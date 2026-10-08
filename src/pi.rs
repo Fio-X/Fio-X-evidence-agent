@@ -625,12 +625,18 @@ fn plan_progress_entry(event: &Value, seq: u64) -> Option<Value> {
     }
     let call_id = event.get("toolCallId").and_then(Value::as_str)?;
     let tool = event.get("toolName").and_then(Value::as_str)?;
+    let is_error = event.get("isError").and_then(Value::as_bool);
     Some(json!({
         "seq": seq,
         "tool_call_id": call_id,
         "tool": tool,
-        "is_error": event.get("isError").and_then(Value::as_bool).unwrap_or(false),
-        "status": if event.get("isError").and_then(Value::as_bool).unwrap_or(false) { "failed" } else { "completed" },
+        "is_error": is_error,
+        // A missing isError is unknown, never completed.
+        "status": match is_error {
+            Some(true) => "failed",
+            Some(false) => "completed",
+            None => "unknown",
+        },
         "source": "tool_execution_end",
         "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
     }))
@@ -1960,6 +1966,13 @@ mod tests {
         assert_eq!(line["tool"], "duckdb_query");
         assert_eq!(line["seq"], 3);
         assert_eq!(line["status"], "failed");
+        let ok = json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c10", "isError": false});
+        assert_eq!(plan_progress_entry(&ok, 4).unwrap()["status"], "completed");
+        let unknown =
+            json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c11"});
+        let line = plan_progress_entry(&unknown, 5).unwrap();
+        assert_eq!(line["status"], "unknown");
+        assert!(line["is_error"].is_null());
         for other in [
             json!({"type": "tool_execution_start", "toolName": "x", "toolCallId": "c1"}),
             json!({"type": "message_update", "assistantMessageEvent": {"delta": "plan: done"}}),
