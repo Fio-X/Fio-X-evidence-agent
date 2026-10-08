@@ -20,8 +20,10 @@ export const LEDGER_PANEL_X = 724;
 const BADGE_R = 8.5;
 const STROKE_PAD = 2;
 
+// The widest line stays below a badge's diameter (17 px), so thick flows near a shared end do not fuse into one grey area.
+export const FLOW_MAX_WIDTH = 12;
 export function flowWidth(value, max) {
-  return Math.max(2, (value / Math.max(max, 1e-9)) * 18);
+  return Math.max(2, (value / Math.max(max, 1e-9)) * FLOW_MAX_WIDTH);
 }
 export function arrowSize(sw) {
   return Math.min(20, Math.max(9, sw * 1.2 + 5));
@@ -54,15 +56,26 @@ export function sharedEnd(routes) {
   if (srcs.size === 1) return { side: "source", name: routes[0].sourceName };
   return null;
 }
-// Numbers for rows in rank order (values descending). Adjacent rows with different values never print the same text:
-// when two would, every row gains one decimal, then at most one more. The unit is not part of the text.
+// The most decimals any number written in the title or subtitle carries (the page's own precision), at most 2.
+export function titleDecimals(spec) {
+  let d = 0;
+  for (const m of `${spec?.title ?? ""} ${spec?.subtitle ?? ""}`.matchAll(/\d+\.(\d+)/g)) d = Math.max(d, m[1].length);
+  return Math.min(2, d);
+}
+// Numbers for one set of rows in rank order (values descending): one decimal count for the whole set. It starts from the
+// shared value-label rule (the most decimals that rule gives any of the values), is raised to the decimals the title or
+// subtitle prints (at most 2), and then every value prints with it. Adjacent rows with different values never print the same
+// text while the count stays within 2: when two would, the count grows until they differ or reaches 2. The unit is not part of the text.
 export function flowNumberTexts(spec, values, fmtSpec) {
   const texts = (d) => values.map((v) => fmtSpec(spec, v, "", d));
   const collide = (t) => t.some((x, i) => i > 0 && values[i] !== values[i - 1] && x === t[i - 1]);
   let t = texts(null);
-  if (!collide(t)) return t;
+  if (t.some((x) => /[万亿]/.test(x))) { if (!collide(t)) return t; }
   const n0 = Math.max(0, ...t.map((x) => (/\.(\d+)/.exec(x)?.[1].length ?? 0)));
-  for (let d = n0 + 1; d <= n0 + 2; d++) { t = texts(d); if (!collide(t)) break; }
+  if (t.some((x) => /[万亿]/.test(x))) { for (let d = n0 + 1; d <= n0 + 2; d++) { t = texts(d); if (!collide(t)) break; } return t; }
+  let d = Math.max(n0, titleDecimals(spec));
+  if (d > 0) t = texts(d);
+  while (collide(t) && d < Math.max(2, n0)) { d++; t = texts(d); }
   return t;
 }
 // Wrap a name onto lines of at most maxW, breaking after an arrow when one is near; never truncates.
@@ -122,22 +135,35 @@ export function flowNumberTies(spec, values, fmtSpec) {
 export function ledgerGeometry({ spec, routes, bounds, textUnits, fmtSpec, zh, extra = new Set() }) {
   const font = 12.5, wUnits = (t) => textUnits(t) * font * 0.56, px = LEDGER_PANEL_X, pr = 980, gutter = 12;
   const order = routes.map((r, i) => ({ r, i })).sort(rankCmp);
-  const sortedValues = [...new Set(routes.map((r) => r.value))].sort((x, y) => y - x), texts = flowNumberTexts(spec, sortedValues, fmtSpec);
-  const numByValue = new Map(sortedValues.map((v, k) => [v, texts[k]]));
   const shared = sharedEnd(routes);
   const y0 = bounds.top + 34, yCap = bounds.bottom + 6;
-  const base = order.map(({ r, i }, k) => ({ i, n: k + 1, value: r.value, num: numByValue.get(r.value), name: shared ? (shared.side === "target" ? r.sourceName : r.targetName) : nameKey(r) }));
-  const numW = Math.max(...base.map((r) => wUnits(r.num)), 0);
-  let best = null;
-  for (const [cols, lineH, pad] of [[1, 16, 8], [1, 15, 4], [2, 16, 8], [2, 15, 4]]) {
+  const base = order.map(({ r, i }, k) => ({ i, n: k + 1, value: r.value, name: shared ? (shared.side === "target" ? r.sourceName : r.targetName) : nameKey(r) }));
+  // One number set per column: rows [from, to) of the rank order print with one decimal count.
+  const numsFor = (from, to) => { const vs = [...new Set(base.slice(from, to).map((b) => b.value))].sort((x, y) => y - x), tx = flowNumberTexts(spec, vs, fmtSpec); return new Map(vs.map((v, k) => [v, tx[k]])); };
+  const widest = (cuts) => Math.max(0, ...cuts.flatMap(([f, t]) => [...numsFor(f, t).values()].map(wUnits)));
+  const lay = (cols, lineH, pad, nums, numW) => {
     const colW = cols === 1 ? pr - px : (pr - px - gutter) / 2, nameW = colW - 26 - numW - (cols === 1 ? 12 : 8);
     const rows = []; const yy = [y0, y0]; let col = 0;
     for (const b of base) {
       const lines = wrapName(b.name, nameW, wUnits), h = (lines.length + (extra.has(b.n) ? 1 : 0)) * lineH + pad;
       if (yy[col] + h > yCap) { if (cols === 2 && col === 0) col = 1; else break; if (yy[col] + h > yCap) break; }
-      rows.push({ ...b, lines, lineH, pad, col, colX: px + col * (colW + gutter), colW, y: yy[col] }); yy[col] += h;
+      rows.push({ ...b, num: nums[col].get(b.value), lines, lineH, pad, col, colX: px + col * (colW + gutter), colW, y: yy[col] }); yy[col] += h;
     }
-    best = { cols, rows, cut: base.length - rows.length, numByValue, shared, order, px, pr };
+    return rows;
+  };
+  let best = null;
+  for (const [cols, lineH, pad] of [[1, 16, 8], [1, 15, 4], [2, 16, 8], [2, 15, 4]]) {
+    let rows;
+    if (cols === 1) { const nums = numsFor(0, base.length); rows = lay(1, lineH, pad, [nums, nums], widest([[0, base.length]])); }
+    else {
+      // First pass finds where the rows split; each column then gets its own decimal count and the rows are laid out again.
+      const g = numsFor(0, base.length), r1 = lay(2, lineH, pad, [g, g], widest([[0, base.length]]));
+      const k = r1.filter((r) => r.col === 0).length;
+      rows = lay(2, lineH, pad, [numsFor(0, k), numsFor(k, base.length)], widest([[0, k], [k, base.length]]));
+      const k2 = rows.filter((r) => r.col === 0).length;
+      if (k2 !== k) { const nn = [numsFor(0, k2), numsFor(k2, base.length)]; rows = rows.map((r) => ({ ...r, num: nn[r.col].get(r.value) })); }
+    }
+    best = { cols, rows, cut: base.length - rows.length, shared, order, px, pr };
     if (!best.cut) break;
   }
   return best;

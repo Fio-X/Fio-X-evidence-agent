@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL } from '../runtime/pi/cartography.mjs';
 import { fmtSpec, lintVizSpec, renderVizBundle, validateVizSpec } from '../runtime/pi/viz.mjs';
-import { flowMapStyleFor, flowNumberTexts } from '../runtime/pi/flow_map_labels.mjs';
+import { FLOW_MAX_WIDTH, flowMapStyleFor, flowNumberTexts } from '../runtime/pi/flow_map_labels.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 process.env.NEWSROOM_FLOW_MAP_LABELS = '1'; // the layer is on only with the switch; the off checks below unset it around the render
@@ -60,9 +60,9 @@ for (const [name, [spec0, rows]] of Object.entries(cases)) {
       for (const a of arcs) for (const p of a.pts) assert(Math.hypot(p.x - c.x, p.y - c.y) > a.hw + 2 + 8.5 - 0.01, `${name}/${style} badge on an arc stroke`);
       for (const d of dots) assert(Math.hypot(d.x - c.x, d.y - c.y) > d.r + 8.5 + 2 - 0.01, `${name}/${style} badge on a dot`);
     }
-    // linear width: widest arc is 18px, others proportional (min 2)
+    // linear width: widest arc is FLOW_MAX_WIDTH (no wider than a 17 px badge), others proportional (min 2)
     const widths = [...svg.matchAll(/data-role="cartographic-flow"[^>]* stroke-width="([\d.]+)"/g)].map((m) => +m[1]);
-    assert(Math.abs(Math.max(...widths) - 18) < 0.01, `${name}/${style} widest arc ${Math.max(...widths)}`);
+    assert(FLOW_MAX_WIDTH <= 17 && Math.abs(Math.max(...widths) - FLOW_MAX_WIDTH) < 0.01, `${name}/${style} widest arc ${Math.max(...widths)}`);
     if (style === 'ledger') {
       // every arc has a ledger row and a badge on the map, or the row says 图上未标 and the footer says so
       const onMap = [...svg.matchAll(/<circle data-role="annotation-marker" cx="([\d.-]+)"/g)].filter((m) => +m[1] < 724 - 12).length;

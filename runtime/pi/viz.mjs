@@ -1772,6 +1772,15 @@ function numericCount(rows, field) {
   return rows.reduce((count, row) => count + (n(row[field]) === null ? 0 : 1), 0);
 }
 
+// NEWSROOM_FLOW_MAP_AUTO_EXTENT=1: a flow map with no extent_mode fits the data when every endpoint lies in one region
+// (at most 90 degrees of longitude and 60 of latitude, about a quarter of the globe's width). Otherwise it stays on the world extent.
+const autoExtentEnabled=()=>process.env.NEWSROOM_FLOW_MAP_AUTO_EXTENT==='1';
+const AUTO_EXTENT_MAX_LON=90, AUTO_EXTENT_MAX_LAT=60;
+const endpointsRegional=(ex)=>!!ex&&(ex.east-ex.west)<=AUTO_EXTENT_MAX_LON&&(ex.north-ex.south)<=AUTO_EXTENT_MAX_LAT;
+function effectiveExtentMode(spec,rowsOrExtent,isExtent=false){
+  if(spec.extent_mode!==undefined||!autoExtentEnabled()||spec.geometry_semantics!=='abstract_od')return spec.extent_mode;
+  return endpointsRegional(isExtent?rowsOrExtent:cartographicDataExtent(spec,rowsOrExtent))?'data':spec.extent_mode;
+}
 function cartographicDataExtent(spec,rows){
   const lines=[];for(const row of selectRoutes(rows,spec)){
     if(spec.geometry_semantics==='observed_trajectory'&&spec.trajectory_points_field){const pts=parseTrajectoryPoints(row[spec.trajectory_points_field]),ls=trajectoryLines(pts);if(ls)lines.push(...ls);}
@@ -2382,7 +2391,8 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (spec.geometry_semantics === 'great_circle_reference') notes.push('great_circle_reference is a geodesic baseline, not a filed or observed route');
     const selectedBasemap = getBasemap(spec.basemap_id);
     notes.push(`cartographic basemap=${spec.basemap_id ?? BASEMAP_ID}; crs=${spec.geometry_crs}; projection=${spec.projection}; geometry_semantics=${spec.geometry_semantics}`);
-    if(spec.extent_mode==='data'){const ex=cartographicDataExtent(spec,selected);if(ex){const span=Math.max(ex.east-ex.west,ex.north-ex.south);if(span<1)warnings.push(`cartographic extent spans only ${span.toFixed(3)} degrees; ${selectedBasemap?.label ?? spec.basemap_id} is too coarse for harbour/street-scale geographic context`);}}
+    if(autoExtentEnabled()&&spec.geometry_semantics==='abstract_od'&&spec.extent_mode==='world'&&endpointsRegional(cartographicDataExtent(spec,selected)))warnings.push(`extent_mode is 'world' but every endpoint lies within one region (at most ${AUTO_EXTENT_MAX_LON}° of longitude and ${AUTO_EXTENT_MAX_LAT}° of latitude); extent_mode 'data' (or leaving it unset) would fill the frame with the flows`);
+    if(effectiveExtentMode(spec,selected)==='data'){const ex=cartographicDataExtent(spec,selected);if(ex){const span=Math.max(ex.east-ex.west,ex.north-ex.south);if(span<1)warnings.push(`cartographic extent spans only ${span.toFixed(3)} degrees; ${selectedBasemap?.label ?? spec.basemap_id} is too coarse for harbour/street-scale geographic context`);}}
   }
   if (spec.chart_type === "process_schematic") {
     const topo = topologyStats(rows, spec.source_field, spec.target_field);
@@ -2508,7 +2518,7 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
     if (selected.length > 35) add("warning","cartographic_route_density",`${selected.length} routes compete on the same cartographic frame.`,8,"Aggregate to top routes, facet by category, or separate overview from detail.");
     if (spec.geometry_semantics === "abstract_od" && !/(physical|tanker|pipeline|relationship|not\s+(?:actual\s+)?(?:ship\s+)?routes?)/i.test(String(spec.note ?? ""))) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
     if (["verified_route","observed_trajectory","network_constrained"].includes(spec.geometry_semantics) && !String(spec.route_provenance_note ?? "").trim()) add("blocker","route_provenance_missing","Physical or observed route geometry has no route provenance note.",100,"Bind route geometry to an explicit source and measurement description.");
-    if(spec.extent_mode==="data"){const ex=cartographicDataExtent(spec,selected);if(ex){const adequacy=basemapAdequacy(spec.basemap_id,ex,spec.map_task??null);if(!adequacy.adequate)add("warning","basemap_detail_mismatch",`Basemap ${spec.basemap_id} is not qualified for ${adequacy.task}-scale interpretation (${adequacy.reason}).`,14,"Use a provenance-bound basemap whose registered detail class and extent cover this geographic task.");}}
+    if(effectiveExtentMode(spec,selected)==="data"){const ex=cartographicDataExtent(spec,selected);if(ex){const adequacy=basemapAdequacy(spec.basemap_id,ex,spec.map_task??null);if(!adequacy.adequate)add("warning","basemap_detail_mismatch",`Basemap ${spec.basemap_id} is not qualified for ${adequacy.task}-scale interpretation (${adequacy.reason}).`,14,"Use a provenance-bound basemap whose registered detail class and extent cover this geographic task.");}}
   }
   if (spec.chart_type === "process_schematic") {
     const topo = topologyStats(rows, spec.source_field, spec.target_field);
@@ -2854,13 +2864,13 @@ function wrapUnbreakable(text, size = 12) {
   if (cur.trim()) lines.push(cur.trimEnd());
   return lines;
 }
-// Footer lines as {t, size}. With urlLine on, each URL sits on its own small line and the sentence around it is wrapped without splitting it.
+// Footer lines as {t, size}. With urlLine on, each URL sits on a line of its own and the sentence around it is wrapped without splitting it. (Render QA's 12px font floor stops it being any smaller.)
 function footerBlock(text, urlLine) {
   const out = [];
   if (!urlLine || !FOOTER_URL_RE.test(text)) { for (const t of wrapUnbreakable(text)) out.push({ t, size: 12 }); return out; }
   for (const part of String(text).split(new RegExp(`(${FOOTER_URL_RE.source})`))) {
     if (!part.trim()) continue;
-    if (FOOTER_URL_RE.test(part) && part.match(FOOTER_URL_RE)[0] === part) out.push({ t: part, size: 10.5 });
+    if (FOOTER_URL_RE.test(part) && part.match(FOOTER_URL_RE)[0] === part) out.push({ t: part, size: 12 });
     else for (const t of wrapUnbreakable(part.trim())) out.push({ t, size: 12 });
   }
   return out;
@@ -6566,7 +6576,8 @@ function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
     }else{const lines=parseRouteGeometry(row[spec.route_geometry_field]);if(lines)extentLines.push(...lines);}
   }
   const dataExtent=coordinateExtent(extentLines);
-  const project=spec.extent_mode==='data'&&dataExtent?createProjectionForExtent(spec.projection??'natural_earth_1',dataExtent,left,right,top,bottom,Number(spec.extent_padding_ratio??.12),Number(spec.extent_min_span_deg??0)):createProjection(spec.projection??'natural_earth_1',left,right,top,bottom);
+  const extMode=effectiveExtentMode(spec,dataExtent,true);
+  const project=extMode==='data'&&dataExtent?createProjectionForExtent(spec.projection??'natural_earth_1',dataExtent,left,right,top,bottom,Number(spec.extent_padding_ratio??.12),Number(spec.extent_min_span_deg??0)):createProjection(spec.projection??'natural_earth_1',left,right,top,bottom);
   const mapPath=renderBasemapPaths(project,spec.basemap_id), mapMeta=getBasemap(spec.basemap_id), mapFill=mapMeta?.detail_class==='local'?'#e6e9e6':'#d9dedb', markerId=`carto-arrow-${mobile?'m':'d'}`, clipId=`carto-clip-${mobile?'m':'d'}`;
   f.parts.push(`<defs><clipPath id="${clipId}"><rect x="${left}" y="${top}" width="${right-left}" height="${bottom-top}" rx="3"/></clipPath><marker id="${markerId}" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3.5 L0,7 z" fill="${PALETTE.muted}"/></marker></defs>`);
   f.parts.push(`<rect data-role="cartographic-ocean" x="${left}" y="${top}" width="${right-left}" height="${bottom-top}" rx="3" fill="#eef2f3" stroke="${PALETTE.grid}"/>`);
@@ -6614,16 +6625,16 @@ function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
   if(!flowLabels&&spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
   if(!flowLabels&&pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
   if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
-  const keyY=bottom+18; if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total:rows.filter(r=>(n(r[spec.value_field])??0)>0).length,flowCut,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop,provBlock);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
+  const keyY=bottom+18; if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total:rows.filter(r=>(n(r[spec.value_field])??0)>0).length,flowCut,extMode,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop,provBlock);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
   f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
   const disclosure=geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??''); f.parts.push(`<text data-role="cartographic-disclosure" x="${right}" y="${bottom+40}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.muted}">${esc(textUnits(disclosure)>(mobile?92:132)?sliceUnits(disclosure,mobile?91:131)+'…':disclosure)}</text>`);
-  f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}</text>`);
+  f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${extMode==='data'?'data-fitted extent':'world extent'}</text>`);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
 }
 
 // Chinese-first key, width legend, disclosure and credit line for the
 // flow_map_labels layer (viz.mjs renderCartographicFlowMap).
-function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total,flowCut,zh}){
+function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,total,flowCut,extMode,zh}){
   const font=12.5,w=(t)=>textUnits(t)*font*.56;
   const widthT=zh?`线宽${spec.unit?`（${spec.unit}）`:''}：`:`width${spec.unit?` (${spec.unit})`:''}: `;
   let x=left+(zh?112:150)+w(widthT)+10;const sw=[];
@@ -6633,7 +6644,7 @@ function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,f
   const disclosure=zh?'弧线表示起点与终点之间的关系，不代表实际运输路线。':geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??'');
   parts.push(`<text data-role="cartographic-disclosure" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.muted}">${esc(disclosure)}</text>`);
   const n=flowRoutes.length,cutT=flowCut?(zh?`；另有 ${flowCut.count} 条放不下未画`:`; ${flowCut.count} more do not fit and are not drawn`):'',drawn=(zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`))+cutT;
-  const bm=getBasemap(spec.basemap_id),credit=zh?`底图：${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'按数据范围':'世界范围'}`:`${bm?.label??spec.basemap_id} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}`;
+  const bm=getBasemap(spec.basemap_id),credit=zh?`底图：${bm?.label??spec.basemap_id} · ${extMode==='data'?'按数据范围':'世界范围'}`:`${bm?.label??spec.basemap_id} · ${extMode==='data'?'data-fitted extent':'world extent'}`;
   parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+58}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(drawn)} · ${esc(credit)}</text>`);
   if(flowOut?.overflow)parts.push(`<text x="${left}" y="${bottom+76}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(flowOut.overflow)}</text>`);
 }
