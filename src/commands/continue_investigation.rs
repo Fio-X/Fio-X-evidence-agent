@@ -95,6 +95,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         tool_profile,
         hide_lieflat: false,
         speed: Default::default(),
+        compose: None,
     };
     let reported_provider = config.effective_provider();
 
