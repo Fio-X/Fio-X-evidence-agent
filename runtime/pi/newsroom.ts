@@ -345,6 +345,15 @@ function compactSetupEnabled() {
   return process.env.NEWSROOM_SPEED_COMPACT_SETUP === "1";
 }
 const optionalWhenCompact = (schema: any) => (compactSetupEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_SYSTEM_DATE_LABEL=1: the page's date line is the run's local date, written by the system; a model-typed
+// date_label is replaced, since a date is a number no data row backs. Off: date_label is the model's text, as before.
+function systemDateLabelEnabled() {
+  return process.env.NEWSROOM_SYSTEM_DATE_LABEL === "1";
+}
+function systemDateLabel(now = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 async function compactSetupRefs(tool: string, params: any) {
   if (!compactSetupEnabled()) return params;
   const filled = await fillSetupRefs(tool, params, preflightIo);
@@ -5319,7 +5328,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       dek: Type.String(),
       alt: Type.String(contractHint("planAlt")),
       byline: Type.Optional(Type.String()),
-      date_label: Type.Optional(Type.String()),
+      date_label: Type.Optional(systemDateLabelEnabled() ? Type.String({ description: "Written by the system as the run date; leave it out." }) : Type.String()),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Page language; defaults to 'en'. Every visual module's chart language must match this field, and infographic.mjs localizes its own functional labels (for example SOURCES & METHODS) to it; brand strings stay in English.", default: "en" })),
       layout: Type.Optional(StringEnum(["feature", "poster", "briefing"] as const)),
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
@@ -5400,6 +5409,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         quality_target: params.quality_target ?? "publishable",
         competition_profile: params.competition_profile ?? "editorial",
         ...params,
+        ...(systemDateLabelEnabled() ? { date_label: systemDateLabel() } : {}),
         editorial_grammar: editorialGrammar,
         modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))),
       };
