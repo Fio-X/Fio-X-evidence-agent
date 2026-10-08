@@ -9,7 +9,6 @@ const MAX_COLUMNS: usize = 12;
 const SAMPLE_ROWS: usize = 5;
 const MAX_CELL_CHARS: usize = 40;
 const MAX_FILE_BYTES: u64 = 8_000_000;
-const MAX_SKIPPED_TITLES: usize = 3;
 
 pub const PROFILE_HEADING: &str =
     "\nProgram-measured data profile (not evidence: it is not a recorded query, source or claim; \
@@ -63,20 +62,19 @@ pub fn profile_csv(display_path: &str, path: &Path) -> Option<String> {
         ));
     }
     let text = std::fs::read_to_string(path).ok()?;
-    let mut lines = text
+    let mut lines: Vec<Vec<String>> = text
         .lines()
         .filter(|l| !l.trim().is_empty())
         .map(|l| split_csv_line(l.trim_start_matches('\u{feff}')))
-        .peekable();
-    // A title line above the header has a different field count than the line after it: skip it.
-    let mut skipped_titles = 0;
-    let mut header = lines.next()?;
-    while skipped_titles < MAX_SKIPPED_TITLES
-        && lines.peek().is_some_and(|next| next.len() != header.len())
-    {
-        header = lines.next()?;
-        skipped_titles += 1;
-    }
+        .collect();
+    // One title line above the header is skipped only when the two lines after it have the same
+    // field count as each other (a stable row width); a ragged header is never mistaken for one.
+    let skipped_titles = usize::from(
+        lines.len() >= 3 && lines[0].len() != lines[1].len() && lines[1].len() == lines[2].len(),
+    );
+    lines.drain(..skipped_titles);
+    let mut lines = lines.into_iter();
+    let header = lines.next()?;
     let rows: Vec<Vec<String>> = lines.collect();
     let shown = header.len().min(MAX_COLUMNS);
     let mut out = format!(
@@ -86,7 +84,7 @@ pub fn profile_csv(display_path: &str, path: &Path) -> Option<String> {
     );
     if skipped_titles > 0 {
         out.push_str(&format!(
-            "  (skipped {skipped_titles} leading line(s) whose field count differs from the next line, taken as a title; the header is the next line)\n"
+            "  (skipped {skipped_titles} leading line(s) whose field count differs from the two lines after it, taken as a title; the header is the next line)\n"
         ));
     }
     for (i, name) in header.iter().take(shown).enumerate() {
@@ -222,5 +220,18 @@ mod tests {
         f.set_len(MAX_FILE_BYTES + 1).unwrap();
         let text = profile_csv("data/big.csv", &path).unwrap();
         assert!(text.contains("skipped: file too large"), "{text}");
+    }
+
+    #[test]
+    fn a_ragged_header_is_not_mistaken_for_a_title_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ragged.csv");
+        std::fs::write(&path, "a,b,c\n1,2\n3,4,5\n6,7,8\n").unwrap();
+        let text = profile_csv("data/ragged.csv", &path).unwrap();
+        assert!(!text.contains("skipped"), "{text}");
+        assert!(
+            text.contains("- a: numeric") || text.contains("- a: text"),
+            "{text}"
+        );
     }
 }
