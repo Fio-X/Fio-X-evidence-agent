@@ -132,7 +132,12 @@ pub async fn post_run_verdict(artifact: &Path) -> Option<String> {
 /// line on stderr (stdout carries the streamed answer) and returns whether the
 /// artifact verified.
 pub async fn announce_post_run_verdict(artifact: &Path) -> bool {
-    match post_run_verdict(artifact).await {
+    announce_verdict(post_run_verdict(artifact).await)
+}
+
+/// Prints a verdict that was already computed (the step-lines closing line needs it first).
+pub fn announce_verdict(verdict: Option<String>) -> bool {
+    match verdict {
         None => {
             eprintln!("VERIFIED");
             true
