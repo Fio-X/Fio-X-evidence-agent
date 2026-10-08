@@ -10,6 +10,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, specValueKind, validateVizSpec } from "./viz.mjs";
 import { mapWorldEnabled } from "./choropleth.mjs";
+import { flowMapLabelsEnabled } from "./flow_map_labels.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
 import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
@@ -4058,7 +4059,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       extent_padding_ratio: Type.Optional(Type.Number({ minimum: 0, maximum: 0.35 })),
       reference_path: Type.Optional(StringEnum(["none", "great_circle"] as const)),
       locator_inset: Type.Optional(Type.Boolean()),
-      flow_map_labels: Type.Optional(StringEnum(["leader", "ledger"] as const, { description: "cartographic_flow_map with abstract_od only: \"leader\" puts Chinese-first place names beside the dots with short leaders, \"ledger\" numbers the arcs and lists them in a ranked panel. Both scale line width and arrowheads linearly with the value; highlight_values [origin, destination] draws one accent arc. Omit for the default labels." })),
+      ...(flowMapLabelsEnabled() ? { flow_map_labels: Type.Optional(StringEnum(["leader", "ledger"] as const, { description: "cartographic_flow_map with abstract_od only: \"leader\" puts Chinese-first place names beside the dots with short leaders, \"ledger\" numbers the arcs and lists them in a ranked panel. Both scale line width and arrowheads linearly with the value; highlight_values [origin, destination] draws one accent arc. Omit for the default labels." })) } : {}),
       // world mode is model-visible only with NEWSROOM_MAP_WORLD=1 (off by default)
       ...(mapWorldEnabled() ? { map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })) } : {}),
       inset: Type.Optional(Type.Object({
