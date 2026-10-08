@@ -34,8 +34,9 @@ assert not off['aborted'] and off['composed'] == [] and MODEL_TEXT in off['answe
 on = run(ON)
 assert on['aborted'] and on['wall'] < off['wall'] - 1.5, (on['wall'], off['wall'])
 assert [c['source'] for c in on['composed']] == ['runtime'], on['composed']
-for need in ('Rate fell from 40 to 11.2.', 'claim-1', 'status verified', 'Mock source', 'Mock caveat', 'visualizations/b.svg'):
+for need in ('Rate fell from 40 to 11.2.', 'claim-1', 'passed its check when the chart was made', 'verification.json', 'Mock source', 'Mock caveat', 'visualizations/b.svg'):
     assert need in on['answer'], (need, on['answer'])
+assert 'status verified' not in on['answer'] and 'system-verified' not in on['answer'], on['answer']
 assert MODEL_TEXT not in on['answer'] and MODEL_TEXT not in on['stdout'], on
 assert on['answer'].index('Rate fell') < on['answer'].index('not verified by the system') < on['answer'].index('Mock caveat')
 # Same exit status, story status and tool events as the run without the switch.
