@@ -28,12 +28,22 @@ def has_cjk_or_wide_text(svg_text: str) -> bool:
     return CJK_WIDE_RE.search(svg_text) is not None
 
 
+class CairoUnavailable(Exception):
+    pass
+
+
 def rasterize_with_cairo(src: Path, dst: Path, width: int) -> None:
-    import cairosvg
+    # Only the import is guarded: cairosvg raises ImportError when it is not
+    # installed and OSError when the native libcairo cannot be loaded. A real
+    # rendering error after a successful import is not swallowed.
+    try:
+        import cairosvg
+    except (ImportError, OSError) as exc:
+        raise CairoUnavailable(type(exc).__name__) from exc
     cairosvg.svg2png(url=str(src), write_to=str(dst), output_width=width)
 
 
-def rasterize_with_chrome(src: Path, dst: Path, width: int) -> None:
+def rasterize_with_chrome(src: Path, dst: Path, width: int, *, reason: str = "CJK text") -> None:
     # Imported lazily, and only from the sibling module materialized right
     # next to this script (src/runtime.rs puts rasterize_svg.py and
     # browser_qa.py in the same runtime/ directory), so a Latin-only preview
@@ -43,10 +53,10 @@ def rasterize_with_chrome(src: Path, dst: Path, width: int) -> None:
     try:
         from playwright.sync_api import sync_playwright
     except (ImportError, ModuleNotFoundError):
-        raise SystemExit("preview needs Chrome for CJK text: playwright_dependency_unavailable")
+        raise SystemExit(f"preview needs Chrome for {reason}: playwright_dependency_unavailable")
     chromium = resolve_chromium_executable()
     if not chromium:
-        raise SystemExit("preview needs Chrome for CJK text: chromium_executable_unavailable")
+        raise SystemExit(f"preview needs Chrome for {reason}: chromium_executable_unavailable")
     security = drop_root_if_needed(dst.parent)
     launch_args = ["--disable-gpu"]
     if not security["sandbox"]:
@@ -101,8 +111,15 @@ def main() -> int:
         rasterize_with_chrome(src, dst, args.width)
         engine = "chrome-playwright"
     else:
-        rasterize_with_cairo(src, dst, args.width)
-        engine = "cairosvg"
+        try:
+            rasterize_with_cairo(src, dst, args.width)
+            engine = "cairosvg"
+        except CairoUnavailable:
+            # cairosvg or libcairo is not available: fall back to the same Chrome path CJK
+            # pages use. If Chrome is unavailable too, rasterize_with_chrome
+            # exits with a clear error, never a silent skip.
+            rasterize_with_chrome(src, dst, args.width, reason="a preview without cairosvg")
+            engine = "chrome-playwright"
     if not dst.is_file() or dst.stat().st_size == 0:
         raise SystemExit("rasterizer did not produce a PNG")
     print(json.dumps({"engine": engine}))
