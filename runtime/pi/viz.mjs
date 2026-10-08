@@ -5005,6 +5005,10 @@ function renderScatter(spec, rows) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+// Desktop heatmap tidy-up (exact "1", default off): the colour domain and legend ends are the data's own min and max,
+// cells carry bare numbers on the shared decimal count, and the unit is said once beside the legend.
+function heatmapTidyEnabled(){ return process.env.NEWSROOM_HEATMAP_TIDY==="1"; }
+
 function renderHeatmap(spec, rows) {
   const xs = unique(rows.map((r) => r[spec.x_field]));
   const ys = unique(rows.map((r) => r[spec.y_field]));
@@ -5013,7 +5017,9 @@ function renderHeatmap(spec, rows) {
   const left = 190, right = 950, top = f.bodyTop + 35, bottom = f.bodyBottom - 40;
   const cellW = (right - left) / Math.max(1, xs.length), cellH = (bottom - top) / Math.max(1, ys.length);
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const [min, max] = extent(vals, false);
+  const tidy = heatmapTidyEnabled();
+  const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const tidyDecimals = tidy ? (resolveChartDecimals(spec, vals) ?? (Number.isInteger(spec.decimals) ? spec.decimals : 1)) : null;
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
   const mixChannels = (t) => {
     const a = [242, 243, 244], b = [209, 73, 63];
@@ -5034,15 +5040,21 @@ function renderHeatmap(spec, rows) {
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmtSpec(spec, value, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
   const legendY=bottom+13, legendW=150;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-d)"/>`);
+  if (tidy) {
+    const legendText = (x, anchor, v) => `<text x="${x}" y="${legendY+22}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, v, "", tidyDecimals))}</text>`;
+    f.parts.push(legendText(left, "start", min), legendText(left+legendW/2, "middle", (min+max)/2), legendText(left+legendW, "end", max));
+    if (spec.unit) f.parts.push(`<text data-role="heatmap-unit" x="${left+legendW+16}" y="${legendY+8}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${vizLang(spec)==="zh"?"单位：":"Unit: "}${spec.unit}`)}</text>`);
+  } else {
   f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
   f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
