@@ -4351,6 +4351,21 @@ function layoutLineEndLabel(name, valueText, pointX, trueEdge, gap, pxPerUnit) {
   ];
 }
 
+// NEWSROOM_LINE_END_LABEL_FIT (default off): lines for a single-series end label
+// that would cross the canvas's right edge, or null when the label already
+// fits (the caller then draws exactly what it always drew). Same 8 px margin
+// as the multi-series label (layoutLineEndLabel); the text is only broken at
+// its first space, never edited.
+function fitLineEndLabel(text, x, trueEdge) {
+  const safeEdge = trueEdge - 8;
+  const width = (t) => estimateTextWidth(t, 12, true);
+  if (x + width(text) <= safeEdge) return null;
+  const cut = text.indexOf(" ");
+  const parts = cut > 0 ? [text.slice(0, cut), text.slice(cut + 1)] : [text];
+  if (parts.every((t) => x + width(t) <= safeEdge)) return parts.map((t) => ({ text: t, x }));
+  return parts.map((t) => ({ text: t, x: safeEdge, anchor: "end" }));
+}
+
 function renderLine(spec, rows, multi = false) {
   let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
@@ -4543,7 +4558,19 @@ function renderLine(spec, rows, multi = false) {
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      const endText = fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals);
+      const endX = Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8), endY = yScale(n(last[spec.value_field])) - 8;
+      const endAttrs = `font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}"`;
+      // Opt-in (NEWSROOM_LINE_END_LABEL_FIT=1): a single-line end label whose
+      // estimated box would cross the right edge is split at its first space
+      // (value above, unit below; no text is dropped or changed) and, when a
+      // line still would not fit, both lines are right-aligned to the edge.
+      const fit = process.env.NEWSROOM_LINE_END_LABEL_FIT === "1" ? fitLineEndLabel(endText, endX, LAYOUT_W) : null;
+      if (fit) {
+        fit.forEach((line, k) => f.parts.push(`<text data-role="direct-label" x="${line.x}" y="${endY - 14 * (fit.length - 1 - k)}"${line.anchor ? ` text-anchor="${line.anchor}"` : ""} ${endAttrs}>${esc(line.text)}</text>`));
+      } else {
+        f.parts.push(`<text data-role="direct-label" x="${endX}" y="${endY}" ${endAttrs}>${esc(endText)}</text>`);
+      }
     }
   });
   if (multi && spec.direct_labels !== false) {
