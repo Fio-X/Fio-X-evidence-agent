@@ -269,4 +269,69 @@ console.log("single-grid waffle passes geometry + contrast render QA on both vie
   console.log("single-grid waffle is deterministic across renders: PASS");
 }
 
+// ---------------------------------------------------------------------------
+// (12) House greys: darkest-first steps, the catch-all ("其他"/"Other", merged or a
+//      literal row) drawn last on the lightest step with a 1px outline, two plain rows
+//      two steps apart, no colour shared by two entries; legacy keeps its own ramp.
+// ---------------------------------------------------------------------------
+{
+  const G = ["#404040", "#646464", "#8B8B8B", "#B9B9B9", "#F2F2F2"];
+  const legend = (svg) => [...svg.matchAll(/<rect data-role="legend-swatch"[^>]*fill="(#[0-9a-fA-F]{6})"([^>]*)\/>/g)].map((m) => ({ fill: m[1], outlined: /stroke="#8B8B8B" stroke-width="1"/.test(m[2]) }));
+  const legendNames = (svg) => [...svg.matchAll(/<text x="[\d.]+" y="[\d.]+" font-family="[^"]*" font-size="13" font-weight="600"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const gridOutlines = (svg) => [...svg.matchAll(/<rect data-role="waffle-cell"[^>]*fill="(#[0-9a-fA-F]{6})"([^>]*)\/>/g)].map((m) => [m[1], /stroke="#8B8B8B" stroke-width="1"/.test(m[2])]);
+  const checkOutline = (svg, outlinedFill, label) => {
+    const sw = legend(svg);
+    assert.deepEqual(sw.filter((e) => e.outlined).map((e) => e.fill), outlinedFill ? [outlinedFill] : [], `${label}: only the lightest-step entry has an outlined swatch`);
+    assert.equal(new Set(sw.map((e) => e.fill)).size, sw.length, `${label}: no two entries share a colour`);
+    for (const [fill, outlined] of gridOutlines(svg)) assert.equal(outlined, fill === outlinedFill, `${label}: grid cells outlined exactly when they take the lightest step`);
+  };
+  const two = [{ source: "甲", share: 60 }, { source: "乙", share: 40 }];
+  for (const render of [renderVizSvg, renderVizMobileSvg]) {
+    const svg = render(baseSpec({ highlight_values: [] }), two);
+    assert.deepEqual(legend(svg).map((e) => e.fill), [G[0], G[2]], "exactly two plain rows take G0 and G2");
+    checkOutline(svg, null, "two rows");
+    const five = ["甲", "乙", "丙", "丁", "戊"].map((source, i) => ({ source, share: [30, 25, 20, 15, 10][i] }));
+    const s5 = render(baseSpec({ highlight_values: [] }), five);
+    assert.deepEqual(legend(s5).map((e) => e.fill), G, "five plain rows take G0..G4 in grid order");
+    checkOutline(s5, G[4], "five rows");
+    const hi = render(baseSpec({ highlight_values: ["甲"] }), five);
+    assert.deepEqual(legend(hi).map((e) => e.fill), ["#D0021B", G[0], G[1], G[2], G[3]], "a highlighted row keeps the accent; the four plain rows take G0..G3");
+    checkOutline(hi, null, "highlight + four rows");
+    const three = render(baseSpec({ highlight_values: [] }), five.slice(0, 3));
+    assert.deepEqual(legend(three).map((e) => e.fill), [G[0], G[1], G[2]], "three plain rows take G0..G2");
+  }
+  // a literal row named 其他 in the middle is drawn last and takes the lightest step
+  const mid = [{ source: "甲", share: 30 }, { source: "其他", share: 28 }, { source: "丙", share: 22 }, { source: "丁", share: 20 }];
+  for (const name of ["其他", "其它", " Other ", "OTHERS"]) {
+    const rowsMid = mid.map((r) => (r.source === "其他" ? { ...r, source: name } : r));
+    const svg = renderVizSvg(baseSpec({ highlight_values: [] }), rowsMid);
+    assert.deepEqual(legendNames(svg), ["甲", "丙", "丁", name], `a literal '${name}' row is drawn last in the legend, the others keep their order`);
+    assert.deepEqual(legend(svg).map((e) => e.fill), [G[0], G[1], G[2], G[4]], `'${name}' takes the lightest step`);
+    checkOutline(svg, G[4], `literal ${name}`);
+    const cells = gridOutlines(svg).map(([fill]) => fill);
+    assert.equal(cells[cells.length - 1], G[4], `'${name}' is last in the grid too`);
+  }
+  // two plain rows plus a catch-all: G0, G2 and G4
+  const twoPlusOther = renderVizSvg(baseSpec({ highlight_values: [] }), [{ source: "甲", share: 50 }, { source: "乙", share: 30 }, { source: "Other", share: 20 }]);
+  assert.deepEqual(legend(twoPlusOther).map((e) => e.fill), [G[0], G[2], G[4]]);
+  // a highlighted catch-all is recognised too: last in the legend and the grid, accent fill, no outline
+  for (const name of ["Other", "其他"]) {
+    const hl = renderVizSvg(baseSpec({ highlight_values: [name] }), [{ source: name, share: 60 }, { source: "甲", share: 25 }, { source: "乙", share: 15 }]);
+    assert.deepEqual(legendNames(hl), ["甲", "乙", name], `highlighted '${name}' is drawn last in the legend`);
+    assert.deepEqual(legend(hl).map((e) => e.fill), [G[0], G[2], "#D0021B"], `highlighted '${name}' takes the accent, the others two steps apart`);
+    assert.ok(!/stroke="#8B8B8B"/.test(hl), `highlighted '${name}' has no outline`);
+    const cells = gridOutlines(hl).map(([fill]) => fill);
+    assert.equal(cells[cells.length - 1], "#D0021B", `highlighted '${name}' is last in the grid too`);
+    assert.equal(cells.filter((c) => c === "#D0021B").length, 60, `highlighted '${name}' owns its 60 cells`);
+  }
+  // the merged bucket is the catch-all too
+  checkOutline(desktop, G[4], "merged bucket");
+  assert.deepEqual(legend(desktop).map((e) => e.fill), ["#D0021B", G[0], G[1], G[2], G[4]]);
+  // legacy: no outline, its own ramp
+  const legacy = renderVizSvg(baseSpec({ highlight_values: ["Coal"], style_id: "legacy" }), rows8);
+  assert.ok(!/stroke="#8B8B8B"/.test(legacy), "legacy style draws no outline");
+  assert.deepEqual(legend(legacy).map((e) => e.fill), ["#d1493f", "#3a4552", "#5c6773", "#828d99", "#d3d9e0"]);
+  console.log("house greys: darkest-first, catch-all last on the lightest step with an outline, no shared colour: PASS");
+}
+
 console.log("waffle single-grid regression: PASS");
