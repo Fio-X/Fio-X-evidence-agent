@@ -4,6 +4,8 @@ Usage: test_step_lines.py HEAD_BINARY BASE_BINARY"""
 import os, re, subprocess, sys, tempfile
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
+if len(sys.argv) < 3:
+    print('skip: needs HEAD_BINARY BASE_BINARY (base = a build without NEWSROOM_STEP_LINES)'); sys.exit(0)
 head, base = (str(Path(a).resolve()) for a in sys.argv[1:3])
 mock = str(root / 'scripts/perf_mock_pi.py')
 SECRET = 'test-only-step-lines-canary'
