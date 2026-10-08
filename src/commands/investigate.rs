@@ -309,10 +309,10 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
         speed,
     );
     if speed.data_profile {
+        // Profile the imported copy the model will query, not the original that may change.
         let files: Vec<(String, PathBuf)> = local_data
             .iter()
-            .cloned()
-            .zip(args.data.iter().cloned())
+            .map(|shown| (shown.clone(), bundle.dir.join(shown)))
             .collect();
         prompt.push_str(&crate::data_profile::profile_section(&files));
     }

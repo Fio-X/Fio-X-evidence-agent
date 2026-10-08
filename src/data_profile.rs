@@ -9,6 +9,7 @@ const MAX_COLUMNS: usize = 12;
 const SAMPLE_ROWS: usize = 5;
 const MAX_CELL_CHARS: usize = 40;
 const MAX_FILE_BYTES: u64 = 8_000_000;
+const MAX_SKIPPED_TITLES: usize = 3;
 
 pub const PROFILE_HEADING: &str =
     "\nProgram-measured data profile (not evidence: it is not a recorded query, source or claim; \
@@ -57,18 +58,37 @@ pub fn profile_csv(display_path: &str, path: &Path) -> Option<String> {
         return None;
     }
     if std::fs::metadata(path).ok()?.len() > MAX_FILE_BYTES {
-        return None;
+        return Some(format!(
+            "- {display_path}: skipped: file too large to profile (over {MAX_FILE_BYTES} bytes)\n"
+        ));
     }
     let text = std::fs::read_to_string(path).ok()?;
-    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    let header = split_csv_line(lines.next()?.trim_start_matches('\u{feff}'));
-    let rows: Vec<Vec<String>> = lines.map(split_csv_line).collect();
+    let mut lines = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| split_csv_line(l.trim_start_matches('\u{feff}')))
+        .peekable();
+    // A title line above the header has a different field count than the line after it: skip it.
+    let mut skipped_titles = 0;
+    let mut header = lines.next()?;
+    while skipped_titles < MAX_SKIPPED_TITLES
+        && lines.peek().is_some_and(|next| next.len() != header.len())
+    {
+        header = lines.next()?;
+        skipped_titles += 1;
+    }
+    let rows: Vec<Vec<String>> = lines.collect();
     let shown = header.len().min(MAX_COLUMNS);
     let mut out = format!(
         "- {display_path}: {} rows, {} columns\n",
         rows.len(),
         header.len()
     );
+    if skipped_titles > 0 {
+        out.push_str(&format!(
+            "  (skipped {skipped_titles} leading line(s) whose field count differs from the next line, taken as a title; the header is the next line)\n"
+        ));
+    }
     for (i, name) in header.iter().take(shown).enumerate() {
         let values: Vec<&str> = rows
             .iter()
@@ -177,5 +197,30 @@ mod tests {
             split_csv_line("a,\"b,c\",\"d\"\"e\""),
             vec!["a", "b,c", "d\"e"]
         );
+    }
+
+    #[test]
+    fn title_line_is_skipped_and_said_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("titled.csv");
+        std::fs::write(
+            &path,
+            "Births per 1000\nyear,country,rate\n2020,China,8.5\n",
+        )
+        .unwrap();
+        let text = profile_csv("data/titled.csv", &path).unwrap();
+        assert!(text.contains("1 rows, 3 columns"), "{text}");
+        assert!(text.contains("skipped 1 leading line"), "{text}");
+        assert!(text.contains("- year: numeric"), "{text}");
+    }
+
+    #[test]
+    fn oversized_file_is_reported_as_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.csv");
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_FILE_BYTES + 1).unwrap();
+        let text = profile_csv("data/big.csv", &path).unwrap();
+        assert!(text.contains("skipped: file too large"), "{text}");
     }
 }
