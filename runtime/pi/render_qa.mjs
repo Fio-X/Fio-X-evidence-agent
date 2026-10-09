@@ -22,7 +22,7 @@
 // a failure" design already documented in render_qa_geometry.mjs and
 // render_qa_contrast.mjs.
 
-import { checkSvgGeometry, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geometry.mjs";
+import { checkSvgGeometry, estimateTextWidth, sharedWidthEnabled, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geometry.mjs";
 import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contrast.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
@@ -58,16 +58,17 @@ export function checkEmptyPasses(geometry, contrast) {
 function checkViewport(svgText, options) {
   const geometry = checkSvgGeometry(svgText, options?.geometry);
   const contrast = checkSvgContrast(svgText, options?.contrast);
+  const sharedWidth = sharedWidthEnabled() ? { textWidth: estimateTextWidth } : {};
   let valueLabels = null;
   let proofOnly = false;
   if (options?.choropleth) {
-    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, ...sharedWidth });
   }
   if (options?.heatmap) {
     // proof only: a heatmap whose cells cannot all be labelled still renders as before; the report just does not prove the labels
     proofOnly = true;
     const spec = options.heatmap;
-    valueLabels = checkHeatmapValueLabels(svgText, spec, { parseXml, cellText: (value) => heatmapCellText(spec.spec, spec.rows, value) });
+    valueLabels = checkHeatmapValueLabels(svgText, spec, { parseXml, cellText: (value) => heatmapCellText(spec.spec, spec.rows, value), ...sharedWidth });
     // proof needs passing contrast too: any contrast failure in the viewport fails the labels
     if (!contrast.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, { rule: "value_label_contrast", message: "the viewport has a text contrast failure" }] };
   }

@@ -156,7 +156,8 @@ function ringsCrossBox(rings, box) {
 // helpers use (a full-width CJK code point measures as one em, everything
 // else as 0.56em) - kept in sync by convention, not by import, per this
 // file's independence rule (see module doc comment).
-function glyphWidth(text, size) {
+function glyphWidth(text, size, textWidth) {
+  if (textWidth) return textWidth(text, size, false); // NEWSROOM_QA_SHARED_WIDTH=1: render_qa.mjs injects the geometry estimator
   return Array.from(text).reduce((sum, ch) => sum + (/[　-鿿＀-￯]/u.test(ch) ? size : size * 0.56), 0);
 }
 
@@ -411,7 +412,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
         const x = Number(node.attrs.x);
         const y = Number(node.attrs.y);
         const size = Number(node.attrs["font-size"]) || 12;
-        const w = glyphWidth(labelText(node), size);
+        const w = glyphWidth(labelText(node), size, deps.textWidth);
         const anchor = node.attrs["text-anchor"] === "end" ? "end" : node.attrs["text-anchor"] === "middle" ? "middle" : "start";
         const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
         return { x0, x1: x0 + w, y0: y - size * 0.9, y1: y + size * 0.25 };
@@ -516,7 +517,7 @@ export function checkHeatmapValueLabels(svgText, options, deps) {
     const size = Number(label.attrs["font-size"]);
     if (!(size >= 12)) failures.push({ rule: "value_label_font_below_floor", message: `${name} label is ${label.attrs["font-size"] ?? "unsized"}px, below 12px` });
     const cx = Number(rect[0].attrs.x), cy = Number(rect[0].attrs.y), cw = Number(rect[0].attrs.width), ch = Number(rect[0].attrs.height);
-    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), half = glyphWidth(shown, size) / 2;
+    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), half = glyphWidth(shown, size, deps.textWidth) / 2;
     const inside = tx - half >= cx - 0.01 && tx + half <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
     if (!inside) failures.push({ rule: "value_label_outside_cell", message: `${name} label does not fit inside its cell` });
   }
