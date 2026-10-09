@@ -819,6 +819,11 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     # with the Rust verifier's verify_choropleth_labels_from_svg - so a bug
     # or omission in one does not silently pass through the others.
     failures: list[str] = []
+    # NEWSROOM_VERIFY_MAP_FOOTNOTES=1 (default off): also count the numbered-footnote list rows, the same roles
+    # render_qa_labels.mjs counts.
+    footnotes = os.environ.get("NEWSROOM_VERIFY_MAP_FOOTNOTES") == "1"
+    name_roles = ("choropleth-label", "choropleth-inset-label") + (("choropleth-footnote-name",) if footnotes else ())
+    value_roles = ("choropleth-label-value", "choropleth-inset-label-value") + (("choropleth-footnote-value",) if footnotes else ())
 
     data_values: dict[str, list[float]] = {}
     for tag in _choropleth_path_tags_with_role(svg_text, "choropleth-data"):
@@ -834,13 +839,13 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
         data_values.setdefault(iso3, []).append(value)
 
     names: dict[str, list[str]] = {}
-    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("choropleth-label", "choropleth-inset-label")):
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, name_roles):
         iso3 = _choropleth_tag_attrs(tag).get("data-iso3")
         if iso3:
             names.setdefault(iso3, []).append(_choropleth_label_body_text(body))
 
     values: dict[str, list[str]] = {}
-    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("choropleth-label-value", "choropleth-inset-label-value")):
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, value_roles):
         iso3 = _choropleth_tag_attrs(tag).get("data-iso3")
         if iso3:
             values.setdefault(iso3, []).append(_choropleth_label_body_text(body))
