@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { recordBoundaryWrite } from './groups.mjs';
 
 export const DEFAULT_RESULT_BUDGETS = Object.freeze({
   network: 128 * 1024,
@@ -165,6 +166,7 @@ async function persistJsonArtifact(root, prefix, value) {
   const rel = `runtime/parallel-results/${prefix}-${digest}.json`;
   const path = join(root, rel);
   await mkdir(join(root, 'runtime', 'parallel-results'), { recursive: true });
+  recordBoundaryWrite(root, rel, 'write_if_absent');
   try {
     await writeFile(path, `${text}\n`, { encoding: 'utf8', flag: 'wx' });
   } catch (error) {

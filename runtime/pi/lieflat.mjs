@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isSystemVerifiedClaim } from "./evidence_gate.mjs";
+import { recordBoundaryWrite } from "./groups.mjs";
 import { LIEFLAT_BUNDLE, VISUAL_SKILL_INDEX, VISUAL_SKILLS } from "./visual_skill_bundle.mjs";
 
 export const LIEFLAT_SCHEMA_VERSION = "1.0.0";
@@ -397,6 +398,7 @@ async function safeWrite(root, relativePath, value) {
   const parent = await realpath(dirname(target));
   if (parent !== canonical && !parent.startsWith(canonical + sep)) throw new Error(`artifact parent escapes run root: ${relativePath}`);
   const bytes = Buffer.isBuffer(value) ? value : Buffer.from(String(value), "utf8");
+  recordBoundaryWrite(canonical, rel, "write_if_absent");
   try {
     await writeFile(target, bytes, { flag: "wx" });
   } catch (error) {

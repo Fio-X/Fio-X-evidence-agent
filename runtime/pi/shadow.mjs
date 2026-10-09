@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { recordBoundaryWrite } from "./groups.mjs";
 import { cutoffCoverage, probeAsOf } from "./asof_probe.mjs";
 import { claimComputationStates, computationInputState, strictResultHashMatches } from "./claim_binding.mjs";
 import { buildCandidates, checkField, summarizeChecks } from "./number_shadow.mjs";
@@ -52,6 +53,7 @@ export async function writeShadowRecord(root, kind, keyInputs, record) {
   const relativePath = `${SHADOW_DIR}/${kind}-${key}.json`;
   const absolute = join(root, relativePath);
   await mkdir(dirname(absolute), { recursive: true });
+  recordBoundaryWrite(root, relativePath, "write_if_absent");
   try {
     await writeFile(absolute, `${JSON.stringify({ schema_version: SHADOW_SCHEMA_VERSION, kind, key, ...record }, null, 2)}\n`, { flag: "wx" });
   } catch (error) {
