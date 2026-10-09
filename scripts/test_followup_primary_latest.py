@@ -110,6 +110,6 @@ line, _ = scenario(A, chart('chart-b') + chart('chart-c'), '1')
 assert line == ('chart-c.svg', 'svg'), line
 # G. on, nothing new this round: a passing chart from the first turn is never taken as this round's, even when it is the newer file
 # (chart-z was written after chart-a; today's line is the first candidate in path order, chart-a).
-line, _ = scenario(chart('chart-z') + chart('chart-a'), [], '1')
+line, _ = scenario(chart('chart-a') + chart('chart-z'), [], '1')
 assert line == OLD, line
 print('test_followup_primary_latest: ok')
