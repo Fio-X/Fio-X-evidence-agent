@@ -454,6 +454,7 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
   if (lieflatHidden() && name.startsWith("newsroom_lieflat_")) return;
+  if (refusedOptionsFixOn() && name === "newsroom_illustration_generate" && !String(process.env.NEWSROOM_ILLUSTRATION_ADAPTER ?? "").trim()) return;
   tool = withSpeedGuidelines(tool);
 
   if (process.env.NEWSROOM_PHASE_METRICS === "1") {
@@ -701,6 +702,27 @@ function artifactRoot(): string | null {
 // see whatever value is current when that registration runs.
 function mobilePagesEnabled(): boolean {
   return process.env.NEWSROOM_MOBILE_PAGES === "1";
+}
+
+// With the switch on, options the checks always refuse under the current settings are not offered
+// (illustration generation without an adapter), and the conditions the checks enforce are written
+// into the descriptions the model reads before calling. Only the exact value "1" turns it on;
+// off, every definition is the one it always was.
+const refusedOptionsFixOn = () => process.env.NEWSROOM_REFUSED_OPTIONS_FIX === "1";
+const REFUSED_OPTION_TEXT = {
+  heroType: " hero_stat needs a claim the plan tool recorded from a claim template in the same plan call; otherwise open the page with the lead visual.",
+  heroValue: " Leave empty on a hero_stat; the runtime writes it from value_from.",
+  span: " Mobile pages are off: a visual or illustration module must be 'full'; the other spans are for text and hero_stat modules.",
+  scenePattern: " Mobile pages are off: an illustration fits only as the anchor or sole sidecar of hero_with_rail; a visual only there, or as the hero_sidecar_stack anchor when it has a compact variant.",
+  claimKind: " Only descriptive, quantitative, comparative and uncertainty claims with status supported can be verified; causal, mechanistic and predictive kinds and hypothesis or contested status stay draft only.",
+  causalWords: " Editorial text may not use causal or motive wording (cause, drive, because, war, conflict, labour; 导致, 因为, 驱动, 战争, 冲突, 劳动力) unless a verified claim covers it; state what the data shows.",
+} as const;
+function refusedOption(key: keyof typeof REFUSED_OPTION_TEXT, force = true): string {
+  return refusedOptionsFixOn() && force ? REFUSED_OPTION_TEXT[key] : "";
+}
+// Schema options carrying the sentence as a description, or undefined (the call as it always was) when off.
+function withRefusedOption(_none: undefined, text: string): { description: string } | undefined {
+  return text ? { description: text.trim() } : undefined;
 }
 
 async function loadEditorialGrammarRegistry(): Promise<any> {
@@ -5292,11 +5314,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   const infographicModuleParameters = Type.Object({
     id: Type.String(),
     subject_caption: Type.Optional(Type.String({ description: "Visual modules only. Caption readers see when the chart covers subjects outside the page subject_set; the runtime restyles the chart, you only write this text. Missing caption blocks lint." })),
-    type: StringEnum(["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"] as const),
-    span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const)),
+    type: StringEnum(["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"] as const, withRefusedOption(undefined, refusedOption("heroType"))),
+    span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const, withRefusedOption(undefined, refusedOption("span", !mobilePagesEnabled())))),
     label: Type.Optional(Type.String()),
     tone: Type.Optional(StringEnum(["accent", "dark", "light"] as const)),
-    value: Type.Optional(Type.Union([Type.String(), Type.Number()])),
+    value: Type.Optional(Type.Union([Type.String(), Type.Number()], withRefusedOption(undefined, refusedOption("heroValue", heroGateOn())))),
     unit: Type.Optional(Type.String(heroGateOn() ? contractHint("heroUnit") : undefined)),
     detail: Type.Optional(Type.String()),
     ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." + firstTry(FIRST_TRY.heroRequired + FIRST_TRY.heroYears) })) } : {}),
@@ -5359,7 +5381,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_infographic_plan",
     label: "Plan magazine infographic",
-    description: "Create a magazine-grade visual-story plan that combines already verified newsroom visuals with claim-bound hero numbers and explanatory text. The composer preserves each upstream visualization artifact rather than recomputing or restyling its data invisibly.",
+    description: "Create a magazine-grade visual-story plan that combines already verified newsroom visuals with claim-bound hero numbers and explanatory text. The composer preserves each upstream visualization artifact rather than recomputing or restyling its data invisibly." + refusedOption("causalWords"),
     promptSnippet: "Plan a responsive multi-module magazine infographic",
     promptGuidelines: [
       "Use this only after newsroom_story_graph passes, editorial discovery and the visual concept tournament are complete, and the investigation has at least two visual/explanatory assets that passed their critics.",
@@ -5404,7 +5426,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       scene_graph: Type.Object({
         schema_version: Type.Literal("0.2.0"),
         scenes: Type.Array(Type.Object({
-          id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const),
+          id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const, withRefusedOption(undefined, refusedOption("scenePattern", !mobilePagesEnabled()))),
           eyebrow: Type.Optional(Type.String()), title: Type.Optional(Type.String()), dek: Type.Optional(Type.String()),
           anchor_module_id: Type.String(contractHint("sceneAnchor")), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
           primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const),
@@ -6640,7 +6662,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     ],
     parameters: Type.Object({
       claim: Type.String(),
-      claim_kind: StringEnum(["descriptive", "quantitative", "comparative", "causal", "mechanistic", "predictive", "uncertainty"] as const),
+      claim_kind: StringEnum(["descriptive", "quantitative", "comparative", "causal", "mechanistic", "predictive", "uncertainty"] as const, withRefusedOption(undefined, refusedOption("claimKind"))),
       status: StringEnum(["hypothesis", "supported", "contested"] as const),
       source_refs: Type.Array(Type.String(), { maxItems: 20 }),
       computation_refs: Type.Array(Type.String(), { maxItems: 20 }),
