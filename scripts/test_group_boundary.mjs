@@ -163,7 +163,10 @@ let withoutSwitch;
   assert.equal(one({ tool: "newsroom_update_plan", kind: "project_state" }).status, "ok");
   assert.equal(one({ tool: "record_claim", kind: "evidence" }).status, "ok");
   assert.equal(one({ tool: "newsroom_viz_plan", kind: "visual_spec" }).status, "ok");
-  for (const tool of ["newsroom_expert_preference_record", "newsroom_award_mode_status", "newsroom_infographic_vision_critic"]) {
+  const verdict = one({ tool: "newsroom_infographic_vision_critic", kind: "pass_decision" });
+  assert.equal(verdict.status, "model_quality_verdict", "the vision critic's record is its own category, not a cross-group violation");
+  assert.match(verdict.reason, /publication decision is computed by the program/);
+  for (const tool of ["newsroom_expert_preference_record", "newsroom_award_mode_status"]) {
     const record = one({ tool, kind: "pass_decision" });
     assert.equal(record.status, "cross_group", tool);
     assert.equal(record.model_supplied_pass, true, `${tool} is a model-supplied-pass site`);
@@ -175,12 +178,12 @@ let withoutSwitch;
   assert.deepEqual([one({ tool: "newsroom_viz_plan", kind: null }).status, one({ tool: "newsroom_viz_plan", kind: null }).reason], ["待查", "path matches no artifact kind"]);
   assert.deepEqual([one({ tool: "tool_that_is_not_listed" }).status, one({ tool: "tool_that_is_not_listed" }).reason], ["待查", "tool is not in groups.json"]);
   assert.deepEqual([one({ tool: null }).status, one({ tool: null }).reason], ["待查", "no initiating tool"]);
-  assert.deepEqual(report.totals, { writes: 11, ok: 4, cross_group: 4, to_check: 3 });
-  assert.equal(report.totals.ok + report.totals.cross_group + report.totals.to_check, report.totals.writes, "every write is counted once");
+  assert.deepEqual(report.totals, { writes: 11, ok: 4, cross_group: 3, to_check: 3, model_quality_verdict: 1 });
+  assert.equal(report.totals.ok + report.totals.cross_group + report.totals.to_check + report.totals.model_quality_verdict, report.totals.writes, "every write is counted once");
   assert.match(report.summary, /3 待查/, "the summary names the 待查 count");
   assert.doesNotMatch(report.summary, /0 violation|通过|pass(ed)?\b/i, "with 待查 above zero the summary never says 0 violations or passed");
   check("ownership: own-group writes ok, the agent group may write the pass decision, the other three may not (no right to write it)");
-  check("model-supplied-pass sites (newsroom_expert_preference_record, newsroom_award_mode_status, newsroom_infographic_vision_critic) are flagged cross-group with model_supplied_pass; newsroom_competition_preflight is flagged without the tag");
+  check("model-supplied-pass sites (newsroom_expert_preference_record, newsroom_award_mode_status) are flagged cross-group with model_supplied_pass; the vision critic's record is listed as model_quality_verdict with its reason (outside the cross-group count); newsroom_competition_preflight is flagged without the tag");
   check("unclassifiable writes (no tool, unlisted tool, unknown path) are 待查 and counted apart, never ok");
 }
 

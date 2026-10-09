@@ -110,7 +110,29 @@ export function retrieveReferencePatterns(input) {
   return artifact;
 }
 
-export function evaluateExpertPreference(input) {
+// NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1 (exact "1", default off): a review counts only when it comes from a record the program saved itself
+// (editorial/human-reviews/, kind program_saved_review, saved_by "program", content hash intact, same baseline and candidate). A review the model
+// reports in its tool call is kept in the record as model_reported_reviews and never counted. No record: the status is PENDING, shown as 待评审.
+export const PROGRAM_REVIEW_KIND = 'program_saved_review';
+export const REVIEW_RECORD_DIR = 'editorial/human-reviews/';
+export const PROGRAM_STATUS_SOURCE = 'program_review_records';
+export const reviewFromRecordsEnabled = () => process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === '1';
+export const reviewStatusDisplay = (status) => ({ PENDING: '待评审', PASS: '通过', FAIL: '未通过' })[status] ?? status;
+const REVIEW_FIELDS = ['story_specificity', 'hierarchy', 'space_intent', 'visual_voice', 'information_gain', 'delayed_memory', 'jury_survival', 'comment'];
+
+/** One saved record -> a normalized review, or null when it does not qualify. Pure: the caller reads the files. */
+export function programReviewFromRecord(record, { baselineRef, candidateRef }) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  if (record.kind !== PROGRAM_REVIEW_KIND || record.saved_by !== 'program') return null;
+  const { content_hash: stored, ...rest } = record;
+  if (!stored || stored !== artDirectionHash(rest)) return null;
+  if (text(record.baseline_ref) !== text(baselineRef) || text(record.candidate_ref) !== text(candidateRef)) return null;
+  const id = text(record.reviewer_id_hash);
+  if (!/^[a-f0-9]{16,64}$/i.test(id) || !['baseline', 'candidate', 'tie'].includes(text(record.preference))) return null;
+  return { reviewer_id_hash: id, qualified: true, preference: text(record.preference), ...Object.fromEntries(REVIEW_FIELDS.map((key) => [key, text(record[key]) || null])) };
+}
+
+export function evaluateExpertPreference(input, options = {}) {
   const baselineRef = text(input?.baseline_ref);
   const candidateRef = text(input?.candidate_ref);
   const minimumReviewers = Number(input?.minimum_reviewers ?? 3);
@@ -139,12 +161,15 @@ export function evaluateExpertPreference(input) {
   });
   const unique = new Set(normalized.map((r) => r.reviewer_id_hash));
   if (unique.size !== normalized.length) throw new Error('reviewer_id_hash values must be unique');
-  const candidateWins = normalized.filter((r) => r.preference === 'candidate').length;
-  const baselineWins = normalized.filter((r) => r.preference === 'baseline').length;
-  const ties = normalized.filter((r) => r.preference === 'tie').length;
+  // program mode: the counted reviews are the program's own records; the model's list stays visible and is not counted
+  const programMode = Array.isArray(options?.programReviews);
+  const counted = programMode ? options.programReviews.map((entry) => entry.review) : normalized;
+  const candidateWins = counted.filter((r) => r.preference === 'candidate').length;
+  const baselineWins = counted.filter((r) => r.preference === 'baseline').length;
+  const ties = counted.filter((r) => r.preference === 'tie').length;
   const decisive = candidateWins + baselineWins;
   const candidateShare = decisive ? candidateWins / decisive : 0;
-  const enoughReviewers = normalized.length >= minimumReviewers;
+  const enoughReviewers = counted.length >= minimumReviewers;
   const status = enoughReviewers ? (candidateShare >= Number(input?.candidate_threshold ?? 0.7) ? 'PASS' : 'FAIL') : 'PENDING';
   const artifact = {
     schema_version: EXPERT_PREFERENCE_SCHEMA_VERSION,
@@ -153,18 +178,21 @@ export function evaluateExpertPreference(input) {
     candidate_ref: candidateRef,
     minimum_reviewers: minimumReviewers,
     candidate_threshold: Number(input?.candidate_threshold ?? 0.7),
-    reviews: normalized,
-    counts: { candidate: candidateWins, baseline: baselineWins, tie: ties, total: normalized.length },
+    reviews: counted,
+    counts: { candidate: candidateWins, baseline: baselineWins, tie: ties, total: counted.length },
     candidate_decisive_share: Number(candidateShare.toFixed(4)),
     status,
     human_evidence_required: true,
+    ...(programMode ? { status_source: PROGRAM_STATUS_SOURCE, review_record_refs: options.programReviews.map((entry) => entry.ref).sort(), model_reported_reviews: { count: normalized.length, counted: false }, status_display: reviewStatusDisplay(status) } : {}),
   };
   artifact.content_hash = artDirectionHash(artifact);
   return artifact;
 }
 
 
-export function summarizeAwardMode(input) {
+// Program mode (NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1): options.programPreference = {status, review_count} read from the program's own preference
+// record (or null when there is none). The model's preference_status and human_review_count are not used; a difference is kept as claim_mismatch.
+export function summarizeAwardMode(input, options = {}) {
   const refs = {
     discovery_ref: text(input?.discovery_ref),
     concepts_ref: text(input?.concepts_ref),
@@ -191,8 +219,12 @@ export function summarizeAwardMode(input) {
   const conceptBudgetOk = metrics.concepts_generated >= 8 && metrics.concepts_generated <= 20 && metrics.concepts_killed >= Math.ceil(metrics.concepts_generated / 2);
   const prototypeBudgetOk = metrics.prototype_count >= 2;
   const rasterObserved = metrics.raster_revision_count >= 1;
-  const preferenceStatus = text(input?.preference_status || 'PENDING').toUpperCase();
-  if (!['PENDING', 'PASS', 'FAIL'].includes(preferenceStatus)) throw new Error('preference_status must be PENDING, PASS, or FAIL');
+  const claimedStatus = text(input?.preference_status || 'PENDING').toUpperCase();
+  if (!['PENDING', 'PASS', 'FAIL'].includes(claimedStatus)) throw new Error('preference_status must be PENDING, PASS, or FAIL');
+  const programMode = options && Object.prototype.hasOwnProperty.call(options, 'programPreference');
+  const programPreference = programMode ? options.programPreference : null;
+  const preferenceStatus = programMode ? (programPreference?.status ?? 'PENDING') : claimedStatus;
+  if (programMode) metrics.human_review_count = Number(programPreference?.review_count ?? 0);
   let status = 'READY_FOR_HUMAN';
   const blockers = [];
   if (missingRefs.length) blockers.push(`missing_refs:${missingRefs.join(',')}`);
@@ -209,6 +241,12 @@ export function summarizeAwardMode(input) {
     preference_status: preferenceStatus,
     status, blockers,
     human_evidence_required: true,
+    ...(programMode ? {
+      status_source: PROGRAM_STATUS_SOURCE,
+      claimed: { preference_status: claimedStatus, human_review_count: Number(input?.metrics?.human_review_count ?? 0) },
+      claim_mismatch: claimedStatus !== preferenceStatus || Number(input?.metrics?.human_review_count ?? 0) !== metrics.human_review_count,
+      status_display: preferenceStatus === 'PENDING' && status !== 'BLOCKED' ? '待评审' : status,
+    } : {}),
   };
   artifact.content_hash = artDirectionHash(artifact);
   return artifact;
