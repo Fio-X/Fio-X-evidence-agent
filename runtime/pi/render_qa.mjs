@@ -25,7 +25,7 @@
 import { checkSvgGeometry, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geometry.mjs";
 import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contrast.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { checkChoroplethValueLabels, checkHeatmapValueLabels, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
+import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMonotone, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
 import { joinChoroplethRows, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, PALETTE } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
@@ -53,9 +53,13 @@ function checkViewport(svgText, options) {
     // proof needs passing contrast too: any contrast failure in the viewport fails the labels
     if (!contrast.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, { rule: "value_label_contrast", message: "the viewport has a text contrast failure" }] };
   }
+  // NEWSROOM_QA_HEATMAP_MONOTONE=1 (exact "1", default off): extra findings only; unset leaves the report byte-identical
+  const extraChecks = options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1"
+    ? checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml })
+    : null;
   return {
     svg_sha256: sha256Hex(svgText),
-    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true),
+    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true) && (extraChecks ? extraChecks.passed : true),
     geometry: {
       passed: geometry.passed,
       failures: geometry.failures,
@@ -68,6 +72,7 @@ function checkViewport(svgText, options) {
       unmeasured: contrast.unmeasured,
     },
     ...(valueLabels ? { value_labels: valueLabels } : {}),
+    ...(extraChecks ? { extra_checks: { heatmap_monotone: extraChecks } } : {}),
   };
 }
 
@@ -118,7 +123,8 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
       total +
       viewports[viewport].geometry.failures.length +
       viewports[viewport].contrast.failures.length +
-      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1),
+      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1) +
+      (viewports[viewport].extra_checks ? Object.values(viewports[viewport].extra_checks).reduce((n, c) => n + c.failures.length, 0) : 0),
     0,
   );
   return {

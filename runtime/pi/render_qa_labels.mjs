@@ -523,3 +523,63 @@ export function checkHeatmapValueLabels(svgText, options, deps) {
   if (seen.size === 0) failures.push({ rule: "value_label_missing", message: "the heatmap has no cell with a value to prove" });
   return { passed: failures.length === 0, failures };
 }
+
+// NEWSROOM_QA_HEATMAP_MONOTONE=1 (exact "1", default off): a heatmap's fill must get darker as the cell value grows, equal values must share a
+// fill, and the grid must be complete. Reads only the values the cell proof already carries (data-value, rows); it computes no new numbers.
+const parseFillRgb = (fill) => {
+  const f = String(fill ?? "").trim();
+  let m = f.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  m = f.match(/^#([0-9a-f]{6})$/i);
+  if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  return null;
+};
+const relLuminance = ([r, g, b]) => {
+  const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
+export function checkHeatmapFillMonotone(svgText, options, deps) {
+  const { parseXml } = deps;
+  const rows = Array.isArray(options?.rows) ? options.rows : [];
+  const nodes = walk(parseXml(svgText), []);
+  const key = (x, y) => `${x}\u0000${y}`;
+  const cells = new Map();
+  for (const n of nodes.filter((c) => c.tag === "rect" && c.attrs["data-role"] === "heatmap-cell")) {
+    const k = key(n.attrs["data-x"], n.attrs["data-y"]);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(n);
+  }
+  const failures = [];
+  const xs = [...new Set(rows.map((r) => String(r?.[options?.x_field])))];
+  const ys = [...new Set(rows.map((r) => String(r?.[options?.y_field])))];
+  const present = new Set();
+  for (const row of rows) {
+    const raw = row?.[options?.value_field];
+    if (raw !== null && raw !== undefined && raw !== "" && Number.isFinite(Number(raw))) present.add(key(String(row[options.x_field]), String(row[options.y_field])));
+  }
+  for (const y of ys) for (const x of xs) {
+    if (!present.has(key(x, y))) failures.push({ rule: "heatmap_grid_incomplete", message: `${y} / ${x} has no value, so the grid is not complete` });
+  }
+  const measured = [];
+  for (const [k, list] of cells) {
+    if (list.length !== 1) continue;
+    const a = list[0].attrs;
+    const value = Number(a["data-value"]);
+    const name = `${a["data-y"]} / ${a["data-x"]}`;
+    const rgb = parseFillRgb(a.fill);
+    if (!Number.isFinite(value)) { failures.push({ rule: "heatmap_fill_unreadable", message: `${name} has no readable value` }); continue; }
+    if (!rgb) { failures.push({ rule: "heatmap_fill_unreadable", message: `${name} has a fill the check cannot read` }); continue; }
+    measured.push({ name, value, fill: rgb.join(","), lum: relLuminance(rgb) });
+  }
+  measured.sort((p, q) => p.value - q.value);
+  const EPS = 1e-4;
+  for (let i = 1; i < measured.length; i++) {
+    const lo = measured[i - 1], hi = measured[i];
+    if (hi.value === lo.value) {
+      if (hi.fill !== lo.fill) failures.push({ rule: "heatmap_equal_values_different_fill", message: `${lo.name} and ${hi.name} have the same value but different fills` });
+    } else if (hi.lum > lo.lum + EPS) {
+      failures.push({ rule: "heatmap_fill_not_monotone", message: `${hi.name} has a larger value than ${lo.name} but a lighter fill` });
+    }
+  }
+  return { passed: failures.length === 0, failures, cells_checked: measured.length };
+}
