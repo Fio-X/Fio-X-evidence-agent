@@ -156,5 +156,46 @@ check("the preference tool's file and result are byte-identical with the hand-of
 }
 check("the vision critic's record stays listed apart as model_quality_verdict");
 
+// 7. the real call sites: the award-status and preflight tools reach the writer too. Running them needs real page manifests and lints, so
+// this reads their registrations: each of the three tools saves its record with saveDecision and has no direct artifact write of its own.
+{
+  const source = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  const blockOf = (tool) => {
+    const start = source.indexOf(`name: "${tool}"`);
+    assert.ok(start > 0, `${tool} is registered`);
+    const next = source.indexOf("registerScopedTool(pi, {", start);
+    return source.slice(start, next < 0 ? undefined : next);
+  };
+  for (const [tool, folder] of [["newsroom_expert_preference_record", "editorial/preferences/"], ["newsroom_award_mode_status", "editorial/award-runs/"], ["newsroom_competition_preflight", "infographics/competition-preflight/"]]) {
+    const block = blockOf(tool);
+    assert.equal((block.match(/\bsaveDecision\(/g) ?? []).length, 1, `${tool} saves its record once, through saveDecision`);
+    assert.ok(block.includes(folder), `${tool} writes under ${folder}`);
+    assert.ok(!/\bwriteArtifactIfAbsent\(/.test(block), `${tool} must not write an artifact itself`);
+  }
+  // No other tool writes into the three decision folders by itself.
+  const direct = [...source.matchAll(/writeArtifactIfAbsent\(([^)]*)\)/g)].filter((m) => /editorial\/(preferences|award-runs)\/|competition-preflight\//.test(m[0] + source.slice(Math.max(0, m.index - 200), m.index)) && /`(editorial\/(preferences|award-runs)|infographics\/competition-preflight)\//.test(source.slice(Math.max(0, m.index - 200), m.index)));
+  assert.deepEqual(direct.map((m) => m[0]), [], "nothing else writes a decision record directly");
+}
+check("the award-status and preflight tools (and the preference tool) save their records only through the decision writer's saveDecision");
+
+// 8. one run with both writers: the hand-off counts of the two groups are separate and never added together
+{
+  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_REVIEW_FROM_RECORDS: "1" });
+  const { dir } = investigation();
+  for (const n of [1, 2, 3]) await groups.runInTool("newsroom_viz_render", () => mod.__saveQueryRowsForTest(`runtime/query-rows/mix-${n}.json`, [{ a: n }]));
+  for (const [tool, ref] of DECISIONS) await groups.runInTool(tool, () => mod.__saveDecisionForTest(ref, { tool }));
+  const report = reportOf(dir);
+  // Records are aggregated by tool and kind, each with a count.
+  const written = (tool) => report.records.filter((r) => r.tool === tool).reduce((sum, r) => sum + (r.count ?? 0), 0);
+  assert.equal(written("knowledge_writer"), 3);
+  assert.equal(written("decision_writer"), 3);
+  assert.equal(report.totals.handed_to_knowledge, 3, "three knowledge hand-offs, not six");
+  assert.equal(report.totals.handed_to_agent, 3, "three decision hand-offs");
+  assert.equal(report.totals.writes, 6);
+  assert.equal(report.totals.cross_group, 0);
+  void tools;
+}
+check("a run with three knowledge and three decision hand-offs reports 3 and 3, never 6 for either group");
+
 console.log(`decision hand-off: PASS (${results.length} checks)`);
 for (const name of results) console.log(`  - ${name}`);
