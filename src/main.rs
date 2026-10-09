@@ -13,6 +13,7 @@ mod output;
 mod pi;
 mod prompt;
 mod recipes;
+mod repeat_failure;
 mod runtime;
 mod step_lines;
 mod tool_registry;
