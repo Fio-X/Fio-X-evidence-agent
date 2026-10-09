@@ -2354,6 +2354,43 @@ export async function inlineSourceNote(sourceRefs: string[], language?: string) 
   return notes.length ? [...notes.join("; ")].slice(0, 160).join("") : null;
 }
 
+/** NEWSROOM_LOCAL_SOURCE_NOTE=1 (default off): the source line of a chart whose every data file is a user file with an accepted
+ *  `<file>.source.json` (recorded by the program as `source_note_file` in the file's origin record), as
+ *  「{publisher}《{dataset}》，{license}」 in zh and `{publisher}, "{dataset}", {license}` otherwise. Null when the switch is off or any data
+ *  file the claim reads has no accepted note, so a chart with a mixed or unknown source keeps the line it has. The text is built here from
+ *  the recorded fields, never from model text. */
+export async function acceptedLocalSourceNote(sourceRefs: string[], language?: string) {
+  if (process.env.NEWSROOM_LOCAL_SOURCE_NOTE !== "1") return null;
+  const root = artifactRoot();
+  const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/")))];
+  if (!root || !dataRefs.length) return null;
+  const originsDir = join(root, "data", "origins");
+  let names: string[];
+  try {
+    names = (await readdir(originsDir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
+  } catch {
+    return null;
+  }
+  const origins: any[] = [];
+  for (const name of names) {
+    try { origins.push(JSON.parse(await readFile(join(originsDir, name), "utf8"))); } catch {}
+  }
+  const field = (note: any, key: string) => {
+    const value = note?.[key];
+    return typeof value === "string" && value.trim() !== "" && value.length <= 120 && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : "";
+  };
+  const lines: string[] = [];
+  for (const ref of dataRefs) {
+    const origin = origins.find((item) => item?.origin === "local_file" && item?.file === ref && item?.source_note_file && item.source_note_file.sha256 === item.sha256);
+    const note = origin?.source_note_file;
+    const publisher = field(note, "publisher"), dataset = field(note, "dataset"), license = field(note, "license");
+    if (!publisher || !dataset || !license) return null;
+    const line = language === "zh" ? `${publisher}《${dataset}》，${license}` : `${publisher}, "${dataset}", ${license}`;
+    if (!lines.includes(line)) lines.push(line);
+  }
+  return lines.join(language === "zh" ? "；" : "; ");
+}
+
 /** The plan's value columns, which the claim's max and min may rank. */
 function inlineClaimMeasures(params: any) {
   const fields = [params.value_field, params.start_field, params.end_field, params.size_field, ...(params.chart_type === "scatter" ? [params.x_field, params.y_field] : []), ...(Array.isArray(params.measure_semantics) ? params.measure_semantics.map((measure: any) => measure?.field) : [])];
@@ -4327,6 +4364,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         const claimRecords = await verifiedClaimRecords();
         verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
       }
+      // NEWSROOM_LOCAL_SOURCE_NOTE=1: an accepted note beside a user's data file decides the source line; a model-written source_note loses.
+      const programSourceNote = await acceptedLocalSourceNote(verifiedClaim?.source_refs ?? [], params.language ?? "en");
       const specCore = {
         schema_version: ["cartographic_flow_map", "trajectory_profile"].includes(params.chart_type) ? "1.1.0" : "0.9.0",
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
@@ -4337,6 +4376,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         publishable: verificationMode === "verified",
         verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
+        ...(programSourceNote ? { source_note: programSourceNote } : {}),
         ...(scatterAxisUnits ?? {}),
         // Value-label decimals come from the shared chart formatter. The tool schema has no decimals field, and a value that reaches
         // here anyway (an unvalidated caller) is dropped, so a plan never carries one: 29.6 and 30.4 must not both print as 30.
