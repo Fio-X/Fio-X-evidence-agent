@@ -183,7 +183,8 @@ function onOffNear(name, run) {
     const { off, on } = onOffNear("NEWSROOM_TYPESET_FOOTER", () => footer(language));
     assert.ok(off.includes("AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY"), `defect: ${language} page prints the fixed English line`);
     assert.ok(!on.includes("VERIFIED"), `${language}: the page is rendered before verification, so it never says VERIFIED`);
-    assert.ok(on.includes("AGENTIC DATA NEWSROOM · 01"), "the top-right line is untouched");
+    assert.ok(off.includes("AGENTIC DATA NEWSROOM · 01"), `defect: ${language} page prints the English top-right line`);
+    assert.ok(!on.includes("AGENTIC DATA NEWSROOM · 01"), `${language}: the top-right English line is gone`);
     assert.equal(on.includes(">AGENTIC DATA NEWSROOM</text>"), language === "en", `${language}: only an English page keeps the short English footer`);
   }
 }
