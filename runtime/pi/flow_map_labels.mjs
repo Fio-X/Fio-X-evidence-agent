@@ -172,14 +172,18 @@ export function ledgerGeometry({ spec, routes, bounds, textUnits, fmtSpec, zh, e
 export function layoutFlowMapLabels(ctx) {
   const { spec, routes, bounds, esc, textUnits, fmtSpec, PALETTE, FONT_SANS, zh } = ctx;
   const style = ctx.style ?? spec.flow_map_labels, font = 12.5;
-  const arcs = routes.map((r) => ({ ...r, pts: sampleArc(r.a, r.control, r.b), hw: r.sw / 2 }));
-  // Round obstacles: every node dot, and each arrowhead.
+  // A route may carry its own drawn curve (flow-style trunk branches stop at the junction) and a proportional circle at its origin.
+  const arcs = routes.map((r) => ({ ...r, pts: sampleArc(r.curve?.a ?? r.a, r.curve?.control ?? r.control, r.curve?.b ?? r.b), hw: r.sw / 2 }));
+  // Strokes that are drawn but are not a flow of their own (a merged trunk): obstacles, never given a badge.
+  const fixedArcs = (ctx.extraArcs ?? []).map((e) => ({ ...e, pts: sampleArc(e.a, e.control, e.b), hw: e.sw / 2 }));
+  const obstacles = fixedArcs.length ? [...arcs, ...fixedArcs] : arcs;
+  // Round obstacles: every node dot, each arrowhead, each proportional circle.
   const dots = [];
-  for (const r of routes) { dots.push({ x: r.a.x, y: r.a.y, r: 3.2 }); dots.push({ x: r.b.x, y: r.b.y, r: Math.max(3.5, r.arrow * 0.6) }); }
+  for (const r of routes) { dots.push({ x: r.a.x, y: r.a.y, r: 3.2 }); dots.push({ x: r.b.x, y: r.b.y, r: Math.max(3.5, r.arrow * 0.6) }); if (r.circle) dots.push({ x: r.circle.x, y: r.circle.y, r: r.circle.r }); }
   const inBounds = (box) => box.x >= bounds.left + 2 && box.y >= bounds.top + 2 && box.x + box.w <= bounds.right - 2 && box.y + box.h <= bounds.bottom - 2;
-  const rectHitsAnyArc = (box) => arcs.some((arc) => arc.pts.some((p) => rectPointDist(box, p) <= arc.hw + STROKE_PAD));
+  const rectHitsAnyArc = (box) => obstacles.some((arc) => arc.pts.some((p) => rectPointDist(box, p) <= arc.hw + STROKE_PAD));
   const rectHitsDot = (box) => dots.some((d) => rectPointDist(box, d) <= d.r + 2);
-  const leaderCrossings = (p, q) => { let n = 0; for (const arc of arcs) for (let i = 1; i < arc.pts.length; i++) if (segCross(p, q, arc.pts[i - 1], arc.pts[i])) n++; return n; };
+  const leaderCrossings = (p, q) => { let n = 0; for (const arc of obstacles) for (let i = 1; i < arc.pts.length; i++) if (segCross(p, q, arc.pts[i - 1], arc.pts[i])) n++; return n; };
   const diag = { style, arcs: routes.length, names_placed: 0, names_overflow: [], badges_placed: 0, badges_unplaced: [], leader_crossings: 0 };
   const parts = [];
 
@@ -193,7 +197,7 @@ export function layoutFlowMapLabels(ctx) {
     const placedDiscs = [], leaders = [];
     const discFree = (c) => {
       if (c.x - BADGE_R < bounds.left + 2 || c.x + BADGE_R > bounds.right - 2 || c.y - BADGE_R < bounds.top + 2 || c.y + BADGE_R > bounds.bottom - 2) return false;
-      if (arcs.some((arc) => arc.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) <= arc.hw + STROKE_PAD + BADGE_R + 1))) return false;
+      if (obstacles.some((arc) => arc.pts.some((p) => Math.hypot(p.x - c.x, p.y - c.y) <= arc.hw + STROKE_PAD + BADGE_R + 1))) return false;
       if (dots.some((d) => Math.hypot(d.x - c.x, d.y - c.y) <= d.r + BADGE_R + 2)) return false;
       if (leaders.some((l) => segHitsRect({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, { x: c.x - BADGE_R, y: c.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }))) return false;
       return !placedDiscs.some((q) => Math.hypot(q.x - c.x, q.y - c.y) <= BADGE_R * 2 + 3);
@@ -220,7 +224,7 @@ export function layoutFlowMapLabels(ctx) {
             leader = { x1: c.x + (ux / ul) * (BADGE_R + 3), y1: c.y + (uy / ul) * (BADGE_R + 3), x2: c.px, y2: c.py };
             if (placedDiscs.some((q) => segHitsRect({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, { x: q.x - BADGE_R, y: q.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }))) continue;
             if (leaders.some((q) => segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, { x: q.x1, y: q.y1 }, { x: q.x2, y: q.y2 }))) continue;
-            for (const [ai, other] of arcs.entries()) if (ai !== own) for (let k = 1; k < other.pts.length; k++) if (segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, other.pts[k - 1], other.pts[k])) cross++;
+            for (const [ai, other] of obstacles.entries()) if (ai !== own) for (let k = 1; k < other.pts.length; k++) if (segCross({ x: leader.x1, y: leader.y1 }, { x: leader.x2, y: leader.y2 }, other.pts[k - 1], other.pts[k])) cross++;
             if (cross > 1) continue;
           }
           const score = cross * 1000 + c.score;
