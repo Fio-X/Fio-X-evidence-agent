@@ -213,10 +213,14 @@ const zhSourceLineEnabled = () => process.env.NEWSROOM_ZH_SOURCE_LINE === "1";
 const sankeyOtherNoteEnabled = () => process.env.NEWSROOM_SANKEY_OTHER_NOTE === "1";
 const SANKEY_HIGHLIGHT_DESCRIPTION = "Nodes to highlight. For sankey/alluvial: a source and a target named together highlight the flow between them; a source alone highlights its largest outgoing flow; a target alone highlights its largest incoming flow.";
 const heldChartTypesEnabled = () => process.env.NEWSROOM_HELD_CHART_TYPES === "1";
-const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? ""));
+// NEWSROOM_FLOW_MAPS_BACK=1 (default off, only with the hold on): the two flow maps leave the held list everywhere it is read (enum, refusal,
+// grammar-blocked message, hint texts, the geo_edges plan value); hierarchy_tree and trajectory_profile stay held. Off: nothing below changes.
+const FLOW_MAP_TYPES: readonly string[] = ["geo_flow_map", "cartographic_flow_map"];
+const flowMapsBackEnabled = () => heldChartTypesEnabled() && process.env.NEWSROOM_FLOW_MAPS_BACK === "1";
+const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? "")) && !(flowMapsBackEnabled() && FLOW_MAP_TYPES.includes(String(chartType ?? "")));
 // Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
 const HELD_PLAN_VALUE_LIST: Record<string, readonly string[]> = { visual_family: ["hierarchy"], data_topology: ["hierarchy", "geo_edges"] };
-const heldPlanValues = (): Record<string, readonly string[]> => (heldChartTypesEnabled() ? HELD_PLAN_VALUE_LIST : { visual_family: [], data_topology: [] });
+const heldPlanValues = (): Record<string, readonly string[]> => (heldChartTypesEnabled() ? (flowMapsBackEnabled() ? { ...HELD_PLAN_VALUE_LIST, data_topology: ["hierarchy"] } : HELD_PLAN_VALUE_LIST) : { visual_family: [], data_topology: [] });
 function assertPlanValuesNotHeld(params: any) {
   for (const [field, held] of Object.entries(heldPlanValues())) {
     if (held.includes(String(params?.[field] ?? ""))) throw new Error(`PLAN_VALUE_HELD: ${field} '${String(params[field])}' is not available; choose another ${field}.`);
@@ -228,7 +232,7 @@ function assertChartTypeNotHeld(chartType: unknown) {
 
 const ruleHintsEnabled = () => process.env.NEWSROOM_SPEED_RULE_HINTS === "1";
 // With the hold on, the relation hint stops naming the held chart types (the two fragments below appear only in that hint).
-const heldHintText = (text: string) => (heldChartTypesEnabled() ? text.replace("flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map;", "flow sankey/alluvial/parallel_sets;").replace("geography geo_flow_map/cartographic_flow_map/choropleth;", "geography choropleth;") : text);
+const heldHintText = (text: string) => (heldChartTypesEnabled() && !flowMapsBackEnabled() ? text.replace("flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map;", "flow sankey/alluvial/parallel_sets;").replace("geography geo_flow_map/cartographic_flow_map/choropleth;", "geography choropleth;") : text);
 const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(base ?? {}), description: [base?.description, heldHintText(text)].filter(Boolean).join(" ") } : base);
 const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows (strip_plot: 600), so aggregate in SQL first.";
 const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";
@@ -4050,14 +4054,14 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_viz_plan",
     label: "Plan newsroom visualization",
-    description: "Create an observable editorial visualization plan. A system-verified claim_id produces a publishable plan; omitting claim_id produces an explicitly non-publishable draft. The model cannot select verification status. " + (heldChartTypesEnabled() ? "Supports statistical charts plus flows, networks, temporal structures, choropleth maps and explanatory process graphics." : "Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics."),
+    description: "Create an observable editorial visualization plan. A system-verified claim_id produces a publishable plan; omitting claim_id produces an explicitly non-publishable draft. The model cannot select verification status. " + (flowMapsBackEnabled() ? "Supports statistical charts plus flows, networks, temporal structures, spatial flows, choropleth maps and explanatory process graphics." : heldChartTypesEnabled() ? "Supports statistical charts plus flows, networks, temporal structures, choropleth maps and explanatory process graphics." : "Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics."),
     promptSnippet: "Plan a newsroom-grade visualization before rendering",
     promptGuidelines: [
       "Bind claim_id only after record_claim reports system verification. Omit claim_id when testing a visual grammar or exploring supplied data; draft artifacts must never be presented as publishable facts.",
       "If the requested deliverable is an infographic or visual story, this tool may create only one module after newsroom_story_graph and concept selection. Set delivery_role=infographic_module, bind story_graph_ref plus story_node_ids, and do not treat the chart as the final deliverable.",
       "For ranking, comparison, change, distribution, correlation, and part-to-whole tasks, declare measure_semantics plus claim_spec. The semantic gate blocks incomparable measures before rendering and derives the editorial grammar from the claim.",
       "For mixed reference periods, prefer explicit separation such as small multiples rather than silently ranking incomparable observations.",
-      "For flow, relationship, hierarchy, spatial, sequence, or process questions, select a topology-aware form " + (heldChartTypesEnabled() ? "such as Sankey, parallel sets, chord, adjacency matrix, timeline, or process schematic. Do not force complex relationships into bars or scatterplots." : "such as Sankey, parallel sets, chord, geographic flow map, adjacency matrix, hierarchy tree, timeline, or process schematic. Do not force complex relationships into bars or scatterplots."),
+      "For flow, relationship, hierarchy, spatial, sequence, or process questions, select a topology-aware form " + (flowMapsBackEnabled() ? "such as Sankey, parallel sets, chord, geographic flow map, adjacency matrix, timeline, or process schematic. Do not force complex relationships into bars or scatterplots." : heldChartTypesEnabled() ? "such as Sankey, parallel sets, chord, adjacency matrix, timeline, or process schematic. Do not force complex relationships into bars or scatterplots." : "such as Sankey, parallel sets, chord, geographic flow map, adjacency matrix, hierarchy tree, timeline, or process schematic. Do not force complex relationships into bars or scatterplots."),
       "For reciprocal origin-destination data in a Sankey, create role-qualified bipartite node labels (for example origin:Asia → destination:Asia). This preserves both directions without self-loops or cycles; do not drop the requested Sankey merely because geographic names repeat across source and destination roles.",
       "Use complexity_budget='low' for fast analytical reading, 'medium' for explanatory newsroom graphics, and 'exploratory' only when the editorial goal justifies higher visual-search cost.",
       "To mark a threshold or target on the value axis, add an annotations entry with type='reference_line' and a numeric value; it renders as a thin rule across the plot area on horizontal_bar, dot, dumbbell, and small_multiples charts only, and is lint-blocked on other chart types or if value falls outside the rendered value axis domain.",
