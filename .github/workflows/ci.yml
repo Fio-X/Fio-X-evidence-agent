@@ -228,6 +228,10 @@ jobs:
         run: node scripts/test_choropleth.mjs
       - name: Treemap chart tests
         run: node scripts/test_treemap.mjs
+      - name: Typesetting switches (numbers, axes, footer, digits)
+        run: node scripts/test_typeset_batch1.mjs
+      - name: Typeset choropleth labels read back exactly
+        run: python3 scripts/test_typeset_choropleth_verify.py
       - name: Strip plot chart tests
         run: node scripts/test_viz_strip_plot.mjs
       - name: Stacked bar 100 chart tests

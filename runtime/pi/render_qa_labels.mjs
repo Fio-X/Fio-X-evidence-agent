@@ -189,7 +189,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
   const unit = options?.unit ?? "";
   // measure kind/semantics (P2) so the expected label text is spelled the same way the renderer spelled it
-  const kindSpec = { unit, value_field: options?.value_field, measure_kind: options?.measure_kind, measure_semantics: options?.measure_semantics };
+  const kindSpec = { unit, value_field: options?.value_field, measure_kind: options?.measure_kind, measure_semantics: options?.measure_semantics, language: options?.language };
   const value_field = options?.value_field;
 
   const root = parseXml(svgText);

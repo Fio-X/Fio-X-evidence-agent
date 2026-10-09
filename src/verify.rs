@@ -1720,6 +1720,72 @@ fn leading_number_with_scale(text: &str) -> Option<f64> {
     Some(number * scale)
 }
 
+/// Exact check of a Chinese 万 / 亿 / 万亿 value label (the renderer's typeset form for a Chinese page). The renderer picks
+/// the suffix by the raw magnitude of the value and prints value / 10^power to one decimal, rounded half up on the shortest
+/// decimal spelling of the value. This re-derives that text from data-value with integer arithmetic and requires the
+/// number and the suffix to equal it - no tolerance. None: the label carries no such suffix (the ordinary reader
+/// applies). Some(true): exact match. Some(false): mismatch, including any arithmetic that does not fit.
+fn zh_scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    if i < bytes.len() && bytes[i] == b'-' {
+        i += 1;
+    }
+    let digits_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == digits_start || i + 1 >= bytes.len() || bytes[i] != b'.' || !bytes[i + 1].is_ascii_digit() {
+        return None;
+    }
+    let number_end = i + 2;
+    let rest = &text[number_end..];
+    let (suffix, power): (&str, u32) = if rest.starts_with("万亿") {
+        ("万亿", 12)
+    } else if rest.starts_with('亿') {
+        ("亿", 8)
+    } else if rest.starts_with('万') {
+        ("万", 4)
+    } else {
+        return None;
+    };
+    if rest[suffix.len()..].chars().next().is_some_and(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
+        return None;
+    }
+    let magnitude = expected.abs();
+    let (want_suffix, want_power): (&str, u32) = if magnitude >= 1e12 {
+        ("万亿", 12)
+    } else if magnitude >= 1e8 {
+        ("亿", 8)
+    } else if magnitude >= 1e4 {
+        ("万", 4)
+    } else {
+        return Some(false);
+    };
+    if suffix != want_suffix || power != want_power {
+        return Some(false);
+    }
+    let shortest = format!("{magnitude}");
+    let (int_part, frac_part) = shortest.split_once('.').unwrap_or((shortest.as_str(), ""));
+    let Ok(coefficient) = format!("{int_part}{frac_part}").parse::<u128>() else {
+        return Some(false);
+    };
+    let Some(numerator) = coefficient.checked_mul(10) else {
+        return Some(false);
+    };
+    let Some(denominator) = 10u128.checked_pow(frac_part.len() as u32 + want_power) else {
+        return Some(false);
+    };
+    let (Some(twice_numerator), Some(twice_denominator)) = (numerator.checked_mul(2), denominator.checked_mul(2)) else {
+        return Some(false);
+    };
+    let Some(rounded) = twice_numerator.checked_add(denominator).map(|v| v / twice_denominator) else {
+        return Some(false);
+    };
+    let want = format!("{}{}.{}", if expected < 0.0 { "-" } else { "" }, rounded / 10, rounded % 10);
+    Some(&text[..number_end] == want.as_str())
+}
+
 /// Independently re-derives the choropleth value-labels proof straight from
 /// one rendered viewport's SVG markup: every `choropleth-data` region's own
 /// `data-iso3`/`data-value`, and every name/value label's `data-iso3` and
@@ -1803,6 +1869,14 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             continue;
         }
         let text = &value_texts[0];
+        if let Some(exact) = zh_scaled_label_matches(text, expected) {
+            if !exact {
+                failures.push(format!(
+                    "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
+                ));
+            }
+            continue;
+        }
         match leading_number_with_scale(text) {
             Some(shown) => {
                 let tolerance = (expected.abs() * 0.01).max(0.05);
@@ -5284,6 +5358,43 @@ mod tests {
                 .any(|f| f.contains("GIN") && f.contains("does not match")),
             "{failures:?}"
         );
+    }
+
+    #[test]
+    fn zh_scaled_choropleth_labels_are_read_back_exactly() {
+        // the renderer's own text for these values: suffix by raw magnitude, one decimal, half up on the decimal value
+        for (value, text) in [
+            (11500.0, "1.2万"),
+            (12500.0, "1.3万"),
+            (10800.0, "1.1万"),
+            (99950.0, "10.0万"),
+            (-11500.0, "-1.2万"),
+            (123456789.0, "1.2亿"),
+            (150000000.0, "1.5亿"),
+            (2.5e12, "2.5万亿"),
+            (10000.0, "1.0万"),
+        ] {
+            assert_eq!(zh_scaled_label_matches(text, value), Some(true), "{text} for {value}");
+        }
+        // a neighbour one tenth off, the wrong scale, or a value under 1万 is a mismatch, never forgiven
+        assert_eq!(zh_scaled_label_matches("1.1万", 11500.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.3万", 11500.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.2亿", 11500.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.2万", 9000.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.2万", -11500.0), Some(false));
+        // not a 万 / 亿 label: the ordinary reader applies
+        assert_eq!(zh_scaled_label_matches("66.6%", 66.6), None);
+        assert_eq!(zh_scaled_label_matches("1.2k", 1200.0), None);
+        assert_eq!(zh_scaled_label_matches("1.2万吨", 11500.0), None);
+    }
+
+    #[test]
+    fn choropleth_labels_from_svg_requires_the_exact_zh_scaled_text() {
+        let good = choropleth_region_svg(true, true).replace("data-value=\"66.6\"", "data-value=\"11500\"").replace("66.6%", "1.2万");
+        assert_eq!(verify_choropleth_labels_from_svg(&good), Vec::<String>::new());
+        let off_by_one_tenth = good.replace("1.2万", "1.1万");
+        let failures = verify_choropleth_labels_from_svg(&off_by_one_tenth);
+        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("does not match")), "{failures:?}");
     }
 
     static FOOTNOTE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

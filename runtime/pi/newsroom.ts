@@ -4525,6 +4525,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
                 // so QA spells expected labels exactly as the renderer did
                 measure_kind: specValueKind(spec) ?? spec.measure_kind,
                 measure_semantics: spec.measure_semantics,
+                language: spec.language,
                 ...(spec.map_extent === "world" ? { map_extent: "world", highlight_values: spec.highlight_values } : {}),
               },
             }
