@@ -222,6 +222,7 @@ jobs:
           node scripts/test_group_coverage.mjs
           node scripts/test_review_from_records.mjs
           python3 scripts/test_review_from_records.py
+          python3 scripts/test_group_commands.py
           python3 scripts/test_infographic_preview.py
           python3 scripts/test_cjk_preview_raster.py
       - name: Visualization semantic smoke tests

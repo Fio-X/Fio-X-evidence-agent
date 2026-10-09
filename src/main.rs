@@ -25,7 +25,11 @@ use cli::{Cli, Commands};
 #[tokio::main]
 async fn main() -> Result<()> {
     config::load_project_env()?;
-    let cli = Cli::parse();
+    let args = match cli::launch(std::env::args_os().collect()) {
+        cli::Launch::Parse(args) => args,
+        cli::Launch::Done(code) => std::process::exit(code),
+    };
+    let cli = Cli::parse_from(args);
 
     match cli.command {
         Some(Commands::Doctor(args)) => commands::doctor::run(args).await,
