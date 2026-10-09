@@ -282,3 +282,4 @@ jobs:
           node scripts/test_parallel_result_budget.mjs
           node scripts/test_parallel_replay_wiring.mjs
           node scripts/test_tool_result_budget_integration.mjs
+          node scripts/test_scene_duplicate_wording.mjs
