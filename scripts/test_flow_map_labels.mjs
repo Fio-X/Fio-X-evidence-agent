@@ -93,6 +93,9 @@ for (const [name, [spec0, rows]] of Object.entries(cases)) {
   if (process.env.BASE_WT) {
     const old = await import(`${process.env.BASE_WT}/runtime/pi/viz.mjs`);
     assert(old.renderVizBundle(spec0, rows).desktop === off, `${name} flag-off output differs from base`); console.log(`ok ${name}: flag-off byte-identical to base`);
+  } else {
+    console.log(`SKIP ${name}: flag-off byte comparison needs BASE_WT=<worktree without the flag>`);
+    if (process.env.NEWSROOM_REQUIRE_NO_SKIP === '1') throw new Error('skipped check under NEWSROOM_REQUIRE_NO_SKIP=1');
   }
   process.env.NEWSROOM_FLOW_MAP_LABELS = '1';
 }

@@ -258,6 +258,9 @@ jobs:
           node scripts/test_flow_maps_back.mjs
           node scripts/test_flow_trunk_cap.mjs
           node scripts/test_flow_styles.mjs
+          node scripts/test_flow_map_labels.mjs
+          node scripts/test_flow_map_round3.mjs
+          node scripts/test_flow_map_round3_b.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
       - name: Investigate and continue exit-code acceptance
