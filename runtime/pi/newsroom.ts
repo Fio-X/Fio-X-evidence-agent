@@ -213,9 +213,9 @@ const zhSourceLineEnabled = () => process.env.NEWSROOM_ZH_SOURCE_LINE === "1";
 const sankeyOtherNoteEnabled = () => process.env.NEWSROOM_SANKEY_OTHER_NOTE === "1";
 const SANKEY_HIGHLIGHT_DESCRIPTION = "Nodes to highlight. For sankey/alluvial: a source and a target named together highlight the flow between them; a source alone highlights its largest outgoing flow; a target alone highlights its largest incoming flow.";
 const heldChartTypesEnabled = () => process.env.NEWSROOM_HELD_CHART_TYPES === "1";
-// NEWSROOM_FLOW_MAPS_BACK=1 (default off, only with the hold on): the two flow maps leave the held list everywhere it is read (enum, refusal,
-// grammar-blocked message, hint texts, the geo_edges plan value); hierarchy_tree and trajectory_profile stay held. Off: nothing below changes.
-const FLOW_MAP_TYPES: readonly string[] = ["geo_flow_map", "cartographic_flow_map"];
+// NEWSROOM_FLOW_MAPS_BACK=1 (default off, only with the hold on): cartographic_flow_map leaves the held list everywhere it is read (enum, refusal,
+// grammar-blocked message, hint texts, the geo_edges plan value, which that map's default data_topology uses); geo_flow_map (fails render QA), hierarchy_tree and trajectory_profile stay held. Off: nothing below changes.
+const FLOW_MAP_TYPES: readonly string[] = ["cartographic_flow_map"];
 const flowMapsBackEnabled = () => heldChartTypesEnabled() && process.env.NEWSROOM_FLOW_MAPS_BACK === "1";
 const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? "")) && !(flowMapsBackEnabled() && FLOW_MAP_TYPES.includes(String(chartType ?? "")));
 // Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
@@ -232,7 +232,7 @@ function assertChartTypeNotHeld(chartType: unknown) {
 
 const ruleHintsEnabled = () => process.env.NEWSROOM_SPEED_RULE_HINTS === "1";
 // With the hold on, the relation hint stops naming the held chart types (the two fragments below appear only in that hint).
-const heldHintText = (text: string) => (heldChartTypesEnabled() && !flowMapsBackEnabled() ? text.replace("flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map;", "flow sankey/alluvial/parallel_sets;").replace("geography geo_flow_map/cartographic_flow_map/choropleth;", "geography choropleth;") : text);
+const heldHintText = (text: string) => (heldChartTypesEnabled() ? (flowMapsBackEnabled() ? text.replace("parallel_sets/geo_flow_map/cartographic_flow_map;", "parallel_sets/cartographic_flow_map;").replace("geography geo_flow_map/cartographic_flow_map/choropleth;", "geography cartographic_flow_map/choropleth;") : text.replace("flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map;", "flow sankey/alluvial/parallel_sets;").replace("geography geo_flow_map/cartographic_flow_map/choropleth;", "geography choropleth;")) : text);
 const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(base ?? {}), description: [base?.description, heldHintText(text)].filter(Boolean).join(" ") } : base);
 const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows (strip_plot: 600), so aggregate in SQL first.";
 const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";

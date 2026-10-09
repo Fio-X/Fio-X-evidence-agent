@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// NEWSROOM_FLOW_MAPS_BACK=1 (default off; acts only with NEWSROOM_HELD_CHART_TYPES=1): geo_flow_map and cartographic_flow_map leave the
-// held list everywhere it is read; hierarchy_tree and trajectory_profile stay held.
+// NEWSROOM_FLOW_MAPS_BACK=1 (default off; acts only with NEWSROOM_HELD_CHART_TYPES=1): cartographic_flow_map leaves the held list
+// everywhere it is read; geo_flow_map (fails render QA on all three flow topics), hierarchy_tree and trajectory_profile stay held.
+// geo_edges is offered again because cartographic_flow_map's default data_topology is geo_edges (newsroom.ts plan defaults).
 //  1. Off (unset, 0, true, yes, "", " 1", 01), and on without the hold: tool definitions of every profile are byte-identical to the base (1296164).
 //  2. On: both flow maps are in the plan and chain enums and accepted (no CHART_TYPE_HELD); the other two are still refused by plan, lint, render.
 //  3. On: geo_edges is offered again, hierarchy values stay refused (PLAN_VALUE_HELD); the strict-grammar refusal lists the flow maps for flow and
@@ -58,7 +59,7 @@ function diff(a, b, path = "") {
   }
   return [{ path, before: a, after: b }];
 }
-const FLOW = ["geo_flow_map", "cartographic_flow_map"], STAY = ["hierarchy_tree", "trajectory_profile"];
+const FLOW = ["cartographic_flow_map"], STAY = ["hierarchy_tree", "trajectory_profile", "geo_flow_map"];
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
 const current = await load(ROOT);
 
@@ -78,7 +79,7 @@ for (const hints of [{}, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) {
   const plan = on.get("newsroom_viz_plan");
   assert.ok(plan.description.includes("spatial flows") && !plan.description.includes("hierarch"), "description names spatial flows, no hierarchies");
   assert.ok(plan.promptGuidelines.some((s) => s.includes("geographic flow map, adjacency matrix, timeline")), "guideline names the flow map, not the hierarchy tree");
-  if (hints.NEWSROOM_SPEED_RULE_HINTS) assert.ok(JSON.stringify(plan.parameters).includes("flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map;"), "rule hint names both flow maps");
+  if (hints.NEWSROOM_SPEED_RULE_HINTS) assert.ok(JSON.stringify(plan.parameters).includes("flow sankey/alluvial/parallel_sets/cartographic_flow_map;") && !JSON.stringify(plan.parameters).includes("geo_flow_map/"), "rule hint names cartographic_flow_map only");
   // refusals: held pair refused by plan, lint and render; the flow maps are not refused (they fail later, on missing data, not as held)
   const refused = (t) => new RegExp(`^CHART_TYPE_HELD: chart_type '${t}' is not available`);
   mkdirSync(join(artifacts, "visualizations/plans"), { recursive: true });
@@ -101,7 +102,7 @@ for (const hints of [{}, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) {
 {
   const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
   assert.ok(src.includes("allowed.filter((form) => !isHeldChartType(form))"), "the blocked message filters by isHeldChartType, which the switch updates");
-  assert.match(src, /const FLOW_MAP_TYPES[^\n]*"geo_flow_map", "cartographic_flow_map"\]/, "exactly the two flow maps leave the list");
+  assert.match(src, /const FLOW_MAP_TYPES: readonly string\[\] = \["cartographic_flow_map"\];/, "exactly cartographic_flow_map leaves the list");
 }
 
 // ---- 1: off is byte-identical to the base; 4: the exact difference ----------------------------------------------------------------
@@ -132,7 +133,7 @@ if (archive.status !== 0) {
     const allowed = /^\/newsroom_viz_(plan|chain)\/(parameters\/properties\/(chart_type|data_topology|claim_spec\/[^/]*)(\/enum)?|description|promptGuidelines\/\d+|parameters\/properties\/[a-z_]+\/description)/;
     for (const c of changes) assert.match(c.path, allowed, `only the planned places change (${c.path})`);
     assert.ok(paths.some((p) => /chart_type\/enum$/.test(p)) && paths.some((p) => /data_topology\/enum$/.test(p)), "the enums change");
-    for (const c of changes.filter((c) => /chart_type\/enum$/.test(c.path))) assert.deepEqual(c.after.filter((t) => !c.before.includes(t)), FLOW, "chart_type enum gains exactly the two flow maps");
+    for (const c of changes.filter((c) => /chart_type\/enum$/.test(c.path))) assert.deepEqual(c.after.filter((t) => !c.before.includes(t)), FLOW, "chart_type enum gains exactly cartographic_flow_map");
     for (const c of changes.filter((c) => /data_topology\/enum$/.test(c.path))) assert.deepEqual(c.after.filter((t) => !c.before.includes(t)), ["geo_edges"], "data_topology enum gains exactly geo_edges");
     if (compared) console.log(`difference ${JSON.stringify(Object.keys(hints))}: ${changes.length} places`);
   }
