@@ -34,9 +34,10 @@ for (const [name, rows] of Object.entries(shapes)) {
   assert.equal(withSwitch("1", () => render(spec(), rows, true)), withSwitch(undefined, () => render(spec(), rows, true)), `${name}: mobile unchanged`);
 }
 
-// the real Germany energy table: write before/after SVG for the PNG step when OUT is set
-const csv = "/Users/fio/code/PJ004-local-docs/demo-1008/data-complex/11-germany-imports-and-energy/eurostat_DE_2023_energy_ktoe_v2.csv";
-if (existsSync(csv)) {
+// the real Germany energy table (source,target,value rows): set SANKEY_DE_ENERGY_CSV to its path; unset or missing skips this block.
+// Write before/after SVG for the PNG step when OUT is set
+const csv = process.env.SANKEY_DE_ENERGY_CSV;
+if (csv && existsSync(csv)) {
   const de = readFileSync(csv, "utf8").trim().split("\n").slice(1).map((l) => l.split(",")).map(([source, target, value]) => ({ source, target, value: Number(value) }));
   const off = withSwitch(undefined, () => render(spec(), de)), on = withSwitch("1", () => render(spec(), de));
   assertNoMoreIssues(off, on, "Germany");
