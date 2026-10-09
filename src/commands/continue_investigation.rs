@@ -3,9 +3,33 @@ use crate::audit;
 use crate::cli::ContinueArgs;
 use crate::commands::verify;
 use crate::pi::{run_prompt, PiConfig};
+use crate::prompt::PromptSpeed;
 use crate::{prompt, runtime};
 use anyhow::Result;
 use std::time::Instant;
+
+/// Opt-in (exactly `1`): a follow-up hands Pi the settings the first question
+/// would get under the same environment (speed and merge switches as set, the
+/// Lieflat fallback tools hidden as the hide switch says) instead of turning
+/// them off. Only the speed/merge settings follow; the tool profile logic is
+/// unchanged.
+pub const FOLLOWUP_SAME_SETTINGS_ENV: &str = "NEWSROOM_FOLLOWUP_SAME_SETTINGS";
+
+fn followup_same_settings_on() -> bool {
+    std::env::var(FOLLOWUP_SAME_SETTINGS_ENV).ok().as_deref() == Some("1")
+}
+
+/// `(hide_lieflat, speed)` for the follow-up's `PiConfig`.
+fn followup_settings(same_settings: bool) -> (bool, PromptSpeed) {
+    if same_settings {
+        (
+            crate::pi::hide_lieflat_switch_enabled(),
+            crate::pi::speed_switches_from_env(),
+        )
+    } else {
+        (false, Default::default())
+    }
+}
 
 /// Text-based routing used when nothing better is known.
 fn inferred_tool_profile(text: &str) -> &'static str {
@@ -80,6 +104,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         );
     }
 
+    let (hide_lieflat, speed) = followup_settings(followup_same_settings_on());
     let config = PiConfig {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
@@ -93,8 +118,8 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: true,
         tool_profile,
-        hide_lieflat: false,
-        speed: Default::default(),
+        hide_lieflat,
+        speed,
         compose: None,
     };
     let reported_provider = config.effective_provider();
@@ -197,8 +222,12 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::effective_tool_profile;
+    use super::{
+        effective_tool_profile, followup_same_settings_on, followup_settings,
+        FOLLOWUP_SAME_SETTINGS_ENV,
+    };
     use crate::artifact::InvestigationBundle;
+    use crate::pi::{PiConfig, ENV_LOCK};
     use std::fs;
 
     #[test]
@@ -289,5 +318,190 @@ mod tests {
             ),
             ("investigate".to_string(), false)
         );
+    }
+
+    const SPEED_ENVS: [&str; 16] = [
+        "NEWSROOM_SPEED_PARALLEL_HINTS",
+        "NEWSROOM_SPEED_COMPUTE_BATCH",
+        "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
+        "NEWSROOM_SPEED_CHAIN_VIZ",
+        "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC",
+        "NEWSROOM_SPEED_PREFLIGHT",
+        "NEWSROOM_SPEED_PLAN_EDIT",
+        "NEWSROOM_SPEED_INLINE_CLAIM",
+        "NEWSROOM_SPEED_PLAN_PATCH",
+        "NEWSROOM_SPEED_CHAIN_PATCH",
+        "NEWSROOM_SPEED_REPORT_ALL",
+        "NEWSROOM_SPEED_FILL_COPIED_REFS",
+        "NEWSROOM_SPEED_FIRST_TRY_TEXT",
+        "NEWSROOM_SPEED_DATA_PROFILE",
+        "NEWSROOM_SPEED_PLAN_PROGRESS",
+        "NEWSROOM_HIDE_LIEFLAT",
+    ];
+
+    fn clear_env() {
+        for name in SPEED_ENVS {
+            std::env::remove_var(name);
+        }
+        std::env::remove_var(FOLLOWUP_SAME_SETTINGS_ENV);
+    }
+
+    fn set_all_speed_switches() {
+        for name in SPEED_ENVS {
+            std::env::set_var(name, "1");
+        }
+    }
+
+    fn config(
+        profile: &str,
+        continue_session: bool,
+        hide: bool,
+        speed: crate::prompt::PromptSpeed,
+    ) -> PiConfig {
+        PiConfig {
+            binary: "pi".into(),
+            provider: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            thinking: None,
+            approve_project: false,
+            extension: Some("ext.ts".into()),
+            artifact_dir: Some("/tmp/artifact".into()),
+            session_dir: Some("/tmp/artifact/session".into()),
+            continue_session,
+            tool_profile: profile.to_string(),
+            hide_lieflat: hide,
+            speed,
+            compose: None,
+        }
+    }
+
+    /// The environment Pi gets for the run: every NEWSROOM_* name with its
+    /// value, or None where the command removes it.
+    fn pi_env(config: &PiConfig) -> Vec<(String, Option<String>)> {
+        let command = config.command();
+        let mut out: Vec<(String, Option<String>)> = command
+            .as_std()
+            .get_envs()
+            .filter(|(name, _)| name.to_string_lossy().starts_with("NEWSROOM_"))
+            .map(|(name, value)| {
+                (
+                    name.to_string_lossy().into_owned(),
+                    value.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// What `investigate` hands Pi for the first question under the same env.
+    fn first_question(profile: &str) -> PiConfig {
+        config(
+            profile,
+            false,
+            crate::pi::hide_lieflat_switch_enabled(),
+            crate::pi::speed_switches_from_env(),
+        )
+    }
+
+    fn follow_up(profile: &str, same: bool) -> PiConfig {
+        let (hide, speed) = followup_settings(same);
+        config(profile, true, hide, speed)
+    }
+
+    #[test]
+    fn switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        assert!(!followup_same_settings_on());
+        for not_one in ["0", "true", "yes", "", " 1", "01"] {
+            std::env::set_var(FOLLOWUP_SAME_SETTINGS_ENV, not_one);
+            assert!(!followup_same_settings_on(), "{not_one:?}");
+        }
+        std::env::set_var(FOLLOWUP_SAME_SETTINGS_ENV, "1");
+        assert!(followup_same_settings_on());
+        clear_env();
+    }
+
+    #[test]
+    fn switch_on_follow_up_settings_and_tools_equal_the_first_questions() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        set_all_speed_switches();
+        for profile in [
+            "investigate",
+            "visual",
+            "visual-story",
+            "publication",
+            "competition",
+        ] {
+            let first = first_question(profile);
+            let second = follow_up(profile, true);
+            assert!(first.speed.chain_viz && first.speed.parallel_hints);
+            assert_eq!(second.speed, first.speed, "{profile}: speed settings");
+            assert_eq!(
+                second.tools_arg(),
+                first.tools_arg(),
+                "{profile}: tool list"
+            );
+            assert_eq!(
+                pi_env(&second),
+                pi_env(&first),
+                "{profile}: env handed to Pi"
+            );
+        }
+        // The merge settings and the fallback-tool hiding are the ones the old follow-up dropped.
+        let second = follow_up("visual-story", true);
+        assert!(second.speed.compute_batch && second.speed.chain_infographic);
+        assert!(!second.tools_arg().contains("newsroom_lieflat_render"));
+        clear_env();
+    }
+
+    #[test]
+    fn switch_on_with_nothing_set_equals_the_first_question_too() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        for profile in ["investigate", "visual-story"] {
+            let first = first_question(profile);
+            let second = follow_up(profile, true);
+            assert_eq!(second.tools_arg(), first.tools_arg());
+            assert_eq!(pi_env(&second), pi_env(&first));
+        }
+    }
+
+    #[test]
+    fn switch_off_follow_up_ignores_the_speed_environment_as_before() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        set_all_speed_switches();
+        for profile in ["investigate", "visual", "visual-story"] {
+            let legacy = config(profile, true, false, Default::default());
+            let second = follow_up(profile, false);
+            assert_eq!(second.speed, Default::default());
+            assert_eq!(
+                second.tools_arg(),
+                legacy.tools_arg(),
+                "{profile}: tool list"
+            );
+            assert_eq!(
+                pi_env(&second),
+                pi_env(&legacy),
+                "{profile}: env handed to Pi"
+            );
+            // Every speed name is removed from the child's environment, as in f2aec34.
+            let env = pi_env(&second);
+            for name in SPEED_ENVS {
+                if let Some((_, value)) = env.iter().find(|(n, _)| n == name) {
+                    assert_eq!(value, &None, "{name} must be removed");
+                }
+            }
+        }
+        // The fallback tools stay in the visual-story list.
+        assert!(follow_up("visual-story", false)
+            .tools_arg()
+            .contains("newsroom_lieflat_render"));
+        clear_env();
     }
 }
