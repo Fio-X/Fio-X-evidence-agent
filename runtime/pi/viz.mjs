@@ -5005,6 +5005,52 @@ function renderScatter(spec, rows) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+// Desktop heatmap tidy-up (exact "1", default off): the colour domain and legend ends are the data's own min and max,
+// cells carry bare numbers on the shared decimal count, and the unit is said once beside the legend.
+function heatmapFixedDecimals(spec, values, count) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (HOUSE_STYLE_ACTIVE && spec?.unit !== "%" && vizLang(spec) === "zh" && finite.some((v) => Math.abs(v) >= 10_000)) {
+    const top = Math.max(...finite.map((v) => Math.abs(v)));
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    return { zhScale: { div, suffix }, decimals: count };
+  }
+  return count;
+}
+function heatmapTidyEnabled(){ return process.env.NEWSROOM_HEATMAP_TIDY==="1"; }
+// Shared decimal count of the tidy heatmap (cells and legend); render QA re-derives the expected cell text from it.
+function heatmapTidyDecimals(spec, vals){
+  // An explicit spec.decimals is kept as written (heatmap-only exception: ties at the stated precision are normal in a
+  // grid, the colour carries the rest). A non-zero value still never prints as zero: fmt() falls back to its own digits.
+  const explicitDecimals = Number.isInteger(spec.decimals) && spec.decimals >= 0 && spec.decimals <= 3 ? spec.decimals : null;
+  return explicitDecimals === null ? heatmapBaseDecimals(spec, vals) : heatmapFixedDecimals(spec, vals, explicitDecimals);
+}
+// The real chart path never carries spec.decimals, so the tidy heatmap's own default is the shared formatter's BASE
+// precision - fmt()'s magnitude rule applied once, to the largest value (>=100: none, 10..100: one, below 10: two) -
+// without resolveChartDecimals' collision raise: ties at the stated precision are normal in a grid and the colour carries
+// the rest (rule 3's raise turned a 0.668-22.087 grid into three decimals). Rule 5 still holds: fmt() never prints a
+// non-zero value as zero. A "%" unit or house style off keeps one decimal, as before.
+function heatmapBaseDecimals(spec, vals){
+  if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return 1;
+  const finite = vals.filter((v) => Number.isFinite(v));
+  if (!finite.length) return 1;
+  const top = Math.max(...finite.map((v) => Math.abs(v)));
+  if (vizLang(spec) === "zh" && top >= 10_000) {
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+    const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+    return { zhScale: { div, suffix }, decimals: auto };
+  }
+  return top >= 100 ? 0 : top >= 10 ? 1 : top > 0 ? 2 : 1;
+}
+// What a heatmap cell prints for a value, exactly as renderHeatmap spells it (render QA proves it against the SVG).
+export function heatmapCellText(spec, rows, value){
+  const vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null);
+  return heatmapTidyEnabled() ? fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals)) : fmtSpec(spec, value, spec.unit);
+}
+// NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1"): desktop cells carry data-role/data-x/data-y/data-value so render QA can prove
+// every cell shows its value (editorial_validators.mjs heatmapValueLabelsProven).
+function heatmapValueLabelsEnabled(){ return process.env.NEWSROOM_HEATMAP_VALUE_LABELS==="1"; }
+
 function renderHeatmap(spec, rows) {
   const xs = unique(rows.map((r) => r[spec.x_field]));
   const ys = unique(rows.map((r) => r[spec.y_field]));
@@ -5013,7 +5059,10 @@ function renderHeatmap(spec, rows) {
   const left = 190, right = 950, top = f.bodyTop + 35, bottom = f.bodyBottom - 40;
   const cellW = (right - left) / Math.max(1, xs.length), cellH = (bottom - top) / Math.max(1, ys.length);
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const [min, max] = extent(vals, false);
+  const tidy = heatmapTidyEnabled();
+  const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const tidyDecimals = tidy ? heatmapTidyDecimals(spec, vals) : null;
+  const proofOn = heatmapValueLabelsEnabled();
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
   const mixChannels = (t) => {
     const a = [242, 243, 244], b = [209, 73, 63];
@@ -5030,19 +5079,26 @@ function renderHeatmap(spec, rows) {
       const value = index.get(`${xv}\u0000${yv}`); if (value === null || value === undefined) return;
       const t = (value - min) / (max - min || 1);
       const x = left + xi * cellW, y = top + yi * cellH;
-      f.parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
+      const cellAttrs = proofOn ? ` data-role="heatmap-cell" data-x="${esc(xv)}" data-y="${esc(yv)}" data-value="${value}"` : "";
+      f.parts.push(`<rect${cellAttrs} x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmtSpec(spec, value, spec.unit))}</text>`);
+        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
   const legendY=bottom+13, legendW=150;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-d)"/>`);
+  if (tidy) {
+    const legendText = (x, anchor, v) => `<text x="${x}" y="${legendY+22}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, v, "", tidyDecimals))}</text>`;
+    f.parts.push(legendText(left, "start", min), legendText(left+legendW/2, "middle", (min+max)/2), legendText(left+legendW, "end", max));
+    if (spec.unit) f.parts.push(`<text data-role="heatmap-unit" x="${left+legendW+16}" y="${legendY+8}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${vizLang(spec)==="zh"?"单位：":"Unit: "}${spec.unit}`)}</text>`);
+  } else {
   f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
   f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
