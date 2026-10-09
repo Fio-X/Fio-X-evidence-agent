@@ -3,10 +3,12 @@
 - 第三轮发 newsroom_visual_concepts，按工具要求的个数写方案，其中一个是「桑基图讲流向＋热力图讲各名称逐年的数值」，后面就选它。
 - 第四轮四个调用一起发：newsroom_semantic_novelty、一次 newsroom_asset_requirements（asset_class 填 historical_series）、桑基和热力图各一次 newsroom_viz_chain。
 - 桑基 chain：chart_type 填 sankey；reader_task 与 claim_spec.reader_task 填 flow；visual_family 填 flow；data_topology 填 flow_edges；flow_conservation 填 strict；aggregation_policy 填 none；delivery_role 填 infographic_module；带上 story_graph_ref 和对应的 story_node_ids；source_field、target_field、value_field、unit、title、subtitle、note、sql 都要填。
+- 桑基 measure_semantics 写一条：measure_kind 填 flow，temporal_basis 写数据覆盖的期间，observation_status 按数据性质填；claim_spec 的 target_measure 指向它的 id。
 - 桑基 SQL：分层时让每股流只跨一层，不让起点越过中间层直连终点；很小的节点在 SQL 里并成「其他」再求和，注释写明「其他」包括哪些；加一列 flow_id，等于起点 || '→' || 终点。
 - 桑基说法：claim_kind 填 quantitative；数字全用占位符 {值列@flow_id=起点→终点|小数位数}，一个数字都不手打，年份也不打；单位写汉字；highlight_values 写要突出那股流的起点和终点。
 - 热力图 chain：chart_type 填 heatmap；reader_task 与 claim_spec.reader_task 填 distribution；data_topology 填 tabular；x_field 填年份列，y_field 填名称列，value_field 填数值列；delivery_role 填 infographic_module；unit、title、subtitle、note、sql 都要填。
-- 热力图 SQL：取名称、年份、数值三列和一列 cell_id，等于 名称 || '·' || CAST(年份 AS VARCHAR)；不提前 ROUND；按最新一年数值从大到小、再按年份从早到晚排序，行序就是图上的顺序；名称不超过八个汉字，年份不超过十列。
+- 热力图 measure_semantics 写一条：measure_kind 按数据性质填，temporal_basis 写数据覆盖的期间，observation_status 按数据性质填；claim_spec 的 target_measure 指向它的 id。
+- 热力图 SQL：取名称、年份、数值三列和一列 cell_id，等于 名称 || '·' || CAST(年份 AS VARCHAR)；不提前 ROUND；按最后一列年份的数值从大到小、再按年份从早到晚排序，行序就是图上的顺序；名称不超过八个汉字，年份不超过十列。
 - 热力图说法：用 {值列@cell_id=名称·年份|小数位数}、{max.值列|小数位数}、{max.值列.名称列}、{max.值列.年份列}、{min.值列…} 这类占位符；「最高」「最大」紧挨 max 占位符，「最低」紧挨 min 占位符；不写两格相减或倍数，需要时在 SQL 里先算成列。
 - 第五轮发 newsroom_infographic_plan，页面计划必须带上 asset_plan_ref：layout 填 feature；主语法填 FLOW_LEDGER，supporting 填 SPECIMEN_GRID；桑基模块 visual_grammar 填 flow，热力图模块填 distribution；evidence_features 只写数据里真有的 origin_destination_relation、quantity、comparable_entities（同一量纲、同一口径时才写）。
 - 热力图模块的 visual_channels：颜色通道是数值；位置只写一个所有者，位置对应格子编号 cell_id（位置就是格子编号本身），不要把横、纵位置分成两个位置所有者；不要把年份声明成数量。
