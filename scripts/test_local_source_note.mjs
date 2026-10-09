@@ -63,6 +63,13 @@ assert.equal(await acceptedLocalSourceNote(["data/dl.csv"], "en"), null, "downlo
 // 6. the plan builder lets the program's text win over a model-written source_note: the override spreads after the plan's own params.
 const specCore = source.slice(source.indexOf("const programSourceNote = await acceptedLocalSourceNote"));
 const afterParams = specCore.indexOf("...normalizedParams,");
-const overrideAt = specCore.indexOf("...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : {}),");
+const overrideAt = specCore.indexOf("...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : process.env.NEWSROOM_LOCAL_SOURCE_NOTE === \"1\" ? { source_note_program: undefined } : {}),");
 assert.ok(afterParams > 0 && overrideAt > afterParams && overrideAt - afterParams < 140, "the program's source_note is spread right after the model's params");
+// 7. K177 part 2: a noted origin plus a later origin of the same file without a note is not accepted; two equal notes still are
+origin("data/redo.csv", note());
+origin("data/redo.csv", {});
+assert.equal(await acceptedLocalSourceNote(["data/redo.csv"], "en"), null, "note, then re-import without the note");
+origin("data/twice.csv", note());
+origin("data/twice.csv", note());
+assert.equal(await acceptedLocalSourceNote(["data/twice.csv"], "en"), 'Our World in Data, "Energy mix", CC BY 4.0', "two imports with the same note");
 console.log("PASS local source note: zh/en wording, off unchanged, invalid or partial notes ignored, downloaded data untouched, program text spread after model params");

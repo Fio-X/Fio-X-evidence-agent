@@ -123,11 +123,11 @@ if (haveDuckdb) {
     assert.ok(out.svg.includes("Our World in Data") && out.svg.includes("CC BY 4.0"), "the SVG shows the accepted note");
     ok("on + accepted note: saved plan, manifest and SVG show the program text, never the model text");
   }
-  const keeps = async (label, env, prepare) => {
+  const keeps = async (label, env, prepare, extra = {}) => {
     const tools = register(env);
     const art = freshRun(label);
     prepare(art);
-    const out = await planRender(tools, art, label);
+    const out = await planRender(tools, art, label, extra);
     assert.equal(out.planJson.source_note, MODEL_TEXT, label);
     assert.ok(!("source_note_program" in out.planJson) && !("source_note_program" in out.manifest), `${label}: no flag`);
     assert.ok(out.svg.includes(MODEL_TEXT), `${label}: the model text is shown as today`);
@@ -141,6 +141,12 @@ if (haveDuckdb) {
   ok("switch on, note hash differs from the data file: the model's text is kept");
   await keeps("two-different", { NEWSROOM_LOCAL_SOURCE_NOTE: "1" }, (art) => { writeOrigin(art); writeOrigin(art, { note: { ...NOTE, license: "CC0" } }); });
   ok("two noted origins with different notes: today's line, no pick by file-name order");
+  await keeps("note-then-plain", { NEWSROOM_LOCAL_SOURCE_NOTE: "1" }, (art) => { writeOrigin(art); writeOrigin(art, { note: null }); });
+  ok("a noted origin and a later origin without a note for one data file: today's line (K177 part 2)");
+  await keeps("plain-then-note", { NEWSROOM_LOCAL_SOURCE_NOTE: "1" }, (art) => { writeOrigin(art, { note: null }); writeOrigin(art); });
+  ok("an origin without a note and a noted one, either order: today's line");
+  await keeps("model-flag-no-note", { NEWSROOM_LOCAL_SOURCE_NOTE: "1" }, (art) => writeOrigin(art, { note: null }), { source_note_program: true });
+  ok("switch on, the model passes source_note_program with no accepted note: no flag in plan or manifest, its line stays (K177 part 1)");
   {
     const tools = register({ NEWSROOM_LOCAL_SOURCE_NOTE: "1" });
     const art = freshRun("two-same");

@@ -2384,6 +2384,8 @@ export async function acceptedLocalSourceNote(sourceRefs: string[], language?: s
     // Every origin of this file that carries a note: when a re-import left two with different notes, which one is current is unknown,
     // so the chart keeps its own source line rather than picking by file-name order.
     const noted = origins.filter((item) => item?.origin === "local_file" && item?.file === ref && item?.source_note_file);
+    // A later import of the same file without a note (the note file was deleted) leaves the old noted record behind: the same doubt.
+    if (origins.some((item) => item?.origin === "local_file" && item?.file === ref && !item?.source_note_file)) return null;
     const triples = new Set<string>();
     let publisher = "", dataset = "", license = "";
     for (const item of noted) {
@@ -4384,7 +4386,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         publishable: verificationMode === "verified",
         verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
-        ...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : {}),
+        ...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : process.env.NEWSROOM_LOCAL_SOURCE_NOTE === "1" ? { source_note_program: undefined } : {}),
         ...(scatterAxisUnits ?? {}),
         // Value-label decimals come from the shared chart formatter. The tool schema has no decimals field, and a value that reaches
         // here anyway (an unvalidated caller) is dropped, so a plan never carries one: 29.6 and 30.4 must not both print as 30.
