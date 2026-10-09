@@ -137,10 +137,12 @@ function writeReport(root) {
   // only present once a write was handed to a group's own writer (NEWSROOM_GROUP_HANDOFF=1)
   const handed = records.filter((r) => r.requested_by !== undefined).reduce((sum, r) => sum + r.count, 0);
   if (handed) totals.handed_to_knowledge = handed;
+  const verdicts = count("model_quality_verdict");
+  if (verdicts) totals.model_quality_verdict = verdicts;
   const report = {
     schema_version: "0.1.0",
     mode: "report",
-    summary: `${totals.writes} writes seen: ${totals.ok} in the owning group, ${totals.cross_group} cross-group, ${totals.to_check} 待查 (could not be classified). Report only; not_traced lists what this report cannot see.`,
+    summary: `${totals.writes} writes seen: ${totals.ok} in the owning group, ${totals.cross_group} cross-group, ${totals.to_check} 待查 (could not be classified)${verdicts ? `, ${verdicts} model quality verdict (listed apart, not counted as fixed)` : ""}. Report only; not_traced lists what this report cannot see.`,
     totals,
     complete: false,
     note: "Report only: nothing was refused. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
@@ -169,6 +171,10 @@ export function recordBoundaryWrite(root, target, op = "write") {
     else if (!group) { status = "待查"; reason = "tool is not in groups.json"; }
     else if (!classified) { status = "待查"; reason = "path matches no artifact kind"; }
     else status = group === classified.owner ? "ok" : "cross_group";
+    // The vision critic's record is the model's own quality verdict: the program computes the publication decision from it. It is listed in its own
+    // category with the reason from groups.json, outside the cross-group count, and is not counted as fixed.
+    const verdictTool = status === "cross_group" && classified.kind === "pass_decision" && loadGroups().tools?.[tool]?.model_quality_verdict ? loadGroups().tools[tool] : null;
+    if (verdictTool) { status = "model_quality_verdict"; reason = verdictTool.verdict_reason ?? ""; }
     const record = { tool: tool ?? null, ...(writer ? { requested_by: requestedBy } : {}), tool_group: group, op, kind: classified?.kind ?? null, owner: classified?.owner ?? null, status, ...(reason ? { reason } : {}), count: 0, examples: [] };
     const current = load(root);
     const key = keyOf({ ...record, reason });

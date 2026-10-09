@@ -157,6 +157,42 @@ def replay_novelty(modules: list[dict]) -> tuple[list[dict], bool]:
         decisions.append({"module_id": str(current.get("id")), "max_overlap": round(max_overlap,4), "overlaps_most_with": max_prior, "redundancy": level, "action": action})
     return decisions, high == 0
 
+PROGRAM_STATUS_SOURCE = "program_review_records"
+
+
+def program_review_ok(root: Path, ref: str, baseline_ref: str, candidate_ref: str):
+    """A review record the program saved itself, or None. Mirrors programReviewFromRecord in art_direction.mjs."""
+    if not isinstance(ref, str) or not ref.startswith("editorial/human-reviews/"):
+        return None
+    try:
+        record = load_json(safe_ref(root, ref))
+    except Exception:
+        return None
+    if not isinstance(record, dict) or record.get("kind") != "program_saved_review" or record.get("saved_by") != "program":
+        return None
+    body = {k: v for k, v in record.items() if k != "content_hash"}
+    if record.get("content_hash") != editorial_hash(body):
+        return None
+    if record.get("baseline_ref") != baseline_ref or record.get("candidate_ref") != candidate_ref:
+        return None
+    if record.get("preference") not in ("baseline", "candidate", "tie") or not re.fullmatch(r"[a-fA-F0-9]{16,64}", str(record.get("reviewer_id_hash") or "")):
+        return None
+    return record
+
+
+def replay_program_preference(root: Path, item: dict) -> tuple[str, float, int]:
+    records = [program_review_ok(root, ref, item.get("baseline_ref"), item.get("candidate_ref")) for ref in item.get("review_record_refs") or []]
+    records = [r for r in records if r is not None]
+    candidate = sum(1 for r in records if r["preference"] == "candidate")
+    baseline = sum(1 for r in records if r["preference"] == "baseline")
+    decisive = candidate + baseline
+    share = candidate / decisive if decisive else 0.0
+    minimum = int(item.get("minimum_reviewers") or 3)
+    threshold = float(item.get("candidate_threshold") or 0.7)
+    status = "PENDING" if len(records) < minimum else ("PASS" if share >= threshold else "FAIL")
+    return status, round(share, 4), len(records)
+
+
 def replay_asset_plan_decision(item: dict) -> str:
     reqs = item.get("requirements") or []
     if any(r.get("status") == "blocking" and r.get("available") is not True for r in reqs if isinstance(r, dict)):
@@ -1484,6 +1520,15 @@ def verify(root: Path) -> Report:
                 status, share = replay_preference_status(item)
                 report.check(item.get("status") == status, f"expert preference {rel} status is not independently replayable")
                 report.check(float(item.get("candidate_decisive_share") or 0.0) == share, f"expert preference {rel} candidate share mismatch")
+                if item.get("status_source") == PROGRAM_STATUS_SOURCE:
+                    # program-computed status: only review records the program saved count; the stored status must follow from them
+                    p_status, p_share, p_count = replay_program_preference(root, item)
+                    refs_listed = item.get("review_record_refs") or []
+                    report.check(p_count == len(refs_listed), f"expert preference {rel} lists a review record the program did not save")
+                    report.check(item.get("status") == p_status, f"expert preference {rel} status does not follow from the program's review records")
+                    report.check(float(item.get("candidate_decisive_share") or 0.0) == p_share, f"expert preference {rel} share does not follow from the program's review records")
+                    report.check(int((item.get("counts") or {}).get("total") or 0) == p_count, f"expert preference {rel} review count does not follow from the program's review records")
+                    report.check((item.get("model_reported_reviews") or {}).get("counted") is False, f"expert preference {rel} counted model-reported reviews")
                 ids = [str(r.get("reviewer_id_hash")) for r in item.get("reviews") or [] if isinstance(r, dict)]
                 report.check(len(ids) == len(set(ids)), f"expert preference {rel} duplicate reviewer ids")
             except Exception as exc:
@@ -1501,6 +1546,21 @@ def verify(root: Path) -> Report:
                 report.check(item.get("status") == status, f"award mode {rel} status is not independently replayable")
                 report.check(item.get("blockers") == blockers, f"award mode {rel} blockers are not independently replayable")
                 report.check(item.get("human_evidence_required") is True, f"award mode {rel} must retain human evidence boundary")
+                if item.get("status_source") == PROGRAM_STATUS_SOURCE:
+                    # program-computed status: the preference status and review count come from the program's own preference record
+                    pref_item = None
+                    pref_path = (item.get("refs") or {}).get("preference_ref")
+                    if pref_path:
+                        try:
+                            candidate_pref = load_json(safe_ref(root, pref_path))
+                            if candidate_pref.get("status_source") == PROGRAM_STATUS_SOURCE and candidate_pref.get("content_hash") == editorial_hash(candidate_pref):
+                                pref_item = candidate_pref
+                        except Exception:
+                            pref_item = None
+                    expected_pref = pref_item.get("status") if pref_item else "PENDING"
+                    expected_count = int((pref_item.get("counts") or {}).get("total") or 0) if pref_item else 0
+                    report.check(item.get("preference_status") == expected_pref, f"award mode {rel} preference status does not follow from the program's preference record")
+                    report.check(int((item.get("metrics") or {}).get("human_review_count") or 0) == expected_count, f"award mode {rel} human review count does not follow from the program's preference record")
                 refs = item.get("refs") or {}
                 for field, prefix in [("discovery_ref", "editorial/discovery/"), ("concepts_ref", "editorial/concepts/"), ("asset_plan_ref", "editorial/assets/"), ("novelty_ref", "editorial/novelty/"), ("page_ref", "infographics/")]:
                     ref = refs.get(field)

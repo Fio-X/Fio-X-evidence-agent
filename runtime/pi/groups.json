@@ -200,8 +200,9 @@
   },
   "newsroom_infographic_vision_critic": {
    "group": "visual",
-   "note": "Write site where the model supplies a pass status: the model supplies passed and score.",
-   "model_supplied_pass": true
+   "note": "The model supplies passed and score: its own quality judgment of the rendered page, which is the product's design.",
+   "model_quality_verdict": true,
+   "verdict_reason": "The publication decision is computed by the program from this verdict, so the critic itself writes a QA record and not the decision."
   },
   "newsroom_infographic_revise": {
    "group": "visual"

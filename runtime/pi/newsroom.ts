@@ -28,7 +28,7 @@ import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
-import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
+import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, reviewFromRecordsEnabled, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
@@ -750,6 +750,35 @@ async function readArtifactJson(relativePath: string, requiredPrefix?: string) {
   const info = await stat(full);
   if (!info.isFile()) throw new Error(`Artifact path is not a file: ${relativePath}`);
   return JSON.parse(await readFile(full, "utf8"));
+}
+
+// NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1: the review records the program saved itself (editorial/human-reviews/). No tool in this runtime writes
+// there; a person-facing way to record reviews would be added as a separate command that saves program_saved_review records to that folder.
+async function loadProgramReviews(baselineRef: string, candidateRef: string) {
+  const root = artifactRoot();
+  if (!root) return [];
+  let names: string[] = [];
+  try { names = (await readdir(join(root, REVIEW_RECORD_DIR))).filter((name) => name.endsWith(".json")).sort(); } catch { return []; }
+  const found: Array<{ ref: string; review: any }> = [];
+  for (const name of names) {
+    const ref = `${REVIEW_RECORD_DIR}${name}`;
+    let record: any;
+    try { record = await readArtifactJson(ref, REVIEW_RECORD_DIR); } catch { continue; }
+    const review = programReviewFromRecord(record, { baselineRef, candidateRef });
+    if (review && !found.some((entry) => entry.review.reviewer_id_hash === review.reviewer_id_hash)) found.push({ ref, review });
+  }
+  return found;
+}
+
+async function loadProgramPreference(preferenceRef?: string) {
+  if (!preferenceRef) return null;
+  let record: any;
+  try { record = await readArtifactJson(preferenceRef, "editorial/preferences/"); } catch { return null; }
+  if (record?.status_source !== PROGRAM_STATUS_SOURCE || !record?.content_hash) return null;
+  const { content_hash: stored, ...rest } = record;
+  if (stored !== artDirectionHash(rest)) return null;
+  if (!["PENDING", "PASS", "FAIL"].includes(record.status)) return null;
+  return { status: record.status as string, review_count: Number(record?.counts?.total ?? 0) };
 }
 
 async function readArtifactText(relativePath: string, requiredPrefix?: string) {
@@ -5293,10 +5322,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Record qualified human art-director preference evidence",
     parameters: Type.Object({ baseline_ref: Type.String(), candidate_ref: Type.String(), minimum_reviewers: Type.Optional(Type.Integer({ minimum: 3, maximum: 30 })), candidate_threshold: Type.Optional(Type.Number({ minimum: 0.5, maximum: 1 })), reviews: Type.Array(preferenceReview, { maxItems: 30 }) }),
     async execute(_id, params) {
-      const result = evaluateExpertPreference(params);
+      const result = reviewFromRecordsEnabled()
+        ? evaluateExpertPreference(params, { programReviews: await loadProgramReviews(params.baseline_ref, params.candidate_ref) })
+        : evaluateExpertPreference(params);
       const rel = `editorial/preferences/${result.content_hash}.json`;
       await writeArtifactIfAbsent(rel, result);
-      return textResult(`${result.status}: expert pairwise preference\nArtifact: ${rel}\nCandidate decisive share: ${(result.candidate_decisive_share * 100).toFixed(1)}%\nReviewers: ${result.counts.total}/${result.minimum_reviewers}`, { preferenceRef: rel, status: result.status, candidateShare: result.candidate_decisive_share, reviewerCount: result.counts.total });
+      return textResult(`${result.status_display ? `${result.status} (${result.status_display})` : result.status}: expert pairwise preference\nArtifact: ${rel}\nCandidate decisive share: ${(result.candidate_decisive_share * 100).toFixed(1)}%\nReviewers: ${result.counts.total}/${result.minimum_reviewers}`, { preferenceRef: rel, status: result.status, candidateShare: result.candidate_decisive_share, reviewerCount: result.counts.total });
     },
   });
 
@@ -5318,10 +5349,12 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       for (const [ref, prefix] of [[params.discovery_ref, "editorial/discovery/"], [params.concepts_ref, "editorial/concepts/"], [params.asset_plan_ref, "editorial/assets/"], [params.novelty_ref, "editorial/novelty/"]] as const) await readArtifactJson(ref, prefix);
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
-      const result = summarizeAwardMode(params);
+      const result = reviewFromRecordsEnabled()
+        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref) })
+        : summarizeAwardMode(params);
       const rel = `editorial/award-runs/${result.content_hash}.json`;
       await writeArtifactIfAbsent(rel, result);
-      return textResult(`${result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
+      return textResult(`${result.status_display && result.status !== "BLOCKED" ? `${result.status} (${result.status_display})` : result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
     },
   });
 
