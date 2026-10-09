@@ -1274,7 +1274,12 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
 // `abs>=10` stripping of a trailing ".0"/".00". Only choropleth per-region
 // labels (on-map, overflow and inset) use this; fmt() itself is untouched so
 // every other chart type's own formatting/snapshot tests are unaffected.
-export function choroplethValueText(value, unit = "", spec = null) {
+// Whether any value on a choropleth is 1万 or more: the context the zh label rule below needs. Callers pass every value
+// of the regions they draw (the verifiers re-derive the same set from the regions' data-value).
+export function choroplethWanContext(values) {
+  return values.some((v) => Number.isFinite(v) && Math.abs(v) >= 10_000);
+}
+export function choroplethValueText(value, unit = "", spec = null, wanContext = false) {
   if (!Number.isFinite(value)) return "";
   // P2: a calendar year or an integer count is spelled as the integer it is
   // ("2017", "3"), never "2.0k" / "3.0". No thousands separator and no zh
@@ -1291,7 +1296,11 @@ export function choroplethValueText(value, unit = "", spec = null) {
   // decimal, rounded half up on the exact decimal value (halfUpFixed), the suffix chosen by the raw magnitude. Below 1万 it is
   // the plain one-decimal number (no k). Both verifiers re-derive this exact text from data-value, so there is no tolerance.
   if (process.env.NEWSROOM_TYPESET_CHOROPLETH_ZH === "1" && spec && vizLang(spec) === "zh") {
-    if (abs >= 1_000_000_000_000) text = `${halfUpFixed(value, 12, 1, true)}万亿`;
+    // A unit that already says 万 / 亿 / 千 / 百万 gets no second scale: the plain one-decimal number (12000.0 万人, not 1.2万 万人).
+    // On a map that has a value of 1万 or more, a value under 1万 is an integer (8765.5 人 -> 8766 人); on a map with none, one decimal.
+    if (/[万亿千]|百万/.test(unit)) text = halfUpFixed(value, 0, 1, true);
+    else if (abs < 10_000 && wanContext) text = halfUpFixed(value, 0, 0, true).replace(/^-0$/, "0");
+    else if (abs >= 1_000_000_000_000) text = `${halfUpFixed(value, 12, 1, true)}万亿`;
     else if (abs >= 100_000_000) text = `${halfUpFixed(value, 8, 1, true)}亿`;
     else if (abs >= 10_000) text = `${halfUpFixed(value, 4, 1, true)}万`;
     else text = halfUpFixed(value, 0, 1, true);
@@ -7906,6 +7915,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(n(item.row[spec.value_field]))
   );
   const values = joined.map((item) => n(item.row[spec.value_field]));
+  const wanContext = choroplethWanContext(values);
   const classOpts = { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) };
   const classPlan = mobile ? { breaks: niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, classOpts), skewed: false } : classBreaks(values, 5, classOpts);
   const breaks = classPlan.breaks;
@@ -8026,7 +8036,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
         const bbox = projectedFeatureBBox(item.featureIndices, project);
         const value = n(item.row[spec.value_field]) ?? 0;
         const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-        const valueText = choroplethValueText(value, spec.unit, spec);
+        const valueText = choroplethValueText(value, spec.unit, spec, wanContext);
         const neededW = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
         const neededH = lineH * 2 + 6;
         const tooSmall = !bbox || bbox.maxX - bbox.minX < neededW || bbox.maxY - bbox.minY < neededH;
@@ -8213,7 +8223,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-    const valueText = choroplethValueText(value, spec.unit, spec);
+    const valueText = choroplethValueText(value, spec.unit, spec, wanContext);
     const w = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
     return { item, x: p.x, y: p.y, fill: colorForValue(value), name, valueText, w, h: lineH * 2 + 6 };
   });
@@ -9142,7 +9152,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // only when at least one region was actually selected into it.
   const insetLabelItems = insetItems.map((item) => {
     const value = n(item.row[spec.value_field]) ?? 0;
-    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec), fill: colorForValue(value) };
+    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec, wanContext), fill: colorForValue(value) };
   });
   const insetTitleH = 18;
 
