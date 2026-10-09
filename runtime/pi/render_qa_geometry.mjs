@@ -211,10 +211,17 @@ const DEFAULT_OPTIONS = Object.freeze({
 // not, strictly, "CJK" - a documented, deliberate widening of the bucket.
 const WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
 
+// NEWSROOM_QA_SHARED_WIDTH=1 (exact "1", default off): combining marks, variation selectors and zero-width joiners add no advance, and the
+// label-proof estimator uses this same function (see render_qa.mjs), so Hangul and the rest count the same way in both.
+const ZERO_ADVANCE_RE = /[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE00-\uFE0F\uFE20-\uFE2F\u200B-\u200F\u2060]/;
+export const sharedWidthEnabled = () => process.env.NEWSROOM_QA_SHARED_WIDTH === "1";
+
 export function estimateTextWidth(text, fontSize, bold) {
   const table = bold ? LATIN_BOLD_ADVANCE_WIDTHS : LATIN_ADVANCE_WIDTHS;
+  const shared = sharedWidthEnabled();
   let units = 0;
   for (const ch of Array.from(String(text))) {
+    if (shared && ZERO_ADVANCE_RE.test(ch)) continue;
     if (/\s/.test(ch)) units += TEXT_WIDTH_FACTORS.space;
     else if (WIDE_CHAR_RE.test(ch)) units += TEXT_WIDTH_FACTORS.cjk;
     else units += table[ch] ?? FALLBACK_LATIN_WIDTH;
