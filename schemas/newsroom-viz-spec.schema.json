@@ -584,6 +584,12 @@
         "data"
       ]
     },
+    "flow_map_labels": {
+      "enum": [
+        "leader",
+        "ledger"
+      ]
+    },
     "extent_padding_ratio": {
       "type": "number",
       "minimum": 0,

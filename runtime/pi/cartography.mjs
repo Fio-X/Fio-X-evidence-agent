@@ -158,8 +158,10 @@ export function geometryDisclosure(semantics, provenance=''){
   return `Paths follow verified route geometry${provenance?` from ${provenance}`:''}.`;
 }
 
-export function selectRoutes(rows,spec){
-  const sorted=rows.slice().sort((a,b)=>(Number(b?.[spec.value_field])||0)-(Number(a?.[spec.value_field])||0));
+export function selectRoutes(rows,spec,stableTies=false){
+  const val=(r)=>Number(r?.[spec.value_field])||0, key=(r)=>`${r?.[spec.source_field]??''}→${r?.[spec.target_field]??''}`;
+  // stableTies (flow-map labels only): equal values break by name, so the top_n boundary never depends on row order.
+  const sorted=rows.slice().sort((a,b)=>val(b)-val(a)||(stableTies?(key(a)<key(b)?-1:key(a)>key(b)?1:0):0));
   if(spec.aggregation_policy==='top_n') return sorted.slice(0,Math.max(1,Number(spec.top_n)||20));
   return sorted;
 }
