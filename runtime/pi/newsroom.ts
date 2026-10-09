@@ -1,4 +1,5 @@
 import { runProcess } from "./process.mjs";
+import { decisionWriter } from "./decision_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
 import { boundaryReportEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -1421,6 +1422,10 @@ const knowledgeSide = () => knowledgeWriter({ writeArtifactIfAbsent: (ref: strin
 const saveComputation = (ref: string, record: unknown) => (handoffEnabled() ? knowledgeSide().writeComputation(ref, record) : writeArtifactIfAbsent(ref, record));
 const saveQueryRows = (ref: string, rows: unknown[]) => (handoffEnabled() ? knowledgeSide().writeQueryRows(ref, rows) : writeArtifactIfAbsent(ref, rows));
 export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQueryRows(ref, rows);
+// The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
+const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
+const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
+export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
 const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().recordClaim(input, signal) : recordClaimArtifact(input, signal));
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
 export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
@@ -5326,7 +5331,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         ? evaluateExpertPreference(params, { programReviews: await loadProgramReviews(params.baseline_ref, params.candidate_ref) })
         : evaluateExpertPreference(params);
       const rel = `editorial/preferences/${result.content_hash}.json`;
-      await writeArtifactIfAbsent(rel, result);
+      await saveDecision(rel, result);
       return textResult(`${result.status_display ? `${result.status} (${result.status_display})` : result.status}: expert pairwise preference\nArtifact: ${rel}\nCandidate decisive share: ${(result.candidate_decisive_share * 100).toFixed(1)}%\nReviewers: ${result.counts.total}/${result.minimum_reviewers}`, { preferenceRef: rel, status: result.status, candidateShare: result.candidate_decisive_share, reviewerCount: result.counts.total });
     },
   });
@@ -5353,7 +5358,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref) })
         : summarizeAwardMode(params);
       const rel = `editorial/award-runs/${result.content_hash}.json`;
-      await writeArtifactIfAbsent(rel, result);
+      await saveDecision(rel, result);
       return textResult(`${result.status_display && result.status !== "BLOCKED" ? `${result.status} (${result.status_display})` : result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
     },
   });
@@ -6613,7 +6618,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       });
       const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, manifest_ref: params.manifest_ref, deterministic_critic_ref: params.deterministic_critic_ref, vision_critic_ref: params.vision_critic_ref, result }));
       const preflightRef = `infographics/competition-preflight/${key}.json`;
-      await writeArtifactIfAbsent(preflightRef, { ...result, plan_ref: params.plan_ref, manifest_ref: params.manifest_ref, deterministic_critic_ref: params.deterministic_critic_ref, vision_critic_ref: params.vision_critic_ref });
+      await saveDecision(preflightRef, { ...result, plan_ref: params.plan_ref, manifest_ref: params.manifest_ref, deterministic_critic_ref: params.deterministic_critic_ref, vision_critic_ref: params.vision_critic_ref });
       return textResult(`${result.machine_passed ? "PASS" : "BLOCKED"}: ${result.label} machine preflight\nPreflight: ${preflightRef}\nBlockers: ${result.blockers.length ? result.blockers.map((item: any) => item.code).join(" | ") : "none"}\nManual requirements: ${result.manual_requirements.length}`, { machinePassed: result.machine_passed, submissionReady: result.submission_ready, preflightRef, blockers: result.blockers, warnings: result.warnings, manualRequirements: result.manual_requirements });
     },
   });
