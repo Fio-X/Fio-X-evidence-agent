@@ -715,6 +715,24 @@ mod tests {
         clear_env();
     }
     #[test]
+    fn primary_latest_switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for (value, on) in [
+            ("1", true),
+            ("0", false),
+            ("true", false),
+            ("yes", false),
+            ("", false),
+            (" 1", false),
+            ("01", false),
+        ] {
+            std::env::set_var(super::FOLLOWUP_PRIMARY_LATEST_ENV, value);
+            assert_eq!(super::followup_primary_latest_on(), on, "{value:?}");
+        }
+        std::env::remove_var(super::FOLLOWUP_PRIMARY_LATEST_ENV);
+        assert!(!super::followup_primary_latest_on());
+    }
+    #[test]
     fn completion_switch_is_exactly_one() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         for (value, on) in [
