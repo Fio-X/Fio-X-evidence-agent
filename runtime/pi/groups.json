@@ -664,6 +664,10 @@
    "group": "system",
    "note": "The group list itself."
   },
+  "runtime/pi/knowledge_writer.mjs": {
+   "group": "knowledge",
+   "note": "Writes the claim record, computation records and query-row tables on behalf of visual tools (hand-off switch)."
+  },
   "runtime/pi/groups.mjs": {
    "group": "system",
    "note": "Loader, boundary report and tool-order helpers for the group list."

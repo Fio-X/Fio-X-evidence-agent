@@ -80,6 +80,7 @@ const RENDER_QA_CONTRAST_RUNTIME: &str = include_str!("../runtime/pi/render_qa_c
 const RENDER_QA_SVG_RUNTIME: &str = include_str!("../runtime/pi/render_qa_svg.mjs");
 const RENDER_QA_LABELS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_labels.mjs");
 const GROUPS_RUNTIME: &str = include_str!("../runtime/pi/groups.mjs");
+const KNOWLEDGE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/knowledge_writer.mjs");
 const GROUPS_LIST: &str = include_str!("../runtime/pi/groups.json");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
@@ -290,6 +291,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&render_qa_svg_path, RENDER_QA_SVG_RUNTIME)?;
     write_if_changed(&render_qa_labels_path, RENDER_QA_LABELS_RUNTIME)?;
     write_if_changed(&runtime_dir.join("groups.mjs"), GROUPS_RUNTIME)?;
+    write_if_changed(&runtime_dir.join("knowledge_writer.mjs"), KNOWLEDGE_WRITER_RUNTIME)?;
     write_if_changed(&runtime_dir.join("groups.json"), GROUPS_LIST)?;
     write_if_changed(&style_mapping_config_path, EDITORIAL_STYLE_MAPPING_CONFIG)?;
     write_if_changed(
