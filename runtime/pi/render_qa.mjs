@@ -37,6 +37,24 @@ export const RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0";
 // field names the chart was built from. Anything else (bar/line/etc. charts,
 // or a choropleth render call that omits it) gets exactly the pre-existing
 // geometry+contrast report, unchanged.
+// NEWSROOM_QA_NO_EMPTY_PASS=1: a rule that had nothing to look at is not a pass. Each entry names the population a rule runs over, taken from
+// the counters the geometry and contrast checks already report. Rules that only apply when a chart has that kind of element (rect adjacency,
+// leaders, stroke order, the value-axis bracket) are left out on purpose: a chart without them is not an empty pass.
+const EMPTY_PASS_RULES = [
+  ["text_outside_viewbox", "texts"], ["text_outside_panel", "texts"], ["text_outside_nested_svg", "texts"], ["text_overlap", "texts"],
+  ["font_below_floor", "texts"], ["text_crosses_data_mark", "texts"], ["text_crosses_data_mark", "marks"], ["text_contrast", "contrast_texts"],
+];
+export function checkEmptyPasses(geometry, contrast) {
+  const s = geometry?.summary ?? {};
+  const texts = (s.texts_checked ?? 0) - (s.texts_unmeasured ?? 0);
+  const population = { texts, marks: s.marks_checked ?? 0, contrast_texts: (s.texts_checked ?? 0) - (contrast?.unmeasured?.length ?? 0) };
+  const failures = [];
+  for (const [rule, kind] of EMPTY_PASS_RULES) {
+    if (population[kind] <= 0) failures.push({ rule: "qa_rule_matched_nothing", message: `${rule} matched no ${kind.replace("_", " ")}, so its pass proves nothing`, checked_rule: rule });
+  }
+  return { passed: failures.length === 0, failures, population };
+}
+
 function checkViewport(svgText, options) {
   const geometry = checkSvgGeometry(svgText, options?.geometry);
   const contrast = checkSvgContrast(svgText, options?.contrast);
@@ -53,10 +71,11 @@ function checkViewport(svgText, options) {
     // proof needs passing contrast too: any contrast failure in the viewport fails the labels
     if (!contrast.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, { rule: "value_label_contrast", message: "the viewport has a text contrast failure" }] };
   }
-  // NEWSROOM_QA_HEATMAP_MONOTONE=1 (exact "1", default off): extra findings only; unset leaves the report byte-identical
-  const extraChecks = options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1"
-    ? checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml })
-    : null;
+  // Default-off extra checks (exact "1"): findings only; with every switch unset the report is byte-identical
+  const extra = {};
+  if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
+  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast);
+  const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
   return {
     svg_sha256: sha256Hex(svgText),
     passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true) && (extraChecks ? extraChecks.passed : true),
@@ -72,7 +91,7 @@ function checkViewport(svgText, options) {
       unmeasured: contrast.unmeasured,
     },
     ...(valueLabels ? { value_labels: valueLabels } : {}),
-    ...(extraChecks ? { extra_checks: { heatmap_monotone: extraChecks } } : {}),
+    ...(extraChecks ? { extra_checks: extra } : {}),
   };
 }
 
