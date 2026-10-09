@@ -1,4 +1,5 @@
 import { runProcess } from "./process.mjs";
+import { boundaryReportEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -484,6 +485,8 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
+  // NEWSROOM_GROUP_BOUNDARY=1: the tool's writes know which tool started them (also when a chain calls this tool).
+  if (boundaryReportEnabled()) tool = withBoundaryContext(tool);
   registeredTools.set(name, tool);
   if (name === "newsroom_infographic_plan" && planPatchEnabled()) tool = withRejectionStore(tool, PLAN_PATCH);
   wrappedTools.set(name, tool);
@@ -716,6 +719,7 @@ async function ensureParent(path: string) {
 async function writeArtifact(relativePath: string, value: unknown) {
   const root = artifactRoot();
   if (!root) return null;
+  recordBoundaryWrite(root, relativePath, "write");
   const path = join(root, relativePath);
   await ensureParent(path);
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n";
@@ -726,6 +730,7 @@ async function writeArtifact(relativePath: string, value: unknown) {
 async function appendArtifact(relativePath: string, value: unknown) {
   const root = artifactRoot();
   if (!root) return null;
+  recordBoundaryWrite(root, relativePath, "append");
   const path = join(root, relativePath);
   await ensureParent(path);
   const text = typeof value === "string" ? value : JSON.stringify(value) + "\n";
@@ -975,6 +980,7 @@ async function rejectCriticizedManifest(dir: string, manifestRef: string, critic
   await writeArtifactIfAbsent(rejectedCriticRef, criticText);
   await writeArtifactIfAbsent(rejectionRef, { reason: "critic_failed", critic_ref: criticRef, manifest_ref: manifestRef });
   try {
+    recordBoundaryWrite(root, manifestRef, "unlink");
     await unlink(join(root, manifestRef));
   } catch (error: any) {
     if (error?.code !== "ENOENT") throw error;
@@ -1187,6 +1193,7 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
   const rejectedDir = join(root, "publications", "rejected", key);
   await mkdir(dirname(rejectedDir), { recursive: true });
   try {
+    recordBoundaryWrite(root, rejectedDir, "rename");
     await rename(join(root, "publications", key), rejectedDir);
   } catch (error: any) {
     if (error?.code !== "ENOENT") throw error;
@@ -1336,6 +1343,7 @@ async function createViaLink(root: string, path: string, bytes: Buffer): Promise
 async function writeArtifactIfAbsent(relativePath: string, value: unknown) {
   const root = artifactRoot();
   if (!root) return null;
+  recordBoundaryWrite(root, relativePath, "write_if_absent");
   const path = join(root, relativePath);
   await ensureParent(path);
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n";
@@ -1357,6 +1365,7 @@ async function writeArtifactIfAbsent(relativePath: string, value: unknown) {
 async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Array) {
   const root = artifactRoot();
   if (!root) return null;
+  recordBoundaryWrite(root, relativePath, "write_if_absent");
   const path = join(root, relativePath);
   await ensureParent(path);
   const bytes = Buffer.from(value);
@@ -3408,7 +3417,25 @@ function registerInfographicChain(pi: ExtensionAPI) {
   if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
 }
 
+// NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
+// NEWSROOM_GROUP_BOUNDARY=1 (default off): every tool's writes are attributed to it (see groups.mjs). Off: Pi gets the tools untouched.
 export default function newsroomExtension(pi: ExtensionAPI) {
+  const order = groupToolOrderEnabled();
+  const boundary = boundaryReportEnabled();
+  if (!order && !boundary) return registerNewsroomTools(pi);
+  const buffered: any[] = [];
+  const proxy = new Proxy(pi as any, {
+    get(target, key) {
+      if (key === "registerTool") return (tool: any) => { const next = boundary ? withBoundaryContext(tool) : tool; if (order) buffered.push(next); else target.registerTool(next); };
+      const value = target[key];
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  registerNewsroomTools(proxy as ExtensionAPI);
+  if (order) for (const tool of orderToolsByGroup(buffered)) (pi as any).registerTool(tool);
+}
+
+function registerNewsroomTools(pi: ExtensionAPI) {
   registeredTools.clear();
   wrappedTools.clear();
   // Orphaned temp files from a writer that was killed mid-write (switch on only).
@@ -3648,6 +3675,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         const filePath = join(root, relativeFile);
         await ensureParent(filePath);
         try {
+          recordBoundaryWrite(artifactRoot(), filePath, "write");
           await writeFile(filePath, bytes, { flag: "wx" });
         } catch (error: any) {
           if (error?.code !== "EEXIST") throw error;
@@ -6173,7 +6201,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const htmlRef = String(manifest.html_ref ?? ""); const fullHtml = resolve(root, htmlRef);
       const qaKey = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, manifest_ref: params.manifest_ref, profile: params.profile ?? "cpu" }));
       const outDir = join(root, "publications", "qa", qaKey); await mkdir(outDir, { recursive: true });
-      const specPath = join(outDir, "publication-spec.json"); await writeFile(specPath, JSON.stringify(spec, null, 2) + "\n", "utf8");
+      const specPath = join(outDir, "publication-spec.json"); recordBoundaryWrite(artifactRoot(), specPath, "write"); await writeFile(specPath, JSON.stringify(spec, null, 2) + "\n", "utf8");
       const script = join(root, "runtime", "browser_qa.py");
       const { code } = await runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--html", fullHtml, "--spec", specPath, "--output", outDir, "--profile", params.profile ?? "cpu"], signal, root, undefined, MAX_QUERY_BYTES, Number(process.env.NEWSROOM_BROWSER_QA_TIMEOUT_MS ?? 120_000), true);
       const report = JSON.parse(await readFile(join(outDir, "browser-qa.json"), "utf8"));
@@ -6206,6 +6234,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         // html_sha256 scan, and a later run that crashes before writing a
         // fresh report hits a clean ENOENT instead of re-reading this one.
         const startupFailureRef = `publications/qa/${qaKey}/startup-failure.json`;
+        recordBoundaryWrite(artifactRoot(), join(outDir, "startup-failure.json"), "rename");
         await rename(join(outDir, "browser-qa.json"), join(outDir, "startup-failure.json"));
         return textResult(`QA could not run: ${reason}; fix the environment and re-run newsroom_publication_qa.\nReport: ${startupFailureRef}`, { passed: false, judged: false, reportRef: startupFailureRef, report });
       }
