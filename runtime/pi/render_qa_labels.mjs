@@ -248,6 +248,8 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[value_field])),
   );
 
+  const wanContext = joined.some((item) => Math.abs(Number(item.row[value_field])) >= 10_000);
+
   // World mode (map_extent: "world") labels only the range ends and highlight_values;
   // the set is re-derived from the rows here, and every other region must carry no text.
   const worldLabelled = options?.map_extent === "world" && typeof worldLabelIso3s === "function"
@@ -257,7 +259,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
-    const expectedValueText = fmt(value, unit, kindSpec);
+    const expectedValueText = fmt(value, unit, kindSpec, wanContext);
     if (!dataIso3ByRegion.has(iso3)) {
       failures.push({ rule: "value_label_missing_region", message: `${iso3} has a data row but no rendered choropleth-data region` });
       continue;

@@ -1786,6 +1786,64 @@ fn zh_scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
     Some(&text[..number_end] == want.as_str())
 }
 
+/// Half-up rounding of |value| to `digits` decimals on the shortest decimal spelling of the value, as integer arithmetic
+/// (the renderer's halfUpFixed). Returns the whole and the fractional digits of the result, None when it does not fit.
+fn half_up_parts(magnitude: f64, digits: u32) -> Option<(u128, u128)> {
+    let shortest = format!("{magnitude}");
+    let (int_part, frac_part) = shortest.split_once('.').unwrap_or((shortest.as_str(), ""));
+    let coefficient = format!("{int_part}{frac_part}").parse::<u128>().ok()?;
+    let numerator = coefficient.checked_mul(10u128.checked_pow(digits)?)?;
+    let denominator = 10u128.checked_pow(frac_part.len() as u32)?;
+    let rounded = numerator.checked_mul(2)?.checked_add(denominator)? / denominator.checked_mul(2)?;
+    let scale = 10u128.pow(digits);
+    Some((rounded / scale, rounded % scale))
+}
+
+/// Exact check of the two plain Chinese choropleth label forms the typeset switch prints besides the 万 / 亿 ones:
+/// (1) a unit that already says 万 / 亿 / 千 / 百万 gets the plain one-decimal number and no second scale ("12000.0 万人");
+/// (2) an integer-form label ("8766 人"): on a map that has a value of 1万 or more, a value under 1万 prints as its half-up
+/// integer; otherwise an integer-form label must be the integer value itself. None: neither form (the ordinary reader
+/// applies). Some(true) exact match, Some(false) mismatch.
+fn zh_plain_label_matches(text: &str, expected: f64, wan_context: bool) -> Option<bool> {
+    let unit_scaled = |rest: &str| rest.chars().any(|c| matches!(c, '万' | '亿' | '千'));
+    let negative = expected < 0.0;
+    // (1) -?digits.digit<space>unit-with-a-scale-word
+    if let Some((number, rest)) = text.split_once(' ') {
+        let digits = number.strip_prefix('-').unwrap_or(number);
+        if let Some((whole, frac)) = digits.split_once('.') {
+            if !whole.is_empty()
+                && whole.bytes().all(|b| b.is_ascii_digit())
+                && frac.len() == 1
+                && frac.bytes().all(|b| b.is_ascii_digit())
+                && unit_scaled(rest)
+            {
+                let Some((w, f)) = half_up_parts(expected.abs(), 1) else {
+                    return Some(false);
+                };
+                let want = format!("{}{w}.{f}", if negative { "-" } else { "" });
+                return Some(number == want);
+            }
+        }
+    }
+    // (2) optional currency symbol, then -?digits not followed by a digit or a point
+    let body = text.strip_prefix(['£', '$', '€', '¥']).unwrap_or(text);
+    let signless = body.strip_prefix('-').unwrap_or(body);
+    let digit_count = signless.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digit_count == 0 || signless[digit_count..].starts_with('.') {
+        return None;
+    }
+    let shown = &body[..body.len() - signless.len() + digit_count];
+    let integer_valued = expected.fract() == 0.0;
+    if !integer_valued && !(wan_context && expected.abs() < 10_000.0) {
+        return Some(false);
+    }
+    let Some((w, _)) = half_up_parts(expected.abs(), 0) else {
+        return Some(false);
+    };
+    let want = format!("{}{w}", if negative && w != 0 { "-" } else { "" });
+    Some(shown == want)
+}
+
 /// Independently re-derives the choropleth value-labels proof straight from
 /// one rendered viewport's SVG markup: every `choropleth-data` region's own
 /// `data-iso3`/`data-value`, and every name/value label's `data-iso3` and
@@ -1845,6 +1903,7 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             .push(label_body_text(node.body));
     }
 
+    let wan_context = data_values.values().any(|vals| vals.len() == 1 && vals[0].abs() >= 10_000.0);
     for (iso3, vals) in &data_values {
         if vals.len() != 1 {
             failures.push(format!(
@@ -1869,7 +1928,7 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             continue;
         }
         let text = &value_texts[0];
-        if let Some(exact) = zh_scaled_label_matches(text, expected) {
+        if let Some(exact) = zh_plain_label_matches(text, expected, wan_context).or_else(|| zh_scaled_label_matches(text, expected)) {
             if !exact {
                 failures.push(format!(
                     "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
@@ -5358,6 +5417,28 @@ mod tests {
                 .any(|f| f.contains("GIN") && f.contains("does not match")),
             "{failures:?}"
         );
+    }
+
+    #[test]
+    fn zh_plain_choropleth_labels_are_read_back_exactly() {
+        // a unit that already says 万: the plain one-decimal number, no second scale
+        assert_eq!(zh_plain_label_matches("11500.5 万人", 11500.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("11500.6 万人", 11500.5, true), Some(false));
+        assert_eq!(zh_plain_label_matches("-12.5 万人", -12.5, false), Some(true));
+        assert_eq!(zh_plain_label_matches("1.2 人", 1.2, true), None);
+        // below 1万 on a map that has a 万 value: the half-up integer
+        assert_eq!(zh_plain_label_matches("8766 人", 8765.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("8765 人", 8765.5, true), Some(false));
+        assert_eq!(zh_plain_label_matches("0 人", -0.4, true), Some(true));
+        assert_eq!(zh_plain_label_matches("¥8766", 8765.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("70%", 70.0, false), Some(true));
+        assert_eq!(zh_plain_label_matches("71%", 70.0, false), Some(false));
+        // an integer label for a non-integer value is wrong when no value reaches 1万, or for a value of 1万 or more
+        assert_eq!(zh_plain_label_matches("8766 人", 8765.5, false), Some(false));
+        assert_eq!(zh_plain_label_matches("12346 人", 12345.5, true), Some(false));
+        // a decimal label is left to the other readers
+        assert_eq!(zh_plain_label_matches("8765.5 人", 8765.5, true), None);
+        assert_eq!(zh_plain_label_matches("1.2万 人", 11500.0, true), None);
     }
 
     #[test]

@@ -93,7 +93,7 @@ function onOffNear(name, run) {
   assert.ok(onTexts.length >= 4, onTexts.join("|"));
   assert.ok(onTexts.every((t) => !/\d(k|m|bn)\b/.test(t)), onTexts.join("|"));
   assert.ok(onTexts.some((t) => t.includes("万")) && onTexts.some((t) => t.includes("亿")), onTexts.join("|"));
-  assert.ok(onTexts.includes("8765.5 人"), "below 1万 the number stays plain");
+  assert.ok(onTexts.includes("8766 人"), `below 1万 among 万 values the number is an integer: ${onTexts}`);
   assert.ok(onTexts.includes("1.2万 人") && onTexts.includes("1.3万 人"), onTexts.join("|")); // 11500.5 -> 1.2万, 12500.5 -> 1.3万
   // render QA (the JS reader) re-derives the exact text; the switch must reach it through the options
   withSwitch("NEWSROOM_TYPESET_CHOROPLETH_ZH", "1", () => {
@@ -112,6 +112,24 @@ function onOffNear(name, run) {
   const tampered = on.replace(">1.2万 人<", ">1.1万 人<");
   const bad = py(tampered);
   assert.ok(JSON.parse(bad.stdout).some((m) => m.includes("does not match")), bad.stdout);
+  // the integer below 1万 is read back exactly too: a label one off, or a decimal label where the integer rule applies, fails
+  const wrongInt = py(on.replace(">8766 人<", ">8765 人<"));
+  assert.ok(JSON.parse(wrongInt.stdout).some((m) => m.includes("does not match")), wrongInt.stdout);
+  const decimalAmongWan = py(on.replace(">8766 人<", ">8765.5 人<"));
+  assert.deepEqual(JSON.parse(decimalAmongWan.stdout), [], "a decimal label stays on the ordinary reader (tolerance)");
+  // every value under 1万: the one-decimal label is unchanged by the integer rule
+  const smallRows = rows.map((r, i) => ({ ...r, pop: 1000.5 + i * 100 }));
+  const small = valueTexts(withSwitch("NEWSROOM_TYPESET_CHOROPLETH_ZH", "1", () => renderVizBundle(spec, smallRows, { mobilePages: false }).desktop));
+  assert.ok(small.length >= 4 && small.every((t) => /^\d+\.\d 人$/.test(t)), small.join("|"));
+  // a unit that already says 万: no second 万, plain one-decimal number, read back exactly
+  const wanSpec = { ...spec, unit: "万人" };
+  const wanSvg = withSwitch("NEWSROOM_TYPESET_CHOROPLETH_ZH", "1", () => renderVizBundle(wanSpec, rows, { mobilePages: false }).desktop);
+  const wanTexts = valueTexts(wanSvg);
+  assert.ok(wanTexts.length >= 4 && wanTexts.every((t) => /^\d+\.\d 万人$/.test(t)), wanTexts.join("|"));
+  assert.ok(wanTexts.includes("11500.5 万人"), wanTexts.join("|"));
+  assert.deepEqual(JSON.parse(py(wanSvg).stdout), [], "plain label with a 万 unit reads back");
+  const wanBad = py(wanSvg.replace(">11500.5 万人<", ">11500.6 万人<"));
+  assert.ok(JSON.parse(wanBad.stdout).some((m) => m.includes("does not match")), wanBad.stdout);
 }
 
 // ---- K84: one notation per axis ------------------------------------------------------------------------------------
