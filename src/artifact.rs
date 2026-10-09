@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 pub struct InvestigationBundle {
@@ -619,6 +620,15 @@ impl InvestigationBundle {
         Ok(delivery.primary_artifact.zip(delivery.primary_kind))
     }
 
+    /// The newest chart a follow-up round made that passed its checks, read from the program's own
+    /// records only: a `visualizations/<key>.json` manifest written at or after `since` whose
+    /// `render_qa.passed` is true and `artifact_status` is `VERIFIED`, with a passing critic record
+    /// under `visualizations/critics/` bound to that manifest. Nothing here reads the model's text.
+    /// `None` when the round made no such chart.
+    pub fn latest_passing_chart_since(&self, since: SystemTime) -> Result<Option<(String, String)>> {
+        latest_passing_chart(&self.dir, since)
+    }
+
     /// `required_pngs` is how many PNG renders a PNG/screenshot request
     /// needs: 0 when none was requested, 1 for the desktop page alone, 2 for
     /// the desktop/mobile pair when mobile pages are enabled.
@@ -1184,6 +1194,73 @@ fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
 
     candidates.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(candidates)
+}
+
+fn latest_passing_chart(root: &Path, since: SystemTime) -> Result<Option<(String, String)>> {
+    let dir = root.join("visualizations");
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let mut passing_critics = std::collections::BTreeSet::new();
+    let critics = dir.join("critics");
+    if critics.is_dir() {
+        for entry in fs::read_dir(&critics)? {
+            let path = entry?.path();
+            let Some(record) = read_manifest_json(&path) else {
+                continue;
+            };
+            if record.get("passed").and_then(Value::as_bool) == Some(true) {
+                if let Some(manifest_ref) = record.get("manifest_ref").and_then(Value::as_str) {
+                    passing_critics.insert(manifest_ref.to_string());
+                }
+            }
+        }
+    }
+    let mut newest: Option<(SystemTime, String)> = None;
+    for entry in fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) else {
+            continue;
+        };
+        if modified < since {
+            continue;
+        }
+        let Some(manifest) = read_manifest_json(&path) else {
+            continue;
+        };
+        let manifest_ref = format!("visualizations/{}", entry.file_name().to_string_lossy());
+        let passed = manifest.pointer("/render_qa/passed").and_then(Value::as_bool) == Some(true)
+            && manifest.get("artifact_status").and_then(Value::as_str) == Some("VERIFIED")
+            && passing_critics.contains(&manifest_ref);
+        if !passed {
+            continue;
+        }
+        let reference = manifest
+            .pointer("/variants/desktop")
+            .and_then(Value::as_str)
+            .or_else(|| manifest.get("svg").and_then(Value::as_str));
+        let Some(path) = reference.and_then(|reference| accept_ref(root, reference)) else {
+            continue;
+        };
+        if newest
+            .as_ref()
+            .map_or(true, |(time, key)| (modified, &path) > (*time, key))
+        {
+            newest = Some((modified, path));
+        }
+    }
+    Ok(newest.map(|(_, path)| {
+        let kind = if path.to_ascii_lowercase().ends_with(".png") {
+            "png"
+        } else {
+            "svg"
+        };
+        (path, kind.to_string())
+    }))
 }
 
 fn read_manifest_json(path: &Path) -> Option<Value> {
