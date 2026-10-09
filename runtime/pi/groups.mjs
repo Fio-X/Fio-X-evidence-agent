@@ -90,7 +90,7 @@ function knownTag(path, kind) {
 // What this report cannot see. Listed in every report so a zero is never read as proof.
 export const NOT_TRACED = [
   "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs, agent/tools/*)",
-  "direct fs writes in lieflat.mjs, parallel_scheduler.mjs and shadow.mjs",
+  "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
   "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process",
   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
