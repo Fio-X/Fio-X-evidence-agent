@@ -101,6 +101,12 @@ const store = new AsyncLocalStorage();
 /** Run fn with `tool` as the initiating tool of every write made inside it. */
 export const runInTool = (tool, fn) => store.run({ tool: String(tool ?? "") }, fn);
 export const currentTool = () => store.getStore()?.tool ?? null;
+/**
+ * Run fn as a group's own writer (NEWSROOM_GROUP_HANDOFF=1): the writes inside belong to that group and are reported under the writer's name,
+ * with the tool that asked for them kept in `requested_by`, so a hand-off is visible and never hidden.
+ */
+export const runAsWriter = (group, writer, fn) => store.run({ tool: store.getStore()?.tool ?? "", writer: { group, name: writer } }, fn);
+const currentWriter = () => store.getStore()?.writer ?? null;
 
 /** Wraps a tool's execute so its writes know who initiated them. Only called with the switch on. */
 export function withBoundaryContext(tool) {
@@ -110,7 +116,7 @@ export function withBoundaryContext(tool) {
 }
 
 let state = null; // { root, records: Map, writes }
-const keyOf = (r) => [r.tool, r.op, r.kind, r.status, r.reason].join("|");
+const keyOf = (r) => [r.tool, r.requested_by ?? "", r.op, r.kind, r.status, r.reason].join("|");
 
 function load(root) {
   if (state?.root === root) return state;
@@ -128,6 +134,9 @@ function writeReport(root) {
   const records = [...state.records.values()];
   const count = (status) => records.filter((r) => r.status === status).reduce((sum, r) => sum + r.count, 0);
   const totals = { writes: state.writes, ok: count("ok"), cross_group: count("cross_group"), to_check: count("待查") };
+  // only present once a write was handed to a group's own writer (NEWSROOM_GROUP_HANDOFF=1)
+  const handed = records.filter((r) => r.requested_by !== undefined).reduce((sum, r) => sum + r.count, 0);
+  if (handed) totals.handed_to_knowledge = handed;
   const report = {
     schema_version: "0.1.0",
     mode: "report",
@@ -150,15 +159,17 @@ export function recordBoundaryWrite(root, target, op = "write") {
   try {
     const text = String(target ?? "");
     const path = (isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/");
-    const tool = currentTool();
-    const group = tool ? toolGroup(tool) : null;
+    const writer = currentWriter();
+    const requestedBy = writer ? (currentTool() || null) : null;
+    const tool = writer ? writer.name : currentTool();
+    const group = writer ? writer.group : tool ? toolGroup(tool) : null;
     const classified = classifyArtifact(path);
     let status, reason = "";
     if (!tool) { status = "待查"; reason = "no initiating tool"; }
     else if (!group) { status = "待查"; reason = "tool is not in groups.json"; }
     else if (!classified) { status = "待查"; reason = "path matches no artifact kind"; }
     else status = group === classified.owner ? "ok" : "cross_group";
-    const record = { tool: tool ?? null, tool_group: group, op, kind: classified?.kind ?? null, owner: classified?.owner ?? null, status, ...(reason ? { reason } : {}), count: 0, examples: [] };
+    const record = { tool: tool ?? null, ...(writer ? { requested_by: requestedBy } : {}), tool_group: group, op, kind: classified?.kind ?? null, owner: classified?.owner ?? null, status, ...(reason ? { reason } : {}), count: 0, examples: [] };
     const current = load(root);
     const key = keyOf({ ...record, reason });
     const entry = current.records.get(key) ?? record;

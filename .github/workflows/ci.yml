@@ -218,6 +218,7 @@ jobs:
           node scripts/test_vision_contract.mjs
           node scripts/test_groups.mjs
           node scripts/test_group_boundary.mjs
+          node scripts/test_group_handoff.mjs
           python3 scripts/test_infographic_preview.py
           python3 scripts/test_cjk_preview_raster.py
       - name: Visualization semantic smoke tests

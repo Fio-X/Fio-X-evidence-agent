@@ -1,4 +1,5 @@
 import { runProcess } from "./process.mjs";
+import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
 import { boundaryReportEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -1385,6 +1386,13 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
 }
 
 // Test-only entry points to the two immutable writers (not used by tools).
+// NEWSROOM_GROUP_HANDOFF=1 (exact value, default off): the claim record, computation records and query-row tables a visual tool needs are saved
+// by the knowledge group's writer (knowledge_writer.mjs). Same store calls, same arguments, same order: the files are byte-identical.
+const knowledgeSide = () => knowledgeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), recordClaimArtifact: (input: any, signal?: AbortSignal) => recordClaimArtifact(input, signal) });
+const saveComputation = (ref: string, record: unknown) => (handoffEnabled() ? knowledgeSide().writeComputation(ref, record) : writeArtifactIfAbsent(ref, record));
+const saveQueryRows = (ref: string, rows: unknown[]) => (handoffEnabled() ? knowledgeSide().writeQueryRows(ref, rows) : writeArtifactIfAbsent(ref, rows));
+export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQueryRows(ref, rows);
+const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().recordClaim(input, signal) : recordClaimArtifact(input, signal));
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
 export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
 
@@ -1655,7 +1663,7 @@ async function queryDuckDb(sql: string, signal?: AbortSignal) {
   if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
   const materialized = await materializeComputationRowTables(safeSql, {
     readComputation: (ref: string) => readArtifactJson(ref, "computations/"),
-    writeRows: (ref: string, rows: unknown[]) => writeArtifactIfAbsent(ref, rows),
+    writeRows: (ref: string, rows: unknown[]) => saveQueryRows(ref, rows),
   });
   const dataDir = join(root, "data").replace(/'/g, "''");
   const sourceDir = join(root, "sources").replace(/'/g, "''");
@@ -2549,7 +2557,7 @@ async function recordInlineClaim(claim: InlineClaim, signal?: AbortSignal) {
   try {
     inlineClaimAborted(signal);
     await validateSourceEvidence(claim.sourceRefs);
-    await writeArtifactIfAbsent(claim.computation.ref, claim.computation.record);
+    await saveComputation(claim.computation.ref, claim.computation.record);
     const existing = (await verifiedClaimRecords()).get(claim.claimId);
     if (existing) {
       if (existing.claim_kind !== claim.kind || (existing.caveat ?? null) !== (claim.caveat ?? null)) {
@@ -2558,7 +2566,7 @@ async function recordInlineClaim(claim: InlineClaim, signal?: AbortSignal) {
       return { reused: true };
     }
     inlineClaimAborted(signal);
-    const recorded = await recordClaimArtifact({
+    const recorded = await saveClaim({
       claim: claim.text,
       claim_kind: claim.kind,
       status: "supported",
@@ -4462,7 +4470,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const lintSql = atomicArtifactWritesEnabled() ? computationSql(spec.sql) : spec.sql;
       const computationRef = computationRelativePath(lintSql, inputSnapshotHash, lint.data_hash);
       const recordInputs = lintSql === spec.sql ? lintInputs : await deriveInputsForSql(lintSql, signal);
-      await writeArtifactIfAbsent(computationRef, buildComputationRecord({
+      await saveComputation(computationRef, buildComputationRecord({
         sql: lintSql,
         inputSnapshot,
         derivedInputs: recordInputs,
