@@ -43,4 +43,30 @@ const t = qa(textOnly, "1").viewports.desktop.extra_checks.no_empty_pass.failure
 assert.deepEqual(t.map((f) => f.checked_rule), ["text_crosses_data_mark"]);
 // 5. unit: unmeasured texts do not count as a population
 assert.equal(checkEmptyPasses({ summary: { texts_checked: 2, texts_unmeasured: 2, marks_checked: 3 } }, { unmeasured: [] }).passed, false);
+
+// 6. heatmaps: cells count as data marks (only with the cell attributes), a label inside its own cell is fine, one over a neighbour reports
+const hspec = { schema_version: "0.9.0", language: "zh", chart_type: "heatmap", reader_task: "comparison", data_topology: "tabular", verification_mode: "draft", title: "各国燃料占比", subtitle: "各来源占比", unit: "%", x_field: "fuel", y_field: "country", value_field: "share", decimals: 1, source: "测试", source_note: "测试", sql: "SELECT 1", alt: "热力图测试，若干国家乘四种燃料的占比。", };
+const fuels = ["煤", "石油", "天然气", "水泥"];
+const hrows = Array.from({ length: 4 }, (_, i) => `国${i + 1}`).flatMap((c, i) => fuels.map((fu, j) => ({ country: c, fuel: fu, share: 10 + i * 3 + j * 1.5 })));
+const hopt = { heatmap: { rows: hrows, spec: hspec, x_field: "fuel", y_field: "country", value_field: "share" } };
+const heat = (labels) => { const o = process.env.NEWSROOM_HEATMAP_VALUE_LABELS; if (labels) process.env.NEWSROOM_HEATMAP_VALUE_LABELS = "1"; else delete process.env.NEWSROOM_HEATMAP_VALUE_LABELS; try { return renderVizBundle(hspec, hrows, { mobilePages: false }).desktop; } finally { if (o === undefined) delete process.env.NEWSROOM_HEATMAP_VALUE_LABELS; else process.env.NEWSROOM_HEATMAP_VALUE_LABELS = o; } };
+const hqa = (svg, v) => withSwitch(v, () => runRenderQa({ desktop: svg }, hopt)).viewports.desktop;
+const withCells = heat(true), noCells = heat(false);
+const g = hqa(withCells, "1");
+assert.deepEqual(g.extra_checks.no_empty_pass.failures, [], JSON.stringify(g.extra_checks.no_empty_pass));
+assert.ok(g.extra_checks.no_empty_pass.population.marks >= 16);
+assert.ok(!g.geometry.failures.some((f) => f.rule === "text_crosses_data_mark"), "labels inside their own cells are exempt");
+// without cell attributes: not applicable, never a pass and never a finding
+const n = hqa(noCells, "1").extra_checks.no_empty_pass;
+assert.equal(n.passed, true);
+assert.deepEqual(n.not_applicable.map((x) => x.checked_rule), ["text_crosses_data_mark"]);
+// a value label moved over a neighbouring cell reports (red); off, the report has no such finding because cells are not marks
+const m = withCells.match(/<text data-role="heatmap-cell-value" data-x="煤" data-y="国1" x="([0-9.]+)"/);
+const moved = withCells.replace(m[0], m[0].replace(`x="${m[1]}"`, `x="${Number(m[1]) + 190}"`));
+assert.notEqual(moved, withCells);
+assert.ok(hqa(moved, "1").geometry.failures.some((f) => f.rule === "text_crosses_data_mark"), "label over a neighbour must report");
+assert.ok(!hqa(moved, undefined).geometry.failures.some((f) => f.rule === "text_crosses_data_mark"));
+// off: heatmap reports are byte-identical for unset/"0"
+assert.equal(JSON.stringify(hqa(withCells, "0")), JSON.stringify(hqa(withCells, undefined)));
+assert.ok(!JSON.stringify(hqa(withCells, undefined)).includes("not_applicable"));
 console.log("PASS qa no empty pass");
