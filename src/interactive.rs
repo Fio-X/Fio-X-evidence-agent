@@ -165,6 +165,13 @@ fn import_follow_up_data(artifact: &std::path::Path, message: &str) -> Result<()
         let reference = bundle.import_data(&file)?;
         eprintln!("[interactive] imported data={reference}");
     }
+    // NEWSROOM_LOCAL_SOURCE_NOTE=1 only: a refused note is reported and kept in the manifest (reasons only). Otherwise nothing changes.
+    if !bundle.source_note_warnings.is_empty() {
+        for warning in &bundle.source_note_warnings {
+            eprintln!("[interactive] source note: {warning}");
+        }
+        bundle.persist_source_note_warnings()?;
+    }
     Ok(())
 }
 

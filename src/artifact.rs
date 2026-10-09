@@ -439,6 +439,61 @@ impl InvestigationBundle {
         Ok(())
     }
 
+    /// With NEWSROOM_LOCAL_SOURCE_NOTE=1: the warnings of this import, the ones an earlier turn left in the manifest, and the
+    /// page-level ones the runtime wrote beside a rendered page. Switch off: this import's warnings only (always empty), as before.
+    fn all_source_note_warnings(&self) -> Vec<String> {
+        let mut all = self.source_note_warnings.clone();
+        if !local_source_note_enabled() {
+            return all;
+        }
+        let mut earlier = Vec::new();
+        if let Ok(text) = fs::read_to_string(&self.manifest_path) {
+            if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                earlier.extend(string_array(value.get("source_note_warnings")));
+            }
+        }
+        if let Ok(files) = relative_files(&self.dir, "infographics") {
+            for file in files {
+                // Only the page manifests directly under infographics/ (key.json), not plans, lints, qa or critics.
+                if file.matches('/').count() == 1 && file.ends_with(".json") {
+                    if let Ok(text) = fs::read_to_string(self.dir.join(&file)) {
+                        if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                            earlier.extend(string_array(value.get("source_note_warnings")));
+                        }
+                    }
+                }
+            }
+        }
+        earlier.extend(all.drain(..));
+        let mut seen = std::collections::HashSet::new();
+        earlier.retain(|warning| seen.insert(warning.clone()));
+        earlier
+    }
+
+    /// A follow-up import reopens the bundle and never writes the manifest itself. With NEWSROOM_LOCAL_SOURCE_NOTE=1 and at least one
+    /// warning from this import, add them to the existing manifest's `source_note_warnings` (the rest of the file is kept as is).
+    /// Switch off, or no warnings, or no manifest yet: nothing is read or written.
+    pub fn persist_source_note_warnings(&self) -> Result<()> {
+        if !local_source_note_enabled() || self.source_note_warnings.is_empty() {
+            return Ok(());
+        }
+        let Ok(text) = fs::read_to_string(&self.manifest_path) else {
+            return Ok(());
+        };
+        let mut value: Value = serde_json::from_str(&text)
+            .with_context(|| format!("failed to parse {}", self.manifest_path.display()))?;
+        let mut warnings = string_array(value.get("source_note_warnings"));
+        for warning in &self.source_note_warnings {
+            if !warnings.contains(warning) {
+                warnings.push(warning.clone());
+            }
+        }
+        value["source_note_warnings"] = serde_json::json!(warnings);
+        let json = serde_json::to_string_pretty(&value)?;
+        fs::write(&self.manifest_path, format!("{json}\n"))
+            .with_context(|| format!("failed to write {}", self.manifest_path.display()))
+    }
+
     pub fn write_manifest(
         &self,
         topic: &str,
@@ -546,7 +601,7 @@ impl InvestigationBundle {
                 infographics: relative_files(&self.dir, "infographics")?,
             },
             delivery,
-            source_note_warnings: self.source_note_warnings.clone(),
+            source_note_warnings: self.all_source_note_warnings(),
             recipe: self
                 .recipe
                 .clone()
@@ -828,6 +883,13 @@ fn local_source_note_enabled() -> bool {
 }
 
 const SOURCE_NOTE_FIELD_MAX: usize = 120;
+const SOURCE_NOTE_FILE_MAX_BYTES: u64 = 16 * 1024;
+
+/// Characters a note field may not carry: C0/C1 controls, zero-width and bidirectional controls, and the byte-order mark.
+/// The same set is refused in `acceptedLocalSourceNote` (runtime/pi/newsroom.ts).
+fn is_refused_note_char(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
 
 /// The note beside `source`, or None when there is no such file. Err carries only the reason it is refused.
 /// Accepted only when it parses, publisher/dataset/license/sha256 are present, non-empty strings of at most 120 chars,
@@ -836,10 +898,23 @@ fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Resu
     let mut note_path = source.as_os_str().to_owned();
     note_path.push(".source.json");
     let note_path = PathBuf::from(note_path);
-    if !note_path.is_file() {
+    let meta = match fs::symlink_metadata(&note_path) {
+        Ok(meta) => meta,
+        Err(_) => return Ok(None),
+    };
+    if meta.file_type().is_symlink() {
+        return Err("the note is a link");
+    }
+    if !meta.is_file() {
         return Ok(None);
     }
+    if meta.len() > SOURCE_NOTE_FILE_MAX_BYTES {
+        return Err("the note is too large");
+    }
     let bytes = fs::read(&note_path).map_err(|_| "the note file cannot be read")?;
+    if bytes.len() as u64 > SOURCE_NOTE_FILE_MAX_BYTES {
+        return Err("the note is too large");
+    }
     let parsed: Value = serde_json::from_slice(&bytes).map_err(|_| "the note is not valid JSON")?;
     let object = parsed.as_object().ok_or("the note is not a JSON object")?;
     let field = |name: &str| object.get(name).and_then(Value::as_str).map(str::trim);
@@ -850,14 +925,14 @@ fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Resu
             "dataset" => "dataset is missing or empty",
             _ => "license is missing or empty",
         })?;
-        if value.chars().count() > SOURCE_NOTE_FIELD_MAX || value.chars().any(char::is_control) {
+        if value.chars().count() > SOURCE_NOTE_FIELD_MAX || value.chars().any(is_refused_note_char) {
             return Err("a field is longer than 120 characters or has control characters");
         }
         accepted.insert(required.to_owned(), Value::String(value.to_owned()));
     }
     if let Some(url) = object.get("url") {
         let url = url.as_str().ok_or("url is not a string")?.trim();
-        if !url.starts_with("https://") || url.len() <= "https://".len() || url.chars().count() > SOURCE_NOTE_FIELD_MAX * 2 || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        if !url.starts_with("https://") || url.len() <= "https://".len() || url.chars().count() > SOURCE_NOTE_FIELD_MAX * 2 || url.chars().any(|c| is_refused_note_char(c) || c.is_whitespace()) {
             return Err("url is not an https address");
         }
         accepted.insert("url".to_owned(), Value::String(url.to_owned()));
@@ -876,6 +951,13 @@ fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Resu
     accepted.insert("sha256".to_owned(), Value::String(data_sha256.to_owned()));
     accepted.insert("note_sha256".to_owned(), Value::String(sha256_bytes(&bytes)));
     Ok(Some(Value::Object(accepted)))
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default()
 }
 
 fn existing_recipe(path: &Path) -> Option<(String, String)> {
@@ -1937,6 +2019,164 @@ mod tests {
         let (none_on, w3) = import_with_note(Some("1"), None);
         assert_eq!(none_on, plain);
         assert!(w3.is_empty());
+    }
+
+    fn note_dir_with(file_bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let src = tempdir().unwrap();
+        let data = src.path().join("X.csv");
+        fs::write(&data, "a,b\n1,2\n").unwrap();
+        fs::write(src.path().join("X.csv.source.json"), file_bytes).unwrap();
+        (src, data)
+    }
+
+    #[test]
+    fn note_file_that_is_a_link_or_too_large_is_refused_by_reason_only() {
+        with_note_switch(Some("1"), || {
+            let src = tempdir().unwrap();
+            let data = src.path().join("X.csv");
+            fs::write(&data, "a,b\n1,2\n").unwrap();
+            let sha = crate::hash::sha256_file(&data).unwrap();
+            // a link to a perfectly good note elsewhere
+            let real = src.path().join("elsewhere.json");
+            fs::write(&real, good_note(&sha)).unwrap();
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(&real, src.path().join("X.csv.source.json")).unwrap();
+                assert_eq!(super::read_local_source_note(&data, &sha), Err("the note is a link"));
+                fs::remove_file(src.path().join("X.csv.source.json")).unwrap();
+            }
+            // 17 KiB: refused before it is parsed
+            let mut big = good_note(&sha).into_bytes();
+            big.extend(std::iter::repeat(b' ').take(17 * 1024));
+            fs::write(src.path().join("X.csv.source.json"), &big).unwrap();
+            assert_eq!(super::read_local_source_note(&data, &sha), Err("the note is too large"));
+            // exactly at the cap is still read
+            let mut edge = good_note(&sha).into_bytes();
+            edge.resize(16 * 1024, b' ');
+            fs::write(src.path().join("X.csv.source.json"), &edge).unwrap();
+            assert!(matches!(super::read_local_source_note(&data, &sha), Ok(Some(_))));
+        });
+    }
+
+    #[test]
+    fn hidden_and_bidirectional_characters_are_refused_in_every_field() {
+        with_note_switch(Some("1"), || {
+            for (label, c) in [("C1", "\u{85}"), ("zwsp", "\u{200B}"), ("lrm", "\u{200E}"), ("rlo", "\u{202E}"), ("isolate", "\u{2066}"), ("bom", "\u{FEFF}"), ("c0", "\u{7}")] {
+                for field in ["publisher", "dataset", "license"] {
+                    let src = tempdir().unwrap();
+                    let data = src.path().join("X.csv");
+                    fs::write(&data, "a,b\n1,2\n").unwrap();
+                    let sha = crate::hash::sha256_file(&data).unwrap();
+                    let mut note: serde_json::Value = serde_json::from_str(&good_note(&sha)).unwrap();
+                    note[field] = serde_json::Value::String(format!("Our{c}World"));
+                    fs::write(src.path().join("X.csv.source.json"), note.to_string()).unwrap();
+                    assert_eq!(
+                        super::read_local_source_note(&data, &sha),
+                        Err("a field is longer than 120 characters or has control characters"),
+                        "{label} in {field}"
+                    );
+                }
+            }
+            let (_keep, data) = note_dir_with(b"{}");
+            let sha = crate::hash::sha256_file(&data).unwrap();
+            assert!(super::read_local_source_note(&data, &sha).is_err());
+        });
+    }
+
+    fn write_a_manifest(bundle: &super::InvestigationBundle) {
+        bundle.write_manifest("topic", None, None, "running", None).unwrap();
+    }
+
+    fn manifest_warnings(dir: &std::path::Path) -> Vec<String> {
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join("story.json")).unwrap()).unwrap();
+        value.get("source_note_warnings").and_then(|w| w.as_array()).map(|w| w.iter().map(|x| x.as_str().unwrap().to_owned()).collect()).unwrap_or_default()
+    }
+
+    fn data_with_bad_note(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let src = tempdir().unwrap();
+        let data = src.path().join(name);
+        fs::write(&data, format!("a,b\n1,{name}\n")).unwrap();
+        fs::write(src.path().join(format!("{name}.source.json")), "not json").unwrap();
+        (src, data)
+    }
+
+    #[test]
+    fn first_turn_manifest_holds_the_warning_when_the_switch_is_on() {
+        // the same calls commands/investigate.rs makes: create, import_data, write_manifest on the one bundle
+        with_note_switch(Some("1"), || {
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+            let (_keep, data) = data_with_bad_note("one.csv");
+            bundle.import_data(&data).unwrap();
+            write_a_manifest(&bundle);
+            let warnings = manifest_warnings(&bundle.dir);
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("not valid JSON") && !warnings[0].contains("not json"));
+        });
+    }
+
+    #[test]
+    fn follow_up_import_keeps_both_warnings() {
+        with_note_switch(Some("1"), || {
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+            let (_k1, first) = data_with_bad_note("one.csv");
+            bundle.import_data(&first).unwrap();
+            write_a_manifest(&bundle);
+            // a follow-up turn reopens the bundle, imports another file and persists its warnings
+            let mut reopened = super::InvestigationBundle::open(&bundle.dir).unwrap();
+            let (_k2, second) = data_with_bad_note("two.csv");
+            reopened.import_data(&second).unwrap();
+            reopened.persist_source_note_warnings().unwrap();
+            let warnings = manifest_warnings(&bundle.dir);
+            assert_eq!(warnings.len(), 2, "{warnings:?}");
+            // persisting twice does not duplicate; a later full manifest write keeps both
+            reopened.persist_source_note_warnings().unwrap();
+            write_a_manifest(&super::InvestigationBundle::open(&bundle.dir).unwrap());
+            assert_eq!(manifest_warnings(&bundle.dir).len(), 2);
+        });
+    }
+
+    #[test]
+    fn switch_off_follow_up_import_leaves_the_manifest_bytes_unchanged() {
+        with_note_switch(None, || {
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+            let (_k1, first) = data_with_bad_note("one.csv");
+            bundle.import_data(&first).unwrap();
+            write_a_manifest(&bundle);
+            let before = fs::read(bundle.dir.join("story.json")).unwrap();
+            let mut reopened = super::InvestigationBundle::open(&bundle.dir).unwrap();
+            let (_k2, second) = data_with_bad_note("two.csv");
+            reopened.import_data(&second).unwrap();
+            assert!(reopened.source_note_warnings.is_empty());
+            reopened.persist_source_note_warnings().unwrap();
+            assert_eq!(fs::read(bundle.dir.join("story.json")).unwrap(), before);
+            // and a full manifest write with the switch off ignores page-level warning files
+            fs::create_dir_all(bundle.dir.join("infographics")).unwrap();
+            fs::write(bundle.dir.join("infographics").join(format!("{}.json", "a".repeat(64))), r#"{"source_note_warnings":["page source_note replaced by an accepted local note"]}"#).unwrap();
+            assert!(manifest_warnings(&bundle.dir).is_empty());
+            write_a_manifest(&super::InvestigationBundle::open(&bundle.dir).unwrap());
+            assert!(manifest_warnings(&bundle.dir).is_empty());
+        });
+    }
+
+    #[test]
+    fn page_level_warning_from_a_rendered_page_reaches_the_manifest_only_when_the_switch_is_on() {
+        for (switch, expected) in [(Some("1"), 1usize), (None, 0usize)] {
+            with_note_switch(switch, || {
+                let out = tempdir().unwrap();
+                let bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+                fs::create_dir_all(bundle.dir.join("infographics/plans")).unwrap();
+                let page = r#"{"source_note_warnings":["page source_note replaced by an accepted local note"]}"#;
+                fs::write(bundle.dir.join("infographics").join(format!("{}.json", "b".repeat(64))), page).unwrap();
+                // only page manifests directly under infographics/ count, not plans
+                fs::write(bundle.dir.join("infographics/plans").join(format!("{}.json", "c".repeat(64))), page).unwrap();
+                write_a_manifest(&bundle);
+                write_a_manifest(&bundle);
+                assert_eq!(manifest_warnings(&bundle.dir).len(), expected, "{switch:?}");
+            });
+        }
     }
 
 }
