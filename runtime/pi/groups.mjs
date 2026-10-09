@@ -184,7 +184,12 @@ export function recordBoundaryWrite(root, target, op = "write") {
     if (status === "cross_group") {
       const known = knownTag(path, classified.kind);
       if (known) entry.known = known;
-      if (loadGroups().tools?.[tool]?.model_supplied_pass && classified.kind === "pass_decision") entry.model_supplied_pass = true;
+      if (loadGroups().tools?.[tool]?.model_supplied_pass && classified.kind === "pass_decision") {
+        // with NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1 the status in this record is computed by the program from its own review records; the write stays
+        // listed as cross-group (a visual-group tool still writes the decision record) and is not counted as fixed
+        if (process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === "1") entry.status_computed_by_program = true;
+        else entry.model_supplied_pass = true;
+      }
     }
     current.records.set(key, entry);
     current.writes += 1;
