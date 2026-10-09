@@ -7,7 +7,7 @@ use crate::prompt::PromptSpeed;
 use crate::{prompt, runtime};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 /// Opt-in (exactly `1`): a follow-up hands Pi the settings the first question
 /// would get under the same environment (speed and merge switches as set, the
@@ -30,6 +30,15 @@ pub const FOLLOWUP_COMPLETION_ENV: &str = "NEWSROOM_FOLLOWUP_COMPLETION_GATE";
 
 fn followup_completion_gate_on() -> bool {
     std::env::var(FOLLOWUP_COMPLETION_ENV).ok().as_deref() == Some("1")
+}
+
+/// Opt-in (exactly `1`): after a follow-up, the `primary_artifact:` line names the newest chart this
+/// round made that passed its checks (render QA, critic and verification records on disk). A round that
+/// made no such chart keeps the line it printed before. Off: the line is unchanged.
+pub const FOLLOWUP_PRIMARY_LATEST_ENV: &str = "NEWSROOM_FOLLOWUP_PRIMARY_LATEST";
+
+fn followup_primary_latest_on() -> bool {
+    std::env::var(FOLLOWUP_PRIMARY_LATEST_ENV).ok().as_deref() == Some("1")
 }
 
 const ROUNDS_DIR: &str = "verification-rounds";
@@ -249,6 +258,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         (0, None)
     };
     audit::append_user_goal_event(&bundle.events_path, "follow_up")?;
+    let round_started_at = SystemTime::now();
     match run_prompt(&config, &follow_up, Some(&bundle.events_path)).await {
         Ok(result) => {
             let persistence_started = Instant::now();
@@ -359,7 +369,12 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             } else {
                 None
             };
-            match bundle.primary_artifact()? {
+            let latest = if followup_primary_latest_on() {
+                bundle.latest_passing_chart_since(round_started_at)?
+            } else {
+                None
+            };
+            match latest.or(bundle.primary_artifact()?) {
                 Some((path, kind)) => {
                     eprintln!(
                         "\nprimary_artifact: {} ({kind})",
