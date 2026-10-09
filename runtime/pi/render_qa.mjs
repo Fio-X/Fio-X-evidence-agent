@@ -44,19 +44,23 @@ const EMPTY_PASS_RULES = [
   ["text_outside_viewbox", "texts"], ["text_outside_panel", "texts"], ["text_outside_nested_svg", "texts"], ["text_overlap", "texts"],
   ["font_below_floor", "texts"], ["text_crosses_data_mark", "texts"], ["text_crosses_data_mark", "marks"], ["text_contrast", "contrast_texts"],
 ];
-export function checkEmptyPasses(geometry, contrast) {
+export function checkEmptyPasses(geometry, contrast, { heatmap = false } = {}) {
   const s = geometry?.summary ?? {};
   const texts = (s.texts_checked ?? 0) - (s.texts_unmeasured ?? 0);
   const population = { texts, marks: s.marks_checked ?? 0, contrast_texts: (s.texts_checked ?? 0) - (contrast?.unmeasured?.length ?? 0) };
   const failures = [];
+  const notApplicable = [];
   for (const [rule, kind] of EMPTY_PASS_RULES) {
+    // a heatmap without cell attributes (the value-label proof is off) has no taggable marks: not applicable, never a pass
+    if (population[kind] <= 0 && kind === "marks" && heatmap) { notApplicable.push({ checked_rule: rule, reason: "heatmap cells carry no data-role without NEWSROOM_HEATMAP_VALUE_LABELS=1" }); continue; }
     if (population[kind] <= 0) failures.push({ rule: "qa_rule_matched_nothing", message: `${rule} matched no ${kind.replace("_", " ")}, so its pass proves nothing`, checked_rule: rule });
   }
-  return { passed: failures.length === 0, failures, population };
+  return { passed: failures.length === 0, failures, population, ...(notApplicable.length ? { not_applicable: notApplicable } : {}) };
 }
 
 function checkViewport(svgText, options) {
-  const geometry = checkSvgGeometry(svgText, options?.geometry);
+  // NEWSROOM_QA_NO_EMPTY_PASS=1 also counts heatmap cells as data marks (see checkEmptyPasses); unset, the geometry call is exactly as before
+  const geometry = checkSvgGeometry(svgText, process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" ? { ...options?.geometry, heatmapCellMarks: true } : options?.geometry);
   const contrast = checkSvgContrast(svgText, options?.contrast);
   const sharedWidth = sharedWidthEnabled() ? { textWidth: estimateTextWidth } : {};
   let valueLabels = null;
@@ -75,7 +79,7 @@ function checkViewport(svgText, options) {
   // Default-off extra checks (exact "1"): findings only; with every switch unset the report is byte-identical
   const extra = {};
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
-  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast);
+  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
   return {
     svg_sha256: sha256Hex(svgText),

@@ -833,7 +833,7 @@ const ANNOTATION_STROKE_ROLES = new Set([
   "range-bracket",
 ]);
 
-function walkSvgTree(svgText, styleRules) {
+function walkSvgTree(svgText, styleRules, walkOpts = {}) {
   const texts = [];
   const rects = [];
   const marks = [];
@@ -918,6 +918,8 @@ function walkSvgTree(svgText, styleRules) {
       matrix,
       unresolved,
       role: (node.attrs || {})["data-role"] ?? null,
+      // opt-in (heatmapCellMarks): a heatmap value label names the cell it belongs to
+      cellKey: walkOpts.heatmapCellMarks && (node.attrs || {})["data-role"] === "heatmap-cell-value" ? `${node.attrs["data-x"]}\u0000${node.attrs["data-y"]}` : null,
       // P4: optional "x0,y0,x1,y1" box (in the text's own user space) of the
       // chart panel this text belongs to; see ruleTextOutsidePanel.
       panelBox: parsePanelBox((node.attrs || {})["data-panel-box"]),
@@ -1025,13 +1027,13 @@ function walkSvgTree(svgText, styleRules) {
       marks.push({ id: elementId, kind: "segments", points: [p1, p2] });
       return;
     }
-    if (node.tag === "rect" && isDataRole(role)) {
+    if (node.tag === "rect" && (isDataRole(role) || (walkOpts.heatmapCellMarks && role === "heatmap-cell"))) {
       const w = parseFloat(attrs.width ?? "0"), h = parseFloat(attrs.height ?? "0");
       if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
       const x0 = parseFloat(attrs.x ?? "0"), y0 = parseFloat(attrs.y ?? "0");
       if (!Number.isFinite(x0) || !Number.isFinite(y0)) return;
       const box = transformedBox({ x: x0, y: y0, w, h }, matrix);
-      marks.push({ id: elementId, kind: "rect", box });
+      marks.push({ id: elementId, kind: "rect", box, cellKey: walkOpts.heatmapCellMarks && role === "heatmap-cell" ? `${attrs["data-x"]}\u0000${attrs["data-y"]}` : null });
     }
   }
 
@@ -1421,6 +1423,7 @@ function ruleTextCrossesDataMark(texts, marks) {
   for (const { node, box } of measurable) {
     for (const mark of marks) {
       if (isOwnMarkerDigit(node, box, mark)) continue;
+      if (node.cellKey && mark.cellKey === node.cellKey) continue; // a heatmap value label inside its own cell; over a neighbour it still reports
       let hit = false;
       if (mark.kind === "circle") {
         hit = circleIntersectsBox(mark.cx, mark.cy, mark.r, box);
@@ -1719,7 +1722,7 @@ export function checkSvgGeometry(svgText, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, checkStrokeZOrder: false, ...options };
 
   const { rules: styleRules, strippedSvgText } = extractStyleRules(text);
-  const { texts, rects, marks, lines, circles, leaders, notes, viewBox } = walkSvgTree(strippedSvgText, styleRules);
+  const { texts, rects, marks, lines, circles, leaders, notes, viewBox } = walkSvgTree(strippedSvgText, styleRules, { heatmapCellMarks: opts.heatmapCellMarks === true });
   if (!viewBox) notes.push({ element: "svg", reason: "no parsable viewBox (and no numeric width/height fallback) on the root <svg>; text_outside_viewbox skipped entirely" });
 
   const failures = [
