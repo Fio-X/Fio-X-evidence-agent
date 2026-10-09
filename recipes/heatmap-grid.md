@@ -1,1 +1,9 @@
-- 占位：热力图配方正文待 fe 在角色扮演后提供。
+- 第一轮同时发两个调用：newsroom_update_plan 写目标和步骤；duckdb_query 读程序给的数据路径，取名称、年份、数值三列的全部行，看清列名、单位、期间和行数。
+- 第二轮只发一次 newsroom_viz_chain，设计、检查、出图、自查一次完成；不要分开调 newsroom_viz_plan、lint、render、critic。
+- chain 参数一次填全：chart_type 填 heatmap；reader_task 与 claim_spec.reader_task 都填 distribution；data_topology 填 tabular；x_field 填年份列，y_field 填名称列，value_field 填数值列；unit、language、title、subtitle、note、sql 都要填。
+- SQL 取名称、年份、数值三列和一列 cell_id，等于 名称 || '·' || CAST(年份 AS VARCHAR)；不提前 ROUND；按最新一年数值从大到小、再按年份从早到晚排序，行序就是图上的顺序；名称不超过八个汉字，年份不超过十列。
+- measure_semantics 写一条：measure_kind 按数据性质填，temporal_basis 写数据覆盖的期间，observation_status 按数据性质填；claim_spec 的 target_measure 指向它的 id。
+- 说法写在 chain 的 claim 里，claim_kind 填 quantitative；数字全用占位符 {值列@cell_id=名称·年份|小数位数}、{max.值列|小数位数}、{max.值列.名称列}、{max.值列.年份列}、{min.值列…} 这类，一个数字都不手打，年份也不打；单位写汉字；「最高」「最大」紧挨 max 占位符，「最低」紧挨 min 占位符；不写两格相减或倍数，需要时在 SQL 里先算成列。
+- 说法、标题、副标题、注释都不用「大多数」「多数」「过半」「近年来」「目前」「最新」这类词，也不写流程用语。
+- 第三轮写结论：只引用已核实的说法和图的文件路径；写明单位口径、是否估算、数据的期间。
+- 每次复用都重算、重新核实、过全部闸门；配方不授予核实状态。
