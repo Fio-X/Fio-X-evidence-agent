@@ -1,0 +1,672 @@
+{
+ "schema_version": "0.1.0",
+ "groups": [
+  "agent",
+  "knowledge",
+  "visual",
+  "system"
+ ],
+ "group_names_zh": {
+  "agent": "流程",
+  "knowledge": "知识",
+  "visual": "视觉",
+  "system": "系统"
+ },
+ "commands": {
+  "doctor": {
+   "group": "system"
+  },
+  "ask": {
+   "group": "agent"
+  },
+  "chat": {
+   "group": "agent"
+  },
+  "investigate": {
+   "group": "agent",
+   "note": "Also imports data through artifact.rs (knowledge); the run itself is the agent loop."
+  },
+  "investigate-v2": {
+   "group": "agent"
+  },
+  "continue": {
+   "group": "agent"
+  },
+  "inspect": {
+   "group": "system"
+  },
+  "verify": {
+   "group": "knowledge",
+   "unclear": true,
+   "note": "Unclear (could be agent, knowledge, or the visual gates it also checks). Kept in knowledge: it is the independent, program-run evidence check. This does not touch the pass-decision row: the matrix governs which group's tools may WRITE a pass record (agent only), and verify records a program-computed verdict, never one the model gives."
+  }
+ },
+ "tools": {
+  "artifact_inventory": {
+   "group": "agent",
+   "note": "Reads artifacts of every group but only to help the model navigate; writes nothing."
+  },
+  "newsroom_update_plan": {
+   "group": "agent"
+  },
+  "news_search": {
+   "group": "knowledge"
+  },
+  "fetch_url": {
+   "group": "knowledge"
+  },
+  "download_data": {
+   "group": "knowledge"
+  },
+  "duckdb_query": {
+   "group": "knowledge"
+  },
+  "newsroom_parallel_tasks": {
+   "group": "agent"
+  },
+  "newsroom_visual_backend_status": {
+   "group": "system"
+  },
+  "newsroom_graph_extraction_status": {
+   "group": "system"
+  },
+  "newsroom_visual_skill": {
+   "group": "visual"
+  },
+  "newsroom_lieflat_catalog": {
+   "group": "visual"
+  },
+  "newsroom_lieflat_render": {
+   "group": "visual"
+  },
+  "newsroom_visual_backend_plan": {
+   "group": "visual"
+  },
+  "newsroom_viz_plan": {
+   "group": "visual",
+   "note": "Cross-group write: records the chart claim and its computation record."
+  },
+  "newsroom_viz_lint": {
+   "group": "visual",
+   "note": "Cross-group write: writes a computation record."
+  },
+  "newsroom_viz_render": {
+   "group": "visual"
+  },
+  "newsroom_viz_critic": {
+   "group": "visual"
+  },
+  "newsroom_explainer_plan": {
+   "group": "visual"
+  },
+  "newsroom_explainer_lint": {
+   "group": "visual"
+  },
+  "newsroom_explainer_render": {
+   "group": "visual"
+  },
+  "newsroom_explainer_critic": {
+   "group": "visual"
+  },
+  "newsroom_illustration_plan": {
+   "group": "visual"
+  },
+  "newsroom_illustration_lint": {
+   "group": "visual"
+  },
+  "newsroom_illustration_generate": {
+   "group": "visual"
+  },
+  "newsroom_illustration_critic": {
+   "group": "visual"
+  },
+  "newsroom_editorial_discovery": {
+   "group": "visual",
+   "note": "Editorial research could be knowledge; kept with the page it feeds."
+  },
+  "newsroom_story_graph": {
+   "group": "visual",
+   "note": "Story nodes cite claims, but the graph is a page-design record."
+  },
+  "newsroom_visual_concepts": {
+   "group": "visual",
+   "note": "Also appends a tool-chain telemetry line (an agent artifact) from a visual tool."
+  },
+  "newsroom_semantic_novelty": {
+   "group": "visual"
+  },
+  "newsroom_asset_requirements": {
+   "group": "visual"
+  },
+  "newsroom_reference_patterns": {
+   "group": "visual"
+  },
+  "newsroom_expert_preference_record": {
+   "group": "visual",
+   "note": "Write site where the model supplies a pass status. A review outcome, not drawing; stays visual for now, so the boundary check reports its pass record as cross-group.",
+   "model_supplied_pass": true
+  },
+  "newsroom_award_mode_status": {
+   "group": "visual",
+   "note": "Write site where the model supplies a pass status. Same call as newsroom_expert_preference_record.",
+   "model_supplied_pass": true
+  },
+  "newsroom_infographic_plan": {
+   "group": "visual"
+  },
+  "newsroom_infographic_lint": {
+   "group": "visual"
+  },
+  "newsroom_infographic_render": {
+   "group": "visual"
+  },
+  "newsroom_infographic_critic": {
+   "group": "visual"
+  },
+  "newsroom_model_validate": {
+   "group": "visual",
+   "note": "Could be knowledge; decided visual because the record it gates is the spec the page draws."
+  },
+  "newsroom_basemap_prepare": {
+   "group": "visual"
+  },
+  "newsroom_map_validate": {
+   "group": "visual"
+  },
+  "newsroom_style_map": {
+   "group": "visual"
+  },
+  "newsroom_publication_plan": {
+   "group": "visual"
+  },
+  "newsroom_portable_publication": {
+   "group": "visual"
+  },
+  "newsroom_publication_render": {
+   "group": "visual"
+  },
+  "newsroom_publication_qa": {
+   "group": "visual"
+  },
+  "newsroom_network_analyze": {
+   "group": "knowledge",
+   "note": "A computation (knowledge) that only serves drawing; the output path is under visualizations/."
+  },
+  "newsroom_network_reduce": {
+   "group": "visual"
+  },
+  "newsroom_infographic_preview": {
+   "group": "visual"
+  },
+  "newsroom_infographic_vision_critic": {
+   "group": "visual",
+   "note": "Write site where the model supplies a pass status: the model supplies passed and score.",
+   "model_supplied_pass": true
+  },
+  "newsroom_infographic_revise": {
+   "group": "visual"
+  },
+  "newsroom_competition_preflight": {
+   "group": "visual",
+   "note": "Machine preflight over the critics; the program computes machine_passed from the critics (the model passes only references), so no model-supplied pass is stored; it reads the model-supplied vision verdict as an input and writes a pass record."
+  },
+  "newsroom_chart": {
+   "group": "visual",
+   "hidden": true,
+   "note": "In the registry but never registered; not model-visible."
+  },
+  "record_claim": {
+   "group": "knowledge"
+  },
+  "newsroom_viz_chain": {
+   "group": "agent",
+   "conditional": true
+  },
+  "newsroom_infographic_chain": {
+   "group": "agent",
+   "conditional": true
+  },
+  "newsroom_infographic_chain_patch": {
+   "group": "agent",
+   "conditional": true
+  },
+  "newsroom_infographic_plan_patch": {
+   "group": "agent",
+   "conditional": true
+  },
+  "newsroom_infographic_edit": {
+   "group": "visual",
+   "conditional": true,
+   "note": "Edits a visual plan though it is an agent-speed tool; decided visual because it writes a visual plan revision."
+  }
+ },
+ "file_rules": [
+  {
+   "prefix": "runtime/pi/vendor/",
+   "group": "visual",
+   "note": "Vendored chart library files; every file under this directory is drawing support."
+  },
+  {
+   "prefix": "runtime/pi/assets/",
+   "suffix": ".geojson",
+   "group": "visual",
+   "note": "Map boundary data for the map renderer; the name tables beside them (*.json) are listed one by one."
+  }
+ ],
+ "files": {
+  "src/main.rs": {
+   "group": "system"
+  },
+  "src/cli.rs": {
+   "group": "system"
+  },
+  "src/config.rs": {
+   "group": "system"
+  },
+  "src/output.rs": {
+   "group": "system"
+  },
+  "src/hash.rs": {
+   "group": "system"
+  },
+  "src/runtime.rs": {
+   "group": "system"
+  },
+  "src/audit.rs": {
+   "group": "system"
+  },
+  "src/tool_registry.rs": {
+   "group": "agent",
+   "note": "Decides which tools the model sees; generated from runtime/pi/tool_registry.mjs."
+  },
+  "src/pi.rs": {
+   "group": "agent",
+   "also_used_by": [
+    "system"
+   ],
+   "note": "Spawns Pi and sets the switches; also holds run-level gates."
+  },
+  "src/prompt.rs": {
+   "group": "agent"
+  },
+  "src/recipes.rs": {
+   "group": "agent"
+  },
+  "src/step_lines.rs": {
+   "group": "system",
+   "also_used_by": [
+    "agent"
+   ],
+   "note": "Progress lines: display (system) fed by agent telemetry."
+  },
+  "src/interactive.rs": {
+   "group": "agent",
+   "also_used_by": [
+    "knowledge"
+   ],
+   "note": "Interactive session; also imports data."
+  },
+  "src/compose_answer.rs": {
+   "group": "agent",
+   "also_used_by": [
+    "knowledge"
+   ],
+   "note": "A closing step (agent) written from verified claims and artifacts (knowledge)."
+  },
+  "src/data_profile.rs": {
+   "group": "knowledge"
+  },
+  "src/artifact.rs": {
+   "group": "knowledge",
+   "also_used_by": [
+    "system"
+   ],
+   "note": "Data import, origins and source notes are knowledge; the run bundle storage is system."
+  },
+  "src/verify.rs": {
+   "group": "knowledge",
+   "also_used_by": [
+    "visual",
+    "agent"
+   ],
+   "note": "Mostly evidence checks, but also render-QA, vision and publication gates."
+  },
+  "src/commands/mod.rs": {
+   "group": "system"
+  },
+  "src/commands/ask.rs": {
+   "group": "agent"
+  },
+  "src/commands/chat.rs": {
+   "group": "agent"
+  },
+  "src/commands/investigate.rs": {
+   "group": "agent"
+  },
+  "src/commands/investigate_v2.rs": {
+   "group": "agent"
+  },
+  "src/commands/continue_investigation.rs": {
+   "group": "agent"
+  },
+  "src/commands/doctor.rs": {
+   "group": "system"
+  },
+  "src/commands/inspect.rs": {
+   "group": "system"
+  },
+  "src/commands/verify.rs": {
+   "group": "knowledge"
+  },
+  "src/llm/mod.rs": {
+   "group": "agent"
+  },
+  "src/llm/client.rs": {
+   "group": "agent"
+  },
+  "src/agent/mod.rs": {
+   "group": "agent"
+  },
+  "src/agent/core.rs": {
+   "group": "agent"
+  },
+  "src/agent/tools/mod.rs": {
+   "group": "agent"
+  },
+  "src/agent/tools/calculate.rs": {
+   "group": "knowledge",
+   "note": "A calculator that writes no artifact."
+  },
+  "src/agent/tools/web_search.rs": {
+   "group": "knowledge"
+  },
+  "src/agent/tools/create_chart.rs": {
+   "group": "visual"
+  },
+  "src/agent/tools/modern_chart.rs": {
+   "group": "visual"
+  },
+  "src/agent/tools/pi_visualization.rs": {
+   "group": "visual"
+  },
+  "runtime/pi/newsroom.ts": {
+   "group": "agent",
+   "also_used_by": [
+    "knowledge",
+    "visual",
+    "system"
+   ],
+   "note": "Tool registration and the run machinery are agent; the bodies of the knowledge, visual and system tools live in the same file. Not split."
+  },
+  "runtime/pi/tool_registry.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/tool_phase_policy.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/tool_chain.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/patch_retry.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/parallel_scheduler.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/compact_setup.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/preflight.mjs": {
+   "group": "agent",
+   "also_used_by": [
+    "visual"
+   ],
+   "note": "Page-stage preflight (opt-in) that reads visual state."
+  },
+  "runtime/pi/contract_text.mjs": {
+   "group": "agent"
+  },
+  "runtime/pi/process.mjs": {
+   "group": "system"
+  },
+  "runtime/pi/net.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/pdf_extract.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/local_backend.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/provenance.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/computation_rows.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/evidence_gate.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/claim_binding.mjs": {
+   "group": "knowledge",
+   "also_used_by": [
+    "visual"
+   ],
+   "note": "Checks a claim against a chart spec."
+  },
+  "runtime/pi/claim_lint.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/fact_graph.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/measure_semantics.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/number_words.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/number_shadow.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/asof_probe.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/shadow.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/economy_names.mjs": {
+   "group": "knowledge",
+   "also_used_by": [
+    "visual"
+   ],
+   "note": "Name tables used by claims and by maps."
+  },
+  "runtime/pi/domain_layers.mjs": {
+   "group": "knowledge"
+  },
+  "runtime/pi/model_spec.mjs": {
+   "group": "knowledge",
+   "also_used_by": [
+    "visual"
+   ],
+   "note": "Model-spec validation used by newsroom_model_validate (visual)."
+  },
+  "runtime/pi/networkx_analyze.py": {
+   "group": "knowledge"
+  },
+  "runtime/pi/quality.mjs": {
+   "group": "agent",
+   "note": "Placed in agent: its only logic is assertNoAutonomousAwardPass, a guard on pass state, which only the agent group may own. No caller found."
+  },
+  "runtime/pi/competition.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/art_direction.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/editorial.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/editorial_grammar.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/editorial_semantics.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/editorial_validators.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/editorial_design_system_bundle.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/story_graph.mjs": {
+   "group": "visual",
+   "also_used_by": [
+    "knowledge"
+   ],
+   "note": "Story nodes cite claims; the graph is a page-design record."
+  },
+  "runtime/pi/viz.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/infographic.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/publication.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/publication_binding.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/lieflat.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/visual_skill_bundle.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/visual_backends.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/backend_policy.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_router.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_contrast.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_geometry.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_labels.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_svg.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/svg_security.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/rasterize_svg.py": {
+   "group": "visual"
+  },
+  "runtime/pi/browser_qa.py": {
+   "group": "visual"
+  },
+  "runtime/pi/vision.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/explanatory.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/illustration.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/adapters/geometric_cover.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/scene.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/scene_solver.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/label_layout.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/style_mapping.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/pro_export.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/d3_editorial.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/plotly_editorial.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/choropleth.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/cartography.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/scientific_map.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/scientific_basemap_prepare.py": {
+   "group": "visual"
+  },
+  "runtime/pi/basemap_registry.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/map_spec.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/map_reference_layers.mjs": {
+   "group": "visual",
+   "also_used_by": [
+    "knowledge"
+   ],
+   "note": "Resolves data-backed layers (knowledge inputs)."
+  },
+  "runtime/pi/geo_flow_layers.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/flow_aggregation.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/flow_layout.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/movement_track.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/networkx_reduce.py": {
+   "group": "visual"
+  },
+  "runtime/pi/assets/currency-names.json": {
+   "group": "knowledge"
+  },
+  "runtime/pi/assets/economy-names.json": {
+   "group": "knowledge"
+  },
+  "runtime/pi/assets/naturalearth-admin0-50m-attributes.json": {
+   "group": "visual"
+  },
+  "runtime/pi/groups.json": {
+   "group": "system",
+   "note": "The group list itself."
+  },
+  "runtime/pi/groups.mjs": {
+   "group": "system",
+   "note": "Loader, boundary report and tool-order helpers for the group list."
+  }
+ }
+}
