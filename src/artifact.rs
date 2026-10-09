@@ -26,6 +26,9 @@ pub struct InvestigationBundle {
     /// Name and sha256 of the method recipe appended to the first prompt (`NEWSROOM_SPEED_RECIPES`),
     /// set by the caller; a bundle reopened later reads it back from the manifest instead.
     pub recipe: Option<(String, String)>,
+    /// Reasons a `<file>.source.json` beside a local data file was ignored (`NEWSROOM_LOCAL_SOURCE_NOTE`): file name and
+    /// reason only, never the note's content. Written to the manifest when not empty.
+    pub source_note_warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,6 +47,8 @@ struct Manifest<'a> {
     delivery: Delivery,
     #[serde(skip_serializing_if = "Option::is_none")]
     recipe: Option<RecipeRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    source_note_warnings: Vec<String>,
 }
 
 /// The recipe the program appended to the first prompt: its name and the sha256 of the text sent.
@@ -194,6 +199,7 @@ impl InvestigationBundle {
             manifest_path: dir.join("story.json"),
             session_dir: dir.join("session"),
             recipe: None,
+            source_note_warnings: Vec::new(),
             dir,
         })
     }
@@ -207,7 +213,7 @@ impl InvestigationBundle {
             .context("story.json has no topic")
     }
 
-    pub fn import_data(&self, source: &Path) -> Result<String> {
+    pub fn import_data(&mut self, source: &Path) -> Result<String> {
         if !source.is_file() {
             bail!(
                 "local data file does not exist or is not a regular file: {}",
@@ -296,13 +302,22 @@ impl InvestigationBundle {
                 .with_context(|| format!("failed to write {}", metadata_path.display()))?;
         }
 
-        let origin = serde_json::json!({
+        let mut origin = serde_json::json!({
             "schema_version": "0.7.0",
             "origin": "local_file",
             "original_filename": original_name,
             "sha256": sha256,
             "file": relative_file
         });
+        if local_source_note_enabled() {
+            match read_local_source_note(source, &sha256) {
+                Ok(Some(note)) => origin["source_note_file"] = note,
+                Ok(None) => {}
+                Err(reason) => self
+                    .source_note_warnings
+                    .push(format!("{original_name}.source.json ignored: {reason}")),
+            }
+        }
         let origin_bytes = serde_json::to_vec(&origin)?;
         let origin_hash = sha256_bytes(&origin_bytes);
         let origin_dir = self.dir.join("data").join("origins");
@@ -531,6 +546,7 @@ impl InvestigationBundle {
                 infographics: relative_files(&self.dir, "infographics")?,
             },
             delivery,
+            source_note_warnings: self.source_note_warnings.clone(),
             recipe: self
                 .recipe
                 .clone()
@@ -804,6 +820,62 @@ fn existing_created_at(path: &Path) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
     value.get("created_at")?.as_str().map(str::to_owned)
+}
+
+/// `NEWSROOM_LOCAL_SOURCE_NOTE=1` (default off): a user data file `X.csv` may carry `X.csv.source.json` beside it.
+fn local_source_note_enabled() -> bool {
+    std::env::var("NEWSROOM_LOCAL_SOURCE_NOTE").as_deref() == Ok("1")
+}
+
+const SOURCE_NOTE_FIELD_MAX: usize = 120;
+
+/// The note beside `source`, or None when there is no such file. Err carries only the reason it is refused.
+/// Accepted only when it parses, publisher/dataset/license/sha256 are present, non-empty strings of at most 120 chars,
+/// url (if present) is https, retrieved (if present) is YYYY-MM-DD, and sha256 equals the data file's sha256.
+fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Result<Option<Value>, &'static str> {
+    let mut note_path = source.as_os_str().to_owned();
+    note_path.push(".source.json");
+    let note_path = PathBuf::from(note_path);
+    if !note_path.is_file() {
+        return Ok(None);
+    }
+    let bytes = fs::read(&note_path).map_err(|_| "the note file cannot be read")?;
+    let parsed: Value = serde_json::from_slice(&bytes).map_err(|_| "the note is not valid JSON")?;
+    let object = parsed.as_object().ok_or("the note is not a JSON object")?;
+    let field = |name: &str| object.get(name).and_then(Value::as_str).map(str::trim);
+    let mut accepted = serde_json::Map::new();
+    for required in ["publisher", "dataset", "license"] {
+        let value = field(required).filter(|v| !v.is_empty()).ok_or(match required {
+            "publisher" => "publisher is missing or empty",
+            "dataset" => "dataset is missing or empty",
+            _ => "license is missing or empty",
+        })?;
+        if value.chars().count() > SOURCE_NOTE_FIELD_MAX || value.chars().any(char::is_control) {
+            return Err("a field is longer than 120 characters or has control characters");
+        }
+        accepted.insert(required.to_owned(), Value::String(value.to_owned()));
+    }
+    if let Some(url) = object.get("url") {
+        let url = url.as_str().ok_or("url is not a string")?.trim();
+        if !url.starts_with("https://") || url.len() <= "https://".len() || url.chars().count() > SOURCE_NOTE_FIELD_MAX * 2 || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            return Err("url is not an https address");
+        }
+        accepted.insert("url".to_owned(), Value::String(url.to_owned()));
+    }
+    if let Some(retrieved) = object.get("retrieved") {
+        let retrieved = retrieved.as_str().ok_or("retrieved is not a string")?.trim();
+        if chrono::NaiveDate::parse_from_str(retrieved, "%Y-%m-%d").is_err() || retrieved.len() != 10 {
+            return Err("retrieved is not a YYYY-MM-DD date");
+        }
+        accepted.insert("retrieved".to_owned(), Value::String(retrieved.to_owned()));
+    }
+    let claimed = field("sha256").filter(|v| !v.is_empty()).ok_or("sha256 is missing or empty")?;
+    if !claimed.eq_ignore_ascii_case(data_sha256) {
+        return Err("sha256 does not match the data file");
+    }
+    accepted.insert("sha256".to_owned(), Value::String(data_sha256.to_owned()));
+    accepted.insert("note_sha256".to_owned(), Value::String(sha256_bytes(&bytes)));
+    Ok(Some(Value::Object(accepted)))
 }
 
 fn existing_recipe(path: &Path) -> Option<(String, String)> {
@@ -1776,4 +1848,95 @@ mod tests {
         let delivery = discover_delivery(dir.path()).expect("delivery");
         assert_eq!(delivery.primary_artifact, None);
     }
+
+    static NOTE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_note_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        let _guard = NOTE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_LOCAL_SOURCE_NOTE").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_LOCAL_SOURCE_NOTE", v),
+            None => std::env::remove_var("NEWSROOM_LOCAL_SOURCE_NOTE"),
+        }
+        let out = f();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_LOCAL_SOURCE_NOTE", v),
+            None => std::env::remove_var("NEWSROOM_LOCAL_SOURCE_NOTE"),
+        }
+        out
+    }
+
+    /// Imports `X.csv` (with an optional note built from the data's sha256) and returns the origin record and the warnings.
+    fn import_with_note(switch: Option<&str>, note: Option<&dyn Fn(&str) -> String>) -> (serde_json::Value, Vec<String>) {
+        with_note_switch(switch, || {
+            let src = tempdir().unwrap();
+            let data = src.path().join("X.csv");
+            fs::write(&data, "a,b\n1,2\n").unwrap();
+            if let Some(make) = note {
+                let sha = crate::hash::sha256_file(&data).unwrap();
+                fs::write(src.path().join("X.csv.source.json"), make(&sha)).unwrap();
+            }
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "note").unwrap();
+            bundle.import_data(&data).unwrap();
+            let origins: Vec<_> = fs::read_dir(bundle.dir.join("data/origins")).unwrap().collect();
+            assert_eq!(origins.len(), 1);
+            let origin: serde_json::Value = serde_json::from_str(&fs::read_to_string(origins[0].as_ref().unwrap().path()).unwrap()).unwrap();
+            (origin, bundle.source_note_warnings.clone())
+        })
+    }
+
+    fn good_note(sha: &str) -> String {
+        format!(r#"{{"publisher":"Our World in Data","dataset":"Energy mix","license":"CC BY 4.0","url":"https://ourworldindata.org/energy","retrieved":"2026-10-01","sha256":"{sha}"}}"#)
+    }
+
+    #[test]
+    fn matching_note_is_recorded_in_the_origin_with_its_own_hash() {
+        let (origin, warnings) = import_with_note(Some("1"), Some(&good_note));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let note = &origin["source_note_file"];
+        assert_eq!(note["publisher"], "Our World in Data");
+        assert_eq!(note["dataset"], "Energy mix");
+        assert_eq!(note["license"], "CC BY 4.0");
+        assert_eq!(note["sha256"], origin["sha256"]);
+        assert_eq!(note["note_sha256"].as_str().unwrap().len(), 64);
+    }
+
+    #[test]
+    fn bad_notes_are_ignored_with_a_reason_and_never_their_content() {
+        let wrong_sha = |_: &str| good_note(&"0".repeat(64));
+        let no_license = |sha: &str| format!(r#"{{"publisher":"P","dataset":"D","sha256":"{sha}"}}"#);
+        let http = |sha: &str| good_note(sha).replace("https://", "http://");
+        let not_json = |_: &str| "publisher: secret-name".to_owned();
+        let long = |sha: &str| good_note(sha).replace("Energy mix", &"x".repeat(121));
+        let cases: [(&dyn Fn(&str) -> String, &str); 5] = [
+            (&wrong_sha, "sha256 does not match"),
+            (&no_license, "license is missing"),
+            (&http, "url is not an https"),
+            (&not_json, "not valid JSON"),
+            (&long, "longer than 120"),
+        ];
+        for (make, reason) in cases {
+            let (origin, warnings) = import_with_note(Some("1"), Some(make));
+            assert!(origin.get("source_note_file").is_none(), "{reason}");
+            assert_eq!(warnings.len(), 1, "{reason} {warnings:?}");
+            assert!(warnings[0].contains(reason), "{warnings:?}");
+            assert!(!warnings[0].contains("secret-name") && !warnings[0].contains("Our World"), "{warnings:?}");
+        }
+    }
+
+    #[test]
+    fn switch_off_origin_is_identical_with_or_without_a_note_file() {
+        let (plain, w1) = import_with_note(None, None);
+        for off in [None, Some("0"), Some("true")] {
+            let (with_note, w2) = import_with_note(off, Some(&good_note));
+            assert_eq!(with_note, plain, "{off:?}");
+            assert!(w1.is_empty() && w2.is_empty());
+        }
+        // no note file at all with the switch on: nothing recorded, no warning
+        let (none_on, w3) = import_with_note(Some("1"), None);
+        assert_eq!(none_on, plain);
+        assert!(w3.is_empty());
+    }
+
 }

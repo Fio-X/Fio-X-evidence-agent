@@ -160,7 +160,7 @@ fn import_follow_up_data(artifact: &std::path::Path, message: &str) -> Result<()
     if files.is_empty() {
         return Ok(());
     }
-    let bundle = InvestigationBundle::open(artifact)?;
+    let mut bundle = InvestigationBundle::open(artifact)?;
     for file in files {
         let reference = bundle.import_data(&file)?;
         eprintln!("[interactive] imported data={reference}");
