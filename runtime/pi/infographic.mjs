@@ -543,6 +543,7 @@ export function validateInfographicSpec(spec) {
         if (spec.schema_version === "1.5.0" && graphVersion !== "0.2.0") errors.push("InfographicSpec 1.5 requires SceneGraph 0.2.0");
         const moduleById = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
         const memberIds = new Set();
+        const memberScene = new Map();
         const sceneIds = new Set();
         for (const scene of graph.scenes) {
           if (!String(scene?.id ?? "").trim() || sceneIds.has(String(scene.id))) errors.push(`scene '${scene?.id ?? "?"}' requires a unique id`);
@@ -561,8 +562,14 @@ export function validateInfographicSpec(spec) {
           }
           for (const id of [anchor, ...sidecars]) {
             if (!moduleById.has(id)) errors.push(`scene '${scene?.id ?? "?"}' references missing module '${id}'`);
-            if (memberIds.has(id)) errors.push(`module '${id}' cannot belong to more than one scene`);
+            if (memberIds.has(id)) {
+              // NEWSROOM_SCENE_DUPLICATE_WORDING=1 (default off): only the wording differs. A module listed twice in the
+              // SAME scene (anchor and sidecar) gets its own text; the check and the refusal are unchanged.
+              if (process.env.NEWSROOM_SCENE_DUPLICATE_WORDING === "1" && memberScene.get(id) === scene) errors.push(`module '${id}' is written twice in scene '${scene?.id ?? "?"}' (as anchor and as sidecar); list it once`);
+              else errors.push(`module '${id}' cannot belong to more than one scene`);
+            }
             memberIds.add(id);
+            if (!memberScene.has(id)) memberScene.set(id, scene);
           }
         }
       }
