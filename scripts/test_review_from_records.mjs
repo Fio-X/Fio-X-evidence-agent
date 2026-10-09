@@ -158,5 +158,17 @@ check("on: award status ignores the model's preference_status and review count, 
 }
 check("tool definitions are identical with the review and hand-off switches on");
 
+// 6. boundary report: still listed as cross-group (not counted as fixed), but no longer tagged as a model-supplied pass
+for (const [value, tag] of [[undefined, "model_supplied_pass"], ["1", "status_computed_by_program"]]) {
+  const tools = register({ NEWSROOM_GROUP_BOUNDARY: "1", ...(value ? { NEWSROOM_GROUP_REVIEW_FROM_RECORDS: value } : {}) });
+  const { dir } = investigation();
+  await run(tools, pref());
+  const rec = reportOf(dir).records.find((r) => r.tool === "newsroom_expert_preference_record");
+  assert.equal(rec.status, "cross_group");
+  assert.equal(rec[tag], true, `${tag} on the preference record (switch ${value ?? "off"})`);
+  assert.equal(rec[tag === "model_supplied_pass" ? "status_computed_by_program" : "model_supplied_pass"], undefined);
+}
+check("boundary report: the preference record stays cross-group; tagged model_supplied_pass when off, status_computed_by_program when on");
+
 console.log(`review-from-records: PASS (${results.length} checks)`);
 for (const name of results) console.log(`  - ${name}`);
