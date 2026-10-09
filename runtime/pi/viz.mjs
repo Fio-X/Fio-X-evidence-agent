@@ -113,6 +113,18 @@ const DEFAULT_FONT_SANS = "Arial, Helvetica, sans-serif";
 // produce invalid SVG - CSS accepts either quote style for a font-family
 // name, so single quotes sidestep the clash without touching every call site.
 export const HOUSE_FONT_SANS = "'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif";
+// NEWSROOM_TYPESET_TABULAR_DIGITS=1 (exact): PingFang's digits are proportional ("111111" is far narrower than "666666")
+// and font-variant-numeric does nothing on it. This stack leads with faces whose digits all have one width (Helvetica
+// Neue on macOS, Arial, Liberation Sans on Linux). They hold no CJK glyphs, so Chinese text still falls through to the
+// CJK faces character by character; only Latin letters and digits change face.
+export const HOUSE_FONT_SANS_TABULAR = "'Helvetica Neue', Arial, 'Liberation Sans', 'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Helvetica, sans-serif";
+// Pair kerning (Arial kerns "11") would still make "111111" narrower than "666666", so the same switch turns it off.
+export function tabularRootAttrs() {
+  return process.env.NEWSROOM_TYPESET_TABULAR_DIGITS === "1" ? ' font-kerning="none"' : "";
+}
+export function houseFontSans() {
+  return process.env.NEWSROOM_TYPESET_TABULAR_DIGITS === "1" ? HOUSE_FONT_SANS_TABULAR : HOUSE_FONT_SANS;
+}
 
 // House style (now the DEFAULT - see styleFor/applyStyle below; "legacy" is
 // the only opt-out): one white paper, one reserved accent red, and the rest
@@ -247,13 +259,13 @@ function applyStyle(spec) {
     const house = HOUSE_PALETTES.house;
     PALETTE = house;
     PAPER = house.paper;
-    FONT_SANS = HOUSE_FONT_SANS;
+    FONT_SANS = houseFontSans();
     // Fix 12: all sans - the title face collapses onto the same stack as
     // everything else under house style (was HOUSE_FONT_TITLE, a Songti-led
     // serif stack, now removed). Legacy is unaffected: its FONT_TITLE already
     // equalled FONT_SANS (both DEFAULT_FONT_SANS) before this fix, and still
     // does - see the "legacy" branch above, untouched.
-    FONT_TITLE = HOUSE_FONT_SANS;
+    FONT_TITLE = houseFontSans();
     CHOROPLETH_RAMP = house.choroplethRamp;
     WAFFLE_GREYS = house.waffleGreySteps;
     // accent and accent2 are both already >=4.5:1 on white (see the palette
@@ -340,8 +352,15 @@ function treemapZhOkuFromBillions(value) {
   return fracPart ? `${withCommas}.${fracPart}` : withCommas;
 }
 
+// NEWSROOM_TYPESET_TREEMAP_ZH=1 (exact): a Chinese treemap writes 万 / 亿 / 万亿 like the axes do, not k / m / bn. A unit
+// that already carries its own scale ("$M" = 百万美元) is not scaled a second time: it keeps the plain grouped number.
 function treemapValueLabel(value, unit, lang) {
-  const raw = fmt(value, unit);
+  const zhScaled = lang === "zh" && process.env.NEWSROOM_TYPESET_TREEMAP_ZH === "1";
+  if (zhScaled && unit === "$M" && Number.isFinite(value) && Math.abs(value) >= 1000) {
+    const [intPart, fracPart] = halfUpFixed(value, 0, 0).replace("-", "").split(".");
+    return `${value < 0 ? "-" : ""}${intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fracPart ? `.${fracPart}` : ""}百万美元`;
+  }
+  const raw = zhScaled ? fmt(value, unit, null, "zh") : fmt(value, unit);
   if (lang !== "zh" || !unit || unit === "%") return raw;
   if (unit === "$B") return `${treemapZhOkuFromBillions(value)}亿美元`;
   const zhUnit = TREEMAP_ZH_UNIT[unit];
@@ -1147,6 +1166,31 @@ export function chartValueFormatter(spec, values) {
   return (value, unit = spec?.unit) => fmtSpec(spec, value, unit, decimals);
 }
 
+// NEWSROOM_TYPESET_HALF_UP=1 (exact): round half up on the exact decimal value a reader would see, not on its binary
+// float. 11500 / 10000 is 1.15 in text but sits just under it in binary, so toFixed(1) printed 1.1万 beside 12500 -> 1.3万.
+// halfUpFixed(value, power, digits) is round-half-away-from-zero of value / 10^power to `digits` decimals, computed on
+// the shortest decimal spelling of `value` with integer arithmetic. Off, it is exactly (value / 10**power).toFixed(digits).
+function halfUpOn() {
+  return process.env.NEWSROOM_TYPESET_HALF_UP === "1";
+}
+export function halfUpFixed(value, power, digits, force = false) {
+  if (!(force || halfUpOn()) || !Number.isFinite(value)) return (value / 10 ** power).toFixed(digits);
+  const [mantissa, exponent = "0"] = String(Math.abs(value)).toLowerCase().split("e");
+  const [whole, fraction = ""] = mantissa.split(".");
+  const coefficient = BigInt(whole + fraction);
+  // |value| = coefficient * 10^(exp10); we want round(|value| / 10^power * 10^digits)
+  const shift = Number(exponent) - fraction.length - power + digits;
+  let scaled;
+  if (shift >= 0) scaled = coefficient * 10n ** BigInt(shift);
+  else {
+    const divisor = 10n ** BigInt(-shift);
+    scaled = (coefficient * 2n + divisor) / (divisor * 2n); // floor(c / d + 1/2)
+  }
+  const text = scaled.toString().padStart(digits + 1, "0");
+  const body = digits > 0 ? `${text.slice(0, text.length - digits)}.${text.slice(text.length - digits)}` : text;
+  return value < 0 ? `-${body}` : body;
+}
+
 // zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
 // four significant digits (161.1万, -325.6万, 1.611亿, 1611万), never a trailing
 // zero. Exported so a hero number can print through the same formatter.
@@ -1156,7 +1200,7 @@ export function zhScaleText(value, minDecimals = 0) {
   const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
   const v = abs / div;
   const d = v >= 1000 ? 0 : v >= 100 ? 1 : v >= 10 ? 2 : 3;
-  let digits = String(Number(v.toFixed(d)));
+  let digits = String(Number(halfUpFixed(abs, Math.round(Math.log10(div)), d)));
   const have = digits.includes(".") ? digits.split(".")[1].length : 0;
   const want = Math.min(3, Math.max(0, minDecimals));
   if (have < want) digits = v.toFixed(want); // from the value: never pad a rounded string
@@ -1187,7 +1231,7 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     // magnitude-branch guess below, and - unlike every branch below - never
     // strips trailing zeros: every label in the chart must show exactly the
     // same number of decimal places (0.720 must stay "0.720", not "0.72").
-    text = value.toFixed(decimals);
+    text = halfUpFixed(value, 0, decimals);
     if (lang === "zh" && abs >= 10_000) {
       text = zhScaleText(value, decimals);
     } else if (value !== 0 && Number(text) === 0) {
@@ -1209,14 +1253,14 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
   else if (lang === "zh" && abs >= 1_000) {
     // zh readers count in 万 and 亿, not k/m/bn: same one-decimal-below-10 rule per unit;
     // 1,000-9,999 is the plain integer. Only a zh caller (fmtSpec, tick sites) passes lang.
-    if (abs >= 1_000_000_000_000) text = `${(value / 1_000_000_000_000).toFixed(abs >= 10_000_000_000_000 ? 0 : 1)}万亿`;
-    else if (abs >= 100_000_000) text = `${(value / 100_000_000).toFixed(abs >= 1_000_000_000 ? 0 : 1)}亿`;
-    else if (abs >= 10_000) text = `${(value / 10_000).toFixed(abs >= 100_000 ? 0 : 1)}万`;
+    if (abs >= 1_000_000_000_000) text = `${halfUpFixed(value, 12, abs >= 10_000_000_000_000 ? 0 : 1)}万亿`;
+    else if (abs >= 100_000_000) text = `${halfUpFixed(value, 8, abs >= 1_000_000_000 ? 0 : 1)}亿`;
+    else if (abs >= 10_000) text = `${halfUpFixed(value, 4, abs >= 100_000 ? 0 : 1)}万`;
     else text = value.toFixed(0);
   }
-  else if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1)}bn`;
-  else if (abs >= 1_000_000) text = `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
-  else if (abs >= 1_000) text = `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
+  else if (abs >= 1_000_000_000) text = `${halfUpFixed(value, 9, abs >= 10_000_000_000 ? 0 : 1)}bn`;
+  else if (abs >= 1_000_000) text = `${halfUpFixed(value, 6, abs >= 10_000_000 ? 0 : 1)}m`;
+  else if (abs >= 1_000) text = `${halfUpFixed(value, 3, abs >= 10_000 ? 0 : 1)}k`;
   else if (abs >= 100) text = value.toFixed(0);
   else if (abs >= 10) text = value.toFixed(1).replace(/\.0$/, "");
   else text = value.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
@@ -1243,6 +1287,18 @@ export function choroplethValueText(value, unit = "", spec = null) {
   }
   const abs = Math.abs(value);
   let text;
+  // NEWSROOM_TYPESET_CHOROPLETH_ZH=1 (exact): a Chinese page spells a non-integer value from 1万 up in 万 / 亿 / 万亿, one
+  // decimal, rounded half up on the exact decimal value (halfUpFixed), the suffix chosen by the raw magnitude. Below 1万 it is
+  // the plain one-decimal number (no k). Both verifiers re-derive this exact text from data-value, so there is no tolerance.
+  if (process.env.NEWSROOM_TYPESET_CHOROPLETH_ZH === "1" && spec && vizLang(spec) === "zh") {
+    if (abs >= 1_000_000_000_000) text = `${halfUpFixed(value, 12, 1, true)}万亿`;
+    else if (abs >= 100_000_000) text = `${halfUpFixed(value, 8, 1, true)}亿`;
+    else if (abs >= 10_000) text = `${halfUpFixed(value, 4, 1, true)}万`;
+    else text = halfUpFixed(value, 0, 1, true);
+    if (unit === "%") return `${text}%`;
+    if (unit && /^[£$€¥]$/.test(unit)) return `${unit}${text}`;
+    return unit ? `${text} ${unit}` : text;
+  }
   if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(1)}bn`;
   else if (abs >= 1_000_000) text = `${(value / 1_000_000).toFixed(1)}m`;
   else if (abs >= 1_000) text = `${(value / 1_000).toFixed(1)}k`;
@@ -2829,7 +2885,7 @@ function frame(spec, bodyHeight, minHeight = 420) {
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
   const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
@@ -3359,6 +3415,51 @@ function axisTickUnit(unit, index, count) {
   return HOUSE_STYLE_ACTIVE && index < count - 1 ? "" : unit;
 }
 
+// NEWSROOM_TYPESET_AXIS_NOTATION=1 (exact): one axis, one notation. The ticks of a value axis are spelled one by one, so a
+// zh axis could read 2000 | 4000 | 1万 | 1.2万, a unit that already says 万 / 亿 got a second one (1万 万吨), and an English bar
+// axis said 2k where its value labels said 2000. axisTickTexts spells a whole tick list at once:
+//   - zh, unit already carries 万 / 亿 / 千 / 百万: every tick is the plain integer, no scale suffix;
+//   - zh or en, ticks that fall into different scale classes (plain / 万 / 亿 / 万亿, or plain / k / m / bn): every tick takes the
+//     class of the largest tick, with as many decimals as it takes to print each tick exactly;
+//   - en, a chart whose value labels print the full number (labelDecimals): the ticks print the same way, not as k / m / bn.
+// An axis that already has a single class, and no unit clash, is returned exactly as tickLabelSpec spelled it.
+const SCALE_UNIT_RE = /[万亿千]|百万|thousand|million|billion/i;
+function scaleClass(text) {
+  const m = /(万亿|亿|万|bn|k|m)$/.exec(text.replace(/\s.*$/, ""));
+  return m ? m[1] : "";
+}
+function attachAxisUnit(text, unit) {
+  if (!unit) return text;
+  if (unit === "%") return `${text}%`;
+  return /^[£$€¥]$/.test(unit) ? `${unit}${text}` : `${text} ${unit}`;
+}
+export function axisTickTexts(spec, ticks, unit, labelDecimals = null, { unitOnEvery = false, spelled = null } = {}) {
+  const unitAt = (i) => (unitOnEvery ? unit : axisTickUnit(unit, i, ticks.length));
+  const plain = ticks.map((tick, i) => (spelled ? spelled(tick, i) : tickLabelSpec(spec, tick, unitAt(i))));
+  if (process.env.NEWSROOM_TYPESET_AXIS_NOTATION !== "1" || !spec || !ticks.length) return plain;
+  const finite = ticks.every((t) => Number.isFinite(t));
+  if (!finite || specValueKind(spec) || zhBillionsActive(spec, unit)) return plain;
+  const lang = vizLang(spec);
+  const bare = ticks.map((t) => tickLabel(t, "", lang));
+  const classes = new Set(ticks.map((t, i) => (t === 0 ? null : scaleClass(bare[i]))).filter((c) => c !== null));
+  const scaled = [...classes].some((c) => c !== "");
+  if (unit && SCALE_UNIT_RE.test(unit) && scaled && lang === "zh") {
+    return ticks.map((t, i) => attachAxisUnit(String(Number(t.toFixed(6))), unitAt(i)));
+  }
+  if (lang === "en" && Number.isInteger(labelDecimals) && scaled) {
+    return ticks.map((t, i) => fmt(t, unitAt(i), Number.isInteger(t) ? 0 : labelDecimals, "en"));
+  }
+  if (classes.size < 2) return plain;
+  const top = Math.max(...ticks.map((t) => Math.abs(t)));
+  const [power, suffix] = lang === "zh"
+    ? (top >= 1e12 ? [12, "万亿"] : top >= 1e8 ? [8, "亿"] : [4, "万"])
+    : (top >= 1e9 ? [9, "bn"] : top >= 1e6 ? [6, "m"] : [3, "k"]);
+  return ticks.map((t, i) => {
+    const body = t === 0 ? "0" : `${halfUpFixed(t, power, 3, true).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}${suffix}`;
+    return attachAxisUnit(body, unitAt(i));
+  });
+}
+
 // Line-chart-only value-axis domain/ticks (task B: "the lowest and highest
 // ticks must bracket the data"). tickValues() above rounds its step to a
 // nice {1,2,5}x10^k number and then only keeps ticks that land strictly
@@ -3530,7 +3631,7 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null) {
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null) {
   let ticks = tickValues(domain, 4);
   // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
   // zero-straddling axis that holds at least a quarter of the span gets at
@@ -3557,6 +3658,7 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
     ticks = [...ticks].sort((a, b) => a - b);
   }
   const scaleX = horizontalScale(domain, left, right);
+  const tickTexts = axisTickTexts(spec, ticks, unit, labelDecimals);
   ticks.forEach((tick, i) => {
     const x = scaleX(tick);
     if (!LAYERING_FIX) {
@@ -3564,7 +3666,7 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
     }
     // Fix 3: the unit shows once, on the last (right-most) tick, not on
     // every one - see axisTickUnit.
-    const label = tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length));
+    const label = tickTexts[i];
     let labelX = x;
     if (frameW !== null) {
       const half = (textUnits(label) * 12 * 0.56) / 2 + 2;
@@ -3732,7 +3834,7 @@ function renderHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -4469,10 +4571,11 @@ function renderLine(spec, rows, multi = false) {
   }
   // Fix 3: the unit shows once, on the top-most tick, not on every one -
   // see axisTickUnit.
+  const yTickTexts = axisTickTexts(spec, yTicks, spec.unit, labelDecimals);
   yTicks.forEach((tick, i) => {
     const y = yScale(tick);
     f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(yTickTexts[i])}</text>`);
   });
   const labelEvery = Math.max(1, Math.ceil(xValues.length / 8));
   const directLabels = [];
@@ -4937,12 +5040,14 @@ function renderScatter(spec, rows) {
   const yLinear = verticalScale(yDomainRaw, top, bottom);
   const yScale = (value) => yLinear(spec.y_scale === "log" ? Math.log10(value) : value);
   const yTicks = spec.y_scale === "log" ? logTickValues(yDomainRaw) : tickValues(yDomainRaw, 4);
-  yTicks.forEach((tick) => {
+  const scatterYTexts = axisTickTexts(spec, yTicks, spec.y_unit ?? spec.unit, null, { unitOnEvery: true });
+  const scatterXTexts = axisTickTexts(spec, xInfo.ticks, spec.x_unit ?? "", null, { unitOnEvery: true, spelled: (tick) => tickLabel(tick, spec.x_unit ?? "", vizLang(spec)) });
+  yTicks.forEach((tick, i) => {
     const y = yScale(tick); f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.y_unit ?? spec.unit))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(scatterYTexts[i])}</text>`);
   });
-  xInfo.ticks.forEach((tick) => {
-    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? "", vizLang(spec)))}</text>`);
+  xInfo.ticks.forEach((tick, i) => {
+    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(scatterXTexts[i])}</text>`);
   });
   if (spec.x_label) f.parts.push(`<text x="${(left + right) / 2}" y="${bottom + 50}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   if (spec.y_label) f.parts.push(`<text x="18" y="${(top + bottom) / 2}" transform="rotate(-90 18 ${(top + bottom) / 2})" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.y_label)}</text>`);
@@ -5604,7 +5709,7 @@ function mobileFrame(spec, bodyHeight) {
   const header = 26 + titleLines * 31 + dekLines * 20 + 20;
   const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0);
   const height = Math.max(440, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title-mobile">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc-mobile">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
@@ -7749,7 +7854,7 @@ const INSET_LADDER = [
 // could not run (never treated as "no failures").
 function insetRenderQaRules(svg, spec, rows) {
   try {
-    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, language: spec.language, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
     return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
   } catch {
     return null;
