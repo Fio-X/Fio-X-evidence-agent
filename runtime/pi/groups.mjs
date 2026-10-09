@@ -135,14 +135,17 @@ function writeReport(root) {
   const count = (status) => records.filter((r) => r.status === status).reduce((sum, r) => sum + r.count, 0);
   const totals = { writes: state.writes, ok: count("ok"), cross_group: count("cross_group"), to_check: count("待查") };
   // only present once a write was handed to a group's own writer (NEWSROOM_GROUP_HANDOFF=1)
-  const handed = records.filter((r) => r.requested_by !== undefined).reduce((sum, r) => sum + r.count, 0);
-  if (handed) totals.handed_to_knowledge = handed;
+  const handedTo = (group) => records.filter((r) => r.requested_by !== undefined && r.tool_group === group).reduce((sum, r) => sum + r.count, 0);
+  if (handedTo("knowledge")) totals.handed_to_knowledge = handedTo("knowledge");
+  if (handedTo("agent")) totals.handed_to_agent = handedTo("agent");
   const verdicts = count("model_quality_verdict");
   if (verdicts) totals.model_quality_verdict = verdicts;
+  const modelPasses = count("model_supplied_pass");
+  if (modelPasses) totals.model_supplied_pass = modelPasses;
   const report = {
     schema_version: "0.1.0",
     mode: "report",
-    summary: `${totals.writes} writes seen: ${totals.ok} in the owning group, ${totals.cross_group} cross-group, ${totals.to_check} 待查 (could not be classified)${verdicts ? `, ${verdicts} model quality verdict (listed apart, not counted as fixed)` : ""}. Report only; not_traced lists what this report cannot see.`,
+    summary: `${totals.writes} writes seen: ${totals.ok} in the owning group, ${totals.cross_group} cross-group, ${totals.to_check} 待查 (could not be classified)${verdicts ? `, ${verdicts} model quality verdict (listed apart, not counted as fixed)` : ""}${modelPasses ? `, ${modelPasses} with a model-supplied pass (listed apart, not counted as fine)` : ""}. Report only; not_traced lists what this report cannot see.`,
     totals,
     complete: false,
     note: "Report only: nothing was refused. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
@@ -175,6 +178,15 @@ export function recordBoundaryWrite(root, target, op = "write") {
     // category with the reason from groups.json, outside the cross-group count, and is not counted as fixed.
     const verdictTool = status === "cross_group" && classified.kind === "pass_decision" && loadGroups().tools?.[tool]?.model_quality_verdict ? loadGroups().tools[tool] : null;
     if (verdictTool) { status = "model_quality_verdict"; reason = verdictTool.verdict_reason ?? ""; }
+    // A decision record whose status the model supplies is never counted as fine, whoever wrote the file. With NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1 its
+    // status is computed by the program from its own records and the record is tagged so; otherwise it is tagged model_supplied_pass, and when a group
+    // writer saved it (so it would read ok) it is listed apart as model_supplied_pass, not ok.
+    let tag = null;
+    const requester = writer ? requestedBy : tool;
+    if ((status === "cross_group" || status === "ok") && classified?.kind === "pass_decision" && loadGroups().tools?.[requester]?.model_supplied_pass) {
+      tag = process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === "1" ? "status_computed_by_program" : "model_supplied_pass";
+      if (status === "ok" && tag === "model_supplied_pass") { status = "model_supplied_pass"; reason = "The status in this record is supplied by the model; writing the file through the owning group does not make it fine."; }
+    }
     const record = { tool: tool ?? null, ...(writer ? { requested_by: requestedBy } : {}), tool_group: group, op, kind: classified?.kind ?? null, owner: classified?.owner ?? null, status, ...(reason ? { reason } : {}), count: 0, examples: [] };
     const current = load(root);
     const key = keyOf({ ...record, reason });
@@ -184,13 +196,8 @@ export function recordBoundaryWrite(root, target, op = "write") {
     if (status === "cross_group") {
       const known = knownTag(path, classified.kind);
       if (known) entry.known = known;
-      if (loadGroups().tools?.[tool]?.model_supplied_pass && classified.kind === "pass_decision") {
-        // with NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1 the status in this record is computed by the program from its own review records; the write stays
-        // listed as cross-group (a visual-group tool still writes the decision record) and is not counted as fixed
-        if (process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === "1") entry.status_computed_by_program = true;
-        else entry.model_supplied_pass = true;
-      }
     }
+    if (tag) entry[tag] = true;
     current.records.set(key, entry);
     current.writes += 1;
     writeReport(root);
