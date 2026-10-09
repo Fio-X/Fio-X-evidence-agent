@@ -1,4 +1,5 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -223,4 +224,130 @@ pub struct VerifyArgs {
     /// Per-query recomputation timeout in seconds.
     #[arg(long, default_value_t = 30)]
     pub recompute_timeout: u64,
+}
+
+/// Which group each command belongs to. Kept equal to the `commands` section of
+/// `runtime/pi/groups.json` (a test checks it). Order is the order shown in help.
+pub const COMMAND_GROUPS: &[(&str, &str)] = &[
+    ("ask", "agent"),
+    ("chat", "agent"),
+    ("investigate", "agent"),
+    ("investigate-v2", "agent"),
+    ("continue", "agent"),
+    ("verify", "knowledge"),
+    ("doctor", "system"),
+    ("inspect", "system"),
+];
+
+/// Group names in help order. `visual` has no command yet.
+pub const GROUPS: &[(&str, &str)] = &[
+    ("agent", "Run the agent loop: ask, chat, investigate, investigate-v2, continue"),
+    ("knowledge", "Check evidence: verify"),
+    ("visual", "Visual tools (they run inside the agent loop; no commands yet)"),
+    ("system", "Check the setup and the audit trail: doctor, inspect"),
+];
+
+/// Environment switch for the group commands. Only the exact value "1" turns it on.
+pub const GROUP_COMMANDS_SWITCH: &str = "NEWSROOM_GROUP_COMMANDS";
+
+/// What to do with the process arguments once the group commands are considered.
+pub enum Launch {
+    /// Parse these arguments as usual.
+    Parse(Vec<OsString>),
+    /// Output was already written; exit with this code.
+    Done(i32),
+}
+
+pub fn group_commands_enabled() -> bool {
+    std::env::var(GROUP_COMMANDS_SWITCH).map(|v| v == "1").unwrap_or(false)
+}
+
+fn group_of(command: &str) -> Option<&'static str> {
+    COMMAND_GROUPS.iter().find(|(c, _)| *c == command).map(|(_, g)| *g)
+}
+
+fn is_group(name: &str) -> bool {
+    GROUPS.iter().any(|(g, _)| *g == name)
+}
+
+fn group_command(group: &str) -> clap::Command {
+    let (name, about) = GROUPS.iter().find(|(g, _)| *g == group).copied().unwrap_or(("", ""));
+    let mut cmd = clap::Command::new(name)
+        .about(about)
+        .bin_name(format!("news {group}"))
+        .disable_help_subcommand(true);
+    let all = Cli::command();
+    for (name, g) in COMMAND_GROUPS {
+        if *g == group {
+            if let Some(sub) = all.find_subcommand(name) {
+                cmd = cmd.subcommand(sub.clone());
+            }
+        }
+    }
+    cmd
+}
+
+fn with_groups() -> clap::Command {
+    let mut cmd = Cli::command();
+    for (g, about) in GROUPS {
+        cmd = cmd.subcommand(clap::Command::new(*g).about(*about));
+    }
+    cmd
+}
+
+fn wants_help(arg: &str) -> bool {
+    matches!(arg, "-h" | "--help")
+}
+
+/// With the switch off this returns the arguments untouched. With it on, `news <group> <command> ...`
+/// is rewritten to `news <command> ...`, and the group help and top-level help list the groups.
+pub fn launch(args: Vec<OsString>) -> Launch {
+    if !group_commands_enabled() {
+        return Launch::Parse(args);
+    }
+    let first = args.get(1).and_then(|a| a.to_str()).map(str::to_string);
+    let Some(first) = first else { return Launch::Parse(args) };
+    if wants_help(&first) || (first == "help" && args.len() == 2) {
+        let mut cmd = with_groups();
+        let _ = if first == "-h" { cmd.print_help() } else { cmd.print_long_help() };
+        println!();
+        return Launch::Done(0);
+    }
+    if !is_group(&first) {
+        return Launch::Parse(args);
+    }
+    let second = args.get(2).and_then(|a| a.to_str()).map(str::to_string);
+    if first == "visual" {
+        println!("news visual: the visual tools run inside the agent loop (`news agent ...`). This group has no command-line commands yet.");
+        return Launch::Done(0);
+    }
+    let usage_error = |message: String| -> Launch {
+        let mut cmd = Cli::command();
+        let err = cmd.error(clap::error::ErrorKind::InvalidSubcommand, message);
+        let _ = err.print();
+        Launch::Done(err.exit_code())
+    };
+    match second.as_deref() {
+        None => {
+            let mut cmd = group_command(&first);
+            let _ = cmd.print_help();
+            println!();
+            Launch::Done(0)
+        }
+        Some(s) if wants_help(s) => {
+            let mut cmd = group_command(&first);
+            let _ = if s == "-h" { cmd.print_help() } else { cmd.print_long_help() };
+            println!();
+            Launch::Done(0)
+        }
+        Some(sub) => match group_of(sub) {
+            Some(g) if g == first => {
+                let mut rewritten = vec![args[0].clone()];
+                rewritten.extend(args[2..].iter().cloned());
+                Launch::Parse(rewritten)
+            }
+            Some(g) => usage_error(format!("`{sub}` belongs to the `{g}` group: use `news {g} {sub}`")),
+            None => usage_error(format!("unrecognized command `{sub}` in the `{first}` group; run `news {first} --help`")),
+        },
+    }
 }
