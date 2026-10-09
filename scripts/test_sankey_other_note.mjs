@@ -68,9 +68,9 @@ const summary = withSwitch("1", () => sankeyMergeSummary(spec(), merged));
 assert.deepEqual(summary.map((m) => [m.label, m.column, m.members]), [["其他", "左列", ["水泥生产", "火炬燃烧"]]]);
 assert.deepEqual(withSwitch("1", () => sankeyMergeSummary(spec(), plain)), []);
 
-// the real table
-const csv = "/Users/fio/code/PJ004-local-docs/demo-1008/data-flows/flow_tables/gcb_2023_flows.csv";
-if (existsSync(csv)) {
+// the real flow table (source,target,value rows): set SANKEY_GCB_FLOWS_CSV to its path; unset or missing skips this block
+const csv = process.env.SANKEY_GCB_FLOWS_CSV;
+if (csv && existsSync(csv)) {
   const gcb = readFileSync(csv, "utf8").trim().split("\n").slice(1).map((l) => l.split(",")).map(([source, target, value]) => ({ source, target, value: Number(value) }));
   const off = withSwitch(undefined, () => render(spec(), gcb)), onG = withSwitch("1", () => render(spec(), gcb));
   assert.deepEqual(qa(off), [], "GCB off: render QA");
