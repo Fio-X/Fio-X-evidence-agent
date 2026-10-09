@@ -63,6 +63,6 @@ assert.equal(await acceptedLocalSourceNote(["data/dl.csv"], "en"), null, "downlo
 // 6. the plan builder lets the program's text win over a model-written source_note: the override spreads after the plan's own params.
 const specCore = source.slice(source.indexOf("const programSourceNote = await acceptedLocalSourceNote"));
 const afterParams = specCore.indexOf("...normalizedParams,");
-const overrideAt = specCore.indexOf("...(programSourceNote ? { source_note: programSourceNote } : {}),");
-assert.ok(afterParams > 0 && overrideAt > afterParams && overrideAt - afterParams < 120, "the program's source_note is spread right after the model's params");
+const overrideAt = specCore.indexOf("...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : {}),");
+assert.ok(afterParams > 0 && overrideAt > afterParams && overrideAt - afterParams < 140, "the program's source_note is spread right after the model's params");
 console.log("PASS local source note: zh/en wording, off unchanged, invalid or partial notes ignored, downloaded data untouched, program text spread after model params");

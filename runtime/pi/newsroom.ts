@@ -11,7 +11,7 @@ import { isIP } from "node:net";
 import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, validateVizSpec } from "./viz.mjs";
 import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
 import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
@@ -2377,14 +2377,22 @@ export async function acceptedLocalSourceNote(sourceRefs: string[], language?: s
   }
   const field = (note: any, key: string) => {
     const value = note?.[key];
-    return typeof value === "string" && value.trim() !== "" && value.length <= 120 && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : "";
+    return typeof value === "string" && value.trim() !== "" && value.length <= 120 && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(value) ? value.trim() : "";
   };
   const lines: string[] = [];
   for (const ref of dataRefs) {
-    const origin = origins.find((item) => item?.origin === "local_file" && item?.file === ref && item?.source_note_file && item.source_note_file.sha256 === item.sha256);
-    const note = origin?.source_note_file;
-    const publisher = field(note, "publisher"), dataset = field(note, "dataset"), license = field(note, "license");
-    if (!publisher || !dataset || !license) return null;
+    // Every origin of this file that carries a note: when a re-import left two with different notes, which one is current is unknown,
+    // so the chart keeps its own source line rather than picking by file-name order.
+    const noted = origins.filter((item) => item?.origin === "local_file" && item?.file === ref && item?.source_note_file);
+    const triples = new Set<string>();
+    let publisher = "", dataset = "", license = "";
+    for (const item of noted) {
+      const note = item.source_note_file;
+      publisher = field(note, "publisher"); dataset = field(note, "dataset"); license = field(note, "license");
+      if (!publisher || !dataset || !license || note.sha256 !== item.sha256) return null;
+      triples.add(JSON.stringify([publisher, dataset, license]));
+    }
+    if (!noted.length || triples.size !== 1) return null;
     const line = language === "zh" ? `${publisher}《${dataset}》，${license}` : `${publisher}, "${dataset}", ${license}`;
     if (!lines.includes(line)) lines.push(line);
   }
@@ -4376,7 +4384,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         publishable: verificationMode === "verified",
         verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
-        ...(programSourceNote ? { source_note: programSourceNote } : {}),
+        ...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : {}),
         ...(scatterAxisUnits ?? {}),
         // Value-label decimals come from the shared chart formatter. The tool schema has no decimals field, and a value that reaches
         // here anyway (an unvalidated caller) is dropped, so a plan never carries one: 29.6 and 30.4 must not both print as 30.
@@ -4574,6 +4582,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         render_qa: { passed: renderQa.passed, failure_count: renderQa.failure_count },
         sql: spec.sql,
         source_note: spec.source_note,
+        ...(spec.source_note_program === true ? { source_note_program: true } : {}),
         alt: spec.alt,
       });
       // NEWSROOM_SANKEY_OTHER_NOTE=1: say which nodes the merged "other" node holds (names only).
@@ -5596,6 +5605,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         claim_ids: [...new Set(spec.modules.flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? [])]).filter(Boolean))],
         variants: mobilePages ? { desktop: desktopRef, mobile: mobileRef } : { desktop: desktopRef },
         hashes: mobilePages ? { desktop_sha256: desktopSha, mobile_sha256: mobileSha } : { desktop_sha256: desktopSha },
+        ...(pageSourceNoteReplaced(spec, assets) ? { source_note_warnings: ["page source_note replaced by an accepted local note"] } : {}),
         render_qa_ref: renderQaRef,
         render_qa: { passed: renderQa.passed, failure_count: renderQa.failure_count },
         alt: spec.alt,

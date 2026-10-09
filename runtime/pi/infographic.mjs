@@ -877,7 +877,8 @@ export function readerTextEntries(spec, assets = {}) {
     if (text.trim()) out.push({ field, text, copy });
   };
   for (const key of ["title", "dek", "kicker"]) add(key, spec?.[key], true);
-  for (const key of ["byline", "date_label", "alt", "source_note"]) add(key, spec?.[key], false);
+  for (const key of ["byline", "date_label", "alt"]) add(key, spec?.[key], false);
+  add("source_note", effectivePageSourceNote(spec, assets), false);
   for (const scene of Array.isArray(spec?.scene_graph?.scenes) ? spec.scene_graph.scenes : []) {
     add(`scene:${scene?.id}:eyebrow`, scene?.eyebrow, false);
     add(`scene:${scene?.id}:title`, scene?.title, true);
@@ -2152,9 +2153,23 @@ function drawPullQuote(parts, box, module, mobile) {
   if (module.attribution) textBlock(parts, module.attribution, box.x + (mobile ? 28 : 34), box.y + box.h - 20, { size: mobile ? 12 : 13, lineHeight: 17, weight: 700, fill: MUTED, maxChars: 55, maxLines: 2 });
 }
 
+// NEWSROOM_LOCAL_SOURCE_NOTE=1: when every visual on the page carries a program-written source line (source_note_program, set from an
+// accepted note beside a user's data file), the model's page-level source_note is not shown and not read as reader text. The saved plan
+// keeps the model's text. One function, used by the footer and by the reader-text checks, so what is checked is what is printed.
+export function pageSourceNoteReplaced(spec, assets) {
+  if (process.env.NEWSROOM_LOCAL_SOURCE_NOTE !== "1") return false;
+  const visuals = (spec?.modules ?? []).filter((m) => m.type === "visual");
+  if (!visuals.length || !visuals.every((m) => assets?.[m.manifest_ref]?.manifest?.source_note_program === true)) return false;
+  return typeof spec?.source_note === "string" && spec.source_note.trim() !== "";
+}
+
+export function effectivePageSourceNote(spec, assets) {
+  return pageSourceNoteReplaced(spec, assets) ? undefined : spec?.source_note;
+}
+
 function sourceList(spec, assets) {
   const notes = uniq([
-    spec.source_note,
+    effectivePageSourceNote(spec, assets),
     ...(spec.modules ?? []).filter((m) => m.type === "visual").map((m) => assets[m.manifest_ref]?.manifest?.source_note),
     ...(spec.modules ?? []).filter((m) => m.type === "illustration").map((m) => assets[m.asset_ref]?.manifest?.source_note),
   ]);
