@@ -37,10 +37,11 @@ assert.equal(ok.passed, qa(real, undefined).passed);
 // 3b. a chart whose mark rule is empty is named, and only that rule
 const hz = qa(real.replace(/data-role="[a-z-]*(point|line-path|bar)[a-z-]*"/g, ""), "1").viewports.desktop.extra_checks.no_empty_pass.failures.map((f) => f.checked_rule);
 assert.ok(hz.every((r) => r === "text_crosses_data_mark"), JSON.stringify(hz));
-// 4. texts only, no marks: only the mark rule is empty
+// 4. texts only, no shapes at all: the mark rule is not applicable (neither a pass nor a finding; see test_qa_not_applicable.mjs)
 const textOnly = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200"><text x="20" y="40" font-size="14" fill="#111">标题</text></svg>';
-const t = qa(textOnly, "1").viewports.desktop.extra_checks.no_empty_pass.failures;
-assert.deepEqual(t.map((f) => f.checked_rule), ["text_crosses_data_mark"]);
+const t = qa(textOnly, "1").viewports.desktop.extra_checks.no_empty_pass;
+assert.deepEqual(t.failures, []);
+assert.deepEqual(t.not_applicable.map((f) => f.checked_rule), ["text_crosses_data_mark"]);
 // 5. unit: unmeasured texts do not count as a population
 assert.equal(checkEmptyPasses({ summary: { texts_checked: 2, texts_unmeasured: 2, marks_checked: 3 } }, { unmeasured: [] }).passed, false);
 

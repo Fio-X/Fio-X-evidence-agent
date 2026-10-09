@@ -254,6 +254,9 @@ jobs:
           node scripts/test_render_qa_contrast.mjs
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
+          node scripts/test_qa_no_empty_pass.mjs
+          node scripts/test_qa_not_applicable.mjs
+          node scripts/test_qa_no_empty_pass_fixtures.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
       - name: Investigate and continue exit-code acceptance
