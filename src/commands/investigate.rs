@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::path::{Component, Path};
 use std::time::Instant;
 
-fn complex_visual_routing_ab_enabled() -> bool {
+pub(crate) fn complex_visual_routing_ab_enabled() -> bool {
     matches!(
         std::env::var("NEWSROOM_COMPLEX_VISUAL_ROUTING_AB")
             .ok()
@@ -30,7 +30,7 @@ fn mobile_pages_enabled() -> bool {
     std::env::var("NEWSROOM_MOBILE_PAGES").ok().as_deref() == Some("1")
 }
 
-fn is_complex_visual_request(topic: &str, split_classifier: bool) -> bool {
+pub(crate) fn is_complex_visual_request(topic: &str, split_classifier: bool) -> bool {
     if split_classifier {
         prompt::is_complex_visual_request_split(topic)
     } else {
@@ -91,7 +91,7 @@ fn visual_completion_gaps(
     visual_completion_gaps_for_profile(bundle, topic, audit, split_classifier, profile.as_deref())
 }
 
-fn visual_completion_gaps_for_profile(
+pub(crate) fn visual_completion_gaps_for_profile(
     bundle: &InvestigationBundle,
     topic: &str,
     audit: &audit::AuditSummary,
@@ -202,7 +202,7 @@ fn is_transient_completion_provider_error(error: &anyhow::Error) -> bool {
         .contains("Pi returned an empty final answer")
 }
 
-async fn run_prompt_with_empty_recovery(
+pub(crate) async fn run_prompt_with_empty_recovery(
     config: &PiConfig,
     prompt: &str,
     recovery_prompt: &str,

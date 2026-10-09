@@ -87,6 +87,7 @@ jobs:
           python3 scripts/test_speed_off_prompt_sha.py
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
+          python3 scripts/test_followup_completion_gate.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
           python3 scripts/test_infographic_schema.py

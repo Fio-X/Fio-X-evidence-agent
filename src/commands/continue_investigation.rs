@@ -5,7 +5,8 @@ use crate::commands::verify;
 use crate::pi::{run_prompt, PiConfig};
 use crate::prompt::PromptSpeed;
 use crate::{prompt, runtime};
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+use std::path::Path;
 use std::time::Instant;
 
 /// Opt-in (exactly `1`): a follow-up hands Pi the settings the first question
@@ -17,6 +18,105 @@ pub const FOLLOWUP_SAME_SETTINGS_ENV: &str = "NEWSROOM_FOLLOWUP_SAME_SETTINGS";
 
 fn followup_same_settings_on() -> bool {
     std::env::var(FOLLOWUP_SAME_SETTINGS_ENV).ok().as_deref() == Some("1")
+}
+
+/// Opt-in (exactly `1`): a follow-up runs the completion check the first
+/// question runs (the model is sent back at most twice when the requested
+/// visual work is not done), and each round's verification is recorded apart:
+/// the verification file a round replaces is first kept under
+/// `verification-rounds/`, and a round that fails before verification writes
+/// a record saying so instead of leaving the previous round's pass in place.
+pub const FOLLOWUP_COMPLETION_ENV: &str = "NEWSROOM_FOLLOWUP_COMPLETION_GATE";
+
+fn followup_completion_gate_on() -> bool {
+    std::env::var(FOLLOWUP_COMPLETION_ENV).ok().as_deref() == Some("1")
+}
+
+const ROUNDS_DIR: &str = "verification-rounds";
+
+/// Copies the current `verification.json` to the next free
+/// `verification-rounds/round-N.json` (never overwriting one) and returns that
+/// relative path; `None` when there is no verification file yet.
+fn archive_previous_verification(artifact: &Path) -> Result<Option<String>> {
+    let current = artifact.join("verification.json");
+    if !current.is_file() {
+        return Ok(None);
+    }
+    let dir = artifact.join(ROUNDS_DIR);
+    std::fs::create_dir_all(&dir)?;
+    let mut n = 1;
+    loop {
+        let target = dir.join(format!("round-{n}.json"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(&std::fs::read(&current)?)?;
+                return Ok(Some(format!("{ROUNDS_DIR}/round-{n}.json")));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(error) => return Err(error).context("failed to archive verification.json"),
+        }
+    }
+}
+
+/// A round that ended before verification ran: the current result is "not
+/// verified" for this round, and the file names where the previous round's
+/// verification was kept.
+fn record_round_not_verified(
+    artifact: &Path,
+    previous: Option<&str>,
+    stage: &str,
+    reason: &str,
+) -> Result<()> {
+    let record = serde_json::json!({
+        "schema_version": "0.7.0",
+        "verified_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "passed": false,
+        "checks": 0,
+        "round_status": "not_verified",
+        "stage": stage,
+        "reason": reason,
+        "previous_round_file": previous,
+    });
+    std::fs::write(
+        artifact.join("verification.json"),
+        format!("{}\n", serde_json::to_string_pretty(&record)?),
+    )
+    .context("failed to write verification.json")
+}
+
+/// The completion gaps of this round only: calls made in earlier rounds do
+/// not count as this round's work.
+fn followup_completion_gaps(
+    bundle: &InvestigationBundle,
+    goal: &str,
+    audit: &audit::AuditSummary,
+    calls_before: usize,
+    profile: Option<&str>,
+) -> Result<Vec<String>> {
+    let mut this_round = audit.clone();
+    this_round.calls = audit.calls.iter().skip(calls_before).cloned().collect();
+    crate::commands::investigate::visual_completion_gaps_for_profile(
+        bundle,
+        goal,
+        &this_round,
+        crate::commands::investigate::complex_visual_routing_ab_enabled(),
+        profile,
+    )
+}
+
+/// The text the first question sends when the completion check finds gaps
+/// (kept equal to commands/investigate.rs by a test).
+fn completion_retry_message(attempt: usize, gaps: &[String], mode_contract: &str) -> String {
+    format!(
+        "System completion gate attempt {attempt}/2 found unfinished required work:\n- {}\n{}Continue the same session and repair only these gaps using the real visual-story tools. Do not weaken, remove, relabel, or replace requested visuals with prose or illustrations. Complete every required infographic and publication gate, then write the self-contained HTML and requested desktop/mobile PNG files under NEWSROOM_ARTIFACT_DIR. Do not invent evidence or quantitative claims.",
+        gaps.join("\n- "),
+        mode_contract,
+    )
 }
 
 /// `(hide_lieflat, speed)` for the follow-up's `PiConfig`.
@@ -134,6 +234,20 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         prompt::language_instruction(&message)
     );
 
+    let completion_gate = followup_completion_gate_on();
+    let goal = format!("{topic} {message}");
+    let (calls_before, archived) = if completion_gate {
+        let before = if bundle.events_path.is_file() {
+            audit::build(&bundle.events_path, &bundle.tools_path)
+                .map(|value| value.calls.len())
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        (before, archive_previous_verification(&bundle.dir)?)
+    } else {
+        (0, None)
+    };
     audit::append_user_goal_event(&bundle.events_path, "follow_up")?;
     match run_prompt(&config, &follow_up, Some(&bundle.events_path)).await {
         Ok(result) => {
@@ -143,8 +257,72 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             if let Some(stats) = &result.session_stats {
                 bundle.write_session_stats(stats)?;
             }
-            let audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-            let status = if audit.has_agent_loop_evidence() {
+            let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
+            let mut completion_gaps = Vec::new();
+            if completion_gate {
+                let split = crate::commands::investigate::complex_visual_routing_ab_enabled();
+                let profile = bundle.recorded_tool_profile();
+                completion_gaps = followup_completion_gaps(
+                    &bundle,
+                    &goal,
+                    &audit,
+                    calls_before,
+                    profile.as_deref(),
+                )?;
+                if crate::commands::investigate::is_complex_visual_request(&goal, split) {
+                    for attempt in 1..=2 {
+                        if completion_gaps.is_empty() {
+                            break;
+                        }
+                        audit::append_completion_retry_event(
+                            &bundle.events_path,
+                            attempt,
+                            &completion_gaps,
+                        )?;
+                        let correction = completion_retry_message(
+                            attempt,
+                            &completion_gaps,
+                            &prompt::visual_mode_contract(&goal),
+                        );
+                        let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
+                        let retry =
+                            match crate::commands::investigate::run_prompt_with_empty_recovery(
+                                &config,
+                                &correction,
+                                recovery,
+                                &bundle.events_path,
+                            )
+                            .await
+                            {
+                                Ok(retry) => retry,
+                                Err(error) => {
+                                    record_round_not_verified(
+                                        &bundle.dir,
+                                        archived.as_deref(),
+                                        "completion_gate_retry_failed",
+                                        &format!("{error:#}"),
+                                    )?;
+                                    return Err(verify::exit_on_error(&error));
+                                }
+                            };
+                        bundle.write_answer(&retry.text)?;
+                        if let Some(stats) = &retry.session_stats {
+                            bundle.write_session_stats(stats)?;
+                        }
+                        audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
+                        completion_gaps = followup_completion_gaps(
+                            &bundle,
+                            &goal,
+                            &audit,
+                            calls_before,
+                            profile.as_deref(),
+                        )?;
+                    }
+                }
+            }
+            let status = if !completion_gaps.is_empty() {
+                "failed"
+            } else if audit.has_agent_loop_evidence() {
                 "draft"
             } else {
                 "incomplete"
@@ -164,6 +342,15 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 status,
                 Some(&audit),
             )?;
+            if !completion_gaps.is_empty() {
+                record_round_not_verified(
+                    &bundle.dir,
+                    archived.as_deref(),
+                    "completion_gate",
+                    &completion_gaps.join("; "),
+                )?;
+                bail!("visual delivery incomplete: {}", completion_gaps.join("; "));
+            }
             // Step lines on: the verdict is computed here so the closing line sits right above primary_artifact.
             let early_verdict = if crate::step_lines::enabled() {
                 let verdict = verify::post_run_verdict(&bundle.dir).await;
@@ -195,6 +382,14 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             Ok(())
         }
         Err(error) => {
+            if completion_gate {
+                record_round_not_verified(
+                    &bundle.dir,
+                    archived.as_deref(),
+                    "run_failed",
+                    &format!("{error:#}"),
+                )?;
+            }
             let audit = if bundle.events_path.is_file() {
                 audit::build(&bundle.events_path, &bundle.tools_path).ok()
             } else {
@@ -503,5 +698,106 @@ mod tests {
             .tools_arg()
             .contains("newsroom_lieflat_render"));
         clear_env();
+    }
+    #[test]
+    fn completion_switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for (value, on) in [
+            ("1", true),
+            ("0", false),
+            ("true", false),
+            ("yes", false),
+            ("", false),
+            (" 1", false),
+            ("01", false),
+        ] {
+            std::env::set_var(super::FOLLOWUP_COMPLETION_ENV, value);
+            assert_eq!(super::followup_completion_gate_on(), on, "{value:?}");
+        }
+        std::env::remove_var(super::FOLLOWUP_COMPLETION_ENV);
+        assert!(!super::followup_completion_gate_on());
+    }
+
+    #[test]
+    fn retry_message_is_the_one_the_first_question_sends() {
+        let gaps = vec!["gap one".to_string(), "gap two".to_string()];
+        let message = super::completion_retry_message(2, &gaps, "CONTRACT ");
+        assert!(message.starts_with(
+            "System completion gate attempt 2/2 found unfinished required work:\n- gap one\n- gap two\nCONTRACT Continue the same session"
+        ));
+        // The sentence after the gaps is the same literal text as in commands/investigate.rs.
+        let tail = message.split("CONTRACT ").nth(1).unwrap();
+        let investigate = include_str!("investigate.rs");
+        assert!(
+            investigate.contains(tail),
+            "retry wording drifted from investigate.rs"
+        );
+        assert!(investigate.contains(
+            "System completion gate attempt {attempt}/2 found unfinished required work:"
+        ));
+    }
+
+    #[test]
+    fn previous_verification_is_kept_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            super::archive_previous_verification(dir.path()).unwrap(),
+            None
+        );
+        assert!(!dir.path().join("verification-rounds").exists());
+        let first = "{\"passed\": true, \"round\": \"first\"}\n";
+        fs::write(dir.path().join("verification.json"), first).unwrap();
+        assert_eq!(
+            super::archive_previous_verification(dir.path())
+                .unwrap()
+                .as_deref(),
+            Some("verification-rounds/round-1.json")
+        );
+        // A later verification.json is archived next to it, not over it.
+        fs::write(
+            dir.path().join("verification.json"),
+            "{\"passed\": false}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            super::archive_previous_verification(dir.path())
+                .unwrap()
+                .as_deref(),
+            Some("verification-rounds/round-2.json")
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verification-rounds/round-1.json")).unwrap(),
+            first
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verification-rounds/round-2.json")).unwrap(),
+            "{\"passed\": false}\n"
+        );
+    }
+
+    #[test]
+    fn a_round_that_does_not_verify_is_not_read_as_the_previous_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let pass = "{\"passed\": true}\n";
+        fs::write(dir.path().join("verification.json"), pass).unwrap();
+        let kept = super::archive_previous_verification(dir.path()).unwrap();
+        super::record_round_not_verified(dir.path(), kept.as_deref(), "run_failed", "boom")
+            .unwrap();
+        let now: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join("verification.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(now["passed"], false);
+        assert_eq!(now["round_status"], "not_verified");
+        assert_eq!(now["stage"], "run_failed");
+        assert_eq!(
+            now["previous_round_file"],
+            "verification-rounds/round-1.json"
+        );
+        // The earlier pass is still on disk, byte for byte.
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verification-rounds/round-1.json")).unwrap(),
+            pass
+        );
     }
 }
