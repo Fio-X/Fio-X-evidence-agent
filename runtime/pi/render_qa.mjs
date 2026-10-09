@@ -25,9 +25,9 @@
 import { checkSvgGeometry, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geometry.mjs";
 import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contrast.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { checkChoroplethValueLabels, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
-import { joinChoroplethRows } from "./choropleth.mjs";
-import { choroplethValueText, PALETTE } from "./viz.mjs";
+import { checkChoroplethValueLabels, checkHeatmapValueLabels, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
+import { joinChoroplethRows, worldLabelIso3s } from "./choropleth.mjs";
+import { choroplethValueText, heatmapCellText, PALETTE } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 
 export const RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0";
@@ -41,12 +41,21 @@ function checkViewport(svgText, options) {
   const geometry = checkSvgGeometry(svgText, options?.geometry);
   const contrast = checkSvgContrast(svgText, options?.contrast);
   let valueLabels = null;
+  let proofOnly = false;
   if (options?.choropleth) {
-    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid });
+    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+  }
+  if (options?.heatmap) {
+    // proof only: a heatmap whose cells cannot all be labelled still renders as before; the report just does not prove the labels
+    proofOnly = true;
+    const spec = options.heatmap;
+    valueLabels = checkHeatmapValueLabels(svgText, spec, { parseXml, cellText: (value) => heatmapCellText(spec.spec, spec.rows, value) });
+    // proof needs passing contrast too: any contrast failure in the viewport fails the labels
+    if (!contrast.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, { rule: "value_label_contrast", message: "the viewport has a text contrast failure" }] };
   }
   return {
     svg_sha256: sha256Hex(svgText),
-    passed: geometry.passed && contrast.passed && (valueLabels ? valueLabels.passed : true),
+    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true),
     geometry: {
       passed: geometry.passed,
       failures: geometry.failures,
@@ -67,7 +76,7 @@ function checkViewport(svgText, options) {
  * desktop alone when the caller has no mobile viewport to check (for example
  * an infographic page rendered with phone-facing pages off).
  *
- * @param {{desktop: string, mobile?: string}} svgByViewport - full rendered
+ * @param {{desktop: string, mobile?: string, compact?: string}} svgByViewport - full rendered
  *   `<svg ...>...</svg>` document text for each responsive viewport. `mobile`
  *   is optional; when omitted, the report covers desktop only.
  * @param {object} [options]
@@ -84,32 +93,39 @@ function checkViewport(svgText, options) {
  *   value_labels_check_version?: string,
  *   passed: boolean,
  *   failure_count: number,
- *   viewports: {desktop: object, mobile?: object},
+ *   viewports: {desktop: object, mobile?: object, compact?: object},
  * }}
  */
-export function runRenderQa({ desktop, mobile } = {}, options = {}) {
+export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
   if (typeof desktop !== "string") {
     throw new Error("runRenderQa: desktop SVG text is required");
   }
   if (mobile !== undefined && typeof mobile !== "string") {
     throw new Error("runRenderQa: mobile SVG text must be a string when present");
   }
+  if (compact !== undefined && typeof compact !== "string") {
+    throw new Error("runRenderQa: compact SVG text must be a string when present");
+  }
   const viewports = { desktop: checkViewport(desktop, options) };
-  if (mobile !== undefined) viewports.mobile = checkViewport(mobile, options);
+  // the heatmap label proof is desktop-only; other viewports keep the plain report (and so never prove it)
+  const { heatmap: _heatmap, ...otherOptions } = options ?? {};
+  if (mobile !== undefined) viewports.mobile = checkViewport(mobile, otherOptions);
+  // The 8-column chart variant is checked exactly like the others, in full.
+  if (compact !== undefined) viewports.compact = checkViewport(compact, otherOptions);
   const viewportNames = Object.keys(viewports);
   const failureCount = viewportNames.reduce(
     (total, viewport) =>
       total +
       viewports[viewport].geometry.failures.length +
       viewports[viewport].contrast.failures.length +
-      (viewports[viewport].value_labels?.failures.length ?? 0),
+      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1),
     0,
   );
   return {
     schema_version: RENDER_QA_REPORT_SCHEMA_VERSION,
     geometry_check_version: RENDER_QA_GEOMETRY_VERSION,
     contrast_check_version: RENDER_QA_CONTRAST_VERSION,
-    ...(options?.choropleth ? { value_labels_check_version: RENDER_QA_LABELS_VERSION } : {}),
+    ...(options?.choropleth || options?.heatmap ? { value_labels_check_version: RENDER_QA_LABELS_VERSION } : {}),
     passed: viewportNames.every((viewport) => viewports[viewport].passed),
     failure_count: failureCount,
     viewports,

@@ -146,3 +146,111 @@ export function applyVisionPatches(spec, report) {
     },
   };
 }
+
+// ---- Plan edits (opt-in, NEWSROOM_SPEED_PLAN_EDIT) -------------------------
+// The model states layout decisions directly instead of re-sending the whole
+// plan. The module fields are the vision-patch fields; the scene fields add
+// the pattern and which modules anchor or accompany a scene. Everything else
+// stays inside the immutable projection, so copy, claims, refs, numbers,
+// scene budgets and module membership cannot change through this path.
+export const PLAN_EDIT_MODULE_FIELDS = VISION_PATCH_FIELDS;
+export const PLAN_EDIT_SCENE_FIELDS = ['pattern', 'anchor_module_id', 'sidecar_module_ids'];
+export const PLAN_EDIT_MAX_OPS = 12;
+const SPANS = ['full', 'half', 'two_thirds', 'third'];
+const EMPHASES = ['hero', 'primary', 'secondary', 'support'];
+const SCENE_PATTERNS = ['hero_sidecar_stack', 'hero_with_rail'];
+
+// Like the vision projection, but the editable scene fields are removed too.
+export function planEditProjection(spec) {
+  const top = immutableProjection(spec);
+  if (top.scene_graph && Array.isArray(top.scene_graph.scenes)) {
+    top.scene_graph = {
+      ...top.scene_graph,
+      scenes: top.scene_graph.scenes.map((scene) => {
+        const copy = { ...scene };
+        for (const field of PLAN_EDIT_SCENE_FIELDS) delete copy[field];
+        return copy;
+      }),
+    };
+  }
+  return top;
+}
+
+export function validatePlanEditOps(ops, spec) {
+  const errors = [];
+  if (!Array.isArray(ops) || ops.length === 0) return ['ops must be a non-empty array'];
+  if (ops.length > PLAN_EDIT_MAX_OPS) errors.push(`ops cannot exceed ${PLAN_EDIT_MAX_OPS} items`);
+  const moduleIds = new Set((spec.modules ?? []).map((module) => String(module.id)));
+  const sceneIds = new Set((spec.scene_graph?.scenes ?? []).map((scene) => String(scene.id)));
+  const seen = new Set();
+  for (const [index, op] of ops.entries()) {
+    const label = `ops[${index}]`;
+    if (!op || typeof op !== 'object' || Array.isArray(op)) { errors.push(`${label} must be an object`); continue; }
+    const extra = Object.keys(op).filter((key) => !['scope', 'id', 'field', 'value'].includes(key));
+    if (extra.length) errors.push(`${label} has unsupported key(s): ${extra.join(', ')}`);
+    const { scope, field, value } = op;
+    const id = String(op.id ?? '');
+    if (scope !== 'module' && scope !== 'scene') { errors.push(`${label} scope must be 'module' or 'scene'`); continue; }
+    const allowed = scope === 'module' ? PLAN_EDIT_MODULE_FIELDS : PLAN_EDIT_SCENE_FIELDS;
+    if (!allowed.includes(field)) { errors.push(`${label} field '${field}' is not editable on a ${scope} (editable: ${allowed.join(', ')})`); continue; }
+    if (!(scope === 'module' ? moduleIds : sceneIds).has(id)) { errors.push(`${label} refers to unknown ${scope} '${id}'`); continue; }
+    const key = `${scope}:${id}:${field}`;
+    if (seen.has(key)) errors.push(`${label} duplicates an edit of ${key}`);
+    seen.add(key);
+    if (field === 'span' && !SPANS.includes(value)) errors.push(`${label} invalid span '${value}'`);
+    else if (field === 'emphasis' && !EMPHASES.includes(value)) errors.push(`${label} invalid emphasis '${value}'`);
+    else if (field === 'priority' && !(Number.isInteger(value) && value >= 1 && value <= 5)) errors.push(`${label} priority must be an integer from 1 to 5`);
+    else if (field === 'move_before' || field === 'mobile_move_before' || field === 'anchor_module_id') {
+      if (typeof value !== 'string' || !moduleIds.has(value)) errors.push(`${label} ${field} must name an existing module`);
+      else if (field !== 'anchor_module_id' && value === id) errors.push(`${label} cannot move a module before itself`);
+    } else if (field === 'pattern' && !SCENE_PATTERNS.includes(value)) errors.push(`${label} invalid scene pattern '${value}'`);
+    else if (field === 'sidecar_module_ids') {
+      const list = Array.isArray(value) ? value : null;
+      if (!list || list.length < 1 || list.length > 3 || list.some((item) => typeof item !== 'string' || !moduleIds.has(item)) || new Set(list).size !== list.length) {
+        errors.push(`${label} sidecar_module_ids must be 1-3 distinct existing module ids`);
+      }
+    }
+  }
+  return errors;
+}
+
+// Returns the edited plan core (no content_hash) and the audit facts. Throws
+// on any invalid op or if anything outside the editable fields changed.
+export function applyPlanEdits(spec, ops) {
+  const source = stripContentHash(spec);
+  const errors = validatePlanEditOps(ops, source);
+  if (errors.length) throw new Error(`plan edit rejected: ${errors.join('; ')}`);
+  const before = hash(planEditProjection(source));
+  const next = structuredClone(source);
+  const ids = next.modules.map((module) => String(module.id));
+  let mobileOrder = Array.isArray(next.mobile_module_order) && next.mobile_module_order.length === ids.length
+    ? [...next.mobile_module_order]
+    : null;
+  const applied = [];
+  for (const op of ops) {
+    if (op.scope === 'scene') {
+      const scene = next.scene_graph.scenes.find((item) => String(item.id) === String(op.id));
+      scene[op.field] = structuredClone(op.value);
+    } else {
+      const target = next.modules.find((module) => String(module.id) === String(op.id));
+      if (op.field === 'move_before') {
+        const moved = moveBefore(next.modules.map((module) => String(module.id)), String(op.id), String(op.value));
+        const byId = new Map(next.modules.map((module) => [String(module.id), module]));
+        next.modules = moved.map((id) => byId.get(id));
+      } else if (op.field === 'mobile_move_before') {
+        mobileOrder = moveBefore(mobileOrder ?? ids, String(op.id), String(op.value));
+      } else {
+        target[op.field] = op.value;
+      }
+    }
+    applied.push({ scope: op.scope, id: String(op.id), field: op.field, value: structuredClone(op.value) });
+  }
+  if (mobileOrder) next.mobile_module_order = mobileOrder;
+  const after = hash(planEditProjection(next));
+  if (before !== after) throw new Error('plan edit attempted to modify immutable editorial evidence fields');
+  return {
+    spec: next,
+    applied,
+    safety: { immutable_projection_sha256: before, evidence_fields_preserved: true, editable_module_fields: PLAN_EDIT_MODULE_FIELDS, editable_scene_fields: PLAN_EDIT_SCENE_FIELDS },
+  };
+}

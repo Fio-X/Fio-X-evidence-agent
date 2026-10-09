@@ -1,0 +1,9 @@
+- 第一次查询（duckdb_query）必须读程序登记的源视图；SQL 不读已引用的源，说法绑定时会被 COMPUTATION_PROVENANCE_REQUIRED 退回。
+- SQL 只取年份列和一个量，ORDER BY 年份；多条线才加 series_field，且不混单位。
+- 说法用 record_claim，或在 newsroom_viz_plan 里传 claim 与 claim_kind，由该图自己的 SQL 行记录；说法里的数字只来自查询行。
+- newsroom_viz_plan 一次填全：reader_task 填 change（只用取值表里的词，不写句子）；claim_spec.reader_task 与它相同，claim_spec.relation 选 change 或 trend；chart_type 填 line；x_field 填年份列，value_field 填量的列；unit、title、alt、source_note、takeaway、sql 都要填。
+- 页面类交付（infographic_module）：先 newsroom_story_graph，再在计划里填 story_graph_ref 与 story_node_ids。
+- 标签与刻度由渲染器决定，模型不选刻度年份；title、subtitle、note 写短，单位词写短。
+- annotations 只给要标的点（type=point），每条自带年份。
+- 计划通过后依次调 newsroom_viz_lint → newsroom_viz_render → newsroom_viz_critic；render QA 报 text_overlap / text_outside_viewbox / text_crosses_data_mark 时，缩短对应文字或删掉那条注释，不改数据。
+- 每次复用重算、重新核实、过全部闸门；配方不得授予核实状态。

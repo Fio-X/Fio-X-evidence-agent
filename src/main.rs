@@ -3,14 +3,18 @@ mod artifact;
 mod audit;
 mod cli;
 mod commands;
+mod compose_answer;
 mod config;
+mod data_profile;
 mod hash;
 mod interactive;
 mod llm;
 mod output;
 mod pi;
 mod prompt;
+mod recipes;
 mod runtime;
+mod step_lines;
 mod tool_registry;
 mod verify;
 

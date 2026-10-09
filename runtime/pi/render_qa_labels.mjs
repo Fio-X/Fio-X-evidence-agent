@@ -43,7 +43,7 @@
 //     region must show its name+value label exactly once - in the main map
 //     or in the inset, never both, never neither, never twice in the same
 //     place.
-export const RENDER_QA_LABELS_VERSION = "1.3.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7)
+export const RENDER_QA_LABELS_VERSION = "1.5.0"; // + leadered-label box-overlaps-polygon and minimum-leader-length checks (v7); + marker_displaced_without_tether (1.4.0); + markers_list_only_exceed_quarter and list_only_markers (1.5.0)
 
 function walk(node, out) {
   out.push(node);
@@ -166,13 +166,13 @@ function glyphWidth(text, size) {
  * @param {Array<object>} options.rows - the exact rows the chart was built from.
  * @param {string} options.category_field
  * @param {string} options.value_field
- * @param {string} options.category_names - 'worldbank' | 'iso3'
+ * @param {string} options.category_names - 'worldbank' | 'iso3' | 'iso2'
  * @param {string} [options.unit]
  * @param {(text: string) => any} deps.parseXml - injected to avoid a static
  *   import cycle with render_qa_svg.mjs's own consumers; render_qa.mjs wires
  *   the real implementation through.
  * @param {(rows, spec) => any[]} deps.joinChoroplethRows
- * @param {(value: number, unit?: string) => string} deps.fmt
+ * @param {(value: number, unit?: string, spec?: object) => string} deps.fmt
  * @param {string} deps.noDataFill - must equal renderChoropleth's own current
  *   non-data fill (viz.mjs's live-bound PALETTE.grid). Injected the same way
  *   as parseXml/joinChoroplethRows/fmt above - this module stays pure and
@@ -183,11 +183,13 @@ function glyphWidth(text, size) {
  *   PALETTE.grid through.
  */
 export function checkChoroplethValueLabels(svgText, options, deps) {
-  const { parseXml, joinChoroplethRows, fmt, noDataFill } = deps;
+  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s } = deps;
   const expectedNoDataFill = String(noDataFill ?? "").toLowerCase();
   const rows = Array.isArray(options?.rows) ? options.rows : [];
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
   const unit = options?.unit ?? "";
+  // measure kind/semantics (P2) so the expected label text is spelled the same way the renderer spelled it
+  const kindSpec = { unit, value_field: options?.value_field, measure_kind: options?.measure_kind, measure_semantics: options?.measure_semantics };
   const value_field = options?.value_field;
 
   const root = parseXml(svgText);
@@ -246,10 +248,16 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[value_field])),
   );
 
+  // World mode (map_extent: "world") labels only the range ends and highlight_values;
+  // the set is re-derived from the rows here, and every other region must carry no text.
+  const worldLabelled = options?.map_extent === "world" && typeof worldLabelIso3s === "function"
+    ? worldLabelIso3s(joined, { value_field, category_field: options?.category_field, highlight_values: options?.highlight_values })
+    : null;
+
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
-    const expectedValueText = fmt(value, unit);
+    const expectedValueText = fmt(value, unit, kindSpec);
     if (!dataIso3ByRegion.has(iso3)) {
       failures.push({ rule: "value_label_missing_region", message: `${iso3} has a data row but no rendered choropleth-data region` });
       continue;
@@ -257,6 +265,12 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     const renderedValue = dataIso3ByRegion.get(iso3);
     if (Number.isFinite(renderedValue) && Math.abs(renderedValue - value) > 1e-9) {
       failures.push({ rule: "region_value_mismatch", message: `${iso3} region data-value is ${renderedValue}, row value is ${value}` });
+    }
+    if (worldLabelled && !worldLabelled.has(iso3)) {
+      if ((namesByIso3.get(iso3) ?? []).length || (valuesByIso3.get(iso3) ?? []).length) {
+        failures.push({ rule: "value_label_unexpected", message: `${iso3} is labelled although world mode labels only the range ends and highlight_values` });
+      }
+      continue;
     }
     const names = namesByIso3.get(iso3) ?? [];
     const values = valuesByIso3.get(iso3) ?? [];
@@ -315,6 +329,22 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     if (!iso3) continue;
     if (!insetPolygonsByIso3.has(iso3)) insetPolygonsByIso3.set(iso3, []);
     insetPolygonsByIso3.get(iso3).push(...parsePathRings(path.attrs.d));
+  }
+  // P3 (add-only gate): a region that the inset itself draws smaller than the
+  // dot threshold is invisible as a polygon, so it must carry a value-coloured
+  // dot in the inset (same threshold as viz.mjs TINY_REGION_PX: 6px desktop,
+  // 5px mobile).
+  const insetDotIso3 = new Set(nodes.filter((n) => n.tag === "circle" && n.attrs["data-role"] === "choropleth-inset-dot").map((n) => n.attrs["data-iso3"]));
+  const insetTinyPx = nodes.find((n) => n.tag === "svg")?.attrs?.["data-viewport"] === "mobile" ? 5 : 6;
+  for (const [iso3, rings] of insetPolygonsByIso3) {
+    let largest = 0;
+    for (const ring of rings) {
+      const xs = ring.map((pt) => pt[0]), ys = ring.map((pt) => pt[1]);
+      largest = Math.max(largest, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    }
+    if (largest < insetTinyPx && !insetDotIso3.has(iso3)) {
+      failures.push({ rule: "inset_region_too_small", message: `${iso3} is drawn ${largest.toFixed(1)}px across in the inset (under ${insetTinyPx}px) and has no value-coloured dot` });
+    }
   }
   const onMapNameLabels = nodes.filter((n) => n.tag === "text" && n.attrs["data-role"] === "choropleth-label" && n.attrs["text-anchor"] === "middle");
   const onMapValueLabels = nodes.filter((n) => n.tag === "text" && n.attrs["data-role"] === "choropleth-label-value" && n.attrs["text-anchor"] === "middle");
@@ -401,5 +431,95 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     }
   }
 
-  return { passed: failures.length === 0, checked: joined.length, failures };
+  // A numbered marker whose circle no longer covers the point it stands for
+  // (data-anchor-x/y) must be joined to that point by a "<role>-leader" path
+  // that starts on its circle and ends at the point; otherwise the number has
+  // no visible geographic link.
+  for (const role of ["choropleth-footnote-marker", "choropleth-inset-footnote-marker"]) {
+    const tethers = nodes.filter((n) => n.tag === "path" && n.attrs["data-role"] === `${role}-leader`);
+    for (const marker of nodes.filter((n) => n.tag === "circle" && n.attrs["data-role"] === role)) {
+      const ax = Number(marker.attrs["data-anchor-x"]), ay = Number(marker.attrs["data-anchor-y"]);
+      const cx = Number(marker.attrs.cx), cy = Number(marker.attrs.cy), r = Number(marker.attrs.r) || 9;
+      const num = marker.attrs["data-number"];
+      if (![ax, ay, cx, cy].every(Number.isFinite)) {
+        failures.push({ rule: "marker_displaced_without_tether", message: `marker ${num} (${marker.attrs["data-iso3"]}) carries no anchor point` });
+        continue;
+      }
+      if (Math.hypot(cx - ax, cy - ay) <= r) continue;
+      const ok = tethers.some((t) => {
+        if (t.attrs["data-number"] !== num) return false;
+        const pts = (String(t.attrs.d ?? "").match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+        if (pts.length < 4) return false;
+        const [sx, sy] = pts, [ex, ey] = pts.slice(-2);
+        return Math.abs(Math.hypot(sx - cx, sy - cy) - r) <= 1.5 && Math.hypot(ex - ax, ey - ay) <= 0.6;
+      });
+      if (!ok) failures.push({ rule: "marker_displaced_without_tether", message: `marker ${num} (${marker.attrs["data-iso3"]}) is displaced ${Math.hypot(cx - ax, cy - ay).toFixed(0)}px from its point with no tether back to it` });
+    }
+  }
+
+  // Regions left without a map marker (list-only) are reported, and a chart
+  // that drops more than a quarter of its numbered markers fails.
+  const listOnlyNode = nodes.find((n) => n.attrs?.["data-role"] === "choropleth-marker-list-only");
+  const listOnly = listOnlyNode
+    ? { count: Number(listOnlyNode.attrs["data-count"]), total: Number(listOnlyNode.attrs["data-total"]), iso3: String(listOnlyNode.attrs["data-iso3"] ?? "").split(",").filter(Boolean) }
+    : { count: 0, total: 0, iso3: [] };
+  if (listOnly.count > 0 && !(listOnly.count * 4 <= listOnly.total)) {
+    failures.push({ rule: "markers_list_only_exceed_quarter", message: `${listOnly.count} of ${listOnly.total} numbered regions have no map marker (more than a quarter): ${listOnly.iso3.join(", ")}` });
+  }
+  return { passed: failures.length === 0, checked: joined.length, failures, list_only_markers: listOnly };
+}
+
+/**
+ * NEWSROOM_HEATMAP_VALUE_LABELS=1 proof for a desktop heatmap: EVERY cell with a non-null value has exactly one cell rect
+ * and exactly one value text that is the exact formatted value (heatmapCellText), centred inside that cell, at or above
+ * the 12px floor. A cell without a label (labels are dropped when cellW <= 48 or cellH <= 30) fails. Contrast is proven by
+ * render_qa.mjs, which fails this check when the viewport's contrast check has any failure.
+ * @param {string} svgText
+ * @param {{rows: object[], x_field: string, y_field: string, value_field: string}} options
+ * @param {{parseXml: Function, cellText: (value: number) => string}} deps
+ */
+export function checkHeatmapValueLabels(svgText, options, deps) {
+  const { parseXml, cellText } = deps;
+  const rows = Array.isArray(options?.rows) ? options.rows : [];
+  const nodes = walk(parseXml(svgText), []);
+  const key = (x, y) => `${x}\u0000${y}`;
+  const cells = new Map();
+  for (const n of nodes.filter((c) => c.tag === "rect" && c.attrs["data-role"] === "heatmap-cell")) {
+    const k = key(n.attrs["data-x"], n.attrs["data-y"]);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(n);
+  }
+  const texts = new Map();
+  for (const n of nodes.filter((c) => c.tag === "text" && c.attrs["data-role"] === "heatmap-cell-value")) {
+    const k = key(n.attrs["data-x"], n.attrs["data-y"]);
+    if (!texts.has(k)) texts.set(k, []);
+    texts.get(k).push(n);
+  }
+  const failures = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const raw = row?.[options?.value_field];
+    const value = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+    if (!Number.isFinite(value)) continue;
+    const k = key(String(row[options.x_field]), String(row[options.y_field]));
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const name = `${row[options.y_field]} / ${row[options.x_field]}`;
+    const rect = cells.get(k) ?? [];
+    const labels = texts.get(k) ?? [];
+    if (rect.length !== 1) { failures.push({ rule: "heatmap_cell_missing", message: `${name} has ${rect.length} rendered cells, expected one` }); continue; }
+    if (labels.length === 0) { failures.push({ rule: "value_label_missing", message: `${name} has no visible value label` }); continue; }
+    if (labels.length > 1) { failures.push({ rule: "value_label_duplicate", message: `${name} has ${labels.length} value labels; it must be labelled exactly once` }); continue; }
+    const label = labels[0];
+    const shown = labelText(label), expected = cellText(value);
+    if (shown !== expected) failures.push({ rule: "value_label_mismatch", message: `${name} shows '${shown}', expected '${expected}'` });
+    const size = Number(label.attrs["font-size"]);
+    if (!(size >= 12)) failures.push({ rule: "value_label_font_below_floor", message: `${name} label is ${label.attrs["font-size"] ?? "unsized"}px, below 12px` });
+    const cx = Number(rect[0].attrs.x), cy = Number(rect[0].attrs.y), cw = Number(rect[0].attrs.width), ch = Number(rect[0].attrs.height);
+    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), half = glyphWidth(shown, size) / 2;
+    const inside = tx - half >= cx - 0.01 && tx + half <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
+    if (!inside) failures.push({ rule: "value_label_outside_cell", message: `${name} label does not fit inside its cell` });
+  }
+  if (seen.size === 0) failures.push({ rule: "value_label_missing", message: "the heatmap has no cell with a value to prove" });
+  return { passed: failures.length === 0, failures };
 }

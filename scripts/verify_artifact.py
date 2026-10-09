@@ -184,6 +184,10 @@ INFOGRAPHIC_COMPETITION_PROFILES = {
     "editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"
 }
 VISION_PATCH_FIELDS = {"span", "emphasis", "priority", "move_before", "mobile_move_before"}
+# Mirrors runtime/pi/vision.mjs PLAN_EDIT_MODULE_FIELDS / PLAN_EDIT_SCENE_FIELDS / PLAN_EDIT_MAX_OPS.
+PLAN_EDIT_MODULE_FIELDS = VISION_PATCH_FIELDS
+PLAN_EDIT_SCENE_FIELDS = ("pattern", "anchor_module_id", "sidecar_module_ids")
+PLAN_EDIT_MAX_OPS = 12
 COMPETITION_POLICY_FLOORS = {
     "editorial": {
         "deterministic_score": 88, "vision_score": 80,
@@ -295,6 +299,86 @@ def replay_infographic_patches(source: dict, patches: list[dict]) -> dict:
             mobile_order = _move_before(mobile_order, target, value)
     next_plan["mobile_module_order"] = mobile_order
     return next_plan
+
+
+def _js_json(value):
+    # JSON.stringify prints an integral number without ".0".
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {k: _js_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_js_json(v) for v in value]
+    return value
+
+
+def infographic_plan_content_hash(plan: dict) -> str:
+    core = {k: v for k, v in plan.items() if k != "content_hash"}
+    text = json.dumps(_js_json(core), separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def replay_plan_edits(source: dict, ops: list) -> dict:
+    """Independent replay of newsroom_infographic_edit: only the module and scene fields the tool exposes."""
+    if not isinstance(ops, list) or not 1 <= len(ops) <= PLAN_EDIT_MAX_OPS:
+        raise ValueError(f"applied_edits must hold 1..{PLAN_EDIT_MAX_OPS} items")
+    plan = json.loads(json.dumps(source))
+    plan.pop("content_hash", None)
+    modules = plan.get("modules") or []
+    ids = [str(m.get("id")) for m in modules]
+    if not ids or len(ids) != len(set(ids)):
+        raise ValueError("source infographic modules must have unique ids")
+    scenes = (plan.get("scene_graph") or {}).get("scenes") or []
+    scene_ids = {str(sc.get("id")) for sc in scenes}
+    mobile_order = list(plan["mobile_module_order"]) if isinstance(plan.get("mobile_module_order"), list) and len(plan["mobile_module_order"]) == len(ids) else None
+    seen = set()
+    for op in ops:
+        if not isinstance(op, dict) or set(op) != {"scope", "id", "field", "value"}:
+            raise ValueError(f"invalid plan edit: {op!r}")
+        scope, field, value, target = op["scope"], op["field"], op["value"], str(op["id"])
+        if scope not in ("module", "scene"):
+            raise ValueError(f"invalid plan edit scope: {scope!r}")
+        if field not in (PLAN_EDIT_MODULE_FIELDS if scope == "module" else PLAN_EDIT_SCENE_FIELDS):
+            raise ValueError(f"field {field!r} is not editable on a {scope}")
+        if target not in (set(ids) if scope == "module" else scene_ids):
+            raise ValueError(f"plan edit refers to unknown {scope} {target!r}")
+        key = (scope, target, field)
+        if key in seen:
+            raise ValueError(f"duplicate plan edit: {key!r}")
+        seen.add(key)
+        if field == "span" and value not in {"full", "half", "two_thirds", "third"}:
+            raise ValueError(f"invalid span: {value!r}")
+        if field == "emphasis" and value not in {"hero", "primary", "secondary", "support"}:
+            raise ValueError(f"invalid emphasis: {value!r}")
+        if field == "priority" and not (isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 5):
+            raise ValueError(f"invalid priority: {value!r}")
+        if field in {"move_before", "mobile_move_before", "anchor_module_id"} and not (isinstance(value, str) and value in ids):
+            raise ValueError(f"{field} must name an existing module: {value!r}")
+        if field == "pattern" and value not in {"hero_sidecar_stack", "hero_with_rail"}:
+            raise ValueError(f"invalid scene pattern: {value!r}")
+        if field == "sidecar_module_ids" and not (isinstance(value, list) and 1 <= len(value) <= 3 and len(set(value)) == len(value) and all(isinstance(v, str) and v in ids for v in value)):
+            raise ValueError(f"invalid sidecar_module_ids: {value!r}")
+        by_id = {str(m.get("id")): m for m in plan["modules"]}
+        if scope == "scene":
+            next(sc for sc in scenes if str(sc.get("id")) == target)[field] = json.loads(json.dumps(value))
+        elif field == "move_before":
+            order = _move_before([str(m.get("id")) for m in plan["modules"]], target, value)
+            plan["modules"] = [by_id[i] for i in order]
+        elif field == "mobile_move_before":
+            mobile_order = _move_before(mobile_order if mobile_order is not None else ids, target, value)
+        else:
+            by_id[target][field] = value
+    if mobile_order is not None:
+        plan["mobile_module_order"] = mobile_order
+    return plan
+
+
+def plan_edit_immutable_hash(plan: dict) -> str:
+    projected = infographic_immutable_projection(plan)
+    scene_graph = projected.get("scene_graph")
+    if isinstance(scene_graph, dict) and isinstance(scene_graph.get("scenes"), list):
+        projected["scene_graph"] = {**scene_graph, "scenes": [{k: v for k, v in sc.items() if k not in PLAN_EDIT_SCENE_FIELDS} for sc in scene_graph["scenes"]]}
+    return hashlib.sha256(canonical_json(projected).encode("utf-8")).hexdigest()
 
 
 def recompute_competition_machine_pass(profile: str, deterministic: dict, vision: dict, origins: list[str]) -> tuple[bool, list[str]]:
@@ -735,6 +819,11 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     # with the Rust verifier's verify_choropleth_labels_from_svg - so a bug
     # or omission in one does not silently pass through the others.
     failures: list[str] = []
+    # NEWSROOM_VERIFY_MAP_FOOTNOTES=1 (default off): also count the numbered-footnote list rows, the same roles
+    # render_qa_labels.mjs counts.
+    footnotes = os.environ.get("NEWSROOM_VERIFY_MAP_FOOTNOTES") == "1"
+    name_roles = ("choropleth-label", "choropleth-inset-label") + (("choropleth-footnote-name",) if footnotes else ())
+    value_roles = ("choropleth-label-value", "choropleth-inset-label-value") + (("choropleth-footnote-value",) if footnotes else ())
 
     data_values: dict[str, list[float]] = {}
     for tag in _choropleth_path_tags_with_role(svg_text, "choropleth-data"):
@@ -750,13 +839,13 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
         data_values.setdefault(iso3, []).append(value)
 
     names: dict[str, list[str]] = {}
-    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("choropleth-label", "choropleth-inset-label")):
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, name_roles):
         iso3 = _choropleth_tag_attrs(tag).get("data-iso3")
         if iso3:
             names.setdefault(iso3, []).append(_choropleth_label_body_text(body))
 
     values: dict[str, list[str]] = {}
-    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("choropleth-label-value", "choropleth-inset-label-value")):
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, value_roles):
         iso3 = _choropleth_tag_attrs(tag).get("data-iso3")
         if iso3:
             values.setdefault(iso3, []).append(_choropleth_label_body_text(body))
@@ -786,6 +875,78 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
         if iso3 not in data_values:
             failures.append(f"{iso3} has a rendered label but no matching choropleth-data region in the SVG")
 
+    return sorted(set(failures))
+
+
+def _heatmap_leading_number_with_scale(text: str) -> float | None:
+    # A heatmap cell prints a bare number, with a trailing zh scale word (wan = 10^4, yi = 10^8) when the
+    # renderer scaled it (viz.mjs heatmapFixedDecimals); any other suffix leaves the scale alone.
+    m = _LEADING_NUMBER_RE.match(text)
+    if not m:
+        return None
+    number = float(m.group(1))
+    rest = text[m.end():]
+    if rest.startswith("\u4ebf"):
+        return number * 100_000_000.0
+    if rest.startswith("\u4e07"):
+        return number * 10_000.0
+    return number
+
+
+def verify_heatmap_labels_from_svg(svg_text: str) -> list[str]:
+    # NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one
+    # rendered viewport's SVG: every heatmap-cell rect (data-x, data-y, data-value) has exactly one
+    # heatmap-cell-value text for the same (x, y) whose number matches the cell's own data-value, is at least
+    # 12px, and sits inside the cell; a label with no cell fails. Written fresh - it never calls into
+    # runtime/pi/render_qa_labels.mjs - and mirrors Rust's verify_heatmap_labels_from_svg.
+    failures: list[str] = []
+    cells: dict[tuple[str, str], list[tuple[float, dict]]] = {}
+    for m in re.finditer(r"<rect\b[^>]*?/?>", svg_text, re.S):
+        attrs = _choropleth_tag_attrs(m.group(0))
+        if attrs.get("data-role") != "heatmap-cell":
+            continue
+        try:
+            value = float(attrs.get("data-value", ""))
+        except ValueError:
+            failures.append(f"a heatmap cell ({attrs.get('data-y')} / {attrs.get('data-x')}) has no readable data-value")
+            continue
+        cells.setdefault((attrs.get("data-x", ""), attrs.get("data-y", "")), []).append((value, attrs))
+    labels: dict[tuple[str, str], list[tuple[str, dict]]] = {}
+    for tag, body in _choropleth_text_nodes_with_role(svg_text, ("heatmap-cell-value",)):
+        attrs = _choropleth_tag_attrs(tag)
+        labels.setdefault((attrs.get("data-x", ""), attrs.get("data-y", "")), []).append((_choropleth_label_body_text(body), attrs))
+    if not cells:
+        failures.append("the heatmap has no cell with a value to prove")
+    for key, found in cells.items():
+        name = f"{key[1]} / {key[0]}"
+        if len(found) != 1:
+            failures.append(f"{name} has {len(found)} heatmap cells (expected exactly 1)")
+            continue
+        expected, rect = found[0]
+        texts = labels.get(key, [])
+        if len(texts) != 1:
+            failures.append(f"{name} has {len(texts)} rendered value labels (expected exactly 1)")
+            continue
+        text, tattrs = texts[0]
+        shown = _heatmap_leading_number_with_scale(text)
+        if shown is None:
+            failures.append(f"{name}'s rendered value label '{text}' has no readable number")
+        elif abs(shown - expected) > max(abs(expected) * 0.01, 0.05):
+            failures.append(f"{name}'s rendered value label '{text}' does not match its cell's data-value {expected}")
+        try:
+            size = float(tattrs.get("font-size", ""))
+            tx, ty = float(tattrs["x"]), float(tattrs["y"])
+            cx, cy, cw, ch = (float(rect[k]) for k in ("x", "y", "width", "height"))
+        except (KeyError, ValueError):
+            failures.append(f"{name}'s value label or cell is missing numeric geometry")
+            continue
+        if size < 12:
+            failures.append(f"{name}'s value label is {size}px, below 12px")
+        if not (cx <= tx <= cx + cw and cy <= ty <= cy + ch):
+            failures.append(f"{name}'s value label is outside its cell")
+    for key in labels:
+        if key not in cells:
+            failures.append(f"{key[1]} / {key[0]} has a rendered value label but no matching heatmap cell in the SVG")
     return sorted(set(failures))
 
 
@@ -975,20 +1136,38 @@ def verify(root: Path) -> Report:
         except Exception as exc:
             report.check(False, f"computation unreadable {path}: {exc}")
 
-    claims = jsonl(root / "claims.jsonl")
-    verified_ids = set()
+    # Every non-blank line must be a JSON object with a non-empty string claim_id, whatever its status; the file line
+    # number is reported (jsonl() drops blank lines, so its row index is not the file line).
+    claims = []
+    claims_path = root / "claims.jsonl"
+    if claims_path.is_file():
+        for line_no, line in enumerate(claims_path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                report.check(False, f"claims.jsonl parse error: line {line_no}: {exc}")
+                continue
+            if isinstance(record, dict) and "__parse_error__" in record:
+                report.check(False, f"claims.jsonl line {line_no} carries the reserved key __parse_error__")
+                continue
+            claim_id = record.get("claim_id") if isinstance(record, dict) else None
+            if not isinstance(claim_id, str) or not claim_id:
+                report.check(False, f"claims.jsonl line {line_no} is not a claim record with a non-empty string claim_id")
+                continue
+            claims.append(record)
+    # A claim counts as verified only while its latest record is system-verified (a later non-verified record
+    # with the same claim_id revokes it), as in the runtime.
+    latest_claims = {claim["claim_id"]: claim for claim in claims}
+    verified_ids = {claim_id for claim_id, claim in latest_claims.items() if system_verified_claim(claim)}
     for claim in claims:
-        if "__parse_error__" in claim:
-            report.check(False, f"claims.jsonl parse error: {claim['__parse_error__']}")
-            continue
         if claim.get("status") != "verified":
             continue
         report.check(system_verified_claim(claim), f"verified claim {claim.get('claim_id')} lacks system-derived verification")
         if not system_verified_claim(claim):
             continue
         claim_id = claim.get("claim_id")
-        if claim_id:
-            verified_ids.add(str(claim_id))
         srcs = claim.get("source_refs") or []
         comps = claim.get("computation_refs") or []
         report.check(bool(srcs), f"verified claim {claim_id} has no source_refs")
@@ -1064,9 +1243,16 @@ def verify(root: Path) -> Report:
             # (rendered only with NEWSROOM_MOBILE_PAGES=1). A listed one is
             # checked the same way, and nothing else may be listed.
             viz_variants = manifest["variants"]
-            report.check(set(viz_variants) <= {"desktop", "mobile"}, f"visualization {manifest_ref} lists an unknown variant: {sorted(set(viz_variants) - {'desktop', 'mobile'})}")
-            for viewport in ("desktop", "mobile"):
-                if viewport == "mobile" and "mobile" not in viz_variants:
+            report.check(set(viz_variants) <= {"desktop", "mobile", "compact"}, f"visualization {manifest_ref} lists an unknown variant: {sorted(set(viz_variants) - {'desktop', 'mobile', 'compact'})}")
+            # Optional manifest.hashes: each key present must equal the sha256
+            # of the corresponding variant file; a listed compact variant must
+            # carry hashes.compact_sha256 (fail closed). Old manifests with no
+            # compact variant and no hashes are unaffected.
+            viz_hashes = manifest.get("hashes") if isinstance(manifest.get("hashes"), dict) else {}
+            report.check("compact_sha256" not in viz_hashes or "compact" in viz_variants, f"visualization {manifest_ref} has hashes.compact_sha256 without a compact variant")
+            report.check("compact" not in viz_variants or "compact_sha256" in viz_hashes, f"visualization {manifest_ref} lists a compact variant without hashes.compact_sha256")
+            for viewport in ("desktop", "mobile", "compact"):
+                if viewport != "desktop" and viewport not in viz_variants:
                     continue
                 ref = manifest["variants"].get(viewport)
                 report.check(isinstance(ref, str) and bool(ref), f"visualization {manifest_ref} missing {viewport} variant")
@@ -1078,6 +1264,9 @@ def verify(root: Path) -> Report:
                             text = svg_path.read_text(encoding="utf-8")
                             report.check(len(text) > 120, f"visualization {manifest_ref} {viewport} SVG suspiciously small")
                             report.check(all(token in text for token in ("<svg", "<title", "<desc")), f"visualization {manifest_ref} {viewport} SVG lacks accessibility markup")
+                            hash_key = f"{viewport}_sha256"
+                            if hash_key in viz_hashes:
+                                report.check(viz_hashes[hash_key] == sha256_file(svg_path), f"visualization {manifest_ref} {viewport} hash mismatch against manifest.hashes.{hash_key}")
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe {viewport} SVG ref: {exc}")
             # Choropleth-only: a choropleth's color channel can only be
@@ -1095,6 +1284,29 @@ def verify(root: Path) -> Report:
             # "choropleth" (Python does not yet re-verify render_qa_ref for
             # every chart type the way Rust does - a pre-existing gap, out
             # of scope here).
+            # A listed compact variant is bound to render QA for every chart
+            # type (viewports.compact.svg_sha256 must equal the file's hash);
+            # choropleths get this through the full loop below.
+            # Fail closed: a listed compact variant needs a valid render_qa_ref, an
+            # existing QA report, and viewports.compact.svg_sha256 - each missing
+            # piece is a failure, never a silent skip.
+            if "compact" in viz_variants:
+                compact_qa_ref = manifest.get("render_qa_ref")
+                compact_qa_ok = isinstance(compact_qa_ref, str) and compact_qa_ref.startswith("visualizations/qa/")
+                report.check(compact_qa_ok, f"visualization {manifest_ref} lists a compact variant without a valid render_qa_ref")
+                if compact_qa_ok:
+                    try:
+                        compact_qa_path = safe_ref(root, compact_qa_ref)
+                        report.check(compact_qa_path.is_file(), f"visualization {manifest_ref} compact variant: render_qa report {compact_qa_ref} does not exist")
+                        compact_ref_value = viz_variants.get("compact")
+                        compact_svg_path = safe_ref(root, compact_ref_value) if isinstance(compact_ref_value, str) else None
+                        if compact_qa_path.is_file() and compact_svg_path is not None and compact_svg_path.is_file():
+                            compact_expected = (((load_json(compact_qa_path).get("viewports") or {}).get("compact")) or {}).get("svg_sha256")
+                            report.check(isinstance(compact_expected, str), f"visualization {manifest_ref} render_qa report is missing viewports.compact.svg_sha256")
+                            if isinstance(compact_expected, str):
+                                report.check(sha256_file(compact_svg_path) == compact_expected, f"visualization {manifest_ref} compact SVG hash does not match render_qa report")
+                    except Exception as exc:
+                        report.check(False, f"visualization {manifest_ref} unsafe compact render_qa binding: {exc}")
             if manifest.get("chart_type") == "choropleth":
                 render_qa_ref = manifest.get("render_qa_ref")
                 if draft and not isinstance(render_qa_ref, str):
@@ -1108,8 +1320,8 @@ def verify(root: Path) -> Report:
                         if qa_path.is_file():
                             qa = load_json(qa_path)
                             report.check(qa.get("schema_version") == RENDER_QA_REPORT_SCHEMA_VERSION, f"choropleth visualization {manifest_ref} render_qa report has an unknown schema_version")
-                            for viewport in ("desktop", "mobile"):
-                                if viewport == "mobile" and "mobile" not in viz_variants:
+                            for viewport in ("desktop", "mobile", "compact"):
+                                if viewport != "desktop" and viewport not in viz_variants:
                                     continue
                                 svg_ref = viz_variants.get(viewport)
                                 if not isinstance(svg_ref, str):
@@ -1138,6 +1350,31 @@ def verify(root: Path) -> Report:
                                         report.check(False, f"choropleth visualization {manifest_ref} failed reading {viewport} SVG for independent value-labels re-derivation: {exc}")
                     except Exception as exc:
                         report.check(False, f"choropleth visualization {manifest_ref} render_qa_ref verification failed: {exc}")
+            # Heatmap-only, NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1", default off): a viewport whose render_qa
+            # report CLAIMS a passing value_labels proof is re-derived from the SVG bytes on disk and bound to
+            # them by sha256 - the JS lint's exemption is never the only gate. Adds strictness only.
+            if manifest.get("chart_type") == "heatmap" and os.environ.get("NEWSROOM_HEATMAP_VALUE_LABELS") == "1":
+                heat_qa_ref = manifest.get("render_qa_ref")
+                if isinstance(heat_qa_ref, str) and heat_qa_ref.startswith("visualizations/qa/"):
+                    try:
+                        heat_qa_path = safe_ref(root, heat_qa_ref)
+                        if heat_qa_path.is_file():
+                            heat_viewports = load_json(heat_qa_path).get("viewports") or {}
+                            for viewport, heat_report in heat_viewports.items():
+                                if not isinstance((heat_report or {}).get("value_labels"), dict) or heat_report["value_labels"].get("passed") is not True:
+                                    continue
+                                svg_ref = viz_variants.get(viewport)
+                                if not isinstance(svg_ref, str):
+                                    report.check(False, f"heatmap visualization {manifest_ref} claims value_labels for unlisted viewport {viewport}")
+                                    continue
+                                svg_path = safe_ref(root, svg_ref)
+                                if not svg_path.is_file():
+                                    continue
+                                report.check(sha256_file(svg_path) == heat_report.get("svg_sha256"), f"heatmap visualization {manifest_ref} {viewport} SVG hash does not match render_qa report")
+                                for failure in verify_heatmap_labels_from_svg(svg_path.read_text(encoding="utf-8")):
+                                    report.check(False, f"heatmap visualization {manifest_ref} {viewport} independent value-labels re-derivation failed: {failure}")
+                    except Exception as exc:
+                        report.check(False, f"heatmap visualization {manifest_ref} value-labels re-derivation failed: {exc}")
             if isinstance(lint_ref, str):
                 try:
                     lint_path = safe_ref(root, lint_ref)
@@ -1634,6 +1871,41 @@ def verify(root: Path) -> Report:
                 report.check(set(safety.get("allowed_patch_fields") or []) == VISION_PATCH_FIELDS, f"revision {rel} allowed patch field contract mismatch")
             except Exception as exc:
                 report.check(False, f"visual revision verification failed {rel}: {exc}")
+
+    # NEWSROOM_SPEED_PLAN_EDIT records live in their own folder and are replayed
+    # against the layout fields newsroom_infographic_edit may change; the vision
+    # revision audit above keeps reading only infographics/revisions/.
+    plan_edit_dir = root / "infographics" / "plan-edits"
+    if plan_edit_dir.is_dir():
+        for edit_path in sorted(plan_edit_dir.glob("*.json")):
+            rel = edit_path.relative_to(root).as_posix()
+            try:
+                record = load_json(edit_path)
+                report.check(record.get("schema_version") == "0.2.0", f"plan edit {rel} schema_version mismatch")
+                report.check(record.get("kind") == "plan_edit", f"plan edit {rel} kind mismatch")
+                source_ref = record.get("source_plan_ref")
+                revised_ref = record.get("revised_plan_ref")
+                for label, ref in [("source plan", source_ref), ("revised plan", revised_ref)]:
+                    report.check(isinstance(ref, str) and ref.startswith("infographics/plans/"), f"plan edit {rel} invalid {label} ref")
+                    if isinstance(ref, str):
+                        report.check(safe_ref(root, ref).is_file(), f"plan edit {rel} missing {label}: {ref}")
+                if not all(isinstance(ref, str) and safe_ref(root, ref).is_file() for ref in (source_ref, revised_ref)):
+                    continue
+                source = load_json(safe_ref(root, source_ref))
+                revised = load_json(safe_ref(root, revised_ref))
+                report.check(revised.get("content_hash") == infographic_plan_content_hash(revised), f"plan edit {rel} revised plan content_hash mismatch")
+                report.check({str(m.get("id")) for m in source.get("modules") or []} == {str(m.get("id")) for m in revised.get("modules") or []}, f"plan edit {rel} changed the module id set")
+                replayed = replay_plan_edits(source, record.get("applied_edits"))
+                revised_without_hash = {k: v for k, v in revised.items() if k != "content_hash"}
+                report.check(canonical_json(replayed) == canonical_json(revised_without_hash), f"plan edit {rel} revised plan does not equal the source plan with only the recorded layout edits applied")
+                source_immutable = plan_edit_immutable_hash(source)
+                report.check(source_immutable == plan_edit_immutable_hash(revised), f"plan edit {rel} changed immutable editorial evidence")
+                safety = record.get("safety") or {}
+                report.check(safety.get("evidence_fields_preserved") is True, f"plan edit {rel} missing evidence-preserved attestation")
+                report.check(safety.get("immutable_projection_sha256") == source_immutable, f"plan edit {rel} immutable projection hash mismatch")
+                report.check(set(safety.get("editable_module_fields") or []) == PLAN_EDIT_MODULE_FIELDS and set(safety.get("editable_scene_fields") or []) == set(PLAN_EDIT_SCENE_FIELDS), f"plan edit {rel} editable field contract mismatch")
+            except Exception as exc:
+                report.check(False, f"plan edit verification failed {rel}: {exc}")
 
     # Competition preflight is engineering evidence, not a jury prediction.
     # Recompute its machine-verifiable predicates from the linked final assets.

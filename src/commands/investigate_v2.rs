@@ -320,6 +320,38 @@ fn write_visual_metrics(
     Ok(canonical_path)
 }
 
+/// v2 always runs the full `visual-story` tool surface, Lieflat included:
+/// `hide_lieflat` stays false whatever the parent environment says.
+#[allow(clippy::too_many_arguments)]
+fn visual_story_pi_config(
+    binary: PathBuf,
+    provider: String,
+    model: String,
+    api_key: String,
+    base_url: Option<String>,
+    thinking: Option<String>,
+    extension: PathBuf,
+    run_dir: &Path,
+) -> PiConfig {
+    PiConfig {
+        binary,
+        provider: Some(provider),
+        model: Some(model),
+        api_key: Some(api_key),
+        base_url,
+        thinking,
+        approve_project: false,
+        extension: Some(extension),
+        artifact_dir: Some(run_dir.to_path_buf()),
+        session_dir: Some(run_dir.join("session")),
+        continue_session: false,
+        tool_profile: "visual-story".to_string(),
+        hide_lieflat: false,
+        speed: Default::default(),
+        compose: None,
+    }
+}
+
 async fn run_visual_story(
     provider: Provider,
     api_key: String,
@@ -336,20 +368,16 @@ async fn run_visual_story(
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("pi"));
     let thinking = std::env::var("NEWSROOM_PI_THINKING").ok();
-    let mut config = PiConfig {
+    let mut config = visual_story_pi_config(
         binary,
-        provider: Some(provider_text),
-        model: Some(model),
-        api_key: Some(api_key),
+        provider_text,
+        model,
+        api_key,
         base_url,
         thinking,
-        approve_project: false,
-        extension: Some(extension),
-        artifact_dir: Some(run_dir.clone()),
-        session_dir: Some(run_dir.join("session")),
-        continue_session: false,
-        tool_profile: "visual-story".to_string(),
-    };
+        extension,
+        &run_dir,
+    );
     let events = run_dir.join("events.jsonl");
     let prompt = format!(
         "你正在执行 Fio-X visual-story rich visual pipeline。原始用户目标只能按已确定的 {intent} 意图处理：{goal}\n本次确定性编辑方法是 {preferred_method}；先调用 newsroom_visual_skill 加载该方法，再按该方法的读者任务执行。\n\n必须完成真实证据调研、editorial discovery、通过 lint 的 Story Graph、4–9 个不重复且有顺序的模块、至少两个不同 analytical job、至少两个真实视觉/解释资产、infographic plan/lint/render/critic、固定版本 Lieflat catalog/render 或对应专业方法，以及 publication QA。报告类请求必须写入当前 NEWSROOM_ARTIFACT_DIR 下真实非空的 publications/<hash>/index.html、manifest.json 和 report.md；工具之外的 fenced HTML/SVG/JS 文本不算 artifact。对于 Lieflat render，传入 method_skill={preferred_method} 以便 manifest 记录方法；不要把全部 Skill 正文放进提示词，也不要使用 synthetic data、模板演示数据、Moxt/CDN。最终只需汇报已验证的路径和状态。",
@@ -514,4 +542,46 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
     eprintln!("report: {}", report_path.display());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v2_keeps_both_lieflat_tools_when_the_parent_switch_is_set() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(crate::pi::HIDE_LIEFLAT_ENV, "1");
+        let config = visual_story_pi_config(
+            PathBuf::from("pi"),
+            "anthropic".into(),
+            "m".into(),
+            "k".into(),
+            None,
+            None,
+            PathBuf::from("ext.ts"),
+            Path::new("/tmp/run"),
+        );
+        let command = config.command();
+        std::env::remove_var(crate::pi::HIDE_LIEFLAT_ENV);
+        let args: Vec<String> = command
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let tools = &args[args.iter().position(|a| a == "--tools").unwrap() + 1];
+        for tool in crate::pi::LIEFLAT_TOOLS {
+            assert!(tools.split(',').any(|name| name == tool), "{tool}");
+        }
+        let marker = command
+            .as_std()
+            .get_envs()
+            .find(|(key, _)| *key == crate::pi::HIDE_LIEFLAT_ENV);
+        assert!(
+            matches!(marker, Some((_, None))),
+            "child must not inherit the switch: {marker:?}"
+        );
+    }
 }

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS } from "./viz.mjs";
+import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, COMPACT_VIEW_W } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
-import { evaluateQuestionClosure } from "./story_graph.mjs";
+import { evaluateQuestionClosure, STORY_DIMENSIONS, unsupportedDimensionError } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
 import { evaluateClaimSupport } from "./evidence_gate.mjs";
+import { buildCandidates, extractNumbers, matchNumber } from "./number_shadow.mjs";
 
 // Fix 7 (house style wiring): page chrome - header/footer rules, kickers,
 // section heads, body text, pull quotes, the sources footer - now follows
@@ -119,17 +120,18 @@ export const INFOGRAPHIC_STORY_ROLES = ["hook", "context", "evidence", "turn", "
 export const INFOGRAPHIC_EMPHASIS = ["hero", "primary", "secondary", "support"];
 export const INFOGRAPHIC_LAYOUT_STRATEGIES = ["balanced", "anchor", "rhythm"];
 export const INFOGRAPHIC_SCENE_PATTERNS = ["hero_sidecar_stack", "hero_with_rail"];
-export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = ["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome"];
+// Same vocabulary as the story graph (see story_graph.mjs).
+export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const INFOGRAPHIC_VISUAL_GRAMMARS = ["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"];
 
-const VISUAL_GRAMMAR_FORMS = Object.freeze({
+export const VISUAL_GRAMMAR_FORMS = Object.freeze({
   rank: new Set(["horizontal_bar", "dot"]),
   change: new Set(["dumbbell", "slope"]),
   trend: new Set(["line", "multi_line", "small_multiples", "streamgraph"]),
   anomaly: new Set(["diverging_bar", "dot", "small_multiples"]),
   benchmark: new Set(["dot", "dumbbell", "horizontal_bar"]),
-  composition: new Set(["horizontal_bar", "heatmap", "parallel_sets", "alluvial", "waffle"]),
-  distribution: new Set(["dot", "heatmap", "small_multiples"]),
+  composition: new Set(["horizontal_bar", "heatmap", "parallel_sets", "alluvial", "waffle", "stacked_bar_100"]),
+  distribution: new Set(["dot", "heatmap", "small_multiples", "strip_plot", "mirrored_bar"]),
   relationship: new Set(["scatter", "node_link", "chord"]),
   uncertainty: new Set(["line", "multi_line", "small_multiples"]),
   flow: new Set(["sankey", "alluvial", "parallel_sets", "geo_flow_map", "cartographic_flow_map"]),
@@ -224,12 +226,156 @@ function hasSourcesMethodsLabel(svg, spec) {
   return pageLang(spec) === "zh" ? svg.includes(t.sourcesMethods) : (svg.includes("SOURCES &amp; METHODS") || svg.includes("SOURCES & METHODS"));
 }
 
-function svgInfo(svg) {
+export function svgInfo(svg) {
   const match = String(svg ?? "").match(/<svg\b[^>]*viewBox=["']([^"']+)["'][^>]*>([\s\S]*)<\/svg>\s*$/i);
   if (!match) throw new Error("Embedded visualization is not a valid viewBox SVG");
   const nums = match[1].trim().split(/\s+/).map(Number);
   if (nums.length !== 4 || nums.some((n) => !Number.isFinite(n))) throw new Error("Embedded visualization has an invalid viewBox");
   return { minX: nums[0], minY: nums[1], width: nums[2], height: nums[3], inner: match[2] };
+}
+
+// Lowest drawn ink (viewBox y) of a chart SVG, or null when it cannot be bound
+// with certainty (transforms, images, <use>, tspans that move). Text counts a
+// quarter em of descender, strokes half their width. Only the bottom edge is
+// used, to trim blank padding when a chart is embedded on the desktop page.
+function svgInkBottom(info) {
+  const inner = String(info.inner ?? "");
+  if (/\btransform=|<image\b|<use\b|<foreignObject\b|<tspan\b[^>]*\b(?:y|dy)=/i.test(inner)) return null;
+  const body = inner.replace(/<defs\b[\s\S]*?<\/defs>/gi, "").replace(/<(?:title|desc)\b[\s\S]*?<\/(?:title|desc)>/gi, "");
+  const num = (tag, name) => { const m = tag.match(new RegExp(`(?:^|\\s)${name}=["']\\s*(-?[\\d.]+)`)); return m ? Number(m[1]) : null; };
+  let bottom = -Infinity;
+  const take = (v) => { if (Number.isFinite(v)) bottom = Math.max(bottom, v); };
+  for (const m of body.matchAll(/<(text|line|rect|circle|ellipse|polygon|polyline|path)\b([^>]*?)\/?>/gi)) {
+    const kind = m[1].toLowerCase(), tag = ` ${m[2]}`;
+    const stroke = (num(tag, "stroke-width") ?? 1) / 2;
+    if (kind === "text") take((num(tag, "y") ?? 0) + 0.25 * (num(tag, "font-size") ?? 16));
+    else if (kind === "line") take(Math.max(num(tag, "y1") ?? 0, num(tag, "y2") ?? 0) + stroke);
+    else if (kind === "rect") { if (!/\sfill=["'](?:#fff(?:fff)?|white)["']/i.test(tag) || /\sstroke=["'](?!none)/i.test(tag)) take((num(tag, "y") ?? 0) + (num(tag, "height") ?? 0) + stroke); }
+    else if (kind === "circle") take((num(tag, "cy") ?? 0) + (num(tag, "r") ?? 0) + stroke);
+    else if (kind === "ellipse") take((num(tag, "cy") ?? 0) + (num(tag, "ry") ?? 0) + stroke);
+    else if (kind === "polygon" || kind === "polyline") {
+      const pts = (tag.match(/points=["']([^"']+)["']/)?.[1] ?? "").trim().split(/[\s,]+/).map(Number);
+      for (let i = 1; i < pts.length; i += 2) take(pts[i] + stroke);
+    } else {
+      const d = tag.match(/\sd=["']([^"']+)["']/)?.[1];
+      if (d === undefined) return null;
+      const yb = pathBottom(d);
+      if (yb === null) return null;
+      take(yb + stroke);
+    }
+  }
+  return Number.isFinite(bottom) ? Math.min(bottom, info.minY + info.height) : null;
+}
+
+// Largest y reached by an SVG path (control points included, so it never
+// under-estimates), or null if the path data cannot be read.
+function pathBottom(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g);
+  if (!tokens) return null;
+  const arity = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
+  let i = 0, cmd = "", cy = 0, sy = 0, max = -Infinity;
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) { cmd = tokens[i++]; if (cmd === "z" || cmd === "Z") { cy = sy; max = Math.max(max, cy); } continue; }
+    const k = arity[cmd.toLowerCase()];
+    if (!k) return null;
+    const a = tokens.slice(i, i + k).map(Number);
+    if (a.length < k || a.some((n) => !Number.isFinite(n))) return null;
+    i += k;
+    const rel = cmd === cmd.toLowerCase(), lower = cmd.toLowerCase();
+    const yAt = (v) => (rel ? cy + v : v);
+    if (lower === "h") { /* y unchanged */ }
+    else if (lower === "v") { cy = yAt(a[0]); max = Math.max(max, cy); }
+    else if (lower === "c") { max = Math.max(max, yAt(a[1]), yAt(a[3]), yAt(a[5])); cy = yAt(a[5]); }
+    else if (lower === "s" || lower === "q") { max = Math.max(max, yAt(a[1]), yAt(a[3])); cy = yAt(a[3]); }
+    else if (lower === "a") { max = Math.max(max, yAt(a[6]) + Math.abs(a[1])); cy = yAt(a[6]); }
+    else { cy = yAt(a[1]); max = Math.max(max, cy); if (lower === "m") sy = cy; }
+    if (lower === "m") { cmd = rel ? "l" : "L"; }
+  }
+  return Number.isFinite(max) ? max : null;
+}
+
+// Desktop page only: the embedded chart is cut just below its lowest ink (3
+// units), so the blank padding a chart carries at the bottom does not become
+// page spacing. Scale and width are unchanged; only blank rows are dropped.
+const CHART_INK_PAD = 3;
+export function trimmedSvgInfo(svg) {
+  const info = svgInfo(svg);
+  const bottom = svgInkBottom(info);
+  const left = svgInkLeft(info);
+  const height = bottom === null ? info.height : Math.min(info.height, Math.max(1, Math.ceil(bottom + CHART_INK_PAD - info.minY)));
+  // Also cut the blank left margin so the chart's ink starts at the page text column's left edge.
+  const cut = left === null ? 0 : Math.max(0, Math.floor(left - info.minX));
+  return { ...info, height, minX: info.minX + cut, width: info.width - cut };
+}
+
+// Leftmost drawn ink (viewBox x) of a chart SVG, or null when it cannot be bound with certainty (transforms,
+// images, <use>, centred/right-anchored text, relative path starts). Strokes count half their width.
+function svgInkLeft(info) {
+  const inner = String(info.inner ?? "");
+  if (/\btransform=|<image\b|<use\b|<foreignObject\b|<tspan\b[^>]*\bx=/i.test(inner)) return null;
+  const body = inner.replace(/<defs\b[\s\S]*?<\/defs>/gi, "").replace(/<(?:title|desc)\b[\s\S]*?<\/(?:title|desc)>/gi, "");
+  const num = (tag, name) => { const m = tag.match(new RegExp(`(?:^|\\s)${name}=["']\\s*(-?[\\d.]+)`)); return m ? Number(m[1]) : null; };
+  let left = Infinity;
+  const take = (v) => { if (Number.isFinite(v)) left = Math.min(left, v); };
+  for (const m of body.matchAll(/<(text)\b([^>]*?)>([\s\S]*?)<\/text>|<(line|rect|circle|ellipse|polygon|polyline|path)\b([^>]*?)\/?>/gi)) {
+    const kind = (m[1] ?? m[4]).toLowerCase(), tag = ` ${m[2] ?? m[5]}`;
+    const stroke = (num(tag, "stroke-width") ?? 1) / 2;
+    if (kind === "text") {
+      // Anchored text reaches left by an over-estimate of its width (CJK 1 em, other glyphs 0.65 em), so the cut is never too deep.
+      const anchor = tag.match(/text-anchor=["'](start|middle|end)/i)?.[1]?.toLowerCase() ?? "start";
+      const chars = [...String(m[3]).replace(/<[^>]*>/g, "")];
+      // Opt-in (NEWSROOM_PAGE_TRIM_TEXT_SAFE=1): every glyph counts a full em, an upper bound for any sans advance ("80%" is about 2 em, more than 3 x 0.65).
+      const nonCjkEm = process.env.NEWSROOM_PAGE_TRIM_TEXT_SAFE === "1" ? 1 : 0.65;
+      const w = chars.reduce((sum, ch) => sum + (/[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 1 : nonCjkEm), 0) * (num(tag, "font-size") ?? 16);
+      take((num(tag, "x") ?? 0) - (anchor === "end" ? w : anchor === "middle" ? w / 2 : 0));
+    } else if (kind === "line") take(Math.min(num(tag, "x1") ?? 0, num(tag, "x2") ?? 0) - stroke);
+    else if (kind === "rect") { if (!/\sfill=["'](?:#fff(?:fff)?|white)["']/i.test(tag) || /\sstroke=["'](?!none)/i.test(tag)) take((num(tag, "x") ?? 0) - stroke); }
+    else if (kind === "circle") take((num(tag, "cx") ?? 0) - (num(tag, "r") ?? 0) - stroke);
+    else if (kind === "ellipse") take((num(tag, "cx") ?? 0) - (num(tag, "rx") ?? 0) - stroke);
+    else if (kind === "polygon" || kind === "polyline") {
+      const pts = (tag.match(/points=["']([^"']+)["']/)?.[1] ?? "").trim().split(/[\s,]+/).map(Number);
+      for (let i = 0; i < pts.length; i += 2) take(pts[i] - stroke);
+    } else {
+      const d = tag.match(/\sd=["']([^"']+)["']/)?.[1];
+      if (d === undefined) return null;
+      const xl = pathLeft(d);
+      if (xl === null) return null;
+      take(xl - stroke);
+    }
+  }
+  return Number.isFinite(left) ? Math.max(left, info.minX) : null;
+}
+
+// Smallest x reached by an SVG path (control points included), or null if the path data cannot be read.
+function pathLeft(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g);
+  if (!tokens) return null;
+  const arity = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
+  let i = 0, cmd = "", cx = 0, sx = 0, min = Infinity;
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) { cmd = tokens[i++]; if (cmd === "z" || cmd === "Z") { cx = sx; min = Math.min(min, cx); } continue; }
+    const k = arity[cmd.toLowerCase()];
+    if (!k) return null;
+    const a = tokens.slice(i, i + k).map(Number);
+    if (a.length < k || a.some((n) => !Number.isFinite(n))) return null;
+    i += k;
+    const rel = cmd === cmd.toLowerCase(), lower = cmd.toLowerCase();
+    const xAt = (v) => (rel ? cx + v : v);
+    if (lower === "v") { /* x unchanged */ }
+    else if (lower === "h") { cx = xAt(a[0]); min = Math.min(min, cx); }
+    else if (lower === "c") { min = Math.min(min, xAt(a[0]), xAt(a[2]), xAt(a[4])); cx = xAt(a[4]); }
+    else if (lower === "s" || lower === "q") { min = Math.min(min, xAt(a[0]), xAt(a[2])); cx = xAt(a[2]); }
+    else if (lower === "a") { min = Math.min(min, xAt(a[5]) - Math.abs(a[0])); cx = xAt(a[5]); }
+    else { cx = xAt(a[0]); min = Math.min(min, cx); if (lower === "m") sx = cx; }
+    if (lower === "m") { cmd = rel ? "l" : "L"; }
+  }
+  return Number.isFinite(min) ? min : null;
+}
+
+// Smallest font-size (px) drawn in an SVG, or null if it declares none.
+function svgMinFontSize(svg) {
+  const sizes = [...String(svg ?? "").matchAll(/font-size=["']([\d.]+)(?:px)?["']/g)].map((m) => Number(m[1])).filter((n) => n > 0);
+  return sizes.length ? Math.min(...sizes) : null;
 }
 
 function namespaceSvgInner(inner, prefix) {
@@ -312,7 +458,7 @@ export function validateInfographicSpec(spec) {
     if (module?.story_role !== undefined && !INFOGRAPHIC_STORY_ROLES.includes(module.story_role)) errors.push(`module '${module?.id ?? "?"}' has unsupported story_role '${module.story_role}'`);
     if (module?.priority !== undefined && (!Number.isInteger(module.priority) || module.priority < 1 || module.priority > 5)) errors.push(`module '${module?.id ?? "?"}' priority must be an integer from 1 to 5`);
     if (module?.emphasis !== undefined && !INFOGRAPHIC_EMPHASIS.includes(module.emphasis)) errors.push(`module '${module?.id ?? "?"}' has unsupported emphasis '${module.emphasis}'`);
-    if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(`module '${module?.id ?? "?"}' has unsupported explanatory_dimension '${module.explanatory_dimension}'`);
+    if (module?.explanatory_dimension !== undefined && !INFOGRAPHIC_EXPLANATORY_DIMENSIONS.includes(module.explanatory_dimension)) errors.push(unsupportedDimensionError(`module '${module?.id ?? "?"}'`, module.explanatory_dimension, INFOGRAPHIC_EXPLANATORY_DIMENSIONS));
     if (module?.visual_grammar !== undefined && !INFOGRAPHIC_VISUAL_GRAMMARS.includes(module.visual_grammar)) errors.push(`module '${module?.id ?? "?"}' has unsupported visual_grammar '${module.visual_grammar}'`);
     if (module?.story_node_ids !== undefined && (!Array.isArray(module.story_node_ids) || module.story_node_ids.some((id) => !String(id ?? "").trim()))) errors.push(`module '${module?.id ?? "?"}' story_node_ids must contain non-empty story node ids`);
     if (["1.4.0", "1.5.0"].includes(spec.schema_version) && ["visual","illustration","hero_stat","text"].includes(module?.type) && (!Array.isArray(module.story_node_ids) || module.story_node_ids.length === 0)) errors.push(`module '${module?.id ?? "?"}' requires story_node_ids in InfographicSpec 1.4+`);
@@ -425,6 +571,13 @@ export function validateInfographicSpec(spec) {
   return errors;
 }
 
+// A decorative illustration (a page cover) explains nothing: it is read from the STORED illustration manifest
+// (metadata.decorative === true, written by the adapter and carried through normalize), never from the page plan,
+// and it earns no credit in any page gate, critic score, ordinal or hero choice. It is still fully validated.
+export function isDecorativeIllustration(module, assets = {}) {
+  return module?.type === "illustration" && assets?.[module.asset_ref]?.manifest?.metadata?.decorative === true;
+}
+
 export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = null) {
   const blockers = [];
   const warnings = [];
@@ -442,7 +595,7 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
   const mappedNodeIds = [];
   const resolutionNodeIds = [];
   const mappedDimensions = new Set();
-  const contentModules = (spec.modules ?? []).filter((module) => ["visual", "illustration", "hero_stat", "text"].includes(module.type));
+  const contentModules = (spec.modules ?? []).filter((module) => ["visual", "illustration", "hero_stat", "text"].includes(module.type) && !isDecorativeIllustration(module, assets));
   const visualModules = contentModules.filter((module) => module.type === "visual");
   const illustrationModules = contentModules.filter((module) => module.type === "illustration");
   const visualKinds = new Set();
@@ -502,6 +655,446 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// D1: page-level subject set.  The page plan may declare one
+// {computation_ref, key_field, cutoff_date}.  Members are read by the runtime
+// from that computation's rows (never typed by the model); each chart's
+// subjects are read by the runtime from the category field of that chart's own
+// SQL rows and arrive on the asset as `asset.subjects`.  A chart whose
+// subjects go beyond the set is restyled by the composer automatically
+// (annotateSubjectSets) and only needs the model's caption text; a missing
+// caption blocks, as does a chart that writes a different cutoff date.
+// ---------------------------------------------------------------------------
+const subjectKey = (value) => String(value ?? "").trim();
+
+export function distinctSubjects(rows, field) {
+  if (!Array.isArray(rows) || !field) return [];
+  return [...new Set(rows.map((row) => subjectKey(row?.[field])).filter(Boolean))];
+}
+
+function subjectSetMembers(assets, context) {
+  const raw = context?.subject_set_members ?? assets?.__subject_set_members;
+  if (raw === undefined || raw === null) return null;
+  return new Set([...raw].map(subjectKey).filter(Boolean));
+}
+
+export function outOfSetSubjects(subjects, members) {
+  return (subjects ?? []).map(subjectKey).filter((subject) => subject && !members.has(subject));
+}
+
+// Marks every visual asset whose subjects exceed the set so composeOne draws it
+// distinguished.  Runtime-owned: nothing here is read from model-written fields.
+export function annotateSubjectSets(spec, assets, members) {
+  for (const module of spec?.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const asset = assets?.[module.manifest_ref];
+    if (!asset) continue;
+    const out = members && Array.isArray(asset.subjects) ? outOfSetSubjects(asset.subjects, members) : [];
+    if (out.length) asset.out_of_set_subjects = out; else delete asset.out_of_set_subjects;
+  }
+}
+
+export function evaluateSubjectSets(spec, assets = {}, context = {}) {
+  const blockers = [];
+  const warnings = [];
+  const notes = [];
+  const visuals = (spec?.modules ?? []).filter((module) => module?.type === "visual");
+  const declared = spec?.subject_set;
+  if (declared === undefined || declared === null) {
+    // No set declared: keep today's behaviour (no block).  Two or more charts whose
+    // subjects partly overlap without being equal is the one thing worth a warning.
+    const lists = visuals
+      .map((module) => ({ id: module.id, subjects: new Set((assets[module.manifest_ref]?.subjects ?? []).map(subjectKey).filter(Boolean)) }))
+      .filter((entry) => entry.subjects.size > 0);
+    let partial = false;
+    for (let i = 0; i < lists.length && !partial; i += 1) {
+      for (let j = i + 1; j < lists.length && !partial; j += 1) {
+        const a = lists[i].subjects;
+        const b = lists[j].subjects;
+        const shared = [...a].filter((subject) => b.has(subject)).length;
+        if (shared > 0 && (shared < a.size || shared < b.size) && !(shared === a.size && shared === b.size)) partial = true;
+      }
+    }
+    if (partial) warnings.push("subject_sets_partially_overlap: two or more charts cover partly overlapping but unequal subjects; declare a page subject_set (computation_ref, key_field, cutoff_date) or align the charts");
+    return { blockers, warnings, notes };
+  }
+  const missing = ["computation_ref", "key_field", "cutoff_date"].filter((key) => !String(declared?.[key] ?? "").trim());
+  if (missing.length) {
+    blockers.push(`subject_set_incomplete: subject_set is missing ${missing.join(", ")}`);
+    return { blockers, warnings, notes };
+  }
+  const members = subjectSetMembers(assets, context);
+  if (!members || members.size === 0) {
+    blockers.push(`subject_set_unresolved: the runtime could not read any '${declared.key_field}' members from computation '${declared.computation_ref}'`);
+    return { blockers, warnings, notes };
+  }
+  notes.push(`subject_set_members=${members.size}`);
+  const cutoff = String(declared.cutoff_date).trim();
+  for (const module of visuals) {
+    const asset = assets[module.manifest_ref];
+    if (!asset) continue;
+    const chartCutoff = String(asset.manifest?.cutoff_date ?? "").trim();
+    // A page that declares a cutoff date needs every chart to state the same one:
+    // a chart that says nothing cannot be shown to match.
+    if (!chartCutoff) blockers.push(`subject_set_cutoff_missing: visual '${module.id}' does not declare a cutoff_date but the page declares '${cutoff}'; set cutoff_date '${cutoff}' on the chart plan`);
+    else if (chartCutoff !== cutoff) blockers.push(`subject_set_cutoff_mismatch: visual '${module.id}' writes cutoff date '${chartCutoff}' but the page declares '${cutoff}'`);
+    if (!Array.isArray(asset.subjects)) {
+      if (asset.manifest?.category_field) blockers.push(`subject_set_unresolved: visual '${module.id}' subjects could not be read from its own rows`);
+      continue;
+    }
+    const out = outOfSetSubjects(asset.subjects, members);
+    if (out.length === 0) continue;
+    notes.push(`out_of_set:${module.id}=${out.length}`);
+    if (!String(module.subject_caption ?? "").trim()) {
+      const shown = out.slice(0, 5).join(", ") + (out.length > 5 ? `, +${out.length - 5} more` : "");
+      blockers.push(`subject_set_out_of_set_without_caption: visual '${module.id}' includes ${out.length} subject(s) outside the page subject set (${shown}) and has no subject_caption readers can see`);
+    }
+  }
+  return { blockers, warnings, notes };
+}
+
+// Hero value gate (on by default in the runtime, off with NEWSROOM_HERO_VALUE_GATE=0; the runtime
+// passes it in as context.hero_value_gate, and this pure lint applies it only when the
+// caller does). Each hero_stat is re-filled from its own claim's
+// bindings by the runtime (newsroom.ts fillHeroModule: value from value_from,
+// label and detail placeholders, unit only as the claim shows it); context.hero_checks
+// ({ module_id: [blocker, ...] }) carries what that re-check refused, so the stored
+// plan must equal the filled one and no number may be unbound. Pure: lint only reads it.
+// Unlike the claim checks before it, an empty verified set lets no claim id through.
+function heroValueBlockers(module, verified, heroChecks) {
+  const id = String(module.id);
+  const claimId = String(module.claim_id ?? "");
+  if (!verified.has(claimId)) return [`hero_stat '${id}' claim '${claimId}' is not verified (hero value gate)`];
+  const checks = heroChecks && Array.isArray(heroChecks[id]) ? heroChecks[id] : null;
+  if (!checks) return [`hero_stat '${id}' was not re-checked against its claim bindings (hero value gate)`];
+  return checks.map(String);
+}
+
+// ---- Page top ---------------------------------------------------------------------------------------------------
+// The page opens with its one prominent verified number, or else its lead chart - never with prose. The first content
+// module is the first module that is not a section_header and not a decorative illustration: a decorative cover
+// directly under the title is header art, not content. Spec order is the order the composer starts from. Warning
+// only; the warning text is the same guidance the plan tool gives the model (newsroom.ts imports this sentence).
+export const PAGE_TOP_GUIDANCE = "The first content module after the title and dek is a hero_stat bound with value_from when the story has one prominent verified number; otherwise it is the lead visual. Never open with a text module or a pull quote.";
+const PAGE_TOP_TYPES = new Set(["hero_stat", "visual", "illustration"]);
+
+export function pageTopWarning(spec, assets = {}) {
+  const modules = Array.isArray(spec?.modules) ? spec.modules : [];
+  const first = modules.find((module) => module && module.type !== "section_header" && !isDecorativeIllustration(module, assets));
+  if (!first || PAGE_TOP_TYPES.has(first.type)) return null;
+  return `page_top_not_hero_or_lead_visual: the first content module '${first.id}' is a ${first.type} module. ${PAGE_TOP_GUIDANCE}`;
+}
+
+// ---- Reader-facing words ----------------------------------------------------------------------------------------
+// Pure checks over the strings of a page that readers see. They never read the data behind a page, never grant
+// anything, and never change a string. Exported so render QA can run the same checker on the final page text.
+//
+// Fields read, as { field, text, copy } (readerTextEntries):
+//   page      title, dek, kicker (copy); byline, date_label, alt, source_note
+//   scene     title, dek (copy); eyebrow                                   (scene_graph.scenes[])
+//   module    label, heading, deck, body, text, detail, subject_caption (copy); label_short, eyebrow, value, unit,
+//             attribution, credit, alt; source_quote.translation
+//   assets    the source_note of every visual and illustration manifest, and an illustration manifest's credit and
+//             provenance disclosure (the page prints them in its source list and caption)
+//   charts    module:<id>:chart_text (not copy): the text, tspan, title and desc contents of each visual's desktop SVG,
+//             entities decoded, plus aria-label / aria-description / aria-roledescription values (chartSvgText); also
+//             module:<id>:chart_text.mobile / .compact (the lines those variants add) and module:<id>:illustration_text[.mobile]
+//             for an illustration's SVG
+// "copy" fields are running copy: they are also read for unsupported quantifiers and vague times.
+// Still not read: the raw text of a source_quote.quote (see below).
+// Deliberately not read: planning fields no composer draws (intent, primary_message, reader_question,
+// visual_thesis, new_information, story_role, annotations, ids and refs), source_quote.quote (verbatim words of the
+// source) and label_template / detail_template (templates by design; the filled label and detail are read).
+const READER_COPY_KEYS = ["label", "heading", "deck", "body", "text", "detail", "subject_caption"];
+const READER_OTHER_KEYS = ["label_short", "eyebrow", "value", "unit", "attribution", "credit", "alt"];
+
+const SVG_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+const decodeSvgEntities = (text) => text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (whole, dec, hex, name) => {
+  const code = dec !== undefined ? Number(dec) : hex !== undefined ? parseInt(hex, 16) : null;
+  if (code !== null) return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  return SVG_ENTITIES[name.toLowerCase()] ?? whole;
+});
+
+/** The inner markup of the element whose id is `id` (any tag; nested same-name tags are balanced), or "" when there is none. */
+function svgElementContentById(svg, id) {
+  // The id attribute is compared after entity decoding, so id="&#97;" is the id "a".
+  const tagPattern = /<([A-Za-z][\w:.-]*)\b[^>]*?\sid\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
+  let open = null;
+  for (let tag = tagPattern.exec(svg); tag; tag = tagPattern.exec(svg)) {
+    if (decodeSvgEntities(tag[2] ?? tag[3] ?? "") === id) { open = tag; break; }
+  }
+  if (!open || /\/\s*>$/.test(open[0])) return "";
+  const name = open[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tags = new RegExp(`<(/?)${name}\\b[^>]*>`, "gi");
+  tags.lastIndex = open.index + open[0].length;
+  let depth = 1;
+  for (let tag = tags.exec(svg); tag; tag = tags.exec(svg)) {
+    if (tag[1]) depth -= 1;
+    else if (!/\/\s*>$/.test(tag[0])) depth += 1;
+    if (depth === 0) return svg.slice(open.index + open[0].length, tag.index);
+  }
+  return "";
+}
+
+/** The reader-visible text of one SVG string: the contents of its text, tspan, title and desc elements, entities decoded,
+ *  one line per element, plus the attribute and referenced-element text listed below. */
+export function chartSvgText(svg) {
+  if (typeof svg !== "string" || !svg) return "";
+  const lines = [];
+  const take = (inner) => {
+    const line = decodeSvgEntities(inner.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, body) => body.replace(/&/g, "&amp;").replace(/</g, "&lt;")).replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
+    if (line) lines.push(line);
+  };
+  // text, title and desc first (a text element's tspans come with it), then any tspan outside those.
+  const outer = /<(text|title|desc)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+  const rest = svg.replace(outer, (_, __, inner) => { take(inner); return " "; });
+  for (const match of rest.matchAll(/<tspan\b[^>]*>([\s\S]*?)<\/tspan\s*>/gi)) take(match[1]);
+  // Text read out by assistive technology is reader text too: aria-label, aria-description, aria-roledescription.
+  // xlink:title is a tooltip on a link: reader text too.
+  for (const match of svg.matchAll(/\s(?:aria-(?:label|description|roledescription)|xlink:title)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) take(match[1] ?? match[2] ?? "");
+  // aria-labelledby / aria-describedby name other elements by id: the whole text content of each, whatever its tag.
+  for (const match of svg.matchAll(/\saria-(?:labelledby|describedby)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    // Decode before splitting: aria-labelledby="a&#32;b" names the two ids a and b.
+    for (const id of decodeSvgEntities(match[1] ?? match[2] ?? "").split(/\s+/).filter(Boolean)) {
+      const content = svgElementContentById(svg, id);
+      if (content) take(content);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** The lines of `svg` that `seen` (the lines already read from another variant) does not have. */
+function newSvgLines(svg, seen) {
+  return chartSvgText(svg).split("\n").filter((line) => line && !seen.has(line)).join("\n");
+}
+
+export function readerTextEntries(spec, assets = {}) {
+  const out = [];
+  const add = (field, value, copy) => {
+    if (value === undefined || value === null || typeof value === "object") return;
+    const text = String(value);
+    if (text.trim()) out.push({ field, text, copy });
+  };
+  for (const key of ["title", "dek", "kicker"]) add(key, spec?.[key], true);
+  for (const key of ["byline", "date_label", "alt"]) add(key, spec?.[key], false);
+  add("source_note", effectivePageSourceNote(spec, assets), false);
+  for (const scene of Array.isArray(spec?.scene_graph?.scenes) ? spec.scene_graph.scenes : []) {
+    add(`scene:${scene?.id}:eyebrow`, scene?.eyebrow, false);
+    add(`scene:${scene?.id}:title`, scene?.title, true);
+    add(`scene:${scene?.id}:dek`, scene?.dek, true);
+  }
+  for (const module of Array.isArray(spec?.modules) ? spec.modules : []) {
+    if (!module || typeof module !== "object") continue;
+    const id = String(module.id ?? "?");
+    for (const key of READER_COPY_KEYS) add(`module:${id}:${key}`, module[key], true);
+    for (const key of READER_OTHER_KEYS) add(`module:${id}:${key}`, module[key], false);
+    add(`module:${id}:source_quote.translation`, module.source_quote?.translation, false);
+    // Every SVG variant the page can embed is read: desktop, mobile and compact charts, and an illustration's own text. A
+    // variant adds only the lines the desktop text does not already have.
+    const svgAsset = module.type === "visual" ? assets?.[module.manifest_ref] : module.type === "illustration" ? assets?.[module.asset_ref] : null;
+    if (svgAsset) {
+      const desktopText = chartSvgText(svgAsset.desktopSvg);
+      const seen = new Set(desktopText.split("\n"));
+      const prefix = module.type === "visual" ? "chart_text" : "illustration_text";
+      add(`module:${id}:${prefix}`, desktopText, false);
+      for (const [variant, svg] of [["mobile", svgAsset.mobileSvg], ["compact", svgAsset.compactSvg]]) add(`module:${id}:${prefix}.${variant}`, newSvgLines(svg, seen), false);
+    }
+    const manifest = module.type === "visual" ? assets?.[module.manifest_ref]?.manifest : module.type === "illustration" ? assets?.[module.asset_ref]?.manifest : null;
+    if (manifest && typeof manifest === "object") {
+      add(`module:${id}:manifest.source_note`, manifest.source_note, false);
+      if (module.type === "illustration") {
+        add(`module:${id}:manifest.credit`, manifest.credit, false);
+        add(`module:${id}:manifest.disclosure`, manifest.provenance?.disclosure, false);
+      }
+    }
+  }
+  return out;
+}
+
+// Blockers: pipeline phrases - words only the pipeline's own notes use. A reader never needs one. Bare 闸门, 未绑定 and
+// 缺口修复 are ordinary words (a reservoir gate, an unbound account, a funding gap repair), so they only warn below.
+//   process_term      1. 未经闸门; 行绑定 (row binding), except as the tail of 进行绑定 / 银行绑定; 闸门 directly followed by 核, 检, 校, 拦,
+//                        放行, 通过 or 判定, except 闸门检修 (an ordinary word: the maintenance of a reservoir gate).
+//                     2. subject rule: a pipeline subject (数值 数字 数据 结论 声明 占位符 字段) and a process word (闸门 未绑定 绑定
+//                        缺口修复) in one clause, in either order, with at most 4 characters between them and none of 。；;，,！!？?、
+//                        or a line break among them (数值未绑定, 这个数字没有通过闸门, 该数据行绑定失败, 结论绑定失败).
+//   field_name        value_from, claim_id(s), story_node(s) / story_node_id(s): whole field names only.
+//   placeholder_word  TODO, FIXME, TBD, placeholder(s), lorem - any case, whole words only.
+//   template_braces   any {...} with something inside, such as an unfilled {max.value}.
+const PROCESS_PHRASE_RE = /未经闸门|闸门(?=核|检|校|拦|放行|通过|判定)(?!检修)|(?<![进银])行绑定/gu;
+const PROCESS_SUBJECT_RE = /数值|数字|数据|结论|声明|占位符|字段/gu;
+const PROCESS_WORD_RE = /缺口修复|未绑定|闸门|绑定/gu;
+const CLAUSE_BREAK_RE = /[。；;，,！!？?、\n\r]/u;
+const SUBJECT_GAP = 4;
+
+/** The pipeline phrases blocked in one text: [{ term, index }] in text order. The subject rule never reports a word that a phrase
+ *  of rule 1 already covers. */
+function processTermHits(text) {
+  const phrases = [...text.matchAll(PROCESS_PHRASE_RE)].map((match) => ({ term: match[0], index: match.index }));
+  const covered = (index, length) => phrases.some((hit) => index < hit.index + hit.term.length && hit.index < index + length);
+  const subjects = [...text.matchAll(PROCESS_SUBJECT_RE)].map((match) => ({ start: match.index, end: match.index + match[0].length }));
+  const clause = (from, to) => to - from <= SUBJECT_GAP && !CLAUSE_BREAK_RE.test(text.slice(from, to));
+  const bound = [];
+  for (const match of text.matchAll(PROCESS_WORD_RE)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (covered(start, match[0].length)) continue;
+    if (subjects.some((subject) => (subject.end <= start && clause(subject.end, start)) || (subject.start >= end && clause(end, subject.start)))) bound.push({ term: match[0], index: start });
+  }
+  return [...phrases, ...bound].sort((x, y) => x.index - y.index);
+}
+
+const READER_BLOCKER_RULES = [
+  { id: "process_term", find: processTermHits },
+  { id: "field_name", re: /(?<![A-Za-z0-9_])(?:value_from|claim_ids?|story_node(?:_ids?|s)?)(?![A-Za-z0-9_])/giu },
+  { id: "placeholder_word", re: /(?<![A-Za-z])(?:todo|fixme|tbd|placeholders?|lorem)(?![A-Za-z])/giu },
+  { id: "template_braces", re: /\{[^{}]*[^{}\s][^{}]*\}/gu },
+];
+
+// Warnings: broader words that are sometimes the story's own (a 模拟 model, a 测试 score, a movie's runtime), and the
+// bare process words above that a pipeline phrase did not already block.
+//   process_word      闸门, 未绑定 and 缺口修复 where the blocker rules above did not take them (a reservoir gate, an unbound account).
+//   review_term       模拟 测试 校验 运行时 (not 运行时间/长/刻/段) and the whole words runtime, lint, mock, prompt (with plural / -ed).
+// Not caught, by design: 气候模型 (model), 门槛 (threshold), 测量 (measurement), 检测, 运行时间 (running time).
+function bareProcessWordHits(text) {
+  const blocked = processTermHits(text);
+  return [...text.matchAll(/缺口修复|未绑定|闸门/gu)]
+    .filter((match) => !blocked.some((hit) => match.index < hit.index + hit.term.length && hit.index < match.index + match[0].length))
+    .map((match) => ({ term: match[0], index: match.index }));
+}
+const READER_WARNING_RULES = [
+  { id: "process_word", find: bareProcessWordHits },
+  { id: "review_term", re: /模拟|测试|校验|运行时(?![间长刻段])|(?<![A-Za-z])(?:runtime|lint(?:s|ing)?|mock(?:s|ed)?|prompts?)(?![A-Za-z])/giu },
+];
+
+function readerExcerpt(text, index, length) {
+  const from = Math.max(0, index - 12);
+  const to = Math.min(text.length, index + length + 12);
+  return `${from > 0 ? "…" : ""}${text.slice(from, to).replace(/\s+/g, " ")}${to < text.length ? "…" : ""}`;
+}
+
+function scanReaderText(entries, rules) {
+  const out = [];
+  for (const { field, text } of entries) {
+    const seen = new Set();
+    for (const rule of rules) {
+      const found = rule.find ? rule.find(text) : [...text.matchAll(rule.re)].map((match) => ({ term: match[0], index: match.index }));
+      for (const { term, index } of found) {
+        const key = `${rule.id}:${term.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ rule: rule.id, term, field, excerpt: readerExcerpt(text, index, term.length) });
+      }
+    }
+  }
+  return out;
+}
+
+// Input: one string (for example a whole rendered page's text), an array of strings, or an array of { field, text }.
+function readerEntryList(input) {
+  const many = Array.isArray(input);
+  return (many ? input : [input]).flatMap((item, index) => {
+    if (typeof item === "string") return item.trim() ? [{ field: many ? `text[${index}]` : "page text", text: item, copy: false }] : [];
+    if (item && typeof item === "object" && typeof item.text === "string" && item.text.trim()) return [{ field: String(item.field ?? `text[${index}]`), text: item.text, copy: item.copy === true }];
+    return [];
+  });
+}
+
+/** Process terms (blockers) and broad review terms (warnings) in reader-facing text. Each finding is { rule, term, field, excerpt, message }. */
+export function checkReaderText(input) {
+  const entries = readerEntryList(input);
+  return {
+    blockers: scanReaderText(entries, READER_BLOCKER_RULES).map((hit) => ({ ...hit, message: `reader_text_${hit.rule}: ${hit.field} shows "${hit.term}" to readers (${hit.excerpt}); say it in story words, never as a process note, field name or template` })),
+    warnings: scanReaderText(entries, READER_WARNING_RULES).map((hit) => ({ ...hit, message: `reader_text_${hit.rule}: ${hit.field} uses "${hit.term}" (${hit.excerpt}); keep it only when it is a story word, not a process term` })),
+  };
+}
+
+// Quantifiers need a count behind them. A phrase of this list in running copy is supported only when some verified
+// claim bound to the page states that same phrase; otherwise the copy should give the count the data shows.
+// Longest phrase wins (绝大多数 before 大多数 before 多数). Not quantifiers: 多数据 / 少数量 / 少数字 (a word that
+// merely contains 多数/少数: more data, fewer digits), 少数民族 (an ethnic minority), and 过半 inside 通过半导体 /
+// 经过半年 / 超过半年 (过半数, 超过半数 and 已过半 are quantifiers).
+const QUANTIFIER_RE = /绝大多数|几乎所有|一半以上|更多国家|更少国家|大多数|多数|少数|过半/gu;
+// Vague time: a relative phrase with no period behind it. Read per field: a field that also states a four-digit
+// year is taken to state its period. Not vague: 项目前期 / 题目前面 (目 ends one word, 前 starts the next), 最新鲜 / 最新颖.
+const VAGUE_TIME_RE = /最近一年|近年来|近几年|近期|目前|如今|最新/gu;
+const STATED_YEAR_RE = /(?<!\d)(?:19|20)\d{2}(?!\d)/u;
+
+function quantifierPhrases(text) {
+  const out = [];
+  for (const match of text.matchAll(QUANTIFIER_RE)) {
+    const phrase = match[0];
+    const before = text[match.index - 1] ?? "";
+    const after = text[match.index + phrase.length] ?? "";
+    if (phrase.endsWith("数") && /[据量字值目码]/u.test(after)) continue;
+    if (phrase === "少数" && after === "民") continue;
+    if (phrase === "过半" && after !== "数" && (/[通经超越度穿错]/u.test(before) || /[年导个小天夜岛径月场途价]/u.test(after))) continue;
+    out.push(phrase);
+  }
+  return out;
+}
+
+function vagueTimePhrases(text) {
+  const out = [];
+  for (const match of text.matchAll(VAGUE_TIME_RE)) {
+    const phrase = match[0];
+    const before = text[match.index - 1] ?? "";
+    const after = text[match.index + phrase.length] ?? "";
+    if (phrase === "目前" && /[项题节栏科剧曲书条名篇数品总要纲眼]/u.test(before)) continue;
+    if (phrase === "最新" && /[鲜颖奇]/u.test(after)) continue;
+    out.push(phrase);
+  }
+  return out;
+}
+
+/**
+ * Warnings for unsupported quantifiers and vague times in the running copy ("copy" entries) of a page.
+ * options.claim_texts is the text of every verified claim bound to the page; without it (null) the quantifier check is
+ * skipped, because there is nothing to compare with. Each finding is { rule, term, field, message }.
+ */
+export function checkReaderWording(input, options = {}) {
+  const claimTexts = Array.isArray(options.claim_texts) ? options.claim_texts.map(String) : null;
+  const warnings = [];
+  for (const { field, text, copy } of readerEntryList(input)) {
+    if (!copy) continue;
+    if (claimTexts) {
+      for (const phrase of new Set(quantifierPhrases(text))) {
+        if (claimTexts.some((claim) => claim.includes(phrase))) continue;
+        warnings.push({ rule: "unsupported_quantifier", term: phrase, field, message: `unsupported_quantifier: ${field} says "${phrase}" but no verified claim bound to this page states it; state the count from the data (for example "12 of 20 countries") or bind a claim that supports the phrase` });
+      }
+    }
+    if (STATED_YEAR_RE.test(text)) continue;
+    for (const phrase of new Set(vagueTimePhrases(text))) {
+      warnings.push({ rule: "vague_time", term: phrase, field, message: `vague_time_reference: ${field} says "${phrase}" with no period stated; state the year or the date range (for example 2022年1月至2024年12月)` });
+    }
+  }
+  return { warnings };
+}
+
+// Text of every verified claim the page cites: a module's claim_id / claim_ids / claim_set, a module annotation's claim,
+// a chart or illustration manifest's own claim, and a scene's supporting claims. A record counts when the caller lists its
+// id as verified or the record carries the system's own publishable verification; the model cannot write either.
+function boundClaimTexts(spec, assets, records, verified) {
+  const cited = new Set();
+  const add = (id) => { if (id !== undefined && id !== null && String(id).trim()) cited.add(String(id)); };
+  const addAll = (ids) => { for (const id of Array.isArray(ids) ? ids : []) add(id); };
+  for (const module of Array.isArray(spec?.modules) ? spec.modules : []) {
+    if (!module || typeof module !== "object") continue;
+    add(module.claim_id);
+    addAll(module.claim_ids);
+    addAll(module.claim_set);
+    for (const annotation of Array.isArray(module.annotations) ? module.annotations : []) add(annotation?.claim_id);
+    const manifest = module.type === "visual" ? assets?.[module.manifest_ref]?.manifest : module.type === "illustration" ? assets?.[module.asset_ref]?.manifest : null;
+    add(manifest?.claim_id);
+    addAll(manifest?.claim_ids);
+  }
+  for (const scene of Array.isArray(spec?.scene_graph?.scenes) ? spec.scene_graph.scenes : []) addAll(scene?.supporting_claim_ids);
+  return records
+    .filter((record) => cited.has(String(record?.claim_id ?? "")) && (verified.has(String(record?.claim_id)) || (record?.verification?.authority === "system" && record?.verification?.publishable === true)))
+    .map((record) => String(record?.claim ?? ""));
+}
+
 export function lintInfographicSpec(spec, assets = {}, context = {}) {
   const blockers = validateInfographicSpec(spec);
   const warnings = [];
@@ -553,12 +1146,34 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`visual '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
       if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`visual '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
       const visualSlot = sceneSlots.get(String(module.id));
-      if (visualSlot && visualSlot.cols < 12) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
+      if (visualSlot && visualSlot.cols < 12 && !(visualSlot.cols === 8 && typeof asset.compactSvg === "string")) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`visual '${module.id}' is missing visualization manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
       if (asset.manifest?.verification_mode === "draft" || asset.manifest?.artifact_status === "DRAFT" || asset.manifest?.publishable === false) blockers.push(`visual '${module.id}' uses a DRAFT/non-publishable visualization manifest`);
-      if (asset.manifest?.claim_id && verified.size && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
+      if (asset.manifest?.claim_id && !verified.has(String(asset.manifest.claim_id))) blockers.push(`visual '${module.id}' references unverified claim '${asset.manifest.claim_id}'`);
+      {
+        // Every verified claim hung on this visual (manifest claim, module
+        // claim_id/claim_ids/claim_set, module annotations) must belong to the
+        // visual's own computation (verdicts from claim_binding.mjs, computed
+        // per visual in the async layer). Absent context means the caller did
+        // not compute them: skip.
+        const verdicts = context.visual_claim_bindings?.[String(module.id)];
+        if (verdicts && typeof verdicts === "object") {
+          const labelled = [[String(asset.manifest?.claim_id ?? ""), `claim '${asset.manifest?.claim_id}'`]];
+          for (const claimId of [module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? [])]) labelled.push([String(claimId ?? ""), `claim '${claimId}'`]);
+          for (const annotation of Array.isArray(module.annotations) ? module.annotations : []) labelled.push([String(annotation?.claim_id ?? ""), `annotation '${annotation?.id}' claim '${annotation?.claim_id}'`]);
+          const seen = new Set();
+          for (const [claimId, label] of labelled) {
+            const verdict = claimId ? verdicts[claimId] : null;
+            if (!verdict || verdict.ok === true) continue;
+            const key = `${claimId}|${label}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            blockers.push(`visual '${module.id}' ${label} is not bound to the visual's own computation: ${verdict.message}`);
+          }
+        }
+      }
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
       {
         // B1: a chart declares its own language (runtime/pi/newsroom.ts
@@ -599,19 +1214,20 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       }
       for (const claimId of module.claim_ids ?? []) {
         claimCount += 1;
-        if (verified.size && !verified.has(String(claimId))) blockers.push(`illustration '${module.id}' references unverified claim '${claimId}'`);
+        if (!verified.has(String(claimId))) blockers.push(`illustration '${module.id}' references unverified claim '${claimId}'`);
       }
       if (asset.manifest?.source_note) sourceNotes.push(asset.manifest.source_note);
     }
     if (module.type === "hero_stat") {
       claimCount += 1;
-      if (verified.size && !verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
+      if (!verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
+      if (context.hero_value_gate === true) blockers.push(...heroValueBlockers(module, verified, context.hero_checks));
       if (String(module.label ?? "").length > 120) warnings.push(`hero_stat '${module.id}' label is long for magazine display`);
     }
     if (module.type === "text") {
       for (const claimId of module.claim_ids ?? []) {
         claimCount += 1;
-        if (verified.size && !verified.has(String(claimId))) blockers.push(`text module '${module.id}' references unverified claim '${claimId}'`);
+        if (!verified.has(String(claimId))) blockers.push(`text module '${module.id}' references unverified claim '${claimId}'`);
       }
       if (String(module.body ?? "").length > 900) warnings.push(`text module '${module.id}' exceeds the preferred 900-character magazine budget`);
       if (module.source_quote) {
@@ -629,7 +1245,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       if (String(module.text ?? "").length > 280) warnings.push(`pull_quote '${module.id}' is too long for a pull quote`);
       for (const claimId of module.claim_ids ?? []) {
         claimCount += 1;
-        if (verified.size && !verified.has(String(claimId))) blockers.push(`pull_quote '${module.id}' references unverified claim '${claimId}'`);
+        if (!verified.has(String(claimId))) blockers.push(`pull_quote '${module.id}' references unverified claim '${claimId}'`);
       }
     }
   }
@@ -641,7 +1257,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
   if (["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version)) {
     const roles = new Set((spec.modules ?? []).map((m) => m.story_role).filter(Boolean));
     const priorityOne = (spec.modules ?? []).filter((m) => m.priority === 1);
-    const heroVisuals = (spec.modules ?? []).filter((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero");
+    const heroVisuals = (spec.modules ?? []).filter((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero" && !isDecorativeIllustration(m, assets));
     if (spec.quality_target === "award") {
       if (!roles.has("hook")) blockers.push("award-target infographic requires at least one hook module");
       if (!roles.has("evidence")) blockers.push("award-target infographic requires at least one evidence module");
@@ -652,6 +1268,19 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     const missingRoles = (spec.modules ?? []).filter((m) => m.type !== "section_header" && !m.story_role).length;
     if (missingRoles) warnings.push(`${missingRoles} non-section modules have no story_role`);
   }
+  // Page top (warning only) and the words readers see. A process term, field name or template brace in reader text
+  // blocks; broader review terms, quantifiers no bound claim states and relative times with no period only warn. The
+  // quantifier check needs the bound claims' text, so it runs only when the caller supplies claim records.
+  const pageTop = pageTopWarning(spec, assets);
+  if (pageTop) warnings.push(pageTop);
+  const readerEntries = readerTextEntries(spec, assets);
+  const readerText = checkReaderText(readerEntries);
+  blockers.push(...readerText.blockers.map((hit) => hit.message));
+  warnings.push(...readerText.warnings.map((hit) => hit.message));
+  const readerWording = checkReaderWording(readerEntries, {
+    claim_texts: Array.isArray(context.verified_claim_records) ? boundClaimTexts(spec, assets, context.verified_claim_records, verified) : null,
+  });
+  warnings.push(...readerWording.warnings.map((hit) => hit.message));
   notes.push(`visual_modules=${visualCount}`);
   notes.push(`claim_references=${claimCount}`);
   notes.push(`unique_sources=${uniq(sourceNotes).length}`);
@@ -668,6 +1297,10 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     else if (row.severity === "WARNING") warnings.push(message);
     else notes.push(message);
   }
+  const subjectSets = evaluateSubjectSets(spec, assets, context);
+  blockers.push(...subjectSets.blockers);
+  warnings.push(...subjectSets.warnings);
+  notes.push(...subjectSets.notes);
   const synthesis = evaluateInfographicSynthesis(spec, assets, context.story_graph ?? null);
   blockers.push(...synthesis.blockers);
   warnings.push(...synthesis.warnings);
@@ -686,8 +1319,16 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
 
 function spanColumns(span) { return ({ full: 12, two_thirds: 8, half: 6, third: 4 })[span ?? "full"] ?? 12; }
 
-function visualAspect(asset, mobilePreferred) {
-  const info = svgInfo(mobilePreferred ? asset.mobileSvg : asset.desktopSvg);
+// A chart that has a compact (8-column) SVG uses it, and only it, in a slot
+// exactly as wide as that variant was laid out for. Any other width keeps the
+// desktop/mobile choice below, so the 12px floor is never met by shrinking.
+function compactFits(asset, width, mobile) {
+  return !mobile && typeof asset?.compactSvg === "string" && Math.abs(width - COMPACT_VIEW_W) <= 2;
+}
+
+function visualAspect(asset, mobilePreferred, trim = false) {
+  const source = mobilePreferred ? asset.mobileSvg : asset.desktopSvg;
+  const info = trim ? trimmedSvgInfo(source) : svgInfo(source);
   return info.height / info.width;
 }
 
@@ -697,14 +1338,17 @@ function moduleHeight(module, width, assets, mobile = false) {
     const labelChars = mobile ? 46 : Math.max(28, Math.round(width / 10));
     const labelLines = lines(module.label ?? "", labelChars, 3).length;
     const detailLines = module.detail ? lines(module.detail, mobile ? 62 : Math.max(38, Math.round(width / 8)), 2).length : 0;
-    return (mobile ? 166 : 154) + Math.max(0, labelLines - 1) * (mobile ? 20 : 20) + detailLines * 10;
+    // Desktop house style, no detail: the box ends just below the label (rhythm).
+    if (!mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !detailLines) return 112 + Math.max(0, labelLines - 1) * 20;
+    return (mobile ? 166 : INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 140 : 154) + Math.max(0, labelLines - 1) * (mobile ? 20 : 20) + detailLines * 10;
   }
   if (type === "section_header") {
     const headingChars = mobile ? 31 : 48;
     const deckChars = mobile ? 55 : 86;
     const headingLines = lines(module.heading ?? "", headingChars, 3).length;
     const deckLines = module.deck ? lines(module.deck, deckChars, 3).length : 0;
-    return (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23);
+    // Desktop: the last deck baseline plus its 4px descender allowance (inkBottomSlack) ended 6px below the box bottom; grow the box so that ink stays inside it.
+    return (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23) + (!mobile && deckLines ? 6 : 0);
   }
   if (type === "pull_quote") {
     if (!mobile) return 78 + lines(`“${module.text}”`, pullQuoteChars(width), 7).length * 38;
@@ -715,6 +1359,8 @@ function moduleHeight(module, width, assets, mobile = false) {
     // Desktop headings wrap and step exactly as drawTextModule draws them.
     const heading = !module.heading ? 0 : mobile ? lines(module.heading, chars, 3).length * 28 : lines(module.heading, Math.max(30, Math.round(width / 17)), 3).length * 32;
     const bodyLines = String(module.body ?? "").trim() ? lines(module.body, chars, 12).length : 0;
+    // Desktop: the box ends just below the last drawn line (rhythm).
+    if (!mobile) return Math.ceil(textInkBottom(module, width) + TEXT_BOTTOM_PAD);
     let height = 72 + (mobile ? 0 : 6) + heading + bodyLines * (mobile ? 24 : 22);
     if (module.source_quote) height += sourceQuoteBlockHeight(module.source_quote, width, mobile);
     return height;
@@ -722,9 +1368,26 @@ function moduleHeight(module, width, assets, mobile = false) {
   if (type === "visual" || type === "illustration") {
     const asset = assets[type === "visual" ? module.manifest_ref : module.asset_ref];
     if (!asset) return mobile ? 500 : 520;
-    const aspect = visualAspect(asset, mobile || spanColumns(module.span) <= 6);
+    const aspect = type === "visual" && compactFits(asset, width, mobile) ? (() => { const info = mobile ? svgInfo(asset.compactSvg) : trimmedSvgInfo(asset.compactSvg); return info.height / info.width; })() : visualAspect(asset, mobile || spanColumns(module.span) <= 6, !mobile);
     const provenanceCaption = type === "illustration" && (asset.manifest?.kind === "rich_illustration" || module.credit) ? (mobile ? 52 : 44) : 0;
-    return clamp(width * aspect + (module.label ? 36 : 12) + provenanceCaption, mobile ? 390 : 330, mobile ? 980 : 900);
+    // The compact chart embeds 1:1, so its slot must hold the full top pad (see
+    // embedVisual) or the chart shrinks below the 12px text floor.
+    const compact = type === "visual" && compactFits(asset, width, mobile);
+    const reserve = compact ? (module.emphasis === "hero" ? 30 : module.label ? 32 : 20) + 6 : module.label ? 36 : 12;
+    const captionH = outOfSetCaptionHeight(asset, module, mobile);
+    let maxHeight = mobile ? 980 : 900;
+    if (type === "visual" && !mobile) {
+      // Desktop: the 900 cap must not shrink the chart below its 12px text
+      // floor. embedVisual fits the chart into (box.h - topPad - 6 - caption),
+      // so give it the native height times 12 / smallest font, plus exactly
+      // that padding. Charts that already fit are unchanged (max keeps 900).
+      const source = compactFits(asset, width, mobile) ? asset.compactSvg : spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+      const nativeH = trimmedSvgInfo(source).height;
+      const minFont = svgMinFontSize(source);
+      const topPad = module.emphasis === "hero" ? 30 : module.label ? 32 : 20;
+      maxHeight = Math.max(maxHeight, Math.ceil(nativeH * (minFont ? 12 / minFont : 1)) + topPad + 6 + captionH);
+    }
+    return clamp(width * aspect + reserve + provenanceCaption + captionH, mobile ? 390 : 0, maxHeight);
   }
   return 180;
 }
@@ -768,52 +1431,154 @@ function normalizedScenes(spec) {
   return spec.scene_graph.scenes.map((scene) => ({ ...scene, sidecar_module_ids: (scene.sidecar_module_ids ?? []).map(String), anchor_module_id: String(scene.anchor_module_id) }));
 }
 
+// ---- Desktop vertical rhythm ---------------------------------------------
+// Whitespace between modules is measured from visible ink (the lowest ink of
+// what is above to the highest ink of what is below), not from box edges, and
+// uses three values, all taken from the grid's existing constants:
+//   RHYTHM_AFTER_HEADING  section heading / scene header -> its first module
+//   RHYTHM_WITHIN         one module -> the next inside a section
+//   RHYTHM_BETWEEN        a section's last module -> the next section heading,
+//                         and the last module -> the footer rule
+// Proximity (Gestalt): things of one group sit closer than groups do, so
+// WITHIN < BETWEEN. Each module's blank inset above and below its ink is known
+// from how it is drawn (inkTop/inkBottom below), so no module carries a spare
+// minimum height.
+const RHYTHM_AFTER_HEADING = 28;
+const RHYTHM_WITHIN = 28;
+const RHYTHM_BETWEEN = 44;
+const TEXT_BOTTOM_PAD = 6;
+
+// Top of the ink, measured from a module box's top edge.
+function inkTop(module, bar) {
+  if (module.type === "hero_stat") return bar || INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 0 : 28;
+  if (module.type === "section_header") return 33;
+  // Text, chart, illustration and pull-quote modules open with a hairline (too light to count as ink) and a small ordinal, which is their first ink.
+  return module.emphasis === "hero" ? 8 : 10;
+}
+
+// Ink bottom of a desktop text module, measured from its box top (drawTextModule).
+function textInkBottom(module, width) {
+  const chars = Math.max(44, Math.round(width / 10));
+  const headLines = module.heading ? lines(module.heading, Math.max(30, Math.round(width / 17)), 3).length : 0;
+  const bodyLines = String(module.body ?? "").trim() ? lines(module.body, chars, 12).length : 0;
+  const bodyTop = 48 + headLines * 32 + (module.heading ? 16 : 0);
+  let bottom = bodyLines ? bodyTop + (bodyLines - 1) * 23 + 4 : 48 + Math.max(0, headLines - 1) * 32 + 7;
+  if (module.source_quote) bottom = bodyTop + bodyLines * 23 + 14 + sourceQuoteBlockHeight(module.source_quote, width, false);
+  return bottom;
+}
+
+// Blank space between the lowest ink and a module box's bottom edge.
+function inkBottomSlack(box, assets) {
+  const { module, h, w } = box;
+  if (module.type === "text") return h - textInkBottom(module, w);
+  if (module.type === "hero_stat") {
+    if (box.stat_bar) return TEXT_BOTTOM_PAD;
+    const detailLines = module.detail ? lines(module.detail, Math.max(38, Math.round(w / 8)), 2).length : 0;
+    return detailLines ? 17 - (detailLines - 1) * 16 : TEXT_BOTTOM_PAD;
+  }
+  if (module.type === "section_header") {
+    const headingLines = lines(module.heading ?? "", 48, 3).length;
+    const deckLines = module.deck ? lines(module.deck, 86, 3).length : 0;
+    return h - (deckLines ? 95 + headingLines * 42 + (deckLines - 1) * 23 + 4 : 91 + (headingLines - 1) * 42);
+  }
+  if (module.type === "visual") {
+    const asset = assets?.[module.manifest_ref];
+    if (!asset) return 0;
+    const captionH = outOfSetCaptionHeight(asset, module, false);
+    if (captionH) return 4;
+    const source = compactFits(asset, w, false) ? asset.compactSvg : spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+    const info = trimmedSvgInfo(source);
+    return 6 + (info.height === svgInfo(source).height ? 0 : CHART_INK_PAD * (w / info.width));
+  }
+  return 0;
+}
+
+export const _rhythmDebug = { svgInfo, svgInkBottom, trimmedSvgInfo, svgInkLeft, inkTop: (b) => inkTop(b.module, b.stat_bar), inkBottomSlack, sceneHeaderInk };
 function sceneHeaderHeight(scene) {
   const titleLines = scene.title ? lines(scene.title, 48, 2).length : 0;
   const dekLines = scene.dek ? lines(scene.dek, 82, 2).length : 0;
   return (scene.eyebrow || scene.title || scene.dek) ? 28 + titleLines * 38 + dekLines * 22 + 20 : 0;
 }
 
+// Scene rule: a hero_with_rail rail with exactly one sidecar, a hero_stat.
+function railStatBand(sidecars) {
+  return INFOGRAPHIC_HOUSE_STYLE_ACTIVE && sidecars.length === 1 && sidecars[0].type === "hero_stat";
+}
+
+// Ink of a scene header, measured from the scene's top: [top, bottom], or null
+// when the scene has no header (drawSceneChrome).
+function sceneHeaderInk(scene) {
+  if (!(scene.eyebrow || scene.title || scene.dek)) return null;
+  const titleLines = scene.title ? lines(scene.title, 48, 2).length : 0;
+  const dekLines = scene.dek ? lines(scene.dek, 82, 2).length : 0;
+  const titleBase = scene.eyebrow ? 52 : 30;
+  const top = scene.eyebrow ? 6 : scene.title ? titleBase - (/[\u2e80-\u9fff\uff00-\uffef]/.test(scene.title) ? 29 : 23) : titleBase + 7 - 14;
+  const bottom = scene.dek ? titleBase + titleLines * 39 + 7 + (dekLines - 1) * 22 + 4 : scene.title ? titleBase + (titleLines - 1) * 39 + 4 : 19;
+  return { top, bottom };
+}
+
+// Lowest ink of a group of laid-out boxes, from the group's own origin.
+const boxesInkBottom = (boxes, assets, originY) => Math.max(...boxes.map((b) => b.y - originY + b.h - inkBottomSlack(b, assets)));
+const boxesInkTop = (boxes, originY) => Math.min(...boxes.map((b) => b.y - originY + inkTop(b.module, b.stat_bar)));
+
+// Built at y = 0; the caller moves it into place by its ink (see flush).
 function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, gap, col) {
   const byId = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
   const anchor = byId.get(scene.anchor_module_id);
   const sidecars = scene.sidecar_module_ids.map((id) => byId.get(id)).filter(Boolean);
-  const headerH = sceneHeaderHeight(scene);
+  const header = sceneHeaderInk(scene);
   const sceneY = y;
-  const contentY = y + headerH;
   const boxes = [];
+  // The anchor starts RHYTHM_AFTER_HEADING below the header's ink (or at the top without a header).
+  const anchorInkTop = inkTop(anchor, false);
+  const contentY = Math.round(header ? y + header.bottom + RHYTHM_AFTER_HEADING - anchorInkTop : y - anchorInkTop);
+  const finish = (inkBottomAbs) => {
+    const bottom = Math.max(...boxes.map((b) => b.y + b.h));
+    const top = header ? sceneY + header.top : boxesInkTop(boxes, 0);
+    return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: bottom - sceneY, header_h: header ? contentY - sceneY : 0 }, height: bottom - sceneY, ink_top: top - sceneY, ink_bottom: inkBottomAbs - sceneY, header_ink_bottom: header ? header.bottom : null, body_ink_top: contentY + anchorInkTop - sceneY };
+  };
   if (scene.pattern === "hero_with_rail") {
     const anchorW = contentW;
     const anchorH = moduleHeight(anchor, anchorW, assets, false);
-    boxes.push({ id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: 12, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" });
-    const railY = contentY + anchorH + gap;
+    const anchorBox = { id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: 12, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" };
+    boxes.push(anchorBox);
     const sideCols = sidecars.length === 1 ? 12 : sidecars.length === 2 ? 6 : 4;
-    let xCols = 0;
-    let railH = 0;
-    sidecars.forEach((module) => {
-      const w = sideCols * col + Math.max(0, sideCols - 1) * gap;
-      const h = moduleHeight(module, w, assets, false);
-      boxes.push({ id: module.id, module, x: margin + xCols * (col + gap), y: railY, w, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar" });
-      xCols += sideCols;
-      railH = Math.max(railH, h);
+    const bar = railStatBand(sidecars);
+    const sized = sidecars.map((module) => {
+      const w = shortTextWidth(module, sideCols * col + Math.max(0, sideCols - 1) * gap);
+      return { module, w, h: bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false) };
     });
-    return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: headerH + anchorH + gap + railH, header_h: headerH }, height: headerH + anchorH + gap + railH };
+    // The rail starts RHYTHM_WITHIN below the anchor's ink; its top is the highest ink among the sidecars.
+    const railInkTop = sized.length ? Math.min(...sized.map((item) => inkTop(item.module, bar))) : 0;
+    const railY = Math.round(contentY + anchorH - inkBottomSlack(anchorBox, assets) + RHYTHM_WITHIN - railInkTop);
+    let xCols = 0;
+    let railBottom = contentY + anchorH - inkBottomSlack(anchorBox, assets);
+    sized.forEach(({ module, w, h }) => {
+      const box = { id: module.id, module, x: margin + xCols * (col + gap), y: railY, w, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar", ...(bar ? { stat_bar: true } : {}) };
+      boxes.push(box);
+      xCols += sideCols;
+      railBottom = Math.max(railBottom, railY + h - inkBottomSlack(box, assets));
+    });
+    return finish(railBottom);
   }
   const anchorCols = 8;
   const sideCols = 4;
   const anchorW = anchorCols * col + (anchorCols - 1) * gap;
   const sideW = sideCols * col + (sideCols - 1) * gap;
   const anchorH = moduleHeight(anchor, anchorW, assets, false);
-  boxes.push({ id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: anchorCols, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" });
-  let sideY = contentY;
-  for (const module of sidecars) {
+  const anchorBox = { id: anchor.id, module: anchor, x: margin, y: contentY, w: anchorW, h: anchorH, cols: anchorCols, density: moduleDensity(anchor), row_index: rowIndex, scene_id: scene.id, scene_role: "anchor" };
+  boxes.push(anchorBox);
+  let inkBottomAbs = contentY + anchorH - inkBottomSlack(anchorBox, assets);
+  let sideY = Math.round(contentY + anchorInkTop - (sidecars[0] ? inkTop(sidecars[0], false) : 0));
+  for (const [index, module] of sidecars.entries()) {
     const h = moduleHeight(module, sideW, assets, false);
-    boxes.push({ id: module.id, module, x: margin + anchorCols * (col + gap), y: sideY, w: sideW, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar" });
-    sideY += h + gap;
+    const box = { id: module.id, module, x: margin + anchorCols * (col + gap), y: sideY, w: sideW, h, cols: sideCols, density: moduleDensity(module), row_index: rowIndex, scene_id: scene.id, scene_role: "sidecar" };
+    boxes.push(box);
+    const bottom = sideY + h - inkBottomSlack(box, assets);
+    inkBottomAbs = Math.max(inkBottomAbs, bottom);
+    sideY = Math.round(bottom + RHYTHM_WITHIN - (sidecars[index + 1] ? inkTop(sidecars[index + 1], false) : 0));
   }
-  const sideH = Math.max(0, sideY - contentY - gap);
-  const contentH = Math.max(anchorH, sideH);
-  return { boxes, meta: { ...scene, x: margin, y: sceneY, w: contentW, h: headerH + contentH, header_h: headerH }, height: headerH + contentH };
+  return finish(inkBottomAbs);
 }
 
 function layoutDesktopWithStrategy(spec, assets, strategy) {
@@ -821,14 +1586,23 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
   const col = (contentW - gap * 11) / 12;
   const boxes = [];
   const scenes = [];
-  let y = 0, rowCols = 0, row = [], rowIndex = 0;
+  let rowCols = 0, row = [], rowIndex = 0;
+  // Vertical placement by ink (see RHYTHM_*): `prev` is the unit above - the
+  // lowest ink of it, and whether it is a heading its next unit belongs to.
+  let prev = null;
+  const rhythm = [];
+  const gapAfter = (startsSection) => (prev.heading ? RHYTHM_AFTER_HEADING : startsSection ? RHYTHM_BETWEEN : RHYTHM_WITHIN);
   const flush = () => {
     if (!row.length) return;
     const rowH = Math.max(...row.map((item) => item.h));
-    const rowHasHero = row.some((item) => item.module.emphasis === "hero");
-    const rowHasTurn = row.some((item) => item.module.story_role === "turn");
+    const heading = row.length === 1 && row[0].module.type === "section_header";
+    const startsSection = row.some((item) => item.module.type === "section_header");
+    const top = Math.min(...row.map((item) => inkTop(item.module, item.stat_bar)));
+    const bottom = Math.max(...row.map((item) => item.h - inkBottomSlack(item, assets)));
+    const y = prev ? Math.round(prev.inkBottom + gapAfter(startsSection) - top) : 0;
     for (const item of row) boxes.push({ ...item, y, h: rowH, row_index: rowIndex });
-    y += rowH + 40 + (rowHasHero ? 18 : 0) + (rowHasTurn ? 12 : 0);
+    rhythm.push({ kind: heading ? "heading" : "row", section_start: startsSection, ink_top: y + top, ink_bottom: y + bottom });
+    prev = { inkBottom: y + bottom, heading };
     rowCols = 0; row = []; rowIndex += 1;
   };
   const configuredScenes = normalizedScenes(spec);
@@ -836,21 +1610,59 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
   for (const scene of configuredScenes) for (const id of [scene.anchor_module_id, ...scene.sidecar_module_ids]) sceneByMember.set(String(id), scene);
   const placedScenes = new Set();
   let previousDensities = [];
-  for (const module of spec.modules) {
+  const ordered = statsAfterLinkedVisual(spec.modules, configuredScenes);
+  // Desktop only, and only for a big number outside any scene that would sit
+  // alone on its row: it pairs with a short text module right after it (4/8
+  // columns) or becomes a full-width bar. Anything else is left as it was.
+  const statColsOverride = new Map();
+  const statBars = new Set();
+  const forceBreakFor = (m, nextRowCols, prevDensities) => nextRowCols && (
+    m.type === "section_header" || m.emphasis === "hero" || m.story_role === "turn" ||
+    (strategy === "rhythm" && prevDensities.slice(-2).every((d) => d >= 0.72) && prevDensities.length >= 2 && moduleDensity(m) >= 0.72)
+  );
+  for (const [index, module] of ordered.entries()) {
     const scene = sceneByMember.get(String(module.id));
     if (scene) {
       if (!placedScenes.has(scene.id)) {
         flush();
-        const built = buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, gap, col);
-        boxes.push(...built.boxes);
-        scenes.push(built.meta);
-        y += built.height + 58;
+        const built = buildDesktopScene(scene, spec, assets, 0, rowIndex, margin, contentW, gap, col);
+        const sceneY = prev ? Math.round(prev.inkBottom + (prev.heading ? RHYTHM_AFTER_HEADING : RHYTHM_BETWEEN) - built.ink_top) : 0;
+        boxes.push(...built.boxes.map((b) => ({ ...b, y: b.y + sceneY })));
+        scenes.push({ ...built.meta, y: built.meta.y + sceneY });
+        if (built.header_ink_bottom !== null) rhythm.push({ kind: "heading", section_start: true, ink_top: sceneY + built.ink_top, ink_bottom: sceneY + built.header_ink_bottom });
+        rhythm.push({ kind: "row", section_start: built.header_ink_bottom === null, ink_top: sceneY + built.body_ink_top, ink_bottom: sceneY + built.ink_bottom });
+        prev = { inkBottom: sceneY + built.ink_bottom, heading: false };
         rowIndex += 1;
         placedScenes.add(scene.id);
       }
       continue;
     }
-    const cols = effectiveColumns(module, strategy);
+    if (module.type === "hero_stat" && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !statColsOverride.has(String(module.id))) {
+      const own = effectiveColumns(module, strategy);
+      const startsRow = !rowCols || forceBreakFor(module, rowCols, previousDensities) || own === 12 || rowCols + own > 12;
+      if (startsRow) {
+        const next = ordered[index + 1];
+        const nextScened = next ? sceneByMember.has(String(next.id)) : false;
+        const nextCols = next ? (statColsOverride.get(String(next.id)) ?? effectiveColumns(next, strategy)) : 0;
+        if (statIsAlone(own, next, nextCols, nextScened, previousDensities, module)) {
+          if (statPairsWithText(module, next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
+          else statBars.add(String(module.id));
+        }
+      }
+    }
+    if (module.type === "text" && INFOGRAPHIC_HOUSE_STYLE_ACTIVE && !statColsOverride.has(String(module.id))) {
+      const own = effectiveColumns(module, strategy);
+      const next = ordered[index + 1];
+      const nextScened = next ? sceneByMember.has(String(next.id)) : false;
+      const startsRow = !rowCols || forceBreakFor(module, rowCols, previousDensities) || own === 12 || rowCols + own > 12;
+      if (startsRow && own === 12 && textPairsWithStat(module, next, nextScened, col, gap)
+        && !forceBreakFor(next, 8, [...previousDensities, moduleDensity(module)])) {
+        statColsOverride.set(String(module.id), 12 - STAT_PAIR_STAT_COLS);
+        statColsOverride.set(String(next.id), STAT_PAIR_STAT_COLS);
+      }
+    }
+    const bar = statBars.has(String(module.id));
+    const cols = bar ? 12 : (statColsOverride.get(String(module.id)) ?? effectiveColumns(module, strategy));
     const density = moduleDensity(module);
     const denseRun = previousDensities.slice(-2).every((d) => d >= 0.72) && previousDensities.length >= 2 && density >= 0.72;
     const forceBreak = rowCols && (
@@ -861,15 +1673,15 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
     );
     if (forceBreak || (rowCols && rowCols + cols > 12) || (cols === 12 && rowCols)) flush();
     const x = margin + rowCols * (col + gap);
-    const w = cols * col + Math.max(0, cols - 1) * gap;
-    const h = moduleHeight(module, w, assets, false);
-    row.push({ id: module.id, module, x, w, h, cols, density });
+    const w = shortTextWidth(module, cols * col + Math.max(0, cols - 1) * gap);
+    const h = bar ? heroStatBarMetrics(module, w).h : moduleHeight(module, w, assets, false);
+    row.push({ id: module.id, module, x, w, h, cols, density, ...(bar ? { stat_bar: true } : {}) });
     rowCols += cols;
     previousDensities.push(density);
     if (cols === 12 || rowCols === 12) flush();
   }
   flush();
-  return { width, margin, contentW, boxes, scenes, contentHeight: Math.max(0, y - 40), strategy };
+  return { width, margin, contentW, boxes, scenes, contentHeight: Math.max(0, prev ? prev.inkBottom + RHYTHM_BETWEEN - 54 : 0), rhythm, strategy };
 }
 
 function scoreLayoutCandidate(spec, layout) {
@@ -980,11 +1792,32 @@ function drawHeader(parts, spec, width, margin, mobile) {
   return h.height;
 }
 
-function editorialOrdinalMap(spec) {
+// A big number that shares a claim with a visual reads best directly after
+// that visual. Stable: only an unscened stat that precedes its linked
+// visual moves, to just behind it; every other module keeps its place.
+function statsAfterLinkedVisual(modules, scenes = []) {
+  const claimsOf = (m) => new Set([m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? [])].filter(Boolean).map(String));
+  const scened = new Set(scenes.flatMap((sc) => [sc.anchor_module_id, ...(sc.sidecar_module_ids ?? [])]).map(String));
+  const out = [...modules];
+  for (const stat of modules) {
+    if (stat.type !== "hero_stat" || scened.has(String(stat.id))) continue;
+    const mine = claimsOf(stat);
+    if (!mine.size) continue;
+    const from = out.indexOf(stat);
+    const to = out.findIndex((m, i) => i > from && m.type === "visual" && !scened.has(String(m.id)) && [...claimsOf(m)].some((c) => mine.has(c)));
+    if (to < 0) continue;
+    out.splice(from, 1);
+    out.splice(to, 0, stat);
+  }
+  return out;
+}
+
+function editorialOrdinalMap(spec, assets = {}) {
   const map = new Map();
   let ordinal = 1;
   for (const module of spec.modules ?? []) {
-    if (module.type === "section_header" || module.emphasis === "hero") continue;
+    // hero_stat draws no ordinal chrome, so it must not consume a number either.
+    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || isDecorativeIllustration(module, assets)) continue;
     map.set(String(module.id), ordinal++);
   }
   return map;
@@ -1056,17 +1889,32 @@ function drawModuleChrome(parts, box, ordinal, mobile, spec) {
   parts.push(`<text x="${box.x}" y="${y + 20}" font-family="${SANS}" font-size="${size}" font-weight="700" letter-spacing="1.5" fill="${ACCENT}">${showLabel ? esc(fitChromeText(`${number} · `, box.module, box.w, size, 1.5)) : number}</text>`);
 }
 
+function outOfSetCaptionHeight(asset, module, mobile) {
+  return asset?.out_of_set_subjects?.length && String(module.subject_caption ?? "").trim()
+    ? lines(module.subject_caption, mobile ? 54 : 110, 3).length * (mobile ? 16 : 17) + 12
+    : 0;
+}
+
 function embedVisual(parts, asset, box, module, mobile) {
-  const sourceSvg = mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
-  const info = svgInfo(sourceSvg);
+  const sourceSvg = compactFits(asset, box.w, mobile) ? asset.compactSvg : mobile || spanColumns(module.span) <= 6 ? asset.mobileSvg : asset.desktopSvg;
+  const info = mobile ? svgInfo(sourceSvg) : trimmedSvgInfo(sourceSvg);
   const topPad = module.emphasis === "hero" ? 30 : (module.label ? 32 : 20);
-  const availableH = box.h - topPad - 6;
+  const captionH = outOfSetCaptionHeight(asset, module, mobile);
+  const availableH = box.h - topPad - 6 - captionH;
   const targetW = box.w;
   const naturalH = targetW * (info.height / info.width);
   const targetH = Math.min(availableH, naturalH);
   const y = box.y + topPad;
   const inner = namespaceSvgInner(info.inner, `embed-${hash(module.id).slice(0, 8)}-${mobile ? "m" : "d"}`);
-  parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="xMidYMin meet">${inner}</svg>`);
+  parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="${mobile ? "xMidYMin" : "xMinYMin"} meet">${inner}</svg>`);
+  if (captionH) {
+    // D1: the chart goes beyond the page subject set, so the runtime restyles it
+    // (dashed frame) and prints the model's caption where readers see it.
+    parts.push(`<rect data-role="out-of-set-frame" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" fill="none" stroke="${MUTED}" stroke-width="1.2" stroke-dasharray="6 4"/>`);
+    parts.push('<g data-role="out-of-set-caption">');
+    textBlock(parts, module.subject_caption, box.x, y + targetH + 18, { size: mobile ? 12 : 13, lineHeight: mobile ? 16 : 17, maxChars: mobile ? 54 : 110, maxLines: 3, fill: MUTED, italic: true });
+    parts.push("</g>");
+  }
 }
 
 function illustrationCaption(asset, module) {
@@ -1092,9 +1940,111 @@ function embedIllustration(parts, asset, box, module, mobile) {
   if (caption) parts.push(`<rect data-role="illustration-credit" data-module-id="${esc(module.id)}" x="${box.x}" y="${y + targetH}" width="1" height="1" fill="none"/>`);
 }
 
+// E2 tuning knobs. A big number that would sit alone on a desktop row pairs
+// with the next module when that is a short text (<= STAT_PAIR_MAX_TEXT_LINES
+// body lines at the width it gets beside the number, no source quote); the
+// number takes STAT_PAIR_STAT_COLS of 12 columns and the text the rest.
+// Otherwise it is drawn as a full-width bar (STAT_BAR_* below).
+const STAT_PAIR_MAX_TEXT_LINES = 4;
+const STAT_PAIR_STAT_COLS = 4;
+const STAT_BAR_PAD = 30;
+const STAT_BAR_MIN_NUMERAL_ZONE = 150;
+const STAT_BAR_GUTTER = 36;
+
+// Page-rhythm tuning knobs. A text block that sets in at most
+// TEXT_SHORT_MAX_LINES lines across a full 12-column row never fills that row
+// on its own: it pairs with a big number right after it (8 + 4 columns), and
+// otherwise its box is narrowed to a readable measure (the row height already
+// follows the text). clreq (W3C) gives no numeric line length, so the cap is converted from
+// Bringhurst's 45-75 Latin characters: 75 is the upper bound and the code's
+// width unit counts a Latin character as 1 and a Han character as 2
+// (viz.mjs textUnits), i.e. about 37 Han characters.
+const TEXT_SHORT_MAX_LINES = 2;
+const TEXT_MEASURE_MAX_UNITS = 75;
+const TEXT_FULL_ROW_MIN_W = 1200;
+
+function textIsShortFullRow(module, width) {
+  if (module.source_quote || width < TEXT_FULL_ROW_MIN_W) return false;
+  const body = String(module.body ?? "").trim();
+  return Boolean(body) && lines(body, Math.max(44, Math.round(width / 10))).length <= TEXT_SHORT_MAX_LINES;
+}
+
+// Box width for a short text that has a whole 12-column row to itself: the
+// readable measure, not the row. Anything else keeps the width it was given.
+function shortTextWidth(module, width) {
+  return module.type === "text" && textIsShortFullRow(module, width) ? Math.min(width, TEXT_MEASURE_MAX_UNITS * 10) : width;
+}
+
+// Does a stat's label and detail still fit its 2-line cut at the paired width?
+function statFitsPaired(stat, col, gap) {
+  const statW = STAT_PAIR_STAT_COLS * col + (STAT_PAIR_STAT_COLS - 1) * gap;
+  if (lines(stat.label ?? "", Math.max(28, Math.round(statW / 10))).length > 2) return false;
+  return !stat.detail || lines(stat.detail, Math.max(38, Math.round(statW / 8))).length <= 2;
+}
+
+// A short lone text pairs with the big number right after it (text 8, stat 4).
+function textPairsWithStat(text, next, nextScened, col, gap) {
+  if (text.type !== "text" || !next || nextScened || next.type !== "hero_stat") return false;
+  if (!textIsShortFullRow(text, 12 * col + 11 * gap)) return false;
+  return statFitsPaired(next, col, gap);
+}
+
+// Pairing rule: is the stat alone in its row? (next is the module after it.)
+function statIsAlone(own, next, nextCols, nextScened, previousDensities, module) {
+  if (own === 12 || !next || nextScened || next.type === "section_header" || nextCols === 12 || own + nextCols > 12) return true;
+  return Boolean(next.emphasis === "hero" || next.story_role === "turn");
+}
+
+// Pairing rule: may the next module share the stat's row at (12 - stat cols)?
+function statPairsWithText(stat, next, nextScened, col, gap) {
+  // The stacked stat cuts its label and detail at 2 lines: pair only when
+  // both fit at the narrow width, otherwise the band, which never truncates.
+  if (!statFitsPaired(stat, col, gap)) return false;
+  if (!next || nextScened || next.type !== "text" || next.source_quote || next.emphasis === "hero" || next.story_role === "turn") return false;
+  const width = (12 - STAT_PAIR_STAT_COLS) * col + (11 - STAT_PAIR_STAT_COLS) * gap;
+  const body = String(next.body ?? "").trim();
+  return !body || lines(body, Math.max(44, Math.round(width / 10))).length <= STAT_PAIR_MAX_TEXT_LINES;
+}
+
+// Width of the big numeral (58px serif) plus its unit (24px) at the left of a
+// full-width stat bar: digits ~0.56em, wide (CJK) characters 1em, '.' ~0.3em.
+function statNumeralWidth(module) {
+  const glyphs = (text, size) => Array.from(String(text ?? "")).reduce((sum, ch) => sum + size * (/[\u2e80-\u9fff\uff00-\uffef]/.test(ch) ? 1 : ch === "." || ch === "," ? 0.3 : 0.56), 0);
+  return Math.ceil(glyphs(module.value, 58) + (module.unit ? 7 + glyphs(module.unit, 24) : 0));
+}
+
+// Full-width stat bar (desktop): numeral on the left, label and detail to its
+// right; the row height follows the wrapped text.
+function heroStatBarMetrics(module, width) {
+  const pad = STAT_BAR_PAD;
+  const textX = pad + Math.max(STAT_BAR_MIN_NUMERAL_ZONE, statNumeralWidth(module) + STAT_BAR_GUTTER);
+  const avail = Math.max(240, width - textX - pad);
+  const labelLines = lines(module.label ?? "", Math.max(20, Math.floor(avail / 10.5)));
+  const detailLines = module.detail ? lines(module.detail, Math.max(24, Math.floor(avail / 8.2))) : [];
+  const textH = 22 + (labelLines.length - 1) * 20 + (detailLines.length ? 10 + detailLines.length * 16 : 0);
+  return { pad, textX, labelLines, detailLines, h: Math.max(59, detailLines.length ? 36 + (labelLines.length - 1) * 20 + 16 * detailLines.length : 31 + (labelLines.length - 1) * 20) + TEXT_BOTTOM_PAD };
+}
+
+function drawHeroStatBar(parts, box, module) {
+  const m = heroStatBarMetrics(module, box.w);
+  // The row gap above (40px) or the rail gap (14px) already separates the band
+  // from the module above, so its rule sits on the box edge.
+  const top = box.y;
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${ACCENT}"/>`);
+  parts.push(`<text x="${box.x + m.pad}" y="${top + 58}" font-family="${SERIF}" font-size="58" font-weight="700" fill="${ACCENT}">${esc(module.value)}${module.unit ? `<tspan font-size="24" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
+  const x = box.x + m.textX;
+  const labelY = top + 3 + 6 + 18;
+  m.labelLines.forEach((line, i) => parts.push(`<text x="${x}" y="${labelY + i * 20}" font-family="${SANS}" font-size="15.5" font-weight="700" fill="${INK}">${esc(line)}</text>`));
+  const detailY = labelY + (m.labelLines.length - 1) * 20 + 10 + 12;
+  m.detailLines.forEach((line, i) => parts.push(`<text x="${x}" y="${detailY + i * 16}" font-family="${SANS}" font-size="12" fill="${MUTED}">${esc(line)}</text>`));
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${box.y + box.h - 1}" width="1" height="1" fill="none"/>`);
+}
+
 function drawHeroStat(parts, box, module, mobile) {
+  if (box.stat_bar && !mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) return drawHeroStatBar(parts, box, module);
   const pad = mobile ? 28 : 30;
-  const top = box.y + 28;
+  // Desktop house style: the red rule sits at box.y, the same y as the hairline drawModuleChrome draws for neighbouring modules.
+  const top = box.y + (INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? (mobile ? 14 : 0) : 28);
   if (!INFOGRAPHIC_HOUSE_STYLE_ACTIVE) {
     // Legacy: unchanged, byte-for-byte - the solid tone-coloured card fix 9
     // replaces under house style. tone still selects the card colour and
@@ -1203,12 +2153,33 @@ function drawPullQuote(parts, box, module, mobile) {
   if (module.attribution) textBlock(parts, module.attribution, box.x + (mobile ? 28 : 34), box.y + box.h - 20, { size: mobile ? 12 : 13, lineHeight: 17, weight: 700, fill: MUTED, maxChars: 55, maxLines: 2 });
 }
 
+// NEWSROOM_LOCAL_SOURCE_NOTE=1: when every visual on the page carries a program-written source line (source_note_program, set from an
+// accepted note beside a user's data file), the model's page-level source_note is not shown and not read as reader text. The saved plan
+// keeps the model's text. One function, used by the footer and by the reader-text checks, so what is checked is what is printed.
+export function pageSourceNoteReplaced(spec, assets) {
+  if (process.env.NEWSROOM_LOCAL_SOURCE_NOTE !== "1") return false;
+  const visuals = (spec?.modules ?? []).filter((m) => m.type === "visual");
+  if (!visuals.length || !visuals.every((m) => assets?.[m.manifest_ref]?.manifest?.source_note_program === true)) return false;
+  return typeof spec?.source_note === "string" && spec.source_note.trim() !== "";
+}
+
+export function effectivePageSourceNote(spec, assets) {
+  return pageSourceNoteReplaced(spec, assets) ? undefined : spec?.source_note;
+}
+
 function sourceList(spec, assets) {
-  return uniq([
-    spec.source_note,
+  const notes = uniq([
+    effectivePageSourceNote(spec, assets),
     ...(spec.modules ?? []).filter((m) => m.type === "visual").map((m) => assets[m.manifest_ref]?.manifest?.source_note),
     ...(spec.modules ?? []).filter((m) => m.type === "illustration").map((m) => assets[m.asset_ref]?.manifest?.source_note),
   ]);
+  // Notes often join several citations with "；"/";" and the page-level note
+  // usually restates the chart notes: write each citation once, dropping any
+  // segment already contained in a longer one.
+  const norm = (x) => x.replace(/\s+/g, "").toLowerCase();
+  const segments = notes.flatMap((note) => String(note).split(/[；;]\s*/).map((x) => x.trim()).filter(Boolean));
+  const kept = segments.filter((seg, i) => !segments.some((other, j) => j !== i && (norm(other).includes(norm(seg)) && (norm(other).length > norm(seg).length || j < i))));
+  return kept;
 }
 
 function composeOne(spec, assets, mobile) {
@@ -1225,10 +2196,10 @@ function composeOne(spec, assets, mobile) {
   drawHeader(parts, spec, layout.width, layout.margin, mobile);
   const shiftedBoxes = layout.boxes.map((box) => ({ ...box, y: box.y + startY }));
   for (const scene of layout.scenes ?? []) drawSceneChrome(parts, scene, startY, mobile);
-  const ordinals = editorialOrdinalMap(spec);
+  const ordinals = editorialOrdinalMap(spec, assets);
   shiftedBoxes.forEach((box) => {
     const module = box.module;
-    if (module.type !== "section_header") drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile, spec);
+    if (module.type !== "section_header" && !isDecorativeIllustration(module, assets)) drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile, spec);
     if (module.type === "hero_stat") drawHeroStat(parts, box, module, mobile);
     else if (module.type === "visual") embedVisual(parts, assets[module.manifest_ref], box, module, mobile);
     else if (module.type === "illustration") embedIllustration(parts, assets[module.asset_ref], box, module, mobile);
@@ -1247,6 +2218,7 @@ function composeOne(spec, assets, mobile) {
   const visualKinds = uniq((spec.modules ?? []).flatMap((m) => {
     if (m.type === "visual") return [assets[m.manifest_ref]?.manifest?.chart_type];
     if (m.type === "illustration") {
+      if (isDecorativeIllustration(m, assets)) return [];
       const manifest = assets[m.asset_ref]?.manifest;
       if (manifest?.kind === "rich_illustration") return [`illustration:rich:${manifest?.provenance?.origin ?? "unknown"}`];
       return [manifest?.view ? `illustration:${manifest.view}` : "illustration"];
@@ -1257,12 +2229,17 @@ function composeOne(spec, assets, mobile) {
     svg: parts.join("\n") + "\n",
     width: layout.width,
     height: pageHeight,
+    ...(mobile ? {} : {
+      rhythm: (layout.rhythm ?? []).map((u) => ({ ...u, ink_top: u.ink_top + startY, ink_bottom: u.ink_bottom + startY })),
+      footer_y: footerY,
+    }),
     boxes: shiftedBoxes,
     scenes: (layout.scenes ?? []).map((scene) => ({ ...scene, y: scene.y + startY })),
     sources,
     layout_strategy: layout.strategy ?? (mobile ? "single_column" : "balanced"),
     candidate_scores: layout.candidate_scores ?? [{ strategy: layout.strategy ?? "balanced", score: 0 }],
     visual_kinds: visualKinds,
+    ...((spec.modules ?? []).some((m) => isDecorativeIllustration(m, assets)) ? { decorative_module_ids: (spec.modules ?? []).filter((m) => isDecorativeIllustration(m, assets)).map((m) => String(m.id)) } : {}),
   };
 }
 
@@ -1281,6 +2258,37 @@ function boxesOverlap(a, b, padding = 0) {
   return a.x < b.x + b.w - padding && a.x + a.w > b.x + padding && a.y < b.y + b.h - padding && a.y + a.h > b.y + padding;
 }
 
+// NEWSROOM_PAGE_MODULE_ORDER_CHECK=1: the printed module numbers (plan order, see editorialOrdinalMap) must increase in the order a
+// reader meets the modules: rows top to bottom (boxes whose tops are within ROW_TOLERANCE_PX share a row), left to right inside a row.
+// The layout may move a scene's anchor ahead of its sidecars, so the two orders can disagree. Returns at most one warning (no score
+// penalty, never a blocker); [] when the switch is not exactly "1".
+const ROW_TOLERANCE_PX = 4;
+function moduleOrderWarnings(spec, composed) {
+  if (process.env.NEWSROOM_PAGE_MODULE_ORDER_CHECK !== "1") return [];
+  const decorative = new Set(composed.decorative_module_ids ?? []);
+  const ordinals = new Map();
+  let ordinal = 1;
+  for (const module of spec.modules ?? []) {
+    if (module.type === "section_header" || module.type === "hero_stat" || module.emphasis === "hero" || decorative.has(String(module.id))) continue;
+    ordinals.set(String(module.id), ordinal++);
+  }
+  const placed = (composed.boxes ?? []).filter((box) => ordinals.has(String(box.id))).sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows = [];
+  for (const box of placed) {
+    const row = rows.at(-1);
+    if (row && box.y - row[0].y <= ROW_TOLERANCE_PX) row.push(box);
+    else rows.push([box]);
+  }
+  const reading = rows.flatMap((row) => row.sort((a, b) => a.x - b.x));
+  for (let i = 1; i < reading.length; i++) {
+    const before = ordinals.get(String(reading[i - 1].id)), after = ordinals.get(String(reading[i].id));
+    if (after <= before) {
+      return [{ severity: "warning", code: "module_ordinal_out_of_order", modules: [reading[i - 1].id, reading[i].id], ordinals: [before, after] }];
+    }
+  }
+  return [];
+}
+
 function critiqueLegacyOne(spec, composed, mobile) {
   const issues = [];
   let score = 100;
@@ -1294,6 +2302,7 @@ function critiqueLegacyOne(spec, composed, mobile) {
       if (boxesOverlap(a, boxes[j], 1)) { issues.push({ severity: "blocker", code: "module_overlap", modules: [a.id, boxes[j].id] }); score -= 30; }
     }
   }
+  issues.push(...moduleOrderWarnings(spec, composed));
   const visualCount = spec.modules.filter((m) => m.type === "visual" || m.type === "illustration").length;
   const heroCount = spec.modules.filter((m) => m.type === "hero_stat").length;
   if (visualCount < 2) { issues.push({ severity: "warning", code: "too_few_visuals" }); score -= 8; }
@@ -1319,10 +2328,12 @@ function maxDenseRun(spec, mobile = false) {
 }
 
 function explicitAnchorBox(spec, composed) {
+  const decorative = new Set(composed.decorative_module_ids ?? []);
+  const isVisual = (box) => (box.module?.type === "visual" || box.module?.type === "illustration") && !decorative.has(String(box.id));
   const priorities = new Map((spec.modules ?? []).map((m) => [m.id, Number.isInteger(m.priority) ? m.priority : 3]));
-  return (composed.boxes ?? []).find((box) => (box.module?.type === "visual" || box.module?.type === "illustration") && box.module?.emphasis === "hero")
-    ?? (composed.boxes ?? []).find((box) => (box.module?.type === "visual" || box.module?.type === "illustration") && priorities.get(box.id) === 1)
-    ?? (composed.boxes ?? []).find((box) => box.module?.type === "visual" || box.module?.type === "illustration")
+  return (composed.boxes ?? []).find((box) => isVisual(box) && box.module?.emphasis === "hero")
+    ?? (composed.boxes ?? []).find((box) => isVisual(box) && priorities.get(box.id) === 1)
+    ?? (composed.boxes ?? []).find(isVisual)
     ?? null;
 }
 
@@ -1345,6 +2356,7 @@ function critiqueAwardOne(spec, composed, mobile) {
       }
     }
   }
+  issues.push(...moduleOrderWarnings(spec, composed));
   if (!hasSourcesMethodsLabel(composed.svg, spec)) {
     issues.push({ severity: "blocker", code: "source_strip_missing" }); geometryPenalty += 30;
   }
@@ -1358,12 +2370,13 @@ function critiqueAwardOne(spec, composed, mobile) {
 
   const modules = moduleSequence(spec, mobile);
   const roles = new Set(modules.map((m) => m.story_role).filter(Boolean));
-  const visualCount = modules.filter((m) => m.type === "visual" || m.type === "illustration").length;
+  const decorativeIds = new Set(composed.decorative_module_ids ?? []);
+  const visualCount = modules.filter((m) => (m.type === "visual" || m.type === "illustration") && !decorativeIds.has(String(m.id))).length;
   const heroStats = modules.filter((m) => m.type === "hero_stat").length;
   const sectionHeaders = modules.filter((m) => m.type === "section_header").length;
   const pullQuotes = modules.filter((m) => m.type === "pull_quote").length;
   const priorityOne = modules.filter((m) => m.priority === 1);
-  const explicitHero = modules.find((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero");
+  const explicitHero = modules.find((m) => (m.type === "visual" || m.type === "illustration") && m.emphasis === "hero" && !decorativeIds.has(String(m.id)));
   const anchor = explicitAnchorBox(spec, composed);
   const anchorY = anchor ? anchor.y / Math.max(1, composed.height) : 1;
   const anchorWidth = anchor ? anchor.w / Math.max(1, composed.width) : 0;

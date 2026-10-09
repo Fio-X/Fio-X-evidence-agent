@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getBasemap } from "./basemap_registry.mjs";
-import { economyEntryFor } from "./economy_names.mjs";
+import { ECONOMY_NAME_MODES, economyEntryFor } from "./economy_names.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +77,10 @@ export function neFeatureCount() {
  * per row, in row order. `entry` is economy_names.mjs's own table entry
  * (carries `.kind` - "economy" | "aggregate" - and `.iso3`), or null when
  * the raw value has no exact table match at all (economy_names.mjs's own
- * unmappedEconomyNameValues lint already blocks that case).
+ * unmappedEconomyNameValues lint already blocks that case). Every
+ * ECONOMY_NAME_MODES mode ("worldbank", "iso3", "iso2") lands on the same
+ * entry, so an ISO2-keyed row joins through that entry's iso3 exactly like
+ * an ISO3-keyed one.
  */
 export function joinChoroplethRows(rows, spec) {
   const field = spec?.category_field;
@@ -103,16 +106,69 @@ export function joinChoroplethRows(rows, spec) {
  * (two rows resolving to the same iso3, which would colour/label the same
  * feature(s) twice with conflicting values).
  */
+/**
+ * World mode is behind NEWSROOM_MAP_WORLD, off by default; only the exact string "1" turns it on. Known open issues
+ * while it is on: the LIMIT-regex completeness check, the value_labels exemption of color_only_quantity, and the
+ * publication verifiers (verify_artifact.py, verify.rs) that still require a label on every region.
+ */
+export function mapWorldEnabled() {
+  return process.env.NEWSROOM_MAP_WORLD === "1";
+}
+
+/** True for the opt-in whole-world mode (`map_extent: "world"`, only with NEWSROOM_MAP_WORLD=1). */
+export function isWorldExtent(spec) {
+  return mapWorldEnabled() && spec?.map_extent === "world";
+}
+
+/** World mode draws at most this many text labels on the map. */
+export const WORLD_LABEL_MAX = 8;
+
+/** Fixed frame for the world projection: Equal Earth over the populated latitudes (no Antarctica), never the data's bbox. */
+export const WORLD_FRAME_POINTS = [[-180, 0], [180, 0], [0, 84], [0, -58]];
+
+/** True for the basemap's Antarctica feature, which world mode leaves undrawn. */
+export function isAntarcticaFeature(index) {
+  return neFeatureAttributes(index)?.continent === "Antarctica";
+}
+
+/**
+ * The iso3 codes that carry a text label in world mode: the lowest and the
+ * highest value (ties: smallest iso3) plus every row named in
+ * highlight_values. `items` are joined, plottable rows. The renderer, the
+ * lint and render QA all call this, so they agree on who is labelled.
+ */
+export function worldLabelIso3s(items, spec) {
+  const out = new Set();
+  const list = (items ?? []).filter((item) => item?.iso3 && Number.isFinite(Number(item.row?.[spec?.value_field])));
+  if (!list.length) return out;
+  const val = (item) => Number(item.row[spec.value_field]);
+  const byValue = [...list].sort((a, b) => val(a) - val(b) || String(a.iso3).localeCompare(String(b.iso3)));
+  out.add(byValue[0].iso3);
+  const top = val(byValue[byValue.length - 1]);
+  out.add(byValue.find((item) => val(item) === top).iso3);
+  const highlights = new Set((spec?.highlight_values ?? []).map(String));
+  for (const item of list) if (highlights.has(String(item.row[spec.category_field]))) out.add(item.iso3);
+  return out;
+}
+
 export function lintChoroplethSpec(spec, rows) {
   const blockers = [];
   const warnings = [];
   const categoryNames = spec?.category_names;
-  if (!["worldbank", "iso3"].includes(categoryNames)) {
-    blockers.push("choropleth requires category_names to be 'worldbank' or 'iso3'");
+  // The modes that name a place: each resolves to an economy-table entry whose
+  // iso3 keys into the basemap sidecar. A currency mode (iso4217) names no map
+  // feature, so it is never a legal choropleth join key.
+  const mapModes = ECONOMY_NAME_MODES;
+  if (!mapModes.includes(categoryNames)) {
+    const modeList = `${mapModes.slice(0, -1).map((mode) => `'${mode}'`).join(", ")} or '${mapModes[mapModes.length - 1]}'`;
+    const currencyNote = categoryNames === "iso4217" ? "; 'iso4217' names a currency, which is not a map feature" : "";
+    blockers.push(`choropleth requires category_names to be ${modeList}${currencyNote}`);
   }
   const rowList = Array.isArray(rows) ? rows : [];
-  if (rowList.length > 60) blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
-  if (!["worldbank", "iso3"].includes(categoryNames) || !spec?.category_field) return { blockers, warnings };
+  const world = isWorldExtent(spec);
+  if (!world && rowList.length > 60) blockers.push(`choropleth has ${rowList.length} rows; maximum is 60 - filter rows in SQL`);
+  if (world && isRowSlice(spec)) blockers.push("choropleth map_extent 'world' needs every economy with data, but the SQL has a LIMIT - remove the LIMIT (or drop map_extent for a top-N slice)");
+  if (!mapModes.includes(categoryNames) || !spec?.category_field) return { blockers, warnings };
 
   const joined = joinChoroplethRows(rowList, spec);
   const aggregateValues = [...new Set(joined.filter((item) => item.entry?.kind === "aggregate").map((item) => String(item.raw)))];
@@ -134,6 +190,12 @@ export function lintChoroplethSpec(spec, rows) {
     const detail = duplicates.slice(0, 5).map(([iso3, raws]) => `${iso3} (${raws.join(", ")})`).join("; ");
     blockers.push(`choropleth category_field '${spec.category_field}' has ${duplicates.length} duplicate economy/economies mapping to the same map feature(s): ${detail}`);
   }
+  if (world) {
+    const labelled = worldLabelIso3s(joined.filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[spec.value_field]))), spec);
+    if (labelled.size > WORLD_LABEL_MAX) {
+      blockers.push(`choropleth map_extent 'world' labels at most ${WORLD_LABEL_MAX} features (the range ends plus highlight_values) but ${labelled.size} would be labelled - shorten highlight_values`);
+    }
+  }
   // inset.iso3 (manual mode) must name only economies actually plotted on
   // this map - a code with no data row would otherwise silently vanish from
   // both the main map's labels and the inset (validateVizSpec's own object
@@ -146,6 +208,9 @@ export function lintChoroplethSpec(spec, rows) {
     if (unplotted.length) {
       blockers.push(`choropleth inset.iso3 names ${unplotted.length} code(s) with no plotted data on this map: ${unplotted.slice(0, 8).join(", ")}`);
     }
+  }
+  if (isRowSlice(spec)) {
+    warnings.push("choropleth rows come from a LIMIT query, so the map covers only a top-N slice while the source has more economies; map every economy with data and use a bar chart for a top list");
   }
   return { blockers, warnings };
 }
@@ -254,6 +319,113 @@ export function fitAzimuthalProjection(lon0, lat0, points, left, right, top, bot
   };
 }
 
+// ---------------------------------------------------------------------------
+// Projection choice (diagnosis P1). The azimuthal projection above can only
+// show points within a 90-degree horizon of its centre, and the bbox midpoint
+// of data that straddles the antimeridian (e.g. New Zealand plus Europe) is a
+// useless centre, so rings used to be dropped whole. The choice is made from
+// the data's real spherical extent, never from a lon/lat bbox midpoint alone:
+//   1. the bbox centre, when every data point is within AZIMUTHAL_FIT_DEG of
+//      it (unchanged framing for every map that already fitted);
+//   2. else the centre of the (approximate) minimal enclosing spherical cap,
+//      when its radius is within AZIMUTHAL_FIT_DEG;
+//   3. else a world projection (Equal Earth, central meridian 0 - the vendored
+//      basemap is already cut at +/-180, so no ring needs splitting).
+export const AZIMUTHAL_FIT_DEG = 80;
+
+function toUnit(lon, lat) {
+  const l = lon * DEG2RAD, p = lat * DEG2RAD;
+  return [Math.cos(p) * Math.cos(l), Math.cos(p) * Math.sin(l), Math.sin(p)];
+}
+function fromUnit([x, y, z]) {
+  return [Math.atan2(y, x) * RAD2DEG, Math.atan2(z, Math.hypot(x, y)) * RAD2DEG];
+}
+function normalizeVec(v) {
+  const m = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / m, v[1] / m, v[2] / m];
+}
+
+/** Approximate minimal enclosing spherical cap of [lon, lat] points: { lon, lat, radiusDeg }. */
+export function enclosingCap(points) {
+  const pts = (points ?? []).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  if (!pts.length) return { lon: 0, lat: 0, radiusDeg: 0 };
+  const vecs = pts.map(([lon, lat]) => toUnit(lon, lat));
+  // Badoiu-Clarkson style iteration on the sphere, seeded from the mean
+  // direction; deterministic and plenty accurate for a framing decision.
+  let c = normalizeVec(vecs.reduce((a, v) => [a[0] + v[0], a[1] + v[1], a[2] + v[2]], [0, 0, 0]));
+  if (!Number.isFinite(c[0])) c = vecs[0];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  for (let i = 1; i <= 400; i++) {
+    let far = vecs[0], best = Infinity;
+    for (const v of vecs) { const d = dot(c, v); if (d < best) { best = d; far = v; } }
+    const t = 1 / (i + 1);
+    c = normalizeVec([c[0] + (far[0] - c[0]) * t, c[1] + (far[1] - c[1]) * t, c[2] + (far[2] - c[2]) * t]);
+  }
+  let minDot = 1;
+  for (const v of vecs) minDot = Math.min(minDot, dot(c, v));
+  const [lon, lat] = fromUnit(c);
+  return { lon, lat, radiusDeg: Math.acos(Math.max(-1, Math.min(1, minDot))) * RAD2DEG };
+}
+
+function maxAngularDistance(points, lon0, lat0) {
+  let max = 0;
+  for (const [lon, lat] of points) max = Math.max(max, angularDistanceDeg(lon, lat, lon0, lat0));
+  return max;
+}
+
+/** Decide the main-map projection for a set of data points: { kind: "azimuthal"|"world", lon0, lat0 }. */
+export function chooseMapProjection(points) {
+  const pts = points && points.length ? points : [[0, 0]];
+  const [bLon, bLat] = bboxCenter(pts);
+  if (maxAngularDistance(pts, bLon, bLat) <= AZIMUTHAL_FIT_DEG) return { kind: "azimuthal", lon0: bLon, lat0: bLat };
+  const cap = enclosingCap(pts);
+  if (cap.radiusDeg <= AZIMUTHAL_FIT_DEG) return { kind: "azimuthal", lon0: cap.lon, lat0: cap.lat };
+  return { kind: "world", lon0: 0, lat0: bLat };
+}
+
+// Equal Earth (Savric, Patterson, Jenny 2018): equal-area like the azimuthal
+// projection above, so colour density stays honest on a world-scale map.
+const EQE_A1 = 1.340264, EQE_A2 = -0.081106, EQE_A3 = 0.000893, EQE_A4 = 0.003796;
+const EQE_M = Math.sqrt(3) / 2;
+function equalEarthForward(lon, lat) {
+  const l = lon * DEG2RAD;
+  const t = Math.asin(EQE_M * Math.sin(lat * DEG2RAD));
+  const t2 = t * t, t6 = t2 * t2 * t2;
+  const x = (2 * Math.sqrt(3) * l * Math.cos(t)) / (3 * (9 * EQE_A4 * t6 * t2 + 7 * EQE_A3 * t6 + 3 * EQE_A2 * t2 + EQE_A1));
+  const y = t * (EQE_A1 + EQE_A2 * t2 + t6 * (EQE_A3 + EQE_A4 * t2));
+  return [x, y];
+}
+
+/** Equal Earth fitted to a pixel rect (same contract as fitAzimuthalProjection: scale/centre/flip-y, padded). */
+export function fitWorldProjection(points, left, right, top, bottom, paddingRatio = 0.08) {
+  const projected = (points ?? []).map(([lon, lat]) => equalEarthForward(lon, lat)).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+  const xs = projected.length ? projected.map((p) => p[0]) : [-1, 1];
+  const ys = projected.length ? projected.map((p) => p[1]) : [-1, 1];
+  const xmin = Math.min(...xs), xmax = Math.max(...xs), ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const w = Math.max(1e-9, xmax - xmin), h = Math.max(1e-9, ymax - ymin);
+  const pad = Math.max(0, Number(paddingRatio) || 0);
+  const scale = Math.min(Math.max(1, right - left) / (w * (1 + 2 * pad)), Math.max(1, bottom - top) / (h * (1 + 2 * pad)));
+  const cx = (xmin + xmax) / 2, cy = (ymin + ymax) / 2;
+  const midX = (left + right) / 2, midY = (top + bottom) / 2;
+  return {
+    lon0: 0,
+    lat0: 0,
+    scale,
+    world: true,
+    project(lon, lat) {
+      const [x, y] = equalEarthForward(lon, lat);
+      return { x: midX + (x - cx) * scale, y: midY - (y - cy) * scale };
+    },
+  };
+}
+
+/** Fit whichever projection chooseMapProjection picked to a pixel rect. */
+export function fitMapProjection(choice, points, left, right, top, bottom, paddingRatio = 0.08) {
+  return choice.kind === "world"
+    ? fitWorldProjection(points, left, right, top, bottom, paddingRatio)
+    : fitAzimuthalProjection(choice.lon0, choice.lat0, points, left, right, top, bottom, paddingRatio);
+}
+
 /** Centre (bbox midpoint, in degrees) of a set of [lon, lat] pairs. */
 export function bboxCenter(points) {
   if (!points || !points.length) return [0, 0];
@@ -273,8 +445,61 @@ export function geometryRings(geometry) {
   return [];
 }
 
+/**
+ * The rings of one region that should drive map framing. A region that owns a
+ * small, distant outlier (an island group across the ocean from the mainland,
+ * or on the far side of the antimeridian) would otherwise stretch the framed
+ * extent across the whole ocean and leave most of the map blank. A ring is
+ * dropped only when it is both tiny next to the region's largest ring and far
+ * from it.
+ *
+ * COVERAGE CONTRACT: this function decides the FRAME only. The dropped rings
+ * are still part of the region's geometry (colour, joins and coverage checks
+ * use all of it), but any dropped ring that then falls outside the frame is
+ * clipped away. omittedFramingRings() names exactly those rings so the
+ * renderer can say so in the chart note; nothing is clipped without that note.
+ */
+export function framingRings(rings, { tinyShare = 0.05, farDeg = 15 } = {}) {
+  const boxes = (rings ?? []).map((ring) => {
+    let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+    for (const [lon, lat] of ring) { w = Math.min(w, lon); e = Math.max(e, lon); s = Math.min(s, lat); n = Math.max(n, lat); }
+    return { ring, area: Math.max(0, e - w) * Math.max(0, n - s), lon: (w + e) / 2, lat: (s + n) / 2 };
+  }).filter((b) => b.ring.length && Number.isFinite(b.area));
+  if (boxes.length < 2) return boxes.map((b) => b.ring);
+  const main = boxes.reduce((best, b) => (b.area > best.area ? b : best));
+  return boxes
+    .filter((b) => b === main || b.area >= main.area * tinyShare || angularDistanceDeg(b.lon, b.lat, main.lon, main.lat) <= farDeg)
+    .map((b) => b.ring);
+}
+
+/** The rings framingRings() leaves out of the frame (same options). */
+export function omittedFramingRings(rings, opts) {
+  const kept = new Set(framingRings(rings, opts));
+  return (rings ?? []).filter((ring) => ring?.length && !kept.has(ring));
+}
+
+/**
+ * Omitted rings that are big enough to see (bbox >= minAreaDeg deg^2) and lie
+ * wholly outside `rect` once projected: the territories that framing would
+ * otherwise clip without a word. `project(lon, lat)` -> {x, y}.
+ */
+export function clippedFramingRings(rings, project, rect, { minAreaDeg = 1 } = {}) {
+  return omittedFramingRings(rings).filter((ring) => ringBBoxAreaDeg(ring) >= minAreaDeg && !ring.some(([lon, lat]) => {
+    const p = project(lon, lat);
+    return Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom;
+  }));
+}
+
+/** Lon/lat bbox area (deg^2) of a ring. */
+export function ringBBoxAreaDeg(ring) {
+  let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+  for (const [lon, lat] of ring ?? []) { w = Math.min(w, lon); e = Math.max(e, lon); s = Math.min(s, lat); n = Math.max(n, lat); }
+  return Number.isFinite(w) ? Math.max(0, e - w) * Math.max(0, n - s) : 0;
+}
+
 /** True when every point of `ring` is within `limitDeg` of the projection centre. */
 export function ringWithinHorizon(ring, lon0, lat0, limitDeg = 90) {
+  if (lat0 === null) return true; // world projection: nothing lies beyond a horizon
   return (ring ?? []).every(([lon, lat]) => angularDistanceDeg(lon, lat, lon0, lat0) <= limitDeg);
 }
 
@@ -394,7 +619,7 @@ export function featurePath(geometry, project, { lon0, lat0, limitDeg = 90, prec
  * example min=19.6/max=96.3/classes=5 resolves to step=20 at the first
  * candidate: [0,20,40,60,80,100]).
  */
-export function niceBreaks(min, max, classes = 5) {
+export function niceBreaks(min, max, classes = 5, opts = {}) {
   let lo = Number(min);
   let hi = Number(max);
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) { lo = 0; hi = 1; }
@@ -408,6 +633,9 @@ export function niceBreaks(min, max, classes = 5) {
     for (const factor of NICE_FACTORS) {
       const step = factor * base;
       if (step < rawStep - 1e-9) continue;
+      // integer data (counts, calendar years): whole-number steps only, so
+      // no legend edge reads 1.2 / 1.4
+      if (opts?.integer && (step < 1 || !Number.isInteger(step))) continue;
       const niceMin = Math.floor(lo / step) * step;
       if (niceMin + n * step >= hi - 1e-9) {
         const breaks = [];
@@ -421,6 +649,46 @@ export function niceBreaks(min, max, classes = 5) {
   // plain linear split so a caller always gets classes+1 finite numbers.
   const step = (hi - lo) / n;
   return Array.from({ length: n + 1 }, (_, i) => Math.round((lo + i * step) * 1e6) / 1e6);
+}
+
+/**
+ * Class edges for a choropleth. Unskewed data keeps niceBreaks' linear nice
+ * edges (unchanged). Right-skewed data (max at least 2.5x the 90th
+ * percentile, so one or two extreme values would leave nearly every region
+ * in the lightest equal-interval class) gets 1-2-5 geometric edges sized to
+ * the bulk of the data instead: the smallest 1-2-5 number at or above the
+ * 90th percentile closes the second-to-last class, and the three 1-2-5
+ * numbers below it open the others; the first class is open below and the
+ * last is open above (classifyValue already clamps into the end classes).
+ * Returns { breaks, skewed, openBottom, openTop }; `breaks` always has
+ * classes+1 ascending entries, the outer two being the data min and max.
+ */
+export function classBreaks(values, classes = 5, opts = {}) {
+  const nums = (values ?? []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  const min = nums.length ? nums[0] : 0;
+  const max = nums.length ? nums[nums.length - 1] : 1;
+  const linear = { breaks: niceBreaks(min, max, classes, opts), skewed: false, openBottom: false, openTop: false };
+  if (opts?.integer || classes !== 5 || nums.length < 6) return linear;
+  const q = (p) => { const pos = (nums.length - 1) * p; const lo = Math.floor(pos); return nums[lo] + (nums[Math.min(lo + 1, nums.length - 1)] - nums[lo]) * (pos - lo); };
+  const p90 = q(0.9);
+  if (!(p90 > 0) || !(max >= 2.5 * p90)) return linear;
+  const seq = [];
+  for (let power = -6; power <= 12; power++) for (const f of [1, 2, 5]) seq.push(f * 10 ** power);
+  const topIdx = seq.findIndex((v) => v >= p90 - 1e-12);
+  if (topIdx < 3) return linear;
+  const inner = seq.slice(topIdx - 3, topIdx + 1).map((v) => Math.round(v * 1e9) / 1e9);
+  // the edges must rise strictly from the data minimum to the maximum, else the first class would be empty
+  if (!(min < inner[0] && inner[3] < max)) return linear;
+  return { breaks: [min, ...inner, max], skewed: true, openBottom: true, openTop: true };
+}
+
+/**
+ * True when the rows look like a LIMIT slice of a larger source: the grey
+ * features then have data, they just were not selected. The lint warning and
+ * the "no data" swatch both read this one condition.
+ */
+export function isRowSlice(spec) {
+  return /\blimit\s+\d+/i.test(String(spec?.sql ?? ""));
 }
 
 // ---------------------------------------------------------------------------

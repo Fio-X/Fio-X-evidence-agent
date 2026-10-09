@@ -1,12 +1,14 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command as StdCommand;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -28,12 +30,292 @@ pub struct PiConfig {
     pub session_dir: Option<PathBuf>,
     pub continue_session: bool,
     pub tool_profile: String,
+    /// Hide the Lieflat fallback tools from a `visual-story` run. Set only by
+    /// the non-v2 `investigate` command when `NEWSROOM_HIDE_LIEFLAT` is on;
+    /// every other caller (v2 included) leaves it false.
+    pub hide_lieflat: bool,
+    /// Opt-in turn-saving guidance (prompt text and tool guidelines). Set only
+    /// by the non-v2 `investigate` command from the parent environment;
+    /// every other caller leaves it at the default (all off).
+    pub speed: crate::prompt::PromptSpeed,
+    /// Set only by the non-v2 `investigate` command for a plain single-chart request when
+    /// `NEWSROOM_SPEED_COMPOSE_ANSWER=1`: once the chart is complete and its claim system-verified,
+    /// the CLI writes the closing text from the artifacts and ends the model loop there.
+    pub compose: Option<crate::compose_answer::ComposeSpec>,
+}
+
+/// Env var that is both the opt-in switch read by `investigate` and the
+/// marker the runtime reads in the Pi child. `PiConfig::command` always
+/// resets it, so a value in the parent environment never reaches a child
+/// that did not ask for it.
+pub const HIDE_LIEFLAT_ENV: &str = "NEWSROOM_HIDE_LIEFLAT";
+/// Parent-environment switches and the matching markers the runtime reads in
+/// the Pi child. `PiConfig::command` always resets them from the config.
+pub const PARALLEL_HINTS_ENV: &str = "NEWSROOM_SPEED_PARALLEL_HINTS";
+pub const COMPUTE_BATCH_ENV: &str = "NEWSROOM_SPEED_COMPUTE_BATCH";
+/// Parent switch the chains depend on; the runtime does not register a chain without it.
+pub const ATOMIC_ARTIFACT_ENV: &str = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
+pub const CHAIN_VIZ_ENV: &str = "NEWSROOM_SPEED_CHAIN_VIZ";
+/// Runtime-only tool that exists when `CHAIN_VIZ_ENV` is on; not in the registry.
+pub const VIZ_CHAIN_TOOL: &str = "newsroom_viz_chain";
+pub const CHAIN_INFOGRAPHIC_ENV: &str = "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC";
+/// Runtime-only tool that exists when `CHAIN_INFOGRAPHIC_ENV` is on; not in the registry.
+pub const INFOGRAPHIC_CHAIN_TOOL: &str = "newsroom_infographic_chain";
+/// Page-stage preflight and derived-reference fill; the runtime reads the same name.
+pub const PREFLIGHT_ENV: &str = "NEWSROOM_SPEED_PREFLIGHT";
+/// Layout-only plan edits without re-sending the plan; the runtime reads the same name.
+pub const PLAN_EDIT_ENV: &str = "NEWSROOM_SPEED_PLAN_EDIT";
+/// Chart claims filled and recorded by the runtime from the chart's own SQL rows.
+/// Only exactly "1" counts, and only with the chart chain and atomic writes on;
+/// the runtime reads the same name and applies the same conditions.
+pub const INLINE_CLAIM_ENV: &str = "NEWSROOM_SPEED_INLINE_CLAIM";
+/// Patch retry of a refused plan or page-chain call; each needs atomic writes, the chain one also the page chain.
+pub const PLAN_PATCH_ENV: &str = "NEWSROOM_SPEED_PLAN_PATCH";
+pub const CHAIN_PATCH_ENV: &str = "NEWSROOM_SPEED_CHAIN_PATCH";
+/// Runtime-only switches: one combined plan/chain report, copied references, first-try rule text.
+pub const REPORT_ALL_ENV: &str = "NEWSROOM_SPEED_REPORT_ALL";
+pub const FILL_COPIED_REFS_ENV: &str = "NEWSROOM_SPEED_FILL_COPIED_REFS";
+pub const FIRST_TRY_TEXT_ENV: &str = "NEWSROOM_SPEED_FIRST_TRY_TEXT";
+/// Prompt-only: a program-measured profile of local CSV files; the Pi child never reads it.
+pub const DATA_PROFILE_ENV: &str = "NEWSROOM_SPEED_DATA_PROFILE";
+pub const RECIPES_ENV: &str = "NEWSROOM_SPEED_RECIPES";
+/// Parent-only: the CLI composes a single chart's closing text; the Pi child never reads it.
+pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
+pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
+/// Runtime-only tools that exist when the patch switches are on; not in the registry.
+pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
+pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
+/// Runtime-only tool that exists when `PLAN_EDIT_ENV` is on; not in the registry.
+pub const PLAN_EDIT_TOOL: &str = "newsroom_infographic_edit";
+pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lieflat_render"];
+
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn env_switch(name: &str) -> bool {
+    matches!(std::env::var(name).ok().as_deref(), Some("1" | "true"))
+}
+
+// The runtime only accepts exactly "1" for this switch.
+fn atomic_artifact_on() -> bool {
+    std::env::var(ATOMIC_ARTIFACT_ENV).ok().as_deref() == Some("1")
+}
+
+// The runtime only accepts exactly "1" for this switch.
+fn inline_claim_on() -> bool {
+    std::env::var(INLINE_CLAIM_ENV).ok().as_deref() == Some("1")
+}
+
+// The runtime only accepts exactly "1" for the five switches below.
+fn exact_one(name: &str) -> bool {
+    std::env::var(name).ok().as_deref() == Some("1")
+}
+
+/// The turn-saving switches the parent environment asks for.
+pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
+    let chain_viz = env_switch(CHAIN_VIZ_ENV) && atomic_artifact_on();
+    crate::prompt::PromptSpeed {
+        // Plan progress is only useful when the first plan call rides with the first research calls.
+        parallel_hints: env_switch(PARALLEL_HINTS_ENV) || exact_one(PLAN_PROGRESS_ENV),
+        compute_batch: env_switch(COMPUTE_BATCH_ENV),
+        chain_viz,
+        chain_infographic: env_switch(CHAIN_INFOGRAPHIC_ENV) && atomic_artifact_on(),
+        preflight: env_switch(PREFLIGHT_ENV),
+        plan_edit: env_switch(PLAN_EDIT_ENV),
+        inline_claim: inline_claim_on() && chain_viz,
+        plan_patch: exact_one(PLAN_PATCH_ENV) && atomic_artifact_on(),
+        chain_patch: exact_one(CHAIN_PATCH_ENV)
+            && atomic_artifact_on()
+            && exact_one(CHAIN_INFOGRAPHIC_ENV),
+        report_all: exact_one(REPORT_ALL_ENV),
+        fill_copied_refs: exact_one(FILL_COPIED_REFS_ENV),
+        first_try_text: exact_one(FIRST_TRY_TEXT_ENV),
+        data_profile: exact_one(DATA_PROFILE_ENV),
+        recipes: exact_one(RECIPES_ENV),
+        compose_answer: exact_one(COMPOSE_ANSWER_ENV),
+        plan_progress: exact_one(PLAN_PROGRESS_ENV),
+    }
+}
+
+pub fn hide_lieflat_switch_enabled() -> bool {
+    matches!(
+        std::env::var(HIDE_LIEFLAT_ENV).ok().as_deref(),
+        Some("1" | "true")
+    )
 }
 
 #[derive(Debug)]
 pub struct PiRunResult {
     pub text: String,
     pub session_stats: Option<Value>,
+}
+
+/// The settled final assistant turn was a provider error. Nothing here is
+/// provider text except `partial_text`, which is model output that already
+/// passed secret redaction and was streamed to stdout.
+#[derive(Debug)]
+pub struct ProviderFailure {
+    pub class: &'static str,
+    pub http_status: Option<u16>,
+    pub turn_index: u32,
+    pub elapsed_ms: u128,
+    pub partial_text: String,
+}
+
+impl std::fmt::Display for ProviderFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Pi provider failed after internal retries: {}",
+            self.class
+        )?;
+        if let Some(status) = self.http_status {
+            write!(f, " HTTP {status}")?;
+        }
+        write!(
+            f,
+            " (turn {}, {} ms elapsed, raw diagnostic suppressed)",
+            self.turn_index, self.elapsed_ms
+        )
+    }
+}
+
+impl std::error::Error for ProviderFailure {}
+
+#[derive(Debug, Clone)]
+struct TurnFailure {
+    class: &'static str,
+    status: Option<u16>,
+    turn_index: u32,
+    at_ms: u128,
+    gap_ms: u128,
+    turn_ms: Option<u128>,
+    turn_events: u64,
+    turn_bytes: u64,
+    turn_first_event_ms: Option<u128>,
+    context_tokens: Option<u64>,
+}
+
+/// Non-sensitive counters for one `run_prompt` call: counts, durations and
+/// fixed class names only.
+#[derive(Debug)]
+struct RunTelemetry {
+    events: u64,
+    bytes: u64,
+    first_event_ms: Option<u128>,
+    turns: u32,
+    turn_start_ms: Option<u128>,
+    turn_events0: u64,
+    turn_bytes0: u64,
+    turn_first_event_ms: Option<u128>,
+    last_ok_context_tokens: Option<u64>,
+    failed_turns: u32,
+    classes: Vec<&'static str>,
+    auto_retries: u32,
+    pending: Option<TurnFailure>,
+    stage: &'static str,
+}
+
+impl RunTelemetry {
+    fn new() -> Self {
+        Self {
+            events: 0,
+            bytes: 0,
+            first_event_ms: None,
+            turns: 0,
+            turn_start_ms: None,
+            turn_events0: 0,
+            turn_bytes0: 0,
+            turn_first_event_ms: None,
+            last_ok_context_tokens: None,
+            failed_turns: 0,
+            classes: Vec::new(),
+            auto_retries: 0,
+            pending: None,
+            stage: "startup",
+        }
+    }
+
+    fn note_event(&mut self, now_ms: u128, record_bytes: u64) {
+        self.events += 1;
+        self.bytes += record_bytes;
+        self.first_event_ms.get_or_insert(now_ms);
+    }
+
+    fn turn_started(&mut self, now_ms: u128) {
+        self.turns += 1;
+        self.turn_start_ms = Some(now_ms);
+        self.turn_events0 = self.events;
+        self.turn_bytes0 = self.bytes;
+        self.turn_first_event_ms = None;
+    }
+
+    fn stream_event(&mut self, now_ms: u128) {
+        if self.turn_first_event_ms.is_none() {
+            if let Some(start) = self.turn_start_ms {
+                self.turn_first_event_ms = Some(now_ms.saturating_sub(start));
+            }
+        }
+    }
+
+    fn turn_failed(
+        &mut self,
+        (class, status): (&'static str, Option<u16>),
+        now_ms: u128,
+        gap_ms: u128,
+        context_tokens: Option<u64>,
+    ) {
+        self.failed_turns += 1;
+        if self.classes.len() < 16 {
+            self.classes.push(class);
+        }
+        self.pending = Some(TurnFailure {
+            class,
+            status,
+            turn_index: self.turns,
+            at_ms: now_ms,
+            gap_ms,
+            turn_ms: self.turn_start_ms.map(|start| now_ms.saturating_sub(start)),
+            turn_events: self.events.saturating_sub(self.turn_events0),
+            turn_bytes: self.bytes.saturating_sub(self.turn_bytes0),
+            turn_first_event_ms: self.turn_first_event_ms,
+            context_tokens,
+        });
+    }
+
+    fn turn_ok(&mut self, context_tokens: Option<u64>) {
+        self.pending = None;
+        if context_tokens.is_some() {
+            self.last_ok_context_tokens = context_tokens;
+        }
+    }
+}
+
+/// Prompt-side tokens of one assistant message (input plus cache traffic).
+fn message_context_tokens(message: Option<&Value>) -> Option<u64> {
+    let usage = message?.get("usage")?;
+    let part = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let total = part("input") + part("cacheRead") + part("cacheWrite");
+    (total > 0).then_some(total)
+}
+
+/// stopReason of a finished assistant turn (`message_end` or `turn_end`).
+fn finished_turn_stop_reason(event: &Value) -> Option<&str> {
+    if !matches!(
+        event.get("type").and_then(Value::as_str),
+        Some("message_end" | "turn_end")
+    ) {
+        return None;
+    }
+    let message = event.get("message")?;
+    if message
+        .get("role")
+        .and_then(Value::as_str)
+        .is_some_and(|role| role != "assistant")
+    {
+        return None;
+    }
+    message.get("stopReason").and_then(Value::as_str)
 }
 
 #[cfg(target_os = "macos")]
@@ -152,10 +434,49 @@ fn normalized_newsroom_phase() -> Option<String> {
     }
 }
 
+/// First standalone HTTP status number (not glued to letters or digits, so ids
+/// such as `req_01abc503x` or counts such as `2500` never match).
+fn standalone_status(diagnostic: &str) -> Option<u16> {
+    const KNOWN: [u16; 19] = [
+        400, 401, 402, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504, 520, 521, 522, 524, 525,
+        529,
+    ];
+    let bytes = diagnostic.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index].is_ascii_digit() {
+            let begin = index;
+            while index < bytes.len() && bytes[index].is_ascii_digit() {
+                index += 1;
+            }
+            let glued = |position: Option<&u8>| {
+                position.is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+            };
+            if index - begin == 3
+                && !glued(begin.checked_sub(1).and_then(|i| bytes.get(i)))
+                && !glued(bytes.get(index))
+            {
+                if let Ok(value) = diagnostic[begin..index].parse::<u16>() {
+                    if KNOWN.contains(&value) {
+                        return Some(value);
+                    }
+                }
+            }
+        } else {
+            index += 1;
+        }
+    }
+    None
+}
+
+/// Redacted, actionable failure classes. The diagnostic is only inspected here
+/// and never returned.
 fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     let diagnostic = [
         event.get("error"),
         event.get("data"),
+        event.get("errorMessage"),
+        event.get("finalError"),
         event
             .get("message")
             .and_then(|message| message.get("errorMessage")),
@@ -169,41 +490,79 @@ fn provider_error_class(event: &Value) -> (&'static str, Option<u16>) {
     .collect::<Vec<_>>()
     .join(" ")
     .to_ascii_lowercase();
-    let status = [
-        400_u16, 401, 402, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504, 529,
-    ]
-    .into_iter()
-    .find(|status| diagnostic.contains(&status.to_string()));
-    let class = match status {
-        Some(401 | 403) => "provider_authentication_failed",
-        Some(408 | 504) => "provider_timeout",
-        Some(429) => "provider_rate_limited",
-        Some(500 | 502 | 503 | 529) => "provider_unavailable",
-        Some(400 | 402 | 404 | 409 | 413) => "provider_request_rejected",
-        _ if diagnostic.contains("rate_limit_error") => "provider_rate_limited",
-        _ if diagnostic.contains("timeout_error") => "provider_timeout",
-        _ if diagnostic.contains("authentication_error")
-            || diagnostic.contains("permission_error") =>
-        {
-            "provider_authentication_failed"
-        }
-        _ if diagnostic.contains("api_error") || diagnostic.contains("overloaded_error") => {
-            "provider_unavailable"
-        }
-        _ if diagnostic.contains("invalid_request_error")
-            || diagnostic.contains("billing_error")
-            || diagnostic.contains("not_found_error")
-            || diagnostic.contains("conflict_error")
-            || diagnostic.contains("request_too_large") =>
-        {
-            "provider_request_rejected"
-        }
-        _ if diagnostic.contains("no available accounts")
-            || diagnostic.contains("service unavailable") =>
-        {
-            "provider_unavailable"
-        }
-        _ => "provider_error",
+    let status = standalone_status(&diagnostic);
+    let has = |needles: &[&str]| needles.iter().any(|needle| diagnostic.contains(needle));
+    let class = if matches!(status, Some(401 | 403))
+        || has(&["authentication_error", "permission_error"])
+    {
+        "provider_authentication_failed"
+    } else if status == Some(429) || has(&["rate_limit_error", "rate limit", "too many requests"]) {
+        "provider_rate_limited"
+    } else if status == Some(413)
+        || has(&[
+            "prompt is too long",
+            "request_too_large",
+            "request too large",
+            "exceeds the context window",
+            "maximum context length",
+            "context_length_exceeded",
+            "context length exceeded",
+            "too many tokens",
+            "input is too long",
+            "payload too large",
+            "request entity too large",
+        ])
+    {
+        "provider_context_overflow"
+    } else if status == Some(529) || has(&["overloaded"]) {
+        "provider_overloaded"
+    } else if matches!(status, Some(408 | 504 | 522 | 524))
+        || has(&[
+            "timeout_error",
+            "timed out",
+            "timeout",
+            "etimedout",
+            "deadline exceeded",
+        ])
+    {
+        "provider_timeout"
+    } else if matches!(status, Some(502 | 503 | 520 | 521 | 525))
+        || has(&[
+            "bad gateway",
+            "service unavailable",
+            "no available accounts",
+            "<html",
+        ])
+    {
+        "provider_gateway_error"
+    } else if has(&[
+        "terminated",
+        "other side closed",
+        "stream ended",
+        "fetch failed",
+        "socket hang up",
+        "econnreset",
+        "connection reset",
+        "connection closed",
+        "premature close",
+        "unexpected eof",
+        "network error",
+        "connection error",
+    ]) {
+        "provider_stream_interrupted"
+    } else if status == Some(500) || has(&["api_error"]) {
+        "provider_unavailable"
+    } else if matches!(status, Some(400 | 402 | 404 | 409))
+        || has(&[
+            "invalid_request_error",
+            "billing_error",
+            "not_found_error",
+            "conflict_error",
+        ])
+    {
+        "provider_request_rejected"
+    } else {
+        "provider_error"
     };
     (class, status)
 }
@@ -215,6 +574,198 @@ fn prompt_retry_allowed(event: &Value, prompt_accepted: bool, attempt: u8) -> bo
         && event.get("command").and_then(Value::as_str) == Some("prompt")
         && event.get("success").and_then(Value::as_bool) == Some(false)
 }
+
+/// The tools a finished `newsroom_viz_chain` call lists, in order.
+const VIZ_CHAIN_STEPS: [&str; 4] = [
+    "newsroom_viz_plan",
+    "newsroom_viz_lint",
+    "newsroom_viz_render",
+    "newsroom_viz_critic",
+];
+
+/// A rendered chart's files as announced once its critic passed. Every ref is
+/// an artifact-relative path inside `visualizations/`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReadyChart {
+    desktop: String,
+    compact: Option<String>,
+    mobile: Option<String>,
+    manifest: String,
+}
+
+impl ReadyChart {
+    /// Reads a render step's typed details. Every ref that is present must stay
+    /// inside `visualizations/`; one that does not leaves the chart unannounced.
+    fn from_render_details(details: &Value) -> Option<Self> {
+        let text = |key: &str| details.get(key).and_then(Value::as_str);
+        let optional = |key: &str| match details.get(key) {
+            None | Some(Value::Null) => Some(None),
+            Some(Value::String(path)) if is_visualization_ref(path) => Some(Some(path.clone())),
+            Some(_) => None,
+        };
+        let (desktop, manifest) = (text("desktopSvgRef")?, text("manifestRef")?);
+        if !is_visualization_ref(desktop) || !is_visualization_ref(manifest) {
+            return None;
+        }
+        Some(Self {
+            desktop: desktop.to_string(),
+            compact: optional("compactSvgRef")?,
+            mobile: optional("mobileSvgRef")?,
+            manifest: manifest.to_string(),
+        })
+    }
+}
+
+const PLAN_PROGRESS_FILE: &str = "plan-progress.json";
+
+/// One `plan-progress.json` line per finished tool call, copied from that tool event's own id,
+/// name and error flag. It is a record of what ran, not a plan: `plan.json` and the audit's
+/// plan-call count are untouched, and an event without a call id yields no line.
+fn plan_progress_entry(event: &Value, seq: u64) -> Option<Value> {
+    if event.get("type").and_then(Value::as_str) != Some("tool_execution_end") {
+        return None;
+    }
+    let call_id = event.get("toolCallId").and_then(Value::as_str)?;
+    let tool = event.get("toolName").and_then(Value::as_str)?;
+    let is_error = event.get("isError").and_then(Value::as_bool);
+    Some(json!({
+        "seq": seq,
+        "tool_call_id": call_id,
+        "tool": tool,
+        "is_error": is_error,
+        // A missing isError is unknown, never completed.
+        "status": match is_error {
+            Some(true) => "failed",
+            Some(false) => "completed",
+            None => "unknown",
+        },
+        "source": "tool_execution_end",
+        "recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    }))
+}
+
+/// Tracks rendered charts whose deterministic critic passed, so the first one
+/// can be announced before the model finishes the rest of the run. The notice
+/// is progress output only: it grants no verification, completion or
+/// publication status, never ends the Pi session and changes no completion
+/// check. Only a run with the inline-claim switch on watches.
+#[derive(Default)]
+struct ChartReadyWatch {
+    renders: HashMap<String, ReadyChart>,
+    critic_manifests: HashMap<String, String>,
+    announced: bool,
+}
+
+impl ChartReadyWatch {
+    /// Returns the chart's files the first time a critic passes for a rendered
+    /// chart: a `newsroom_viz_chain` that completed with a passing critic, or a
+    /// separately called `newsroom_viz_critic` for a manifest that an earlier
+    /// `newsroom_viz_render` call produced.
+    fn observe(&mut self, event: &Value) -> Option<ReadyChart> {
+        let tool = event.get("toolName").and_then(Value::as_str)?;
+        let call_id = event.get("toolCallId").and_then(Value::as_str)?;
+        match event.get("type").and_then(Value::as_str)? {
+            "tool_execution_start" if tool == "newsroom_viz_critic" => {
+                let manifest = event.get("args")?.get("manifest_ref")?.as_str()?;
+                self.critic_manifests
+                    .insert(call_id.to_string(), manifest.to_string());
+                None
+            }
+            "tool_execution_end" => {
+                let manifest = self.critic_manifests.remove(call_id);
+                if event.get("isError").and_then(Value::as_bool) != Some(false) {
+                    return None;
+                }
+                let details = event.get("result")?.get("details")?;
+                match tool {
+                    "newsroom_viz_render" => {
+                        let chart = ReadyChart::from_render_details(details)?;
+                        self.renders.insert(chart.manifest.clone(), chart);
+                        None
+                    }
+                    "newsroom_viz_critic" if !self.announced => {
+                        if details.get("passed").and_then(Value::as_bool) != Some(true) {
+                            return None;
+                        }
+                        let chart = self.renders.get(&manifest?)?.clone();
+                        self.announced = true;
+                        Some(chart)
+                    }
+                    VIZ_CHAIN_TOOL if !self.announced => {
+                        let chart = Self::finished_chain_chart(details)?;
+                        self.announced = true;
+                        Some(chart)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The chart a finished chain call rendered, when all four steps ran, the
+    /// chain completed and its critic passed on the manifest that render wrote.
+    /// Read only from the call's own result: anything missing or inconsistent
+    /// yields nothing.
+    fn finished_chain_chart(details: &Value) -> Option<ReadyChart> {
+        if details.get("chain").and_then(Value::as_str) != Some(VIZ_CHAIN_TOOL)
+            || details.get("chainStatus").and_then(Value::as_str) != Some("COMPLETE")
+        {
+            return None;
+        }
+        let steps = details.get("steps")?.as_array()?;
+        let [plan, lint, render, critic] = steps.as_slice() else {
+            return None;
+        };
+        if ![plan, lint, render, critic]
+            .iter()
+            .zip(VIZ_CHAIN_STEPS)
+            .all(|(step, name)| step.get("tool").and_then(Value::as_str) == Some(name))
+        {
+            return None;
+        }
+        if critic.pointer("/details/passed").and_then(Value::as_bool) != Some(true) {
+            return None;
+        }
+        let chart = ReadyChart::from_render_details(render.get("details")?)?;
+        (critic
+            .pointer("/params/manifest_ref")
+            .and_then(Value::as_str)
+            == Some(chart.manifest.as_str()))
+        .then_some(chart)
+    }
+}
+
+/// An artifact-relative path that stays inside `visualizations/`: no absolute
+/// part, no `..`, no control character that could forge a log line.
+fn is_visualization_ref(path: &str) -> bool {
+    path.starts_with("visualizations/")
+        && !path.ends_with('/')
+        && !path.chars().any(char::is_control)
+        && Path::new(path)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
+/// The one-line first-chart notice. It names files and states only that a
+/// critic passed; it never says verified, publishable or complete.
+fn chart_ready_line(elapsed_ms: u128, root: &Path, chart: &ReadyChart) -> String {
+    let mut line = format!(
+        "[agent] chart_ready elapsed_ms={elapsed_ms} desktop={}",
+        root.join(&chart.desktop).display()
+    );
+    for (label, path) in [("compact", &chart.compact), ("mobile", &chart.mobile)] {
+        if let Some(path) = path {
+            line.push_str(&format!(" {label}={}", root.join(path).display()));
+        }
+    }
+    line.push_str(" (critic passed; progress only, the run continues)");
+    line
+}
+
+/// Set once the first-chart notice was printed. A recovery or repair prompt
+/// starts a new watch and a new clock; the first chart stays the only one named.
+static CHART_NOTICE_SENT: AtomicBool = AtomicBool::new(false);
 
 fn assistant_provider_turn_failed(event: &Value) -> bool {
     matches!(
@@ -254,6 +805,47 @@ fn sanitize_provider_event(event: &mut Value, secrets: &[String]) -> Result<()> 
 }
 
 impl PiConfig {
+    fn effective_tool_profile(&self) -> &str {
+        if tools_for_profile(&self.tool_profile).is_some() {
+            self.tool_profile.as_str()
+        } else {
+            DEFAULT_TOOL_PROFILE
+        }
+    }
+
+    fn lieflat_hidden(&self) -> bool {
+        self.hide_lieflat && self.effective_tool_profile() == "visual-story"
+    }
+
+    /// Comma-separated tool allowlist handed to Pi via `--tools`.
+    pub fn tools_arg(&self) -> String {
+        let tools = tools_for_profile(self.effective_tool_profile())
+            .expect("effective tool profile must exist");
+        let mut names: Vec<&str> = tools.split(',').collect();
+        if self.lieflat_hidden() {
+            names.retain(|name| !LIEFLAT_TOOLS.contains(name));
+        }
+        // The chain wraps newsroom_viz_plan, so it is offered only where that tool is.
+        if self.speed.chain_viz && names.contains(&"newsroom_viz_plan") {
+            names.push(VIZ_CHAIN_TOOL);
+        }
+        if self.speed.chain_infographic && names.contains(&"newsroom_infographic_plan") {
+            names.push(INFOGRAPHIC_CHAIN_TOOL);
+        }
+        // The edit rewrites a page plan through the plan tool, so it is offered only where that is.
+        if self.speed.plan_edit && names.contains(&"newsroom_infographic_plan") {
+            names.push(PLAN_EDIT_TOOL);
+        }
+        // Each patch tool re-runs the tool it wraps, so it is offered only where that tool is.
+        if self.speed.plan_patch && names.contains(&"newsroom_infographic_plan") {
+            names.push(PLAN_PATCH_TOOL);
+        }
+        if self.speed.chain_patch && names.contains(&INFOGRAPHIC_CHAIN_TOOL) {
+            names.push(CHAIN_PATCH_TOOL);
+        }
+        names.join(",")
+    }
+
     fn dragoncode_endpoint(value: &str) -> bool {
         let authority = value
             .split_once("://")
@@ -365,10 +957,7 @@ impl PiConfig {
                 .arg("--no-prompt-templates")
                 .arg("--no-context-files")
                 .arg("--tools")
-                .arg(tools_for_profile(&self.tool_profile).unwrap_or_else(|| {
-                    tools_for_profile(DEFAULT_TOOL_PROFILE)
-                        .expect("default tool profile must exist")
-                }));
+                .arg(self.tools_arg());
         }
 
         if self.approve_project {
@@ -386,6 +975,64 @@ impl PiConfig {
             DEFAULT_TOOL_PROFILE
         };
         cmd.env("NEWSROOM_TOOL_PROFILE", effective_profile);
+        if self.lieflat_hidden() {
+            cmd.env(HIDE_LIEFLAT_ENV, "1");
+        } else {
+            cmd.env_remove(HIDE_LIEFLAT_ENV);
+        }
+        if self.speed.parallel_hints {
+            cmd.env(PARALLEL_HINTS_ENV, "1");
+        } else {
+            cmd.env_remove(PARALLEL_HINTS_ENV);
+        }
+        if self.speed.plan_progress {
+            cmd.env(PLAN_PROGRESS_ENV, "1");
+        } else {
+            cmd.env_remove(PLAN_PROGRESS_ENV);
+        }
+        if self.speed.compute_batch {
+            cmd.env(COMPUTE_BATCH_ENV, "1");
+        } else {
+            cmd.env_remove(COMPUTE_BATCH_ENV);
+        }
+        if self.speed.chain_viz {
+            cmd.env(CHAIN_VIZ_ENV, "1");
+        } else {
+            cmd.env_remove(CHAIN_VIZ_ENV);
+        }
+        if self.speed.chain_infographic {
+            cmd.env(CHAIN_INFOGRAPHIC_ENV, "1");
+        } else {
+            cmd.env_remove(CHAIN_INFOGRAPHIC_ENV);
+        }
+        if self.speed.preflight {
+            cmd.env(PREFLIGHT_ENV, "1");
+        } else {
+            cmd.env_remove(PREFLIGHT_ENV);
+        }
+        if self.speed.plan_edit {
+            cmd.env(PLAN_EDIT_ENV, "1");
+        } else {
+            cmd.env_remove(PLAN_EDIT_ENV);
+        }
+        if self.speed.inline_claim {
+            cmd.env(INLINE_CLAIM_ENV, "1");
+        } else {
+            cmd.env_remove(INLINE_CLAIM_ENV);
+        }
+        for (on, name) in [
+            (self.speed.plan_patch, PLAN_PATCH_ENV),
+            (self.speed.chain_patch, CHAIN_PATCH_ENV),
+            (self.speed.report_all, REPORT_ALL_ENV),
+            (self.speed.fill_copied_refs, FILL_COPIED_REFS_ENV),
+            (self.speed.first_try_text, FIRST_TRY_TEXT_ENV),
+        ] {
+            if on {
+                cmd.env(name, "1");
+            } else {
+                cmd.env_remove(name);
+            }
+        }
         if let Some(phase) = normalized_newsroom_phase() {
             cmd.env("NEWSROOM_PHASE", phase);
         }
@@ -459,7 +1106,7 @@ fn redact_event(value: &mut Value, secrets: &[String]) {
         }
         Value::Object(object) => {
             for (key, item) in object {
-                if matches!(key.as_str(), "error" | "errorMessage") {
+                if matches!(key.as_str(), "error" | "errorMessage" | "finalError") {
                     *item = json!("diagnostic suppressed");
                 } else {
                     redact_event(item, secrets);
@@ -522,7 +1169,10 @@ pub async fn run_prompt(
         })
         .collect();
     let started = Instant::now();
-    eprintln!("[agent] phase=startup elapsed_ms=0");
+    let mut telemetry = RunTelemetry::new();
+    if !crate::step_lines::enabled() {
+        eprintln!("[agent] phase=startup elapsed_ms=0");
+    }
     let mut command = config.command();
     #[cfg(unix)]
     command.process_group(0);
@@ -588,7 +1238,16 @@ pub async fn run_prompt(
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut next_heartbeat = started + heartbeat;
         let mut extension_errors: Vec<String> = Vec::new();
-        let mut provider_turn_failed = false;
+        // Only a run with chart claims filled from rows names its first chart early.
+        let mut chart_watch =
+            (config.speed.inline_claim || config.compose.is_some()).then(ChartReadyWatch::default);
+        // NEWSROOM_STEP_LINES=1: one named line per finished tool call (stderr only; changes no state).
+        let mut step_tracker = crate::step_lines::enabled().then(crate::step_lines::StepTracker::default);
+        // The closing text composed from the artifacts when the one chart is complete; once
+        // set, the next model turn is aborted and no later model text is used or shown.
+        let mut composed_answer: Option<String> = None;
+        let mut compose_abort_sent = false;
+        let mut plan_progress_seq = 0u64;
 
         let mut line = Vec::new();
         loop {
@@ -609,7 +1268,9 @@ pub async fn run_prompt(
                         else if !prompt_accepted { "startup" }
                         else if active_work { "active-work" } else { "rpc-wait" };
                     if now >= next_heartbeat {
-                        eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        if !crate::step_lines::enabled() {
+                            eprintln!("[agent] phase={phase} elapsed_ms={}", started.elapsed().as_millis());
+                        }
                         next_heartbeat = now + heartbeat;
                     }
                     let expired = if !total.is_zero() && started.elapsed() >= total { Some("total") }
@@ -632,10 +1293,19 @@ pub async fn run_prompt(
 
             let event: Value = serde_json::from_str(record)
                 .context("invalid JSONL record from Pi (payload suppressed)")?;
+            let record_bytes = line.len() as u64;
             line.clear();
+            let gap_ms = last_activity.elapsed().as_millis();
             last_activity = Instant::now();
+            let now_ms = started.elapsed().as_millis();
+            telemetry.note_event(now_ms, record_bytes);
 
             let mut event = event;
+            // Classify turn failures from the raw event; only the class is kept.
+            let turn_stop = finished_turn_stop_reason(&event).map(str::to_owned);
+            let turn_class =
+                (turn_stop.as_deref() == Some("error")).then(|| provider_error_class(&event));
+            let turn_tokens = message_context_tokens(event.get("message"));
             // Classify provider failures before redaction, then retain only the safe class/status.
             sanitize_provider_event(&mut event, &secrets)?;
             if let Some(file) = log.as_mut() {
@@ -649,9 +1319,95 @@ pub async fn run_prompt(
                 writeln!(file, "{}", serde_json::to_string(&logged_event)?)?;
                 file.flush()?;
             }
+            // Step lines come first so the chart-out line sits right above `[agent] chart_ready`.
+            if let Some(tracker) = step_tracker.as_mut() {
+                match event.get("type").and_then(Value::as_str) {
+                    Some("tool_execution_start") => tracker.on_start(&event, crate::step_lines::secs_now()),
+                    Some("tool_execution_end") => {
+                        for line in tracker.on_end(&event, crate::step_lines::secs_now(), crate::step_lines::language_zh()) {
+                            eprintln!("{line}");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // Routine plan progress comes from real tool events only, never from model text.
+            if config.speed.plan_progress {
+                if let (Some(root), Some(entry)) = (
+                    config.artifact_dir.as_deref(),
+                    plan_progress_entry(&event, plan_progress_seq + 1),
+                ) {
+                    plan_progress_seq += 1;
+                    if let Ok(mut file) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(root.join(PLAN_PROGRESS_FILE))
+                    {
+                        let _ = writeln!(file, "{entry}");
+                    }
+                }
+            }
+            // Progress only: the notice changes no state, status or completion check.
+            if let Some(chart) = chart_watch.as_mut().and_then(|watch| watch.observe(&event)) {
+                let root = config.artifact_dir.as_deref().unwrap_or(Path::new(""));
+                if config.speed.inline_claim && !CHART_NOTICE_SENT.swap(true, Ordering::Relaxed) {
+                    eprintln!(
+                        "{}",
+                        chart_ready_line(started.elapsed().as_millis(), root, &chart)
+                    );
+                }
+                if let Some(spec) = config
+                    .compose
+                    .as_ref()
+                    .filter(|_| composed_answer.is_none())
+                {
+                    let files = crate::compose_answer::ChartFiles {
+                        desktop: chart.desktop.clone(),
+                        compact: chart.compact.clone(),
+                        mobile: chart.mobile.clone(),
+                        manifest: chart.manifest.clone(),
+                    };
+                    let composed = crate::compose_answer::compose(root, &files, spec);
+                    let mut record = json!({
+                        "type": "newsroom_composed_answer",
+                        "schema_version": "0.1.0",
+                        "manifest_ref": chart.manifest,
+                        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+                    });
+                    match &composed {
+                        Ok(_) => record["source"] = json!("runtime"),
+                        Err(error) => {
+                            record["source"] = json!("model");
+                            record["reason"] = json!(format!("{error:#}"));
+                        }
+                    }
+                    if let Some(file) = log.as_mut() {
+                        writeln!(file, "{}", serde_json::to_string(&record)?)?;
+                        file.flush()?;
+                    }
+                    eprintln!(
+                        "[agent] composed_answer elapsed_ms={} source={}",
+                        started.elapsed().as_millis(),
+                        if composed.is_ok() { "runtime" } else { "model" }
+                    );
+                    composed_answer = composed.ok();
+                }
+            }
 
-            if assistant_provider_turn_failed(&event) {
-                provider_turn_failed = true;
+            match (turn_stop.as_deref(), turn_class) {
+                (Some("error"), Some(class)) => {
+                    let is_message_end =
+                        event.get("type").and_then(Value::as_str) == Some("message_end");
+                    let already = telemetry
+                        .pending
+                        .as_ref()
+                        .is_some_and(|failure| failure.turn_index == telemetry.turns);
+                    if is_message_end || !already {
+                        telemetry.turn_failed(class, now_ms, gap_ms, turn_tokens);
+                    }
+                }
+                (Some(_), _) => telemetry.turn_ok(turn_tokens),
+                _ => {}
             }
 
             match event.get("type").and_then(Value::as_str) {
@@ -660,6 +1416,7 @@ pub async fn run_prompt(
                 {
                     if event.get("success").and_then(Value::as_bool) == Some(true) {
                         prompt_accepted = true;
+                        telemetry.stage = "streaming";
                         let accepted_ms = started.elapsed().as_millis();
                         startup_ms = Some(accepted_ms);
                         eprintln!("[agent] startup_ms={accepted_ms}");
@@ -725,14 +1482,17 @@ pub async fn run_prompt(
                 }
                 Some("message_update") => {
                     active_work = true;
+                    telemetry.stream_event(now_ms);
                     if let Some(update) = event.get("assistantMessageEvent") {
                         if update.get("type").and_then(Value::as_str) == Some("text_delta") {
                             if let Some(delta) = update.get("delta").and_then(Value::as_str) {
                                 if first_text_ms.is_none() {
                                     first_text_ms = Some(started.elapsed().as_millis());
                                 }
-                                print!("{delta}");
-                                std::io::stdout().flush().ok();
+                                if composed_answer.is_none() {
+                                    print!("{delta}");
+                                    std::io::stdout().flush().ok();
+                                }
                                 streamed_answer.push_str(delta);
                             }
                         }
@@ -740,21 +1500,42 @@ pub async fn run_prompt(
                 }
                 Some("tool_execution_start") => {
                     active_work = true;
-                    eprintln!(
-                        "[agent] phase=tool-running elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
+                    if !crate::step_lines::enabled() {
+                        eprintln!(
+                            "[agent] phase=tool-running elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("tool_execution_end") => {
-                    eprintln!(
-                        "[agent] phase=tool-complete elapsed_ms={}",
-                        started.elapsed().as_millis()
-                    );
+                    if !crate::step_lines::enabled() {
+                        eprintln!(
+                            "[agent] phase=tool-complete elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("turn_start") => {
                     // A new model/tool turn is active even when the provider
                     // emits no visible text while it is thinking.
                     active_work = true;
+                    telemetry.turn_started(now_ms);
+                    if composed_answer.is_some() && !compose_abort_sent {
+                        // The one chart is complete and its closing text is composed, so
+                        // this turn could only restate it.
+                        send_json(
+                            &mut stdin,
+                            &json!({"id": "news-compose-abort", "type": "abort"}),
+                            finish,
+                        )
+                        .await?;
+                        compose_abort_sent = true;
+                        finish_started.get_or_insert_with(Instant::now);
+                        eprintln!(
+                            "[agent] phase=compose-abort elapsed_ms={}",
+                            started.elapsed().as_millis()
+                        );
+                    }
                 }
                 Some("turn_end") => {
                     // Re-enable the idle boundary between turns. Tool and
@@ -764,6 +1545,19 @@ pub async fn run_prompt(
                 }
                 Some("agent_start" | "message_start" | "auto_retry_start") => {
                     active_work = true;
+                    match event.get("type").and_then(Value::as_str) {
+                        Some("auto_retry_start") => telemetry.auto_retries += 1,
+                        Some("message_start")
+                            if event
+                                .get("message")
+                                .and_then(|m| m.get("stopReason"))
+                                .and_then(Value::as_str)
+                                != Some("error") =>
+                        {
+                            telemetry.stream_event(now_ms)
+                        }
+                        _ => {}
+                    }
                 }
                 Some("extension_error") => {
                     extension_errors.push("suppressed".to_string());
@@ -771,6 +1565,7 @@ pub async fn run_prompt(
                 }
                 Some("agent_settled") => {
                     saw_settled = true;
+                    telemetry.stage = "finishing";
                     finish_started.get_or_insert_with(Instant::now);
                     if !final_queries_sent {
                         send_json(
@@ -822,11 +1617,29 @@ pub async fn run_prompt(
             );
         }
 
-        let answer = final_answer.unwrap_or(streamed_answer);
-        if answer.trim().is_empty() {
-            if provider_turn_failed {
-                bail!("Pi provider failed after internal retries (diagnostic suppressed)");
+        let answer = match composed_answer {
+            Some(text) => {
+                print!("{text}");
+                std::io::stdout().flush().ok();
+                text
             }
+            None => final_answer.unwrap_or(streamed_answer),
+        };
+        if let Some(failure) = telemetry.pending.clone() {
+            // The settled final turn is a provider error: the run did not
+            // complete, even when partial text was streamed. Keep the text.
+            if !answer.is_empty() && !answer.ends_with('\n') {
+                println!();
+            }
+            return Err(anyhow::Error::new(ProviderFailure {
+                class: failure.class,
+                http_status: failure.status,
+                turn_index: failure.turn_index,
+                elapsed_ms: failure.at_ms,
+                partial_text: answer,
+            }));
+        }
+        if answer.trim().is_empty() {
             bail!("Pi returned an empty final answer (provider diagnostic suppressed)");
         }
         if !answer.ends_with('\n') {
@@ -834,13 +1647,15 @@ pub async fn run_prompt(
         }
 
         let rpc_ms = started.elapsed().as_millis();
-        eprintln!(
-            "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
-            rpc_ms,
-            first_text_ms
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "N/A".into())
-        );
+        if !crate::step_lines::enabled() {
+            eprintln!(
+                "[agent] phase=complete rpc_ms={} first_model_text_ms={}",
+                rpc_ms,
+                first_text_ms
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "N/A".into())
+            );
+        }
         let token_value = |key: &str| {
             session_stats
                 .as_ref()
@@ -869,12 +1684,21 @@ pub async fn run_prompt(
             } else {
                 DEFAULT_TOOL_PROFILE
             };
-            let tool_count = tools_for_profile(effective_profile)
-                .map(|tools| tools.split(',').filter(|name| !name.is_empty()).count())
-                .unwrap_or(0);
+            let tool_count = config
+                .tools_arg()
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .count();
             let metric_event = json!({
                 "type": "newsroom_rpc_metrics",
-                "schema_version": "0.1.0",
+                "schema_version": "0.2.0",
+                "outcome": "completed",
+                "events_received": telemetry.events,
+                "bytes_received": telemetry.bytes,
+                "first_event_ms": telemetry.first_event_ms,
+                "turns": telemetry.turns,
+                "recovered_failed_turns": telemetry.failed_turns,
+                "auto_retries": telemetry.auto_retries,
                 "startup_ms": startup_ms,
                 "rpc_ms": rpc_ms,
                 "first_model_text_ms": first_text_ms,
@@ -902,6 +1726,9 @@ pub async fn run_prompt(
         _ = tokio::signal::ctrl_c() => Err(anyhow!("Pi RPC cancelled by user")),
         _ = tokio::time::sleep(total), if !total.is_zero() => Err(anyhow!("Pi RPC total timeout")),
     };
+    if let (Err(error), Some(path)) = (&outcome, event_log) {
+        record_rpc_failure(path, config, prompt, &telemetry, started, error);
+    }
     #[cfg(unix)]
     {
         // Give Pi a bounded chance to clean up its own tracked detached tools.
@@ -914,6 +1741,68 @@ pub async fn run_prompt(
     let _ = child.kill().await;
     let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
     outcome
+}
+
+/// Appends one `newsroom_rpc_failure` event (best effort) and prints a one-line
+/// stderr summary. Only classes, counts and durations are recorded.
+fn record_rpc_failure(
+    path: &Path,
+    config: &PiConfig,
+    prompt: &str,
+    telemetry: &RunTelemetry,
+    started: Instant,
+    error: &anyhow::Error,
+) {
+    let elapsed_ms = started.elapsed().as_millis();
+    let provider = error.downcast_ref::<ProviderFailure>();
+    let failure = telemetry.pending.as_ref();
+    let message = format!("{error:#}");
+    let event = json!({
+        "type": "newsroom_rpc_failure",
+        "schema_version": "0.1.0",
+        "kind": if provider.is_some() { "provider_failure" } else { "rpc_failure" },
+        "stage": telemetry.stage,
+        "message": message,
+        "class": provider.map(|value| value.class),
+        "http_status": provider.and_then(|value| value.http_status),
+        "turn_index": failure.map(|value| value.turn_index).or((telemetry.turns > 0).then_some(telemetry.turns)),
+        "elapsed_ms": elapsed_ms,
+        "failure_at_ms": failure.map(|value| value.at_ms),
+        "first_event_ms": telemetry.first_event_ms,
+        "events_received": telemetry.events,
+        "bytes_received": telemetry.bytes,
+        "turn_events": failure.map(|value| value.turn_events),
+        "turn_bytes": failure.map(|value| value.turn_bytes),
+        "turn_ms": failure.and_then(|value| value.turn_ms),
+        "turn_first_event_ms": failure.and_then(|value| value.turn_first_event_ms),
+        "gap_before_failure_ms": failure.map(|value| value.gap_ms),
+        "failed_turn_context_tokens": failure.and_then(|value| value.context_tokens),
+        "last_ok_context_tokens": telemetry.last_ok_context_tokens,
+        "failed_turns": telemetry.failed_turns,
+        "auto_retries": telemetry.auto_retries,
+        "turn_classes": telemetry.classes,
+        "partial_text_bytes": provider.map(|value| value.partial_text.len()),
+        "prompt_bytes": prompt.len(),
+        "continue_session": config.continue_session,
+        "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{event}");
+    }
+    let number = |value: Option<u128>| value.map_or("N/A".to_string(), |v| v.to_string());
+    eprintln!(
+        "[agent] rpc_failure class={} stage={} turn={} elapsed_ms={elapsed_ms} first_event_ms={} events={} bytes={} turn_events={} turn_bytes={} turn_ms={} gap_ms={}",
+        provider.map_or("none", |value| value.class),
+        telemetry.stage,
+        telemetry.turns,
+        number(telemetry.first_event_ms),
+        telemetry.events,
+        telemetry.bytes,
+        failure.map_or("N/A".to_string(), |value| value.turn_events.to_string()),
+        failure.map_or("N/A".to_string(), |value| value.turn_bytes.to_string()),
+        number(failure.and_then(|value| value.turn_ms)),
+        number(failure.map(|value| value.gap_ms)),
+    );
 }
 
 // fill_buf/consume keeps partial JSON safe across select cancellation and caps memory.
@@ -958,7 +1847,11 @@ async fn send_json(
         tokio::select! {
             _ = tokio::signal::ctrl_c() => bail!("Pi RPC cancelled by user"),
             result = &mut write => { result.context("Pi RPC write timeout")??; break; },
-            _ = tokio::time::sleep(heartbeat) => eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis()),
+            _ = tokio::time::sleep(heartbeat) => {
+                if !crate::step_lines::enabled() {
+                    eprintln!("[agent] phase=rpc-write elapsed_ms={}", started.elapsed().as_millis());
+                }
+            }
         }
     }
     Ok(())
@@ -983,11 +1876,911 @@ mod tests {
             session_dir: None,
             continue_session: false,
             tool_profile: "investigate".to_string(),
+            hide_lieflat: false,
+            speed: Default::default(),
+            compose: None,
         };
         assert_eq!(
             cfg.display_runtime(),
             "pi-rpc provider=<pi-default> model=<pi-default> session=ephemeral tools=investigate"
         );
+    }
+
+    fn visual_story_config(hide_lieflat: bool, profile: &str) -> PiConfig {
+        PiConfig {
+            binary: "pi".into(),
+            provider: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            thinking: None,
+            approve_project: false,
+            extension: Some("ext.ts".into()),
+            artifact_dir: None,
+            session_dir: None,
+            continue_session: false,
+            tool_profile: profile.to_string(),
+            hide_lieflat,
+            speed: Default::default(),
+            compose: None,
+        }
+    }
+
+    fn names(config: &PiConfig) -> Vec<String> {
+        config.tools_arg().split(',').map(str::to_string).collect()
+    }
+
+    #[test]
+    fn hide_lieflat_removes_exactly_one_design_and_one_publish_tool() {
+        let registry: Value =
+            serde_json::from_str(include_str!("../config/tool-registry.json")).unwrap();
+        let phase_of = |name: &str| {
+            registry["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .map(|tool| tool["phase"].as_str().unwrap().to_string())
+                .unwrap_or_else(|| panic!("{name} missing from tool-registry.json"))
+        };
+        let base = names(&visual_story_config(false, "visual-story"));
+        let lean = names(&visual_story_config(true, "visual-story"));
+        println!(
+            "visual-story baseline tools={} lean tools={}",
+            base.len(),
+            lean.len()
+        );
+        assert_eq!(base.len() - lean.len(), 2);
+        let removed: Vec<&String> = base.iter().filter(|name| !lean.contains(name)).collect();
+        let mut phases: Vec<String> = removed.iter().map(|name| phase_of(name)).collect();
+        phases.sort();
+        assert_eq!(phases, ["design", "publish"]);
+        let mut removed_names: Vec<&str> = removed.iter().map(|name| name.as_str()).collect();
+        removed_names.sort();
+        assert_eq!(removed_names, LIEFLAT_TOOLS);
+        // Order of everything else is unchanged.
+        let kept: Vec<&String> = base.iter().filter(|name| lean.contains(name)).collect();
+        assert_eq!(kept, lean.iter().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn hide_lieflat_never_touches_other_profiles() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let on = visual_story_config(true, profile);
+            assert_eq!(on.tools_arg(), off.tools_arg(), "{profile}");
+        }
+        assert_eq!(
+            visual_story_config(false, "visual-story").tools_arg(),
+            crate::tool_registry::tools_for_profile("visual-story").unwrap()
+        );
+    }
+
+    #[test]
+    fn data_profile_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(DATA_PROFILE_ENV);
+        assert_eq!(
+            speed_switches_from_env(),
+            crate::prompt::PromptSpeed::default()
+        );
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(DATA_PROFILE_ENV, not_one);
+            assert!(!speed_switches_from_env().data_profile, "{not_one:?}");
+        }
+        std::env::set_var(DATA_PROFILE_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.data_profile);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                data_profile: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(DATA_PROFILE_ENV);
+    }
+
+    #[test]
+    fn recipes_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(RECIPES_ENV);
+        assert_eq!(speed_switches_from_env(), crate::prompt::PromptSpeed::default());
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(RECIPES_ENV, not_one);
+            assert!(!speed_switches_from_env().recipes, "{not_one:?}");
+        }
+        std::env::set_var(RECIPES_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.recipes);
+        assert_eq!(
+            crate::prompt::PromptSpeed { recipes: false, ..on },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(RECIPES_ENV);
+    }
+
+    #[test]
+    fn plan_progress_lines_come_only_from_tool_end_events_and_never_from_text() {
+        let end = json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c9", "isError": true});
+        let line = plan_progress_entry(&end, 3).unwrap();
+        assert_eq!(line["tool_call_id"], "c9");
+        assert_eq!(line["tool"], "duckdb_query");
+        assert_eq!(line["seq"], 3);
+        assert_eq!(line["status"], "failed");
+        let ok = json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c10", "isError": false});
+        assert_eq!(plan_progress_entry(&ok, 4).unwrap()["status"], "completed");
+        let unknown =
+            json!({"type": "tool_execution_end", "toolName": "duckdb_query", "toolCallId": "c11"});
+        let line = plan_progress_entry(&unknown, 5).unwrap();
+        assert_eq!(line["status"], "unknown");
+        assert!(line["is_error"].is_null());
+        for other in [
+            json!({"type": "tool_execution_start", "toolName": "x", "toolCallId": "c1"}),
+            json!({"type": "message_update", "assistantMessageEvent": {"delta": "plan: done"}}),
+            json!({"type": "tool_execution_end", "toolName": "x"}),
+        ] {
+            assert!(plan_progress_entry(&other, 1).is_none());
+        }
+    }
+
+    #[test]
+    fn plan_progress_switch_is_exactly_one_and_turns_parallel_hints_on_with_it() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(PLAN_PROGRESS_ENV);
+        std::env::remove_var(PARALLEL_HINTS_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(PLAN_PROGRESS_ENV, not_one);
+            assert_eq!(
+                speed_switches_from_env(),
+                crate::prompt::PromptSpeed::default()
+            );
+        }
+        std::env::set_var(PLAN_PROGRESS_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.plan_progress && on.parallel_hints);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                plan_progress: false,
+                parallel_hints: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(PLAN_PROGRESS_ENV);
+    }
+
+    #[test]
+    fn compose_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(COMPOSE_ANSWER_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(COMPOSE_ANSWER_ENV, not_one);
+            assert!(!speed_switches_from_env().compose_answer, "{not_one:?}");
+        }
+        std::env::set_var(COMPOSE_ANSWER_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.compose_answer);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                compose_answer: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(COMPOSE_ANSWER_ENV);
+    }
+
+    #[test]
+    fn speed_markers_follow_the_config_not_the_parent() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(PARALLEL_HINTS_ENV, "1");
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PARALLEL_HINTS_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        // The parent asked for it, the config did not: the child must not see it.
+        assert_eq!(marker(&config), Some(None));
+        config.speed.parallel_hints = true;
+        assert_eq!(marker(&config), Some(Some("1".to_string())));
+        assert!(speed_switches_from_env().parallel_hints);
+        std::env::set_var(PARALLEL_HINTS_ENV, "0");
+        assert!(!speed_switches_from_env().parallel_hints);
+        std::env::remove_var(PARALLEL_HINTS_ENV);
+        assert!(!speed_switches_from_env().parallel_hints);
+
+        std::env::set_var(COMPUTE_BATCH_ENV, "1");
+        let batch_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == COMPUTE_BATCH_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(batch_marker(&config), Some(None));
+        assert!(speed_switches_from_env().compute_batch);
+        config.speed.compute_batch = true;
+        assert_eq!(batch_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(COMPUTE_BATCH_ENV);
+        assert!(!speed_switches_from_env().compute_batch);
+
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().chain_viz,
+            "chains need atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        let chain_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == CHAIN_VIZ_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(chain_marker(&config), Some(None));
+        assert!(speed_switches_from_env().chain_viz);
+        config.speed.chain_viz = true;
+        assert_eq!(chain_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        assert!(!speed_switches_from_env().chain_viz);
+
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().chain_infographic,
+            "chains need atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        let page_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == CHAIN_INFOGRAPHIC_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(page_marker(&config), Some(None));
+        assert!(speed_switches_from_env().chain_infographic);
+        config.speed.chain_infographic = true;
+        assert_eq!(page_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(CHAIN_INFOGRAPHIC_ENV);
+        assert!(!speed_switches_from_env().chain_infographic);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+
+        // Preflight needs no other switch and follows the config like the rest.
+        let preflight_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PREFLIGHT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(PREFLIGHT_ENV, "1");
+        let mut config = visual_story_config(false, "investigate");
+        assert!(speed_switches_from_env().preflight);
+        assert_eq!(preflight_marker(&config), Some(None));
+        config.speed.preflight = true;
+        assert_eq!(preflight_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(PREFLIGHT_ENV);
+        assert!(!speed_switches_from_env().preflight);
+
+        // Plan edit: marker follows the config; the tool is offered only with the plan tool.
+        let edit_marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == PLAN_EDIT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(PLAN_EDIT_ENV, "1");
+        let mut config = visual_story_config(false, "investigate");
+        assert!(speed_switches_from_env().plan_edit);
+        assert_eq!(edit_marker(&config), Some(None));
+        assert!(!config
+            .tools_arg()
+            .split(',')
+            .any(|name| name == PLAN_EDIT_TOOL));
+        config.speed.plan_edit = true;
+        assert_eq!(edit_marker(&config), Some(Some("1".to_string())));
+        std::env::remove_var(PLAN_EDIT_ENV);
+        assert!(!speed_switches_from_env().plan_edit);
+    }
+
+    #[test]
+    fn inline_claim_switch_needs_the_chain_and_atomic_writes_and_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == INLINE_CLAIM_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::set_var(INLINE_CLAIM_ENV, "1");
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(
+            !speed_switches_from_env().inline_claim,
+            "needs the chart chain"
+        );
+        std::env::set_var(CHAIN_VIZ_ENV, "1");
+        assert!(
+            !speed_switches_from_env().inline_claim,
+            "needs atomic writes"
+        );
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        assert!(speed_switches_from_env().inline_claim);
+        for not_one in ["true", "0", "", "yes", "1 "] {
+            std::env::set_var(INLINE_CLAIM_ENV, not_one);
+            assert!(!speed_switches_from_env().inline_claim, "{not_one:?}");
+        }
+        std::env::set_var(INLINE_CLAIM_ENV, "1");
+        // The child marker follows the config, never the parent.
+        let mut config = visual_story_config(false, "investigate");
+        assert_eq!(marker(&config), Some(None));
+        config.speed.inline_claim = true;
+        assert_eq!(marker(&config), Some(Some("1".to_string())));
+        // It does not change the tool list: the chain tool carries the extra parameters.
+        let mut chain = visual_story_config(false, "visual-story");
+        chain.speed.chain_viz = true;
+        let without = chain.tools_arg();
+        chain.speed.inline_claim = true;
+        assert_eq!(chain.tools_arg(), without);
+        std::env::remove_var(INLINE_CLAIM_ENV);
+        std::env::remove_var(CHAIN_VIZ_ENV);
+        std::env::remove_var(ATOMIC_ARTIFACT_ENV);
+        assert!(!speed_switches_from_env().inline_claim);
+    }
+
+    fn viz_chain_steps(render: Value, critic_manifest: &str, passed: bool) -> Value {
+        json!([
+            {"tool": "newsroom_viz_plan", "params": {}, "details": {"planRef": "visualizations/plans/p.json", "publishable": true}},
+            {"tool": "newsroom_viz_lint", "params": {"plan_ref": "visualizations/plans/p.json"}, "details": {"passed": true}},
+            {"tool": "newsroom_viz_render", "params": {"plan_ref": "visualizations/plans/p.json"}, "details": render},
+            {"tool": "newsroom_viz_critic", "params": {"manifest_ref": critic_manifest}, "details": {"passed": passed}}
+        ])
+    }
+
+    fn viz_chain_end(id: &str, chain_status: &str, steps: Value) -> Value {
+        json!({"type": "tool_execution_end", "toolName": "newsroom_viz_chain", "toolCallId": id, "isError": false,
+            "result": {"details": {"chain": "newsroom_viz_chain", "chainStatus": chain_status, "steps": steps}}})
+    }
+
+    #[test]
+    fn chart_ready_fires_once_for_a_completed_chain_whose_critic_passed() {
+        let render = |desktop: &str, compact: &str| json!({"manifestRef": "visualizations/a.json", "desktopSvgRef": desktop, "compactSvgRef": compact});
+        let good_render = || render("visualizations/a.svg", "visualizations/a.compact.svg");
+        let mut watch = ChartReadyWatch::default();
+        assert_eq!(
+            watch.observe(&json!({"type": "tool_execution_start", "toolName": "newsroom_viz_chain", "toolCallId": "s", "args": {}})),
+            None,
+            "a start event announces nothing"
+        );
+        let refused: Vec<(&str, Value)> = vec![
+            (
+                "a stopped chain, even with every step listed",
+                viz_chain_end(
+                    "c1",
+                    "STOPPED",
+                    viz_chain_steps(good_render(), "visualizations/a.json", true),
+                ),
+            ),
+            (
+                "a chain stopped at a critic revision",
+                viz_chain_end(
+                    "c1b",
+                    "STOPPED",
+                    viz_chain_steps(good_render(), "visualizations/a.json", false),
+                ),
+            ),
+            (
+                "a completed chain whose critic did not pass",
+                viz_chain_end(
+                    "c2",
+                    "COMPLETE",
+                    viz_chain_steps(good_render(), "visualizations/a.json", false),
+                ),
+            ),
+            (
+                "a completed chain with a step missing",
+                viz_chain_end(
+                    "c3",
+                    "COMPLETE",
+                    json!(
+                        viz_chain_steps(good_render(), "visualizations/a.json", true)
+                            .as_array()
+                            .unwrap()[..3]
+                    ),
+                ),
+            ),
+            (
+                "a critic that judged another manifest",
+                viz_chain_end(
+                    "c4",
+                    "COMPLETE",
+                    viz_chain_steps(good_render(), "visualizations/other.json", true),
+                ),
+            ),
+            (
+                "an absolute desktop ref",
+                viz_chain_end(
+                    "c5",
+                    "COMPLETE",
+                    viz_chain_steps(
+                        render("/tmp/a.svg", "visualizations/a.compact.svg"),
+                        "visualizations/a.json",
+                        true,
+                    ),
+                ),
+            ),
+            (
+                "a compact ref that climbs out of visualizations",
+                viz_chain_end(
+                    "c6",
+                    "COMPLETE",
+                    viz_chain_steps(
+                        render("visualizations/a.svg", "visualizations/../a.compact.svg"),
+                        "visualizations/a.json",
+                        true,
+                    ),
+                ),
+            ),
+            (
+                "a render without a manifest",
+                viz_chain_end(
+                    "c7",
+                    "COMPLETE",
+                    viz_chain_steps(
+                        json!({"desktopSvgRef": "visualizations/a.svg"}),
+                        "visualizations/a.json",
+                        true,
+                    ),
+                ),
+            ),
+        ];
+        for (why, event) in &refused {
+            assert_eq!(watch.observe(event), None, "{why}");
+        }
+        let mut errored = viz_chain_end(
+            "c8",
+            "COMPLETE",
+            viz_chain_steps(good_render(), "visualizations/a.json", true),
+        );
+        errored["isError"] = json!(true);
+        assert_eq!(watch.observe(&errored), None, "a call that errored");
+        let mut other_chain = viz_chain_end(
+            "c9",
+            "COMPLETE",
+            viz_chain_steps(good_render(), "visualizations/a.json", true),
+        );
+        other_chain["result"]["details"]["chain"] = json!("newsroom_infographic_chain");
+        assert_eq!(watch.observe(&other_chain), None, "another chain's record");
+        let mut reordered = viz_chain_steps(good_render(), "visualizations/a.json", true);
+        reordered.as_array_mut().unwrap().swap(0, 1);
+        assert_eq!(
+            watch.observe(&viz_chain_end("c10", "COMPLETE", reordered)),
+            None,
+            "steps out of order"
+        );
+        let good = viz_chain_end(
+            "c11",
+            "COMPLETE",
+            viz_chain_steps(good_render(), "visualizations/a.json", true),
+        );
+        assert_eq!(
+            watch.observe(&good),
+            Some(ReadyChart {
+                desktop: "visualizations/a.svg".to_string(),
+                compact: Some("visualizations/a.compact.svg".to_string()),
+                mobile: None,
+                manifest: "visualizations/a.json".to_string(),
+            })
+        );
+        assert_eq!(
+            watch.observe(&viz_chain_end(
+                "c12",
+                "COMPLETE",
+                viz_chain_steps(good_render(), "visualizations/a.json", true)
+            )),
+            None,
+            "announce only once"
+        );
+    }
+
+    #[test]
+    fn chart_ready_fires_for_a_separately_called_critic_of_a_rendered_manifest() {
+        let render = |manifest: &str, desktop: &str| {
+            json!({"type": "tool_execution_end", "toolName": "newsroom_viz_render", "toolCallId": format!("r-{manifest}"), "isError": false,
+                "result": {"details": {"manifestRef": manifest, "desktopSvgRef": desktop, "mobileSvgRef": "visualizations/a.mobile.svg"}}})
+        };
+        let critic_start = |id: &str, manifest: &str| json!({"type": "tool_execution_start", "toolName": "newsroom_viz_critic", "toolCallId": id, "args": {"manifest_ref": manifest}});
+        let critic_end = |id: &str, passed: bool| {
+            json!({"type": "tool_execution_end", "toolName": "newsroom_viz_critic", "toolCallId": id, "isError": false,
+                "result": {"details": {"passed": passed}}})
+        };
+        let mut watch = ChartReadyWatch::default();
+        assert_eq!(
+            watch.observe(&render("visualizations/a.json", "visualizations/a.svg")),
+            None
+        );
+        assert_eq!(
+            watch.observe(&render("visualizations/x.json", "visualizations/../x.svg")),
+            None
+        );
+        watch.observe(&critic_start("c1", "visualizations/a.json"));
+        assert_eq!(watch.observe(&critic_end("c1", false)), None);
+        watch.observe(&critic_start("c2", "visualizations/x.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c2", true)),
+            None,
+            "unsafe render refs are never announced"
+        );
+        watch.observe(&critic_start("c0", "visualizations/never-rendered.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c0", true)),
+            None,
+            "a critic for a manifest no render produced"
+        );
+        watch.observe(&critic_start("c3", "visualizations/a.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c3", true)),
+            Some(ReadyChart {
+                desktop: "visualizations/a.svg".to_string(),
+                compact: None,
+                mobile: Some("visualizations/a.mobile.svg".to_string()),
+                manifest: "visualizations/a.json".to_string(),
+            })
+        );
+        watch.observe(&critic_start("c4", "visualizations/a.json"));
+        assert_eq!(
+            watch.observe(&critic_end("c4", true)),
+            None,
+            "announce only once"
+        );
+    }
+
+    #[test]
+    fn chart_ready_line_names_each_file_and_claims_no_status() {
+        let chart = ReadyChart {
+            desktop: "visualizations/a.svg".to_string(),
+            compact: Some("visualizations/a.compact.svg".to_string()),
+            mobile: None,
+            manifest: "visualizations/a.json".to_string(),
+        };
+        let line = chart_ready_line(1234, Path::new("/runs/r1"), &chart);
+        assert_eq!(
+            line,
+            "[agent] chart_ready elapsed_ms=1234 desktop=/runs/r1/visualizations/a.svg compact=/runs/r1/visualizations/a.compact.svg (critic passed; progress only, the run continues)"
+        );
+        for word in ["verified", "publishable", "complete", "passed qa"] {
+            assert!(!line.to_lowercase().contains(word), "{word}");
+        }
+        let both = ReadyChart {
+            mobile: Some("visualizations/a.mobile.svg".to_string()),
+            ..chart.clone()
+        };
+        let line = chart_ready_line(5, Path::new(""), &both);
+        assert!(line
+            .contains(" compact=visualizations/a.compact.svg mobile=visualizations/a.mobile.svg "));
+        assert!(!chart_ready_line(
+            5,
+            Path::new(""),
+            &ReadyChart {
+                compact: None,
+                ..chart
+            }
+        )
+        .contains("compact="));
+    }
+
+    #[test]
+    fn visualization_refs_stay_inside_the_visualizations_folder() {
+        for ok in ["visualizations/a.svg", "visualizations/sub/a.compact.svg"] {
+            assert!(is_visualization_ref(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "a.svg",
+            "/visualizations/a.svg",
+            "visualizations",
+            "visualizations/",
+            "visualizations/../a.svg",
+            "other/visualizations/a.svg",
+            "Visualizations/a.svg",
+            "visualizations/a\n[agent] forged.svg",
+            "visualizations/a\r.svg",
+            "visualizations/a\u{1b}[0m.svg",
+        ] {
+            assert!(!is_visualization_ref(bad), "{bad:?}");
+        }
+    }
+
+    /// `--tools` for every profile, with the older speed switches off and on; the five
+    /// newer switches stay at their default (off).
+    fn tools_arg_cases() -> std::collections::BTreeMap<String, String> {
+        let older_on = crate::prompt::PromptSpeed {
+            parallel_hints: true,
+            compute_batch: true,
+            chain_viz: true,
+            chain_infographic: true,
+            preflight: true,
+            plan_edit: true,
+            inline_claim: true,
+            ..Default::default()
+        };
+        let mut cases = std::collections::BTreeMap::new();
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "visual-story",
+            "competition",
+            "full",
+        ] {
+            for hide in [false, true] {
+                for (mode, speed) in [("older-off", Default::default()), ("older-on", older_on)] {
+                    let mut config = visual_story_config(hide, profile);
+                    config.speed = speed;
+                    cases.insert(
+                        format!("{profile}/{mode}/hide-lieflat={hide}"),
+                        config.tools_arg(),
+                    );
+                }
+            }
+        }
+        cases
+    }
+
+    #[test]
+    fn tools_arg_with_the_newer_switches_off_matches_the_base() {
+        let cases = tools_arg_cases();
+        if let Ok(path) = std::env::var("NEWSROOM_WRITE_TOOLS_ARG_GOLDEN") {
+            std::fs::write(path, serde_json::to_string_pretty(&cases).unwrap() + "\n").unwrap();
+            return;
+        }
+        let golden: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(include_str!("../fixtures/speed-off/tools-arg-8a75560.json"))
+                .unwrap();
+        assert_eq!(cases, golden);
+    }
+
+    #[test]
+    fn patch_tools_are_offered_only_with_their_switch_and_the_tool_they_wrap() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+        ] {
+            let mut base = visual_story_config(false, profile);
+            base.speed.chain_infographic = true;
+            let without = base.tools_arg();
+            let names = |c: &PiConfig| {
+                c.tools_arg()
+                    .split(',')
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            };
+            assert!(!names(&base)
+                .iter()
+                .any(|n| n == PLAN_PATCH_TOOL || n == CHAIN_PATCH_TOOL));
+            let mut on = base.clone();
+            on.speed.plan_patch = true;
+            on.speed.chain_patch = true;
+            let has_plan = without.split(',').any(|n| n == "newsroom_infographic_plan");
+            let expected = if has_plan {
+                format!("{without},{PLAN_PATCH_TOOL},{CHAIN_PATCH_TOOL}")
+            } else {
+                without.clone()
+            };
+            assert_eq!(on.tools_arg(), expected, "{profile}");
+            // The chain patch needs the page chain itself to be offered.
+            let mut no_chain = on.clone();
+            no_chain.speed.chain_infographic = false;
+            assert!(
+                !names(&no_chain).iter().any(|n| n == CHAIN_PATCH_TOOL),
+                "{profile}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_five_patch_era_switches_are_owned_like_preflight() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let all = [
+            PLAN_PATCH_ENV,
+            CHAIN_PATCH_ENV,
+            REPORT_ALL_ENV,
+            FILL_COPIED_REFS_ENV,
+            FIRST_TRY_TEXT_ENV,
+        ];
+        let clear = || {
+            for k in all
+                .iter()
+                .chain([&ATOMIC_ARTIFACT_ENV, &CHAIN_INFOGRAPHIC_ENV])
+            {
+                std::env::remove_var(k);
+            }
+        };
+        let marker = |config: &PiConfig, key: &str| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        clear();
+        // A stray export does not reach Pi: the config decides, and off means removed.
+        for k in all {
+            std::env::set_var(k, "1");
+        }
+        let config = visual_story_config(false, "visual-story");
+        for k in all {
+            assert_eq!(marker(&config, k), Some(None), "{k}");
+        }
+        // Read once from the parent environment: exactly "1", and the patch tools need atomic writes.
+        let speed = speed_switches_from_env();
+        assert!(!speed.plan_patch && !speed.chain_patch, "no atomic writes");
+        assert!(speed.report_all && speed.fill_copied_refs && speed.first_try_text);
+        std::env::set_var(ATOMIC_ARTIFACT_ENV, "1");
+        let speed = speed_switches_from_env();
+        assert!(
+            speed.plan_patch && !speed.chain_patch,
+            "chain patch needs the page chain"
+        );
+        std::env::set_var(CHAIN_INFOGRAPHIC_ENV, "1");
+        assert!(speed_switches_from_env().chain_patch);
+        for value in ["true", "0", "", "yes"] {
+            for k in all {
+                std::env::set_var(k, value);
+            }
+            let speed = speed_switches_from_env();
+            assert!(
+                !speed.plan_patch
+                    && !speed.chain_patch
+                    && !speed.report_all
+                    && !speed.fill_copied_refs
+                    && !speed.first_try_text,
+                "{value:?}"
+            );
+        }
+        let mut on = visual_story_config(false, "visual-story");
+        on.speed.plan_patch = true;
+        on.speed.chain_patch = true;
+        on.speed.report_all = true;
+        on.speed.fill_copied_refs = true;
+        on.speed.first_try_text = true;
+        for k in all {
+            assert_eq!(marker(&on, k), Some(Some("1".to_string())), "{k}");
+        }
+        clear();
+    }
+
+    #[test]
+    fn infographic_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let mut on = visual_story_config(false, profile);
+            on.speed.chain_infographic = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == INFOGRAPHIC_CHAIN_TOOL),
+                "{profile}"
+            );
+            let has_plan = base
+                .split(',')
+                .any(|name| name == "newsroom_infographic_plan");
+            let offered = on
+                .tools_arg()
+                .split(',')
+                .any(|name| name == INFOGRAPHIC_CHAIN_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{INFOGRAPHIC_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
+    }
+
+    #[test]
+    fn viz_chain_tool_is_offered_only_with_the_switch_and_the_plan_tool() {
+        for profile in [
+            "investigate",
+            "visual",
+            "publication",
+            "competition",
+            "full",
+            "visual-story",
+            "no-such-profile",
+        ] {
+            let off = visual_story_config(false, profile);
+            let mut on = visual_story_config(false, profile);
+            on.speed.chain_viz = true;
+            let base = off.tools_arg();
+            assert!(
+                !base.split(',').any(|name| name == VIZ_CHAIN_TOOL),
+                "{profile}"
+            );
+            let has_plan = base.split(',').any(|name| name == "newsroom_viz_plan");
+            let offered = on.tools_arg().split(',').any(|name| name == VIZ_CHAIN_TOOL);
+            assert_eq!(offered, has_plan, "{profile}");
+            if offered {
+                assert_eq!(
+                    on.tools_arg(),
+                    format!("{base},{VIZ_CHAIN_TOOL}"),
+                    "{profile}"
+                );
+            } else {
+                assert_eq!(on.tools_arg(), base, "{profile}");
+            }
+        }
+    }
+
+    #[test]
+    fn child_env_marker_follows_the_config_not_the_parent() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(HIDE_LIEFLAT_ENV, "1");
+        let marker = |config: &PiConfig| {
+            let command = config.command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == HIDE_LIEFLAT_ENV)
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        let hidden = marker(&visual_story_config(true, "visual-story"));
+        let shown = marker(&visual_story_config(false, "visual-story"));
+        let other_profile = marker(&visual_story_config(true, "visual"));
+        std::env::remove_var(HIDE_LIEFLAT_ENV);
+        assert_eq!(hidden, Some(Some("1".to_string())));
+        assert_eq!(shown, Some(None));
+        assert_eq!(other_profile, Some(None));
     }
 
     #[test]
@@ -1027,7 +2820,7 @@ mod tests {
         });
         assert_eq!(
             provider_error_class(&unavailable),
-            ("provider_unavailable", Some(503))
+            ("provider_gateway_error", Some(503))
         );
         let rate_limited = json!({"data": {"status": 429, "message": "secret-token"}});
         assert_eq!(
@@ -1052,12 +2845,12 @@ mod tests {
             ("authentication_error", "provider_authentication_failed"),
             ("permission_error", "provider_authentication_failed"),
             ("api_error", "provider_unavailable"),
-            ("overloaded_error", "provider_unavailable"),
+            ("overloaded_error", "provider_overloaded"),
             ("invalid_request_error", "provider_request_rejected"),
             ("billing_error", "provider_request_rejected"),
             ("not_found_error", "provider_request_rejected"),
             ("conflict_error", "provider_request_rejected"),
-            ("request_too_large", "provider_request_rejected"),
+            ("request_too_large", "provider_context_overflow"),
         ] {
             let streamed = json!({
                 "type": "message_end",
@@ -1077,8 +2870,8 @@ mod tests {
 
         for (status, expected_class) in [
             (402, "provider_request_rejected"),
-            (413, "provider_request_rejected"),
-            (529, "provider_unavailable"),
+            (413, "provider_context_overflow"),
+            (529, "provider_overloaded"),
         ] {
             let response = json!({
                 "data": {
@@ -1108,6 +2901,55 @@ mod tests {
         );
 
         assert_eq!(provider_error_class(&json!({})), ("provider_error", None));
+    }
+
+    #[test]
+    fn new_failure_classes_are_distinguished() {
+        for (text, class) in [
+            (
+                "stream terminated unexpectedly",
+                "provider_stream_interrupted",
+            ),
+            ("HTTP 502 bad gateway", "provider_gateway_error"),
+            ("HTTP 524 origin timeout", "provider_timeout"),
+            (
+                "prompt is too long: 210000 tokens",
+                "provider_context_overflow",
+            ),
+            ("Overloaded", "provider_overloaded"),
+        ] {
+            let event = json!({"message": {"stopReason": "error", "errorMessage": text}});
+            assert_eq!(provider_error_class(&event).0, class, "{text}");
+        }
+    }
+
+    #[test]
+    fn final_error_is_redacted_and_provider_failure_display_is_safe() {
+        let mut event = json!({"type": "auto_retry_end", "finalError": "secret-token boom"});
+        redact_event(&mut event, &["secret-token".to_string()]);
+        assert_eq!(event["finalError"], "diagnostic suppressed");
+        let text = ProviderFailure {
+            class: "provider_timeout",
+            http_status: Some(504),
+            turn_index: 3,
+            elapsed_ms: 1200,
+            partial_text: "partial".to_string(),
+        }
+        .to_string();
+        assert!(text.contains("provider_timeout") && text.contains("turn 3"));
+        assert!(!text.contains("partial"));
+    }
+
+    #[test]
+    fn recovered_turn_clears_pending_failure() {
+        let mut t = RunTelemetry::new();
+        t.turn_started(0);
+        t.turn_failed(("provider_timeout", None), 50, 10, None);
+        assert!(t.pending.is_some());
+        t.turn_started(100);
+        t.turn_ok(Some(10));
+        assert!(t.pending.is_none());
+        assert_eq!(t.failed_turns, 1);
     }
 
     #[test]

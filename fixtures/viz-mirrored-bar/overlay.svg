@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 695" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">Share of each age band, by side</title>
+<desc id="viz-desc">A back-to-back bar chart of the share of each age band for two sides in two periods, fixture data.</desc>
+<rect width="1040" height="695" fill="#FFFFFF"/>
+<text x="54" y="38" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1A1A1A">Share of each age band, by side</text>
+<text x="54" y="74" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666">Synthetic fixture data, share of the total in %</text>
+<text data-role="series-name" x="278.5" y="147" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">Side A</text>
+<text data-role="series-name" x="761.5" y="147" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">Side B</text>
+<rect data-role="legend-swatch" x="455" y="114" width="14" height="10" fill="#9E9E9E"/>
+<text data-role="period-key-label" x="474" y="123" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">2020</text>
+<rect data-role="legend-swatch" x="534" y="114" width="14" height="10" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<text data-role="period-key-label" x="553" y="123" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">2010</text>
+<line data-role="grid-line" x1="488" y1="159" x2="488" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="552" y1="159" x2="552" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="404.2" y1="159" x2="404.2" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="635.8" y1="159" x2="635.8" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="320.4" y1="159" x2="320.4" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="719.6" y1="159" x2="719.6" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="236.6" y1="159" x2="236.6" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="803.4" y1="159" x2="803.4" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="152.8" y1="159" x2="152.8" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="887.2" y1="159" x2="887.2" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="69" y1="159" x2="69" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="971" y1="159" x2="971" y2="591" stroke="#E5E5E5" stroke-width="1"/>
+<rect data-role="data-bar" x="337.16" y="568" width="150.84" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="568" width="234.64" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="219.84" y="544" width="268.16" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="544" width="351.96" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="387.44" y="520" width="100.56" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="520" width="184.36" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="270.12" y="496" width="217.88" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="496" width="301.68" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="152.8" y="472" width="335.2" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="472" width="134.08" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="320.4" y="448" width="167.6" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="448" width="251.4" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="203.08" y="424" width="284.92" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="424" width="368.72" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="370.68" y="400" width="117.32" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="400" width="201.12" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="253.36" y="376" width="234.64" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="376" width="318.44" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="136.04" y="352" width="351.96" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="352" width="150.84" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="303.64" y="328" width="184.36" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="328" width="268.16" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="186.32" y="304" width="301.68" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="304" width="100.56" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="353.92" y="280" width="134.08" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="280" width="217.88" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="236.6" y="256" width="251.4" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="256" width="335.2" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="119.28" y="232" width="368.72" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="232" width="167.6" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="286.88" y="208" width="201.12" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="208" width="284.92" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="169.56" y="184" width="318.44" height="22" fill="#757575"/>
+<rect data-role="data-bar" x="552" y="184" width="117.32" height="22" fill="#BDBDBD"/>
+<rect data-role="data-bar" x="337.16" y="160" width="150.84" height="22" fill="#D0021B"/>
+<rect data-role="data-bar" x="552" y="160" width="234.64" height="22" fill="#D0021B"/>
+<rect data-role="data-bar-outline" x="388.19" y="568.75" width="99.06" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="568.75" width="182.86" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="270.87" y="544.75" width="216.38" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="544.75" width="300.18" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="153.55" y="520.75" width="333.7" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="520.75" width="132.58" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="321.15" y="496.75" width="166.1" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="496.75" width="249.9" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="203.83" y="472.75" width="283.42" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="472.75" width="367.22" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="371.43" y="448.75" width="115.82" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="448.75" width="199.62" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="254.11" y="424.75" width="233.14" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="424.75" width="316.94" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="136.79" y="400.75" width="350.46" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="400.75" width="149.34" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="304.39" y="376.75" width="182.86" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="376.75" width="266.66" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="187.07" y="352.75" width="300.18" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="352.75" width="99.06" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="354.67" y="328.75" width="132.58" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="328.75" width="216.38" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="237.35" y="304.75" width="249.9" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="304.75" width="333.7" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="120.03" y="280.75" width="367.22" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="280.75" width="166.1" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="287.63" y="256.75" width="199.62" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="256.75" width="283.42" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="170.31" y="232.75" width="316.94" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="232.75" width="115.82" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="337.91" y="208.75" width="149.34" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="208.75" width="233.14" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="220.59" y="184.75" width="266.66" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="184.75" width="350.46" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="388.19" y="160.75" width="99.06" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<rect data-role="data-bar-outline" x="552.75" y="160.75" width="182.86" height="20.5" fill="none" stroke="#1A1A1A" stroke-opacity="0.8" stroke-width="1.5"/>
+<text data-role="category-label" x="520" y="583" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">0-4</text>
+<text data-role="category-label" x="520" y="535" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">10-14</text>
+<text data-role="category-label" x="520" y="487" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">20-24</text>
+<text data-role="category-label" x="520" y="439" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">30-34</text>
+<text data-role="category-label" x="520" y="391" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">40-44</text>
+<text data-role="category-label" x="520" y="343" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">50-54</text>
+<text data-role="category-label" x="520" y="295" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">60-64</text>
+<text data-role="category-label" x="520" y="247" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">70-74</text>
+<text data-role="category-label" x="520" y="199" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">80-84</text>
+<text data-role="category-label" x="520" y="175" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#1A1A1A">85+</text>
+<text data-role="axis-tick-label" x="488" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" x="552" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" x="404.2" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1</text>
+<text data-role="axis-tick-label" x="635.8" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1</text>
+<text data-role="axis-tick-label" x="320.4" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2</text>
+<text data-role="axis-tick-label" x="719.6" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2</text>
+<text data-role="axis-tick-label" x="236.6" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">3</text>
+<text data-role="axis-tick-label" x="803.4" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">3</text>
+<text data-role="axis-tick-label" x="152.8" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">4</text>
+<text data-role="axis-tick-label" x="887.2" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">4</text>
+<text data-role="axis-tick-label" x="69" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">5%</text>
+<text data-role="axis-tick-label" x="971" y="609" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">5%</text>
+<line x1="54" y1="624" x2="986" y2="624" stroke="#E5E5E5" stroke-width="1"/>
+<text x="54" y="643" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">Source: Synthetic fixture, no real source</text>
+</svg>

@@ -1,5 +1,5 @@
 // Generated from runtime/visual/editorial_semantics.mjs. Do not edit by hand.
-import { COMPARABILITY, compareMeasureSemantics, normalizeMeasureSemantics } from './measure_semantics.mjs';
+import { COMPARABILITY, compareMeasureSemantics, compareScatterAxes, normalizeMeasureSemantics } from './measure_semantics.mjs';
 
 export const CLAIM_SPEC_VERSION='1.0.0';
 export const EDITORIAL_GRAMMAR_VERSION='1.0.0';
@@ -112,7 +112,23 @@ function grammarFor(claim,gate){
   });
 }
 
-export function evaluateVisualSemantics(input){
+// The pairing applies only when every condition holds; otherwise the caller gets today's peer comparison.
+// options.scatterPair={chart_type,x_field,y_field} is passed explicitly by a caller that opted in; nothing here reads the environment.
+function scatterPairing(claim,measures,pair){
+  if(!pair||pair.chart_type!=='scatter') return null;
+  if(claim.relation!=='relationship'||claim.derived_metric) return null;
+  if(claim.measure_ids.length!==2||measures.length!==2) return null;
+  const xField=typeof pair.x_field==='string'?pair.x_field.trim():'', yField=typeof pair.y_field==='string'?pair.y_field.trim():'';
+  if(!xField||!yField||xField===yField) return null;
+  const byId=new Map(measures.map(x=>[x.id,x]));
+  const [m1,m2]=claim.measure_ids.map(id=>byId.get(id));
+  if(!m1||!m2||m1.id===m2.id) return null;
+  if(m1.field===xField&&m2.field===yField) return {x:m1,y:m2,xField,yField};
+  if(m2.field===xField&&m1.field===yField) return {x:m2,y:m1,xField,yField};
+  return null;
+}
+
+export function evaluateVisualSemantics(input,options){
   const measures=normalizeMeasureSemantics(input?.measure_semantics);
   if(!measures.length){
     return Object.freeze({status:'NOT_DECLARED',enforcement:'legacy',measures,claim_spec:null,comparisons:Object.freeze([]),derived_metric:null,editorial_plan:null,repairs:Object.freeze([])});
@@ -121,11 +137,16 @@ export function evaluateVisualSemantics(input){
   if(!claim) throw new Error('claim_spec is required when measure_semantics are declared');
   const map=new Map(measures.map(x=>[x.id,x]));
   const comparisons=[];
-  for(let i=0;i<claim.measure_ids.length;i++){
-    for(let j=i+1;j<claim.measure_ids.length;j++){
-      const a=map.get(claim.measure_ids[i]),b=map.get(claim.measure_ids[j]);
-      const verdict=compareMeasureSemantics(a,b);
-      comparisons.push(Object.freeze({a:a.id,b:b.id,...verdict}));
+  const paired=scatterPairing(claim,measures,options?.scatterPair);
+  if(paired){
+    comparisons.push(Object.freeze({a:paired.x.id,b:paired.y.id,...compareScatterAxes(paired.x,paired.y)}));
+  } else {
+    for(let i=0;i<claim.measure_ids.length;i++){
+      for(let j=i+1;j<claim.measure_ids.length;j++){
+        const a=map.get(claim.measure_ids[i]),b=map.get(claim.measure_ids[j]);
+        const verdict=compareMeasureSemantics(a,b);
+        comparisons.push(Object.freeze({a:a.id,b:b.id,...verdict}));
+      }
     }
   }
   const blocked=comparisons.some(x=>x.status===COMPARABILITY.INCOMPATIBLE);
@@ -133,6 +154,7 @@ export function evaluateVisualSemantics(input){
   const status=blocked?'BLOCK':(contextual?'CONTEXTUAL':'PASS');
   const repairs=[...new Set(comparisons.flatMap(x=>x.repair))];
   const derivedMetric=computeDerivedMetric(claim,map);
-  const gate=Object.freeze({status,enforcement:'strict',measures,claim_spec:claim,comparisons:Object.freeze(comparisons),derived_metric:derivedMetric,repairs:Object.freeze(repairs)});
+  const gate=Object.freeze({status,enforcement:'strict',measures,claim_spec:claim,comparisons:Object.freeze(comparisons),derived_metric:derivedMetric,repairs:Object.freeze(repairs),
+    ...(paired?{scatter_pair:Object.freeze({x_measure:paired.x.id,y_measure:paired.y.id,x_field:paired.xField,y_field:paired.yField})}:{})});
   return Object.freeze({...gate,editorial_plan:grammarFor(claim,gate)});
 }

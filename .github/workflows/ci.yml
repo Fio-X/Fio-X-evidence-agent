@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # test_viz_round3_conventions compares against a base commit
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
@@ -82,12 +84,22 @@ jobs:
       - name: Visual-story and portable-publication regressions
         run: |
           python3 scripts/test_fact_editorial_contracts.py
+          python3 scripts/test_speed_off_prompt_sha.py
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           node scripts/test_computation_row_tables.mjs
+          node scripts/test_computation_binding.mjs
           python3 scripts/test_infographic_schema.py
           node scripts/test_cognitive_editorial_validators_v15.mjs
           node scripts/test_infographic.mjs
+          node scripts/test_shared_scale_never_hides.mjs
+          node scripts/test_zh_number_scale.mjs
+          node scripts/test_viz_round3_conventions.mjs
+          node scripts/test_index_base_period.mjs
+          node scripts/test_rank_cutoff_disclosure.mjs
+          node scripts/test_viz_plan_schema.mjs
+          node scripts/test_map_world_switch.mjs
+          NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
           python3 scripts/test_migration_flow_fixture.py
           python3 scripts/test_migration_story_ir.py
           node scripts/test_migration_story_ir.mjs
@@ -95,6 +107,7 @@ jobs:
           node scripts/test_lieflat_catalog.mjs
           node scripts/test_lieflat_report.mjs
           node scripts/test_lieflat_reader_text.mjs
+          node scripts/test_lieflat_unqualified.mjs
           node scripts/test_visual_story_completion.mjs
           node scripts/test_visual_story_routing.mjs
           node scripts/test_evidence_bound_composite.mjs
@@ -187,6 +200,7 @@ jobs:
         run: |
           node scripts/test_content_addressing.mjs
           node scripts/test_stream_limits.mjs
+          node scripts/test_fast_fail_errors.mjs
           node scripts/test_pdf_extract.mjs
           node scripts/test_cjk_viz.mjs
           node scripts/test_viz_ticks.mjs
@@ -214,6 +228,18 @@ jobs:
         run: node scripts/test_choropleth.mjs
       - name: Treemap chart tests
         run: node scripts/test_treemap.mjs
+      - name: Strip plot chart tests
+        run: node scripts/test_viz_strip_plot.mjs
+      - name: Stacked bar 100 chart tests
+        run: node scripts/test_viz_stacked_bar_100.mjs
+      - name: Mirrored bar chart tests
+        run: node scripts/test_viz_mirrored_bar.mjs
+      - name: Chart form grammar wiring tests
+        run: node scripts/test_viz_form_wiring.mjs
+      - name: Chart form plan-path tests
+        run: node scripts/test_viz_forms_plan_path.mjs
+      - name: Chart form plan schema tests
+        run: node scripts/test_viz_plan_schema.mjs
       - name: Complex visualization semantic smoke tests
         run: |
           node scripts/test_complex_viz.mjs
@@ -230,6 +256,8 @@ jobs:
           node scripts/test_render_qa_tool_path.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
+      - name: Investigate and continue exit-code acceptance
+        run: python3 scripts/test_investigate_exit_codes.py
       - name: Visualization performance budget
         run: node scripts/benchmark_viz.mjs
       - name: Complex visualization performance budget

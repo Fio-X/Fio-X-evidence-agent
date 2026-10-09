@@ -11,6 +11,7 @@ const CARTOGRAPHY_BASEMAP_50M: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-50m.geojson");
 const GSHHS_BASEMAP: &str = include_str!("../runtime/pi/assets/gshhs-i-syros-local.geojson");
 const ECONOMY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/economy-names.json");
+const CURRENCY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/currency-names.json");
 const ECONOMY_NAMES_RUNTIME: &str = include_str!("../runtime/pi/economy_names.mjs");
 const CHOROPLETH_RUNTIME: &str = include_str!("../runtime/pi/choropleth.mjs");
 const CHOROPLETH_ATTRIBUTES_ASSET: &str =
@@ -19,6 +20,7 @@ const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
 const PROVENANCE_RUNTIME: &str = include_str!("../runtime/pi/provenance.mjs");
 const PDF_EXTRACT_RUNTIME: &str = include_str!("../runtime/pi/pdf_extract.mjs");
 const EVIDENCE_GATE_RUNTIME: &str = include_str!("../runtime/pi/evidence_gate.mjs");
+const CLAIM_LINT_RUNTIME: &str = include_str!("../runtime/pi/claim_lint.mjs");
 const INFOGRAPHIC_RUNTIME: &str = include_str!("../runtime/pi/infographic.mjs");
 const EXPLANATORY_RUNTIME: &str = include_str!("../runtime/pi/explanatory.mjs");
 const ILLUSTRATION_RUNTIME: &str = include_str!("../runtime/pi/illustration.mjs");
@@ -34,6 +36,7 @@ const VISUAL_BACKENDS_RUNTIME: &str = include_str!("../runtime/pi/visual_backend
 const BACKEND_POLICY_RUNTIME: &str = include_str!("../runtime/pi/backend_policy.mjs");
 const MEASURE_SEMANTICS_RUNTIME: &str = include_str!("../runtime/pi/measure_semantics.mjs");
 const EDITORIAL_SEMANTICS_RUNTIME: &str = include_str!("../runtime/pi/editorial_semantics.mjs");
+const CONTRACT_TEXT_RUNTIME: &str = include_str!("../runtime/pi/contract_text.mjs");
 const VISUAL_SKILL_BUNDLE_RUNTIME: &str = include_str!("../runtime/pi/visual_skill_bundle.mjs");
 const EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME: &str =
     include_str!("../runtime/pi/editorial_design_system_bundle.mjs");
@@ -54,8 +57,18 @@ const MAP_SPEC_RUNTIME: &str = include_str!("../runtime/pi/map_spec.mjs");
 const SCIENTIFIC_MAP_RUNTIME: &str = include_str!("../runtime/pi/scientific_map.mjs");
 const BASEMAP_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/basemap_registry.mjs");
 const FLOW_LAYOUT_RUNTIME: &str = include_str!("../runtime/pi/flow_layout.mjs");
+const MAP_REFERENCE_LAYERS_RUNTIME: &str = include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
+const ASOF_PROBE_RUNTIME: &str = include_str!("../runtime/pi/asof_probe.mjs");
+const CLAIM_BINDING_RUNTIME: &str = include_str!("../runtime/pi/claim_binding.mjs");
+const NUMBER_SHADOW_RUNTIME: &str = include_str!("../runtime/pi/number_shadow.mjs");
+const COMPACT_SETUP_RUNTIME: &str = include_str!("../runtime/pi/compact_setup.mjs");
+const NUMBER_WORDS_RUNTIME: &str = include_str!("../runtime/pi/number_words.mjs");
+const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
+const PATCH_RETRY_RUNTIME: &str = include_str!("../runtime/pi/patch_retry.mjs");
+const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
+const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
 const PARALLEL_SCHEDULER_RUNTIME: &str = include_str!("../runtime/pi/parallel_scheduler.mjs");
@@ -110,6 +123,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let cartography_basemap_50m_path = assets_dir.join("naturalearth-admin0-50m.geojson");
     let gshhs_basemap_path = assets_dir.join("gshhs-i-syros-local.geojson");
     let economy_names_asset_path = assets_dir.join("economy-names.json");
+    let currency_names_asset_path = assets_dir.join("currency-names.json");
     let economy_names_path = runtime_dir.join("economy_names.mjs");
     let choropleth_path = runtime_dir.join("choropleth.mjs");
     let choropleth_attributes_asset_path =
@@ -118,6 +132,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let provenance_path = runtime_dir.join("provenance.mjs");
     let pdf_extract_path = runtime_dir.join("pdf_extract.mjs");
     let evidence_gate_path = runtime_dir.join("evidence_gate.mjs");
+    let claim_lint_path = runtime_dir.join("claim_lint.mjs");
     let infographic_path = runtime_dir.join("infographic.mjs");
     let explanatory_path = runtime_dir.join("explanatory.mjs");
     let illustration_path = runtime_dir.join("illustration.mjs");
@@ -133,6 +148,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let backend_policy_path = runtime_dir.join("backend_policy.mjs");
     let measure_semantics_path = runtime_dir.join("measure_semantics.mjs");
     let editorial_semantics_path = runtime_dir.join("editorial_semantics.mjs");
+    let contract_text_path = runtime_dir.join("contract_text.mjs");
     let visual_skill_bundle_path = runtime_dir.join("visual_skill_bundle.mjs");
     let editorial_design_system_bundle_path =
         runtime_dir.join("editorial_design_system_bundle.mjs");
@@ -159,8 +175,18 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let scientific_map_path = runtime_dir.join("scientific_map.mjs");
     let basemap_registry_path = runtime_dir.join("basemap_registry.mjs");
     let flow_layout_path = runtime_dir.join("flow_layout.mjs");
+    let map_reference_layers_path = runtime_dir.join("map_reference_layers.mjs");
     let publication_binding_path = runtime_dir.join("publication_binding.mjs");
     let svg_security_path = runtime_dir.join("svg_security.mjs");
+    let asof_probe_path = runtime_dir.join("asof_probe.mjs");
+    let claim_binding_path = runtime_dir.join("claim_binding.mjs");
+    let number_shadow_path = runtime_dir.join("number_shadow.mjs");
+    let compact_setup_path = runtime_dir.join("compact_setup.mjs");
+    let number_words_path = runtime_dir.join("number_words.mjs");
+    let preflight_path = runtime_dir.join("preflight.mjs");
+    let patch_retry_path = runtime_dir.join("patch_retry.mjs");
+    let shadow_path = runtime_dir.join("shadow.mjs");
+    let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
     let parallel_scheduler_path = runtime_dir.join("parallel_scheduler.mjs");
@@ -187,6 +213,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&cartography_basemap_50m_path, CARTOGRAPHY_BASEMAP_50M)?;
     write_if_changed(&gshhs_basemap_path, GSHHS_BASEMAP)?;
     write_if_changed(&economy_names_asset_path, ECONOMY_NAMES_ASSET)?;
+    write_if_changed(&currency_names_asset_path, CURRENCY_NAMES_ASSET)?;
     write_if_changed(&economy_names_path, ECONOMY_NAMES_RUNTIME)?;
     write_if_changed(
         &choropleth_attributes_asset_path,
@@ -197,6 +224,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&provenance_path, PROVENANCE_RUNTIME)?;
     write_if_changed(&pdf_extract_path, PDF_EXTRACT_RUNTIME)?;
     write_if_changed(&evidence_gate_path, EVIDENCE_GATE_RUNTIME)?;
+    write_if_changed(&claim_lint_path, CLAIM_LINT_RUNTIME)?;
     write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)?;
     write_if_changed(&explanatory_path, EXPLANATORY_RUNTIME)?;
     write_if_changed(&illustration_path, ILLUSTRATION_RUNTIME)?;
@@ -212,6 +240,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&backend_policy_path, BACKEND_POLICY_RUNTIME)?;
     write_if_changed(&measure_semantics_path, MEASURE_SEMANTICS_RUNTIME)?;
     write_if_changed(&editorial_semantics_path, EDITORIAL_SEMANTICS_RUNTIME)?;
+    write_if_changed(&contract_text_path, CONTRACT_TEXT_RUNTIME)?;
     write_if_changed(&visual_skill_bundle_path, VISUAL_SKILL_BUNDLE_RUNTIME)?;
     write_if_changed(
         &editorial_design_system_bundle_path,
@@ -236,8 +265,18 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&scientific_map_path, SCIENTIFIC_MAP_RUNTIME)?;
     write_if_changed(&basemap_registry_path, BASEMAP_REGISTRY_RUNTIME)?;
     write_if_changed(&flow_layout_path, FLOW_LAYOUT_RUNTIME)?;
+    write_if_changed(&map_reference_layers_path, MAP_REFERENCE_LAYERS_RUNTIME)?;
     write_if_changed(&publication_binding_path, PUBLICATION_BINDING_RUNTIME)?;
     write_if_changed(&svg_security_path, SVG_SECURITY_RUNTIME)?;
+    write_if_changed(&asof_probe_path, ASOF_PROBE_RUNTIME)?;
+    write_if_changed(&claim_binding_path, CLAIM_BINDING_RUNTIME)?;
+    write_if_changed(&number_shadow_path, NUMBER_SHADOW_RUNTIME)?;
+    write_if_changed(&compact_setup_path, COMPACT_SETUP_RUNTIME)?;
+    write_if_changed(&number_words_path, NUMBER_WORDS_RUNTIME)?;
+    write_if_changed(&preflight_path, PREFLIGHT_RUNTIME)?;
+    write_if_changed(&patch_retry_path, PATCH_RETRY_RUNTIME)?;
+    write_if_changed(&shadow_path, SHADOW_RUNTIME)?;
+    write_if_changed(&tool_chain_path, TOOL_CHAIN_RUNTIME)?;
     write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
     write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
     write_if_changed(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME)?;
@@ -288,6 +327,22 @@ mod tests {
             .join("editorial_validators.mjs")
             .is_file());
         assert!(root.path().join("runtime").join("render_qa.mjs").is_file());
+        for module in [
+            "asof_probe.mjs",
+            "claim_binding.mjs",
+            "compact_setup.mjs",
+            "number_shadow.mjs",
+            "number_words.mjs",
+            "patch_retry.mjs",
+            "preflight.mjs",
+            "shadow.mjs",
+            "tool_chain.mjs",
+        ] {
+            assert!(
+                root.path().join("runtime").join(module).is_file(),
+                "{module} missing"
+            );
+        }
         assert!(root
             .path()
             .join("runtime")

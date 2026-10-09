@@ -2,40 +2,48 @@ import { runProcess } from "./process.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename } from "node:fs/promises";
-import { dirname, join, resolve, sep, relative } from "node:path";
+import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link } from "node:fs/promises";
+import { basename, dirname, join, resolve, sep, relative } from "node:path";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { critiqueViz, hashRows, lintVizSpec, renderVizBundle, validateVizSpec } from "./viz.mjs";
+import { chartNameDisplay, critiqueViz, hashRows, lintVizSpec, renderVizBundle, sankeyMergeSummary, specValueKind, validateVizSpec } from "./viz.mjs";
+import { mapWorldEnabled } from "./choropleth.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, getBasemap } from "./cartography.mjs";
-import { composeInfographicBundle, critiqueInfographic, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
+import { INFOGRAPHIC_EMPHASIS, INFOGRAPHIC_MODULE_TYPES, INFOGRAPHIC_SCENE_PATTERNS, INFOGRAPHIC_SPANS, INFOGRAPHIC_STORY_ROLES, INFOGRAPHIC_VISUAL_GRAMMARS, PAGE_TOP_GUIDANCE, VISUAL_GRAMMAR_FORMS, annotateSubjectSets, composeInfographicBundle, critiqueInfographic, distinctSubjects, pageSourceNoteReplaced, lintInfographicSpec, validateInfographicSpec } from "./infographic.mjs";
 import { critiqueExplanatory, lintExplanatorySpec, renderExplanatoryBundle, validateExplanatorySpec } from "./explanatory.mjs";
 import { critiqueRichIllustration, illustrationAdapterRequest, lintIllustrationSpec, normalizeIllustrationAdapterResponse, validateIllustrationSpec } from "./illustration.mjs";
-import { applyVisionPatches, normalizeVisionCriticReport, VISION_RUBRIC_KEYS } from "./vision.mjs";
+import { applyPlanEdits, applyVisionPatches, normalizeVisionCriticReport, PLAN_EDIT_MAX_OPS, VISION_RUBRIC_KEYS } from "./vision.mjs";
 import { evaluateCompetitionProfile } from "./competition.mjs";
 import { assessEditorialDiscovery, scoreSemanticNovelty, tournamentVisualConcepts } from "./editorial.mjs";
-import { assessStoryGraph } from "./story_graph.mjs";
+import { assessStoryGraph, mapExplanatoryDimension, PUBLICATION_DIMENSIONS, STORY_DIMENSIONS } from "./story_graph.mjs";
+import { allowedValueHints, contractStatements, loadGrammarRegistrySync } from "./contract_text.mjs";
 import { lintEditorialGrammarSelection, materializeEditorialGrammarSelection } from "./editorial_grammar.mjs";
 import { renderPublication, validatePublicationSpec } from "./publication.mjs";
 import { validateModelSpec } from "./model_spec.mjs";
 import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
-import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData } from "./publication_binding.mjs";
+import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
 import { DEFAULT_REFERENCE_PATTERNS, evaluateExpertPreference, planEditorialAssets, retrieveReferencePatterns, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
-import { extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
+import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
+import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
 import { runRenderQa } from "./render_qa.mjs";
-import { assertDatasetPayload, assertEvidenceBackedStatus, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, evidenceRefFromFingerprint, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
+import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
 import { runTaskDag } from "./parallel_scheduler.mjs";
 import { localHash, localImageInfo, localMetadata, localSpotlight, localSqliteQuery, localText } from "./local_backend.mjs";
 import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLieflatArtifact } from "./lieflat.mjs";
-import { materializeComputationRowTables, safeDuckDbDiagnostic } from "./computation_rows.mjs";
+import { resolveReferenceLayers } from "./map_reference_layers.mjs";
+import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
+import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
+import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
+import { numberWordIn } from "./number_words.mjs";
+import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
 const DEFAULT_RESULT_BUDGET_BYTES = 12 * 1024;
@@ -44,6 +52,8 @@ const MAX_QUERY_BYTES = 1_000_000;
 const MAX_CHART_ROWS = 80;
 const MAX_DATASET_BYTES = 25_000_000;
 const sourceAccessCircuit = createSourceAccessCircuit(3);
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const downloadTimeoutGuard = createDownloadTimeoutGuard(DOWNLOAD_TIMEOUT_MS);
 
 // DuckDB returns two useful identifiers for a computation: the content-addressed
 // artifact filename and the deterministic hash of its rows.  Models frequently
@@ -67,7 +77,30 @@ const CARTOGRAPHIC_DEFAULT_SOURCE_URL = CARTOGRAPHIC_DEFAULT_BASEMAP?.source_url
 const CARTOGRAPHIC_DEFAULT_LICENSE = CARTOGRAPHIC_DEFAULT_BASEMAP?.license ?? BASEMAP_LICENSE;
 const CARTOGRAPHIC_DEFAULT_CONTENT_HASH = CARTOGRAPHIC_DEFAULT_BASEMAP?.content_hash ?? BASEMAP_CONTENT_HASH;
 
+// Provenance defaults for the basemap the caller selected. Only omitted fields
+// are filled; anything the caller wrote is kept verbatim and still validated by
+// validateVizSpec against the registry. An unknown basemap_id gets no defaults,
+// so it is rejected rather than quietly paired with another basemap's provenance.
+function basemapProvenanceDefaults(basemapId: unknown) {
+  if (basemapId === undefined || basemapId === null || basemapId === CARTOGRAPHIC_DEFAULT_BASEMAP_ID) {
+    return {
+      basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
+      basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
+      basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
+      basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+    };
+  }
+  const entry = getBasemap(String(basemapId));
+  return entry
+    ? { basemap_id: String(basemapId), basemap_source_url: entry.source_url, basemap_license: entry.license, basemap_content_hash: entry.content_hash }
+    : {};
+}
+
 import { VALID_TOOL_PHASES, toolEnabled } from "./tool_phase_policy.mjs";
+import { chainResultFor, infographicChainSteps, runToolChain, vizChainSteps } from "./tool_chain.mjs";
+import { checkExpandedConcepts, expandSharedConcepts, fillSetupRefs, setupRefError } from "./compact_setup.mjs";
+import { PATCH_MAX_OPS, PatchError, applyJsonPatch, combinedError, sha256Of, strictSchemaIssues } from "./patch_retry.mjs";
+import { candidates, fillPlanRefs, fillStageRefs, inSchemaOrder, planPrerequisiteIssues, preflightError, renderPrerequisiteIssues } from "./preflight.mjs";
 
 function normalizedNewsroomPhase() {
   const raw = String(process.env.NEWSROOM_PHASE ?? "all").trim();
@@ -76,11 +109,352 @@ function normalizedNewsroomPhase() {
   return phases.length && phases.every((phase) => VALID_TOOL_PHASES.includes(phase)) ? phases.join(",") : "core";
 }
 
+// Opt-in lean surface, set by the CLI only for non-v2 visual-story runs. It
+// also removes the other places that would point the model at a tool it
+// cannot call: the visual-skill enum and the reference-pattern corpus.
+function lieflatHidden() {
+  return process.env.NEWSROOM_HIDE_LIEFLAT === "1" && (process.env.NEWSROOM_TOOL_PROFILE ?? "investigate") === "visual-story";
+}
+
+const INLINE_CLAIM_GUIDELINE = "To bind a claim to a chart without a separate record_claim turn, pass claim and claim_kind instead of claim_id: claim is the sentence with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows ({first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other}, {col@key=value}, optional |N decimals inside the braces). The runtime records the filled claim through record_claim's own gates (source validation, replay, claim-support rule), binds its claim_id to the plan, claim_spec and annotations, and writes takeaway and alt from the claim. Typed digits are refused, nothing is computed or guessed, so a total or ratio must be a column of this SQL. Write a place or currency name in a claim as a placeholder on the chart's name column (for example {max.value.country}); on a zh chart the runtime prints its localized name, so never type one. Pass claim or claim_id, never both.";
+const INLINE_CLAIM_RECORD_GUIDELINE = "A claim that belongs to one chart is not recorded here: pass claim and claim_kind to newsroom_viz_chain or newsroom_viz_plan, which records it from that chart's own SQL rows. Use record_claim for claims no chart carries.";
+
+// One sentence each, always shown (no switch). A hero label is read on its own under the big number, so it names its
+// subject, measure and period. With the hero value gate on (the default) typed digits in a label are refused, so the
+// period is a placeholder of the hero's claim; the gate-off text keeps the plain example. A relative window is written in
+// the SQL, so its sentence sits on duckdb_query; the page-top sentence is exported by infographic.mjs beside its lint.
+const HERO_LABEL_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「2024年阿根廷年通胀率」, not 「通胀率」.";
+const HERO_LABEL_GATED_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「{max.rate.year}年阿根廷年通胀率」, not 「通胀率」; the year comes from a placeholder of the hero's claim (typed digits are refused), so that claim must state the period.";
+const RELATIVE_WINDOW_GUIDELINE = "A relative window such as 近三年 means the 36 months up to the latest data point; state its start and end dates on the page.";
+
+// Opt-in prompt guidance that saves model turns. Each entry is added to a tool's
+// promptGuidelines only when its switch is exactly "1" in the Pi child
+// environment (the Rust side sets it from the parent's opt-in, and resets it
+// otherwise); with the switch off the tool definition is untouched.
+const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record<string, string> }> = [
+  {
+    env: "NEWSROOM_SPEED_PREFLIGHT",
+    tools: {
+      newsroom_infographic_plan: "You may omit reader_question, visual_thesis, editorial_discovery_ref, visual_concept_ref, novelty_ref, asset_plan_ref and a visual module's critic_ref when exactly one existing artifact is bound to what you already named; the runtime copies it verbatim, never overrides a value you give, and lists every unmet precondition in one error. selected_concept_id, claim ids and story nodes are never filled for you.",
+      newsroom_infographic_render: "lint_ref may be omitted when exactly one passing lint is bound to plan_ref.",
+      newsroom_infographic_critic: "lint_ref and manifest_ref may be omitted when exactly one passing lint and one rendered manifest are bound to plan_ref.",
+      newsroom_infographic_preview: "critic_ref may be omitted when exactly one passing deterministic critic is bound to manifest_ref.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_COMPACT_SETUP",
+    tools: {
+      newsroom_editorial_discovery: "Page setup turn plan (each dependency checked in the tools): newsroom_update_plan, newsroom_editorial_discovery and newsroom_story_graph read no concept, discovery or plan artifact (story_graph only needs verified claim ids), so send them in one assistant message. newsroom_visual_concepts needs the discovery artifact, so it is the next turn. newsroom_semantic_novelty and newsroom_asset_requirements both read only the concept set, so send them together after it.",
+      newsroom_visual_concepts: "To avoid retyping text the concepts really share, pass shared: an object of defaults (reader_question, editorial_premise, surprise, hero_evidence_refs, supporting_evidence_refs, asset_requirements, media_mix, information_hierarchy, mobile_treatment, risk_flags, reporting_gaps, why_reject). Each concept is {...shared, ...concept}; the concept's value wins and arrays are replaced. concept_id, framing, visual_metaphor, hero_scene and why_memorable must be written in every concept and are refused in shared. The 8..20 concepts, required fields and three framings are checked as before on the expanded set. discovery_ref may be omitted when exactly one CONTINUE discovery exists.",
+      newsroom_semantic_novelty: "concept_ref may be omitted when exactly one editorial/concepts artifact exists; the runtime copies it verbatim and never overrides a value you give.",
+      newsroom_asset_requirements: "concept_ref may be omitted when exactly one editorial/concepts artifact lists concept_id as a finalist; concept_id is never filled for you.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_PARALLEL_HINTS",
+    tools: {
+      newsroom_update_plan: "newsroom_update_plan does not need a turn of its own: send it in the same assistant message as the first independent research calls.",
+      fetch_url: "When several candidate pages do not depend on each other, call fetch_url for all of them in the same assistant message instead of one per turn.",
+      download_data: "When several candidate data files do not depend on each other, call download_data for all of them in the same assistant message instead of one per turn.",
+    },
+  },
+  {
+    // The CLI records routine progress from real tool events (plan-progress.json); plan.json stays the model's.
+    env: "NEWSROOM_SPEED_PLAN_PROGRESS",
+    tools: {
+      newsroom_update_plan: "Routine step status is recorded by the program from the tool results; call newsroom_update_plan only to set the first plan, change the goal, or after a failure.",
+    },
+  },
+  {
+    // Only where the chain and atomic writes are also on (inlineClaimEnabled).
+    env: "NEWSROOM_SPEED_INLINE_CLAIM",
+    when: () => inlineClaimEnabled(),
+    tools: {
+      newsroom_viz_plan: INLINE_CLAIM_GUIDELINE,
+      record_claim: INLINE_CLAIM_RECORD_GUIDELINE,
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_COMPUTE_BATCH",
+    tools: {
+      duckdb_query: "Independent duckdb_query calls can be sent together in one assistant message; never send two identical SQL statements in one turn, and do not mix them with fetch_url or download_data in the same turn.",
+      record_claim: "record_claim needs the computation_ref from its duckdb_query result, so wait for the results, then send all of the independent record_claim calls together in one assistant message.",
+    },
+  },
+  {
+    env: "NEWSROOM_SPEED_EDITORIAL_HINTS",
+    tools: {
+      newsroom_visual_concepts: "Send all 8-20 concepts in ONE call; fewer than 8 is refused before the tool runs and nothing is saved.",
+    },
+  },
+];
+
+// NEWSROOM_SPEED_EDITORIAL_HINTS=1: wording only. Field descriptions and one guideline say what the editorial tools
+// need, and the story-graph and concept-set refusals gain a suffix that names the legal next step. No schema
+// constraint, fill, default, or accept/refuse condition changes, and a refused call still writes nothing.
+// Off (anything but exactly "1"): the schema, descriptions, guidelines and refusal texts are untouched.
+function editorialHintsEnabled() {
+  return process.env.NEWSROOM_SPEED_EDITORIAL_HINTS === "1";
+}
+// TypeBox options for a field: with the switch off exactly the options the field always had (or none at all).
+const editorialHint = (description: string, base?: any): any => (editorialHintsEnabled() ? { ...(base ?? {}), description } : base);
+// NEWSROOM_SPEED_RULE_HINTS=1: wording only. Descriptions on the viz-plan, discovery and story-graph fields state rules
+// that the validators already enforce (row cap, required fields, source evidence, editorial grammar, question count,
+// channel ownership). No minItems, enum, fill or accept/refuse condition changes. Off (anything but exactly "1"):
+// the registered tool definitions are byte-identical to what they were without this switch.
+// Chart types the model can no longer choose. Render QA rejects all four on common data; their renderers stay, and they go
+// back on the plan's chart_type list (and into the hints below) once they are fixed. The enum, the refusal and the
+// grammar-blocked message all read this one list.
+const HELD_CHART_TYPES: readonly string[] = ["hierarchy_tree", "geo_flow_map", "cartographic_flow_map", "trajectory_profile"];
+// Default off (exactly "1" turns it on): off, the registered tool definitions and the execute paths are byte-identical to what
+// they were before the hold. The switch is read where the tools register and where a plan is accepted.
+const zhSourceLineEnabled = () => process.env.NEWSROOM_ZH_SOURCE_LINE === "1";
+const sankeyOtherNoteEnabled = () => process.env.NEWSROOM_SANKEY_OTHER_NOTE === "1";
+const SANKEY_HIGHLIGHT_DESCRIPTION = "Nodes to highlight. For sankey/alluvial: a source and a target named together highlight the flow between them; a source alone highlights its largest outgoing flow; a target alone highlights its largest incoming flow.";
+const heldChartTypesEnabled = () => process.env.NEWSROOM_HELD_CHART_TYPES === "1";
+const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? ""));
+// Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
+const HELD_PLAN_VALUE_LIST: Record<string, readonly string[]> = { visual_family: ["hierarchy"], data_topology: ["hierarchy", "geo_edges"] };
+const heldPlanValues = (): Record<string, readonly string[]> => (heldChartTypesEnabled() ? HELD_PLAN_VALUE_LIST : { visual_family: [], data_topology: [] });
+function assertPlanValuesNotHeld(params: any) {
+  for (const [field, held] of Object.entries(heldPlanValues())) {
+    if (held.includes(String(params?.[field] ?? ""))) throw new Error(`PLAN_VALUE_HELD: ${field} '${String(params[field])}' is not available; choose another ${field}.`);
+  }
+}
+function assertChartTypeNotHeld(chartType: unknown) {
+  if (isHeldChartType(chartType)) throw new Error(`CHART_TYPE_HELD: chart_type '${String(chartType)}' is not available; choose another chart_type.`);
+}
+
+const ruleHintsEnabled = () => process.env.NEWSROOM_SPEED_RULE_HINTS === "1";
+// With the hold on, the relation hint stops naming the held chart types (the two fragments below appear only in that hint).
+const heldHintText = (text: string) => (heldChartTypesEnabled() ? text.replace("flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map;", "flow sankey/alluvial/parallel_sets;").replace("geography geo_flow_map/cartographic_flow_map/choropleth;", "geography choropleth;") : text);
+const ruleHint = (text: string, base?: any): any => (ruleHintsEnabled() ? { ...(base ?? {}), description: [base?.description, heldHintText(text)].filter(Boolean).join(" ") } : base);
+const RULE_HINT_SQL = "The rows must come from a downloaded or supplied data file (data/...) or a source snapshot (sources/...), at most 240 rows (strip_plot: 600), so aggregate in SQL first.";
+const RULE_HINT_VALUE_FIELD = "Required by chart_type: horizontal_bar/dot/diverging_bar/waffle/treemap category_field+value_field; line x_field+value_field; multi_line/streamgraph x_field+value_field+series_field; small_multiples x_field+value_field+facet_field; dumbbell/slope category_field+start_field+end_field; heatmap x_field+y_field+value_field; scatter x_field+y_field; sankey/alluvial/chord source_field+target_field+value_field.";
+const RULE_HINT_RELATION = "The editorial grammar must fit chart_type: rank horizontal_bar/dot; comparison horizontal_bar/dot/dumbbell/slope/small_multiples/mirrored_bar; change dumbbell/slope; trend line/multi_line/small_multiples; anomaly diverging_bar/dot/small_multiples; benchmark dot/dumbbell; relationship scatter; flow sankey/alluvial/parallel_sets/geo_flow_map/cartographic_flow_map; geography geo_flow_map/cartographic_flow_map/choropleth; network node_link/adjacency_matrix/chord.";
+const RULE_HINT_STORY_REF = "Required when delivery_role=infographic_module: the story_graph_ref returned by newsroom_story_graph; that graph must have passed narrative closure.";
+const RULE_HINT_STORY_NODES = "Required when delivery_role=infographic_module: ids of nodes that exist in that story graph.";
+const RULE_HINT_TARGET_MEASURE = "Optional. When given, it must be one of the declared measure_semantics[].id values.";
+const RULE_HINT_SPEC_CLAIM_ID = "When claim_spec is declared and the plan is verified (claim_id given), strict semantics require claim_spec.claim_id to be present and equal to claim_id; in a draft plan it is compared only when both are given.";
+const RULE_HINT_CATEGORY_FIELD = "Must be present and nonempty for the chart types that list category_field (horizontal_bar, dot, ...); see value_field for the list.";
+const RULE_HINT_PLAN_CLAIM_ID = "Lint needs both: shared compatible evidence (this chart's SQL and one of the claim's computations read a common data/ or sources/ file, and no file they both read has a different hash) plus a permitted computation relation: the chart is rooted in the claim's stored computation (one plain SELECT directly FROM read_json('computations/<hash>.json') using its columns or simple COUNT/SUM/AVG/MIN/MAX of them; no CTE, JOIN, UNION, subquery, window, HAVING, DISTINCT, literal or arithmetic, and no other file read), or uses the same SQL, or shows only values contained in the claim's rows. Prefer the rooted form; never reword the claim to pass.";
+const VIZ_PLAN_READER_TASKS = ["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const;
+// With RULE_HINTS on, claim_spec.reader_task names the enum values instead of the example that listed a value outside the enum.
+const claimSpecReaderTaskOptions = (base: any): any => (ruleHintsEnabled() ? { ...base, description: `Use the same controlled value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence.` } : base);
+const RULE_HINT_QUESTIONS = "Send at least 3 questions, and fill at least one of surprises, mechanisms or spatial_dimensions; otherwise the decision is REVISE.";
+const RULE_HINT_CHANNELS = "Each channel may be owned by one field only.";
+// NEWSROOM_SPEED_CONTRACT_TEXT=1: wording only, same shape as the rule hints above. The statements come from
+// contract_text.mjs, which builds them from the checks' own sets (see there). Off (anything but exactly "1"): the
+// registered tool definitions are byte-identical to what they were without this switch.
+const contractTextEnabled = () => process.env.NEWSROOM_SPEED_CONTRACT_TEXT === "1";
+let contractCache: any = null;
+const contractHint = (key: string, base?: any): any => {
+  if (!contractTextEnabled()) return base;
+  contractCache ??= contractStatements({ readerTasks: SEMANTIC_REQUIRED_READER_TASKS, visualGrammarForms: VISUAL_GRAMMAR_FORMS, registry: loadGrammarRegistrySync(import.meta.url) });
+  const text = contractCache[key];
+  return text ? { ...(base ?? {}), description: [base?.description, text].filter(Boolean).join(" ") } : base;
+};
+// NEWSROOM_CHANNEL_AXES=1: the channel list also offers position_x / position_y. Off (anything but exactly "1"): the
+// tool definition is byte-identical to what it was without this switch.
+const channelAxesEnabled = () => process.env.NEWSROOM_CHANNEL_AXES === "1";
+const CHANNEL_AXES_HINT = "A line or scatter chart declares its horizontal field as position_x and its vertical field as position_y.";
+const VISUAL_CHANNEL_NAMES = ["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const;
+const VISUAL_CHANNEL_NAMES_AXES = ["position", "position_x", "position_y", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const;
+const channelListOptions = (base: any): any => {
+  const hinted = ruleHint(RULE_HINT_CHANNELS, base);
+  return channelAxesEnabled() ? { ...hinted, description: [hinted?.description, CHANNEL_AXES_HINT].filter(Boolean).join(" ") } : hinted;
+};
+const EDITORIAL_HINT_CLAIM_IDS = "Only claim_ids whose record_claim result read \"VERIFIED by system replay\". A claim recorded without computation_refs never verifies, and citing it refuses the whole graph.";
+const EDITORIAL_HINT_CONCEPT_REF = "Artifact path printed by newsroom_visual_concepts (editorial/concepts/...), not the discovery or story-graph path. Run that tool first.";
+const EDITORIAL_HINT_CONCEPT_REF_REFUSAL = "concept_ref is the Artifact line of newsroom_visual_concepts; run it first if you have none.";
+const EDITORIAL_HINT_VERIFIED_LIMIT = 12;
+const EDITORIAL_HINT_CLAIM_TEXT_CHARS = 60;
+// Always on, not a speed switch: wording only. A level of a stock (people, money) is a stock, so it meets the stock
+// checks in editorial_validators.mjs; stock_change, count, rate, share and index follow; only the rest is other.
+// The enum and the validators that read it are unchanged. At most 160 bytes.
+const QUANTITY_KIND_HINT = "Level of a stock (people, money): stock; its change: stock_change; items or events: count; ratio: rate; part of whole: share; true index: index; else other.";
+
+// The suffix after the unchanged first sentence of the story-graph refusal. It is built only after the unchanged
+// check has decided to refuse, reads claims.jsonl and writes nothing. Every pair that failed the check is listed,
+// and only claims the system verified (isSystemVerifiedClaim, never the model's own status) are offered, each with
+// its stored text, so the replacement is chosen by meaning and not by availability.
+async function storyGraphRefusalHint(nodes: any[], verified: Set<string>) {
+  const unverified = new Map<string, string[]>();
+  let pairs = 0;
+  for (const node of nodes ?? []) for (const claimId of node?.claim_ids ?? []) {
+    const id = String(claimId);
+    if (verified.has(id)) continue;
+    const list = unverified.get(String(node.id)) ?? [];
+    if (!list.includes(id)) { list.push(id); pairs += 1; }
+    unverified.set(String(node.id), list);
+  }
+  const records = [...(await verifiedClaimRecords())];
+  const shown = records.slice(-EDITORIAL_HINT_VERIFIED_LIMIT);
+  const clip = (text: unknown) => {
+    const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+    return JSON.stringify(flat.length > EDITORIAL_HINT_CLAIM_TEXT_CHARS ? `${flat.slice(0, EDITORIAL_HINT_CLAIM_TEXT_CHARS - 3).trimEnd()}...` : flat);
+  };
+  const lines = [
+    `Unverified node/claim pairs (${pairs}): ${[...unverified].map(([node, ids]) => `${node}: ${ids.join(", ")}`).join("; ")}. Nothing was saved; send the whole graph again.`,
+    "Rule: a story node may cite only a claim whose record_claim result read \"VERIFIED by system replay\"; a claim recorded as \"NOT VERIFIED / draft only\" (for example with no computation_refs) cannot be cited.",
+    "Next step, either: (1) run duckdb_query on the data, then record_claim with computation_refs set to that query's artifact path, and cite the new claim_id; or (2) cite an already verified claim that states what the node says.",
+    records.length
+      ? `Verified claims (${records.length > shown.length ? `${shown.length} most recent of ${records.length}` : records.length}):\n${shown.map(([id, claim]) => `  ${id} ${clip(claim.claim)}`).join("\n")}`
+      : "Verified claims: none recorded yet, so take step (1).",
+  ];
+  return `\n${lines.join("\n")}`;
+}
+
+// The concept set that newsroom_semantic_novelty and newsroom_asset_requirements read. The check is readArtifactJson's
+// own; with the switch on only the wrong-folder refusal gets one more line, every other error passes through as it was.
+async function readConceptSetArtifact(conceptRef: string) {
+  try {
+    return await readArtifactJson(conceptRef, "editorial/concepts/");
+  } catch (error: any) {
+    if (editorialHintsEnabled() && String(error?.message ?? "").startsWith("Artifact path must be under editorial/concepts/:")) {
+      throw new Error(`${error.message}\n${EDITORIAL_HINT_CONCEPT_REF_REFUSAL}`);
+    }
+    throw error;
+  }
+}
+
+// NEWSROOM_SPEED_PREFLIGHT=1: derivable references become optional and unmet
+// preconditions are listed together (see preflight.mjs). Off: nothing changes.
+function preflightEnabled() {
+  return process.env.NEWSROOM_SPEED_PREFLIGHT === "1";
+}
+// NEWSROOM_SPEED_REPORT_ALL=1: the plan tool reports the independent problems it finds (the editorial grammar build and every hero_stat
+// problem that does not depend on another) in one refusal, the first problem's text unchanged. No check is removed or reordered. Off: nothing changes.
+function reportAllEnabled() {
+  return process.env.NEWSROOM_SPEED_REPORT_ALL === "1";
+}
+// NEWSROOM_SPEED_VIZ_REPORT_ALL=1: a refused newsroom_viz_plan call lists every independent problem found by the checks that read only the call
+// (and the story graph file), in the old order and with the first problem's text, code and class unchanged. A check that needs an earlier one
+// to have passed (the semantic gate's claim_id compares and grammar, which read its result) is skipped when that one failed. Nothing runs SQL or
+// writes to collect problems, and the inline claim is recorded only after the list is empty. Off (anything but exactly "1"): nothing changes.
+function vizReportAllEnabled() {
+  return process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL === "1";
+}
+// NEWSROOM_SPEED_PRECHECK_ALL=1: when the plan call is refused, the refusal also lists every other pre-draw check that can still run
+// (planPrecheckAll). It runs only after the unchanged checks have refused, so no verdict or code changes. Off: nothing changes.
+function precheckAllEnabled() {
+  return process.env.NEWSROOM_SPEED_PRECHECK_ALL === "1";
+}
+// NEWSROOM_SPEED_COMPACT_SETUP=1: shared concept defaults and inferred setup refs (see compact_setup.mjs). Off: nothing changes.
+function compactSetupEnabled() {
+  return process.env.NEWSROOM_SPEED_COMPACT_SETUP === "1";
+}
+const optionalWhenCompact = (schema: any) => (compactSetupEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_SYSTEM_DATE_LABEL=1: the page's date line is the run's local date, written by the system; a model-typed
+// date_label is replaced, since a date is a number no data row backs. Off: date_label is the model's text, as before.
+function systemDateLabelEnabled() {
+  return process.env.NEWSROOM_SYSTEM_DATE_LABEL === "1";
+}
+function systemDateLabel(now = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+async function compactSetupRefs(tool: string, params: any) {
+  if (!compactSetupEnabled()) return params;
+  const filled = await fillSetupRefs(tool, params, preflightIo);
+  if (Object.keys(filled.unresolved).length) throw setupRefError(tool, filled);
+  return filled.params;
+}
+const optionalWhenPreflight = (schema: any) => (preflightEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_SPEED_FIRST_TRY_TEXT=1: a few sentences added to tool descriptions and to one refusal so a call can pass the first time.
+// Text only: no schema, check or result changes. Off: the same text as before.
+function firstTryTextEnabled() {
+  return process.env.NEWSROOM_SPEED_FIRST_TRY_TEXT === "1";
+}
+// NEWSROOM_SPEED_FIRST_TRY_ALL=1 (default off): a refused newsroom_viz_plan / newsroom_viz_chain call names every problem it has, each with
+// its exact fix, so the next call can pass. It reports all problems of the claim template in one pass, checks reader_task here instead of
+// in the framework validator, keeps checking claim ids after a missing declaration, and states the whole placeholder grammar. It only changes
+// which refusal text comes back and when; no check is added, removed or relaxed, and nothing is repaired.
+function firstTryAllEnabled() {
+  return process.env.NEWSROOM_SPEED_FIRST_TRY_ALL === "1";
+}
+const FIRST_TRY = {
+  stepStatus: "Required on every step: pending, in_progress, completed or blocked.",
+  claimNumberWords: ' Number words ("three", "三个", "second largest") are refused like typed digits; select the number in the SQL and write a placeholder.',
+  copyFromGraph: "Copy verbatim from the story graph named by story_graph_ref.",
+  projectId: "A short id for this page, 1 to 120 characters.",
+  heroRequired: " Required for every hero_stat.",
+  heroYears: " A year or a range of years counts as a typed number; if the claim has no placeholder for it, reword without it.",
+  heroTypedNumberError: "; if the claim has no placeholder for it, reword without the number",
+};
+const firstTry = (text: string) => (firstTryTextEnabled() ? text : "");
+const describedString = (text: string) => (firstTryTextEnabled() ? Type.String({ description: text }) : Type.String());
+// NEWSROOM_SPEED_FILL_COPIED_REFS=1: code copies a reference the model left out when exactly one artifact can be meant:
+// story_graph_ref (the only story graph) and the lint's plan_ref (the only plan). project_id is never filled: an id for the page is the model's to give.
+// A value the model gave is left for today's checks; zero or several candidates refuse with the reason. Never fills selected_concept_id, claim ids or story nodes.
+function fillCopiedEnabled() {
+  return process.env.NEWSROOM_SPEED_FILL_COPIED_REFS === "1";
+}
+const optionalWhenFillCopied = (schema: any) => (fillCopiedEnabled() ? Type.Optional(schema) : schema);
+async function onlyArtifactRef(tool: string, field: string, dir: string, none: string) {
+  const found = await candidates(preflightIo, dir, () => true);
+  if (found.truncated) throw preflightError(tool, [`${field} is missing and could not be derived: more than 200 artifacts to scan; supply it explicitly`]);
+  if (found.found.length === 1) return found.found[0];
+  throw preflightError(tool, [`${field} is missing and could not be derived: ${found.found.length ? `${found.found.length} candidates (${found.found.slice(0, 4).join(", ")}${found.found.length > 4 ? ", ..." : ""}); supply the one you mean` : none}`]);
+}
+async function fillStoryGraphRef(tool: string, params: any) {
+  if (!fillCopiedEnabled() || params?.story_graph_ref !== undefined) return params;
+  return { ...params, story_graph_ref: await onlyArtifactRef(tool, "story_graph_ref", "editorial/story-graphs/", "no editorial/story-graphs artifact exists; call newsroom_story_graph first") };
+}
+// Fill the references a later page stage can read off the artifacts it already
+// names, then list every unmet precondition together. Switch off: untouched.
+async function preflightStage(tool: string, params: any) {
+  if (!preflightEnabled()) return params;
+  const filled = await fillStageRefs(tool, params, preflightIo);
+  const issues = tool === "newsroom_infographic_preview"
+    ? Object.entries(filled.unresolved).filter(([field]) => filled.params[field] === undefined).map(([field, reason]) => `${field} is missing and could not be derived: ${reason}`)
+    : await renderPrerequisiteIssues(filled.params, preflightIo, filled.unresolved);
+  if (issues.length) throw preflightError(tool, issues);
+  return filled.params;
+}
+const preflightIo = {
+  async list(dir: string) {
+    const root = artifactRoot();
+    if (!root) return [];
+    const entries = await readdir(join(root, dir), { withFileTypes: true });
+    return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => `${dir}${entry.name}`).sort();
+  },
+  read: (ref: string, prefix?: string) => readArtifactJson(ref, prefix),
+  manifest: (dir: string, ref: string, prefix: string) => readManifestOrRejected(dir, ref, prefix),
+  verified: async () => new Set(await verifiedClaimIds()),
+  // A lint is current while the render would still accept it (the render's own check).
+  async lintCurrent(lint: any) {
+    // Exactly the render's own checks (assertInfographicLintHolds): the verdict, the cited claims, the policy,
+    // the upstream asset hashes and a fresh lint under today's settings. Any refusal means the lint is stale.
+    try {
+      const spec = await readArtifactJson(String(lint.plan_ref), "infographics/plans/");
+      await assertInfographicLintHolds(spec, lint, String(lint.plan_ref));
+      return true;
+    } catch { return false; }
+  },
+  // A rendered page manifest is current while it has not been moved to rejected/.
+  async pageManifestUsableRef(ref: string) {
+    try { await readManifestOrRejected("infographics", String(ref), "infographics/"); return true; } catch { return false; }
+  },
+};
+
+function withSpeedGuidelines(tool: any) {
+  const extra = SPEED_GUIDELINES.filter((entry) => process.env[entry.env] === "1" && (entry.when?.() ?? true) && entry.tools[String(tool?.name ?? "")]).map((entry) => entry.tools[String(tool.name)]);
+  if (!extra.length) return tool;
+  return { ...tool, promptGuidelines: [...(tool.promptGuidelines ?? []), ...extra] };
+}
+
+// Tools exactly as handed to pi.registerTool (after the phase/profile filter,
+// guidelines and fault injection), so a chain calls the same execute Pi would.
+const registeredTools = new Map<string, any>();
+
 function registerScopedTool(pi: ExtensionAPI, tool: any) {
   const name=String(tool?.name??'');
   const phase=normalizedNewsroomPhase();
   const profile=process.env.NEWSROOM_TOOL_PROFILE??'investigate';
   if (!toolEnabled(name,{phase,profile})) return;
+  if (lieflatHidden() && name.startsWith("newsroom_lieflat_")) return;
+  tool = withSpeedGuidelines(tool);
 
   if (process.env.NEWSROOM_PHASE_METRICS === "1") {
     const metric = {type:"newsroom_phase_scope",phase,profile,tool:name,schema_bytes:Buffer.byteLength(JSON.stringify(tool?.parameters ?? {}), "utf8")};
@@ -110,15 +484,112 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
+  registeredTools.set(name, tool);
+  if (name === "newsroom_infographic_plan" && planPatchEnabled()) tool = withRejectionStore(tool, PLAN_PATCH);
+  wrappedTools.set(name, tool);
   pi.registerTool(tool);
+}
+
+// NEWSROOM_SPEED_PLAN_PATCH=1 / NEWSROOM_SPEED_CHAIN_PATCH=1: a refused call's raw parameters are kept, and a
+// patch tool takes only the change (RFC 6902) against them. The patched parameters get the strict schema
+// check, then run through the same tool as a full call, so every other check runs again. Off: nothing changes.
+const planPatchEnabled = () => process.env.NEWSROOM_SPEED_PLAN_PATCH === "1" && atomicArtifactWritesEnabled(); // like the chains, only with atomic writes
+const chainPatchEnabled = () => process.env.NEWSROOM_SPEED_CHAIN_PATCH === "1" && atomicArtifactWritesEnabled();
+type PatchKind = { tool: string; patchTool: string; rejections: string; patches: string };
+const PLAN_PATCH: PatchKind = { tool: "newsroom_infographic_plan", patchTool: "newsroom_infographic_plan_patch", rejections: "infographics/plan-rejections/", patches: "infographics/plan-patches/" };
+const CHAIN_PATCH: PatchKind = { tool: "newsroom_infographic_chain", patchTool: "newsroom_infographic_chain_patch", rejections: "infographics/chain-rejections/", patches: "infographics/chain-patches/" };
+// The tool as Pi runs it (with the rejection store), so a patch runs the call exactly as a full call would.
+const wrappedTools = new Map<string, any>();
+
+async function storeRejection(kind: PatchKind, raw: any): Promise<string | null> {
+  const ref = `${kind.rejections}${sha256Of(raw)}.json`;
+  // Raw params only: stored before any fill, so a retry is filled again from the artifacts it names.
+  return (await writeArtifactIfAbsent(ref, { schema_version: "0.1.0", kind: "rejected_call", tool: kind.tool, params: raw })) ? ref : null;
+}
+const patchHint = (kind: PatchKind, ref: string) => `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
+
+function withRejectionStore(tool: any, kind: PatchKind) {
+  const original = tool.execute.bind(tool);
+  return { ...tool, async execute(id: string, params: any, signal?: AbortSignal, ...rest: any[]) {
+    const raw = structuredClone(params ?? {});
+    let result: any;
+    try {
+      result = await original(id, params, signal, ...rest);
+    } catch (error: any) {
+      if (signal?.aborted || !(error instanceof Error)) throw error;
+      let ref: string | null = null;
+      try { ref = await storeRejection(kind, raw); } catch { /* the refusal still stands */ }
+      if (ref) error.message += patchHint(kind, ref);
+      throw error;
+    }
+    // A chain returns a STOPPED result instead of throwing; its refusal is kept the same way.
+    if (kind === CHAIN_PATCH && result?.details?.chainStatus === "STOPPED" && !signal?.aborted) {
+      let ref: string | null = null;
+      try { ref = await storeRejection(kind, raw); } catch { /* the refusal still stands */ }
+      if (ref) result = { ...result, content: result.content.map((block: any, index: number) => (index === 0 && block?.type === "text" ? { ...block, text: block.text + patchHint(kind, ref!) } : block)) };
+    }
+    return result;
+  } };
+}
+
+function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const target = wrappedTools.get(kind.tool);
+  // The chain is not a registry tool; it exists only where the plan tool does, so that is the phase/profile check.
+  if (!target || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const label = kind === PLAN_PATCH ? "plan" : "page chain";
+  pi.registerTool({
+    name: kind.patchTool,
+    label: `Send only the change to a refused ${label} call`,
+    description: `After ${kind.tool} refused a call, change only what the refusal named and run the call again, without re-sending it. patch_of is the reference in the refusal's 'Send only the change' line. patch is a list of RFC 6902 ops (add, replace, remove, test) on that call's parameters; a test op must come before any op on an array element, and the whole patch is refused if any op fails. The patched call goes through the same strict parameter check and every ${kind.tool} check as a full call.`,
+    promptSnippet: `Re-run a refused ${kind.tool} call by sending only the change`,
+    promptGuidelines: [`Use this instead of re-sending the whole ${kind.tool} call after it names the problem.`],
+    parameters: Type.Object({
+      patch_of: Type.String(),
+      patch: Type.Array(Type.Object({
+        op: StringEnum(["add", "replace", "remove", "test"] as const),
+        path: Type.String(),
+        value: Type.Optional(Type.Any()),
+      }), { minItems: 1, maxItems: PATCH_MAX_OPS }),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) {
+      const sha = String(params.patch_of ?? "").replace(kind.rejections, "").replace(/\.json$/, "");
+      if (!/^[0-9a-f]{64}$/.test(sha)) throw new PatchError("PATCH_BASE_NOT_FOUND", `patch_of must be a reference printed in a ${kind.tool} refusal`);
+      let stored: any;
+      try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
+      const patched = applyJsonPatch(stored.params, params.patch);
+      let Compile: any;
+      try { Compile = (await import("typebox/compile")).Compile; } catch { Compile = undefined; }
+      const issues = strictSchemaIssues(Compile, registeredTools.get(kind.tool)?.parameters ?? target.parameters, patched);
+      if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
+      const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: params.patch })}.json`;
+      await writeArtifactIfAbsent(patchRef, { schema_version: "0.1.0", kind: "call_patch", tool: kind.tool, patch_of: `${kind.rejections}${sha}.json`, ops: params.patch, patched_params_sha256: sha256Of(patched) });
+      return wrappedTools.get(kind.tool).execute(`${id}:${kind.tool}`, patched, signal, onUpdate, ctx);
+    },
+  });
 }
 
 
 const SEMANTIC_REQUIRED_READER_TASKS = new Set(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole"]);
 
+// NEWSROOM_SCATTER_PAIRED_MEASURES=1 (K110): a scatter's two axes are declared one measure each and compared as a pair (same objects,
+// same period, aggregation and temporal basis); units and phenomena may differ and each axis shows its own declared unit.
+// Off (anything but exactly "1"): the tool definitions and every refusal are byte-identical to what they were without this switch.
+const scatterPairedEnabled = () => process.env.NEWSROOM_SCATTER_PAIRED_MEASURES === "1";
+const SCATTER_PAIR_CHART = "scatter";
+const SCATTER_PAIR_RELATION = "relationship";
+const SCATTER_PAIR_ENTITY_FIELD = "entity_field";
+const SCATTER_PAIR_PERIOD_FIELD = "period_field";
+const SCATTER_PAIR_HINT = `For a ${SCATTER_PAIR_CHART} chart, declare one measure_semantics entry per axis (field = x_field and y_field, claim_spec relation ${SCATTER_PAIR_RELATION}, exactly those two measure_ids, no derived_metric) and set ${SCATTER_PAIR_ENTITY_FIELD} and ${SCATTER_PAIR_PERIOD_FIELD}. The two axes must cover the same objects (one row per ${SCATTER_PAIR_ENTITY_FIELD} value) and the same single period (one ${SCATTER_PAIR_PERIOD_FIELD} value in every row, equal to any date, start or end a measure states); their units and phenomena may differ and each axis shows its own declared unit.`;
+const SCATTER_PAIR_ENTITY_HINT = `${SCATTER_PAIR_CHART} only: the field naming the object each point stands for; it must be in every row, non-empty and unique across rows (one point per object).`;
+const SCATTER_PAIR_PERIOD_HINT = `${SCATTER_PAIR_CHART}: the field holding the single period every row covers; it must be in every row and have one value.`;
+const scatterPairHint = (base: any): any => (scatterPairedEnabled() ? { ...(base ?? {}), description: [base?.description, SCATTER_PAIR_HINT].filter(Boolean).join(" ") } : base);
+const scatterPeriodHint = (base: any): any => (scatterPairedEnabled() ? { ...(base ?? {}), description: [base?.description, SCATTER_PAIR_PERIOD_HINT].filter(Boolean).join(" ") } : base);
+
 const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   rank: ["horizontal_bar", "dot"],
-  comparison: ["horizontal_bar", "dot", "dumbbell", "slope", "small_multiples"],
+  comparison: ["horizontal_bar", "dot", "dumbbell", "slope", "small_multiples", "mirrored_bar"],
   change: ["dumbbell", "slope"],
   trend: ["line", "multi_line", "small_multiples"],
   anomaly: ["diverging_bar", "dot", "small_multiples"],
@@ -129,6 +600,59 @@ const STRICT_GRAMMAR_FORMS: Record<string, string[]> = {
   network: ["node_link", "adjacency_matrix", "chord"],
 };
 
+// The block below names the charts that fit the relation; this names the relations that fit the chart,
+// read from the same table, so the model can change the chart or the claim in one turn.
+function grammarFitClause(chartType: string): string {
+  const relations = Object.keys(STRICT_GRAMMAR_FORMS).filter((relation) => STRICT_GRAMMAR_FORMS[relation].includes(chartType));
+  return `; ${chartType} fits: ${relations.length ? relations.join(", ") : "no relation in the strict grammar"}`;
+}
+
+// K110: a paired scatter shows each axis's own declared unit. An absent x_unit or y_unit is filled from that axis's declaration;
+// one that differs is refused with the declared unit named. The chart's required `unit` stays: it is the fallback for the y axis
+// and feeds the unit checks, but no longer has to equal either axis.
+function scatterPairAxisUnits(semanticGate: any, params: any): { x_unit: string; y_unit: string } {
+  const pair = semanticGate.scatter_pair;
+  const unitOf = (id: string) => String((semanticGate.measures ?? []).find((measure: any) => measure.id === id)?.unit ?? "");
+  const out: any = {};
+  for (const [axis, id] of [["x", pair.x_measure], ["y", pair.y_measure]] as const) {
+    const declared = unitOf(id);
+    const given = params[`${axis}_unit`];
+    if (given != null && String(given).trim() && String(given).trim() !== declared) {
+      throw new Error(`SCATTER_AXIS_UNIT_MISMATCH: ${axis}_unit '${String(given).trim()}' differs from the unit declared for the ${axis} axis (measure '${id}'): '${declared}'; omit ${axis}_unit or set it to '${declared}'`);
+    }
+    out[`${axis}_unit`] = declared;
+  }
+  return out;
+}
+
+// K110 fix: with the switch on, a scatter whose declarations do not form a pair is refused, naming every failed condition at once.
+// Built from the same constants as SCATTER_PAIR_HINT; today's comparison never runs for a scatter.
+function scatterPairFailures(semanticGate: any, params: any): string[] {
+  const claim = semanticGate.claim_spec ?? {};
+  const measures: any[] = semanticGate.measures ?? [];
+  const ids: string[] = Array.isArray(claim.measure_ids) ? claim.measure_ids : [];
+  const xField = String(params.x_field ?? "").trim();
+  const yField = String(params.y_field ?? "").trim();
+  const failed: string[] = [];
+  if (claim.relation !== SCATTER_PAIR_RELATION) failed.push(`claim_spec relation is '${claim.relation ?? ""}': set it to ${SCATTER_PAIR_RELATION}`);
+  if (new Set(ids).size !== 2) failed.push(`claim_spec names ${new Set(ids).size} distinct measure ids (target, baseline and context together): name exactly two, one per axis`);
+  if (measures.length !== 2) failed.push(`${measures.length} measure_semantics entries are declared: declare exactly two, one per axis, and no others`);
+  if (!xField || !yField || xField === yField) failed.push(`x_field and y_field must be two different fields (x_field '${xField}', y_field '${yField}')`);
+  else {
+    const fields = ids.map((id) => measures.find((measure: any) => measure.id === id)?.field);
+    const oneToOne = fields.length === 2 && ((fields[0] === xField && fields[1] === yField) || (fields[1] === xField && fields[0] === yField));
+    if (!oneToOne) failed.push(`the two measures' fields (${fields.map((f) => `'${f ?? ""}'`).join(", ")}) must be x_field '${xField}' and y_field '${yField}', one each`);
+  }
+  if (claim.derived_metric) failed.push(`claim_spec has a derived_metric: remove it, a ${SCATTER_PAIR_CHART} compares its two axes directly`);
+  return failed;
+}
+
+function assertScatterPairFields(params: any) {
+  const missing = [SCATTER_PAIR_ENTITY_FIELD, SCATTER_PAIR_PERIOD_FIELD].filter((field) => !String(params[field] ?? "").trim());
+  if (missing.length) throw new Error(`SCATTER_PAIRING_FIELDS_REQUIRED: a ${SCATTER_PAIR_CHART} with one measure per axis requires ${missing.join(" and ")}: ${SCATTER_PAIR_ENTITY_FIELD} names the object of each point (one row per object), ${SCATTER_PAIR_PERIOD_FIELD} the single period every row covers`);
+  if (params[SCATTER_PAIR_ENTITY_FIELD] === params[SCATTER_PAIR_PERIOD_FIELD]) throw new Error(`SCATTER_PAIRING_FIELDS_REQUIRED: ${SCATTER_PAIR_ENTITY_FIELD} and ${SCATTER_PAIR_PERIOD_FIELD} must be two different fields`);
+}
+
 function assertEditorialGrammar(semanticGate: any, chartType: string) {
   if (!semanticGate || semanticGate.enforcement !== "strict") return;
   if (semanticGate.status === "BLOCK") {
@@ -138,7 +662,17 @@ function assertEditorialGrammar(semanticGate: any, chartType: string) {
   const relation = String(semanticGate.claim_spec?.relation ?? "");
   const allowed = STRICT_GRAMMAR_FORMS[relation];
   if (allowed && !allowed.includes(chartType)) {
-    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'`);
+    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.join(", ")}; got '${chartType}'${grammarFitClause(chartType)}`);
+  }
+}
+
+// With the hold on, the refusal names only the forms the model can choose; off, it is assertEditorialGrammar unchanged.
+function assertEditorialGrammarOffered(semanticGate: any, chartType: string) {
+  if (!heldChartTypesEnabled()) return assertEditorialGrammar(semanticGate, chartType);
+  const relation = String(semanticGate.claim_spec?.relation ?? "");
+  const allowed = STRICT_GRAMMAR_FORMS[relation];
+  if (allowed && !allowed.includes(chartType)) {
+    throw new Error(`EDITORIAL_GRAMMAR_BLOCKED: relation '${relation}' requires one of ${allowed.filter((form) => !isHeldChartType(form)).join(", ")}; got '${chartType}'${grammarFitClause(chartType)}`);
   }
 }
 
@@ -224,12 +758,79 @@ async function readArtifactText(relativePath: string, requiredPrefix?: string) {
   return readFile(full, "utf8");
 }
 
+// D1: the runtime, never the model, reads the page subject set (the key field
+// of the declared computation's rows) and each chart's subjects (the category
+// field of that chart's own computation rows), then restyles any chart that
+// goes beyond the set. Unreadable rows leave the subjects unset, which lint
+// reports as unresolved.
+async function resolveSubjectSets(spec: any, assets: Record<string, any>, shadowAsOfCheck: boolean = false) {
+  await resolveSubjectSetsCore(spec, assets);
+  // Shadow check A (off unless NEWSROOM_SHADOW_CHECKS=1): never changes the
+  // subjects or members resolved above; stashes {path, counts} on the assets,
+  // out of sight of lint, for the lint tool's details.
+  if (!shadowAsOfCheck || !shadowChecksEnabled()) return;
+  const shadow = await runShadow(() => shadowAsOf({
+    root: artifactRoot(), spec, assets, planRef: "", members: (assets as any).__subject_set_members,
+    deps: {
+      ...claimBindingDeps(),
+      serializeSql: (sql: string) => serializeSqlAst(sql),
+      describe: async (source: string) => (await queryDuckDb(`DESCRIBE SELECT * FROM ${source}`) as any[]).map((row) => ({ name: String(row.column_name), type: String(row.column_type) })),
+      query: (sql: string) => queryDuckDb(sql) as Promise<Record<string, unknown>[]>,
+      registryDate: (path: string) => registryDateFor(path),
+    },
+  }));
+  if (shadow) Object.defineProperty(assets, "__asof_shadow", { value: shadow, enumerable: false, configurable: true });
+}
+
+// The reference date of a data file from the source registry (data/origins/*.json
+// records that name the file), never from the clock. Null when none is recorded.
+async function registryDateFor(dataPath: string) {
+  const root = artifactRoot();
+  if (!root) return null;
+  let names: string[] = [];
+  try { names = (await readdir(join(root, "data", "origins"))).filter((name) => name.endsWith(".json")).sort(); } catch { return null; }
+  for (const name of names) {
+    try {
+      const record = JSON.parse(await readFile(join(root, "data", "origins", name), "utf8"));
+      if (record?.file !== dataPath) continue;
+      for (const field of REGISTRY_DATE_FIELDS) {
+        const value = String(record?.[field] ?? "").trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function resolveSubjectSetsCore(spec: any, assets: Record<string, any>) {
+  const declared = spec?.subject_set;
+  if (!declared || typeof declared !== "object") return;
+  const readRows = async (ref: unknown) => {
+    try {
+      const computation = await readArtifactJson(String(ref), "computations/");
+      return Array.isArray(computation?.rows) ? computation.rows : null;
+    } catch { return null; }
+  };
+  const setRows = declared.computation_ref ? await readRows(declared.computation_ref) : null;
+  const members = new Set<string>(setRows && declared.key_field ? distinctSubjects(setRows, String(declared.key_field)) : []);
+  Object.defineProperty(assets, "__subject_set_members", { value: [...members], enumerable: false, configurable: true });
+  for (const module of spec?.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const asset = assets[String(module.manifest_ref ?? "")];
+    const field = asset?.manifest?.category_field;
+    if (!asset || !field || !asset.manifest?.computation_ref) continue;
+    const rows = await readRows(asset.manifest.computation_ref);
+    if (rows) asset.subjects = distinctSubjects(rows, String(field));
+  }
+  if (members.size) annotateSubjectSets(spec, assets, members);
+}
+
 // Accepts desktop-only chart/illustration assets when the phone-facing
 // mobile page is off (NEWSROOM_MOBILE_PAGES): the mobile variant is never
 // read from the manifest and never requested, matching newsroom_viz_render
 // and newsroom_explainer_render/newsroom_illustration_generate, which stop
 // producing one. Callers that don't pass mobilePages follow the live switch.
-async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled()) {
+async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePagesEnabled(), shadowAsOfCheck: boolean = false) {
   const assets: Record<string, any> = {};
   for (const module of spec?.modules ?? []) {
     if (module?.type === "visual") {
@@ -246,7 +847,16 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       // exemption can independently check a choropleth's value_labels proof
       // without a second artifact read of its own.
       const renderQa = manifest.render_qa_ref ? await readArtifactJson(String(manifest.render_qa_ref), "visualizations/qa/") : null;
-      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: await readArtifactText(desktopRef, "visualizations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/") } : {}) };
+      const desktopSvgText = await readArtifactText(desktopRef, "visualizations/");
+      // The 8-column variant (desktop-only pages): read it and re-check its bytes against the hash
+      // the manifest recorded and the one render QA covered, so a swapped file never reaches a page.
+      let compactSvgText: string | undefined;
+      if (!mobilePages && manifest?.variants?.compact) {
+        compactSvgText = await readArtifactText(String(manifest.variants.compact), "visualizations/");
+        const compactSha = sha256Hex(compactSvgText);
+        if (compactSha !== manifest.hashes?.compact_sha256 || compactSha !== renderQa?.viewports?.compact?.svg_sha256) throw new Error(`Visualization manifest '${manifestRef}' compact SVG does not match its recorded hash and render QA report`);
+      }
+      assets[manifestRef] = { manifest, critic, renderQa, desktopSvg: desktopSvgText, ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/") } : {}), ...(compactSvgText !== undefined ? { compactSvg: compactSvgText } : {}) };
     } else if (module?.type === "illustration") {
       const assetRef = String(module.asset_ref ?? "");
       if (!assetRef) continue;
@@ -259,13 +869,14 @@ async function loadInfographicAssets(spec: any, mobilePages: boolean = mobilePag
       assets[assetRef] = { manifest, critic, desktopSvg: await readArtifactText(desktopRef, "visualizations/illustrations/"), ...(mobilePages ? { mobileSvg: await readArtifactText(String(mobileRef), "visualizations/illustrations/") } : {}) };
     }
   }
+  await resolveSubjectSets(spec, assets, shadowAsOfCheck);
   return assets;
 }
 
 // Turns one viewport of a render-QA report (runtime/pi/render_qa.mjs) into
 // critic-shaped issues. Unmeasured elements never appear here - by design,
 // they never fail a viewport and are not actionable editorial guidance.
-function renderQaIssueList(viewportReport: any, viewport: "desktop" | "mobile") {
+function renderQaIssueList(viewportReport: any, viewport: "desktop" | "mobile" | "compact") {
   const issues: any[] = [];
   for (const failure of viewportReport?.geometry?.failures ?? []) {
     issues.push({ severity: "blocker", code: `render_qa_${failure.rule}`, message: failure.message, viewport });
@@ -285,13 +896,17 @@ function renderQaIssueList(viewportReport: any, viewport: "desktop" | "mobile") 
 // mobile is optional: newsroom_viz_render and newsroom_infographic_render
 // both omit it when phone pages are off, and then only
 // <dir>/rejected/<key>/desktop.svg plus render-qa.json are written.
-async function writeRejectedRender(dir: "visualizations" | "infographics", key: string, desktop: string, mobile: string | undefined, renderQa: any) {
+async function writeRejectedRender(dir: "visualizations" | "infographics", key: string, desktop: string, mobile: string | undefined, renderQa: any, compact?: string) {
   const base = `${dir}/rejected/${key}`;
-  const refs: { desktopSvgRef: string; mobileSvgRef?: string; renderQaRef: string } = { desktopSvgRef: `${base}/desktop.svg`, renderQaRef: `${base}/render-qa.json` };
+  const refs: { desktopSvgRef: string; mobileSvgRef?: string; compactSvgRef?: string; renderQaRef: string } = { desktopSvgRef: `${base}/desktop.svg`, renderQaRef: `${base}/render-qa.json` };
   await writeArtifactIfAbsent(refs.desktopSvgRef, desktop);
   if (mobile !== undefined) {
     refs.mobileSvgRef = `${base}/mobile.svg`;
     await writeArtifactIfAbsent(refs.mobileSvgRef, mobile);
+  }
+  if (compact !== undefined) {
+    refs.compactSvgRef = `${base}/compact.svg`;
+    await writeArtifactIfAbsent(refs.compactSvgRef, compact);
   }
   await writeArtifactIfAbsent(refs.renderQaRef, renderQa);
   return refs;
@@ -304,7 +919,7 @@ async function writeRejectedRender(dir: "visualizations" | "infographics", key: 
 // renderQa.viewports and refs.mobileSvgRef both omit mobile together (a
 // viz or infographic render with phone pages off), so this walks whatever viewport
 // keys are actually present instead of assuming desktop+mobile.
-function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobileSvgRef?: string; renderQaRef: string }) {
+function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobileSvgRef?: string; compactSvgRef?: string; renderQaRef: string }) {
   const messages: string[] = [];
   for (const viewport of Object.keys(renderQa.viewports)) {
     const report = renderQa.viewports[viewport];
@@ -314,7 +929,7 @@ function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobil
   const shown = messages.slice(0, 5);
   const remainder = messages.length - shown.length;
   const more = remainder > 0 ? `\n(+${remainder} more failure(s); see ${refs.renderQaRef})` : "";
-  const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
+  const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef, refs.compactSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
   return `REVISE: render QA failed (${renderQa.failure_count} failure${renderQa.failure_count === 1 ? "" : "s"})
 ${shown.map((message) => `- ${message}`).join("\n")}${more}
 No manifest was written: this render cannot be critiqued or published.
@@ -543,6 +1158,9 @@ async function assertApprovedInfographicLineage(infographicPlanRef: string): Pro
       `Publication blocked: infographic '${found.ref}' has no passing critic (missing or failed) - run newsroom_infographic_critic until it passes`,
     );
   }
+  try { await assertPageLintCurrent(found.manifest); } catch (error: any) {
+    throw new Error(`Publication blocked: the lint infographic '${found.ref}' was rendered from no longer holds - ${String(error?.message ?? error)}`);
+  }
   if (found.manifest.visual_review_required === true) {
     const hasVision = await hasPassingLinkedCritic("infographics/vision-critics", found.ref);
     if (!hasVision) {
@@ -581,37 +1199,45 @@ async function rejectPublication(key: string, manifestRef: string, report: any, 
   return { rejectedManifestRef, rejectedQaReportRef, rejectionRef };
 }
 
-async function verifiedClaimIds() {
+// The latest record per claim_id decides: a claim counts as verified only while its last record in
+// claims.jsonl is system-verified (a later non-verified record revokes it). Order is first appearance.
+// A line that does not parse, is not a JSON object or has no claim_id closes the registry: such a line could
+// have been a revoking record, so no claim counts as verified until the file is intact again.
+async function latestClaimRecords(): Promise<Map<string, any>> {
   const root = artifactRoot();
-  if (!root) return [];
+  const latest = new Map<string, any>();
+  if (!root) return latest;
+  let text = "";
   try {
-    const text = await readFile(join(root, "claims.jsonl"), "utf8");
-    return text.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-      try {
-        const claim = JSON.parse(line);
-        return isSystemVerifiedClaim(claim) && claim.claim_id ? [String(claim.claim_id)] : [];
-      } catch {
-        return [];
-      }
-    });
-  } catch {
-    return [];
+    text = await readFile(join(root, "claims.jsonl"), "utf8");
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") throw error;
+    return latest;
   }
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].trim()) continue;
+    let claim: any;
+    try {
+      claim = JSON.parse(lines[index]);
+    } catch {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not valid JSON, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
+    }
+    if (!claim || typeof claim !== "object" || Array.isArray(claim) || typeof claim.claim_id !== "string" || !claim.claim_id) {
+      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not a claim record with a claim_id, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
+    }
+    latest.set(claim.claim_id, claim);
+  }
+  return latest;
 }
 
-async function verifiedClaimRecords() {
-  const root = artifactRoot();
+export async function verifiedClaimIds() {
+  return [...(await latestClaimRecords())].filter(([, claim]) => isSystemVerifiedClaim(claim)).map(([id]) => id);
+}
+
+export async function verifiedClaimRecords() {
   const out = new Map<string, any>();
-  if (!root) return out;
-  try {
-    const text = await readFile(join(root, "claims.jsonl"), "utf8");
-    for (const line of text.split(/\r?\n/).filter(Boolean)) {
-      try {
-        const claim = JSON.parse(line);
-        if (isSystemVerifiedClaim(claim) && claim.claim_id) out.set(String(claim.claim_id), claim);
-      } catch {}
-    }
-  } catch {}
+  for (const [id, claim] of await latestClaimRecords()) if (isSystemVerifiedClaim(claim)) out.set(id, claim);
   return out;
 }
 
@@ -637,19 +1263,92 @@ function stableId(input: string) {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
+// NEWSROOM_SPEED_ATOMIC_ARTIFACT=1 (default off) makes the immutable writers
+// publish a complete file with link(2) instead of creating the target first
+// and filling it afterwards. Read per call, never cached. With the switch off
+// the original exclusive-create path below runs unchanged.
+function atomicArtifactWritesEnabled(): boolean {
+  return process.env.NEWSROOM_SPEED_ATOMIC_ARTIFACT === "1";
+}
+
+// The fs calls the immutable writers use, behind one object so a test can
+// pause or break a specific step deterministically. Production never swaps it.
+const defaultArtifactFs = { writeFile, link, unlink, mkdir, readFile, stat, readdir };
+let artifactFs: typeof defaultArtifactFs = defaultArtifactFs;
+export function __setArtifactFsForTest(overrides: Partial<typeof defaultArtifactFs> | null) {
+  artifactFs = overrides ? { ...defaultArtifactFs, ...overrides } : defaultArtifactFs;
+}
+
+// Temp files live in a dot-directory next to the artifact root (same volume so
+// link works), never inside it: the verifiers and listArtifactFiles only walk
+// the root, and nothing in the repo enumerates the root's parent.
+const ARTIFACT_TMP_SUFFIX = ".tmp";
+const ARTIFACT_TMP_DIR_SUFFIX = ".write-tmp";
+function artifactTmpDir(root: string) {
+  return join(dirname(root), `.${basename(root)}${ARTIFACT_TMP_DIR_SUFFIX}`);
+}
+
+// Remove temp files left by a writer that died before its cleanup ran. A file
+// is named <pid>-<random>.tmp and is only removed when that pid is gone.
+export async function cleanupStaleArtifactTmp(root: string | null = artifactRoot()) {
+  if (!root) return 0;
+  const dir = artifactTmpDir(root);
+  let names: string[];
+  try { names = await artifactFs.readdir(dir) as string[]; } catch { return 0; }
+  let removed = 0;
+  for (const name of names) {
+    const match = /^(\d+)-[0-9a-f]+\.tmp$/.exec(name);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    let alive = false;
+    try { process.kill(pid, 0); alive = true; } catch (error: any) { alive = error?.code === "EPERM"; }
+    if (alive && pid !== process.pid) continue;
+    try { await artifactFs.unlink(join(dir, name)); removed++; } catch {}
+  }
+  return removed;
+}
+
+const LINK_UNSUPPORTED_CODES = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "EXDEV", "ENOSYS"]);
+
+// Returns "linked" (we created the target, complete), "exists" (target was
+// already there; the caller compares bytes), or "unsupported" (this volume
+// cannot link or the temp dir is unusable; the caller falls back to wx, where
+// a reader can still see a half-written file).
+async function createViaLink(root: string, path: string, bytes: Buffer): Promise<"linked" | "exists" | "unsupported"> {
+  const dir = artifactTmpDir(root);
+  try { await artifactFs.mkdir(dir, { recursive: true }); } catch { return "unsupported"; }
+  const tmp = join(dir, `${process.pid}-${randomBytes(8).toString("hex")}${ARTIFACT_TMP_SUFFIX}`);
+  try {
+    await artifactFs.writeFile(tmp, bytes, { flag: "wx" });
+    try {
+      await artifactFs.link(tmp, path);
+      return "linked";
+    } catch (error: any) {
+      if (error?.code === "EEXIST") return "exists";
+      if (LINK_UNSUPPORTED_CODES.has(error?.code)) return "unsupported";
+      throw error;
+    }
+  } finally {
+    try { await artifactFs.unlink(tmp); } catch {}
+  }
+}
+
 async function writeArtifactIfAbsent(relativePath: string, value: unknown) {
   const root = artifactRoot();
   if (!root) return null;
   const path = join(root, relativePath);
   await ensureParent(path);
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n";
+  const atomic = atomicArtifactWritesEnabled() ? await createViaLink(root, path, Buffer.from(text, "utf8")) : "unsupported";
+  if (atomic === "linked") return path;
   try {
-    await writeFile(path, text, { encoding: "utf8", flag: "wx" });
+    if (atomic === "exists") throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    await artifactFs.writeFile(path, text, { encoding: "utf8", flag: "wx" });
   } catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
-    const info = await stat(path);
+    const info = await artifactFs.stat(path);
     if (!info.isFile()) throw new Error(`Immutable artifact path exists but is not a file: ${relativePath}`);
-    const existing = await readFile(path, "utf8");
+    const existing = await artifactFs.readFile(path, "utf8");
     if (existing !== text) throw new Error(`Immutable artifact collision: existing bytes differ at ${relativePath}`);
   }
   return path;
@@ -661,16 +1360,41 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
   const path = join(root, relativePath);
   await ensureParent(path);
   const bytes = Buffer.from(value);
+  const atomic = atomicArtifactWritesEnabled() ? await createViaLink(root, path, bytes) : "unsupported";
+  if (atomic === "linked") return path;
   try {
-    await writeFile(path, bytes, { flag: "wx" });
+    if (atomic === "exists") throw Object.assign(new Error("exists"), { code: "EEXIST" });
+    await artifactFs.writeFile(path, bytes, { flag: "wx" });
   } catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
-    const info = await stat(path);
+    const info = await artifactFs.stat(path);
     if (!info.isFile()) throw new Error(`Immutable artifact path exists but is not a file: ${relativePath}`);
-    const existing = await readFile(path);
+    const existing = await artifactFs.readFile(path);
     if (!existing.equals(bytes)) throw new Error(`Immutable artifact collision: existing bytes differ at ${relativePath}`);
   }
   return path;
+}
+
+// Test-only entry points to the two immutable writers (not used by tools).
+export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
+export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
+
+// One shape for every computation record, so duckdb_query and viz_lint write
+// identical bytes for the same SQL, snapshot and result rows. dataHash is the
+// legacy extra field viz_lint used to add; it duplicates result_hash and is
+// only passed when the atomic switch is off, to keep old bytes unchanged.
+function buildComputationRecord(input: { sql: string; inputSnapshot: { hash: string; fingerprints: unknown }; derivedInputs: { read_inputs: unknown; input_binding: unknown }; resultHash: string; rows: unknown[]; dataHash?: string }) {
+  return {
+    schema_version: "0.7.0",
+    sql: input.sql,
+    input_snapshot_hash: input.inputSnapshot.hash,
+    input_fingerprints: input.inputSnapshot.fingerprints,
+    read_inputs: input.derivedInputs.read_inputs,
+    input_binding: input.derivedInputs.input_binding,
+    result_hash: input.resultHash,
+    ...(input.dataHash === undefined ? {} : { data_hash: input.dataHash }),
+    rows: input.rows,
+  };
 }
 
 async function evidenceSnapshot() {
@@ -744,7 +1468,9 @@ async function assertPublicUrl(url: URL) {
   assertResolvedAddressesSafe(addresses, url.protocol);
 }
 
-async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>) {
+// deferSuccess: the caller reads the body itself and records the success once the body is complete, so a body that
+// never finishes counts against the host like a header that never arrives.
+async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<string, string>, options: { deferSuccess?: boolean } = {}) {
   let current: URL | undefined;
   try {
     current = new URL(urlText);
@@ -757,7 +1483,7 @@ async function safeFetch(urlText: string, signal: AbortSignal, headers: Record<s
           await response.body?.cancel();
           throw new Error(`HTTP ${response.status}`);
         }
-        sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
+        if (!options.deferSuccess) sourceAccessCircuit.recordSuccess(current.hostname.toLowerCase());
         return response;
       }
       const location = response.headers.get("location");
@@ -902,6 +1628,15 @@ function validateReadOnlySql(sql: string) {
     throw new Error("Mutating or extension-loading SQL is blocked");
   }
   return cleaned;
+}
+
+// The SQL string a computation record is keyed and stored under. Validation
+// trims before it strips a trailing ";", so "x ;" becomes "x " and only a second
+// pass reaches "x". With the atomic switch on both tools take the second pass, so
+// the same query is one record whether or not the text had a space before ";".
+function computationSql(sql: string) {
+  const once = validateReadOnlySql(sql);
+  return atomicArtifactWritesEnabled() ? validateReadOnlySql(once) : once;
 }
 
 async function queryDuckDb(sql: string, signal?: AbortSignal) {
@@ -1099,14 +1834,80 @@ async function validateSourceEvidence(refs: string[]) {
     } else if (ref.startsWith("data/")) {
       const info = await stat(full);
       assertDatasetPayload(ref, info.size);
+      await assertDataBytesMatchRecord(root, ref, full);
     }
   }
+}
+
+// A data/ ref is evidence only while its bytes still hash to what its sidecar
+// recorded: the sha256 in the content-addressed file name, the sidecar's
+// sha256 and its byte count must all agree with the file as it is now. A
+// sidecar that is missing or unreadable refuses (fail closed). A derived PDF
+// rows table is checked against its own rows_sha256; its source-chain
+// provenance is still verified where the computation is replayed.
+async function assertDataBytesMatchRecord(root: string, ref: string, full: string) {
+  const refuse = (why: string) => new Error(`INVALID_SOURCE_EVIDENCE: data bytes do not match their record (${why}): ${ref}`);
+  const bytes = await readFile(full);
+  const actual = sha256Hex(bytes);
+  // A derived rows table is named for its source PDF, not for its own bytes:
+  // its own metadata binds the name, the file and the rows hash instead.
+  const derived = DERIVED_ROWS_PATH.exec(ref);
+  if (derived) {
+    let rowsMeta: any = null;
+    try { rowsMeta = JSON.parse(await readFile(resolve(root, ref.replace(/\.json$/, ".meta.json")), "utf8")); } catch {}
+    if (!rowsMeta || typeof rowsMeta !== "object") throw refuse("derived metadata is missing or unreadable");
+    if (rowsMeta.source_sha256 !== derived[1]) throw refuse("derived metadata names another source sha256");
+    if (rowsMeta.rows_file !== ref) throw refuse("derived metadata describes another rows file");
+    if (rowsMeta.rows_sha256 !== actual) throw refuse("derived rows differ from rows_sha256");
+    return;
+  }
+  const stem = (ref.split("/").pop() ?? "").split(".")[0];
+  if (/^[0-9a-f]{64}$/.test(stem) && stem !== actual) throw refuse("file name hash differs from the bytes");
+  let meta: any = null;
+  for (const candidate of [`${ref}.meta.json`, ref.replace(/\.[^./]+$/, ".meta.json")]) {
+    try {
+      meta = JSON.parse(await readFile(resolve(root, candidate), "utf8"));
+      break;
+    } catch {}
+  }
+  if (!meta || typeof meta !== "object") throw refuse("sidecar is missing or unreadable");
+  const recorded = meta.sha256;
+  if (typeof recorded !== "string" || !/^[0-9a-f]{64}$/.test(recorded)) throw refuse("sidecar has no sha256");
+  if (recorded !== actual) throw refuse("sidecar sha256 differs from the bytes");
+  if (meta.bytes !== undefined && meta.bytes !== bytes.byteLength) throw refuse("sidecar byte count differs from the file size");
+  if (typeof meta.file === "string" && meta.file.split("/").pop() !== ref.split("/").pop()) throw refuse("sidecar describes a different file");
+}
+
+// NEWSROOM_CLAIM_SQL_LINT=1 (default off): a claim's SQL may not type a number
+// into its select list or generate rows, and its template may not pair a max
+// placeholder with a word for the lowest value (claim_lint.mjs). Refuse only.
+function claimSqlLintEnabled() {
+  return process.env.NEWSROOM_CLAIM_SQL_LINT === "1";
+}
+
+async function lintClaimSql(sql: string, signal?: AbortSignal) {
+  if (!claimSqlLintEnabled()) return;
+  let ast: any;
+  try {
+    ast = await serializeSqlAst(sql, signal);
+  } catch {
+    throw new Error("CLAIM_SQL_LINT_UNAVAILABLE: the SQL could not be parsed by DuckDB json_serialize_sql, so it cannot be checked for typed numbers");
+  }
+  const violations = lintClaimSqlAst(ast);
+  if (violations.length) throw new Error(`CLAIM_SQL_CONSTANT: ${violations.slice(0, 4).join("; ")}. The number must come from the data.`);
+}
+
+function lintClaimWording(template: string) {
+  if (!claimSqlLintEnabled()) return;
+  const violations = lintClaimTemplate(template);
+  if (violations.length) throw new Error(`CLAIM_TEMPLATE_DIRECTION: ${violations.slice(0, 3).join("; ")}`);
 }
 
 async function replayComputationEvidence(refs: string[], sourceRefs: string[], signal?: AbortSignal) {
   for (const ref of refs) {
     const computation = await readArtifactJson(ref, "computations/");
     const sql = validateReadOnlySql(String(computation?.sql ?? ""));
+    await lintClaimSql(sql, signal);
     const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
     const recordedResultHash = String(computation?.result_hash ?? "");
     if (!inputSnapshotHash || !/^[0-9a-f]{64}$/i.test(recordedResultHash) || !Array.isArray(computation?.rows)) {
@@ -1118,27 +1919,91 @@ async function replayComputationEvidence(refs: string[], sourceRefs: string[], s
     if (computationRelativePath(sql, inputSnapshotHash, recordedResultHash) !== ref) {
       throw new Error(`INVALID_COMPUTATION_EVIDENCE: content-addressed path does not match computation: ${ref}`);
     }
-    const inputs = Array.isArray(computation.input_fingerprints) ? computation.input_fingerprints.map(String) : [];
-    const isBound = sourceRefs.some((sourceRef) => sourceRef.startsWith("data/")
-      ? inputs.some((fingerprint: string) => fingerprint.startsWith(`data:${sourceRef}:`))
-      : inputs.some((fingerprint: string) => fingerprint.startsWith(`source:${sourceRef.slice("sources/".length)}:`)));
-    if (!isBound) throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} does not consume any cited source artifact`);
-    if (hashRows(await queryDuckDb(sql, signal)) !== recordedResultHash) {
-      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}`);
+    // Bind on what the SQL really reads, re-derived now and required to match
+    // what was recorded at query time. Legacy records (no read_inputs) and
+    // literal-only or unresolved computations can never support a claim.
+    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"), 0, new Set(), { root: artifactRoot() });
+    if (recorded.binding === "legacy") {
+      throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} has no recorded read inputs (legacy record); rerun the query`);
+    }
+    const derived = await deriveInputsForSql(sql, signal);
+    if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
+      throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
+    }
+    assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs);
+    const replayed = await queryDuckDb(sql, signal);
+    if (hashRows(replayed) !== recordedResultHash) {
+      const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
+      const reordered = JSON.stringify(sameRows(replayed)) === JSON.stringify(sameRows(computation.rows));
+      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}${reordered ? "; the same rows came back in another order: add a top-level ORDER BY over every key column so the order is total" : ""}`);
     }
   }
 }
 
-async function hasUsableEvidenceInput(snapshot: { fingerprints: string[] }) {
-  for (const fingerprint of snapshot.fingerprints) {
-    const ref = evidenceRefFromFingerprint(fingerprint);
-    if (!ref) continue;
-    try {
-      await validateSourceEvidence([ref]);
-      return true;
-    } catch {}
+// Parse SQL with DuckDB's own parser (no data access) so the inputs a
+// computation really reads can be derived deterministically.
+async function serializeSqlAst(sql: string, signal?: AbortSignal) {
+  const bin = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
+  const literal = String(sql).replace(/'/g, "''");
+  const args = [
+    "-noheader", "-list", ":memory:",
+    "-cmd", "SET enable_external_access = false",
+    "-cmd", "SET lock_configuration = true",
+    "-c", `SELECT json_serialize_sql('${literal}', skip_null := true, skip_empty := true)`,
+  ];
+  const { stdout, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES * 4, 20_000, true);
+  if (code !== 0) throw new Error("SQL could not be analyzed");
+  return JSON.parse(stdout.trim());
+}
+
+// True when the statement's own top-level node carries an ORDER BY (read from
+// DuckDB's parse, not from the text). An unparsable statement counts as ordered:
+// the note is advice and never a refusal.
+async function hasTopLevelOrderBy(sql: string, signal?: AbortSignal) {
+  try {
+    const ast = await serializeSqlAst(sql, signal);
+    const node = ast?.statements?.[0]?.node;
+    if (!node) return true;
+    return (node.modifiers ?? []).some((modifier: any) => modifier?.type === "ORDER_MODIFIER");
+  } catch {
+    return true;
   }
-  return false;
+}
+
+async function deriveInputsForSql(sql: string, signal?: AbortSignal) {
+  const root = artifactRoot();
+  if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for DuckDB queries");
+  return deriveComputationInputs(sql, {
+    root,
+    serializeSql: (text: string) => serializeSqlAst(text, signal),
+    readComputation: (ref: string) => readArtifactJson(ref, "computations/"),
+  });
+}
+
+// Claim-to-chart binding (claim_binding.mjs): what each cited claim's
+// computations read versus what the chart's own computation reads.
+function claimBindingDeps() {
+  return { readComputation: (ref: string) => readArtifactJson(ref, "computations/"), root: artifactRoot(), serializeSql: (sql: string) => serializeSqlAst(sql) };
+}
+
+// The one claim-binding judgement for a chart: the viz lint and the viz chain
+// both call this, so the chain can never be looser or stricter than the lint.
+async function vizClaimBindings(spec: any, signal?: AbortSignal) {
+  const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
+  const verified = await verifiedClaimIds();
+  const lintInputs = await deriveInputsForSql(spec.sql, signal);
+  const vizClaimIds = [spec.claim_id, ...((Array.isArray(spec.annotations) ? spec.annotations : []).map((annotation: any) => annotation?.claim_id))].filter((id) => id && verified.includes(String(id)));
+  const vizClaimRecords = await verifiedClaimRecords();
+  const inputSnapshot = await evidenceSnapshot();
+  const claimBindings = await bindClaimsToChart(
+    { input_binding: lintInputs.input_binding, effective_inputs: lintInputs.effective_inputs, read_inputs: lintInputs.read_inputs, sql: spec.sql, rows, fingerprints: inputSnapshot.fingerprints, numeric_fields: numericFieldsOfSpec(spec) },
+    vizClaimIds,
+    vizClaimRecords,
+    claimBindingDeps(),
+  );
+  return { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords };
 }
 
 async function normalizeIllustrationEvidenceRefs(refs: string[]) {
@@ -1172,7 +2037,1382 @@ async function listArtifactFiles(root: string, child: string) {
   return entries;
 }
 
+// ---------------------------------------------------------------------------
+// Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1, with the chain and atomic writes).
+//
+// A chart's claim is passed to newsroom_viz_plan (and so to newsroom_viz_chain)
+// as a template: the sentence with every number, years included, written as a
+// placeholder. The runtime runs the plan's own SQL, fills the placeholders from
+// those rows, records the filled claim through the same gates record_claim
+// uses (source validation, deterministic replay, the claim-support rule), and
+// binds the claim_id to the chart. Placeholders only select values of rows:
+// nothing is guessed, computed or repaired, the model cannot grant
+// verification, and every refusal happens before anything is recorded.
+// Off: nothing below is reached and the tools are exactly as before.
+// ---------------------------------------------------------------------------
+const CLAIM_KINDS = ["descriptive", "quantitative", "comparative", "causal", "mechanistic", "predictive", "uncertainty"] as const;
+
+function inlineClaimEnabled() {
+  if (process.env.NEWSROOM_SPEED_INLINE_CLAIM !== "1" || process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1" || !atomicArtifactWritesEnabled()) return false;
+  // The runtime writes the chart's computation and records its claim, which duckdb_query
+  // and record_claim do outside this tool. A phase or profile that hides either of them
+  // must not be bypassed here, so the inline claim exists only where both are enabled.
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  return ["newsroom_viz_plan", "duckdb_query", "record_claim"].every((tool) => toolEnabled(tool, { phase, profile }));
+}
+
+/** record_claim and the inline claim record claims through this one path:
+ *  source validation, deterministic replay and the claim-support rule decide
+ *  verification; the requested status never does. */
+type ClaimInput = { claim: string; claim_kind: string; status: string; source_refs: string[]; computation_refs: string[]; caveat?: string; extra?: Record<string, unknown> };
+
+function claimIdFor(claim: string, sourceRefs: string[], computationRefs: string[]) {
+  return `claim-${stableId(JSON.stringify({ claim, sourceRefs, computationRefs }))}`;
+}
+
+async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
+  assertEvidenceBackedStatus(input.status, input.source_refs, input.computation_refs);
+  const sourceRefs = await normalizeArtifactRefs(input.source_refs, "source");
+  await validateSourceEvidence(sourceRefs);
+  const computationRefs = await normalizeArtifactRefs(input.computation_refs, "computation");
+  if (input.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
+  const claimSupport = evaluateClaimSupport({ requested_status: input.status, claim_kind: input.claim_kind, claim: input.claim });
+  const verification = deriveClaimVerification({
+    source_resolved: sourceRefs.length > 0,
+    extraction_passed: sourceRefs.length > 0,
+    computation_replayed: computationRefs.length > 0 && input.status === "supported",
+    claim_supported: claimSupport.passed,
+  });
+  const claimId = claimIdFor(input.claim, sourceRefs, computationRefs);
+  const base = {
+    schema_version: "0.8.0",
+    claim_id: claimId,
+    recorded_at: new Date().toISOString(),
+    claim: input.claim,
+    claim_kind: input.claim_kind,
+    requested_status: input.status,
+    status: verification.publishable ? "verified" : input.status,
+    verification,
+    claim_support: claimSupport,
+    source_refs: sourceRefs,
+    computation_refs: computationRefs,
+    caveat: input.caveat ?? null,
+  };
+  // Extra audit fields follow the record and never replace one of its fields.
+  const record = { ...base, ...Object.fromEntries(Object.entries(input.extra ?? {}).filter(([key]) => !Object.hasOwn(base, key))) };
+  // The replay above can take a while: check the data bytes (and a cancel)
+  // once more right before anything is written.
+  if (signal?.aborted) throw new Error("CLAIM_ABORTED: the call was cancelled; no claim was recorded");
+  await validateSourceEvidence(sourceRefs);
+  const path = await appendArtifact("claims.jsonl", record);
+  return { path, record, claimId, verification };
+}
+
+const CLAIM_TEMPLATE_GRAMMAR = "{first.col}, {last.col}, {max.col}, {min.col}, {max.col.other}, {min.col.other} or {col@key=value}, with an optional |N inside the braces for N decimals (0-4), as in {max.col|1}";
+const CLAIM_TEMPLATE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CLAIM_TEMPLATE_STRING_MAX_CHARS = 80;
+
+// `value` is always the raw cell. `text` is what the claim shows: the formatted raw value, or, when the runtime localized a
+// name on a zh chart (see ClaimNames), the localized name - then `raw_text` is the formatted raw value and `category_names`
+// the table mode that resolved it. Both fields are absent from every other binding.
+type ClaimBinding = { placeholder: string; column: string; row_index: number; value: unknown; text: string; raw_text?: string; category_names?: string };
+
+// How a chart localizes its name field (chartNameDisplay in viz.mjs): display() is the localized name of a raw value of a
+// name-field column, or null when the chart prints that value as it is.
+type ClaimNames = { mode: string; display: (column: string, value: unknown) => string | null };
+
+function claimTemplateError(message: string) {
+  return new Error(`CLAIM_TEMPLATE_ERROR: ${message}`);
+}
+
+// Numeric extremes compare JSON numbers and numeric literals DuckDB prints as
+// strings (for example HUGEINT); anything else is not a number.
+function claimTemplateNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(value.trim())) return Number(value);
+  return null;
+}
+
+function formatClaimValue(placeholder: string, value: unknown, rowIndex: number, decimals: number | null) {
+  if (value === null || value === undefined) throw claimTemplateError(`${placeholder} selects a null value (row ${rowIndex})`);
+  if (decimals !== null) {
+    const numeric = claimTemplateNumber(value);
+    if (numeric === null) throw claimTemplateError(`${placeholder}: the |N suffix applies only to numbers, and the selected value is ${JSON.stringify(value).slice(0, 40)}`);
+    return numeric.toFixed(decimals);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw claimTemplateError(`${placeholder} selects a non-finite number (row ${rowIndex})`);
+    if (Number.isInteger(value)) return String(value);
+    if (Math.abs(value) >= 1) return value.toFixed(1);
+    // Two significant digits without trailing zeros, as in 0.7 or -0.05.
+    const short = String(Number(value.toPrecision(2)));
+    return /e/i.test(short) ? value.toPrecision(2) : short;
+  }
+  if (typeof value === "string") return [...value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim()].slice(0, CLAIM_TEMPLATE_STRING_MAX_CHARS).join("");
+  if (typeof value === "boolean") return String(value);
+  throw claimTemplateError(`${placeholder} selects a value that is not a single number or text (row ${rowIndex})`);
+}
+
+function resolveClaimPlaceholder(placeholder: string, body: string, rows: Record<string, unknown>[], columns: string[], measures: string[], names: ClaimNames | null = null): ClaimBinding {
+  let selector = body.trim();
+  let decimals: number | null = null;
+  const format = selector.match(/^(.*)\|([^|]*)$/);
+  if (format) {
+    if (!/^[0-4]$/.test(format[2].trim())) throw claimTemplateError(`${placeholder}: the |N suffix takes 0 to 4 decimals`);
+    selector = format[1].trim();
+    decimals = Number(format[2].trim());
+  }
+  const column = (name: string) => {
+    if (!CLAIM_TEMPLATE_IDENTIFIER.test(name)) throw claimTemplateError(`${placeholder}: '${name}' is not a simple column name; alias the column in the SQL (AS name, using letters, digits and _)`);
+    if (!columns.includes(name)) throw claimTemplateError(`${placeholder}: the SQL result has no column '${name}'; result columns: ${columns.join(", ")}. Alias columns in the SQL to simple names (letters, digits and _)`);
+    return name;
+  };
+  const bind = (name: string, rowIndex: number): ClaimBinding => {
+    const value = rows[rowIndex]?.[name];
+    const text = formatClaimValue(placeholder, value, rowIndex, decimals);
+    // Only a text placeholder (no |N) on a name column of the chart can show a localized name; every check still sees `value`.
+    const shown = decimals === null ? names?.display(name, value) ?? null : null;
+    return shown === null || !names
+      ? { placeholder, column: name, row_index: rowIndex, value, text }
+      : { placeholder, column: name, row_index: rowIndex, value, text: shown, raw_text: text, category_names: names.mode };
+  };
+  const lookup = selector.match(/^([^@=]*)@([^@=]*)=(.*)$/);
+  if (lookup) {
+    const valueColumn = column(lookup[1].trim());
+    const keyColumn = column(lookup[2].trim());
+    const wanted = lookup[3].trim();
+    if (!wanted) throw claimTemplateError(`${placeholder}: name the ${keyColumn} value after =`);
+    const matches = rows.flatMap((row, index) => (row?.[keyColumn] !== null && row?.[keyColumn] !== undefined && String(row[keyColumn]) === wanted ? [index] : []));
+    if (matches.length > 1) throw claimTemplateError(`${placeholder}: ${matches.length} result rows have ${keyColumn} = ${wanted} (row_index ${matches.slice(0, 6).join(", ")}${matches.length > 6 ? ", ..." : ""}), so the lookup names no single row; select by a column whose values are unique in this SQL result`);
+    if (!matches.length) {
+      // {year@rate=max} reads as the year of the highest rate.
+      const extreme = wanted.match(/^(max|min)(\.[A-Za-z_][A-Za-z0-9_]*)?$/i);
+      if (extreme) {
+        const side = extreme[1].toLowerCase();
+        throw claimTemplateError(`${placeholder}: for the ${valueColumn} of the row with the ${side === "max" ? "highest" : "lowest"} ${keyColumn}, write {${side}.${keyColumn}.${valueColumn}}`);
+      }
+      const values = [...new Set(rows.map((row) => row?.[keyColumn]).filter((value) => value !== null && value !== undefined).map(String))];
+      throw claimTemplateError(`${placeholder}: no result row has ${keyColumn} = ${wanted}; ${keyColumn} values: ${values.slice(0, 12).join(", ")}${values.length > 12 ? ", ..." : ""}`);
+    }
+    return bind(valueColumn, matches[0]);
+  }
+  const parts = selector.split(".").map((part) => part.trim());
+  if ((parts[0] === "first" || parts[0] === "last") && parts.length === 2) {
+    return bind(column(parts[1]), parts[0] === "first" ? 0 : rows.length - 1);
+  }
+  if ((parts[0] === "max" || parts[0] === "min") && (parts.length === 2 || parts.length === 3)) {
+    const measure = column(parts[1]);
+    // An extreme ranks one of the plan's measures: {max.year} would be the
+    // latest year, not the year of the highest value.
+    if (measures.length && !measures.includes(measure)) {
+      const ranked = measures[0];
+      throw claimTemplateError(`${placeholder}: max and min rank a measure column of this plan (${measures.join(", ")}), and ${measure} is not one. For the ${measure} of the row with the ${parts[0] === "max" ? "highest" : "lowest"} ${ranked}, write {${parts[0]}.${ranked}.${measure}}; for the first or last row, {first.${measure}} or {last.${measure}}`);
+    }
+    const selected = parts.length === 3 ? column(parts[2]) : measure;
+    let best: number | null = null;
+    let tied: number[] = [];
+    rows.forEach((row, rowIndex) => {
+      const value = row?.[measure];
+      if (value === null || value === undefined) return;
+      const numeric = claimTemplateNumber(value);
+      if (numeric === null) throw claimTemplateError(`${placeholder}: column '${measure}' holds a non-numeric value (${JSON.stringify(value).slice(0, 40)}), so it has no ${parts[0]}`);
+      if (best === null || (parts[0] === "max" ? numeric > best : numeric < best)) {
+        best = numeric;
+        tied = [rowIndex];
+      } else if (numeric === best) {
+        tied.push(rowIndex);
+      }
+    });
+    if (!tied.length) throw claimTemplateError(`${placeholder}: column '${measure}' holds only null values`);
+    // Ties change nothing for the extreme value itself, but another column of
+    // "the" extreme row is ambiguous when several rows share it.
+    if (selected !== measure && tied.length > 1) throw claimTemplateError(`${placeholder}: ${tied.length} rows tie for the ${parts[0] === "max" ? "highest" : "lowest"} ${measure} (row_index ${tied.slice(0, 6).join(", ")}${tied.length > 6 ? ", ..." : ""}), so ${selected} of "the" ${parts[0]} row is ambiguous; use {${parts[0]}.${measure}} for the value, or {${selected}@key=value} with a unique key`);
+    return bind(selected, tied[0]);
+  }
+  // A bare column names no row.
+  if (parts.length === 1 && columns.includes(parts[0])) {
+    const name = parts[0];
+    const suffix = decimals === null ? "" : `|${decimals}`;
+    const ranked = !measures.length || measures.includes(name) ? null : measures[0];
+    const extremes = ranked ? `{max.${ranked}.${name}${suffix}}, {min.${ranked}.${name}${suffix}}` : `{max.${name}${suffix}}, {min.${name}${suffix}}`;
+    throw claimTemplateError(`${placeholder} names a column but not a row: write {first.${name}${suffix}}, {last.${name}${suffix}}, ${extremes} or {${name}@key=value${suffix}}`);
+  }
+  throw claimTemplateError(`${placeholder} is not a placeholder; use ${CLAIM_TEMPLATE_GRAMMAR}`);
+}
+
+// A number typed into the template is a number no row backs, so every number,
+// years included, is a placeholder. A digit run inside an uppercase-led Latin
+// name of at most two digits (G7, G20, CO2, H5N1) is a name, not a quantity.
+function literalNumberIn(template: string) {
+  const literal = template.replace(/\{[^{}]*\}/g, "\u0000");
+  for (const match of literal.matchAll(/\p{Nd}+/gu)) {
+    const run = match[0];
+    const at = match.index ?? 0;
+    if (/^[0-9]+$/.test(run)) {
+      let start = at;
+      while (start > 0 && /[A-Za-z0-9]/.test(literal[start - 1])) start -= 1;
+      let end = at + run.length;
+      while (end < literal.length && /[A-Za-z0-9]/.test(literal[end])) end += 1;
+      const word = literal.slice(start, end);
+      if (/^[A-Z]/.test(word) && (word.match(/[0-9]/g) ?? []).length <= 2) continue;
+    }
+    return [...literal.slice(Math.max(0, at - 12), at + run.length + 12)].join("").replace(/\u0000/g, "{...}");
+  }
+  return null;
+}
+
+// The whole placeholder grammar in one place (NEWSROOM_SPEED_FIRST_TRY_ALL): what a placeholder may be and the usual wrong forms.
+const CLAIM_TEMPLATE_FULL_GRAMMAR = `${CLAIM_TEMPLATE_GRAMMAR}. Rules: every number, years included, is a placeholder, and a number word is refused like a digit; a placeholder holds one selector only, so no arithmetic or expression ({a - b}, {a / b}): compute it in the SQL as a column (AS name) and select that column; column names are plain aliases of letters, digits and _ and are not dotted (write {first.year}, not {first.value.year}); max and min rank a measure column of the plan, and {max.measure.other} reads another column of that row; a bare column names no row; |N (0-4) comes last inside the braces`;
+
+/** NEWSROOM_SPEED_FIRST_TRY_ALL: every problem of a claim template in one pass, each with its fix. Same checks as fillClaimTemplate
+ *  (it calls the same resolver per placeholder); returns the messages without the CLAIM_TEMPLATE_ERROR prefix, empty when the template is fine. */
+export function claimTemplateProblems(template: string, rows: Record<string, unknown>[], measures: string[] = [], names: ClaimNames | null = null): string[] {
+  const strip = (error: any) => String(error?.message ?? error).replace(/^CLAIM_TEMPLATE_ERROR: /, "");
+  const problems: string[] = [];
+  if (typeof template !== "string" || !template.trim()) return ["the claim is empty"];
+  if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) problems.push("the claim has an unmatched { or }; every placeholder is one pair of braces around one selector");
+  const typed = literalNumberIn(template);
+  if (typed !== null) problems.push(`the claim has a typed number (near "${typed}"); every number, years included, must be a placeholder so that no number is transcribed`);
+  const worded = numberWordIn(template);
+  if (worded !== null) problems.push(`the claim has a number word (near "${worded}"); a number written in words is still a number no row backs. Drop it, or select it in the SQL (for example COUNT(*) AS n) and write a placeholder such as {first.n}. A scale or unit word right after a placeholder, as in {max.x} million, is fine`);
+  if (!Array.isArray(rows) || rows.length === 0) { problems.push("the plan SQL returned no rows, so no placeholder can be filled"); return problems; }
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))];
+  const ranked = measures.filter((name) => columns.includes(name));
+  for (const match of template.matchAll(/\{([^{}]*)\}/g)) {
+    try { resolveClaimPlaceholder(match[0], match[1], rows, columns, ranked, names); } catch (error) { problems.push(strip(error)); }
+  }
+  return problems;
+}
+
+/** Fill a claim template from SQL result rows. Every placeholder selects one
+ *  value of one row; the bindings record which, for audit. `measures` are the
+ *  plan's value columns: when any is in the result, max and min rank only
+ *  those. Typed digits, ambiguous rows and missing columns are refused.
+ *  `names` (zh charts only, from chartNameDisplay) swaps a raw place or
+ *  currency code for the name the chart itself prints; the binding keeps the
+ *  raw value and its text beside the localized one. */
+export function fillClaimTemplate(template: string, rows: Record<string, unknown>[], measures: string[] = [], names: ClaimNames | null = null) {
+  if (typeof template !== "string" || !template.trim()) throw claimTemplateError("the claim is empty");
+  if (/[{}]/.test(template.replace(/\{[^{}]*\}/g, ""))) throw claimTemplateError(`the claim has an unmatched { or }; placeholders look like ${CLAIM_TEMPLATE_GRAMMAR}`);
+  const typed = literalNumberIn(template);
+  if (typed !== null) throw claimTemplateError(`the claim has a typed number (near "${typed}"); every number, years included, must be a placeholder so that no number is transcribed. Placeholders: ${CLAIM_TEMPLATE_GRAMMAR}`);
+  const worded = numberWordIn(template);
+  if (worded !== null) throw claimTemplateError(`the claim has a number word (near "${worded}"); a number written in words is still a number no row backs. Drop it, or select it in the SQL (for example COUNT(*) AS n) and write a placeholder such as {first.n}. A scale or unit word right after a placeholder, as in {max.x} million, is fine.`);
+  if (!Array.isArray(rows) || rows.length === 0) throw claimTemplateError("the plan SQL returned no rows, so no placeholder can be filled");
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row ?? {})))];
+  const ranked = measures.filter((name) => columns.includes(name));
+  const bindings: ClaimBinding[] = [];
+  const text = template.replace(/\{([^{}]*)\}/g, (placeholder: string, body: string) => {
+    const binding = resolveClaimPlaceholder(placeholder, body, rows, columns, ranked, names);
+    bindings.push(binding);
+    return binding.text;
+  });
+  return { text, bindings };
+}
+
+function inlineNoteText(value: unknown) {
+  return String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** The default source note of an inline-claim plan: the host each downloaded
+ *  file the SQL reads came from and the series label recorded with it when it
+ *  was downloaded (untrusted source metadata), or the name of a file the user
+ *  supplied. Null when no data file has an origin record. */
+/** `language` only matters with NEWSROOM_ZH_SOURCE_LINE=1: a zh chart then names a local file in Chinese. */
+export async function inlineSourceNote(sourceRefs: string[], language?: string) {
+  const root = artifactRoot();
+  const dataRefs = sourceRefs.filter((ref) => ref.startsWith("data/"));
+  if (!root || !dataRefs.length) return null;
+  const originsDir = join(root, "data", "origins");
+  let names: string[];
+  try {
+    names = (await readdir(originsDir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
+  } catch {
+    return null;
+  }
+  const origins: any[] = [];
+  for (const name of names) {
+    try { origins.push(JSON.parse(await readFile(join(originsDir, name), "utf8"))); } catch {}
+  }
+  // A note names the series; a label's description (after " — ") and unit
+  // stay in the origin record.
+  const labelOf = (origin: any) => [origin?.source_label, origin?.series_title].map((value) => inlineNoteText(value).replace(/\s*\[unit:[^\]]*\]$/, "").split(" — ")[0].trim()).find(Boolean) ?? "";
+  const notes: string[] = [];
+  for (const ref of dataRefs) {
+    const matching = origins.filter((item) => item?.file === ref);
+    const origin = matching.find((item) => labelOf(item)) ?? matching[0];
+    if (!origin) continue;
+    let host = "";
+    try { host = new URL(String(origin.final_url ?? origin.requested_url ?? "")).hostname.toLowerCase().replace(/^www\./, ""); } catch {}
+    const label = labelOf(origin);
+    // A user-supplied file has no download URL or series label.
+    const supplied = origin.origin === "local_file" ? inlineNoteText(origin.original_filename) : "";
+    const note = host && label ? `${host}: ${label}` : host || label || (supplied && (language === "zh" && zhSourceLineEnabled() ? `本地数据文件 ${supplied}` : `User-supplied file ${supplied}`));
+    if (note && !notes.includes(note)) notes.push(note);
+  }
+  return notes.length ? [...notes.join("; ")].slice(0, 160).join("") : null;
+}
+
+/** NEWSROOM_LOCAL_SOURCE_NOTE=1 (default off): the source line of a chart whose every data file is a user file with an accepted
+ *  `<file>.source.json` (recorded by the program as `source_note_file` in the file's origin record), as
+ *  「{publisher}《{dataset}》，{license}」 in zh and `{publisher}, "{dataset}", {license}` otherwise. Null when the switch is off or any data
+ *  file the claim reads has no accepted note, so a chart with a mixed or unknown source keeps the line it has. The text is built here from
+ *  the recorded fields, never from model text. */
+export async function acceptedLocalSourceNote(sourceRefs: string[], language?: string) {
+  if (process.env.NEWSROOM_LOCAL_SOURCE_NOTE !== "1") return null;
+  const root = artifactRoot();
+  const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/")))];
+  if (!root || !dataRefs.length) return null;
+  const originsDir = join(root, "data", "origins");
+  let names: string[];
+  try {
+    names = (await readdir(originsDir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
+  } catch {
+    return null;
+  }
+  const origins: any[] = [];
+  for (const name of names) {
+    try { origins.push(JSON.parse(await readFile(join(originsDir, name), "utf8"))); } catch {}
+  }
+  const field = (note: any, key: string) => {
+    const value = note?.[key];
+    return typeof value === "string" && value.trim() !== "" && value.length <= 120 && !/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/.test(value) ? value.trim() : "";
+  };
+  const lines: string[] = [];
+  for (const ref of dataRefs) {
+    // Every origin of this file that carries a note: when a re-import left two with different notes, which one is current is unknown,
+    // so the chart keeps its own source line rather than picking by file-name order.
+    const noted = origins.filter((item) => item?.origin === "local_file" && item?.file === ref && item?.source_note_file);
+    // A later import of the same file without a note (the note file was deleted) leaves the old noted record behind: the same doubt.
+    if (origins.some((item) => item?.origin === "local_file" && item?.file === ref && !item?.source_note_file)) return null;
+    const triples = new Set<string>();
+    let publisher = "", dataset = "", license = "";
+    for (const item of noted) {
+      const note = item.source_note_file;
+      publisher = field(note, "publisher"); dataset = field(note, "dataset"); license = field(note, "license");
+      if (!publisher || !dataset || !license || note.sha256 !== item.sha256) return null;
+      triples.add(JSON.stringify([publisher, dataset, license]));
+    }
+    if (!noted.length || triples.size !== 1) return null;
+    const line = language === "zh" ? `${publisher}《${dataset}》，${license}` : `${publisher}, "${dataset}", ${license}`;
+    if (!lines.includes(line)) lines.push(line);
+  }
+  return lines.join(language === "zh" ? "；" : "; ");
+}
+
+/** The plan's value columns, which the claim's max and min may rank. */
+function inlineClaimMeasures(params: any) {
+  const fields = [params.value_field, params.start_field, params.end_field, params.size_field, ...(params.chart_type === "scatter" ? [params.x_field, params.y_field] : []), ...(Array.isArray(params.measure_semantics) ? params.measure_semantics.map((measure: any) => measure?.field) : [])];
+  return [...new Set(fields.filter((field): field is string => typeof field === "string" && field.trim() !== "").map((field) => field.trim()))];
+}
+
+function inlineAltText(title: unknown, claimText: string) {
+  const lead = String(title ?? "").trim();
+  const text = !lead ? claimText : `${lead}${/[.!?。！？]$/u.test(lead) ? "" : "."} ${claimText}`;
+  return [...text].slice(0, 400).join("");
+}
+
+type InlineClaim = { claimId: string; text: string; template: string; bindings: ClaimBinding[]; kind: string; caveat?: string; sourceRefs: string[]; computationRefs: string[]; computation: { ref: string; record: unknown } };
+
+function inlineClaimAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new Error("INLINE_CLAIM_ABORTED: the call was cancelled; no claim and no visualization plan were recorded");
+}
+
+/** Runs the plan SQL with duckdb_query's evidence rule, builds its computation
+ *  record, fills the claim and binds its future claim_id to the plan. Returns
+ *  null when the call carries no claim. Every refusal is thrown here, before
+ *  anything but the idempotent query-row cache is written. */
+async function prepareInlineClaim(rawParams: any, signal?: AbortSignal) {
+  const { claim: template, claim_kind: claimKind, claim_caveat: caveat, ...plan } = rawParams;
+  if (template === undefined) {
+    for (const field of ["claim_kind", "claim_caveat"]) {
+      if (rawParams[field] !== undefined) throw new Error(`INLINE_CLAIM_REQUIRED: ${field} applies only together with claim`);
+    }
+    return null;
+  }
+  if (rawParams.claim_id !== undefined) throw new Error("INLINE_CLAIM_EXCLUSIVE: pass claim to record the claim in this call, or claim_id for a claim already recorded with record_claim, not both");
+  if (typeof template !== "string" || !template.trim()) throw new Error("INLINE_CLAIM_REQUIRED: claim must be a non-empty sentence");
+  if (claimKind === undefined || claimKind === null || claimKind === "") throw new Error(`INLINE_CLAIM_KIND_REQUIRED: claim_kind is required with claim (one of ${CLAIM_KINDS.join(", ")})`);
+  if (!(CLAIM_KINDS as readonly string[]).includes(String(claimKind))) throw new Error(`INLINE_CLAIM_KIND_INVALID: claim_kind must be one of ${CLAIM_KINDS.join(", ")}`);
+  if (caveat !== undefined && typeof caveat !== "string") throw new Error("INLINE_CLAIM_CAVEAT_INVALID: claim_caveat must be text");
+  // The recorded claim and the plan state come only from the runtime: a field
+  // the tool does not declare (verification, publishable, status, passed, a
+  // hash, an artifact field) is refused, never taken from the call.
+  const declared = new Set(Object.keys(registeredTools.get("newsroom_viz_plan")?.parameters?.properties ?? {}));
+  const unknown = Object.keys(plan).filter((key) => !declared.has(key));
+  if (unknown.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: ${unknown.slice(0, 8).join(", ")} ${unknown.length === 1 ? "is" : "are"} not a newsroom_viz_plan parameter; verification, publishable, status, passed, hash and artifact fields are written by the runtime and never taken from a call`);
+  // The claim id is the runtime's: an annotation that names one, or a claim_spec
+  // that carries refs of its own, is a forged reference, not a shortcut.
+  if (Array.isArray(plan.annotations) && plan.annotations.some((annotation: any) => annotation && typeof annotation === "object" && String(annotation.claim_id ?? "").trim())) {
+    throw new Error("INLINE_CLAIM_FIELD_NOT_ACCEPTED: an annotation names a claim_id, but this call records its own claim; the runtime binds the annotations to it, so leave claim_id out of the annotations");
+  }
+  if (plan.claim_spec && typeof plan.claim_spec === "object") {
+    const forged = Object.keys(plan.claim_spec).filter((key) => /(^|_)(refs?|verified|verification|status|publishable|hash)(_|$)/i.test(key));
+    if (forged.length) throw new Error(`INLINE_CLAIM_FIELD_NOT_ACCEPTED: claim_spec.${forged.slice(0, 4).join(", claim_spec.")} cannot be set here; the runtime writes refs, status and verification`);
+  }
+  inlineClaimAborted(signal);
+  const safeSql = computationSql(String(rawParams.sql ?? ""));
+  const snapshot = await evidenceSnapshot();
+  const derived = await deriveInputsForSql(safeSql, signal);
+  // A cancelled input derivation looks like an unresolved one: say cancelled.
+  inlineClaimAborted(signal);
+  assertInlineRowsHaveEvidence(safeSql, derived.input_binding === "source_bound");
+  const effective = Array.isArray(derived.effective_inputs) ? derived.effective_inputs.map(String) : [];
+  if (derived.input_binding !== "source_bound" || !effective.length) throw new Error("INLINE_CLAIM_EVIDENCE_REQUIRED: the plan SQL must read a downloaded or supplied data file (data/...) or a source snapshot (sources/...), so the claim has source evidence");
+  // After the evidence rule, so an existing refusal keeps its reason.
+  lintClaimWording(template);
+  await lintClaimSql(safeSql, signal);
+  inlineClaimAborted(signal);
+  const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
+  inlineClaimAborted(signal);
+  if (firstTryAllEnabled()) {
+    const problems = claimTemplateProblems(template, rows, inlineClaimMeasures(rawParams), chartNameDisplay(plan, rows));
+    if (problems.length) {
+      // Nothing is recorded: the handler collects this refusal beside the plan's own, then refuses the whole call. The stand-in params only
+      // keep the claim-id and text checks from reporting a claim the runtime has not made yet.
+      const error: any = new Error(`CLAIM_TEMPLATE_ERROR: ${problems.length === 1 ? problems[0] : `${problems.length} problems in the claim, each with its fix: ${problems.map((problem, index) => `(${index + 1}) ${problem}`).join(" ")}`}. Placeholder grammar: ${CLAIM_TEMPLATE_FULL_GRAMMAR}`);
+      const pending = "claim_pending";
+      const standIn: any = { ...plan, claim_id: pending, takeaway: String(plan.takeaway ?? pending), alt: String(plan.alt ?? pending), source_note: String(plan.source_note ?? pending) };
+      if (standIn.claim_spec && typeof standIn.claim_spec === "object" && !Array.isArray(standIn.claim_spec)) standIn.claim_spec = { ...standIn.claim_spec, claim_id: pending };
+      if (Array.isArray(standIn.annotations)) standIn.annotations = standIn.annotations.map((a: any) => a && typeof a === "object" && !String(a.claim_id ?? "").trim() ? { ...a, claim_id: pending } : a);
+      return { params: standIn, claim: null as any, refusal: error };
+    }
+  }
+  const resultHash = hashRows(rows);
+  const computationRef = computationRelativePath(safeSql, snapshot.hash, resultHash);
+  const record = buildComputationRecord({ sql: safeSql, inputSnapshot: snapshot, derivedInputs: derived, resultHash, rows });
+  const measures = inlineClaimMeasures(rawParams);
+  const filled = fillClaimTemplate(template, rows, measures, chartNameDisplay(plan, rows));
+  // A localized name is how a raw value is shown, never a different claim: the claim-support rule below reads the claim
+  // with the raw values as well, so a name swap cannot make a refused claim pass.
+  const rawText = filled.bindings.some((binding) => binding.raw_text !== undefined) ? fillClaimTemplate(template, rows, measures).text : filled.text;
+  // Everything record_claim would refuse for these inputs is refused now, so a
+  // refused claim leaves no claim line and no plan.
+  const sourceRefs = await normalizeArtifactRefs(effective, "source");
+  await validateSourceEvidence(sourceRefs);
+  const supportOf = (claimText: string) => evaluateClaimSupport({ requested_status: "supported", claim_kind: String(claimKind), claim: claimText });
+  const support = supportOf(filled.text);
+  const rawSupport = rawText === filled.text ? support : supportOf(rawText);
+  if (!support.passed || !rawSupport.passed) throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime would not verify this claim; claim_support reasons: ${[...new Set([...support.reasons, ...rawSupport.reasons])].join(", ")}. No claim and no visualization plan were recorded. Data can verify descriptive, quantitative, comparative and uncertainty claims worded without causes or motives.`);
+  let sourceNote: string | null = null;
+  if (plan.source_note === undefined) {
+    sourceNote = await inlineSourceNote(sourceRefs, plan.language);
+    if (!sourceNote) throw new Error("INLINE_CLAIM_SOURCE_NOTE_REQUIRED: source_note is required here because no publisher host or series label is recorded for the data the SQL reads");
+  }
+  const claim: InlineClaim = {
+    claimId: claimIdFor(filled.text, sourceRefs, [computationRef]),
+    text: filled.text,
+    template,
+    bindings: filled.bindings,
+    kind: String(claimKind),
+    ...(caveat === undefined ? {} : { caveat }),
+    sourceRefs,
+    computationRefs: [computationRef],
+    computation: { ref: computationRef, record },
+  };
+  const bound: any = { ...plan, claim_id: claim.claimId };
+  if (bound.claim_spec && typeof bound.claim_spec === "object" && !Array.isArray(bound.claim_spec)) bound.claim_spec = { ...bound.claim_spec, claim_id: claim.claimId };
+  if (Array.isArray(bound.annotations)) {
+    bound.annotations = bound.annotations.map((annotation: any) => annotation && typeof annotation === "object" && !String(annotation.claim_id ?? "").trim() ? { ...annotation, claim_id: claim.claimId } : annotation);
+  }
+  // The chart's takeaway and alt state the filled claim, so the model types
+  // none of their numbers; values the call passed are replaced.
+  bound.takeaway = claim.text;
+  bound.alt = inlineAltText(plan.title, claim.text);
+  if (sourceNote) bound.source_note = sourceNote;
+  return { params: bound, claim };
+}
+
+// Parallel calls of one assistant message may carry the same claim: recording
+// is one at a time, so the second finds the first verified and reuses it.
+let inlineClaimQueue: Promise<void> = Promise.resolve();
+
+/** After every plan check passes: writes the plan query's computation record
+ *  (the same record and address duckdb_query writes), then records the claim
+ *  unless the identical claim is already system-verified (a retry after a lint
+ *  or critic REVISE), and fails the plan when the runtime does not verify it. */
+async function recordInlineClaim(claim: InlineClaim, signal?: AbortSignal) {
+  const previous = inlineClaimQueue;
+  let release: () => void = () => {};
+  inlineClaimQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    inlineClaimAborted(signal);
+    await validateSourceEvidence(claim.sourceRefs);
+    await writeArtifactIfAbsent(claim.computation.ref, claim.computation.record);
+    const existing = (await verifiedClaimRecords()).get(claim.claimId);
+    if (existing) {
+      if (existing.claim_kind !== claim.kind || (existing.caveat ?? null) !== (claim.caveat ?? null)) {
+        throw new Error(`INLINE_CLAIM_REUSE_MISMATCH: this claim (${claim.claimId}) is already recorded and verified with a different claim_kind or caveat; repeat the same claim_kind and claim_caveat, or change the claim wording. No visualization plan was recorded.`);
+      }
+      return { reused: true };
+    }
+    inlineClaimAborted(signal);
+    const recorded = await recordClaimArtifact({
+      claim: claim.text,
+      claim_kind: claim.kind,
+      status: "supported",
+      source_refs: claim.sourceRefs,
+      computation_refs: claim.computationRefs,
+      ...(claim.caveat === undefined ? {} : { caveat: claim.caveat }),
+      extra: { claim_template: claim.template, claim_bindings: claim.bindings, recorded_by: "newsroom_viz_plan" },
+    }, signal);
+    if (recorded.claimId !== claim.claimId) throw new Error(`INLINE_CLAIM_ID_MISMATCH: recorded ${recorded.claimId}, prepared ${claim.claimId}. No visualization plan was recorded.`);
+    if (!recorded.verification.publishable) {
+      const reasons = Array.isArray(recorded.record.claim_support?.reasons) ? recorded.record.claim_support.reasons : [];
+      const gates = ["source_resolved", "extraction_passed", "computation_replayed", "claim_supported"].filter((gate) => (recorded.verification as any)[gate] !== true);
+      throw new Error(`INLINE_CLAIM_NOT_VERIFIED: the runtime recorded the claim (${claim.claimId}) but did not verify it; claim_support reasons: ${reasons.join(", ") || "none"}; failed gates: ${gates.join(", ") || "none"}. No visualization plan was recorded.`);
+    }
+    return { reused: false };
+  } finally {
+    release();
+  }
+}
+
+
+/** The newsroom_viz_plan surface with the inline claim: takeaway, alt and
+ *  source_note become optional (the runtime writes them from the claim) and
+ *  claim, claim_kind and claim_caveat are added. Off: the shared schema. */
+function withInlineClaimSchema(shared: any) {
+  if (!inlineClaimEnabled()) return shared;
+  const entries: Array<[string, any]> = [];
+  for (const [key, schema] of Object.entries(shared.properties ?? {}) as Array<[string, any]>) {
+    if (key === "takeaway") entries.push([key, Type.Optional(Type.String({ description: "One-sentence intended reader takeaway; required unless the call carries claim, from which the runtime writes it (a value passed with claim is replaced)" }))]);
+    else if (key === "alt") entries.push([key, Type.Optional(Type.String({ description: "Standalone accessible description of the visual and its main takeaway; required unless the call carries claim, from which the runtime writes it as the title followed by the claim (a value passed with claim is replaced)" }))]);
+    else if (key === "source_note") entries.push([key, Type.Optional(Type.String({ description: "Source attribution; required unless the call carries claim, which defaults it to the host and series label recorded when the data file was downloaded, or the name of a user-supplied file (if none is recorded the call is refused: then pass source_note)" }))]);
+    else entries.push([key, schema]);
+    if (key === "claim_id") {
+      entries.push(["claim", Type.Optional(Type.String({ description: `The claim this chart shows, recorded in this call instead of passing claim_id, with every number, years included, written as a placeholder the runtime fills from this plan's SQL rows. Placeholders: ${firstTryAllEnabled() ? CLAIM_TEMPLATE_FULL_GRAMMAR : CLAIM_TEMPLATE_GRAMMAR}; col, key and other are SQL result column names (alias them to letters, digits and _). max and min rank a value column of the plan, so the year of the highest rate is {max.rate.year}, never {max.year}, and a period is {first.year} to {last.year}. Typed digits are refused.${firstTry(FIRST_TRY.claimNumberWords)}` }))]);
+      entries.push(["claim_kind", Type.Optional(StringEnum(CLAIM_KINDS, { description: "Required with claim; same meaning as record_claim claim_kind" }))]);
+      entries.push(["claim_caveat", Type.Optional(Type.String({ description: "Caveat recorded with the claim: a provisional latest year, definition changes the data flags, the series' method, or reference periods that differ between rows; no other data values, trends or causes" }))]);
+    }
+  }
+  return Type.Object(Object.fromEntries(entries));
+}
+
+// The chain tool exists only when its switch is exactly "1" in the Pi child
+// environment and the chain's first tool is enabled for this phase/profile.
+function registerVizChain(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_CHAIN_VIZ !== "1") return;
+  // Without atomic writes the lint step's computation record differs from the
+  // one duckdb_query wrote for the same SQL, so the chain would collide on it.
+  if (!atomicArtifactWritesEnabled()) return;
+  const name = "newsroom_viz_chain";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_viz_plan");
+  if (!planTool || !toolEnabled("newsroom_viz_plan", { phase, profile })) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  pi.registerTool({
+    name,
+    label: "Plan, lint, render and critique a newsroom visualization",
+    description: "Takes the same parameters as newsroom_viz_plan and, when the plan is VERIFIED (a recorded, system-verified claim_id), runs newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic in the same call, filling only the plan/lint/manifest references they return. It stops at the first blocker, failed render QA, DRAFT plan or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. Optional computation_ref is only compared with the verified lint computation, never used to override it." + (inlineClaimEnabled() ? " With claim and claim_kind instead of claim_id, the plan step first records the claim filled from this chart's own SQL rows (see claim) and binds it to the chart; a retry with the same claim reuses it." : ""),
+    promptSnippet: "Plan, lint, render and critique a visualization in one call",
+    promptGuidelines: [
+      "Prefer this over calling newsroom_viz_plan, newsroom_viz_lint, newsroom_viz_render and newsroom_viz_critic one by one; send the chain calls for independent charts in the same assistant message.",
+      "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+      ...(inlineClaimEnabled() ? ["For a chart's claim pass claim and claim_kind (see claim) instead of claim_id: the plan step records it from this chart's own SQL rows, so no record_claim turn comes first and charts that carry their own claim can be sent in the same assistant message."] : []),
+    ],
+    parameters: Type.Object({
+      ...(planTool.parameters?.properties ?? {}),
+      computation_ref: Type.Optional(Type.String({ description: "Optional: the computation artifact you expect the plan SQL to produce. It must be the computation the chart produces or one its SQL reads; any other value is rejected, never overridden." })),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const { computation_ref: modelComputationRef, ...planParams } = params ?? {};
+      const outcome = await runToolChain({
+        steps: vizChainSteps({
+          modelComputationRef,
+          claimBinding: async (planRef: string) => {
+            const spec = await readArtifactJson(planRef, "visualizations/plans/");
+            const verdict = (await vizClaimBindings(spec, signal)).claimBindings[String(spec.claim_id)];
+            return verdict ? { ok: verdict.ok === true, message: String(verdict.message ?? "") } : { ok: false, message: "the claim has no system-verified record" };
+          },
+          chartReadComputationRefs: async (planRef: string) => {
+            const spec = await readArtifactJson(planRef, "visualizations/plans/");
+            const reads = (await deriveInputsForSql(spec.sql, signal)).read_inputs;
+            return (Array.isArray(reads) ? reads : []).map((input: any) => String(input?.path ?? "")).filter((path: string) => path.startsWith("computations/"));
+          },
+        }),
+        state: { planParams },
+        enabled,
+        schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        signal,
+        call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
+        record: async (event: any) => {
+          const at = new Date().toISOString();
+          const toolCallId = `${id}:${event.tool}`;
+          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+        },
+      });
+      return chainResultFor(outcome, { chain: name, textResult });
+    },
+  });
+}
+
+// ---- Hero value gate (on by default; NEWSROOM_HERO_VALUE_GATE=0 turns it off) -----------------------------------
+// A hero_stat does not type its number: it names one placeholder of its claim (value_from) and the runtime copies the
+// text the claim itself shows. Only a claim the system bound can fill a hero: a claim recorded inline carries its bindings
+// (claim_bindings), and a claim recorded with record_claim has none, so it is refused (HERO_CLAIM_UNBOUND); there is no
+// fallback that matches a row's value against the claim text, because two rows can show the same text.
+// label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
+// writes a number of its own and never changes a claim's status.
+// Only the exact string "0" switches the gate off; unset, "1", empty or any other value leaves it on, so a typo can never
+// quietly open the gate. The pure lint in infographic.mjs stays opt-in through context.hero_value_gate: this runtime
+// is the only caller that passes it, and it passes it whenever this switch is on.
+const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE !== "0";
+// A stored page lint is only as good as the rules it ran under. Bump this when a page-lint rule changes what passes; the lint
+// record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
+const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
+const currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: heroGateOn() });
+const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
+
+type HeroClaimContext = { claimId: string; bindings: ClaimBinding[] | null; claimText: string; template: string | null; computationRefs: string[] };
+
+async function heroClaimContext(claimId: string, records: Map<string, any>): Promise<HeroClaimContext | null> {
+  const record = records.get(claimId);
+  if (!record) return null;
+  const bindings = Array.isArray(record.claim_bindings) && record.claim_bindings.length ? (record.claim_bindings as ClaimBinding[]) : null;
+  const computationRefs = Array.isArray(record.computation_refs) ? record.computation_refs.map(String).filter(Boolean) : [];
+  return { claimId, bindings, claimText: String(record.claim ?? ""), template: bindings && typeof record.claim_template === "string" ? record.claim_template : null, computationRefs };
+}
+
+// A bound hero number must still be in the rows of the computation its claim was verified from: the bound row and column hold
+// the binding's value. A missing computation file or a changed row refuses (HERO_BINDING_STALE); nothing is repaired.
+async function assertHeroBindingHolds(heroId: string, context: HeroClaimContext, binding: ClaimBinding) {
+  const same = (a: unknown, b: unknown) => a === b || (typeof a !== "boolean" && typeof b !== "boolean" && String(a ?? "").trim() !== "" && String(b ?? "").trim() !== "" && Number.isFinite(Number(a)) && Number(a) === Number(b));
+  let readable = 0;
+  for (const ref of context.computationRefs) {
+    let computation: any;
+    try { computation = await readArtifactJson(ref, "computations/"); } catch { continue; }
+    readable += 1;
+    const row = Array.isArray(computation?.rows) ? computation.rows[binding.row_index] : undefined;
+    if (row && typeof row === "object" && same((row as any)[binding.column], binding.value)) return;
+  }
+  throw new Error(`HERO_BINDING_STALE: hero_stat '${heroId}' claim '${context.claimId}' binding ${binding.placeholder} (row ${binding.row_index}, column '${binding.column}') is ${readable ? "no longer in the rows of" : "not readable from"} the computation the claim was verified from; run the query and record the claim again`);
+}
+
+// Offsets at which `text` appears in `claim` as a whole token: a number is not preceded by a digit, '.', '+', '-' or
+// '−' and not followed by a digit or by '.' and a digit; any other text just has to occur.
+function heroTokenOffsets(text: string, claim: string): number[] {
+  const out: number[] = [];
+  if (!text) return out;
+  const numeric = /\p{Nd}/u.test(text);
+  for (let at = claim.indexOf(text); at !== -1; at = claim.indexOf(text, at + 1)) {
+    if (numeric) {
+      const before = at > 0 ? claim[at - 1] : "";
+      const after = claim[at + text.length] ?? "";
+      const next = claim[at + text.length + 1] ?? "";
+      if (/[\p{Nd}.+\-−]/u.test(before)) continue;
+      if (before === "," && at > 1 && /\p{Nd}/u.test(claim[at - 2])) continue;
+      if (/\p{Nd}/u.test(after) || (after === "." && /\p{Nd}/u.test(next))) continue;
+    }
+    out.push(at);
+  }
+  return out;
+}
+
+function resolveHeroPlaceholder(context: HeroClaimContext, placeholder: string, where: string): { text: string; column?: string } {
+  if (!/^\{[^{}]*\}$/.test(placeholder)) throw new Error(`HERO_PLACEHOLDER_INVALID: ${where} must be one placeholder of claim '${context.claimId}' written in braces, got '${placeholder.slice(0, 60)}'`);
+  if (!context.bindings) throw heroUnbound(context.claimId, where);
+  const hit = context.bindings.find((binding) => binding.placeholder === placeholder);
+  if (!hit) throw new Error(`HERO_PLACEHOLDER_UNBOUND: ${where} ${placeholder} is not one of claim '${context.claimId}' bindings; use one of: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}`);
+  return { text: String(hit.text), column: hit.column };
+}
+
+function heroUnbound(claimId: string, where = "a hero_stat") {
+  const head = `HERO_CLAIM_UNBOUND: ${where} claim '${claimId}' has no system bindings (it was not recorded from a claim template), so a hero_stat cannot take its number from it.`;
+  // Only a run that can record a claim from a claim template may point at one; otherwise the lead visual is the only page top.
+  if (!inlineClaimEnabled()) return new Error(`${head} This run records no claim templates, so use the lead visual for the page top.`);
+  return new Error(`${head} Use the lead visual for the page top, or point the hero at a claim that the plan tool recorded from a claim template.`);
+}
+
+// Units a hero may show: the literal that follows the placeholder in the claim itself, and the unit the page's own chart
+// for this claim declares for the bound column (its plan's measure_semantics). No page chart for the claim, no unit.
+async function heroPlanUnits(modules: any[], claimId: string, column: string | undefined) {
+  const out = new Set<string>();
+  if (!column) return [];
+  for (const module of modules ?? []) {
+    if (module?.type !== "visual" || !module.manifest_ref) continue;
+    try {
+      const manifest = await readArtifactJson(String(module.manifest_ref), "visualizations/");
+      if (String(manifest?.claim_id ?? "") !== claimId || !manifest.plan_ref) continue;
+      const plan = await readArtifactJson(String(manifest.plan_ref), "visualizations/plans/");
+      for (const entry of Array.isArray(plan?.measure_semantics) ? plan.measure_semantics : []) if (entry?.field === column && typeof entry.unit === "string" && entry.unit) out.add(entry.unit);
+    } catch {}
+  }
+  return [...out];
+}
+
+// A magnitude word or percent sign at the start of the literal after the number. A lone 千 and single letters (千克, 千米, m) are not one.
+const HERO_MAGNITUDES = ["万亿", "千亿", "亿", "千万", "百万", "万", "%", "％", "‰", "个百分点", "百分点"];
+const HERO_MAGNITUDE_WORDS = /^(thousand|million|billion|trillion)(?:s)?(?!\p{L})/iu;
+function heroMagnitudeStart(literal: string): string | null {
+  const sign = HERO_MAGNITUDES.find((entry) => literal.startsWith(entry));
+  if (sign) return sign;
+  return literal.match(HERO_MAGNITUDE_WORDS)?.[1] ?? null;
+}
+function heroUnitStartsWith(unit: string, magnitude: string) {
+  return /^[a-z]/i.test(magnitude) ? unit.toLowerCase().startsWith(magnitude.toLowerCase()) : unit.startsWith(magnitude);
+}
+
+function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, valueText: string): string[] {
+  let rest: string | null = null;
+  if (context.template) {
+    const at = context.template.indexOf(placeholder);
+    if (at !== -1) rest = context.template.slice(at + placeholder.length);
+  } else {
+    const [at] = heroTokenOffsets(valueText, context.claimText);
+    if (at !== undefined) rest = context.claimText.slice(at + valueText.length);
+  }
+  if (rest === null) return [];
+  // A character the reader cannot see (zero-width, soft hyphen, BOM, word joiner, variation selector, combining mark, NEL and the rest of
+  // Default_Ignorable / Cf / Mn / Me / Cc) in the text read after the number could hide a magnitude word, and deleting it would accept a
+  // unit the claim never showed. Refuse it instead; plain whitespace (space, tab, newline, NBSP) stays as it is.
+  const seen = rest.match(/^\s*/u)![0] + (rest.replace(/^\s+/u, "").match(HERO_LITERAL_STOP)?.[0] ?? "");
+  for (const ch of seen) {
+    if (/[\t\n\v\f\r]/.test(ch) || !/[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Mn}\p{Me}\p{Cc}]/u.test(ch)) continue;
+    throw new Error(`HERO_LITERAL_HIDDEN_CHAR: the claim text right after the number holds the hidden character U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}; record the claim again without it`);
+  }
+  // The literal right after the number, and a scale word after exactly one space (letters only: "million", never "3").
+  const out = [rest.match(HERO_LITERAL_STOP)?.[0] ?? ""];
+  if (/^ \S/u.test(rest)) {
+    const word = rest.slice(1).match(HERO_LITERAL_STOP)?.[0] ?? "";
+    if (/^\p{L}+$/u.test(word)) out.push(word);
+  }
+  // Any whitespace (several spaces, a tab, a newline, NBSP) between the number and a magnitude word or percent sign does not hide it.
+  const trimmed = rest.replace(/^\s+/u, "");
+  if (trimmed !== rest) {
+    const literal = trimmed.match(HERO_LITERAL_STOP)?.[0] ?? "";
+    if (heroMagnitudeStart(literal)) out.push(literal);
+  }
+  return out.filter(Boolean);
+}
+
+/** Gate on (the default): every hero_stat is filled from its claim before validation and storage. NEWSROOM_HERO_VALUE_GATE=0: the modules pass untouched. */
+async function fillHeroModules(modules: any[], collectAll = false): Promise<any[]> {
+  if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
+  const records = await verifiedClaimRecords();
+  const out: any[] = [];
+  const problems: string[] = [];
+  let first: unknown;
+  for (const module of modules) {
+    if (module?.type !== "hero_stat") { out.push(module); continue; }
+    const context = await heroClaimContext(String(module.claim_id ?? ""), records);
+    if (!reportAllEnabled() && !collectAll) { out.push(await fillHeroModule(module, context, modules)); continue; }
+    try { out.push(await fillHeroModule(module, context, modules)); } catch (error: any) {
+      first ??= error;
+      problems.push(...heroProblemsOf(module, context, error));
+      // NEWSROOM_SPEED_PRECHECK_ALL only: the fill stops at its first refusal, so later gates of the same hero are found by re-running it
+      // on a probe copy with the offending field removed. The stored plan is never the probe.
+      if (collectAll) for (const extra of await peelHeroProblems(module, context, modules, problems)) if (!problems.includes(extra)) problems.push(extra);
+    }
+  }
+  if (!problems.length) return out;
+  // One problem: the very error the off path throws. Several: every code the off path would have thrown first stays, one per line.
+  if (problems.length === 1) throw first;
+  throw combinedError(first, problems.join("\n"));
+}
+
+/** Probe copies only (NEWSROOM_SPEED_PRECHECK_ALL): the refusals fillHeroModule would give after the first one, found by dropping the field it refused. Stops at any refusal it cannot step past (the value itself, the claim). */
+async function peelHeroProblems(module: any, context: HeroClaimContext | null, modules: any[], known: string[]): Promise<string[]> {
+  const found: string[] = [];
+  let probe: any = { ...module };
+  for (let round = 0; round < 8; round++) {
+    let message = "";
+    try { await fillHeroModule(probe, context, modules); return found; } catch (error: any) { message = String(error?.message ?? error); }
+    const code = /^([A-Z][A-Z0-9_]+):/.exec(message)?.[1] ?? "";
+    if (!known.includes(message) && !found.includes(message)) found.push(message);
+    const field = new RegExp(`hero_stat '${String(module.id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}' (label|detail)\\b`).exec(message)?.[1];
+    if (code === "HERO_VALUE_TYPED") probe = { ...probe, value: undefined };
+    else if (code === "HERO_UNIT_NOT_ALLOWED") probe = { ...probe, unit: undefined };
+    else if (code === "HERO_UNIT_DROPPED") { const magnitude = /shows '([^']*)' right after/.exec(message)?.[1]; if (magnitude === undefined || probe.unit === magnitude) return found; probe = { ...probe, unit: magnitude }; }
+    else if (field && ["HERO_TYPED_NUMBER", "HERO_TEMPLATE_INVALID", "HERO_PLACEHOLDER_UNBOUND", "HERO_EDITED_AFTER_FILL"].includes(code)) probe = { ...probe, [field]: undefined, [`${field}_template`]: undefined };
+    else return found;
+  }
+  return found;
+}
+
+/** The first refusal fillHeroModule threw for a module, then the label/detail refusals that do not depend on the value (the loop below reads only the text). */
+function heroProblemsOf(module: any, context: HeroClaimContext | null, firstError: any): string[] {
+  const problems = [String(firstError?.message ?? firstError)];
+  if (!context?.bindings) return problems;
+  const id = String(module.id);
+  const claimId = String(module.claim_id ?? "");
+  for (const field of ["label", "detail"]) {
+    const source = typeof module[`${field}_template`] === "string" ? module[`${field}_template`] : module[field];
+    if (source === undefined || source === null) continue;
+    const refusal = heroTextRefusal(id, field, String(source), claimId, context);
+    if (refusal && !problems.includes(refusal)) problems.push(refusal);
+  }
+  return problems;
+}
+
+/** The refusal for a typed number or number word in a hero label/detail source, or null. Shared by the fill and the all-problems report. */
+function heroTextRefusal(id: string, field: string, src: string, claimId: string, context: HeroClaimContext): string | null {
+  if (/[{}]/.test(src.replace(/\{[^{}]*\}/g, ""))) return `HERO_TEMPLATE_INVALID: hero_stat '${id}' ${field} has an unmatched { or }`;
+  const near = literalNumberIn(src);
+  if (near !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a typed number (near "${near}"); every number, years included, must be a placeholder of claim '${claimId}'${context.bindings ? ` (${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")})` : ""}${firstTry(FIRST_TRY.heroTypedNumberError)}`;
+  const wordedNear = numberWordIn(src);
+  if (wordedNear !== null) return `HERO_TYPED_NUMBER: hero_stat '${id}' ${field} has a number word (near "${wordedNear}"); every number must be a placeholder of claim '${claimId}'`;
+  return null;
+}
+
+/** The filled form of one hero_stat; throws the first refusal. Filling a stored (already filled) module gives the same module. */
+async function fillHeroModule(module: any, context: HeroClaimContext | null, modules: any[]) {
+  const id = String(module.id);
+  const claimId = String(module.claim_id ?? "");
+  if (!context) throw new Error(`HERO_CLAIM_NOT_VERIFIED: hero_stat '${id}' claim '${claimId}' is not a system-verified claim`);
+  if (!context.bindings) throw heroUnbound(claimId, `hero_stat '${id}'`);
+  const from = typeof module.value_from === "string" ? module.value_from.trim() : "";
+  if (!from) throw new Error(`HERO_VALUE_FROM_REQUIRED: hero_stat '${id}': do not type the number; give value_from, one placeholder of claim '${claimId}' such as {max.col}, and the runtime writes the number the claim shows${context.bindings ? `. Placeholders of this claim: ${[...new Set(context.bindings.map((binding) => binding.placeholder))].join(" ")}` : ""}`);
+  const value = resolveHeroPlaceholder(context, from, `hero_stat '${id}' value_from`);
+  await assertHeroBindingHolds(id, context, context.bindings.find((binding) => binding.placeholder === from)!);
+  const typed = module.value !== undefined && module.value !== null && String(module.value).trim() !== "";
+  if (typed && String(module.value) !== value.text) throw new Error(`HERO_VALUE_TYPED: hero_stat '${id}' value '${String(module.value).slice(0, 40)}' is typed; leave value out and keep value_from ${from}, which the runtime fills with '${value.text}'`);
+  const unit = module.unit === undefined || module.unit === null ? "" : String(module.unit);
+  if (unit !== "") {
+    const allowed = [...new Set([...heroLiteralsAfter(context, from, value.text), ...(await heroPlanUnits(modules, claimId, value.column))])];
+    if (!allowed.includes(unit)) throw new Error(`HERO_UNIT_NOT_ALLOWED: hero_stat '${id}' unit '${unit.slice(0, 20)}' is not shown by claim '${claimId}'; allowed: empty${allowed.map((entry) => `, '${entry}'`).join("")}`);
+  }
+  // The claim formatter writes a bare number (12.3); a magnitude word or percent sign is a literal of the claim after it. The unit
+  // must carry it, or "12.3亿美元" would become a hero of 12.3 with no unit or with 美元 alone.
+  const magnitude = heroLiteralsAfter(context, from, value.text).map(heroMagnitudeStart).find(Boolean);
+  if (magnitude && !heroUnitStartsWith(unit, magnitude)) throw new Error(`HERO_UNIT_DROPPED: hero_stat '${id}' claim '${claimId}' shows '${magnitude}' right after the number, so the unit must start with '${magnitude}'${unit ? ` (got '${unit.slice(0, 20)}')` : " (the unit is empty)"}; keep it at the start of unit`);
+  const text: Record<string, string> = {};
+  for (const field of ["label", "detail"]) {
+    const templateKey = `${field}_template`;
+    const hasTemplate = typeof module[templateKey] === "string";
+    const source = hasTemplate ? module[templateKey] : module[field];
+    if (source === undefined || source === null) continue;
+    const src = String(source);
+    const textRefusal = heroTextRefusal(id, field, src, claimId, context);
+    if (textRefusal) throw new Error(textRefusal);
+    const placeholders = src.match(/\{[^{}]*\}/g) ?? [];
+    let filled = src;
+    for (const placeholder of new Set(placeholders)) {
+      filled = filled.split(placeholder).join(resolveHeroPlaceholder(context, placeholder, `hero_stat '${id}' ${field}`).text);
+      // Every placeholder the module fills must still be in the computation rows, not only the one the value comes from.
+      await assertHeroBindingHolds(id, context, context.bindings!.find((binding) => binding.placeholder === placeholder)!);
+    }
+    if (hasTemplate && String(module[field] ?? "") !== filled) throw new Error(`HERO_EDITED_AFTER_FILL: hero_stat '${id}' ${field} no longer matches its ${templateKey}; edit the template, not the filled text`);
+    text[field] = filled;
+    if (placeholders.length) text[templateKey] = src;
+  }
+  const { label_template: _l, detail_template: _d, ...rest } = module;
+  return { ...rest, value: value.text, value_from: from, ...text };
+}
+
+/** The render accepts a stored lint only when it was made under today's policy version and hero gate state. */
+function lintIsCurrent(lint: any) {
+  const now = currentLintPolicy();
+  return lint?.lint_policy_version === now.lint_policy_version && lint?.hero_value_gate === now.hero_value_gate;
+}
+function assertLintCurrent(lint: any) {
+  if (!lintIsCurrent(lint)) throw new Error(`LINT_STALE: the stored infographic lint was made under another lint policy (version ${String(lint?.lint_policy_version ?? "none")}, hero gate ${String(lint?.hero_value_gate ?? "unknown")}) than the current one (version ${INFOGRAPHIC_LINT_POLICY_VERSION}, hero gate ${heroGateOn()}); run newsroom_infographic_lint again on this plan, then render with the new lint_ref`);
+}
+
+/**
+ * The lint a page was made from must still hold today. Every consumer of an infographic lint, page manifest or critic
+ * record runs this: the lint belongs to the plan and passed; every claim the plan cites is still system-verified; it was
+ * made under today's lint policy; the upstream assets still hash as it recorded; and the plan lints clean again under
+ * today's settings. The checks and their messages are the render's own.
+ */
+async function assertInfographicLintHolds(spec: any, lint: any, planRef: string) {
+  const mobilePages = mobilePagesEnabled();
+  if (lint.plan_ref !== planRef) throw new Error("Infographic lint does not belong to the supplied plan");
+  if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
+  {
+    // The stored lint is not trusted for claims: re-read the verified set and re-check every claim id the plan cites.
+    const verifiedNow = new Set(await verifiedClaimIds());
+    const cited = [...new Set((spec.modules ?? []).flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? []), ...(m.claim_set ?? []), ...(Array.isArray(m.annotations) ? m.annotations.map((a: any) => a?.claim_id) : [])]).filter(Boolean).map(String))];
+    const unverified = cited.filter((id) => !verifiedNow.has(id));
+    if (unverified.length) throw new Error(`Infographic plan cites claims that are not system-verified: ${unverified.join(", ")}`);
+  }
+  assertLintCurrent(lint);
+  const assets = await loadInfographicAssets(spec, mobilePages);
+  for (const [ref, asset] of Object.entries(assets) as any) {
+    const expected = lint.asset_hashes?.[ref];
+    if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
+    if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256) || (expected.compact_sha256 ?? null) !== (asset.compactSvg !== undefined ? sha256Hex(asset.compactSvg) : null)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
+  }
+  // The stored lint is not trusted for its verdict either: the plan is linted again under today's settings.
+  const fresh = (await lintInfographicPlan(spec)).lint;
+  if (!fresh.passed || (fresh.blockers ?? []).length) throw new Error(`Infographic lint has blocking failures under the current settings: ${fresh.blockers.join(" | ")}`);
+}
+/** The same checks for a consumer that holds a page manifest: the lint the manifest names must be current. */
+async function assertPageLintCurrent(manifest: any) {
+  const lintRef = String(manifest?.lint_ref ?? "");
+  if (!lintRef) throw new Error("LINT_STALE: the infographic manifest names no lint; render the page again from a current lint");
+  const planRef = String(manifest?.plan_ref ?? "");
+  const lint = await readArtifactJson(lintRef, "infographics/lints/");
+  const spec = await readArtifactJson(planRef, "infographics/plans/");
+  await assertInfographicLintHolds(spec, lint, planRef);
+}
+
+// The deterministic page lint over a stored or proposed plan; shared by
+// newsroom_infographic_lint and the opt-in plan-edit check.
+async function lintInfographicPlan(spec: any) {
+  const mobilePages = mobilePagesEnabled();
+  const assets = await loadInfographicAssets(spec, mobilePages, true);
+  const verified = await verifiedClaimIds();
+  const verifiedRecords = await verifiedClaimRecords();
+  const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
+  const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
+  // Source-only quote notes verify against the saved source's own text,
+  // hash-bound and read fresh here (never trusted from the plan), so an
+  // edited quote, a source swapped after planning, or a wrong page is
+  // caught before render rather than only at the final artifact verify.
+  const sourceQuoteErrors: string[] = [];
+  const sourceTexts = new Map<string, string>();
+  for (const module of spec.modules ?? []) {
+    const ref = module?.type === "text" ? String(module.source_quote?.source_ref ?? "") : "";
+    if (!ref || sourceTexts.has(ref)) continue;
+    try {
+      sourceTexts.set(ref, await loadSourceQuoteText(ref));
+    } catch (error: any) {
+      sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
+    }
+  }
+  // Per visual: every verified claim the page hangs on it (the manifest's
+  // own claim, module claim_id/claim_ids/claim_set, and each module
+  // annotation's claim) must bind to the visual's own computation.
+  const visualClaimBindings: Record<string, Record<string, any>> = {};
+  for (const module of spec.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const manifest = assets[String(module.manifest_ref ?? "")]?.manifest;
+    const claimIds = [...new Set([
+      manifest?.claim_id, module.claim_id, ...(module.claim_ids ?? []), ...(module.claim_set ?? []),
+      ...((Array.isArray(module.annotations) ? module.annotations : []).map((annotation: any) => annotation?.claim_id)),
+    ].filter(Boolean).map(String))].filter((id) => verifiedRecords.has(id));
+    if (!claimIds.length) continue;
+    let chartState: any = manifest?.computation_ref
+      ? await computationInputState(String(manifest.computation_ref), claimBindingDeps())
+      : { input_binding: "legacy", effective_inputs: [] };
+    if (manifest?.computation_ref) {
+      // The numeric encoding fields come from the visual's own plan; an
+      // unreadable plan leaves them unknown and the direct-read relation fails closed.
+      let planSpec: any = null;
+      try { planSpec = await readArtifactJson(String(manifest.plan_ref ?? ""), "visualizations/plans/"); } catch { planSpec = null; }
+      chartState = { ...chartState, numeric_fields: planSpec ? numericFieldsOfSpec(planSpec) : undefined };
+    }
+    visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
+  }
+  // Gate on (the default; NEWSROOM_HERO_VALUE_GATE=0 turns it off): each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
+  const heroGate: Record<string, any> = {};
+  if (heroGateOn()) {
+    const heroChecks: Record<string, string[]> = {};
+    for (const module of spec.modules ?? []) {
+      if (module?.type !== "hero_stat") continue;
+      const claimId = String(module.claim_id ?? "");
+      try {
+        const filled = await fillHeroModule(module, await heroClaimContext(claimId, verifiedRecords), spec.modules);
+        const stored = ["value", "label", "detail", "label_template", "detail_template", "value_from"].filter((key) => (filled as any)[key] !== undefined && String((filled as any)[key]) !== String(module[key] ?? ""));
+        heroChecks[String(module.id)] = stored.length ? [`HERO_EDITED_AFTER_FILL: hero_stat '${module.id}' ${stored.join(", ")} differ from what its claim fills; leave the filled plan as the plan tool wrote it`] : [];
+      } catch (error) {
+        heroChecks[String(module.id)] = [String((error as any)?.message ?? error)];
+      }
+    }
+    heroGate.hero_checks = heroChecks;
+  }
+  // The gate state is passed explicitly in both states (the pure lint reads only an exact true).
+  heroGate.hero_value_gate = heroGateOn();
+  const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
+  if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
+  return { lint, assets, mobilePages, verifiedRecords };
+}
+
+// NEWSROOM_SPEED_PRECHECK_ALL=1, page chain only: after the claim/manifest check refused, the other modules that check refuses and the
+// page lint blockers of the stored plan (the chain never reached the lint). Read-only; the stop code and verdict are not touched.
+async function chainStopWithPageLint(message: string, planRef: string): Promise<string> {
+  const plan = await readArtifactJson(planRef, "infographics/plans/");
+  const lines: string[] = [];
+  for (const module of plan.modules ?? []) {
+    if (module?.type !== "visual") continue;
+    const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+    const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+    const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+    const text = !manifestClaims.length
+      ? `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`
+      : moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))
+        ? `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`
+        : null;
+    if (text && !message.includes(text)) lines.push(`[claim/manifest] ${text}`);
+  }
+  const notChecked: string[] = ["render, critic and preview: the chain stops before them"];
+  try {
+    const registry = await loadEditorialGrammarRegistry();
+    const { lint } = await lintInfographicPlan(plan);
+    const context = { visualGrammarForms: VISUAL_GRAMMAR_FORMS, visualGrammars: INFOGRAPHIC_VISUAL_GRAMMARS, enums: {}, registry, selectedGrammarIds: [plan.editorial_grammar?.primary, ...(plan.editorial_grammar?.supporting ?? [])].filter(Boolean).map(String) };
+    for (const blocker of lint.blockers ?? []) {
+      lines.push(`[page lint] ${blocker}`);
+      for (const hint of allowedValueHints(String(blocker), context)) lines.push(`   allowed values: ${hint}`);
+    }
+  } catch (error: any) { notChecked.push(`page lint: it could not run on this plan (${String(error?.message ?? error).split("\n")[0].slice(0, 200)})`); }
+  if (lines.length === 0 && notChecked.length === 1) return message;
+  const numbered = lines.reduce((out: string[], line) => { out.push(line.startsWith("   ") ? line : `${out.filter((entry) => !entry.startsWith("   ")).length + 1}. ${line}`); return out; }, []);
+  return [message, "Other problems found by running the checks the chain skipped (each keeps its own text, in stage order). Fix them together before calling again:", ...numbered, "Not checked (the stop prevents these from running; this is not a pass):", ...notChecked.map((entry) => `- ${entry}`)].join("\n");
+}
+
+// NEWSROOM_SPEED_PRECHECK_ALL=1, plan tool only. Called after the unchanged plan checks refused the call: it runs every other
+// pre-draw check that can still run (the plan checks below the refusal, and the page lint over the plan as proposed, in memory)
+// and returns one refusal. The first problem keeps its own text, code and class (combinedError). Nothing is written, no check is
+// skipped or changed, and nothing here can accept a call. A check whose input an earlier problem stops is listed as not checked.
+async function planPrecheckAll(first: any, givenParams: any): Promise<any> {
+  const firstText = String(first?.message ?? first);
+  const problems: { stage: string; text: string }[] = [];
+  const unchecked: string[] = [];
+  const failedHeroIds = new Set<string>();
+  const seen = (text: string) => firstText.includes(text) || problems.some((problem) => problem.text === text);
+  // A hero whose fill was refused is planned unfilled, so a spec or lint line that only says its value or text is missing repeats the fill problem.
+  const heroConsequence = (stage: string, text: string) => stage !== "hero fill" && !text.includes("\n") && [...failedHeroIds].some((id) => text.includes(`hero_stat '${id}' requires value`) || text.includes(`module:${id}:label`) || text.includes(`module:${id}:detail`));
+  const add = (stage: string, text: string) => { if (heroConsequence(stage, text)) { suppressedForHero = true; return; } if (!seen(text)) problems.push({ stage, text }); };
+  let suppressedForHero = false;
+  const fail = (stage: string, error: any) => add(stage, String(error?.message ?? error));
+  const orderKeys = () => Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {});
+  const hintContext: any = {
+    visualGrammarForms: VISUAL_GRAMMAR_FORMS,
+    visualGrammars: INFOGRAPHIC_VISUAL_GRAMMARS,
+    enums: { type: INFOGRAPHIC_MODULE_TYPES, span: INFOGRAPHIC_SPANS, story_role: INFOGRAPHIC_STORY_ROLES, emphasis: INFOGRAPHIC_EMPHASIS, pattern: INFOGRAPHIC_SCENE_PATTERNS },
+    registry: null,
+    selectedGrammarIds: [] as string[],
+  };
+
+  // 1. References the runtime fills (same fills as the plan tool).
+  let rawParams = givenParams;
+  try {
+    if (fillCopiedEnabled()) {
+      const copied = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
+      if (copied !== givenParams) rawParams = inSchemaOrder(copied, orderKeys());
+    }
+  } catch (error: any) { fail("fill", error); }
+  let params = rawParams;
+  let unresolvedRefs: Record<string, string> = {};
+  try {
+    if (preflightEnabled()) {
+      const filled = await fillPlanRefs(rawParams, preflightIo);
+      unresolvedRefs = filled.unresolved;
+      if (filled.filled.length) params = inSchemaOrder(filled.params, orderKeys());
+    }
+  } catch (error: any) { fail("fill", error); }
+  const rawModules: any[] = Array.isArray(params?.modules) ? params.modules : [];
+  const withDefaults = rawModules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }));
+
+  // 2. Editorial grammar build and hero fill: independent of each other.
+  let registry: any = null;
+  let editorialGrammar: any;
+  try {
+    registry = await loadEditorialGrammarRegistry();
+    hintContext.registry = registry;
+    editorialGrammar = materializeEditorialGrammarSelection(params?.editorial_grammar, registry);
+    hintContext.selectedGrammarIds = [editorialGrammar?.primary, ...(editorialGrammar?.supporting ?? [])].filter(Boolean).map(String);
+  } catch (error: any) { fail("editorial grammar", error); }
+  let modules = withDefaults;
+  let heroFilled = true;
+  try { modules = await fillHeroModules(withDefaults, true); } catch (error: any) {
+    for (const line of String(error?.message ?? error).split("\n")) { add("hero fill", line); const id = /hero_stat '([^']+)'/.exec(line)?.[1]; if (id) failedHeroIds.add(id); }
+    heroFilled = false;
+  }
+  const view: any = {
+    schema_version: "1.5.0",
+    layout: params?.layout ?? "feature",
+    language: params?.language ?? "en",
+    complexity_budget: params?.complexity_budget ?? "medium",
+    quality_target: params?.quality_target ?? "publishable",
+    competition_profile: params?.competition_profile ?? "editorial",
+    ...params,
+    editorial_grammar: editorialGrammar,
+    modules,
+  };
+  const specBuilt = editorialGrammar !== undefined && rawModules.length > 0;
+  if (!specBuilt) unchecked.push("spec validation, editorial grammar lint and page lint: the editorial grammar did not build or the plan has no modules, so there is no spec to check");
+
+  // 3. Preflight list and spec validation.
+  if (specBuilt && preflightEnabled()) {
+    try {
+      const issues: string[] = [];
+      issues.push(...validateInfographicSpec(view).filter((error: string) => !Object.keys(unresolvedRefs).some((field) => error.startsWith(`${field} is required`))));
+      const grammar = lintEditorialGrammarSelection(view.editorial_grammar, registry);
+      if (!grammar.passed) issues.push(...grammar.issues.map((issue: any) => `editorial grammar ${issue.rule_id}: ${issue.message}`));
+      issues.push(...(await planPrerequisiteIssues(view, preflightIo, unresolvedRefs)));
+      if (issues.length) add("preflight", preflightError("newsroom_infographic_plan", issues).message);
+    } catch (error: any) { fail("preflight", error); }
+  }
+
+  // 4. StoryGraph.
+  let storyGraph: any;
+  try { storyGraph = await readArtifactJson(String(view.story_graph_ref), "editorial/story-graphs/"); } catch (error: any) {
+    fail("story graph", error);
+    unchecked.push("StoryGraph checks (passed, reader_question, visual_thesis, story nodes): the StoryGraph could not be read");
+  }
+  if (storyGraph) {
+    if (!storyGraph.passed) add("story graph", "Infographic cannot proceed from a StoryGraph with blocking narrative-closure issues");
+    if (String(storyGraph.reader_question) !== String(view.reader_question)) add("story graph", "Infographic reader_question must exactly match StoryGraph reader_question");
+    if (String(storyGraph.visual_thesis) !== String(view.visual_thesis)) add("story graph", "Infographic visual_thesis must exactly match StoryGraph visual_thesis");
+    const storyNodeIds = new Set((storyGraph.nodes ?? []).map((node: any) => String(node.id)));
+    for (const module of modules) for (const nodeId of module.story_node_ids ?? []) if (!storyNodeIds.has(String(nodeId))) add("story graph", `Infographic module '${module.id}' references unknown story node '${nodeId}'`);
+  }
+
+  // 5. Spec validation and grammar lint, as the plan tool runs them.
+  if (specBuilt) {
+    try {
+      const errors = validateInfographicSpec(view);
+      if (errors.length) add("spec", `Invalid infographic plan: ${errors.join("; ")}`);
+      const grammarLint = lintEditorialGrammarSelection(view.editorial_grammar, registry);
+      if (!grammarLint.passed) add("editorial grammar lint", `Invalid editorial grammar selection: ${grammarLint.issues.map((issue: any) => `${issue.rule_id}: ${issue.message}`).join("; ")}`);
+    } catch (error: any) { fail("spec", error); }
+  }
+
+  // 6. Upstream editorial artifacts, each read on its own.
+  const read = async (stage: string, ref: unknown, prefix: string, what: string) => {
+    try { return await readArtifactJson(String(ref), prefix); } catch (error: any) {
+      fail(stage, error);
+      unchecked.push(`${what}: its artifact could not be read`);
+      return undefined;
+    }
+  };
+  const discovery = await read("discovery", view.editorial_discovery_ref, "editorial/discovery/", "editorial discovery decision");
+  if (discovery && discovery.decision !== "CONTINUE") add("discovery", `Award infographic cannot proceed from editorial discovery decision '${discovery.decision}'`);
+  const concepts = await read("concept", view.visual_concept_ref, "editorial/concepts/", "selected_concept_id finalist check");
+  if (concepts && !(concepts.finalists ?? []).includes(view.selected_concept_id)) add("concept", `selected_concept_id '${view.selected_concept_id}' is not a concept finalist`);
+  const novelty = await read("novelty", view.novelty_ref, "editorial/novelty/", "novelty checks");
+  if (novelty) {
+    if (novelty.concept_ref !== view.visual_concept_ref) add("novelty", "Semantic novelty report does not belong to the selected concept set");
+    if (!novelty.passed) add("novelty", "Award infographic contains unresolved high semantic redundancy");
+  }
+  const assetPlan = await read("asset plan", view.asset_plan_ref, "editorial/assets/", "asset plan checks");
+  if (assetPlan) {
+    if (assetPlan.concept_ref !== view.visual_concept_ref || assetPlan.concept_id !== view.selected_concept_id) add("asset plan", "Asset plan does not belong to the selected visual concept");
+    if (assetPlan.decision !== "CONTINUE") add("asset plan", `Award infographic asset plan is '${assetPlan.decision}'`);
+  }
+
+  // 7. Per module: claims and the visual or illustration artifacts.
+  let verified: Set<string> | null = null;
+  try { verified = new Set(await verifiedClaimIds()); } catch (error: any) {
+    fail("claims", error);
+    unchecked.push("verified-claim checks of every module: the verified claim list could not be read");
+  }
+  for (const module of modules) {
+    const claimIds = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+    if (verified) for (const claimId of claimIds) if (!verified.has(claimId)) add("module claims", `Infographic module '${module.id}' references unverified claim '${claimId}'`);
+    if (module.type === "visual") {
+      if (!module.manifest_ref || !module.critic_ref) { add("module assets", `Visual module '${module.id}' requires manifest_ref and critic_ref`); continue; }
+      let manifest: any;
+      let critic: any;
+      try { manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/"); } catch (error: any) { fail("module assets", error); unchecked.push(`visual module '${module.id}' manifest checks: the manifest could not be read`); }
+      try { critic = await readArtifactJson(String(module.critic_ref), "visualizations/critics/"); } catch (error: any) { fail("module assets", error); unchecked.push(`visual module '${module.id}' critic checks: the critic could not be read`); }
+      if (critic) {
+        if (!critic.passed) add("module assets", `Visual module '${module.id}' uses a visualization whose critic did not pass`);
+        if (critic.manifest_ref && critic.manifest_ref !== module.manifest_ref) add("module assets", `Visual module '${module.id}' critic does not match its manifest`);
+      }
+      if (manifest) {
+        if (manifest.verification_mode === "draft" || manifest.artifact_status === "DRAFT" || manifest.publishable === false) add("module assets", `Visual module '${module.id}' cannot use a DRAFT/non-publishable visualization manifest; bind a verified visual before infographic composition`);
+        if (verified && manifest.claim_id && !verified.has(String(manifest.claim_id))) add("module assets", `Visual module '${module.id}' manifest references unverified claim '${manifest.claim_id}'`);
+      }
+    }
+    if (module.type === "illustration") {
+      if (!module.asset_ref || !module.critic_ref) { add("module assets", `Illustration module '${module.id}' requires asset_ref and critic_ref`); continue; }
+      let manifest: any;
+      let critic: any;
+      try { manifest = await readManifestOrRejected("visualizations/illustrations", String(module.asset_ref), "visualizations/illustrations/"); } catch (error: any) { fail("module assets", error); unchecked.push(`illustration module '${module.id}' manifest checks: the manifest could not be read`); }
+      try { critic = await readArtifactJson(String(module.critic_ref), "visualizations/illustrations/critics/"); } catch (error: any) { fail("module assets", error); unchecked.push(`illustration module '${module.id}' critic checks: the critic could not be read`); }
+      if (critic) {
+        if (!critic.passed) add("module assets", `Illustration module '${module.id}' uses an explanatory graphic whose critic did not pass`);
+        if (critic.manifest_ref && critic.manifest_ref !== module.asset_ref) add("module assets", `Illustration module '${module.id}' critic does not match its asset manifest`);
+      }
+      if (manifest && verified) for (const claimId of manifest.claim_ids ?? []) if (!verified.has(String(claimId))) add("module assets", `Illustration module '${module.id}' manifest references unverified claim '${claimId}'`);
+    }
+  }
+
+  // 8. The page lint (newsroom_infographic_lint) over the plan as proposed, in memory. Its blockers are the ones the lint tool
+  // would refuse with after this call. An unfilled hero (its fill refused above) is lint's own business: the lint refuses it too.
+  if (specBuilt) {
+    try {
+      const { lint } = await lintInfographicPlan(view);
+      for (const blocker of lint.blockers ?? []) add("page lint", String(blocker));
+    } catch (error: any) {
+      unchecked.push(`page lint: it could not run on this plan (${String(error?.message ?? error).split("\n")[0].slice(0, 200)})`);
+    }
+  }
+
+  const firstHints = allowedValueHints(firstText, hintContext);
+  if (!problems.length && !unchecked.length && !firstHints.length) return first;
+  const lines = [firstText];
+  if (firstHints.length) lines.push(...firstHints.map((hint) => `  allowed values for the problem above: ${hint}`));
+  if (problems.length) {
+    lines.push(`Other problems found by running every pre-draw check that can still run (${problems.length}; each keeps its own code and text, in stage order). Fix them together before calling again:`);
+    problems.forEach((problem, index) => {
+      lines.push(`${index + 1}. [${problem.stage}] ${problem.text}`);
+      for (const hint of allowedValueHints(problem.text, hintContext)) lines.push(`   allowed values: ${hint}`);
+    });
+  }
+  if (unchecked.length) {
+    lines.push("Not checked (an earlier problem stops these from running; this is not a pass):");
+    for (const entry of unchecked) lines.push(`- ${entry}`);
+  }
+  if (suppressedForHero) lines.push("Not shown: spec and page-lint lines that only say a refused hero_stat is missing its value or has unfilled template text; they follow from the hero fill problem above and are not checked separately.");
+  return combinedError(first, lines.join("\n"));
+}
+
+// Plan edit: exists only with NEWSROOM_SPEED_PLAN_EDIT exactly "1" and
+// newsroom_infographic_plan enabled here. The model names the layout change
+// (span, emphasis, priority, order, scene pattern/anchor/sidecars) instead of
+// re-sending the whole plan. The edited plan goes through the registered plan
+// tool, so every plan validator runs again, and the page lint must not gain a
+// blocker the source plan did not already have.
+function registerPlanEdit(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_PLAN_EDIT !== "1") return;
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_infographic_plan");
+  if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  pi.registerTool({
+    name: "newsroom_infographic_edit",
+    label: "Edit the layout of an infographic plan",
+    description: "Change only layout fields of an existing infographic plan and record the result as a new plan, without re-sending the plan. Module fields: span, emphasis, priority, move_before, mobile_move_before. Scene fields: pattern, anchor_module_id, sidecar_module_ids (existing module ids only). Copy, claims, story nodes, references, numbers, scene budgets, visual channels and module membership cannot be edited here. The edited plan runs through every newsroom_infographic_plan validation again, and the edit is refused if it adds a newsroom_infographic_lint blocker the source plan did not have.",
+    promptSnippet: "Change span/emphasis/priority/order or a scene's pattern, anchor and sidecars of a plan",
+    promptGuidelines: [
+      "Prefer this over re-sending the whole newsroom_infographic_plan when only layout needs to change.",
+      "Each op is {scope:'module'|'scene', id, field, value}. For anything else, call newsroom_infographic_plan with the full plan.",
+      "After editing, run newsroom_infographic_lint, render, critic and preview on the new plan again.",
+    ],
+    parameters: Type.Object({
+      plan_ref: Type.String(),
+      ops: Type.Array(Type.Object({
+        scope: StringEnum(["module", "scene"] as const),
+        id: Type.String(),
+        field: Type.String(),
+        value: Type.Union([Type.String(), Type.Number(), Type.Array(Type.String())]),
+      }), { minItems: 1, maxItems: PLAN_EDIT_MAX_OPS }),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const sourcePlan = await readArtifactJson(String(params.plan_ref), "infographics/plans/");
+      const revised = applyPlanEdits(sourcePlan, params.ops);
+      const proposed = { ...revised.spec, content_hash: sha256Hex(JSON.stringify(revised.spec)) };
+      const proposalErrors = validateInfographicSpec(proposed);
+      if (proposalErrors.length) throw new Error(`Plan edit produced an invalid infographic plan: ${proposalErrors.join("; ")}`);
+      const before = new Set<string>((await lintInfographicPlan(sourcePlan)).lint.blockers.map(String));
+      const after = (await lintInfographicPlan(proposed)).lint.blockers.map(String);
+      const added = after.filter((blocker: string) => !before.has(blocker));
+      if (added.length) throw new Error(`Plan edit refused: it would add ${added.length} lint blocker(s) the source plan did not have: ${added.join(" | ")}`);
+      if (signal?.aborted) throw new Error("plan edit cancelled before the revised plan was written");
+      // The registered plan tool re-runs every plan validation and writes the plan.
+      const result = await registeredTools.get("newsroom_infographic_plan").execute(`${id}:newsroom_infographic_plan`, revised.spec, signal, undefined, ctx);
+      const planRef = String(result?.details?.planRef ?? "");
+      if (!planRef) throw new Error("newsroom_infographic_plan returned no planRef for the edited plan");
+      if (signal?.aborted) throw new Error("plan edit cancelled before the revision record was written");
+      const revisionKey = sha256Hex(JSON.stringify({ source_plan_ref: params.plan_ref, plan_ref: planRef, applied: revised.applied }));
+      const revisionRef = `infographics/plan-edits/${revisionKey}.json`;
+      await writeArtifactIfAbsent(revisionRef, {
+        schema_version: "0.2.0",
+        kind: "plan_edit",
+        source_plan_ref: params.plan_ref,
+        revised_plan_ref: planRef,
+        applied_edits: revised.applied,
+        remaining_lint_blockers: after,
+        safety: revised.safety,
+      });
+      return textResult(`Applied ${revised.applied.length} layout edit(s).\nRevised plan: ${planRef}${planRef === params.plan_ref ? " (identical to the source plan)" : ""}\nRevision audit: ${revisionRef}\nLint blockers still present: ${after.length ? after.join(" | ") : "none"}\nNext: call newsroom_infographic_lint on the revised plan, then render, critic and preview.`, { planRef, revisionRef, applied: revised.applied, unchanged: planRef === params.plan_ref, remainingLintBlockers: after });
+    },
+  });
+}
+
+// Page chain: exists only with NEWSROOM_SPEED_CHAIN_INFOGRAPHIC exactly "1" and
+// newsroom_infographic_plan enabled here. It stops before the image-aware vision
+// critic, which only the model can write after looking at the preview image.
+function registerInfographicChain(pi: ExtensionAPI) {
+  if (process.env.NEWSROOM_SPEED_CHAIN_INFOGRAPHIC !== "1") return;
+  // Its inner viz tools share the immutable computation writers; see registerVizChain.
+  if (!atomicArtifactWritesEnabled()) return;
+  const name = "newsroom_infographic_chain";
+  const phase = normalizedNewsroomPhase();
+  const profile = process.env.NEWSROOM_TOOL_PROFILE ?? "investigate";
+  const planTool = registeredTools.get("newsroom_infographic_plan");
+  if (!planTool || !toolEnabled("newsroom_infographic_plan", { phase, profile })) return;
+  const enabled = (tool: string) => registeredTools.has(tool) && toolEnabled(tool, { phase, profile });
+  const planProperties = planTool.parameters?.properties ?? {};
+  const chainTool = {
+    name,
+    label: "Plan, lint, render, critique and preview a magazine infographic",
+    description: "Takes the same parameters as newsroom_infographic_plan and runs newsroom_infographic_plan, _lint, _render, _critic and _preview in the same call, filling only the plan/lint/manifest/critic references they return. reader_question and visual_thesis may be omitted: they are copied verbatim from the StoryGraph named by story_graph_ref (a value you supply is never overridden and must match it). It stops at the first blocker, failed render QA, DRAFT plan, visual manifest not bound to its module's claim, or critic REVISE and returns every step's result verbatim; nothing is retried or skipped. It returns the preview image; you must still inspect it and call newsroom_infographic_vision_critic yourself.",
+    promptSnippet: "Plan, lint, render, critique and preview a magazine infographic in one call",
+    promptGuidelines: [
+      "Prefer this over calling newsroom_infographic_plan, _lint, _render, _critic and _preview one by one.",
+      "After it completes, look at the returned image and call newsroom_infographic_vision_critic with your own verdict; the chain never writes the vision critique.",
+      "When it stops, follow the 'Call <tool> separately next' line: revise the plan and call the chain again, or call the named tool yourself.",
+    ],
+    parameters: Type.Object({
+      ...planProperties,
+      reader_question: Type.Optional(planProperties.reader_question ?? Type.String()),
+      visual_thesis: Type.Optional(planProperties.visual_thesis ?? Type.String()),
+    }),
+    async execute(id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+      const planParams: any = await fillStoryGraphRef("newsroom_infographic_chain", { ...(params ?? {}) });
+      if (planParams.story_graph_ref && (planParams.reader_question === undefined || planParams.visual_thesis === undefined)) {
+        // Copied verbatim from the StoryGraph artifact; an unreadable graph leaves the
+        // fields absent so the plan step fails exactly as a direct call would.
+        try {
+          const graph = await readArtifactJson(String(planParams.story_graph_ref), "editorial/story-graphs/");
+          if (planParams.reader_question === undefined && typeof graph.reader_question === "string") planParams.reader_question = graph.reader_question;
+          if (planParams.visual_thesis === undefined && typeof graph.visual_thesis === "string") planParams.visual_thesis = graph.visual_thesis;
+        } catch { /* fall through */ }
+      }
+      const state: any = { planParams };
+      const outcome = await runToolChain({
+        steps: infographicChainSteps({
+          visualClaimMismatch: async () => {
+            const plan = await readArtifactJson(String(state.planRef), "infographics/plans/");
+            for (const module of plan.modules ?? []) {
+              if (module?.type !== "visual") continue;
+              const manifest = await readManifestOrRejected("visualizations", String(module.manifest_ref), "visualizations/");
+              const manifestClaims = [manifest.claim_id, ...(manifest.claim_ids ?? [])].filter(Boolean).map(String);
+              if (!manifestClaims.length) return `visual module '${module.id}' manifest ${module.manifest_ref} is not bound to any claim`;
+              const moduleClaims = [module.claim_id, ...(module.claim_ids ?? [])].filter(Boolean).map(String);
+              if (moduleClaims.length && !manifestClaims.some((claim) => moduleClaims.includes(claim))) {
+                return `visual module '${module.id}' cites claim(s) ${moduleClaims.join(", ")} but its manifest ${module.manifest_ref} is bound to ${manifestClaims.join(", ")}`;
+              }
+            }
+            return null;
+          },
+        }),
+        state,
+        enabled,
+        schemaOf: (tool: string) => registeredTools.get(tool)?.parameters,
+        signal,
+        call: (tool: string, toolParams: any) => registeredTools.get(tool).execute(`${id}:${tool}`, toolParams, signal, undefined, ctx),
+        record: async (event: any) => {
+          const at = new Date().toISOString();
+          const toolCallId = `${id}:${event.tool}`;
+          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+            ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
+            : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
+        },
+      });
+      // NEWSROOM_SPEED_PRECHECK_ALL=1: the claim/manifest check stops the chain before the page lint runs; the stop text then also lists
+      // every module that check refuses and what the page lint says about the plan. The verdict and the stop code are the same.
+      if (precheckAllEnabled() && outcome.status !== "COMPLETE" && outcome.code === "CLAIM_MANIFEST_MISMATCH" && state.planRef) {
+        try { outcome.message = await chainStopWithPageLint(String(outcome.message), String(state.planRef)); } catch { /* keep the stop text as it is */ }
+      }
+      return chainResultFor(outcome, {
+        chain: name,
+        textResult,
+        handoff: (final: any) => `Next: inspect the returned image, then call newsroom_infographic_vision_critic with manifest_ref=${final.manifestRef}, preview_ref=${final.previewRef}, deterministic_critic_ref=${final.criticRef} and your own passed/score/confidence/rubric/issues.`,
+      });
+    },
+  };
+  const registered = chainPatchEnabled() ? withRejectionStore(chainTool, CHAIN_PATCH) : chainTool;
+  wrappedTools.set(name, registered);
+  pi.registerTool(registered);
+  if (chainPatchEnabled()) registerPatchTool(pi, CHAIN_PATCH);
+}
+
 export default function newsroomExtension(pi: ExtensionAPI) {
+  registeredTools.clear();
+  wrappedTools.clear();
+  // Orphaned temp files from a writer that was killed mid-write (switch on only).
+  if (atomicArtifactWritesEnabled()) void cleanupStaleArtifactTmp().catch(() => {});
   registerScopedTool(pi, {
     name: "artifact_inventory",
     label: "Inspect investigation files",
@@ -1203,7 +3443,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       steps: Type.Array(Type.Object({
         id: Type.String(),
         action: Type.String({ description: "Observable task or deliverable, not hidden reasoning" }),
-        status: StringEnum(["pending", "in_progress", "completed", "blocked"] as const),
+        status: StringEnum(["pending", "in_progress", "completed", "blocked"] as const, firstTryTextEnabled() ? { description: FIRST_TRY.stepStatus } : {}),
       }), { minItems: 1, maxItems: 10 }),
       revision_note: Type.Optional(Type.String({ description: "What changed in this plan revision" })),
       trigger: Type.Optional(StringEnum(["initial_goal", "tool_error", "evidence_conflict", "insufficient_information", "user_followup", "validation_failure", "other"] as const)),
@@ -1372,16 +3612,31 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const root = artifactRoot();
       if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for download_data");
+      // The request is a GET of the URL; filename only labels the local copy. A blocked host answers with the
+      // stronger SOURCE_ACCESS_BLOCKED stop instruction, so the repeat refusal applies while the host is usable.
+      const request = { method: "GET", url: params.url, body: "" };
+      const requestHost = downloadTimeoutGuard.hostOf(params.url);
+      // A refused repeat sends nothing, so it does not count against the host: counting it would turn the refusal
+      // into SOURCE_ACCESS_BLOCKED, which also stops the smaller requests its hint asks for.
+      if (!sourceAccessCircuit.isBlocked(requestHost)) downloadTimeoutGuard.assertNotRepeat(request);
+      const startedAt = Date.now();
+      let timedOut = false;
+      let bodyPhase = false;
+      // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
+      let answeredHost = requestHost;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30_000);
+      const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
       const abortForwarder = () => controller.abort();
       signal?.addEventListener("abort", abortForwarder, { once: true });
       try {
-        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" });
+        const response = await safeFetch(params.url, controller.signal, { "user-agent": "agentic-data-newsroom/0.6 (+https://pi.dev/)" }, { deferSuccess: true });
+        bodyPhase = true;
+        answeredHost = downloadTimeoutGuard.hostOf(response.url) ?? requestHost;
         if (!response.ok) throw new Error(`HTTP ${response.status} while downloading ${params.url}`);
         const declaredLength = Number(response.headers.get("content-length") || 0);
         if (declaredLength > MAX_DATASET_BYTES) throw new Error("Dataset exceeds the 25 MB download limit");
         const { bytes } = await readBodyBytes(response.body, MAX_DATASET_BYTES, { truncate: false });
+        sourceAccessCircuit.recordSuccess(answeredHost);
 
         const pathName = new URL(response.url).pathname;
         const inferred = pathName.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase();
@@ -1407,6 +3662,16 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           sha256,
           file: relativeFile,
         });
+        // A downloaded PDF is complete, so extract it in full into a row
+        // table ({page, line, x, text}) bound to the data file's sha256. The
+        // data file stays byte-identical; the table is evidence derived from it.
+        const derivedPdf = await extractDownloadedPdf({ bytes, contentType: response.headers.get("content-type"), sourceSha256: sha256, sourceFile: relativeFile, signal: controller.signal });
+        let derivedRowsPath: string | null = null;
+        if (derivedPdf?.available) {
+          await writeArtifactIfAbsent(derivedPdf.rowsFile, derivedPdf.rowsText);
+          derivedRowsPath = derivedPdf.rowsFile;
+          await writeArtifactIfAbsent(derivedPdf.rowsFile.replace(/\.json$/, ".meta.json"), derivedPdf.meta);
+        }
         const origin = {
           schema_version: "0.7.0",
           origin: "download",
@@ -1416,16 +3681,26 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           content_type: response.headers.get("content-type"),
           sha256,
           file: relativeFile,
+          ...(derivedPdf?.available ? { derived_text: { file: derivedPdf.rowsFile, rows_sha256: derivedPdf.meta.rows_sha256, extraction: derivedPdf.extraction } } : {}),
         };
         const originHash = sha256Hex(JSON.stringify(origin));
         const originPath = await writeArtifactIfAbsent(`data/origins/${originHash}.json`, origin);
-        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}`, {
+        const derivedLine = derivedPdf ? (derivedPdf.available ? `\nPDF rows (full, ${derivedPdf.extraction.pages} pages, ${derivedPdf.rows.length} rows of {page, line, x, text}): ${derivedRowsPath}\nQuery it with read_json_auto('${derivedPdf.rowsFile}'); cite the data file or this table as the source.` : `\nPDF text unavailable: ${derivedPdf.extraction.unavailable_reason}`) : "";
+        return textResult(`Downloaded ${bytes.byteLength} bytes.\nData file: ${relativeFile}\nMetadata: ${metadataPath}\nOrigin: ${originPath}${derivedLine}`, {
+          derivedRowsPath,
           filePath: relativeFile,
           metadataPath,
           originPath,
           bytes: bytes.byteLength,
           sha256,
         });
+      } catch (error: any) {
+        // Only the tool's own 30 s timer counts: a user cancel keeps its own error. A header timeout was already
+        // counted against the host inside safeFetch; a timeout while the body is read is counted here.
+        // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
+        if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
+        const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
+        throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
       } finally {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abortForwarder);
@@ -1441,6 +3716,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use duckdb_query for aggregations, comparisons, joins, rankings, rates, and chart data whenever the required dataset is locally available.",
       "For every ordered result, make the ORDER BY a total order by adding deterministic secondary keys (usually country, iso_code, year, or all grouping fields). Do not rely on the arbitrary order of tied DuckDB rows; replay must reproduce the same row sequence.",
+      RELATIVE_WINDOW_GUIDELINE,
     ],
       parameters: Type.Object({
         sql: Type.String({ description: "One read-only analytical SQL statement" }),
@@ -1451,23 +3727,18 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         }, { description: "Opt-in bounded model-visible preview; the full computation remains replayable in computations/" })),
       }),
     async execute(_id, params, signal) {
-      const safeSql = validateReadOnlySql(params.sql);
+      const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
-      assertInlineRowsHaveEvidence(safeSql, await hasUsableEvidenceInput(inputSnapshot));
+      const derivedInputs = await deriveInputsForSql(safeSql, signal);
+      assertInlineRowsHaveEvidence(safeSql, derivedInputs.input_binding === "source_bound");
       const inputSnapshotHash = inputSnapshot.hash;
       const rows = await queryDuckDb(safeSql, signal);
       const resultHash = hashRows(rows);
       const computationRef = computationRelativePath(safeSql, inputSnapshotHash, resultHash);
-      const record = {
-        schema_version: "0.7.0",
-        sql: safeSql,
-        input_snapshot_hash: inputSnapshotHash,
-        input_fingerprints: inputSnapshot.fingerprints,
-        result_hash: resultHash,
-        rows,
-      };
+      const record = buildComputationRecord({ sql: safeSql, inputSnapshot, derivedInputs, resultHash, rows });
       const path = await writeArtifactIfAbsent(computationRef, record);
       const budget = modelResultBudget(params.result_budget);
+      const orderNote = rows.length > 1 && !(await hasTopLevelOrderBy(safeSql, signal));
       let modelResult: any = budget ? {
         row_count: rows.length,
         columns: [...new Set(rows.flatMap((row: any) => Object.keys(row)))],
@@ -1476,6 +3747,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         result_hash: resultHash,
         truncated_for_model: rows.length > budget.maxRows,
       } : { row_count: rows.length, rows, artifact: path };
+      if (orderNote) modelResult = { ...modelResult, order_note: "No top-level ORDER BY: row order is not guaranteed, and a claim's replay compares rows in order. Add ORDER BY over every key column." };
       if (budget) {
         while (Buffer.byteLength(JSON.stringify(modelResult, null, 2), "utf8") > budget.maxBytes && modelResult.preview_rows.length > 0) {
           modelResult = { ...modelResult, preview_rows: modelResult.preview_rows.slice(0, Math.max(0, Math.floor(modelResult.preview_rows.length * 0.75) - 1)) };
@@ -1602,7 +3874,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     description: "Load the reproducible project-local Skill guidance for a professional visualization backend; loading guidance itself does not require a verified claim. Ambient Pi skills remain disabled; these bundled skills are versioned with the newsroom runtime. Omit claim_id for a draft, or bind a system-verified claim for publishable output.",
     promptSnippet: "Load the backend-specific visual production method before generating an execution request",
     parameters: Type.Object({
-      skill: StringEnum(["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const),
+      skill: StringEnum((["python-gis", "r-editorial", "qgis-cartography", "pygmt-scientific", "datashader-density", "sigma-network", "web-geospatial", "editorial-chart", "graph-extraction", "plotly-editorial", "d3-editorial", "network-analysis", "browser-publication", "lieflat-charts", "economist-analytical", "scmp-integrated-explainer", "pudding-visual-essay"] as const).filter((skill) => !(lieflatHidden() && skill === "lieflat-charts")) as any),
     }),
     async execute(_id, params) {
       const skill = visualSkill(params.skill);
@@ -1699,7 +3971,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
       const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
-      return textResult(`Rendered Lieflat ${params.mode} publication.\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
+      return textResult(`Rendered Lieflat ${params.mode} page (unqualified fallback: it carries no measured lint, critic or browser QA and does not complete a story or long-form request).\nprimary: ${primaryPath}${reportLine}${fileLine}\nmanifest: ${result.manifest_path}\nmodules: ${result.module_count}\nsource-bound modules: ${result.source_bound_module_count}\nHTML bytes: ${result.html_bytes}\nQA: ${result.publication_qa}`, { ...result, output_mode: outputMode, primary_path: primaryPath, file_path: result.file_path ?? result.html_path, html_path: result.html_path, report_path: result.report_path ?? null });
     },
   });
 
@@ -1777,33 +4049,36 @@ export default function newsroomExtension(pi: ExtensionAPI) {
   registerScopedTool(pi, {
     name: "newsroom_viz_plan",
     label: "Plan newsroom visualization",
-    description: "Create an observable editorial visualization plan. A system-verified claim_id produces a publishable plan; omitting claim_id produces an explicitly non-publishable draft. The model cannot select verification status. Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics.",
+    description: "Create an observable editorial visualization plan. A system-verified claim_id produces a publishable plan; omitting claim_id produces an explicitly non-publishable draft. The model cannot select verification status. " + (heldChartTypesEnabled() ? "Supports statistical charts plus flows, networks, temporal structures, choropleth maps and explanatory process graphics." : "Supports statistical charts plus flows, networks, hierarchies, temporal structures, spatial flows and explanatory process graphics."),
     promptSnippet: "Plan a newsroom-grade visualization before rendering",
     promptGuidelines: [
       "Bind claim_id only after record_claim reports system verification. Omit claim_id when testing a visual grammar or exploring supplied data; draft artifacts must never be presented as publishable facts.",
       "If the requested deliverable is an infographic or visual story, this tool may create only one module after newsroom_story_graph and concept selection. Set delivery_role=infographic_module, bind story_graph_ref plus story_node_ids, and do not treat the chart as the final deliverable.",
       "For ranking, comparison, change, distribution, correlation, and part-to-whole tasks, declare measure_semantics plus claim_spec. The semantic gate blocks incomparable measures before rendering and derives the editorial grammar from the claim.",
       "For mixed reference periods, prefer explicit separation such as small multiples rather than silently ranking incomparable observations.",
-      "For flow, relationship, hierarchy, spatial, sequence, or process questions, select a topology-aware form such as Sankey, parallel sets, chord, geographic flow map, adjacency matrix, hierarchy tree, timeline, or process schematic. Do not force complex relationships into bars or scatterplots.",
+      "For flow, relationship, hierarchy, spatial, sequence, or process questions, select a topology-aware form " + (heldChartTypesEnabled() ? "such as Sankey, parallel sets, chord, adjacency matrix, timeline, or process schematic. Do not force complex relationships into bars or scatterplots." : "such as Sankey, parallel sets, chord, geographic flow map, adjacency matrix, hierarchy tree, timeline, or process schematic. Do not force complex relationships into bars or scatterplots."),
       "For reciprocal origin-destination data in a Sankey, create role-qualified bipartite node labels (for example origin:Asia → destination:Asia). This preserves both directions without self-loops or cycles; do not drop the requested Sankey merely because geographic names repeat across source and destination roles.",
       "Use complexity_budget='low' for fast analytical reading, 'medium' for explanatory newsroom graphics, and 'exploratory' only when the editorial goal justifies higher visual-search cost.",
       "To mark a threshold or target on the value axis, add an annotations entry with type='reference_line' and a numeric value; it renders as a thin rule across the plot area on horizontal_bar, dot, dumbbell, and small_multiples charts only, and is lint-blocked on other chart types or if value falls outside the rendered value axis domain.",
       "Use chart_type='waffle' to show a share out of 100 for one to four items (for example, the percentage of a population, budget, or category covered by something). It requires unit='%', category_field, value_field, every row's value finite and within 0-100, and at most 4 rows - filter further upstream in SQL. It does not support reference_line annotations.",
       "To bracket a contiguous run of rows on horizontal_bar/dot (for example '8 countries at least 70%'), add an annotations entry with type='range_bracket', match_field equal to category_field, and match_value/end_match_value naming the first and last row in rendered order; at most 2 per chart, and their row ranges must not overlap.",
-      "Use chart_type='choropleth' to show one value per country on a map (for example a World Bank indicator across countries or territories). It requires category_field, value_field, and category_names='worldbank' or 'iso3'; category_field joins through the same vendored economy table category_names uses, so every value must be an exact World Bank name or ISO3 code, never a paraphrase. It supports at most 60 rows (filter upstream in SQL), rejects regional/income-group aggregates (for example Sub-Saharan Africa or World) and any economy the basemap has no feature for, and rejects duplicate economies. It draws its own locator inset and does not support reference_line or range_bracket annotations. Set inset={iso3:[...]} to zoom a manual list of small economies into their own panel, or inset={auto:true} to let the renderer pick which ones are too small to label on the main map.",
-      "Never translate a place name yourself. If a chart's category_field, facet_field, or series_field holds World Bank English country/region names or ISO3 codes and the chart's language is 'zh', set category_names='worldbank' or 'iso3' so the renderer shows the vendored, provenance-recorded localized name instead; lint blocks any value that table cannot resolve.",
+      "Use chart_type='choropleth' to show one value per country on a map (for example a World Bank indicator across countries or territories). It requires category_field, value_field, and category_names='worldbank', 'iso3' or 'iso2'; category_field joins through the same vendored economy table category_names uses, so every value must be an exact World Bank name, ISO3 code or ISO2 code, never a paraphrase. It supports at most 60 rows (filter upstream in SQL), rejects regional/income-group aggregates (for example Sub-Saharan Africa or World) and any economy the basemap has no feature for, and rejects duplicate economies. It draws its own locator inset and does not support reference_line or range_bracket annotations. Set inset={iso3:[...]} to zoom a manual list of small economies into their own panel, or inset={auto:true} to let the renderer pick which ones are too small to label on the main map.",
+      "Use chart_type='strip_plot' for the spread and extremes of many units inside groups: category_field is the group (one chart row each, at most 40), value_field is the unit's value with one SQL row per unit (at most 600), and label_field names the units so label_extremes can label the highest and lowest across the chart.",
+      "Use chart_type='stacked_bar_100' for the shares of a whole across many entities with one highlighted segment: it requires unit='%', category_field (the entity, at most 25), series_field (the segments, at most 5) and value_field, every entity's shares summing to 100 (+/- 1); set highlight_segment, and sort='desc' to order the bars by it.",
+      "Use chart_type='mirrored_bar' for a two-sided distribution such as a male/female age pyramid: category_field is the band (at most 25), series_field has exactly 2 values (the two sides), value_field is at least 0, and an optional period_field with at most 2 values adds a comparison period; sort and annotations are not supported.",
+      "Never translate a place name yourself. If a chart's category_field, facet_field, or series_field holds World Bank English country/region names or ISO3 codes and the chart's language is 'zh', set category_names='worldbank' or 'iso3' so the renderer shows the vendored, provenance-recorded localized name instead; lint blocks any value that table cannot resolve. On zh pages a country name field is the ISO3 code column with category_names='iso3' (ISO2 codes: 'iso2') and a currency name field is the ISO 4217 code column with category_names='iso4217'; drop aggregate rows (OWID_*, regions, income groups) in SQL, and never type a translated name.",
       "After lint passes, route nontrivial map/network/density/interactive work through newsroom_visual_backend_plan before choosing a renderer.",
     ],
-    parameters: Type.Object({
-      reader_task: StringEnum(["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const),
-      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const)),
-      story_graph_ref: Type.Optional(Type.String()),
-      story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+    parameters: withInlineClaimSchema(Type.Object({
+      reader_task: firstTryAllEnabled() ? Type.Optional(Type.String({ description: `Required: exactly one of ${VIZ_PLAN_READER_TASKS.join(", ")} (checked by the runtime; claim_spec.reader_task repeats it)` })) : StringEnum(VIZ_PLAN_READER_TASKS, contractHint("readerTask")),
+      delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole"))),
+      story_graph_ref: Type.Optional(Type.String(ruleHint(RULE_HINT_STORY_REF))),
+      story_node_ids: Type.Optional(Type.Array(Type.String(), ruleHint(RULE_HINT_STORY_NODES, { minItems: 1, maxItems: 12 }))),
       takeaway: Type.String({ description: "One-sentence intended reader takeaway" }),
-      chart_type: StringEnum(["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth"] as const),
+      chart_type: StringEnum((["horizontal_bar", "dot", "dumbbell", "slope", "line", "multi_line", "small_multiples", "scatter", "diverging_bar", "heatmap", "sankey", "alluvial", "node_link", "adjacency_matrix", "hierarchy_tree", "timeline", "streamgraph", "parallel_sets", "chord", "geo_flow_map", "cartographic_flow_map", "trajectory_profile", "process_schematic", "waffle", "choropleth", "strip_plot", "stacked_bar_100", "mirrored_bar"] as const).filter((chartType) => !isHeldChartType(chartType)) as any),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Chart language; defaults to 'en'. Every string the renderer adds on its own (note/source prefixes, axis and legend words) follows this field; the model's own title/subtitle copy must still be written in this language.", default: "en" })),
-      visual_family: Type.Optional(StringEnum(["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const)),
-      data_topology: Type.Optional(StringEnum(["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const)),
+      visual_family: Type.Optional(StringEnum((["statistical", "flow", "relationship", "hierarchy", "temporal", "spatial", "explanatory"] as const).filter((value) => !heldPlanValues().visual_family.includes(value)) as any)),
+      data_topology: Type.Optional(StringEnum((["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"] as const).filter((value) => !heldPlanValues().data_topology.includes(value)) as any)),
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
       flow_conservation: Type.Optional(StringEnum(["off", "warn", "strict"] as const)),
       flow_tolerance: Type.Optional(Type.Number({ minimum: 0, maximum: 0.5 })),
@@ -1812,11 +4087,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       alt: Type.String({ description: "Standalone accessible description of the visual and its main takeaway" }),
       source_note: Type.String(),
       note: Type.Optional(Type.String()),
-      claim_id: Type.Optional(Type.String({ description: "Verified claim_id previously returned by record_claim; required in verified mode and omitted for draft mode" })),
-      sql: Type.String({ description: "Read-only SQL whose rows directly encode the visual" }),
+      claim_id: Type.Optional(Type.String(ruleHint(RULE_HINT_PLAN_CLAIM_ID, { description: "Verified claim_id previously returned by record_claim; required in verified mode and omitted for draft mode" }))),
+      sql: Type.String(ruleHint(RULE_HINT_SQL, { description: "Read-only SQL whose rows directly encode the visual" })),
       unit: Type.String({ description: "Quantitative unit, such as %, TWh, MtCO2, index points, or USD" }),
       measure_semantics: Type.Optional(Type.Array(Type.Object({
-        id: Type.String(),
+        id: Type.String(...(firstTryAllEnabled() ? [{ description: "A short key you choose (for example m1); claim_spec target_measure, baseline_measure, context_measures and measure_ids must repeat these keys; a claim id or a label is not a key" }] : [])),
         field: Type.Optional(Type.String()),
         phenomenon: Type.String(),
         unit: Type.String(),
@@ -1837,18 +4112,19 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         scope: Type.Optional(Type.String()),
         evidence_ref: Type.Optional(Type.String()),
         value: Type.Optional(Type.Number()),
-      }), { minItems: 1, maxItems: 24 })),
+      }), scatterPairHint({ minItems: 1, maxItems: 24, description: "Per-field measure declarations. A count or calendar-year value_field is spelled as a plain integer." }))),
       claim_spec: Type.Optional(Type.Object({
-        claim_id: Type.Optional(Type.String({ description: "Optional in draft mode; required for a verified claim-bound plan" })),
-        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const),
-        reader_task: Type.String({ description: "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." }),
-        target_measure: Type.Optional(Type.String()),
+        claim_id: Type.Optional(Type.String(ruleHint(RULE_HINT_SPEC_CLAIM_ID, { description: "Optional in draft mode; required for a verified claim-bound plan" }))),
+        relation: StringEnum(["rank", "comparison", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "correlation", "uncertainty", "flow", "geography", "network"] as const, ruleHint(RULE_HINT_RELATION)),
+        reader_task: Type.String(claimSpecReaderTaskOptions({ description: firstTryAllEnabled() ? `Use the same value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence and not a relation.` : "Use the same controlled value as the top-level reader_task (for example ranking, comparison, change, trend, distribution, correlation, or relationship), not a prose sentence." })),
+        target_measure: Type.Optional(Type.String(ruleHint(RULE_HINT_TARGET_MEASURE))),
         baseline_measure: Type.Optional(Type.String()),
         context_measures: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })),
         measure_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })),
         derived_metric: Type.Optional(StringEnum(["percent_change", "absolute_change", "percentage_point_change", "ratio"] as const)),
       })),
-      category_field: Type.Optional(Type.String()),
+      category_field: Type.Optional(Type.String(ruleHint(RULE_HINT_CATEGORY_FIELD))),
+      cutoff_date: Type.Optional(Type.String({ description: "Optional data cutoff date this chart states. If the infographic page declares subject_set.cutoff_date, every chart on the page must state that same date: a different value or a missing one blocks the page lint." })),
       x_field: Type.Optional(Type.String()),
       y_field: Type.Optional(Type.String()),
       source_field: Type.Optional(Type.String()),
@@ -1881,6 +4157,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       extent_padding_ratio: Type.Optional(Type.Number({ minimum: 0, maximum: 0.35 })),
       reference_path: Type.Optional(StringEnum(["none", "great_circle"] as const)),
       locator_inset: Type.Optional(Type.Boolean()),
+      // world mode is model-visible only with NEWSROOM_MAP_WORLD=1 (off by default)
+      ...(mapWorldEnabled() ? { map_extent: Type.Optional(StringEnum(["world"] as const, { description: "Choropleth-only. \"world\" draws every economy with data on a fixed Equal Earth world map (no Antarctica) and lifts the 60-row cap; the SQL must return all economies (no LIMIT). Text labels only the lowest and highest value plus highlight_values (at most 8)." })) } : {}),
       inset: Type.Optional(Type.Object({
         iso3: Type.Optional(Type.Array(Type.String())),
         auto: Type.Optional(Type.Boolean()),
@@ -1894,7 +4172,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       aggregation_policy: Type.Optional(StringEnum(["none", "top_n"] as const)),
       top_n: Type.Optional(Type.Integer({ minimum: 1, maximum: 80 })),
       edge_label_field: Type.Optional(Type.String()),
-      value_field: Type.Optional(Type.String()),
+      value_field: Type.Optional(Type.String(ruleHint(RULE_HINT_VALUE_FIELD))),
       start_field: Type.Optional(Type.String()),
       end_field: Type.Optional(Type.String()),
       start_label: Type.Optional(Type.String()),
@@ -1906,9 +4184,26 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       reference_period_field: Type.Optional(Type.String()),
       mixed_period_strategy: Type.Optional(StringEnum(["reject", "facet", "explicit"] as const)),
       sort: Type.Optional(StringEnum(["asc", "desc", "none"] as const)),
-      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
+      highlight_values: Type.Optional(Type.Array(Type.String(), { maxItems: 12, ...(sankeyOtherNoteEnabled() ? { description: SANKEY_HIGHLIGHT_DESCRIPTION } : {}) })),
       direct_labels: Type.Optional(Type.Boolean()),
-      category_names: Type.Optional(StringEnum(["worldbank", "iso3"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth, facet_field for small_multiples, series_field for multi_line): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes. On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
+      // strip_plot, stacked_bar_100 and mirrored_bar fields. Names, enums and ranges equal schemas/newsroom-viz-spec.schema.json
+      // (scripts/test_viz_plan_schema.mjs compares them); viz.mjs validateVizSpec and lintVizSpec stay the authority on every data rule.
+      group_order: Type.Optional(StringEnum(["median_desc", "median_asc", "data"] as const)),
+      point_layout: Type.Optional(StringEnum(["jitter", "beeswarm"] as const, { description: "strip_plot: packed without overlap (beeswarm, default) or scattered (jitter)" })),
+      show_median: Type.Optional(Type.Boolean()),
+      label_extremes: Type.Optional(Type.Integer({ minimum: 0, maximum: 6, description: "strip_plot: units named chart-wide, half highest and half lowest (default 4; needs label_field)" })),
+      segment_order: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 5, uniqueItems: true, description: "stacked_bar_100: series_field values left to right" })),
+      sort_segment: Type.Optional(Type.String({ minLength: 1, description: "stacked_bar_100: segment whose value orders the bars (direction from sort)" })),
+      highlight_segment: Type.Optional(Type.String({ minLength: 1, description: "stacked_bar_100: segment drawn in the accent colour, the rest grey" })),
+      segment_values: Type.Optional(StringEnum(["in_bar", "highlight_column"] as const, { description: "stacked_bar_100: highlight value only, in a right column (highlight_column, default), or every value in the bars (in_bar)" })),
+      first_row: Type.Optional(StringEnum(["bottom", "top"] as const, { description: "mirrored_bar: where the first category is drawn (default bottom)" })),
+      compare_layout: Type.Optional(StringEnum(["overlay", "side_by_side"] as const, { description: "mirrored_bar: second period as an outline (overlay, default) or a second pyramid (side_by_side)" })),
+      left_series: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Number()], { description: "mirrored_bar: series_field value on the left (default: first in row order)" })),
+      current_period: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Number()], { description: "mirrored_bar: period drawn filled (default: later)" })),
+      period_field: Type.Optional(Type.String(scatterPeriodHint({ minLength: 1, description: "mirrored_bar: optional field holding at most 2 periods to compare" }))),
+      ...(scatterPairedEnabled() ? { entity_field: Type.Optional(Type.String({ minLength: 1, description: SCATTER_PAIR_ENTITY_HINT })) } : {}),
+      measure_kind: Type.Optional(StringEnum(["year", "count", "index", "level", "flow", "stock", "rate", "share", "capacity", "change", "cumulative", "duration", "distance", "price"] as const, { description: "What the value_field measures, so numbers are spelled correctly: 'year' (a calendar year such as 2017) and 'count' (a whole-number tally) print as plain integers - never '2.0k' or '3.0' - and choropleth legends use whole-number steps. A year-like unit on measure_kind 'index' is also read as a calendar year. Omit for ordinary quantities." })),
+      category_names: Type.Optional(StringEnum(["worldbank", "iso3", "iso2", "iso4217"] as const, { description: "Localizes the chart's name field (category_field for horizontal_bar/dot/dumbbell/slope/diverging_bar/waffle/choropleth/strip_plot/stacked_bar_100, facet_field for small_multiples, series_field for multi_line, label_field for scatter, source_field and target_field for sankey/alluvial): 'worldbank' when values are exact World Bank English names, 'iso3' when values are exact ISO3 economy/aggregate codes, 'iso2' when values are exact ISO 3166-1 alpha-2 economy codes, 'iso4217' when values are exact ISO 4217 currency codes (not for choropleth). On a zh chart this shows the vendored table's localized name instead of the raw value; never translate a name yourself. Lint blocks any value the table cannot resolve. Required (not optional) for choropleth - it is also how choropleth joins each row to a map feature." })),
       annotations: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["point", "node", "reference_line", "range_bracket"] as const, { description: "point/node label a specific mark. reference_line draws a thin rule across the plot area at a fixed value on the value axis; supported only on horizontal_bar, dot, dumbbell, and small_multiples. range_bracket draws a bracket spanning a contiguous run of rows (match_value to end_match_value, in rendered order); supported only on horizontal_bar and dot, at most 2 per chart, and ranges must not overlap." }),
         text: Type.String(),
@@ -1925,16 +4220,42 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       y_scale: Type.Optional(StringEnum(["linear", "log"] as const)),
       x_label: Type.Optional(Type.String()),
       y_label: Type.Optional(Type.String()),
-    }),
-    async execute(_id, params) {
-      validateReadOnlySql(params.sql);
+      rank_cutoff: Type.Optional(Type.Integer({ minimum: 2, maximum: 30, description: "slope only: set when start_field and end_field hold ranks (1 = best, positive integers; an empty end means outside the ranking). Draws a bump chart with rank 1 on top, one row per rank up to N, and anyone outside the top N on an N+1 row with their true rank." })),
+      index_base: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "small_multiples line only: set when value_field is an index rebased to this value (for example 100): one x value (the base period) must equal it in every panel, so rebase in SQL. Draws a base line labelled with that period, y tick labels and an end value in each panel." })),
+    })),
+    async execute(_id, rawParams, signal) {
+      assertChartTypeNotHeld(rawParams.chart_type);
+      assertPlanValuesNotHeld(rawParams);
+      // Inline claim (NEWSROOM_SPEED_INLINE_CLAIM=1): the plan SQL runs and the
+      // claim is filled and bound to the plan before the checks below; it is
+      // recorded only after all of them pass. Off: params is rawParams.
+      const inline = inlineClaimEnabled() ? await prepareInlineClaim(rawParams, signal) : null;
+      if (inlineClaimEnabled() && !inline && !String(rawParams.takeaway ?? "").trim()) throw new Error("INLINE_CLAIM_TAKEAWAY_REQUIRED: takeaway is required unless the call carries claim, from which the runtime writes it");
+      const params = inline ? inline.params : rawParams;
+      // NEWSROOM_SPEED_VIZ_REPORT_ALL=1: `attempt` records a failed check and goes on; the checks that read a failed check's result are
+      // skipped (declared, semanticGate). Off: `attempt` just runs the check, so the first failure throws exactly as before.
+      const collected: any[] | null = vizReportAllEnabled() || firstTryAllEnabled() ? [] : null;
+      // A cancel or abort is not a validation message: it rethrows at once.
+      const keep = (error: any) => { if (signal?.aborted || error?.name === "AbortError") throw error; collected!.push(error); };
+      const attempt = (check: () => void) => { if (!collected) return check(); try { check(); } catch (error) { keep(error); } };
+      const attemptAsync = async (check: () => Promise<void>) => { if (!collected) return check(); try { await check(); } catch (error) { keep(error); } };
+      const throwCollected = () => {
+        if (!collected?.length) return;
+        if (collected.length === 1) throw collected[0];
+        throw combinedError(collected[0], `${collected[0]?.message ?? collected[0]}\nAlso refused in this call (${collected.length - 1} more independent problem${collected.length === 2 ? "" : "s"}; no claim or plan was recorded, though inline preparation may have queried rows and cached them):\n${collected.slice(1).map((error, index) => `(${index + 2}) ${error?.message ?? error}`).join("\n")}`);
+      };
+      // NEWSROOM_SPEED_FIRST_TRY_ALL: the claim template's refusal joins the plan's own; reader_task is checked here with its exact fix.
+      if ((inline as any)?.refusal) collected!.push((inline as any).refusal);
+      attempt(() => {
+        if (!firstTryAllEnabled()) return;
+        const value = String(params.reader_task ?? "");
+        if (!(VIZ_PLAN_READER_TASKS as readonly string[]).includes(value)) throw new Error(`READER_TASK_INVALID: reader_task ${value ? `'${value}' is not a reader task` : "is required"}; set it to exactly one of ${VIZ_PLAN_READER_TASKS.join(", ")}, and set claim_spec.reader_task to the same value (claim_spec.relation is a different field)`);
+      });
+      attempt(() => validateReadOnlySql(params.sql));
       const normalizedParams = params.chart_type === "cartographic_flow_map" ? {
         geometry_crs: "EPSG:4326",
         projection: "natural_earth_1",
-        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
-        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
-        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
-        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+        ...basemapProvenanceDefaults(params.basemap_id),
         aggregation_policy: "none",
         ...params,
         ...(params.geometry_semantics === "abstract_od" && !String(params.note ?? "").trim()
@@ -1946,36 +4267,115 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         // CHOROPLETH_BASEMAP_ID), the same naturalearth_admin0_50m
         // cartographic_flow_map already defaults to, so it reuses these same
         // four provenance constants rather than defining its own.
-        basemap_id: CARTOGRAPHIC_DEFAULT_BASEMAP_ID,
-        basemap_source_url: CARTOGRAPHIC_DEFAULT_SOURCE_URL,
-        basemap_license: CARTOGRAPHIC_DEFAULT_LICENSE,
-        basemap_content_hash: CARTOGRAPHIC_DEFAULT_CONTENT_HASH,
+        ...basemapProvenanceDefaults(params.basemap_id),
         ...params,
       } : params;
       const deliveryRole = params.delivery_role ?? "standalone_visual";
       const verificationMode = params.claim_id ? "verified" : "draft";
-      if (verificationMode === "verified" && !String(params.claim_id ?? "").trim()) {
-        throw new Error("VERIFIED_CLAIM_REQUIRED: publishable plans require claim_id; omit claim_id for exploratory rendering");
-      }
+      let declared = true; // false once a declaration check failed: the semantic gate would then read declarations that are not there
+      attempt(() => {
+        if (verificationMode === "verified" && !String(params.claim_id ?? "").trim()) {
+          throw new Error("VERIFIED_CLAIM_REQUIRED: publishable plans require claim_id; omit claim_id for exploratory rendering");
+        }
+      });
       if (deliveryRole === "infographic_module") {
-        if (!params.story_graph_ref || !Array.isArray(params.story_node_ids) || !params.story_node_ids.length) throw new Error("INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required");
-        const storyGraph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
-        if (!storyGraph.passed) throw new Error("INFOGRAPHIC_MODULE_STORY_GRAPH_BLOCKED: story graph has not passed narrative closure");
-        const validNodes = new Set((storyGraph.nodes ?? []).map((node: any) => String(node.id)));
-        const unknown = params.story_node_ids.filter((id: string) => !validNodes.has(String(id)));
-        if (unknown.length) throw new Error(`INFOGRAPHIC_MODULE_UNKNOWN_STORY_NODES: ${unknown.join(", ")}`);
+        await attemptAsync(async () => {
+          if (!params.story_graph_ref || !Array.isArray(params.story_node_ids) || !params.story_node_ids.length) throw new Error("INFOGRAPHIC_MODULE_BINDING_REQUIRED: story_graph_ref and story_node_ids are required");
+          const storyGraph = await readArtifactJson(String(params.story_graph_ref), "editorial/story-graphs/");
+          if (!storyGraph.passed) throw new Error("INFOGRAPHIC_MODULE_STORY_GRAPH_BLOCKED: story graph has not passed narrative closure");
+          const validNodes = new Set((storyGraph.nodes ?? []).map((node: any) => String(node.id)));
+          const unknown = params.story_node_ids.filter((id: string) => !validNodes.has(String(id)));
+          if (unknown.length) throw new Error(`INFOGRAPHIC_MODULE_UNKNOWN_STORY_NODES: ${unknown.join(", ")}`);
+        });
       }
-      if (SEMANTIC_REQUIRED_READER_TASKS.has(params.reader_task) && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
-        throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec`);
+      attempt(() => {
+        if (SEMANTIC_REQUIRED_READER_TASKS.has(params.reader_task) && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
+          declared = false;
+          const missing = firstTryAllEnabled() ? [!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length ? "measure_semantics (one entry per measure)" : "", !normalizedParams.claim_spec ? "claim_spec" : ""].filter(Boolean) : [];
+          throw new Error(`SEMANTIC_DECLARATION_REQUIRED: reader_task '${params.reader_task}' requires measure_semantics and claim_spec${missing.length ? `; this call is missing ${missing.join(" and ")}` : ""}`);
+        }
+      });
+      // K110 (off unless NEWSROOM_SCATTER_PAIRED_MEASURES=1): only a call whose own chart_type is scatter must declare; a scatter that
+      // meets every pairing condition is compared as two axes and its refusals below name the field or unit to change.
+      const scatterPaired = scatterPairedEnabled() && params.chart_type === SCATTER_PAIR_CHART;
+      attempt(() => {
+        if (scatterPaired && (!Array.isArray(normalizedParams.measure_semantics) || !normalizedParams.measure_semantics.length || !normalizedParams.claim_spec)) {
+          declared = false;
+          throw new Error(`SEMANTIC_DECLARATION_REQUIRED: chart_type '${SCATTER_PAIR_CHART}' requires measure_semantics and claim_spec: one measure per axis (field = x_field and y_field)`);
+        }
+      });
+      // The semantic gate throws on the first problem it finds, so its own problems are one entry; the checks that read its result need it.
+      let semanticGate: any = null;
+      if (declared) {
+        attempt(() => {
+          try {
+          semanticGate = scatterPaired
+            ? evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null }, { scatterPair: { chart_type: params.chart_type, x_field: params.x_field, y_field: params.y_field } })
+            : evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
+          } catch (error: any) {
+            // NEWSROOM_SPEED_FIRST_TRY_ALL: the same refusal, plus the ids the call itself declared so the fix is exact.
+            if (firstTryAllEnabled() && /^claim_spec references unknown measure: /.test(String(error?.message ?? ""))) {
+              const ids = (Array.isArray(normalizedParams.measure_semantics) ? normalizedParams.measure_semantics : []).map((measure: any) => String(measure?.id ?? ""));
+              throw combinedError(error, `${error.message}; measure_semantics declares the ids: ${ids.join(", ")}. target_measure, baseline_measure, context_measures and measure_ids in claim_spec must repeat those ids exactly (an id is a short key you chose, not a claim id or a label)`);
+            }
+            throw error;
+          }
+        });
       }
-      const semanticGate = evaluateVisualSemantics({ measure_semantics: normalizedParams.measure_semantics ?? [], claim_spec: normalizedParams.claim_spec ?? null });
-      if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
-      if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
-      assertEditorialGrammar(semanticGate, params.chart_type);
-      const errors = validateVizSpec(normalizedParams);
-      if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
-      const claimRecords = await verifiedClaimRecords();
-      const verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
+      // NEWSROOM_SPEED_FIRST_TRY_ALL: the claim-id comparison reads only the call, so it still runs when the declaration check refused.
+      if (firstTryAllEnabled() && !semanticGate) {
+        attempt(() => {
+          const specId = (normalizedParams.claim_spec as any)?.claim_id;
+          if (verificationMode === "verified" && normalizedParams.claim_spec && String(specId ?? "") !== String(params.claim_id)) throw new Error(`claim_spec.claim_id '${specId ?? ""}' must match verified claim_id '${params.claim_id}'`);
+        });
+      }
+      let scatterAxisUnits: any = null;
+      if (semanticGate) {
+        attempt(() => {
+          if (scatterPaired && !semanticGate.scatter_pair) {
+            throw new Error(`SCATTER_PAIRING_REQUIRED: a ${SCATTER_PAIR_CHART} chart's declarations do not form a pair of axes: ${scatterPairFailures(semanticGate, params).map((failure, index) => `(${index + 1}) ${failure}`).join("; ")}. ${SCATTER_PAIR_HINT}`);
+          }
+        });
+        attempt(() => { scatterAxisUnits = scatterPaired && semanticGate.scatter_pair ? scatterPairAxisUnits(semanticGate, params) : null; });
+        attempt(() => {
+          if (semanticGate.enforcement === "strict" && verificationMode === "verified" && semanticGate.claim_spec?.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id ?? ""}' must match verified claim_id '${params.claim_id}'`);
+        });
+        attempt(() => {
+          if (semanticGate.enforcement === "strict" && verificationMode === "draft" && params.claim_id && semanticGate.claim_spec?.claim_id && semanticGate.claim_spec.claim_id !== params.claim_id) throw new Error(`claim_spec.claim_id '${semanticGate.claim_spec?.claim_id}' must match supplied claim_id '${params.claim_id}'`);
+        });
+        attempt(() => {
+          try { assertEditorialGrammarOffered(semanticGate, params.chart_type); } catch (error: any) {
+            // NEWSROOM_SPEED_FIRST_TRY_ALL: the same refusal with the two ways to fix it named; the check itself is unchanged.
+            if (!firstTryAllEnabled() || !/^EDITORIAL_GRAMMAR_BLOCKED: /.test(String(error?.message ?? ""))) throw error;
+            const fits = Object.keys(STRICT_GRAMMAR_FORMS).filter((name) => STRICT_GRAMMAR_FORMS[name].includes(params.chart_type));
+            const allowed = STRICT_GRAMMAR_FORMS[String(semanticGate.claim_spec?.relation ?? "")] ?? [];
+            throw combinedError(error, `${error.message}. To fix, either set chart_type to one of ${allowed.join(", ")}, or set claim_spec.relation to a relation that fits ${params.chart_type} (a relation value such as ${fits.join(", ") || "none"}, not a reader_task)`);
+          }
+        });
+        attempt(() => { if (scatterPaired && semanticGate.scatter_pair) assertScatterPairFields(params); });
+      }
+      attempt(() => {
+        const errors = validateVizSpec(normalizedParams);
+        if (errors.length) throw new Error(`Invalid visualization plan: ${errors.join("; ")}`);
+      });
+      // NEWSROOM_SPEED_FIRST_TRY_ALL: the existing record check for a claim_id passed in the call runs before the refusal is thrown, so its
+      // refusal joins the others; it only reads the claim records, writes nothing, and the same check runs again below when nothing was refused.
+      if (firstTryAllEnabled() && !inline && params.claim_id) {
+        await attemptAsync(async () => { requireVerifiedClaim(await verifiedClaimRecords(), params.claim_id); });
+      }
+      throwCollected();
+      let verifiedClaim: any = null;
+      let claimText = "";
+      if (inline) {
+        const recorded = await recordInlineClaim(inline.claim, signal);
+        verifiedClaim = requireVerifiedClaim(await verifiedClaimRecords(), inline.claim.claimId);
+        claimText = `Claim recorded: VERIFIED by system replay${recorded.reused ? " (this identical claim was already recorded and verified; no new claim line)" : ""}\nclaim_id: ${inline.claim.claimId}\nClaim: ${inline.claim.text}\nChart text: takeaway and alt were written from this claim.\n`;
+      } else {
+        const claimRecords = await verifiedClaimRecords();
+        verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
+      }
+      // NEWSROOM_LOCAL_SOURCE_NOTE=1: an accepted note beside a user's data file decides the source line; a model-written source_note loses.
+      const programSourceNote = await acceptedLocalSourceNote(verifiedClaim?.source_refs ?? [], params.language ?? "en");
       const specCore = {
         schema_version: ["cartographic_flow_map", "trajectory_profile"].includes(params.chart_type) ? "1.1.0" : "0.9.0",
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
@@ -1986,11 +4386,19 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         publishable: verificationMode === "verified",
         verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
         ...normalizedParams,
+        ...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : process.env.NEWSROOM_LOCAL_SOURCE_NOTE === "1" ? { source_note_program: undefined } : {}),
+        ...(scatterAxisUnits ?? {}),
+        // Value-label decimals come from the shared chart formatter. The tool schema has no decimals field, and a value that reaches
+        // here anyway (an unvalidated caller) is dropped, so a plan never carries one: 29.6 and 30.4 must not both print as 30.
+        decimals: undefined,
         semantic_gate: semanticGate,
         editorial_plan: semanticGate.editorial_plan,
         language: params.language ?? "en",
         mixed_period_strategy: params.mixed_period_strategy ?? "reject",
-        sort: params.sort ?? "none",
+        // stacked_bar_100 orders its bars by one segment's value, descending, unless the caller says otherwise (sort); every other type keeps the
+        // row order. The segment (viz.mjs stackedPlan) is sort_segment if set, else the first entry of segment_order, else highlight_segment,
+        // else the first segment in the SQL rows.
+        sort: params.sort ?? (params.chart_type === "stacked_bar_100" ? "desc" : "none"),
         highlight_values: params.highlight_values ?? [],
         direct_labels: params.direct_labels ?? true,
         annotations: params.annotations ?? [],
@@ -2001,7 +4409,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const rel = `visualizations/plans/${key}.json`;
       await writeArtifactIfAbsent(rel, spec);
       const statusText = verificationMode === "verified" ? "VERIFIED / publishable after all QA gates" : "DRAFT / exploratory only, not publishable";
-      return textResult(`Visualization plan recorded.\nPlan: ${rel}\nVerification: ${statusText}\nNext: call newsroom_viz_lint with this plan_ref before rendering.`, { planRef: rel, chartType: params.chart_type, verificationMode, publishable: verificationMode === "verified" });
+      return textResult(`${claimText}Visualization plan recorded.\nPlan: ${rel}\nVerification: ${statusText}\nNext: call newsroom_viz_lint with this plan_ref before rendering.`, { planRef: rel, chartType: params.chart_type, verificationMode, publishable: verificationMode === "verified", ...(inline ? { claim: { claimId: inline.claim.claimId, text: inline.claim.text } } : {}) });
     },
   });
 
@@ -2015,22 +4423,25 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
-      const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
-      const verified = await verifiedClaimIds();
-      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)));
-      const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified });
-      const inputSnapshot = await evidenceSnapshot();
+      assertChartTypeNotHeld(spec.chart_type);
+      assertPlanValuesNotHeld(spec);
+      const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
+      const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
+      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
       const inputSnapshotHash = inputSnapshot.hash;
-      const computationRef = computationRelativePath(spec.sql, inputSnapshotHash, lint.data_hash);
-      await writeArtifactIfAbsent(computationRef, {
-        schema_version: "0.7.0",
-        sql: spec.sql,
-        input_snapshot_hash: inputSnapshotHash,
-        input_fingerprints: inputSnapshot.fingerprints,
-        result_hash: lint.data_hash,
-        data_hash: lint.data_hash,
+      // With the atomic switch on, key and record use the same normalized SQL
+      // duckdb_query writes, so one computation is one file whichever tool ran first.
+      const lintSql = atomicArtifactWritesEnabled() ? computationSql(spec.sql) : spec.sql;
+      const computationRef = computationRelativePath(lintSql, inputSnapshotHash, lint.data_hash);
+      const recordInputs = lintSql === spec.sql ? lintInputs : await deriveInputsForSql(lintSql, signal);
+      await writeArtifactIfAbsent(computationRef, buildComputationRecord({
+        sql: lintSql,
+        inputSnapshot,
+        derivedInputs: recordInputs,
+        resultHash: lint.data_hash,
         rows,
-      });
+        dataHash: atomicArtifactWritesEnabled() ? undefined : lint.data_hash,
+      }));
       const lintKey = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, data_hash: lint.data_hash }));
       const lintRef = `visualizations/lints/${lintKey}.json`;
       await writeArtifactIfAbsent(lintRef, {
@@ -2042,6 +4453,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
         publishable: systemVerified,
       });
+      // Shadow check (off unless NEWSROOM_SHADOW_CHECKS=1): runs after every
+      // artifact above is written and only adds a side file plus details.shadow.
+      const vizShadow = shadowChecksEnabled()
+        ? await runShadow(() => shadowVizNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, chart: { rows, data_hash: lint.data_hash }, claimRecords: vizClaimRecords, deps: claimBindingDeps() }))
+        : null;
       const status = lint.passed ? "PASS" : "BLOCKED";
       const verificationText = systemVerified ? "VERIFIED / publishable after QA" : "DRAFT / exploratory only; not publishable";
       return textResult(`${status}: visualization lint\nPlan: ${params.plan_ref}\nLint: ${lintRef}\nVerification: ${verificationText}\nData hash: ${lint.data_hash}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_viz_render with plan_ref and lint_ref." : "Revise the visualization plan and lint again before rendering."}`, {
@@ -2053,6 +4469,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         warnings: lint.warnings,
         verificationMode: systemVerified ? "verified" : "draft",
         publishable: systemVerified,
+        ...(vizShadow ? { shadow: vizShadow } : {}),
       });
     },
   });
@@ -2071,6 +4488,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "visualizations/plans/");
+      assertChartTypeNotHeld(spec.chart_type);
+      assertPlanValuesNotHeld(spec);
       const lint = await readArtifactJson(params.lint_ref, "visualizations/lints/");
       if (lint.plan_ref !== params.plan_ref) throw new Error("Lint artifact does not belong to the supplied visualization plan");
       if (!lint.passed || (Array.isArray(lint.blockers) && lint.blockers.length > 0)) throw new Error("Visualization lint has blocking failures; revise and lint again before rendering");
@@ -2078,7 +4497,8 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       const systemVerified = Boolean(spec.claim_id && (await verifiedClaimIds()).includes(String(spec.claim_id)));
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
-      const bundle = renderVizBundle(spec, rows, { mobilePages });
+      // Desktop-only pages also get the 8-column variant for the chart types that have one.
+      const bundle = renderVizBundle(spec, rows, { mobilePages, compact: !mobilePages });
       // The same plan_ref+data_hash must not collide across a mobile-pages
       // toggle if the same artifact directory is reused between runs (the
       // manifest's variants/hashes shape differs); omitted rather than
@@ -2101,12 +4521,19 @@ export default function newsroomExtension(pi: ExtensionAPI) {
                 value_field: spec.value_field,
                 category_names: spec.category_names,
                 unit: spec.unit,
+                // resolved once by the renderer's own rule (measure_kind or a measure_semantics entry)
+                // so QA spells expected labels exactly as the renderer did
+                measure_kind: specValueKind(spec) ?? spec.measure_kind,
+                measure_semantics: spec.measure_semantics,
+                ...(spec.map_extent === "world" ? { map_extent: "world", highlight_values: spec.highlight_values } : {}),
               },
             }
-          : {};
-      const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}) }, renderQaOptions);
+          : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
+            ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
+            : {};
+      const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}), ...(bundle.compact !== undefined ? { compact: bundle.compact } : {}) }, renderQaOptions);
       if (!renderQa.passed) {
-        const rejected = await writeRejectedRender("visualizations", key, bundle.desktop, mobilePages ? bundle.mobile : undefined, renderQa);
+        const rejected = await writeRejectedRender("visualizations", key, bundle.desktop, mobilePages ? bundle.mobile : undefined, renderQa, bundle.compact);
         return textResult(renderQaFailureText(renderQa, rejected), {
           ...rejected,
           dataHash: currentHash,
@@ -2124,6 +4551,11 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         mobileSvgRef = `visualizations/${key}.mobile.svg`;
         await writeArtifactIfAbsent(mobileSvgRef, bundle.mobile);
       }
+      let compactSvgRef: string | undefined;
+      if (bundle.compact !== undefined) {
+        compactSvgRef = `visualizations/${key}.compact.svg`;
+        await writeArtifactIfAbsent(compactSvgRef, bundle.compact);
+      }
       const renderQaRef = `visualizations/qa/${key}.json`;
       await writeArtifactIfAbsent(renderQaRef, renderQa);
       const manifestRef = `visualizations/${key}.json`;
@@ -2139,18 +4571,26 @@ export default function newsroomExtension(pi: ExtensionAPI) {
         verification: systemVerified ? (await verifiedClaimRecords()).get(String(spec.claim_id))?.verification : deriveClaimVerification({}),
         chart_type: spec.chart_type,
         language: spec.language ?? "en",
+        ...(spec.category_field ? { category_field: spec.category_field } : {}),
+        ...(spec.cutoff_date ? { cutoff_date: spec.cutoff_date } : {}),
         reader_task: spec.reader_task,
         takeaway: spec.takeaway,
         data_hash: currentHash,
         row_count: rows.length,
         svg: desktopSvgRef,
-        variants: mobilePages ? { desktop: desktopSvgRef, mobile: mobileSvgRef } : { desktop: desktopSvgRef },
+        variants: mobilePages ? { desktop: desktopSvgRef, mobile: mobileSvgRef } : { desktop: desktopSvgRef, ...(compactSvgRef ? { compact: compactSvgRef } : {}) },
+        ...(compactSvgRef ? { hashes: { desktop_sha256: sha256Hex(bundle.desktop), compact_sha256: sha256Hex(bundle.compact as string) } } : {}),
         render_qa_ref: renderQaRef,
         render_qa: { passed: renderQa.passed, failure_count: renderQa.failure_count },
         sql: spec.sql,
         source_note: spec.source_note,
+        ...(spec.source_note_program === true ? { source_note_program: true } : {}),
         alt: spec.alt,
       });
+      // NEWSROOM_SANKEY_OTHER_NOTE=1: say which nodes the merged "other" node holds (names only).
+      const mergedNote = sankeyOtherNoteEnabled() && (spec.chart_type === "sankey" || spec.chart_type === "alluvial")
+        ? sankeyMergeSummary(spec, rows).map((m: { label: string; column: string; members: string[] }) => `\nMerged nodes: ${m.label} (${m.column}) holds ${m.members.join(", ")}`).join("")
+        : "";
       return textResult(
         mobilePages
           ? `Rendered responsive newsroom visualization.
@@ -2159,19 +4599,20 @@ Mobile SVG: ${mobileSvgRef}
 Manifest: ${manifestRef}
 Render QA: PASS (${renderQaRef})
 Verification: ${systemVerified ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
-Data hash: ${currentHash}
+Data hash: ${currentHash}${mergedNote}
 Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`
           : `Rendered newsroom visualization (desktop only; phone-facing mobile page is off).
 Desktop SVG: ${desktopSvgRef}
 Manifest: ${manifestRef}
 Render QA: PASS (${renderQaRef})
 Verification: ${systemVerified ? "VERIFIED / publishable after critic and downstream QA" : "DRAFT / exploratory only; not publishable"}
-Data hash: ${currentHash}
+Data hash: ${currentHash}${mergedNote}
 Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a rendered visual is not complete until the critic passes.`,
         {
           svgRef: desktopSvgRef,
           desktopSvgRef,
           ...(mobilePages ? { mobileSvgRef } : {}),
+          ...(compactSvgRef ? { compactSvgRef } : {}),
           manifestRef,
           renderQaRef,
           dataHash: currentHash,
@@ -2215,7 +4656,18 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
       const mobileRef = mobilePages ? (manifest?.variants?.mobile ?? null) : null;
       const desktopSvg = await readArtifactText(desktopRef, "visualizations/");
       const renderQaReport = await readArtifactJson(String(manifest.render_qa_ref), "visualizations/qa/");
+      // The 8-column variant is bound by hash exactly like the desktop one: the file must still be
+      // the bytes the manifest hashed and the render QA report checked, or the critic refuses.
+      const compactRef = manifest?.variants?.compact ? String(manifest.variants.compact) : null;
+      let compactSvg: string | null = null;
+      if (compactRef) {
+        compactSvg = await readArtifactText(compactRef, "visualizations/");
+        const compactSha = sha256Hex(compactSvg);
+        if (compactSha !== manifest.hashes?.compact_sha256 || compactSha !== renderQaReport.viewports?.compact?.svg_sha256) throw new Error("Compact visualization SVG does not match its manifest hash and render QA report; re-render the visualization");
+      }
+      if (manifest.hashes?.desktop_sha256 && sha256Hex(desktopSvg) !== manifest.hashes.desktop_sha256) throw new Error("Desktop visualization SVG does not match its manifest hash; re-render the visualization");
       const desktopCritic = critiqueViz(spec, rows, lint, desktopSvg);
+      const compactCritic = compactSvg !== null ? critiqueViz(spec, rows, lint, compactSvg) : null;
       const mobileCritic = !mobilePages ? null : mobileRef
         ? critiqueViz(spec, rows, lint, await readArtifactText(mobileRef, "visualizations/"))
         : {
@@ -2227,21 +4679,23 @@ Next: call newsroom_viz_critic with this plan_ref, lint_ref, and manifest_ref; a
           };
       const renderQaIssues = renderQaReport.passed
         ? []
-        : [...renderQaIssueList(renderQaReport.viewports.desktop, "desktop"), ...(mobilePages ? renderQaIssueList(renderQaReport.viewports.mobile, "mobile") : [])];
+        : [...renderQaIssueList(renderQaReport.viewports.desktop, "desktop"), ...(mobilePages ? renderQaIssueList(renderQaReport.viewports.mobile, "mobile") : []), ...(compactCritic ? renderQaIssueList(renderQaReport.viewports.compact, "compact") : [])];
       const criticResult = {
         schema_version: "0.9.0",
-        passed: mobilePages ? (desktopCritic.passed && mobileCritic.passed && renderQaReport.passed) : (desktopCritic.passed && renderQaReport.passed),
-        score: mobilePages ? Math.min(desktopCritic.score, mobileCritic.score) : desktopCritic.score,
-        viewports: mobilePages ? { desktop: desktopCritic, mobile: mobileCritic } : { desktop: desktopCritic },
+        passed: mobilePages ? (desktopCritic.passed && mobileCritic.passed && renderQaReport.passed) : (desktopCritic.passed && (compactCritic ? compactCritic.passed : true) && renderQaReport.passed),
+        score: mobilePages ? Math.min(desktopCritic.score, mobileCritic.score) : compactCritic ? Math.min(desktopCritic.score, compactCritic.score) : desktopCritic.score,
+        viewports: mobilePages ? { desktop: desktopCritic, mobile: mobileCritic } : { desktop: desktopCritic, ...(compactCritic ? { compact: compactCritic } : {}) },
         issues: [
           ...desktopCritic.issues.map((issue: any) => ({ ...issue, viewport: "desktop" })),
           ...(mobilePages ? mobileCritic.issues.map((issue: any) => ({ ...issue, viewport: "mobile" })) : []),
+          ...(compactCritic ? compactCritic.issues.map((issue: any) => ({ ...issue, viewport: "compact" })) : []),
           ...renderQaIssues,
         ],
         suggestions: [
           ...new Set([
             ...desktopCritic.suggestions,
             ...(mobilePages ? mobileCritic.suggestions : []),
+            ...(compactCritic ? compactCritic.suggestions : []),
             ...(renderQaReport.passed ? [] : ["Render QA failed: shorten labels, reduce categories, or choose another chart type, then render again."]),
           ]),
         ],
@@ -2292,6 +4746,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       });
     },
   });
+
+  // NEWSROOM_SPEED_CHAIN_VIZ=1: one call runs plan -> lint -> render -> critic.
+  // Not a registry tool, so with the switch off nothing is registered and the
+  // tool surface is unchanged. Every gate stays inside the four inner executes.
+  registerVizChain(pi);
 
 
   const explanatoryPartParameters = Type.Object({
@@ -2595,7 +5054,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     ],
     parameters: Type.Object({
       reader_problem: Type.String(),
-      candidate_questions: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
+      candidate_questions: Type.Array(Type.String(), ruleHint(RULE_HINT_QUESTIONS, { minItems: 1, maxItems: 12 })),
       surprises: Type.Array(Type.String(), { maxItems: 12 }),
       counterintuitive_findings: Type.Array(Type.String(), { maxItems: 12 }),
       human_scale_refs: Type.Array(Type.String(), { maxItems: 12 }),
@@ -2618,8 +5077,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     id: Type.String(),
     kind: StringEnum(["evidence", "claim", "mechanism", "context", "outcome", "uncertainty"] as const),
     summary: Type.String(),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "relationship"] as const),
-    claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
+    explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
+    claim_ids: Type.Optional(Type.Array(Type.String(), editorialHint(EDITORIAL_HINT_CLAIM_IDS, { maxItems: 20 }))),
     evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     module_hint: Type.Optional(Type.String()),
   });
@@ -2649,7 +5108,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       const verified = new Set(await verifiedClaimIds());
-      for (const node of params.nodes) for (const claimId of node.claim_ids ?? []) if (!verified.has(String(claimId))) throw new Error(`Story node '${node.id}' references unverified claim '${claimId}'`);
+      for (const node of params.nodes) for (const claimId of node.claim_ids ?? []) if (!verified.has(String(claimId))) throw new Error(`Story node '${node.id}' references unverified claim '${claimId}'${editorialHintsEnabled() ? await storyGraphRefusalHint(params.nodes, verified) : ""}`);
       const graph = assessStoryGraph(params);
       const rel = `editorial/story-graphs/${graph.content_hash}.json`;
       await writeArtifactIfAbsent(rel, graph);
@@ -2657,25 +5116,31 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     },
   });
 
-  const conceptParameters = Type.Object({
-    concept_id: Type.String(),
-    reader_question: Type.String(),
-    editorial_premise: Type.String(),
-    surprise: Type.Optional(Type.String()),
-    visual_metaphor: Type.String(),
-    hero_scene: Type.String(),
-    framing: StringEnum(["spatial", "temporal", "mechanism", "comparison", "human_scale", "object_scene", "progressive_reveal"] as const),
-    hero_evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
-    supporting_evidence_refs: Type.Array(Type.String(), { maxItems: 20 }),
-    asset_requirements: Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 }),
-    media_mix: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
-    information_hierarchy: Type.Optional(Type.String()),
-    mobile_treatment: Type.Optional(Type.String()),
-    risk_flags: Type.Array(Type.String(), { maxItems: 12 }),
-    reporting_gaps: Type.Array(Type.String(), { maxItems: 12 }),
-    why_memorable: Type.String(),
-    why_reject: Type.Optional(Type.String()),
-  });
+  // The concept shape as the full form (switch off) registers it; compact mode relaxes the shareable fields to optional
+  // and then checks every expanded concept against the strict one.
+  const buildConceptParameters = (compact: boolean) => {
+    const optionalWhenCompact = (schema: any) => (compact ? Type.Optional(schema) : schema);
+    return Type.Object({
+      concept_id: Type.String(),
+      reader_question: optionalWhenCompact(Type.String()),
+      editorial_premise: optionalWhenCompact(Type.String()),
+      surprise: Type.Optional(Type.String()),
+      visual_metaphor: Type.String(),
+      hero_scene: Type.String(),
+      framing: StringEnum(["spatial", "temporal", "mechanism", "comparison", "human_scale", "object_scene", "progressive_reveal"] as const),
+      hero_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+      supporting_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 20 })),
+      asset_requirements: optionalWhenCompact(Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 })),
+      media_mix: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
+      information_hierarchy: Type.Optional(Type.String()),
+      mobile_treatment: Type.Optional(Type.String()),
+      risk_flags: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
+      reporting_gaps: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
+      why_memorable: Type.String(),
+      why_reject: Type.Optional(Type.String()),
+    });
+  };
+  const conceptParameters = buildConceptParameters(compactSetupEnabled());
 
   registerScopedTool(pi, {
     name: "newsroom_visual_concepts",
@@ -2687,8 +5152,20 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Describe missing assets and blocking reporting gaps explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject.",
       "Use the finalists as prototypes, not as permission to alter verified claims or source provenance.",
     ],
-    parameters: Type.Object({ discovery_ref: Type.String(), concepts: Type.Array(conceptParameters, { minItems: 8, maxItems: 20 }) }),
-    async execute(_id, params) {
+    parameters: Type.Object({
+      discovery_ref: optionalWhenCompact(Type.String()),
+      ...(compactSetupEnabled() ? { shared: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Defaults merged under every concept (shallow; the concept wins; arrays are replaced). Never concept_id, framing, visual_metaphor, hero_scene or why_memorable." })) } : {}),
+      concepts: Type.Array(conceptParameters, { minItems: 8, maxItems: 20 }),
+    }),
+    async execute(_id, rawParams) {
+      let params = rawParams;
+      if (compactSetupEnabled()) {
+        params = await compactSetupRefs("newsroom_visual_concepts", rawParams);
+        const concepts = expandSharedConcepts(params.shared, params.concepts);
+        await checkExpandedConcepts(concepts, buildConceptParameters(false), (await import("typebox/compile")).Compile);
+        params = { discovery_ref: params.discovery_ref, concepts };
+        await appendArtifact("runtime/tool-chain-events.jsonl", { type: "setup_input_form", toolName: "newsroom_visual_concepts", input_form: rawParams.shared === undefined ? "full" : "shared_defaults", _newsroom_recorded_at: new Date().toISOString() });
+      }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
       const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: mobilePagesEnabled() });
@@ -2704,15 +5181,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     description: "Detect repeated reader answers before they consume page area. High-overlap award modules must be removed, demoted, or explicitly justified.",
     promptSnippet: "Make each visual module add a new explanatory dimension",
     parameters: Type.Object({
-      concept_ref: Type.String(),
+      concept_ref: optionalWhenCompact(Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF))),
       modules: Type.Array(Type.Object({
         id: Type.String(), reader_question_id: Type.String(), claim_set: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }), new_information: Type.String(),
-        explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context"] as const),
+        explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
         dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), justification: Type.Optional(Type.String()),
       }), { minItems: 2, maxItems: 30 }),
     }),
-    async execute(_id, params) {
-      await readArtifactJson(params.concept_ref, "editorial/concepts/");
+    async execute(_id, rawParams) {
+      const params = await compactSetupRefs("newsroom_semantic_novelty", rawParams);
+      await readConceptSetArtifact(params.concept_ref);
       const novelty = scoreSemanticNovelty(params);
       const rel = `editorial/novelty/${novelty.content_hash}.json`;
       await writeArtifactIfAbsent(rel, novelty);
@@ -2732,19 +5210,20 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Choose a production lane that preserves origin and license metadata; human/vector/GIS assets should use the existing provenance-aware illustration boundary when reader-facing.",
     ],
     parameters: Type.Object({
-      concept_ref: Type.String(), concept_id: Type.String(),
+      concept_ref: optionalWhenCompact(Type.String(editorialHint(EDITORIAL_HINT_CONCEPT_REF))), concept_id: Type.String(),
       requirements: Type.Array(Type.Object({
         id: Type.Optional(Type.String()),
         asset_class: StringEnum(["published_gis", "archival_photo", "verified_diagram", "portrait_or_object_photo", "expert_explanation", "geographic_coordinates", "historical_series", "human_scale_reference", "vector_illustration", "verified_3d"] as const),
         status: StringEnum(["blocking", "required", "optional"] as const),
         available: Type.Boolean(), purpose: Type.String(),
-        source_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
+        source_refs: Type.Optional(Type.Array(Type.String(), contractHint("assetAvailable", { maxItems: 20 }))),
         production_lane: Type.Optional(StringEnum(["software_schematic", "human_vector", "human_illustration", "gis_render", "photo_collage", "verified_3d", "generated_disclosed"] as const)),
         evidence_needed: Type.Optional(Type.String()), rejection_reason: Type.Optional(Type.String()),
       }), { minItems: 1, maxItems: 20 }),
     }),
-    async execute(_id, params) {
-      const concepts = await readArtifactJson(params.concept_ref, "editorial/concepts/");
+    async execute(_id, rawParams) {
+      const params = await compactSetupRefs("newsroom_asset_requirements", rawParams);
+      const concepts = await readConceptSetArtifact(params.concept_ref);
       if (!(concepts.finalists ?? []).includes(params.concept_id)) throw new Error(`concept_id '${params.concept_id}' is not a finalist in the supplied concept set`);
       const plan = planEditorialAssets(params);
       const rel = `editorial/assets/${plan.content_hash}.json`;
@@ -2760,7 +5239,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Compare the concept with abstract world-class visual patterns",
     parameters: Type.Object({ tags: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 6 })) }),
     async execute(_id, params) {
-      const result = retrieveReferencePatterns({ corpus: DEFAULT_REFERENCE_PATTERNS, tags: params.tags, limit: params.limit ?? 4 });
+      const result = retrieveReferencePatterns({ corpus: lieflatHidden() ? DEFAULT_REFERENCE_PATTERNS.filter((item: any) => item.id !== "lieflat-charts") : DEFAULT_REFERENCE_PATTERNS, tags: params.tags, limit: params.limit ?? 4 });
       const rel = `editorial/references/${result.content_hash}.json`;
       await writeArtifactIfAbsent(rel, result);
       return textResult(`Reference patterns retrieved.\nArtifact: ${rel}\nMatches: ${result.matches.map((item: any) => item.id).join(", ") || "none"}`, { referenceRef: rel, matches: result.matches });
@@ -2801,7 +5280,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     }),
     async execute(_id, params) {
       for (const [ref, prefix] of [[params.discovery_ref, "editorial/discovery/"], [params.concepts_ref, "editorial/concepts/"], [params.asset_plan_ref, "editorial/assets/"], [params.novelty_ref, "editorial/novelty/"]] as const) await readArtifactJson(ref, prefix);
-      await readManifestOrRejected("infographics", params.page_ref, "infographics/");
+      await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = summarizeAwardMode(params);
       const rel = `editorial/award-runs/${result.content_hash}.json`;
@@ -2812,19 +5291,21 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
 
   const infographicModuleParameters = Type.Object({
     id: Type.String(),
+    subject_caption: Type.Optional(Type.String({ description: "Visual modules only. Caption readers see when the chart covers subjects outside the page subject_set; the runtime restyles the chart, you only write this text. Missing caption blocks lint." })),
     type: StringEnum(["hero_stat", "visual", "illustration", "text", "section_header", "pull_quote"] as const),
     span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const)),
     label: Type.Optional(Type.String()),
     tone: Type.Optional(StringEnum(["accent", "dark", "light"] as const)),
     value: Type.Optional(Type.Union([Type.String(), Type.Number()])),
-    unit: Type.Optional(Type.String()),
+    unit: Type.Optional(Type.String(heroGateOn() ? contractHint("heroUnit") : undefined)),
     detail: Type.Optional(Type.String()),
+    ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." + firstTry(FIRST_TRY.heroRequired + FIRST_TRY.heroYears) })) } : {}),
     claim_id: Type.Optional(Type.String()),
-    claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
+    claim_ids: Type.Optional(Type.Array(Type.String(), contractHint("moduleClaimIds", { maxItems: 12 }))),
     manifest_ref: Type.Optional(Type.String()),
     asset_ref: Type.Optional(Type.String()),
     critic_ref: Type.Optional(Type.String()),
-    alt: Type.Optional(Type.String()),
+    alt: Type.Optional(Type.String(contractHint("moduleAlt"))),
     credit: Type.Optional(Type.String()),
     heading: Type.Optional(Type.String()),
     body: Type.Optional(Type.String()),
@@ -2844,8 +5325,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     reader_question_id: Type.Optional(Type.String()),
     claim_set: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
     new_information: Type.Optional(Type.String()),
-    explanatory_dimension: Type.Optional(StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome"] as const)),
-    visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const)),
+    explanatory_dimension: Type.Optional(StringEnum([...STORY_DIMENSIONS])),
+    visual_grammar: Type.Optional(StringEnum(["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"] as const, contractHint("visualGrammar"))),
     story_node_ids: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
     dependency_on: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })),
     graphic_object_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 40 })),
@@ -2853,13 +5334,13 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       id: Type.String(), target_object_id: Type.String(), text: Type.String(), claim_id: Type.String(),
     }), { maxItems: 8 })),
     visual_channels: Type.Optional(Type.Array(Type.Object({
-      channel: StringEnum(["position", "length", "area", "size", "angle", "color", "opacity", "shape", "connection"] as const),
+      channel: StringEnum((channelAxesEnabled() ? VISUAL_CHANNEL_NAMES_AXES : VISUAL_CHANNEL_NAMES) as any),
       field: Type.String(), role: StringEnum(["quantitative", "categorical", "identity", "emphasis", "uncertainty"] as const),
-    }), { maxItems: 12 })),
+    }), channelListOptions({ maxItems: 12 }))),
     quantitative_encoding: Type.Optional(Type.Object({
-      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const),
+      quantity_kind: StringEnum(["observed_flow", "estimated_flow", "stock", "stock_change", "count", "rate", "share", "index", "other"] as const, { description: QUANTITY_KIND_HINT }),
       mark_semantics: StringEnum(["position", "length", "area", "size", "angle", "connection", "flow_width", "color"] as const),
-      scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const),
+      scale_type: StringEnum(["linear", "log", "sqrt", "symlog", "ordinal"] as const, contractHint("scaleType")),
       baseline_policy: StringEnum(["zero", "symmetric_zero", "included", "not_applicable"] as const),
       domain_min: Type.Optional(Type.Number()), domain_max: Type.Optional(Type.Number()),
       area_proportional: Type.Optional(Type.Boolean()), uncertainty_disclosed: Type.Boolean(), disclosure: Type.Optional(Type.String()),
@@ -2867,8 +5348,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   });
 
   const editorialGrammarParameters = Type.Object({
-    project_id: Type.String(),
-    primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const),
+    project_id: describedString(FIRST_TRY.projectId),
+    primary: StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const, contractHint("primaryGrammar")),
     supporting: Type.Array(StringEnum(["CUTAWAY", "SCALE_TRANSLATOR", "MECHANISM_FLOW", "SPECIMEN_GRID", "THEN_NOW", "ROUTE_SPINE", "THEMATIC_MAP", "FLOW_LEDGER"] as const), { maxItems: 2 }),
     available_renderer_capabilities: Type.Array(StringEnum(["svg", "canvas2d", "webgl_map"] as const), { minItems: 1 }),
     evidence_features: Type.Array(StringEnum(["spatial_structure", "quantity", "human_scale_reference", "process_or_causal_relation", "comparable_entities", "comparable_timepoints", "origin_destination_relation", "verified_locations"] as const), { minItems: 1 }),
@@ -2888,42 +5369,44 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Use SceneGraph 0.2 cognitive goals. Every scene has one bounded hero, supporting claims, and explicit limits for sidecars, annotations, and claims.",
       "Define the editorial intent, target audience, one primary message, and a story arc before selecting modules. Form follows the reporting purpose.",
       "Assign every module a story_role and priority. Use a single explicit visual anchor, then alternate dense evidence with lighter context, turns, or section resets.",
+      PAGE_TOP_GUIDANCE,
       "Prefer 4-9 modules. A magazine page should have a reading sequence, not a dashboard grid. The composer will generate and rank balanced, anchor, and rhythm layout candidates.",
       "For award-target pages, include a hook, evidence, at least one priority-1 module, and a resolution or explanation. Originality must not reduce clarity or provenance.",
       "Every quantitative hero statistic or explanatory text module must cite verified claim IDs. Visual modules must reference their visualization manifest and critic artifacts.",
+      heroGateOn() ? HERO_LABEL_GATED_GUIDELINE : HERO_LABEL_GUIDELINE,
     ],
     parameters: Type.Object({
       kicker: Type.Optional(Type.String()),
       title: Type.String(),
       dek: Type.String(),
-      alt: Type.String(),
+      alt: Type.String(contractHint("planAlt")),
       byline: Type.Optional(Type.String()),
-      date_label: Type.Optional(Type.String()),
+      date_label: Type.Optional(systemDateLabelEnabled() ? Type.String({ description: "Written by the system as the run date; leave it out." }) : Type.String()),
       language: Type.Optional(StringEnum(["en", "zh"] as const, { description: "Page language; defaults to 'en'. Every visual module's chart language must match this field, and infographic.mjs localizes its own functional labels (for example SOURCES & METHODS) to it; brand strings stay in English.", default: "en" })),
       layout: Type.Optional(StringEnum(["feature", "poster", "briefing"] as const)),
       complexity_budget: Type.Optional(StringEnum(["low", "medium", "exploratory"] as const)),
       intent: Type.String(),
       primary_message: Type.String(),
-      reader_question: Type.String(),
-      visual_thesis: Type.String(),
-      story_graph_ref: Type.String(),
+      reader_question: optionalWhenPreflight(describedString(FIRST_TRY.copyFromGraph)),
+      visual_thesis: optionalWhenPreflight(describedString(FIRST_TRY.copyFromGraph)),
+      story_graph_ref: optionalWhenFillCopied(Type.String()),
       story_arc: StringEnum(["explain", "compare", "chronology", "system", "question_answer", "profile"] as const),
       audience: StringEnum(["general", "informed", "specialist"] as const),
       quality_target: Type.Optional(StringEnum(["publishable", "award"] as const)),
       competition_profile: Type.Optional(StringEnum(["editorial", "snd47_infographics", "oja2026_visual", "sigma2026", "iib_awards"] as const)),
       mobile_module_order: Type.Optional(Type.Array(Type.String(), { minItems: 3, maxItems: 12 })),
-      editorial_discovery_ref: Type.String(),
-      visual_concept_ref: Type.String(),
+      editorial_discovery_ref: optionalWhenPreflight(Type.String()),
+      visual_concept_ref: optionalWhenPreflight(Type.String()),
       selected_concept_id: Type.String(),
-      novelty_ref: Type.String(),
-      asset_plan_ref: Type.String(),
+      novelty_ref: optionalWhenPreflight(Type.String()),
+      asset_plan_ref: optionalWhenPreflight(Type.String()),
       editorial_grammar: editorialGrammarParameters,
       scene_graph: Type.Object({
         schema_version: Type.Literal("0.2.0"),
         scenes: Type.Array(Type.Object({
           id: Type.String(), pattern: StringEnum(["hero_sidecar_stack", "hero_with_rail"] as const),
           eyebrow: Type.Optional(Type.String()), title: Type.Optional(Type.String()), dek: Type.Optional(Type.String()),
-          anchor_module_id: Type.String(), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
+          anchor_module_id: Type.String(contractHint("sceneAnchor")), sidecar_module_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 3 }), shared_source_scope: Type.Optional(Type.Boolean()),
           primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const),
           hero_object_id: Type.String(), supporting_claim_ids: Type.Array(Type.String(), { maxItems: 12 }),
           scene_budget: Type.Object({
@@ -2934,11 +5417,43 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         }), { minItems: 1, maxItems: 6 }),
       }),
       source_note: Type.Optional(Type.String()),
-      modules: Type.Array(infographicModuleParameters, { minItems: 3, maxItems: 12 }),
+      subject_set: Type.Optional(Type.Object({
+        computation_ref: Type.String({ description: "Computation whose rows define the page's subject set; the runtime reads the members, never list them yourself." }),
+        key_field: Type.String({ description: "Field of that computation's rows that identifies a subject." }),
+        cutoff_date: Type.String({ description: "The single data cutoff date for the page; every chart on the page must state this same cutoff_date; a chart that states a different one, or none, blocks lint." }),
+      }, { description: "Optional. Declares the set of subjects the page covers. A chart whose category_field rows include subjects outside the set is restyled by the runtime and needs a subject_caption on its module." })),
+      modules: Type.Array(infographicModuleParameters, contractHint("modules", { minItems: 3, maxItems: 12 })),
     }),
-    async execute(_id, params) {
+    async execute(_id, givenParams, signal?: AbortSignal) {
+      try { return await planAttempt(givenParams, signal); } catch (error: any) {
+        if (!precheckAllEnabled()) throw error;
+        throw await planPrecheckAll(error, givenParams).catch(() => error);
+      }
+    },
+  });
+  const planAttempt = async (givenParams: any, signal?: AbortSignal) => {
+      let rawParams = givenParams;
+      if (fillCopiedEnabled()) {
+        const copied = await fillStoryGraphRef("newsroom_infographic_plan", givenParams);
+        if (copied !== givenParams) rawParams = inSchemaOrder(copied, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
+      }
+      let params = rawParams;
+      let unresolvedRefs: Record<string, string> = {};
+      if (preflightEnabled()) {
+        const filled = await fillPlanRefs(rawParams, preflightIo);
+        unresolvedRefs = filled.unresolved;
+        if (filled.filled.length) params = inSchemaOrder(filled.params, Object.keys(registeredTools.get("newsroom_infographic_plan")?.parameters?.properties ?? {}));
+      }
       const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
-      const editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
+      let editorialGrammar: any;
+      if (reportAllEnabled()) {
+        try { editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry); } catch (grammarError: any) {
+          // The hero fill reads nothing the grammar build writes, so its problems are reported with this one.
+          let heroError: any = null;
+          try { await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))); } catch (error: any) { heroError = error; }
+          throw heroError ? combinedError(grammarError, `${grammarError.message}\n${heroError.message}`) : grammarError;
+        }
+      } else editorialGrammar = materializeEditorialGrammarSelection(params.editorial_grammar, editorialGrammarRegistry);
       const specCore = {
         schema_version: "1.5.0",
         layout: params.layout ?? "feature",
@@ -2947,9 +5462,22 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         quality_target: params.quality_target ?? "publishable",
         competition_profile: params.competition_profile ?? "editorial",
         ...params,
+        ...(systemDateLabelEnabled() ? { date_label: systemDateLabel() } : {}),
         editorial_grammar: editorialGrammar,
-        modules: params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" })),
+        modules: await fillHeroModules(params.modules.map((module: any) => ({ ...module, span: module.span ?? "full", priority: module.priority ?? 3, emphasis: module.emphasis ?? "secondary" }))),
       };
+      if (preflightEnabled()) {
+        // Everything the checks below would reject for a missing or unbound
+        // prerequisite, listed at once. They still run afterwards, unchanged.
+        const issues: string[] = [];
+        const specErrors = validateInfographicSpec(specCore);
+        // A field the fill could not derive is reported once, with its reason.
+        issues.push(...specErrors.filter((error: string) => !Object.keys(unresolvedRefs).some((field) => error.startsWith(`${field} is required`))));
+        const grammar = lintEditorialGrammarSelection(specCore.editorial_grammar, editorialGrammarRegistry);
+        if (!grammar.passed) issues.push(...grammar.issues.map((issue: any) => `editorial grammar ${issue.rule_id}: ${issue.message}`));
+        issues.push(...(await planPrerequisiteIssues(specCore, preflightIo, unresolvedRefs)));
+        if (issues.length) throw preflightError("newsroom_infographic_plan", issues);
+      }
       const storyGraph = await readArtifactJson(String(specCore.story_graph_ref), "editorial/story-graphs/");
       if (!storyGraph.passed) throw new Error("Infographic cannot proceed from a StoryGraph with blocking narrative-closure issues");
       if (String(storyGraph.reader_question) !== String(specCore.reader_question)) throw new Error("Infographic reader_question must exactly match StoryGraph reader_question");
@@ -2999,52 +5527,38 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const key = sha256Hex(JSON.stringify(specCore));
       const spec = { ...specCore, content_hash: key };
       const rel = `infographics/plans/${key}.json`;
+      if (signal?.aborted) throw new Error("newsroom_infographic_plan cancelled before the plan was written");
       await writeArtifactIfAbsent(rel, spec);
       return textResult(`Infographic plan recorded.\nPlan: ${rel}\nNext: call newsroom_infographic_lint before rendering.`, { planRef: rel, modules: specCore.modules.length });
-    },
-  });
+  };
 
   registerScopedTool(pi, {
     name: "newsroom_infographic_lint",
     label: "Lint magazine infographic",
     description: "Validate magazine hierarchy, claim provenance, responsive visual availability, and upstream visualization critic status before page composition.",
     promptSnippet: "Run deterministic magazine-page quality checks",
-    parameters: Type.Object({ plan_ref: Type.String() }),
-    async execute(_id, params) {
-      const mobilePages = mobilePagesEnabled();
+    parameters: Type.Object({ plan_ref: optionalWhenFillCopied(Type.String()) }),
+    async execute(_id, givenParams) {
+      const params = fillCopiedEnabled() && givenParams?.plan_ref === undefined
+        ? { ...givenParams, plan_ref: await onlyArtifactRef("newsroom_infographic_lint", "plan_ref", "infographics/plans/", "no infographics/plans artifact exists; call newsroom_infographic_plan first") }
+        : givenParams;
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
-      const assets = await loadInfographicAssets(spec, mobilePages);
-      const verified = await verifiedClaimIds();
-      const verifiedRecords = await verifiedClaimRecords();
-      const storyGraph = spec.story_graph_ref ? await readArtifactJson(String(spec.story_graph_ref), "editorial/story-graphs/") : null;
-      const editorialGrammarRegistry = await loadEditorialGrammarRegistry();
-      // Source-only quote notes verify against the saved source's own text,
-      // hash-bound and read fresh here (never trusted from the plan), so an
-      // edited quote, a source swapped after planning, or a wrong page is
-      // caught before render rather than only at the final artifact verify.
-      const sourceQuoteErrors: string[] = [];
-      const sourceTexts = new Map<string, string>();
-      for (const module of spec.modules ?? []) {
-        const ref = module?.type === "text" ? String(module.source_quote?.source_ref ?? "") : "";
-        if (!ref || sourceTexts.has(ref)) continue;
-        try {
-          sourceTexts.set(ref, await loadSourceQuoteText(ref));
-        } catch (error: any) {
-          sourceQuoteErrors.push(`text module '${module.id}' source_quote source '${ref}' failed to load: ${error?.message ?? error}`);
-        }
-      }
-      const lint = lintInfographicSpec(spec, assets, { verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts });
-      if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
+      const { lint, assets, mobilePages, verifiedRecords } = await lintInfographicPlan(spec);
       const assetHashes = Object.fromEntries(Object.entries(assets).map(([ref, asset]: any) => [ref, {
         desktop_sha256: sha256Hex(asset.desktopSvg),
         ...(mobilePages ? { mobile_sha256: sha256Hex(asset.mobileSvg) } : {}),
+        ...(asset.compactSvg !== undefined ? { compact_sha256: sha256Hex(asset.compactSvg) } : {}),
         data_hash: asset.manifest?.data_hash ?? null,
         critic_score: asset.critic?.score ?? null,
       }]));
-      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes }));
+      const policy = currentLintPolicy();
+      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, assetHashes, ...policy }));
       const lintRef = `infographics/lints/${key}.json`;
-      await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes });
-      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings });
+      await writeArtifactIfAbsent(lintRef, { ...lint, plan_ref: params.plan_ref, asset_hashes: assetHashes, ...policy });
+      const igShadow = shadowChecksEnabled()
+        ? await runShadow(() => shadowInfographicNumbers({ root: artifactRoot(), spec, planRef: params.plan_ref, assets, claimRecords: verifiedRecords, deps: claimBindingDeps() }))
+        : null;
+      return textResult(`${lint.passed ? "PASS" : "BLOCKED"}: infographic lint\nLint: ${lintRef}\nBlockers: ${lint.blockers.length ? lint.blockers.join(" | ") : "none"}\nWarnings: ${lint.warnings.length ? lint.warnings.join(" | ") : "none"}\n${lint.passed ? "Next: call newsroom_infographic_render." : "Revise the page plan before rendering."}`, { passed: lint.passed, lintRef, blockers: lint.blockers, warnings: lint.warnings, ...(igShadow ? { shadow: igShadow } : {}), ...((assets as any).__asof_shadow ? { shadow_asof: (assets as any).__asof_shadow } : {}) });
     },
   });
 
@@ -3055,19 +5569,15 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       ? "Compose verified visualization artifacts and claim-bound editorial modules into responsive desktop and mobile magazine SVG pages after infographic lint passes."
       : "Compose verified visualization artifacts and claim-bound editorial modules into a magazine SVG page after infographic lint passes. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to render it too.",
     promptSnippet: "Render a responsive magazine-grade infographic",
-    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams) {
+      const params = await preflightStage("newsroom_infographic_render", rawParams);
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
-      if (lint.plan_ref !== params.plan_ref) throw new Error("Infographic lint does not belong to the supplied plan");
-      if (!lint.passed || (lint.blockers ?? []).length) throw new Error("Infographic lint has blocking failures");
+      // The stored lint is not trusted: every consumer of a page runs the same current-lint checks (see assertInfographicLintHolds).
+      await assertInfographicLintHolds(spec, lint, params.plan_ref);
       const assets = await loadInfographicAssets(spec, mobilePages);
-      for (const [ref, asset] of Object.entries(assets) as any) {
-        const expected = lint.asset_hashes?.[ref];
-        if (!expected) throw new Error(`Infographic lint is missing asset hash for '${ref}'`);
-        if (sha256Hex(asset.desktopSvg) !== expected.desktop_sha256 || (mobilePages && sha256Hex(asset.mobileSvg) !== expected.mobile_sha256)) throw new Error(`Upstream visualization '${ref}' changed after infographic lint`);
-      }
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
       const mobileSha = mobilePages ? sha256Hex(bundle.mobile.svg) : undefined;
@@ -3097,6 +5607,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         claim_ids: [...new Set(spec.modules.flatMap((m: any) => [m.claim_id, ...(m.claim_ids ?? [])]).filter(Boolean))],
         variants: mobilePages ? { desktop: desktopRef, mobile: mobileRef } : { desktop: desktopRef },
         hashes: mobilePages ? { desktop_sha256: desktopSha, mobile_sha256: mobileSha } : { desktop_sha256: desktopSha },
+        ...(pageSourceNoteReplaced(spec, assets) ? { source_note_warnings: ["page source_note replaced by an accepted local note"] } : {}),
         render_qa_ref: renderQaRef,
         render_qa: { passed: renderQa.passed, failure_count: renderQa.failure_count },
         alt: spec.alt,
@@ -3138,13 +5649,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       ? "Review the composed desktop and mobile feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, responsive execution, geometry and visual-language variety. A failing page should be replanned and rendered again."
       : "Review the composed desktop feature with deterministic award-informed dimensions for impact, engagement, clarity, effectiveness, hierarchy, editorial rhythm, inclusion, geometry and visual-language variety. The phone-facing mobile page is off by default; set NEWSROOM_MOBILE_PAGES=1 to critique both desktop and mobile. A failing page should be replanned and rendered again.",
     promptSnippet: "Critique a responsive magazine infographic",
-    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: Type.String(), manifest_ref: Type.String() }),
-    async execute(_id, params) {
+    parameters: Type.Object({ plan_ref: Type.String(), lint_ref: optionalWhenPreflight(Type.String()), manifest_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams) {
+      const params = await preflightStage("newsroom_infographic_critic", rawParams);
       const mobilePages = mobilePagesEnabled();
       const spec = await readArtifactJson(params.plan_ref, "infographics/plans/");
       const lint = await readArtifactJson(params.lint_ref, "infographics/lints/");
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       if (manifest.plan_ref !== params.plan_ref || manifest.lint_ref !== params.lint_ref) throw new Error("Infographic manifest is not linked to the supplied plan and lint artifacts");
+      // The critic is a consumer of the lint too: a stale policy, a changed claim or a changed upstream asset refuses here, as in render.
+      await assertInfographicLintHolds(spec, lint, params.plan_ref);
       const assets = await loadInfographicAssets(spec, mobilePages);
       const bundle = composeInfographicBundle(spec, assets, { mobilePages });
       const desktopSha = sha256Hex(bundle.desktop.svg);
@@ -3244,9 +5758,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       let spec: any; try { spec = JSON.parse(params.spec_json); } catch { throw new Error("MapSpec JSON is invalid"); }
       const gate = validateMapSpec(spec);
-      const key = sha256Hex(JSON.stringify({ spec, gate }));
+      // Reference layers read their coordinates from recorded data only; the
+      // resolution (with the sha256 of every input file) is stored with the map.
+      let resolution: any = null;
+      if (gate.status === "PASS" && (spec.layers ?? []).some((l: any) => ["reference_points", "reference_lines", "line", "observations"].includes(l?.type))) {
+        const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
+        const inside = (ref: string) => { const abs = resolve(root, ref); if (!/^(data|computations)\//.test(ref) || !abs.startsWith(resolve(root) + "/")) throw new Error(`MAP_SOURCE_PATH_REJECTED: ${ref}`); return abs; };
+        resolution = await resolveReferenceLayers(spec, { readBytes: async (ref: string) => readFile(inside(ref)), readJson: async (ref: string) => JSON.parse(await readFile(inside(ref), "utf8")) });
+      }
+      const key = sha256Hex(JSON.stringify({ spec, gate, resolution }));
       const rel = `maps/${key}.json`;
-      await writeArtifactIfAbsent(rel, { spec, status: gate.status, gate, content_hash: key });
+      await writeArtifactIfAbsent(rel, { spec, status: gate.status, gate, ...(resolution ? { resolution } : {}), content_hash: key });
       if (gate.status !== "PASS") throw new Error(`MAP_SPEC_BLOCKED: ${(gate.errors ?? []).join(" | ")}`);
       return textResult(`PASS: scientific map validation\nMap: ${rel}\nBasemap: ${gate.basemap?.id}`, { passed: true, mapRef: rel, gate });
     },
@@ -3279,7 +5801,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     dek: Type.Optional(Type.String()),
     story_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 20 }),
     claim_ids: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
-    explanatory_dimension: StringEnum(["trend", "rank", "spatial", "mechanism", "comparison", "distribution", "uncertainty", "human_scale", "method", "context", "outcome", "flow", "network", "relationship", "hierarchy", "model"] as const),
+    explanatory_dimension: StringEnum([...PUBLICATION_DIMENSIONS]),
     width: Type.Optional(StringEnum(["full", "wide", "half", "third"] as const)),
     computation_ref: Type.Optional(Type.String()),
     result_hash: Type.Optional(Type.String()),
@@ -3364,6 +5886,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         if (module.view_spec_json) {
           try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Publication module '${module.id}' view_spec_json is not valid JSON`); }
           assertViewSpecHasNoInlineData(viewSpec);
+          assertViewSpecHasNoReservedEvidence(viewSpec);
         }
         let fieldMapping: any = {};
         if (module.field_mapping_json) {
@@ -3406,7 +5929,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           binding = { kind: "asset", ref: module.asset_ref, result_hash: sha256Text(clean), field_mapping: fieldMapping };
         }
         if (dataBearing && !binding) throw new Error(`Publication module '${module.id}' requires an immutable evidence binding`);
-        const rest: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        const rest: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete rest.computation_ref; delete rest.result_hash; delete rest.field_mapping_json; delete rest.view_spec_json;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(rest.type)) && !rest.view_spec && !rest.spec && !rest.map_ref && !rest.analysis_ref) rest.view_spec = { visual_type: rest.visual_type ?? "statistical" };
         const accessibility = dataBearing ? {
@@ -3497,13 +6020,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         if (module.view_spec_json) {
           try { viewSpec = JSON.parse(module.view_spec_json); } catch { throw new Error(`Portable module '${module.id}' view_spec_json is not valid JSON`); }
           assertViewSpecHasNoInlineData(viewSpec);
+          assertViewSpecHasNoReservedEvidence(viewSpec);
         }
         let fieldMapping: any = {};
         if (module.field_mapping_json) {
           try { fieldMapping = JSON.parse(module.field_mapping_json); } catch { throw new Error(`Portable module '${module.id}' field_mapping_json is not valid JSON`); }
           if (!fieldMapping || typeof fieldMapping !== "object" || Array.isArray(fieldMapping)) throw new Error(`Portable module '${module.id}' field_mapping_json must be an object`);
         }
-        const planned: any = { ...module, explanatory_dimension: module.explanatory_dimension === "relationship" ? "network" : module.explanatory_dimension };
+        const planned: any = { ...module, explanatory_dimension: mapExplanatoryDimension(module.explanatory_dimension) };
         delete planned.computation_ref; delete planned.result_hash; delete planned.field_mapping_json; delete planned.view_spec_json;
         if (Object.keys(viewSpec).length) planned.view_spec = viewSpec;
         if (dataBearing && ["plotly", "d3", "sigma"].includes(String(planned.type)) && !planned.view_spec && !planned.spec && !planned.map_ref && !planned.analysis_ref) planned.view_spec = { visual_type: planned.visual_type ?? "statistical" };
@@ -3594,17 +6118,21 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         } else if (binding.kind === "analysis") {
           const analysis = await readArtifactJson(String(binding.ref), "visualizations/graph-analysis/");
           if (String(analysis.result_hash ?? "") !== String(binding.result_hash)) throw new Error(`Publication analysis changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { nodes: analysis.nodes ?? [], edges: analysis.edges ?? [], analysis_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          resolvedModules.push({ ...module, spec: { ...(module.view_spec ?? {}), nodes: analysis.nodes ?? [], edges: analysis.edges ?? [], analysis_ref: binding.ref } });
         } else if (binding.kind === "map") {
           const mapArtifact = await readArtifactJson(String(binding.ref), "maps/");
           const currentHash = String(mapArtifact.content_hash ?? sha256Hex(JSON.stringify(mapArtifact)));
           if (currentHash !== String(binding.result_hash)) throw new Error(`Publication map changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { map_spec: mapArtifact.spec, map_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          // The bound map evidence is spread last: a view_spec can never replace the
+          // spec, the resolved coordinates or the artifact reference.
+          const { view_spec: mapViewSpec, ...mapModule } = module;
+          const { map_spec: _s, map_resolution: _r, map_ref: _m, ...mapLayout } = mapViewSpec ?? {};
+          resolvedModules.push({ ...mapModule, spec: { map_spec: mapArtifact.spec, map_resolution: mapArtifact.resolution ?? null, map_ref: binding.ref, ...mapLayout } });
         } else if (binding.kind === "model") {
           const modelArtifact = await readArtifactJson(String(binding.ref), "models/");
           const currentHash = String(modelArtifact.content_hash ?? sha256Hex(JSON.stringify(modelArtifact)));
           if (currentHash !== String(binding.result_hash)) throw new Error(`Publication model changed for module '${module.id}'`);
-          resolvedModules.push({ ...module, spec: { model: modelArtifact, model_ref: binding.ref, ...(module.view_spec ?? {}) } });
+          resolvedModules.push({ ...module, spec: { ...(module.view_spec ?? {}), model: modelArtifact, model_ref: binding.ref } });
         } else if (binding.kind === "asset") {
           const svg = await readArtifactText(String(binding.ref), "visualizations/");
           const clean = assertSafeSvg(svg, { label: `Publication asset ${binding.ref}` });
@@ -3805,19 +6333,21 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
           "Do not infer data truth from pixels. Numerical truth and provenance remain governed by deterministic lint and verification.",
           "After observing the image, call newsroom_infographic_vision_critic with concrete visible evidence and only bounded layout patch suggestions.",
         ],
-    parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: Type.String() }),
-    async execute(_id, params, signal) {
+    parameters: Type.Object({ manifest_ref: Type.String(), critic_ref: optionalWhenPreflight(Type.String()) }),
+    async execute(_id, rawParams, signal) {
+      const params = await preflightStage("newsroom_infographic_preview", rawParams);
       const mobilePages = mobilePagesEnabled();
       const manifest = await readManifestOrRejected("infographics", params.manifest_ref, "infographics/");
       const critic = await readArtifactJson(params.critic_ref, "infographics/critics/");
       if (critic.manifest_ref !== params.manifest_ref || !critic.passed) throw new Error("A passing deterministic infographic critic linked to this manifest is required before image observation");
+      await assertPageLintCurrent(manifest);
       const desktopRef = manifest?.variants?.desktop, mobileRef = manifest?.variants?.mobile;
       if (!desktopRef || (mobilePages && !mobileRef)) throw new Error("Infographic manifest is missing responsive SVG variants");
       const desktopSvg = await readArtifactText(desktopRef, "infographics/");
       const mobileSvg = mobilePages ? await readArtifactText(mobileRef, "infographics/") : undefined;
       if (sha256Hex(desktopSvg) !== manifest?.hashes?.desktop_sha256 || (mobilePages && sha256Hex(mobileSvg as string) !== manifest?.hashes?.mobile_sha256)) throw new Error("Infographic SVG bytes do not match manifest hashes");
       const [desktopResult, mobileResult] = await Promise.all([
-        rasterizeArtifactSvg(desktopRef, 1100, signal),
+        rasterizeArtifactSvg(desktopRef, 1440, signal),
         mobilePages ? rasterizeArtifactSvg(mobileRef, 720, signal) : Promise.resolve(undefined as any),
       ]);
       const desktopPng = desktopResult.bytes;
@@ -3842,8 +6372,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         variants: mobilePages ? { desktop: desktopPngRef, mobile: mobilePngRef } : { desktop: desktopPngRef },
         hashes: mobilePages ? { desktop_sha256: desktopHash, mobile_sha256: mobileHash } : { desktop_sha256: desktopHash },
         rasterizer: mobilePages
-          ? { desktop_engine: desktopResult.engine, mobile_engine: mobileResult.engine, desktop_width: 1100, mobile_width: 720 }
-          : { desktop_engine: desktopResult.engine, desktop_width: 1100 },
+          ? { desktop_engine: desktopResult.engine, mobile_engine: mobileResult.engine, desktop_width: 1440, mobile_width: 720 }
+          : { desktop_engine: desktopResult.engine, desktop_width: 1440 },
       });
       return {
         content: mobilePages
@@ -3897,6 +6427,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const preview = await readArtifactJson(params.preview_ref, "infographics/previews/");
       const deterministicCritic = await readArtifactJson(params.deterministic_critic_ref, "infographics/critics/");
       if (!deterministicCritic.passed || deterministicCritic.manifest_ref !== params.manifest_ref) throw new Error("Image-aware critique requires a passing deterministic critic for the same infographic manifest");
+      await assertPageLintCurrent(manifest);
       if (preview.manifest_ref !== params.manifest_ref || preview.deterministic_critic_ref !== params.deterministic_critic_ref) throw new Error("Preview does not belong to the supplied infographic and deterministic critic");
       if (preview.source_hashes?.desktop_sha256 !== manifest.hashes?.desktop_sha256 || preview.source_hashes?.mobile_sha256 !== manifest.hashes?.mobile_sha256) throw new Error("Preview source hashes do not match the current infographic manifest");
       const plan = await readArtifactJson(manifest.plan_ref, "infographics/plans/");
@@ -3936,6 +6467,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     },
   });
 
+
+  registerInfographicChain(pi);
+  if (planPatchEnabled()) registerPatchTool(pi, PLAN_PATCH);
+  registerPlanEdit(pi);
 
   registerScopedTool(pi, {
     name: "newsroom_infographic_revise",
@@ -3997,6 +6532,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       if (manifest.plan_ref !== params.plan_ref) throw new Error("Infographic manifest does not belong to the supplied plan");
       if (deterministicCritic.manifest_ref !== params.manifest_ref) throw new Error("Deterministic critic does not belong to the supplied manifest");
       if (visionCritic.manifest_ref !== params.manifest_ref || visionCritic.deterministic_critic_ref !== params.deterministic_critic_ref) throw new Error("Vision critic does not belong to the supplied final manifest/critic pair");
+      await assertPageLintCurrent(manifest);
       const assets = await loadInfographicAssets(spec);
       const result = evaluateCompetitionProfile({
         profile_id: spec.competition_profile ?? "editorial",
@@ -4046,7 +6582,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       note: Type.Optional(Type.String({ description: "Concise methodological caveat shown on the SVG" })),
     }),
     async execute(_id, params, signal) {
-      const safeSql = validateReadOnlySql(params.sql);
+      const safeSql = computationSql(params.sql);
       const inputSnapshot = await evidenceSnapshot();
       const rows = await queryDuckDb(safeSql, signal) as Record<string, unknown>[];
       if (rows.length === 0) throw new Error("Chart query returned no rows");
@@ -4111,34 +6647,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       caveat: Type.Optional(Type.String()),
     }),
     async execute(_id, params, signal) {
-      assertEvidenceBackedStatus(params.status, params.source_refs, params.computation_refs);
-      const sourceRefs = await normalizeArtifactRefs(params.source_refs, "source");
-      await validateSourceEvidence(sourceRefs);
-      const computationRefs = await normalizeArtifactRefs(params.computation_refs, "computation");
-      if (params.status === "supported" && computationRefs.length) await replayComputationEvidence(computationRefs, sourceRefs, signal);
-      const claimSupport = evaluateClaimSupport({ requested_status: params.status, claim_kind: params.claim_kind, claim: params.claim });
-      const verification = deriveClaimVerification({
-        source_resolved: sourceRefs.length > 0,
-        extraction_passed: sourceRefs.length > 0,
-        computation_replayed: computationRefs.length > 0 && params.status === "supported",
-        claim_supported: claimSupport.passed,
-      });
-      const claimId = `claim-${stableId(JSON.stringify({ claim: params.claim, sourceRefs, computationRefs }))}`;
-      const record = {
-        schema_version: "0.8.0",
-        claim_id: claimId,
-        recorded_at: new Date().toISOString(),
+      const { path, record, claimId, verification } = await recordClaimArtifact({
         claim: params.claim,
         claim_kind: params.claim_kind,
-        requested_status: params.status,
-        status: verification.publishable ? "verified" : params.status,
-        verification,
-        claim_support: claimSupport,
-        source_refs: sourceRefs,
-        computation_refs: computationRefs,
-        caveat: params.caveat ?? null,
-      };
-      const path = await appendArtifact("claims.jsonl", record);
+        status: params.status,
+        source_refs: params.source_refs,
+        computation_refs: params.computation_refs,
+        caveat: params.caveat,
+      }, signal);
       return textResult(`Claim recorded${path ? ` in ${path}` : ""}.\nclaim_id: ${claimId}\nVerification: ${verification.publishable ? "VERIFIED by system replay" : "NOT VERIFIED / draft only"}`, { path, status: record.status, verification, claimId });
     },
   });

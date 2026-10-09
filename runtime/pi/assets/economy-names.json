@@ -1,11 +1,20 @@
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.3.0",
   "generated_by": "scripts/build_economy_names.mjs",
   "versions": {
     "node": "24.14.1",
     "icu": "78.2",
     "cldr": "48.0"
   },
+  "rules": [
+    "zh = Unicode CLDR zh-Hans region name (Intl.DisplayNames) for the entry's ISO 3166-1 alpha-2 code.",
+    "When CLDR has no name for the code (the World Bank pseudo-code JG for the Channel Islands, CHI), zh = the World Bank's own zh name, zh_source 'worldbank'. This is the one exception to policy rule 8 (an iso3 with no CLDR name is dropped and never shown in English): the World Bank's name is Chinese, a source name and not an English fallback, so the entry is kept (reviewed decision of 2026-10-03).",
+    "The override table (zh_source 'override') replaces the CLDR name only where a policy rule says so; policy_rule is that rule's number and cldr_zh records what CLDR said.",
+    "Natural Earth territories (the `territories` list) have no World Bank row: they resolve by ISO3 and ISO2 only, never by an English name. Their ISO2 is ISO_A2_EH of the pinned Natural Earth source (sources.natural_earth_admin0_50m); their en_name is the CLDR English region name.",
+    "Aggregates are never derived from the World Bank list: only the entries of the explicit policy table (policy rule 7) exist in `aggregates`, each with policy_rule 7, and every other aggregate code or name does not resolve, so a chart that holds one is refused. The seven World Bank regions keep the World Bank's zh names (zh_source 'worldbank'); the others take the policy table's name (zh_source 'policy', wb_zh records what the World Bank said where it has a name). The income groups are 经济体, never 国家, because they include Hong Kong, Macao and Taiwan. Aggregate rows belong out of a country chart; use them only when the aggregate itself is the subject.",
+    "`aliases` map a documented alternate code to a primary key of the same mode; any other code that is not a primary key does not resolve.",
+    "A zh name is never an English fallback: an empty name or one with Latin letters aborts the build."
+  ],
   "sources": {
     "wb_country_en": {
       "file": "fixtures/external/worldbank_country_list/wb-country-en.json",
@@ -16,6 +25,19 @@
       "file": "fixtures/external/worldbank_country_list/wb-country-zh.json",
       "bytes": 112475,
       "sha256": "a27d8b5480bf7c0bbfbfdf15a0d63e118ba322f6f6b5a6765fa67226c9ea7edf"
+    },
+    "natural_earth_admin0_50m": {
+      "file": "ne_50m_admin_0_countries.geojson",
+      "vendored": false,
+      "provenance": "fixtures/external/naturalearth_50m_attributes/SOURCE.json",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+      "retrieved_at": "2026-09-27T02:34:28Z",
+      "bytes": 3083490,
+      "sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+      "fields_used": [
+        "ISO_A3_EH",
+        "ISO_A2_EH"
+      ]
     }
   },
   "economies": [
@@ -297,14 +319,18 @@
       "iso2": "CD",
       "wb_name": "Congo, Dem. Rep.",
       "zh": "刚果（金）",
-      "zh_source": "cldr"
+      "zh_source": "override",
+      "policy_rule": 6,
+      "cldr_zh": "刚果（金）"
     },
     {
       "iso3": "COG",
       "iso2": "CG",
       "wb_name": "Congo, Rep.",
       "zh": "刚果（布）",
-      "zh_source": "cldr"
+      "zh_source": "override",
+      "policy_rule": 6,
+      "cldr_zh": "刚果（布）"
     },
     {
       "iso3": "COL",
@@ -485,8 +511,10 @@
       "iso3": "FSM",
       "iso2": "FM",
       "wb_name": "Micronesia, Fed. Sts.",
-      "zh": "密克罗尼西亚",
-      "zh_source": "cldr"
+      "zh": "密克罗尼西亚联邦",
+      "zh_source": "override",
+      "policy_rule": 3,
+      "cldr_zh": "密克罗尼西亚"
     },
     {
       "iso3": "GAB",
@@ -597,8 +625,10 @@
       "iso3": "HKG",
       "iso2": "HK",
       "wb_name": "Hong Kong SAR, China",
-      "zh": "中国香港特别行政区",
-      "zh_source": "cldr"
+      "zh": "中国香港",
+      "zh_source": "override",
+      "policy_rule": 3,
+      "cldr_zh": "中国香港特别行政区"
     },
     {
       "iso3": "HND",
@@ -849,8 +879,10 @@
       "iso3": "MAC",
       "iso2": "MO",
       "wb_name": "Macao SAR, China",
-      "zh": "中国澳门特别行政区",
-      "zh_source": "cldr"
+      "zh": "中国澳门",
+      "zh_source": "override",
+      "policy_rule": 3,
+      "cldr_zh": "中国澳门特别行政区"
     },
     {
       "iso3": "MAF",
@@ -1150,8 +1182,10 @@
       "iso3": "PSE",
       "iso2": "PS",
       "wb_name": "West Bank and Gaza",
-      "zh": "巴勒斯坦领土",
-      "zh_source": "cldr"
+      "zh": "巴勒斯坦",
+      "zh_source": "override",
+      "policy_rule": 3,
+      "cldr_zh": "巴勒斯坦领土"
     },
     {
       "iso3": "PYF",
@@ -1508,7 +1542,9 @@
       "iso2": "XK",
       "wb_name": "Kosovo",
       "zh": "科索沃",
-      "zh_source": "cldr"
+      "zh_source": "override",
+      "policy_rule": 5,
+      "cldr_zh": "科索沃"
     },
     {
       "iso3": "YEM",
@@ -1539,78 +1575,381 @@
       "zh_source": "cldr"
     }
   ],
+  "territories": [
+    {
+      "iso3": "AIA",
+      "iso2": "AI",
+      "en_name": "Anguilla",
+      "zh": "安圭拉",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "ALA",
+      "iso2": "AX",
+      "en_name": "Åland Islands",
+      "zh": "奥兰群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "ATA",
+      "iso2": "AQ",
+      "en_name": "Antarctica",
+      "zh": "南极洲",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "ATF",
+      "iso2": "TF",
+      "en_name": "French Southern Territories",
+      "zh": "法属南部领地",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "BLM",
+      "iso2": "BL",
+      "en_name": "St. Barthélemy",
+      "zh": "圣巴泰勒米",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "COK",
+      "iso2": "CK",
+      "en_name": "Cook Islands",
+      "zh": "库克群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "ESH",
+      "iso2": "EH",
+      "en_name": "Western Sahara",
+      "zh": "西撒哈拉",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "FLK",
+      "iso2": "FK",
+      "en_name": "Falkland Islands",
+      "zh": "福克兰群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "GGY",
+      "iso2": "GG",
+      "en_name": "Guernsey",
+      "zh": "根西岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "HMD",
+      "iso2": "HM",
+      "en_name": "Heard & McDonald Islands",
+      "zh": "赫德岛和麦克唐纳群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "IOT",
+      "iso2": "IO",
+      "en_name": "British Indian Ocean Territory",
+      "zh": "英属印度洋领地",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "JEY",
+      "iso2": "JE",
+      "en_name": "Jersey",
+      "zh": "泽西岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "MSR",
+      "iso2": "MS",
+      "en_name": "Montserrat",
+      "zh": "蒙特塞拉特",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "NFK",
+      "iso2": "NF",
+      "en_name": "Norfolk Island",
+      "zh": "诺福克岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "NIU",
+      "iso2": "NU",
+      "en_name": "Niue",
+      "zh": "纽埃",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "PCN",
+      "iso2": "PN",
+      "en_name": "Pitcairn Islands",
+      "zh": "皮特凯恩群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "SGS",
+      "iso2": "GS",
+      "en_name": "South Georgia & South Sandwich Islands",
+      "zh": "南乔治亚和南桑威奇群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "SHN",
+      "iso2": "SH",
+      "en_name": "St. Helena",
+      "zh": "圣赫勒拿",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "SPM",
+      "iso2": "PM",
+      "en_name": "St. Pierre & Miquelon",
+      "zh": "圣皮埃尔和密克隆群岛",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "TWN",
+      "iso2": "TW",
+      "en_name": "Taiwan",
+      "zh": "中国台湾",
+      "zh_source": "override",
+      "policy_rule": 3,
+      "cldr_zh": "台湾",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "VAT",
+      "iso2": "VA",
+      "en_name": "Vatican City",
+      "zh": "梵蒂冈",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    },
+    {
+      "iso3": "WLF",
+      "iso2": "WF",
+      "en_name": "Wallis & Futuna",
+      "zh": "瓦利斯和富图纳",
+      "zh_source": "cldr",
+      "source": "natural_earth_admin0_50m"
+    }
+  ],
   "aggregates": [
     {
       "iso3": "EAS",
       "wb_name": "East Asia & Pacific",
       "zh": "东亚与太平洋地区",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
     },
     {
       "iso3": "ECS",
       "wb_name": "Europe & Central Asia",
       "zh": "欧洲与中亚地区",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "EUU",
+      "wb_name": "European Union",
+      "zh": "欧盟",
+      "zh_source": "policy",
+      "policy_rule": 7,
+      "wb_zh": "欧洲联盟"
     },
     {
       "iso3": "HIC",
       "wb_name": "High income",
-      "zh": "高收入国家",
-      "zh_source": "worldbank"
+      "zh": "高收入经济体",
+      "zh_source": "policy",
+      "policy_rule": 7,
+      "wb_zh": "高收入国家"
     },
     {
       "iso3": "LCN",
       "wb_name": "Latin America & Caribbean",
       "zh": "拉丁美洲与加勒比海地区",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
     },
     {
       "iso3": "LIC",
       "wb_name": "Low income",
-      "zh": "低收入国家",
-      "zh_source": "worldbank"
+      "zh": "低收入经济体",
+      "zh_source": "policy",
+      "policy_rule": 7,
+      "wb_zh": "低收入国家"
     },
     {
       "iso3": "LMC",
       "wb_name": "Lower middle income",
-      "zh": "中低等收入国家",
-      "zh_source": "worldbank"
+      "zh": "中等偏下收入经济体",
+      "zh_source": "policy",
+      "policy_rule": 7,
+      "wb_zh": "中低等收入国家"
     },
     {
       "iso3": "MEA",
       "wb_name": "Middle East, North Africa, Afghanistan & Pakistan",
       "zh": "中东、北非、阿富汗与巴基斯坦",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
     },
     {
       "iso3": "NAC",
       "wb_name": "North America",
       "zh": "北美",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "OWID_AFR",
+      "en_name": "Africa",
+      "zh": "非洲",
+      "zh_source": "policy",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "OWID_ASI",
+      "en_name": "Asia",
+      "zh": "亚洲",
+      "zh_source": "policy",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "OWID_EUR",
+      "en_name": "Europe",
+      "zh": "欧洲",
+      "zh_source": "policy",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "OWID_NAM",
+      "en_name": "North America",
+      "zh": "北美洲",
+      "zh_source": "policy",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "OWID_OCE",
+      "en_name": "Oceania",
+      "zh": "大洋洲",
+      "zh_source": "policy",
+      "policy_rule": 7
+    },
+    {
+      "iso3": "OWID_SAM",
+      "en_name": "South America",
+      "zh": "南美洲",
+      "zh_source": "policy",
+      "policy_rule": 7
     },
     {
       "iso3": "SAS",
       "wb_name": "South Asia",
       "zh": "南亚",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
     },
     {
       "iso3": "SSF",
       "wb_name": "Sub-Saharan Africa",
       "zh": "撒哈拉以南非洲地区",
-      "zh_source": "worldbank"
+      "zh_source": "worldbank",
+      "policy_rule": 7
     },
     {
       "iso3": "UMC",
       "wb_name": "Upper middle income",
-      "zh": "中高等收入国家",
-      "zh_source": "worldbank"
+      "zh": "中等偏上收入经济体",
+      "zh_source": "policy",
+      "policy_rule": 7,
+      "wb_zh": "中高等收入国家"
     },
     {
       "iso3": "WLD",
       "wb_name": "World",
       "zh": "世界",
-      "zh_source": "worldbank"
+      "zh_source": "policy",
+      "policy_rule": 7,
+      "wb_zh": "世界"
+    }
+  ],
+  "aliases": [
+    {
+      "mode": "iso3",
+      "alias": "OWID_KOS",
+      "target": "XKX",
+      "source": "Our World in Data code for Kosovo"
+    },
+    {
+      "mode": "iso3",
+      "alias": "OWID_WRL",
+      "target": "WLD",
+      "source": "Our World in Data code for the World aggregate"
+    },
+    {
+      "mode": "iso3",
+      "alias": "OWID_EU27",
+      "target": "EUU",
+      "source": "Our World in Data code for the European Union aggregate"
+    },
+    {
+      "mode": "iso3",
+      "alias": "OWID_HIC",
+      "target": "HIC",
+      "source": "Our World in Data code for the World Bank high-income group"
+    },
+    {
+      "mode": "iso3",
+      "alias": "OWID_UMC",
+      "target": "UMC",
+      "source": "Our World in Data code for the World Bank upper-middle-income group"
+    },
+    {
+      "mode": "iso3",
+      "alias": "OWID_LMC",
+      "target": "LMC",
+      "source": "Our World in Data code for the World Bank lower-middle-income group"
+    },
+    {
+      "mode": "iso3",
+      "alias": "OWID_LIC",
+      "target": "LIC",
+      "source": "Our World in Data code for the World Bank low-income group"
+    },
+    {
+      "mode": "iso2",
+      "alias": "EL",
+      "target": "GR",
+      "source": "Eurostat geo code for Greece (ISO 3166-1 alpha-2 is GR)"
+    },
+    {
+      "mode": "iso2",
+      "alias": "UK",
+      "target": "GB",
+      "source": "Eurostat geo code for the United Kingdom (ISO 3166-1 alpha-2 is GB)"
     }
   ]
 }

@@ -1,7 +1,9 @@
 use crate::artifact::InvestigationBundle;
 use crate::audit;
 use crate::cli::InvestigateArgs;
-use crate::pi::{run_prompt, PiConfig, PiRunResult};
+use crate::commands::verify;
+use crate::compose_answer;
+use crate::pi::{self, run_prompt, PiConfig, PiRunResult};
 use crate::{output, prompt, runtime};
 use anyhow::{bail, Result};
 use serde_json::Value;
@@ -49,11 +51,52 @@ fn effective_tool_profile(requested: &str, topic: &str, split_classifier: bool) 
     }
 }
 
+/// Opt-in (`NEWSROOM_HIDE_LIEFLAT=1`): drop the unmeasured Lieflat fallback
+/// tools from this command's `visual-story` runs. Only this non-v2 path asks
+/// for it; v2 builds its own `PiConfig` and keeps both tools. Gates are
+/// untouched: a Lieflat page never counted as the delivered page.
+fn lieflat_hidden_for(requested: &str, topic: &str, split_classifier: bool) -> bool {
+    pi::hide_lieflat_switch_enabled()
+        && effective_tool_profile(requested, topic, split_classifier) == "visual-story"
+}
+
+/// Whether completion must go through the measured infographic, publication
+/// and browser-QA chain. The goal text can only add this requirement; an
+/// explicit visual-story tool profile adds it regardless of the wording.
+fn completion_chain_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
+    is_complex_visual_request(topic, split_classifier) || profile == Some("visual-story")
+}
+
+/// A composed closing text is only for a run whose completion does not need the infographic,
+/// publication and browser-QA chain, whether the topic or the tool profile asks for it.
+fn compose_allowed(topic: &str, split_classifier: bool, profile: &str) -> bool {
+    !completion_chain_required(topic, split_classifier, Some(profile))
+        && compose_answer::eligible(
+            topic,
+            is_complex_visual_request(topic, split_classifier),
+            prompt::requires_html(topic),
+            prompt::requires_png(topic),
+        )
+}
+
 fn visual_completion_gaps(
     bundle: &InvestigationBundle,
     topic: &str,
     audit: &audit::AuditSummary,
     split_classifier: bool,
+) -> Result<Vec<String>> {
+    // The effective profile is what the Pi run recorded, so an explicit
+    // `--tool-profile visual-story` is seen here without touching the run loop.
+    let profile = bundle.recorded_tool_profile();
+    visual_completion_gaps_for_profile(bundle, topic, audit, split_classifier, profile.as_deref())
+}
+
+fn visual_completion_gaps_for_profile(
+    bundle: &InvestigationBundle,
+    topic: &str,
+    audit: &audit::AuditSummary,
+    split_classifier: bool,
+    profile: Option<&str>,
 ) -> Result<Vec<String>> {
     let successful_tool = |name: &str| {
         audit
@@ -67,7 +110,7 @@ fn visual_completion_gaps(
         (true, true) => 2,
     };
     let mut gaps = bundle.visual_delivery_gaps(prompt::requires_html(topic), required_pngs)?;
-    if is_complex_visual_request(topic, split_classifier) {
+    if completion_chain_required(topic, split_classifier, profile) {
         for tool in [
             "newsroom_infographic_plan",
             "newsroom_infographic_lint",
@@ -80,6 +123,9 @@ fn visual_completion_gaps(
             if !successful_tool(tool) {
                 gaps.push(format!("required complex-visual gate did not pass: {tool}"));
             }
+        }
+        if let Some(reason) = bundle.measured_publication_gap()? {
+            gaps.push(format!("no measured publication: {reason}"));
         }
         gaps.extend(requested_visual_mode_gaps(bundle, topic, audit));
     }
@@ -101,7 +147,9 @@ fn requested_visual_mode_gaps(
         .rev()
         .find(|call| call.tool == "newsroom_infographic_render" && call.is_error != Some(true))
     else {
-        return Vec::new();
+        // Nothing was rendered, so every requested mode (a requested map
+        // included) is still missing.
+        return missing_visual_modes(topic, &Value::Null);
     };
     let Some(plan_ref) = render.args.get("plan_ref").and_then(Value::as_str) else {
         return vec!["rendered infographic is missing its plan_ref".to_string()];
@@ -182,35 +230,116 @@ pub async fn run(args: InvestigateArgs) -> Result<()> {
             .filter_map(|path| path.file_name().and_then(|value| value.to_str()))
             .map(|name| format!("data/{name}"))
             .collect();
-        let prompt =
-            prompt::investigation_with_classifier(&topic, &declared_local_data, split_classifier);
+        let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
+        let speed = pi::speed_switches_from_env();
+        let mut prompt = prompt::investigation_with_options(
+            &topic,
+            &declared_local_data,
+            split_classifier,
+            hide_lieflat,
+            speed,
+        );
+        if speed.data_profile {
+            let files: Vec<(String, PathBuf)> = declared_local_data
+                .iter()
+                .cloned()
+                .zip(args.data.iter().cloned())
+                .collect();
+            prompt.push_str(&crate::data_profile::profile_section(&files));
+        }
+        if speed.recipes {
+            let files: Vec<(String, PathBuf)> = declared_local_data
+                .iter()
+                .cloned()
+                .zip(args.data.iter().cloned())
+                .collect();
+            if let Some(recipe) = crate::recipes::section(&files) {
+                prompt.push_str(&recipe.text);
+            }
+        }
         print!("{prompt}");
         return Ok(());
     }
-    run_with_artifact(args).await.map(|_| ())
+    let (_, verified) = match run_inner(args).await {
+        Ok(done) => done,
+        Err(error) => return Err(verify::exit_on_error(&error)),
+    };
+    verify::exit_if_not_verified(verified);
+    Ok(())
 }
 
 /// Run a persistent investigation and return its directory so interactive
 /// callers can continue the same Pi session without asking the user to copy a
 /// path from stderr.
 pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
+    verify::mark_interactive_session();
+    run_inner(args).await.map(|(dir, _)| dir)
+}
+
+/// Answer written for a failed run: the redacted error plus any partial text
+/// the model had already streamed (kept so nothing on disk is lost).
+fn failure_answer(error: &anyhow::Error) -> String {
+    let mut text = format!("# Investigation failed\n\n{error:#}\n");
+    if let Some(failure) = error.downcast_ref::<crate::pi::ProviderFailure>() {
+        if !failure.partial_text.trim().is_empty() {
+            text.push_str("\n## Partial output before the failure\n\n");
+            text.push_str(&failure.partial_text);
+            if !failure.partial_text.ends_with('\n') {
+                text.push('\n');
+            }
+        }
+    }
+    text
+}
+
+async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
     let run_started = Instant::now();
     let split_classifier = complex_visual_routing_ab_enabled();
     let topic = args.topic.join(" ");
+    crate::step_lines::begin(&topic);
 
     let output_root = output::resolve_output_dir(&args.out)?;
     output::announce_and_confirm(&output_root, args.confirm_output)?;
 
-    eprintln!(
-        "[agent] phase=preparing elapsed_ms={}",
-        run_started.elapsed().as_millis()
-    );
-    let bundle = InvestigationBundle::create(&output_root, &topic)?;
+    if !crate::step_lines::enabled() {
+        eprintln!(
+            "[agent] phase=preparing elapsed_ms={}",
+            run_started.elapsed().as_millis()
+        );
+    }
+    let mut bundle = InvestigationBundle::create(&output_root, &topic)?;
     let mut local_data = Vec::new();
     for source in &args.data {
         local_data.push(bundle.import_data(source)?);
     }
-    let prompt = prompt::investigation_with_classifier(&topic, &local_data, split_classifier);
+    let hide_lieflat = lieflat_hidden_for(&args.pi.tool_profile, &topic, split_classifier);
+    let speed = pi::speed_switches_from_env();
+    let mut prompt = prompt::investigation_with_options(
+        &topic,
+        &local_data,
+        split_classifier,
+        hide_lieflat,
+        speed,
+    );
+    if speed.data_profile {
+        // Profile the imported copy the model will query, not the original that may change.
+        let files: Vec<(String, PathBuf)> = local_data
+            .iter()
+            .map(|shown| (shown.clone(), bundle.dir.join(shown)))
+            .collect();
+        prompt.push_str(&crate::data_profile::profile_section(&files));
+    }
+    if speed.recipes {
+        // The shape comes from the imported copy the model will query, not from the request text.
+        let files: Vec<(String, PathBuf)> = local_data
+            .iter()
+            .map(|shown| (shown.clone(), bundle.dir.join(shown)))
+            .collect();
+        if let Some(recipe) = crate::recipes::section(&files) {
+            prompt.push_str(&recipe.text);
+            bundle.recipe = Some((recipe.name.to_string(), recipe.sha256));
+        }
+    }
     bundle.write_prompt(&prompt)?;
     let reported_provider = PiConfig::normalize_provider(args.pi.provider.as_deref());
     bundle.write_manifest(
@@ -220,10 +349,12 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
         "draft",
         None,
     )?;
-    eprintln!(
-        "[agent] phase=runtime-initialization elapsed_ms={}",
-        run_started.elapsed().as_millis()
-    );
+    if !crate::step_lines::enabled() {
+        eprintln!(
+            "[agent] phase=runtime-initialization elapsed_ms={}",
+            run_started.elapsed().as_millis()
+        );
+    }
     let runtime_started = Instant::now();
     let extension = runtime::materialize_extension(&bundle.dir)?;
     eprintln!(
@@ -231,6 +362,7 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
         runtime_started.elapsed().as_millis()
     );
 
+    let tool_profile = effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier);
     let mut config = PiConfig {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
@@ -243,7 +375,13 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
         artifact_dir: Some(bundle.dir.clone()),
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: false,
-        tool_profile: effective_tool_profile(&args.pi.tool_profile, &topic, split_classifier),
+        tool_profile: tool_profile.clone(),
+        hide_lieflat,
+        speed,
+        compose: (speed.compose_answer && compose_allowed(&topic, split_classifier, &tool_profile))
+            .then(|| compose_answer::ComposeSpec {
+                chinese: prompt::language_instruction(&topic).contains("Simplified Chinese"),
+            }),
     };
     let reported_provider = config.effective_provider();
 
@@ -282,13 +420,36 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                     );
                     config.continue_session = true;
                     let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
-                    let retry = run_prompt_with_empty_recovery(
+                    let retry = match run_prompt_with_empty_recovery(
                         &config,
                         &correction,
                         recovery,
                         &bundle.events_path,
                     )
-                    .await?;
+                    .await
+                    {
+                        Ok(retry) => retry,
+                        Err(error) => {
+                            bundle.write_answer(&failure_answer(&error))?;
+                            let audit = audit::build(&bundle.events_path, &bundle.tools_path).ok();
+                            bundle.append_run_metric(
+                                "investigate",
+                                reported_provider.as_deref(),
+                                config.model.as_deref(),
+                                "failed",
+                                run_started.elapsed().as_millis(),
+                                audit.as_ref(),
+                            )?;
+                            bundle.write_manifest(
+                                &topic,
+                                reported_provider.as_deref(),
+                                config.model.as_deref(),
+                                "failed",
+                                audit.as_ref(),
+                            )?;
+                            return Err(error);
+                        }
+                    };
                     final_text = retry.text;
                     bundle.write_answer(&final_text)?;
                     if let Some(stats) = &retry.session_stats {
@@ -329,6 +490,14 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                     "\n[qualification] investigation completed without enough observable planning/tool evidence; inspect tools.json"
                 );
             }
+            // Step lines on: the verdict is computed here so the closing line sits right above primary_artifact.
+            let early_verdict = if crate::step_lines::enabled() {
+                let verdict = verify::post_run_verdict(&bundle.dir).await;
+                crate::step_lines::print_final(verdict.is_none());
+                Some(verdict)
+            } else {
+                None
+            };
             match bundle.primary_artifact()? {
                 Some((path, kind)) => {
                     eprintln!(
@@ -350,10 +519,14 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
                 persistence_started.elapsed().as_millis(),
                 run_started.elapsed().as_millis()
             );
-            Ok(bundle.dir)
+            let verified = match early_verdict {
+                Some(verdict) => verify::announce_verdict(verdict),
+                None => verify::announce_post_run_verdict(&bundle.dir).await,
+            };
+            Ok((bundle.dir, verified))
         }
         Err(error) => {
-            let diagnostic = format!("# Investigation failed\n\n{error:#}\n");
+            let diagnostic = failure_answer(&error);
             bundle.write_answer(&diagnostic)?;
             let audit = if bundle.events_path.is_file() {
                 audit::build(&bundle.events_path, &bundle.tools_path).ok()
@@ -382,8 +555,193 @@ pub async fn run_with_artifact(args: InvestigateArgs) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod completion_tests {
-    use super::{is_transient_completion_provider_error, missing_visual_modes};
+    use super::{
+        completion_chain_required, compose_allowed, is_transient_completion_provider_error,
+        lieflat_hidden_for, missing_visual_modes, visual_completion_gaps_for_profile,
+    };
+    use crate::artifact::InvestigationBundle;
+    use crate::audit;
+    use crate::pi;
     use serde_json::json;
+    use std::fs;
+
+    #[test]
+    fn composed_closing_text_never_replaces_a_visual_story_completion_chain() {
+        let simple = "Show the GISTEMP anomaly as one line chart";
+        assert!(compose_allowed(simple, false, "investigate"));
+        // An explicit visual-story profile requires the chain even for a simple topic.
+        assert!(!compose_allowed(simple, false, "visual-story"));
+    }
+
+    const SCMP_LONG_IMAGE_GOAL: &str = "做一张南华早报（SCMP）风格的中文信息长图：一带一路倡议到2017年的进展——哪些国家参与、中国对沿线国家的投资和贸易规模、代表性项目在哪里。要有地图，数字必须来自可核实的数据。";
+
+    #[test]
+    fn lieflat_is_hidden_only_for_visual_story_with_the_switch_on() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let complex = SCMP_LONG_IMAGE_GOAL;
+        for value in [None, Some("0"), Some("")] {
+            match value {
+                Some(v) => std::env::set_var(pi::HIDE_LIEFLAT_ENV, v),
+                None => std::env::remove_var(pi::HIDE_LIEFLAT_ENV),
+            }
+            assert!(
+                !lieflat_hidden_for("investigate", complex, false),
+                "{value:?}"
+            );
+            assert!(
+                !lieflat_hidden_for("visual-story", complex, false),
+                "{value:?}"
+            );
+        }
+        std::env::set_var(pi::HIDE_LIEFLAT_ENV, "1");
+        let complex_on = lieflat_hidden_for("investigate", complex, false);
+        let explicit_on = lieflat_hidden_for("visual-story", "总结这篇新闻", false);
+        let simple_visual = lieflat_hidden_for("investigate", "制作一个信息图", false);
+        let plain = lieflat_hidden_for("investigate", "总结这篇新闻", false);
+        let other_profile = lieflat_hidden_for("visual", complex, false);
+        std::env::remove_var(pi::HIDE_LIEFLAT_ENV);
+        assert!(complex_on);
+        assert!(explicit_on);
+        assert!(!simple_visual && !plain && !other_profile);
+    }
+
+    /// A run that only ever called newsroom_lieflat_render and left a Lieflat
+    /// publication behind: the shape of the run behind issue #37.
+    fn lieflat_only_run(
+        root: &std::path::Path,
+        goal: &str,
+    ) -> (InvestigationBundle, audit::AuditSummary) {
+        let bundle = InvestigationBundle::create(root, goal).unwrap();
+        let page = bundle.dir.join("publications/lieflat-page");
+        fs::create_dir_all(&page).unwrap();
+        fs::write(page.join("index.html"), "<html>lieflat</html>").unwrap();
+        fs::write(
+            page.join("manifest.json"),
+            r#"{"kind":"lieflat_publication","html_ref":"publications/lieflat-page/index.html"}"#,
+        )
+        .unwrap();
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"tool_execution_start\",\"toolCallId\":\"c1\",\"toolName\":\"newsroom_lieflat_render\",\"args\":{}}\n",
+                "{\"type\":\"tool_execution_end\",\"toolCallId\":\"c1\",\"isError\":false}\n"
+            ),
+        )
+        .unwrap();
+        let audit = audit::build(&bundle.events_path, &bundle.tools_path).unwrap();
+        (bundle, audit)
+    }
+
+    #[test]
+    fn lieflat_only_run_cannot_complete_the_long_image_goal() {
+        // The goal is complex through 信息长图, not the bare 地图, so the full
+        // chain is required even with no recorded profile.
+        assert!(completion_chain_required(SCMP_LONG_IMAGE_GOAL, false, None));
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = lieflat_only_run(root.path(), SCMP_LONG_IMAGE_GOAL);
+        for profile in [None, Some("visual"), Some("visual-story")] {
+            let gaps = visual_completion_gaps_for_profile(
+                &bundle,
+                SCMP_LONG_IMAGE_GOAL,
+                &audit,
+                false,
+                profile,
+            )
+            .unwrap();
+            for tool in [
+                "newsroom_infographic_plan",
+                "newsroom_infographic_lint",
+                "newsroom_infographic_render",
+                "newsroom_infographic_critic",
+                "newsroom_publication_plan",
+                "newsroom_publication_render",
+                "newsroom_publication_qa",
+            ] {
+                assert!(
+                    gaps.iter().any(|gap| gap.contains(tool)),
+                    "{profile:?} missing {tool}: {gaps:?}"
+                );
+            }
+            assert!(
+                gaps.iter().any(|gap| gap.contains("map/spatial")),
+                "{profile:?} missing map gap: {gaps:?}"
+            );
+            assert!(
+                gaps.iter()
+                    .any(|gap| gap.contains("only a Lieflat page exists")),
+                "{profile:?} missing publication gap: {gaps:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_page_whose_only_page_call_is_a_stopped_patch_call_stays_not_verified() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = InvestigationBundle::create(root.path(), SCMP_LONG_IMAGE_GOAL).unwrap();
+        let steps: Vec<_> = ["newsroom_infographic_plan", "newsroom_infographic_lint"]
+            .iter()
+            .map(|tool| json!({"tool": tool, "params": {"plan_ref": "p"}, "details": {"passed": true}}))
+            .collect();
+        let stopped = json!({"chain":"newsroom_infographic_chain","chainStatus":"STOPPED","failedAt":"newsroom_infographic_lint","stopCode":"BLOCKED","steps":steps});
+        let events = [
+            json!({"type":"tool_execution_start","toolCallId":"c1","toolName":"newsroom_infographic_chain_patch","args":{}}),
+            json!({"type":"tool_execution_end","toolCallId":"c1","toolName":"newsroom_infographic_chain_patch","isError":false,"result":{"content":[],"details":stopped}}),
+        ];
+        let text: String = events.iter().map(|e| format!("{e}\n")).collect();
+        fs::write(&bundle.events_path, text).unwrap();
+        let audit = audit::build(&bundle.events_path, &bundle.tools_path).unwrap();
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        // Plan and lint count; everything after the stop still does not.
+        for tool in [
+            "newsroom_infographic_render",
+            "newsroom_infographic_critic",
+            "newsroom_publication_plan",
+            "newsroom_publication_render",
+            "newsroom_publication_qa",
+        ] {
+            assert!(
+                gaps.iter().any(|gap| gap.contains(tool)),
+                "{tool}: {gaps:?}"
+            );
+        }
+        assert!(!gaps
+            .iter()
+            .any(|gap| gap.contains("newsroom_infographic_plan")));
+    }
+
+    #[test]
+    fn explicit_visual_story_profile_requires_the_chain_for_any_goal() {
+        let goal = "show a chart of exports";
+        assert!(!completion_chain_required(goal, false, None));
+        assert!(!completion_chain_required(goal, false, Some("visual")));
+        assert!(completion_chain_required(goal, false, Some("visual-story")));
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = lieflat_only_run(root.path(), goal);
+        let plain =
+            visual_completion_gaps_for_profile(&bundle, goal, &audit, false, Some("visual"))
+                .unwrap();
+        assert!(!plain
+            .iter()
+            .any(|gap| gap.contains("newsroom_publication_qa")));
+        let story =
+            visual_completion_gaps_for_profile(&bundle, goal, &audit, false, Some("visual-story"))
+                .unwrap();
+        assert!(story
+            .iter()
+            .any(|gap| gap.contains("newsroom_publication_qa")));
+        assert!(story
+            .iter()
+            .any(|gap| gap.contains("no measured publication")));
+    }
 
     #[test]
     fn explicit_visual_modes_cannot_be_silently_replaced_by_rank_charts() {

@@ -48,6 +48,18 @@ export function annotationTargetValidator(spec) {
 // quantity encoding gets today.
 function choroplethValueLabelsProven(asset) {
   if (!asset || asset.manifest?.chart_type !== 'choropleth') return false;
+  return valueLabelsProvenPerViewport(asset);
+}
+
+// Same proof for a heatmap, behind NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1", default off): every non-null cell must show
+// its exact formatted value as legible text (render_qa_labels.mjs checkHeatmapValueLabels). Nothing else is loosened.
+function heatmapValueLabelsProven(asset) {
+  if (process.env.NEWSROOM_HEATMAP_VALUE_LABELS !== '1') return false;
+  if (!asset || asset.manifest?.chart_type !== 'heatmap') return false;
+  return valueLabelsProvenPerViewport(asset);
+}
+
+function valueLabelsProvenPerViewport(asset) {
   const qa = asset.renderQa;
   if (!qa || typeof qa !== 'object') return false;
   const viewportSvg = { desktop: asset.desktopSvg, ...(asset.mobileSvg !== undefined ? { mobile: asset.mobileSvg } : {}) };
@@ -72,12 +84,14 @@ export function visualChannelOwnerValidator(spec, assets = {}) {
     if (spec.schema_version === '1.5.0' && channels.length === 0) issues.push(issue(validator, 'ERROR', 'visual_channel.owner_required', `visual module '${module.id}' must declare visual channel ownership`, `/modules/${moduleIndex}/visual_channels`));
     for (const [channelIndex, owner] of channels.entries()) {
       const channel = String(owner.channel ?? '');
-      if (seen.has(channel)) issues.push(issue(validator, 'ERROR', 'visual_channel.single_owner', `channel '${channel}' in module '${module.id}' has multiple owners`, `/modules/${moduleIndex}/visual_channels/${channelIndex}/channel`, { first_owner: seen.get(channel), second_owner: owner.field }));
+      // NEWSROOM_CHANNEL_AXES=1: position_x and position_y are two channels; plain position conflicts with either.
+      const clash = process.env.NEWSROOM_CHANNEL_AXES === '1' && channel.startsWith('position') ? [...seen.keys()].find((key) => key === channel || (key.startsWith('position') && (key === 'position' || channel === 'position'))) : (seen.has(channel) ? channel : undefined);
+      if (clash !== undefined) issues.push(issue(validator, 'ERROR', 'visual_channel.single_owner', `channel '${channel}' in module '${module.id}' has multiple owners`, `/modules/${moduleIndex}/visual_channels/${channelIndex}/channel`, { first_owner: seen.get(clash), second_owner: owner.field }));
       else seen.set(channel, owner.field);
     }
     const quantitative = channels.filter((owner) => owner.role === 'quantitative');
-    const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle'].includes(owner.channel));
-    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref])) {
+    const accurate = quantitative.some((owner) => ['position', 'length', 'area', 'size', 'angle', ...(process.env.NEWSROOM_CHANNEL_AXES === '1' ? ['position_x', 'position_y'] : [])].includes(owner.channel));
+    if (quantitative.length && !accurate && !choroplethValueLabelsProven(assets[module.manifest_ref]) && !heatmapValueLabelsProven(assets[module.manifest_ref])) {
       issues.push(issue(validator, 'ERROR', 'visual_channel.color_only_quantity', `visual module '${module.id}' encodes quantity only through low-precision channels`, `/modules/${moduleIndex}/visual_channels`));
     }
   }
@@ -100,7 +114,8 @@ export function misleadingQuantitativeValidator(spec, assets = {}) {
     if (['horizontal_bar', 'diverging_bar'].includes(chartType) && !['zero', 'symmetric_zero'].includes(encoding.baseline_policy)) issues.push(issue(validator, 'ERROR', 'quantitative.zero_baseline_required', `bar visual '${module.id}' requires a zero or symmetric-zero baseline`, `${path}/baseline_policy`));
     if (encoding.scale_type === 'log' && (!(Number(encoding.domain_min) > 0) || !(Number(encoding.domain_max) > Number(encoding.domain_min)))) issues.push(issue(validator, 'ERROR', 'quantitative.log_domain_positive', `log scale in module '${module.id}' requires 0 < domain_min < domain_max`, path));
     if (['area', 'size'].includes(encoding.mark_semantics) && encoding.area_proportional !== true) issues.push(issue(validator, 'ERROR', 'quantitative.area_must_be_proportional', `area/size encoding in module '${module.id}' must declare proportional area`, `${path}/area_proportional`));
-    if (encoding.mark_semantics === 'color' && chartType !== 'choropleth') issues.push(issue(validator, 'ERROR', 'quantitative.color_mark_choropleth_only', `color mark semantics in module '${module.id}' is only valid for a choropleth chart`, `${path}/mark_semantics`));
+    // NEWSROOM_HEATMAP_VALUE_LABELS=1: a heatmap may declare color only with the same per-cell value-label proof as visualChannelOwnerValidator.
+    if (encoding.mark_semantics === 'color' && chartType !== 'choropleth' && !(chartType === 'heatmap' && heatmapValueLabelsProven(assets[module.manifest_ref]))) issues.push(issue(validator, 'ERROR', 'quantitative.color_mark_choropleth_only', `color mark semantics in module '${module.id}' is only valid for a choropleth chart`, `${path}/mark_semantics`));
     const flowLike = module.visual_grammar === 'flow' || ['sankey', 'alluvial', 'parallel_sets', 'geo_flow_map', 'cartographic_flow_map'].includes(chartType);
     if (flowLike && encoding.quantity_kind === 'stock_change') issues.push(issue(validator, 'FATAL', 'quantitative.stock_change_is_not_flow', `module '${module.id}' cannot label stock change as migration flow`, `${path}/quantity_kind`));
     if (flowLike && encoding.quantity_kind === 'stock') issues.push(issue(validator, 'ERROR', 'quantitative.stock_is_not_flow', `module '${module.id}' uses flow geometry for a stock quantity without flow semantics`, `${path}/quantity_kind`));

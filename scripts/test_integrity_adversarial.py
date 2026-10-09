@@ -637,6 +637,73 @@ def check_publication_infographic_lineage_verifies():
         print("PASS control: publication-infographic-lineage-verifies")
 
 
+def check_claim_revoked_by_a_later_record():
+    # A claim counts as verified only while its latest record is system-verified: the same claim_id recorded again as
+    # contested revokes it, so the chart and page that cite it must fail with the existing "not verified" messages.
+    # Contested then verified is verified again and verifies clean.
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-claim-revoked-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        verified = claim(root)
+        revoked = {**verified, "status": "contested"}
+        (root / "claims.jsonl").write_text(json.dumps(verified) + "\n" + json.dumps(revoked) + "\n", encoding="utf-8")
+        report = verify(root)
+        errors = [e for e in report.errors if "claim_id is not verified: claim-valid" in e]
+        if report.passed or not any(e.startswith("visualization ") for e in errors):
+            raise SystemExit(f"FAIL: a visualization citing a later-revoked claim verified: {report.errors}")
+        if not any(e.startswith("infographic ") for e in errors):
+            raise SystemExit(f"FAIL: an infographic citing a later-revoked claim verified: {report.errors}")
+        (root / "claims.jsonl").write_text(json.dumps(revoked) + "\n" + json.dumps(verified) + "\n", encoding="utf-8")
+        report = verify(root)
+        if not report.passed:
+            raise SystemExit(f"FAIL: contested then verified should verify: {report.errors}")
+        print("PASS adversary+control: claim-revoked-by-a-later-record")
+
+
+def check_malformed_claim_records_fail_the_report():
+    # Every non-blank claims.jsonl line must be an object with a non-empty string claim_id, whatever its status.
+    # A malformed line fails the report with its file line number and never crashes the verifier; a clean file verifies.
+    with tempfile.TemporaryDirectory(prefix="newsroom-integrity-claim-malformed-") as tmp:
+        root = Path(tmp)
+        build_valid(root)
+        verified = json.dumps(claim(root))
+        cases = {
+            "no claim_id": '{"status": "contested"}',
+            "numeric id 1": '{"claim_id": 1, "status": "contested"}',
+            "numeric id 0": '{"claim_id": 0, "status": "contested"}',
+            "empty id": '{"claim_id": "", "status": "contested"}',
+            "null id": '{"claim_id": null, "status": "contested"}',
+            "array line": "[1]",
+            "string line": '"x"',
+            "number line": "7",
+            "null line": "null",
+        }
+        for name, bad in cases.items():
+            (root / "claims.jsonl").write_text(verified + "\n\n" + bad + "\n", encoding="utf-8")
+            try:
+                report = verify(root)
+            except Exception as exc:
+                raise SystemExit(f"FAIL: a malformed claim record ({name}) crashed the verifier: {exc!r}")
+            if report.passed or not any("claims.jsonl line 3 is not a claim record" in e for e in report.errors):
+                raise SystemExit(f"FAIL: a malformed claim record ({name}) was not refused with its line number: {report.errors}")
+        # A record carrying the reserved key __parse_error__ is refused whatever its other fields, and never counts.
+        keyed_extra = '{"claim_id": "extra", "status": "contested", "__parse_error__": "x"}'
+        keyed_verified = json.dumps({**json.loads(verified), "__parse_error__": "x"})
+        for name, text, line in (
+            ("reserved key on an extra record", verified + "\n" + keyed_extra + "\n", 2),
+            ("reserved key on the verified record", keyed_verified + "\n", 1),
+        ):
+            (root / "claims.jsonl").write_text(text, encoding="utf-8")
+            report = verify(root)
+            if report.passed or not any(f"claims.jsonl line {line} " in e and "__parse_error__" in e for e in report.errors):
+                raise SystemExit(f"FAIL: {name} was not refused with its line number: {report.errors}")
+        (root / "claims.jsonl").write_text(verified + "\n", encoding="utf-8")
+        report = verify(root)
+        if not report.passed:
+            raise SystemExit(f"FAIL: a clean claims file should verify: {report.errors}")
+        print("PASS adversary+control: malformed-claim-records-fail-the-report")
+
+
 def check_infographic_en_unchanged_verifies():
     # An infographic with no language field (the runtime's own
     # params.language ?? "en" default) must keep verifying exactly as it
@@ -718,7 +785,9 @@ def main():
     check_primary_artifact_svg_variant_verifies()
     check_clean_1_4_0_infographic_verifies()
     check_publication_infographic_lineage_verifies()
+    check_malformed_claim_records_fail_the_report()
     check_infographic_en_unchanged_verifies()
+    check_claim_revoked_by_a_later_record()
     check_infographic_zh_plan_with_zh_strip_verifies()
 
 

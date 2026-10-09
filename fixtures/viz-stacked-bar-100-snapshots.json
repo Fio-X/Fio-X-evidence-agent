@@ -1,0 +1,18 @@
+{
+  "25 bars, in-bar values": {
+    "sha256": "99bfe59280e52e209653253fb579d59dba07b927ec0e8fd8733d73868ac88dd0",
+    "bytes": 39025
+  },
+  "25 bars, highlight column": {
+    "sha256": "e51121276fe97f253c695a5bd7526e2418f76c04a2bf1b1f6bf077731c5c35c7",
+    "bytes": 29049
+  },
+  "25 bars, no decimals, rounding note": {
+    "sha256": "bf387852a89c6ee6044db936716e0ae3569b10dabcb957909fd84d3442f3ea84",
+    "bytes": 39344
+  },
+  "25 bars, no decimals, default layout (no note)": {
+    "sha256": "27f84f8feba78ac3a69dfa1048ff1261a498026432301a09528c8ce31a360c56",
+    "bytes": 28986
+  }
+}

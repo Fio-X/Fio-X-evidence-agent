@@ -2,7 +2,7 @@ use crate::hash::{sha256_bytes, sha256_file};
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
@@ -252,6 +252,7 @@ fn verify_data(root: &Path, report: &mut VerificationReport) -> Result<()> {
             )),
         }
     }
+    verify_derived_tables(root, report);
     let origin_dir = data_dir.join("origins");
     if origin_dir.is_dir() {
         for entry in fs::read_dir(&origin_dir)? {
@@ -544,9 +545,583 @@ fn verify_computations(root: &Path, report: &mut VerificationReport) -> Result<(
                     ),
                 );
             }
+            verify_computation_read_inputs(root, &path, &value, report);
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Read-input binding (issue #36). Mirrors runtime/pi/computation_rows.mjs: a
+// computation only supports a claim when the files its SQL really reads
+// (recorded as `read_inputs`, re-derivable with DuckDB) include data/ or
+// sources/ artifacts the claim cites. Literal-only (VALUES, constants,
+// generate_series), unresolved and legacy (unrecorded) computations never do.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputBinding {
+    Legacy,
+    SourceBound,
+    LiteralOnly,
+    Unresolved,
+}
+
+impl InputBinding {
+    fn label(self) -> &'static str {
+        match self {
+            InputBinding::Legacy => "legacy",
+            InputBinding::SourceBound => "source_bound",
+            InputBinding::LiteralOnly => "literal_only",
+            InputBinding::Unresolved => "unresolved",
+        }
+    }
+}
+
+const MAX_CHAIN_DEPTH: usize = 16;
+const FILE_READER_FUNCTIONS: &[&str] = &[
+    "read_csv",
+    "read_csv_auto",
+    "read_json",
+    "read_json_auto",
+    "read_ndjson",
+    "read_ndjson_auto",
+    "read_json_objects",
+    "read_json_objects_auto",
+    "read_ndjson_objects",
+    "read_parquet",
+    "parquet_scan",
+    "read_text",
+    "read_blob",
+    "parquet_metadata",
+    "parquet_schema",
+    "parquet_file_metadata",
+    "parquet_kv_metadata",
+    "sniff_csv",
+];
+const LITERAL_TABLE_FUNCTIONS: &[&str] = &[
+    "range",
+    "generate_series",
+    "unnest",
+    "repeat_row",
+    "generate_subscripts",
+    "json_each",
+    "json_tree",
+];
+
+fn is_computation_path(path: &str) -> bool {
+    path.strip_prefix("computations/")
+        .and_then(|rest| rest.strip_suffix(".json"))
+        .is_some_and(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
+
+fn canonical_input_path(raw: &str) -> Option<String> {
+    if raw.is_empty()
+        || raw.len() > 512
+        || !raw
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._/-".contains(&byte))
+        || raw.starts_with('/')
+        || raw.contains("//")
+        || raw.ends_with('/')
+        || raw
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
+    {
+        return None;
+    }
+    if raw.starts_with("data/") || raw.starts_with("sources/") || is_computation_path(raw) {
+        Some(raw.to_owned())
+    } else {
+        None
+    }
+}
+
+fn constant_strings(expr: &Value) -> Option<Vec<String>> {
+    match expr.get("class").and_then(Value::as_str)? {
+        "CONSTANT" => {
+            let value = expr.get("value")?;
+            if value.get("is_null").and_then(Value::as_bool) == Some(false)
+                && value.pointer("/type/id").and_then(Value::as_str) == Some("VARCHAR")
+            {
+                Some(vec![value.get("value")?.as_str()?.to_owned()])
+            } else {
+                None
+            }
+        }
+        "FUNCTION" if expr.get("function_name").and_then(Value::as_str) == Some("list_value") => {
+            let children = expr.get("children")?.as_array()?;
+            if children.is_empty() {
+                return None;
+            }
+            let mut out = Vec::new();
+            for child in children {
+                let inner = constant_strings(child)?;
+                if inner.len() != 1 {
+                    return None;
+                }
+                out.push(inner.into_iter().next()?);
+            }
+            Some(out)
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SqlReads {
+    paths: Vec<String>,
+    unresolved: Vec<String>,
+}
+
+fn collect_cte_names(node: &Value, names: &mut HashSet<String>) {
+    match node {
+        Value::Array(items) => items.iter().for_each(|item| collect_cte_names(item, names)),
+        Value::Object(map) => {
+            if let Some(entries) = map
+                .get("cte_map")
+                .and_then(|v| v.get("map"))
+                .and_then(Value::as_array)
+            {
+                for entry in entries {
+                    if let Some(key) = entry.get("key").and_then(Value::as_str) {
+                        names.insert(key.to_owned());
+                    }
+                }
+            }
+            map.values()
+                .for_each(|value| collect_cte_names(value, names));
+        }
+        _ => {}
+    }
+}
+
+fn walk_sql_reads(
+    node: &Value,
+    ctes: &HashSet<String>,
+    paths: &mut std::collections::BTreeSet<String>,
+    unresolved: &mut std::collections::BTreeSet<String>,
+) {
+    match node {
+        Value::Array(items) => items
+            .iter()
+            .for_each(|item| walk_sql_reads(item, ctes, paths, unresolved)),
+        Value::Object(map) => {
+            match map.get("type").and_then(Value::as_str) {
+                Some("BASE_TABLE") => {
+                    let table = map.get("table_name").and_then(Value::as_str).unwrap_or("");
+                    let qualified = map
+                        .get("schema_name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|v| !v.is_empty())
+                        || map
+                            .get("catalog_name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| !v.is_empty());
+                    if !qualified
+                        && !ctes.contains(table)
+                        && table.contains(['/', '.', '*', '\\', ':'])
+                    {
+                        match canonical_input_path(table) {
+                            Some(path) => {
+                                paths.insert(path);
+                            }
+                            None => {
+                                unresolved.insert(
+                                    "table reference is not a plain data/, sources/ or computations/ path"
+                                        .to_owned(),
+                                );
+                            }
+                        }
+                    }
+                }
+                Some("TABLE_FUNCTION") => {
+                    let function = map.get("function").cloned().unwrap_or(Value::Null);
+                    let name = function
+                        .get("function_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    if FILE_READER_FUNCTIONS.contains(&name.as_str()) {
+                        let positional: Vec<&Value> = function
+                            .get("children")
+                            .and_then(Value::as_array)
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .filter(|child| {
+                                        child
+                                            .get("alias")
+                                            .and_then(Value::as_str)
+                                            .is_none_or(str::is_empty)
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let listed = if positional.len() == 1 {
+                            constant_strings(positional[0])
+                        } else {
+                            None
+                        };
+                        match listed {
+                            None => {
+                                unresolved.insert(format!(
+                                    "{name}: path is not a single constant string or list"
+                                ));
+                            }
+                            Some(raws) => {
+                                for raw in raws {
+                                    match canonical_input_path(&raw) {
+                                        Some(path) => {
+                                            paths.insert(path);
+                                        }
+                                        None => {
+                                            unresolved.insert(format!(
+                                                "{name}: path is not a plain data/, sources/ or computations/ path"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if !LITERAL_TABLE_FUNCTIONS.contains(&name.as_str()) {
+                        unresolved.insert(format!("table function {name} is not recognized"));
+                    }
+                }
+                _ => {}
+            }
+            map.values()
+                .for_each(|value| walk_sql_reads(value, ctes, paths, unresolved));
+        }
+        _ => {}
+    }
+}
+
+/// Pure walk of a `json_serialize_sql` document.
+fn collect_sql_reads(ast: &Value) -> SqlReads {
+    let single = ast.get("error").and_then(Value::as_bool) == Some(false)
+        && ast
+            .get("statements")
+            .and_then(Value::as_array)
+            .is_some_and(|statements| statements.len() == 1);
+    if !single {
+        return SqlReads {
+            paths: Vec::new(),
+            unresolved: vec!["SQL is not a single serializable SELECT statement".to_owned()],
+        };
+    }
+    let mut ctes = HashSet::new();
+    collect_cte_names(ast, &mut ctes);
+    let mut paths = std::collections::BTreeSet::new();
+    let mut unresolved = std::collections::BTreeSet::new();
+    walk_sql_reads(ast, &ctes, &mut paths, &mut unresolved);
+    SqlReads {
+        paths: paths.into_iter().collect(),
+        unresolved: unresolved.into_iter().collect(),
+    }
+}
+
+const DERIVED_PREFIX: &str = "data/derived/";
+
+fn is_hex64(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// `data/derived/<sha>.pdf-rows.json` -> `<sha>` when the path has that shape.
+fn derived_rows_sha(path: &str) -> Option<&str> {
+    path.strip_prefix(DERIVED_PREFIX)?
+        .strip_suffix(".pdf-rows.json")
+        .filter(|sha| is_hex64(sha))
+}
+
+/// Verify the chain of a derived PDF row table, recomputed from bytes on disk:
+/// rows file hash == meta.rows_sha256; meta.source_sha256 == sha256 of the PDF
+/// data file it names; and a download record binds that PDF to this table.
+/// Returns the source PDF path on success.
+fn verify_derived_input(root: &Path, path: &str) -> std::result::Result<String, String> {
+    let sha = derived_rows_sha(path).ok_or("not a recognised derived table path")?;
+    let rows_hash =
+        sha256_file(&root.join(path)).map_err(|e| format!("derived table unreadable: {e}"))?;
+    let meta_path = root.join(path.trim_end_matches(".json").to_owned() + ".meta.json");
+    let meta = read_json(&meta_path).map_err(|e| format!("derived metadata unreadable: {e}"))?;
+    let text = |key: &str| meta.get(key).and_then(Value::as_str).unwrap_or("");
+    if text("kind") != "pdf_row_table" || text("rows_file") != path {
+        return Err("derived metadata does not describe this table".into());
+    }
+    if rows_hash != text("rows_sha256") {
+        return Err("derived table bytes do not match rows_sha256".into());
+    }
+    if text("source_sha256") != sha {
+        return Err("derived table is not named for its source sha256".into());
+    }
+    let source = text("source_file");
+    let in_data = source
+        .strip_prefix("data/")
+        .is_some_and(|rest| !rest.contains('/'));
+    if !in_data
+        || !source
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .starts_with(&format!("{sha}."))
+    {
+        return Err("source_file is not the content-addressed PDF".into());
+    }
+    let source_hash =
+        sha256_file(&root.join(source)).map_err(|e| format!("source PDF unreadable: {e}"))?;
+    if source_hash != sha {
+        return Err("source PDF bytes do not match source_sha256".into());
+    }
+    let origins = fs::read_dir(root.join("data").join("origins"))
+        .map_err(|e| format!("no download records: {e}"))?;
+    for entry in origins.flatten() {
+        let origin_path = entry.path();
+        if origin_path.extension().and_then(|v| v.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(origin) = read_json(&origin_path) else {
+            continue;
+        };
+        let derived = origin.get("derived_text");
+        if origin.get("file").and_then(Value::as_str) == Some(source)
+            && origin.get("sha256").and_then(Value::as_str) == Some(sha)
+            && derived.and_then(|d| d.get("file")).and_then(Value::as_str) == Some(path)
+            && derived
+                .and_then(|d| d.get("rows_sha256"))
+                .and_then(Value::as_str)
+                == Some(rows_hash.as_str())
+        {
+            return Ok(source.to_owned());
+        }
+    }
+    Err("no download record binds this table to the PDF".into())
+}
+
+/// Every table under data/derived/ must pass the chain check, so an altered
+/// or orphaned derived file is reported even when no computation reads it.
+fn verify_derived_tables(root: &Path, report: &mut VerificationReport) {
+    let Ok(entries) = fs::read_dir(root.join("data").join("derived")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".pdf-rows.meta.json") {
+            continue;
+        }
+        let rel = format!("{DERIVED_PREFIX}{name}");
+        if let Err(reason) = verify_derived_input(root, &rel) {
+            report.error(format!(
+                "derived table {rel} failed its provenance chain: {reason}"
+            ));
+        }
+    }
+}
+
+/// Classify a set of directly read paths, following chained computations.
+fn classify_inputs(
+    root: &Path,
+    paths: &[String],
+    had_unresolved: bool,
+    depth: usize,
+    seen: &[String],
+) -> (InputBinding, std::collections::BTreeSet<String>) {
+    let mut effective = std::collections::BTreeSet::new();
+    let mut unresolved = had_unresolved;
+    for path in paths {
+        if path.starts_with(DERIVED_PREFIX) {
+            // A derived table is evidence only while its chain to the
+            // downloaded PDF verifies; anything else under data/derived/ is
+            // unresolved (fails closed).
+            match verify_derived_input(root, path) {
+                Ok(source_file) => {
+                    effective.insert(path.clone());
+                    effective.insert(source_file);
+                }
+                Err(_) => unresolved = true,
+            }
+            continue;
+        }
+        if path.starts_with("data/") || path.starts_with("sources/") {
+            effective.insert(path.clone());
+            continue;
+        }
+        if !is_computation_path(path) || seen.contains(path) || depth >= MAX_CHAIN_DEPTH {
+            unresolved = true;
+            continue;
+        }
+        let dependency = read_json(&root.join(path)).unwrap_or(Value::Null);
+        let mut chain = seen.to_vec();
+        chain.push(path.clone());
+        let (binding, inner) = recorded_input_state(root, &dependency, depth + 1, &chain);
+        if matches!(binding, InputBinding::Legacy | InputBinding::Unresolved) {
+            unresolved = true;
+        }
+        effective.extend(inner);
+    }
+    let binding = if unresolved {
+        InputBinding::Unresolved
+    } else if effective.is_empty() {
+        InputBinding::LiteralOnly
+    } else {
+        InputBinding::SourceBound
+    };
+    (binding, effective)
+}
+
+fn recorded_read_paths(record: &Value) -> Option<Vec<String>> {
+    let items = record.get("read_inputs")?.as_array()?;
+    Some(
+        items
+            .iter()
+            .map(|item| {
+                item.get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned()
+            })
+            .collect(),
+    )
+}
+
+fn recorded_binding_label(record: &Value) -> Option<InputBinding> {
+    match record.get("input_binding").and_then(Value::as_str)? {
+        "source_bound" => Some(InputBinding::SourceBound),
+        "literal_only" => Some(InputBinding::LiteralOnly),
+        "unresolved" => Some(InputBinding::Unresolved),
+        _ => None,
+    }
+}
+
+/// Binding implied by what a stored record says it read.
+fn recorded_input_state(
+    root: &Path,
+    record: &Value,
+    depth: usize,
+    seen: &[String],
+) -> (InputBinding, std::collections::BTreeSet<String>) {
+    let (Some(paths), Some(label)) = (recorded_read_paths(record), recorded_binding_label(record))
+    else {
+        return (InputBinding::Legacy, Default::default());
+    };
+    if depth > MAX_CHAIN_DEPTH {
+        return (InputBinding::Unresolved, Default::default());
+    }
+    classify_inputs(root, &paths, label == InputBinding::Unresolved, depth, seen)
+}
+
+/// Record-level checks for computations that carry read_inputs (new builds).
+/// Legacy records are not rewritten or flagged here; claims resting on them are
+/// judged in `verify_claims`.
+fn verify_computation_read_inputs(
+    root: &Path,
+    path: &Path,
+    value: &Value,
+    report: &mut VerificationReport,
+) {
+    let has_inputs = value.get("read_inputs").is_some();
+    let has_binding = value.get("input_binding").is_some();
+    if !has_inputs && !has_binding {
+        return;
+    }
+    let name = path.display();
+    let (Some(items), Some(label)) = (
+        value.get("read_inputs").and_then(Value::as_array),
+        recorded_binding_label(value),
+    ) else {
+        report.error(format!(
+            "computation {name} must carry both a valid read_inputs array and input_binding"
+        ));
+        return;
+    };
+    let mut listed: Vec<String> = Vec::new();
+    let mut shape_ok = true;
+    for item in items {
+        let input_path = item.get("path").and_then(Value::as_str).unwrap_or("");
+        let sha = item.get("sha256").and_then(Value::as_str).unwrap_or("");
+        let canonical = canonical_input_path(input_path);
+        if canonical.is_none() || sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            report.error(format!(
+                "computation {name} has an invalid read_inputs entry: {input_path}"
+            ));
+            shape_ok = false;
+            continue;
+        }
+        listed.push(input_path.to_owned());
+        match sha256_file(&root.join(input_path)) {
+            Ok(actual) => report.check(
+                actual == sha,
+                format!("computation {name} read input {input_path} no longer matches its recorded sha256"),
+            ),
+            Err(_) => report.error(format!(
+                "computation {name} read input {input_path} is missing"
+            )),
+        }
+    }
+    let mut sorted = listed.clone();
+    sorted.sort();
+    sorted.dedup();
+    report.check(
+        listed == sorted,
+        format!("read_inputs must be sorted and unique: {name}"),
+    );
+    if !shape_ok {
+        return;
+    }
+    let (implied, _) = classify_inputs(root, &listed, label == InputBinding::Unresolved, 0, &[]);
+    report.check(
+        implied == label,
+        format!(
+            "computation {name} input_binding {} does not match its read_inputs ({})",
+            label.label(),
+            implied.label()
+        ),
+    );
+}
+
+/// A verified claim may rest only on computations that read, at run time, at
+/// least one cited data/ or sources/ artifact.
+fn verify_claim_computation_binding(
+    root: &Path,
+    line_no: usize,
+    source_refs: &[String],
+    computation_ref: &str,
+    report: &mut VerificationReport,
+) {
+    let Ok(path) = safe_ref(root, computation_ref) else {
+        return;
+    };
+    let Ok(record) = read_json(&path) else {
+        report.error(format!(
+            "COMPUTATION_PROVENANCE_REQUIRED: computation {computation_ref} cited by verified claim on line {} is unreadable",
+            line_no + 1
+        ));
+        return;
+    };
+    let (binding, effective) =
+        recorded_input_state(root, &record, 0, &[computation_ref.to_owned()]);
+    if binding != InputBinding::SourceBound {
+        report.error(format!(
+            "COMPUTATION_PROVENANCE_REQUIRED: verified claim on line {} rests on computation {computation_ref} whose recorded inputs are {}; literal-only, unresolved or unrecorded (legacy) computations cannot verify a claim",
+            line_no + 1,
+            binding.label()
+        ));
+        return;
+    }
+    report.check(
+        source_refs.iter().any(|source| effective.contains(source)),
+        format!(
+            "COMPUTATION_PROVENANCE_REQUIRED: verified claim on line {} cites no source read by computation {computation_ref}",
+            line_no + 1
+        ),
+    );
 }
 
 fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
@@ -571,6 +1146,18 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
                 continue;
             }
         };
+        let has_claim_id = claim.is_object()
+            && claim
+                .get("claim_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty());
+        if !has_claim_id {
+            report.error(format!(
+                "claims.jsonl line {} is not a claim record with a non-empty string claim_id",
+                line_no + 1
+            ));
+            continue;
+        }
         if claim.get("status").and_then(Value::as_str) != Some("verified") {
             continue;
         }
@@ -605,6 +1192,10 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
                 line_no + 1
             ),
         );
+        let cited_sources: Vec<String> = source_refs
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_owned))
+            .collect();
         for item in source_refs {
             if let Some(reference) = item.as_str() {
                 match safe_ref(root, reference) {
@@ -626,6 +1217,7 @@ fn verify_claims(root: &Path, report: &mut VerificationReport) -> Result<()> {
                     ));
                     continue;
                 }
+                verify_claim_computation_binding(root, line_no, &cited_sources, reference, report);
                 match safe_ref(root, reference) {
                     Ok(path) => report.check(
                         path.is_file(),
@@ -750,12 +1342,33 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             // QA below, and nothing else may be listed.
             for key in variants.keys() {
                 report.check(
-                    key == "desktop" || key == "mobile",
+                    key == "desktop" || key == "mobile" || key == "compact",
                     format!("visualization {name} lists an unknown variant: {key}"),
                 );
             }
-            for viewport in ["desktop", "mobile"] {
-                if viewport == "mobile" && !variants.contains_key("mobile") {
+            // Optional manifest.hashes: every key present must equal the
+            // sha256 of the corresponding variant file. A compact variant
+            // must carry hashes.compact_sha256 (fail closed); old manifests
+            // with no compact variant and no hashes are unaffected.
+            let viz_hashes = manifest.get("hashes").and_then(Value::as_object);
+            report.check(
+                !viz_hashes
+                    .map(|h| h.contains_key("compact_sha256"))
+                    .unwrap_or(false)
+                    || variants.contains_key("compact"),
+                format!("visualization {name} has hashes.compact_sha256 without a compact variant"),
+            );
+            report.check(
+                !variants.contains_key("compact")
+                    || viz_hashes
+                        .map(|h| h.contains_key("compact_sha256"))
+                        .unwrap_or(false),
+                format!(
+                    "visualization {name} lists a compact variant without hashes.compact_sha256"
+                ),
+            );
+            for viewport in ["desktop", "mobile", "compact"] {
+                if viewport != "desktop" && !variants.contains_key(viewport) {
                     continue;
                 }
                 let reference = variants.get(viewport).and_then(Value::as_str).unwrap_or("");
@@ -778,6 +1391,22 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                                     "visualization {name} {viewport} SVG is suspiciously small"
                                 ),
                             );
+                            let hash_key = format!("{viewport}_sha256");
+                            if let Some(expected) =
+                                viz_hashes.and_then(|h| h.get(hash_key.as_str()))
+                            {
+                                match sha256_file(&svg) {
+                                    Ok(actual) => report.check(
+                                        expected.as_str() == Some(actual.as_str()),
+                                        format!(
+                                            "visualization {name} {viewport} hash mismatch against manifest.hashes.{hash_key}"
+                                        ),
+                                    ),
+                                    Err(error) => report.error(format!(
+                                        "visualization {name} failed hashing {viewport} SVG: {error}"
+                                    )),
+                                }
+                            }
                         }
                     }
                     Err(error) => report.error(format!(
@@ -797,6 +1426,10 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                 .and_then(|v| v.get("mobile"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            let compact_ref = variants
+                .and_then(|v| v.get("compact"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let render_qa_ref = manifest
                 .get("render_qa_ref")
                 .and_then(Value::as_str)
@@ -811,16 +1444,31 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             // JS lint that ran at plan time somehow let one through.
             let is_choropleth =
                 manifest.get("chart_type").and_then(Value::as_str) == Some("choropleth");
+            // Heatmap proof claims are re-derived only behind NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1").
+            let is_heatmap_proof = manifest.get("chart_type").and_then(Value::as_str)
+                == Some("heatmap")
+                && std::env::var("NEWSROOM_HEATMAP_VALUE_LABELS").as_deref() == Ok("1");
             if draft {
+                // A listed compact variant is never exempt from render QA.
+                report.check(
+                    !render_qa_ref.is_empty()
+                        || !variants.map(|v| v.contains_key("compact")).unwrap_or(false),
+                    format!("visualization {name} lists a compact variant without a render_qa_ref"),
+                );
                 if !render_qa_ref.is_empty() {
                     check_render_qa_ref(
                         root,
                         &format!("visualization {name}"),
                         render_qa_ref,
                         "visualizations/qa/",
-                        &[("desktop", desktop_ref), ("mobile", mobile_ref)],
+                        &[
+                            ("desktop", desktop_ref),
+                            ("mobile", mobile_ref),
+                            ("compact", compact_ref),
+                        ],
                         false,
                         is_choropleth,
+                        is_heatmap_proof,
                         report,
                     );
                 }
@@ -835,9 +1483,14 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                         &format!("visualization {name}"),
                         render_qa_ref,
                         "visualizations/qa/",
-                        &[("desktop", desktop_ref), ("mobile", mobile_ref)],
+                        &[
+                            ("desktop", desktop_ref),
+                            ("mobile", mobile_ref),
+                            ("compact", compact_ref),
+                        ],
                         true,
                         is_choropleth,
+                        is_heatmap_proof,
                         report,
                     );
                 }
@@ -1077,6 +1730,19 @@ fn leading_number_with_scale(text: &str) -> Option<f64> {
 /// messages (empty means the proof holds).
 fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     let mut failures = Vec::new();
+    // NEWSROOM_VERIFY_MAP_FOOTNOTES=1 (default off): also count the numbered-footnote list rows the renderer draws for
+    // regions too small for an on-map label, the same roles render_qa_labels.mjs counts.
+    let footnotes = std::env::var("NEWSROOM_VERIFY_MAP_FOOTNOTES").as_deref() == Ok("1");
+    let name_roles: &[&str] = if footnotes {
+        &["choropleth-label", "choropleth-inset-label", "choropleth-footnote-name"]
+    } else {
+        &["choropleth-label", "choropleth-inset-label"]
+    };
+    let value_roles: &[&str] = if footnotes {
+        &["choropleth-label-value", "choropleth-inset-label-value", "choropleth-footnote-value"]
+    } else {
+        &["choropleth-label-value", "choropleth-inset-label-value"]
+    };
 
     let mut data_values: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     for tag in find_path_tags_with_role(svg_text, "choropleth-data") {
@@ -1092,7 +1758,7 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     }
 
     let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for node in find_text_nodes_with_role(svg_text, &["choropleth-label", "choropleth-inset-label"])
+    for node in find_text_nodes_with_role(svg_text, name_roles)
     {
         let Some(iso3) = attr_value(node.tag, "data-iso3") else {
             continue;
@@ -1103,10 +1769,7 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             .push(label_body_text(node.body));
     }
     let mut values: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for node in find_text_nodes_with_role(
-        svg_text,
-        &["choropleth-label-value", "choropleth-inset-label-value"],
-    ) {
+    for node in find_text_nodes_with_role(svg_text, value_roles) {
         let Some(iso3) = attr_value(node.tag, "data-iso3") else {
             continue;
         };
@@ -1168,6 +1831,155 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     failures
 }
 
+/// Like attr_value, but only matches a whole attribute name (` x="` never matches inside `data-x="`).
+fn whole_attr_value<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
+    attr_value(tag, &format!(" {attr}")).or_else(|| attr_value(tag, &format!("\n{attr}")))
+}
+
+/// A heatmap cell's printed number, with the renderer's trailing zh scale word applied (wan = 10^4, yi = 10^8);
+/// any other suffix leaves the number's own scale alone. None when there is no leading number.
+fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    if i < bytes.len() && bytes[i] == b'-' {
+        i += 1;
+    }
+    let digits_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+    if i == digits_start {
+        return None;
+    }
+    let number: f64 = text[..i].parse().ok()?;
+    let rest = &text[i..];
+    let scale = if rest.starts_with('\u{4ebf}') {
+        100_000_000.0
+    } else if rest.starts_with('\u{4e07}') {
+        10_000.0
+    } else {
+        1.0
+    };
+    Some(number * scale)
+}
+
+/// NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one rendered
+/// viewport's SVG: every `heatmap-cell` rect (data-x, data-y, data-value) has exactly one `heatmap-cell-value` text
+/// for the same (x, y) whose number matches the cell's own data-value, is at least 12px, and sits inside the cell;
+/// a label with no cell fails. Written fresh - it never calls into render_qa_labels.mjs - and mirrors the Python
+/// verifier's verify_heatmap_labels_from_svg. Returns the failure messages (empty means the proof holds).
+fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
+    let mut failures = Vec::new();
+    let mut cells: BTreeMap<(String, String), Vec<(f64, [Option<f64>; 4])>> = BTreeMap::new();
+    let mut idx = 0;
+    while let Some(rel) = svg_text[idx..].find("<rect") {
+        let start = idx + rel;
+        let after = start + "<rect".len();
+        if !svg_text[after..].starts_with(|c: char| c.is_whitespace() || c == '>') {
+            idx = after;
+            continue;
+        }
+        let Some(gt_rel) = svg_text[start..].find('>') else {
+            break;
+        };
+        let tag_end = start + gt_rel + 1;
+        let tag = &svg_text[start..tag_end];
+        idx = tag_end;
+        if attr_value(tag, "data-role") != Some("heatmap-cell") {
+            continue;
+        }
+        let key = (
+            attr_value(tag, "data-x").unwrap_or("").to_owned(),
+            attr_value(tag, "data-y").unwrap_or("").to_owned(),
+        );
+        let Some(value) = attr_value(tag, "data-value").and_then(|v| v.parse::<f64>().ok()) else {
+            failures.push(format!("{} / {} has no readable data-value", key.1, key.0));
+            continue;
+        };
+        let num = |name: &str| whole_attr_value(tag, name).and_then(|v| v.parse::<f64>().ok());
+        cells
+            .entry(key)
+            .or_default()
+            .push((value, [num("x"), num("y"), num("width"), num("height")]));
+    }
+    let mut labels: BTreeMap<(String, String), Vec<(String, Option<f64>, Option<f64>, Option<f64>)>> =
+        BTreeMap::new();
+    for node in find_text_nodes_with_role(svg_text, &["heatmap-cell-value"]) {
+        let key = (
+            attr_value(node.tag, "data-x").unwrap_or("").to_owned(),
+            attr_value(node.tag, "data-y").unwrap_or("").to_owned(),
+        );
+        let num = |name: &str| whole_attr_value(node.tag, name).and_then(|v| v.parse::<f64>().ok());
+        labels.entry(key).or_default().push((
+            label_body_text(node.body),
+            num("font-size"),
+            num("x"),
+            num("y"),
+        ));
+    }
+    if cells.is_empty() {
+        failures.push("the heatmap has no cell with a value to prove".to_owned());
+    }
+    for (key, found) in &cells {
+        let name = format!("{} / {}", key.1, key.0);
+        if found.len() != 1 {
+            failures.push(format!("{name} has {} heatmap cells (expected exactly 1)", found.len()));
+            continue;
+        }
+        let (expected, rect) = &found[0];
+        let texts = labels.get(key).map(Vec::as_slice).unwrap_or(&[]);
+        if texts.len() != 1 {
+            failures.push(format!(
+                "{name} has {} rendered value labels (expected exactly 1)",
+                texts.len()
+            ));
+            continue;
+        }
+        let (text, size, tx, ty) = &texts[0];
+        match heatmap_leading_number_with_scale(text) {
+            Some(shown) => {
+                if (shown - expected).abs() > (expected.abs() * 0.01).max(0.05) {
+                    failures.push(format!(
+                        "{name}'s rendered value label '{text}' does not match its cell's data-value {expected}"
+                    ));
+                }
+            }
+            None => failures.push(format!(
+                "{name}'s rendered value label '{text}' has no readable number"
+            )),
+        }
+        let (Some(size), Some(tx), Some(ty), [Some(cx), Some(cy), Some(cw), Some(ch)]) =
+            (size, tx, ty, rect)
+        else {
+            failures.push(format!("{name}'s value label or cell is missing numeric geometry"));
+            continue;
+        };
+        if *size < 12.0 {
+            failures.push(format!("{name}'s value label is {size}px, below 12px"));
+        }
+        if !(*cx <= *tx && *tx <= cx + cw && *cy <= *ty && *ty <= cy + ch) {
+            failures.push(format!("{name}'s value label is outside its cell"));
+        }
+    }
+    for key in labels.keys() {
+        if !cells.contains_key(key) {
+            failures.push(format!(
+                "{} / {} has a rendered value label but no matching heatmap cell in the SVG",
+                key.1, key.0
+            ));
+        }
+    }
+    failures.sort();
+    failures.dedup();
+    failures
+}
+
 /// Validates one manifest's `render_qa_ref`: it must be a safe reference
 /// under `qa_prefix` pointing at an existing JSON file with the known render
 /// QA report schema_version, and for every named viewport, the report's
@@ -1192,6 +2004,7 @@ fn check_render_qa_ref(
     variants: &[(&str, &str)],
     require_passed: bool,
     require_choropleth_value_labels: bool,
+    heatmap_value_labels: bool,
     report: &mut VerificationReport,
 ) {
     if !qa_ref.starts_with(qa_prefix) {
@@ -1301,6 +2114,27 @@ fn check_render_qa_ref(
                     // value_labels.passed boolean alone, even sha256-bound -
                     // independently re-derive the same proof from these SVG
                     // bytes on disk.
+                    // Heatmap (NEWSROOM_HEATMAP_VALUE_LABELS=1): a viewport whose report claims a passing
+                    // value_labels proof is re-derived from these SVG bytes the same way.
+                    if heatmap_value_labels
+                        && qa
+                            .pointer(&format!("/viewports/{viewport}/value_labels/passed"))
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                    {
+                        match fs::read_to_string(&svg_path) {
+                            Ok(svg_text) => {
+                                for failure in verify_heatmap_labels_from_svg(&svg_text) {
+                                    report.error(format!(
+                                        "{name} {viewport} independent value-labels re-derivation failed: {failure}"
+                                    ));
+                                }
+                            }
+                            Err(error) => report.error(format!(
+                                "{name} failed reading {viewport} SVG {svg_reference} for independent value-labels re-derivation: {error}"
+                            )),
+                        }
+                    }
                     if require_choropleth_value_labels {
                         match fs::read_to_string(&svg_path) {
                             Ok(svg_text) => {
@@ -1553,10 +2387,21 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
                 &[("desktop", desktop_ref), ("mobile", mobile_ref)],
                 true,
                 false,
+                false,
                 report,
             );
         }
 
+        // Every claim the page cites must be system-verified; an empty verified set cites nothing.
+        if let Some(claim_ids) = manifest.get("claim_ids").and_then(Value::as_array) {
+            for claim_id in claim_ids {
+                let claim_id = claim_id.as_str().unwrap_or("");
+                report.check(
+                    verified_claims.contains(claim_id),
+                    format!("infographic {manifest_ref} claim_id is not verified: {claim_id}"),
+                );
+            }
+        }
         verify_infographic_illustrations(root, &manifest_ref, &manifest, &verified_claims, report)?;
         verify_infographic_critics(root, &manifest_ref, name, &manifest, report)?;
         verify_infographic_source_quotes(root, name, plan_ref, plan_is_zh, desktop_ref, report)?;
@@ -2925,27 +3770,32 @@ fn find_critics(root: &Path, critics_dir: &str, manifest_ref: &str) -> Result<Ve
     Ok(out)
 }
 
+// A claim counts as verified only while its latest record in claims.jsonl is system-verified, as in the
+// runtime: a later non-verified record for the same claim_id revokes it. Lines that do not parse are
+// reported by verify_claims and skipped here.
 fn verified_claim_ids(root: &Path) -> Result<HashSet<String>> {
-    let mut ids = HashSet::new();
+    let mut latest: HashMap<String, Value> = HashMap::new();
     let path = root.join("claims.jsonl");
     if !path.is_file() {
-        return Ok(ids);
+        return Ok(HashSet::new());
     }
     for line in BufReader::new(fs::File::open(path)?).lines() {
         let value: Value = match serde_json::from_str(&line?) {
             Ok(value) => value,
             Err(_) => continue,
         };
-        if is_system_verified_claim(&value) {
-            if let Some(id) = value.get("claim_id").and_then(Value::as_str) {
-                ids.insert(id.to_owned());
-            }
+        if let Some(id) = value.get("claim_id").and_then(Value::as_str) {
+            latest.insert(id.to_owned(), value);
         }
     }
-    Ok(ids)
+    Ok(latest
+        .into_iter()
+        .filter(|(_, value)| is_system_verified_claim(value))
+        .map(|(id, _)| id)
+        .collect())
 }
 
-fn is_system_verified_claim(value: &Value) -> bool {
+pub(crate) fn is_system_verified_claim(value: &Value) -> bool {
     let verification = match value.get("verification") {
         Some(value) => value,
         None => return false,
@@ -3210,6 +4060,55 @@ impl RecomputeReport {
     }
 }
 
+/// Re-derive the read inputs of a stored SQL statement with DuckDB's parser
+/// (no data access) and classify them like the runtime did at query time.
+async fn derive_read_inputs(
+    root: &Path,
+    duckdb_bin: &Path,
+    sql: &str,
+    timeout_seconds: u64,
+) -> Result<(Vec<(String, String)>, InputBinding)> {
+    use tokio::process::Command;
+    use tokio::time::{timeout, Duration};
+
+    let literal = sql.replace('\'', "''");
+    let mut command = Command::new(duckdb_bin);
+    command
+        .current_dir(root)
+        .kill_on_drop(true)
+        .arg("-noheader")
+        .arg("-list")
+        .arg(":memory:")
+        .arg("-cmd")
+        .arg("SET enable_external_access = false")
+        .arg("-cmd")
+        .arg("SET lock_configuration = true")
+        .arg("-c")
+        .arg(format!(
+            "SELECT json_serialize_sql('{literal}', skip_null := true, skip_empty := true)"
+        ));
+    let output = timeout(Duration::from_secs(timeout_seconds), command.output())
+        .await
+        .context("read-input analysis timed out")??;
+    if !output.status.success() {
+        bail!("DuckDB could not analyze the SQL");
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let ast: Value = serde_json::from_str(text.trim())?;
+    let reads = collect_sql_reads(&ast);
+    let mut inputs = Vec::new();
+    let mut unresolved = !reads.unresolved.is_empty();
+    for path in &reads.paths {
+        match sha256_file(&root.join(path)) {
+            Ok(sha) => inputs.push((path.clone(), sha)),
+            Err(_) => unresolved = true,
+        }
+    }
+    let paths: Vec<String> = inputs.iter().map(|(path, _)| path.clone()).collect();
+    let (binding, _) = classify_inputs(root, &paths, unresolved, 0, &[]);
+    Ok((inputs, binding))
+}
+
 pub async fn recompute_artifact(
     root: &Path,
     duckdb_bin: &Path,
@@ -3271,6 +4170,45 @@ pub async fn recompute_artifact(
                 continue;
             }
         };
+        // New-format records (read_inputs present) must match what DuckDB
+        // derives from the stored SQL now; legacy records have nothing to
+        // compare and are judged by verify_claims instead.
+        if let Some(recorded) = value.get("read_inputs").and_then(Value::as_array) {
+            let recorded_pairs: Vec<(String, String)> = recorded
+                .iter()
+                .map(|item| {
+                    (
+                        item.get("path")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        item.get("sha256")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                    )
+                })
+                .collect();
+            match derive_read_inputs(root, duckdb_bin, &sql, timeout_seconds).await {
+                Ok((derived, binding)) => {
+                    report.check(
+                        derived == recorded_pairs
+                            && Some(binding) == recorded_binding_label(&value),
+                        format!(
+                            "recompute read_inputs mismatch: recorded inputs do not match the SQL of {}",
+                            path.display()
+                        ),
+                    );
+                }
+                Err(error) => report.check(
+                    false,
+                    format!(
+                        "recompute could not derive read inputs for {}: {error}",
+                        path.display()
+                    ),
+                ),
+            }
+        }
         let sql = match materialize_recompute_rows(root, &sql, &scratch.path) {
             Ok(sql) => sql,
             Err(error) => {
@@ -3771,6 +4709,201 @@ mod tests {
         );
     }
 
+    /// Rewrites build_viz_fixture's manifest/QA into a desktop+compact
+    /// visualization (no mobile) with matching hashes and QA coverage.
+    fn build_compact_fixture() -> tempfile::TempDir {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
+        let compact_svg = render_qa_svg("compact");
+        let compact_sha = sha256_bytes(compact_svg.as_bytes());
+        fs::write(root.join("visualizations/x.compact.svg"), &compact_svg).unwrap();
+        fs::remove_file(root.join("visualizations/x.mobile.svg")).unwrap();
+        let mut qa = render_qa_report_json(&desktop_sha, &compact_sha, true);
+        let compact_viewport = qa["viewports"]["mobile"].clone();
+        qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        qa["viewports"]["compact"] = compact_viewport;
+        fs::write(
+            root.join("visualizations/qa/x.json"),
+            serde_json::to_string(&qa).unwrap(),
+        )
+        .unwrap();
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(root.join("visualizations/x.json")).unwrap())
+                .unwrap();
+        manifest["variants"] = serde_json::json!({
+            "desktop": "visualizations/x.svg",
+            "compact": "visualizations/x.compact.svg",
+        });
+        manifest["hashes"] =
+            serde_json::json!({"desktop_sha256": desktop_sha, "compact_sha256": compact_sha});
+        fs::write(
+            root.join("visualizations/x.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .unwrap();
+        temp
+    }
+
+    fn compact_errors(temp: &tempfile::TempDir) -> Vec<String> {
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        report.errors
+    }
+
+    fn rewrite_viz_manifest(temp: &tempfile::TempDir, edit: impl FnOnce(&mut Value)) {
+        let path = temp.path().join("visualizations/x.json");
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        edit(&mut manifest);
+        fs::write(path, serde_json::to_string(&manifest).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn compact_variant_with_matching_qa_and_hashes_verifies() {
+        let temp = build_compact_fixture();
+        let errors = compact_errors(&temp);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn compact_svg_tampered_after_qa_fails_verification() {
+        let temp = build_compact_fixture();
+        fs::write(
+            temp.path().join("visualizations/x.compact.svg"),
+            render_qa_svg("tampered-compact"),
+        )
+        .unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("compact SVG hash does not match render_qa report")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_hash_mismatch_in_manifest_hashes_fails_verification() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m["hashes"]["compact_sha256"] = Value::String("0".repeat(64));
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("compact hash mismatch")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_without_compact_sha256_fails_closed() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m["hashes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("compact_sha256");
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("compact variant without hashes.compact_sha256")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_without_render_qa_ref_fails() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m.as_object_mut().unwrap().remove("render_qa_ref");
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("missing render_qa_ref")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_with_missing_render_qa_file_fails() {
+        let temp = build_compact_fixture();
+        fs::remove_file(temp.path().join("visualizations/qa/x.json")).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("render_qa_ref is missing: visualizations/qa/x.json")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_variant_with_qa_lacking_compact_viewport_fails() {
+        let temp = build_compact_fixture();
+        let path = temp.path().join("visualizations/qa/x.json");
+        let mut qa: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        qa["viewports"].as_object_mut().unwrap().remove("compact");
+        fs::write(&path, serde_json::to_string(&qa).unwrap()).unwrap();
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("render_qa report is missing viewports.compact.svg_sha256")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn compact_sha256_without_compact_variant_fails() {
+        let temp = build_viz_fixture(true, true);
+        rewrite_viz_manifest(&temp, |m| {
+            m["hashes"] = serde_json::json!({"compact_sha256": "0".repeat(64)});
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("hashes.compact_sha256 without a compact variant")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_visualization_variant_key_still_fails() {
+        let temp = build_compact_fixture();
+        rewrite_viz_manifest(&temp, |m| {
+            m["variants"]["tablet"] = Value::String("visualizations/x.svg".into());
+        });
+        let errors = compact_errors(&temp);
+        assert!(
+            errors.iter().any(|e| e.contains("unknown variant: tablet")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn desktop_only_visualization_without_hashes_still_verifies() {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let desktop_sha = sha256_bytes(render_qa_svg("desktop").as_bytes());
+        let mobile_sha = sha256_bytes(render_qa_svg("mobile").as_bytes());
+        let mut qa = render_qa_report_json(&desktop_sha, &mobile_sha, true);
+        qa["viewports"].as_object_mut().unwrap().remove("mobile");
+        fs::write(
+            root.join("visualizations/qa/x.json"),
+            serde_json::to_string(&qa).unwrap(),
+        )
+        .unwrap();
+        rewrite_viz_manifest(&temp, |m| {
+            m["variants"].as_object_mut().unwrap().remove("mobile");
+        });
+        let errors = compact_errors(&temp);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
     #[test]
     fn render_qa_tampered_svg_hash_mismatch_fails_verification() {
         let temp = build_viz_fixture(true, true);
@@ -3992,6 +5125,122 @@ mod tests {
         temp
     }
 
+    // -----------------------------------------------------------------
+    // heatmap value-labels re-derivation (NEWSROOM_HEATMAP_VALUE_LABELS=1)
+    // -----------------------------------------------------------------
+
+    /// One heatmap cell (value 66.6) with its value label controllable.
+    fn heatmap_cell_svg(label: Option<&str>, font_size: &str, label_x: &str) -> String {
+        let text = label.map(|body| format!(
+            "<text data-role=\"heatmap-cell-value\" data-x=\"2020\" data-y=\"A\" x=\"{label_x}\" y=\"25\" text-anchor=\"middle\" font-size=\"{font_size}\">{body}</text>"
+        )).unwrap_or_default();
+        format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><title>Fixture</title><desc>Fixture heatmap.</desc><rect data-role=\"heatmap-cell\" data-x=\"2020\" data-y=\"A\" data-value=\"66.6\" x=\"10\" y=\"10\" width=\"40\" height=\"30\"/>{text}</svg>"
+        )
+    }
+
+    static HEATMAP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Runs `body` with NEWSROOM_HEATMAP_VALUE_LABELS set (or removed) and restores it afterwards.
+    fn with_heatmap_switch<T>(value: Option<&str>, body: impl FnOnce() -> T) -> T {
+        let _guard = HEATMAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_HEATMAP_VALUE_LABELS").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_HEATMAP_VALUE_LABELS", v),
+            None => std::env::remove_var("NEWSROOM_HEATMAP_VALUE_LABELS"),
+        }
+        let out = body();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_HEATMAP_VALUE_LABELS", v),
+            None => std::env::remove_var("NEWSROOM_HEATMAP_VALUE_LABELS"),
+        }
+        out
+    }
+
+    /// Like build_choropleth_svg_fixture, for a heatmap: the report is honestly sha256-bound to the SVG bytes and
+    /// claims value_labels.passed (`claims_passed`) on both viewports.
+    fn build_heatmap_svg_fixture(svg: &str, claims_passed: bool) -> tempfile::TempDir {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        fs::write(root.join("visualizations/x.svg"), svg).unwrap();
+        fs::write(root.join("visualizations/x.mobile.svg"), svg).unwrap();
+        let sha = sha256_bytes(svg.as_bytes());
+        let qa = render_qa_report_json_choropleth(&sha, &sha, claims_passed);
+        fs::write(root.join("visualizations/qa/x.json"), serde_json::to_string(&qa).unwrap()).unwrap();
+        let manifest_path = root.join("visualizations/x.json");
+        let mut manifest: Value = read_json(&manifest_path).unwrap();
+        manifest["chart_type"] = Value::String("heatmap".to_owned());
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        temp
+    }
+
+    fn heatmap_errors(svg: &str, claims_passed: bool, switch: Option<&str>) -> Vec<String> {
+        let temp = build_heatmap_svg_fixture(svg, claims_passed);
+        with_heatmap_switch(switch, || {
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            report.errors
+        })
+    }
+
+    #[test]
+    fn heatmap_labels_from_svg_passes_when_every_cell_is_labelled_once() {
+        assert_eq!(
+            verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "12", "30")),
+            Vec::<String>::new()
+        );
+        // a zh scale word applies: 6.66 wan is 66600, not 6.66
+        let wan = heatmap_cell_svg(Some("6.7\u{4e07}"), "12", "30").replace("66.6", "66600");
+        assert_eq!(verify_heatmap_labels_from_svg(&wan), Vec::<String>::new());
+    }
+
+    #[test]
+    fn heatmap_labels_from_svg_fails_each_way_a_cell_can_be_unproven() {
+        let missing = verify_heatmap_labels_from_svg(&heatmap_cell_svg(None, "12", "30"));
+        assert!(missing.iter().any(|f| f.contains("0 rendered value labels")), "{missing:?}");
+        let wrong = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("12.3"), "12", "30"));
+        assert!(wrong.iter().any(|f| f.contains("does not match")), "{wrong:?}");
+        let small = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "9", "30"));
+        assert!(small.iter().any(|f| f.contains("below 12px")), "{small:?}");
+        let outside = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "12", "90"));
+        assert!(outside.iter().any(|f| f.contains("outside its cell")), "{outside:?}");
+        let nothing = verify_heatmap_labels_from_svg("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+        assert!(nothing.iter().any(|f| f.contains("no cell with a value")), "{nothing:?}");
+        let orphan = heatmap_cell_svg(Some("66.6"), "12", "30").replace("data-x=\"2020\" data-y=\"A\" x=\"30\"", "data-x=\"2021\" data-y=\"A\" x=\"30\"");
+        assert!(verify_heatmap_labels_from_svg(&orphan).iter().any(|f| f.contains("no matching heatmap cell")));
+    }
+
+    #[test]
+    fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on() {
+        let svg = heatmap_cell_svg(None, "12", "30");
+        let on = heatmap_errors(&svg, true, Some("1"));
+        assert!(on.iter().any(|e| e.contains("independent value-labels re-derivation failed")), "{on:?}");
+        for off in [None, Some("0"), Some("true"), Some("")] {
+            assert_eq!(heatmap_errors(&svg, true, off), Vec::<String>::new(), "switch {off:?}");
+        }
+    }
+
+    #[test]
+    fn heatmap_with_real_labels_or_no_claim_verifies_with_the_switch_on() {
+        let good = heatmap_cell_svg(Some("66.6"), "12", "30");
+        assert_eq!(heatmap_errors(&good, true, Some("1")), Vec::<String>::new());
+        // no claim of a proof: nothing to re-derive, the heatmap verifies as it always did
+        let unlabelled = heatmap_cell_svg(None, "12", "30");
+        assert_eq!(heatmap_errors(&unlabelled, false, Some("1")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on() {
+        let temp = build_heatmap_svg_fixture(&heatmap_cell_svg(Some("66.6"), "12", "30"), true);
+        fs::write(temp.path().join("visualizations/x.svg"), heatmap_cell_svg(Some("66.6"), "12", "31")).unwrap();
+        let errors = with_heatmap_switch(Some("1"), || {
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            report.errors
+        });
+        assert!(errors.iter().any(|e| e.contains("hash does not match")), "{errors:?}");
+    }
+
     #[test]
     fn choropleth_labels_from_svg_passes_when_every_region_is_labelled_once() {
         let svg = choropleth_region_svg(true, true);
@@ -4034,6 +5283,91 @@ mod tests {
                 .iter()
                 .any(|f| f.contains("GIN") && f.contains("does not match")),
             "{failures:?}"
+        );
+    }
+
+    static FOOTNOTE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_footnote_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        let _guard = FOOTNOTE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_VERIFY_MAP_FOOTNOTES").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_VERIFY_MAP_FOOTNOTES", v),
+            None => std::env::remove_var("NEWSROOM_VERIFY_MAP_FOOTNOTES"),
+        }
+        let out = f();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_VERIFY_MAP_FOOTNOTES", v),
+            None => std::env::remove_var("NEWSROOM_VERIFY_MAP_FOOTNOTES"),
+        }
+        out
+    }
+
+    fn choropleth_footnote_svg(on_map_name: bool, footnote_name: bool, footnote_value: &str) -> String {
+        let on_map = if on_map_name {
+            r#"<text data-role="choropleth-label" data-iso3="GIN" x="5" y="5" font-size="12">Guinea</text>"#
+        } else {
+            ""
+        };
+        let name = if footnote_name {
+            r#"<text data-role="choropleth-footnote-name" data-iso3="GIN" x="80" y="637" font-size="12.5">Guinea</text>"#
+        } else {
+            ""
+        };
+        let value = if footnote_value.is_empty() {
+            String::new()
+        } else {
+            format!(r#"<text data-role="choropleth-footnote-value" data-iso3="GIN" x="212" y="637" text-anchor="end" font-size="12.5">{footnote_value}</text>"#)
+        };
+        format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><title>Fixture</title><desc>Fixture choropleth.</desc><path data-role=\"choropleth-data\" data-iso3=\"GIN\" data-value=\"66.6\" d=\"M0,0L10,0L10,10L0,10Z\"/>{on_map}{name}{value}</svg>"
+        )
+    }
+
+    #[test]
+    fn footnote_labelled_region_passes_only_with_the_switch_on() {
+        let svg = choropleth_footnote_svg(false, true, "66.6%");
+        assert_eq!(with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg)), Vec::<String>::new());
+        for off in [None, Some("0"), Some("true"), Some("")] {
+            let failures = with_footnote_switch(off, || verify_choropleth_labels_from_svg(&svg));
+            assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("name labels")), "{off:?} {failures:?}");
+            assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("value labels")), "{off:?} {failures:?}");
+        }
+    }
+
+    #[test]
+    fn footnote_value_that_disagrees_with_data_value_fails() {
+        let svg = choropleth_footnote_svg(false, true, "12.3%");
+        let failures = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
+        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("does not match")), "{failures:?}");
+    }
+
+    #[test]
+    fn region_with_no_label_anywhere_still_fails_with_the_switch_on() {
+        let svg = choropleth_footnote_svg(false, false, "");
+        let failures = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
+        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("name labels")), "{failures:?}");
+        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("value labels")), "{failures:?}");
+    }
+
+    #[test]
+    fn region_named_on_the_map_and_in_the_footnote_fails_exactly_one() {
+        let svg = choropleth_footnote_svg(true, true, "66.6%");
+        let failures = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
+        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("2 rendered name labels")), "{failures:?}");
+    }
+
+    #[test]
+    fn on_map_only_svg_is_unchanged_by_the_footnote_switch() {
+        let svg = choropleth_region_svg(true, true);
+        let off = with_footnote_switch(None, || verify_choropleth_labels_from_svg(&svg));
+        let on = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
+        assert_eq!(off, Vec::<String>::new());
+        assert_eq!(on, off);
+        let bad = choropleth_region_svg(false, true);
+        assert_eq!(
+            with_footnote_switch(None, || verify_choropleth_labels_from_svg(&bad)),
+            with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&bad))
         );
     }
 
@@ -5794,6 +7128,196 @@ mod tests {
         assert_error(&errors, "has no critic artifact");
     }
 
+    fn set_infographic_claim_ids(root: &Path, claim_ids: &[&str]) {
+        let manifest_path = root.join("infographics/x.json");
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest["claim_ids"] = serde_json::json!(claim_ids);
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn infographic_citing_an_unverified_claim_fails() {
+        // The fixture has no verified claim at all, so any cited claim id is unverified.
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &["c-not-verified"]);
+        let errors = infographic_errors(temp.path());
+        assert_error(
+            &errors,
+            "infographic infographics/x.json claim_id is not verified: c-not-verified",
+        );
+    }
+
+    #[test]
+    fn infographic_citing_no_claim_has_no_claim_error() {
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &[]);
+        let errors = infographic_errors(temp.path());
+        assert!(
+            !errors
+                .iter()
+                .any(|e| e.contains("claim_id is not verified")),
+            "{errors:?}"
+        );
+    }
+
+    fn claim_line(claim_id: &str, status: &str) -> String {
+        serde_json::to_string(&serde_json::json!({
+            "claim_id": claim_id,
+            "status": status,
+            "verification": {
+                "authority": "system",
+                "source_resolved": true,
+                "extraction_passed": true,
+                "computation_replayed": true,
+                "claim_supported": true,
+                "publishable": true,
+                "rule_id": "verification.source+extraction+computation+claim.v1",
+            },
+            "source_refs": ["sources/x.json"],
+            "computation_refs": ["computations/x.json"],
+        }))
+        .unwrap()
+    }
+
+    fn write_claim_lines(root: &Path, lines: &[(&str, &str)]) {
+        let text: String = lines
+            .iter()
+            .map(|(id, status)| format!("{}\n", claim_line(id, status)))
+            .collect();
+        fs::write(root.join("claims.jsonl"), text).unwrap();
+    }
+
+    #[test]
+    fn infographic_citing_a_revoked_claim_fails_and_a_reverified_one_passes() {
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &["c-x"]);
+        write_claim_lines(temp.path(), &[("c-x", "verified"), ("c-x", "contested")]);
+        assert_error(
+            &infographic_errors(temp.path()),
+            "infographic infographics/x.json claim_id is not verified: c-x",
+        );
+        write_claim_lines(temp.path(), &[("c-x", "contested"), ("c-x", "verified")]);
+        assert!(
+            !infographic_errors(temp.path())
+                .iter()
+                .any(|e| e.contains("claim_id is not verified")),
+            "contested then verified must count as verified"
+        );
+    }
+
+    #[test]
+    fn visualization_citing_a_revoked_claim_fails_and_a_reverified_one_passes() {
+        let temp = build_viz_fixture(true, true);
+        let id = "claim-render-qa-fixture";
+        write_claim_lines(temp.path(), &[(id, "verified"), (id, "contested")]);
+        assert_error(
+            &viz_errors(temp.path()),
+            &format!("claim_id is not verified: {id}"),
+        );
+        write_claim_lines(temp.path(), &[(id, "contested"), (id, "verified")]);
+        assert!(
+            !viz_errors(temp.path())
+                .iter()
+                .any(|e| e.contains("claim_id is not verified")),
+            "contested then verified must count as verified"
+        );
+    }
+
+    fn claims_errors(root: &Path) -> Vec<String> {
+        let mut report = VerificationReport::default();
+        verify_claims(root, &mut report).unwrap();
+        report.errors
+    }
+
+    fn write_claims_text(root: &Path, text: &str) {
+        fs::write(root.join("claims.jsonl"), text).unwrap();
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_record_without_a_claim_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let good = claim_line("c-x", "verified");
+        write_claims_text(
+            temp.path(),
+            &format!("{good}\n{{\"status\":\"contested\"}}\n"),
+        );
+        assert_error(
+            &claims_errors(temp.path()),
+            "claims.jsonl line 2 is not a claim record with a non-empty string claim_id",
+        );
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_numeric_claim_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let good = claim_line("1", "verified");
+        write_claims_text(
+            temp.path(),
+            &format!("{good}\n{{\"claim_id\": 1, \"status\": \"contested\"}}\n"),
+        );
+        assert_error(
+            &claims_errors(temp.path()),
+            "claims.jsonl line 2 is not a claim record with a non-empty string claim_id",
+        );
+    }
+
+    #[test]
+    fn verify_claims_refuses_a_line_that_is_not_an_object() {
+        for bad in ["[1]", "\"x\"", "7", "null"] {
+            let temp = tempfile::tempdir().unwrap();
+            let good = claim_line("c-x", "verified");
+            write_claims_text(temp.path(), &format!("{good}\n\n{bad}\n"));
+            assert_error(
+                &claims_errors(temp.path()),
+                "claims.jsonl line 3 is not a claim record with a non-empty string claim_id",
+            );
+        }
+    }
+
+    #[test]
+    fn verify_claims_refuses_an_empty_claim_id() {
+        let temp = tempfile::tempdir().unwrap();
+        write_claims_text(temp.path(), &format!("{}\n", claim_line("", "contested")));
+        assert_error(
+            &claims_errors(temp.path()),
+            "claims.jsonl line 1 is not a claim record with a non-empty string claim_id",
+        );
+    }
+
+    #[test]
+    fn verified_claim_set_leaves_out_a_status_only_record() {
+        let temp = build_infographic_fixture(true, true);
+        set_infographic_claim_ids(temp.path(), &["c-x"]);
+        let status_only = serde_json::to_string(&serde_json::json!({
+            "claim_id": "c-x", "status": "verified",
+        }))
+        .unwrap();
+        write_claims_text(
+            temp.path(),
+            &format!("{}\n{status_only}\n", claim_line("c-x", "verified")),
+        );
+        assert!(!verified_claim_ids(temp.path()).unwrap().contains("c-x"));
+        assert_error(
+            &infographic_errors(temp.path()),
+            "infographic infographics/x.json claim_id is not verified: c-x",
+        );
+        let viz = build_viz_fixture(true, true);
+        let id = "claim-render-qa-fixture";
+        write_claims_text(
+            viz.path(),
+            &format!(
+                "{}\n{}\n",
+                claim_line(id, "verified"),
+                serde_json::json!({"claim_id": id, "status": "verified"})
+            ),
+        );
+        assert_error(
+            &viz_errors(viz.path()),
+            &format!("claim_id is not verified: {id}"),
+        );
+    }
+
     #[test]
     fn infographic_unsupported_schema_version_fails() {
         let temp = build_infographic_fixture(true, true);
@@ -5954,5 +7478,348 @@ mod tests {
         fs::write(&path, serde_json::to_string_pretty(&record).unwrap()).unwrap();
         let errors = source_errors(temp.path());
         assert_error(&errors, "source content_hash mismatch");
+    }
+
+    // ---- read-input binding (issue #36) ----
+
+    fn reader_ast(function: &str, path: &str) -> Value {
+        serde_json::json!({
+            "error": false,
+            "statements": [{"node": {"from_table": {
+                "type": "TABLE_FUNCTION",
+                "function": {"function_name": function, "children": [
+                    {"class": "CONSTANT", "value": {"is_null": false, "type": {"id": "VARCHAR"}, "value": path}}
+                ]}
+            }}}]
+        })
+    }
+
+    #[test]
+    fn sql_reads_classify_files_literals_and_unresolved() {
+        let reads = collect_sql_reads(&reader_ast("read_csv_auto", "data/x.csv"));
+        assert_eq!(reads.paths, vec!["data/x.csv".to_owned()]);
+        assert!(reads.unresolved.is_empty());
+        for bad in [
+            "data/*.csv",
+            "../etc/passwd",
+            "/abs/data/x.csv",
+            "other/x.csv",
+        ] {
+            let reads = collect_sql_reads(&reader_ast("read_csv_auto", bad));
+            assert!(
+                reads.paths.is_empty() && !reads.unresolved.is_empty(),
+                "{bad}"
+            );
+        }
+        assert!(!collect_sql_reads(&reader_ast("mystery_fn", "data/x.csv"))
+            .unresolved
+            .is_empty());
+        assert!(!collect_sql_reads(&serde_json::json!({"error": true}))
+            .unresolved
+            .is_empty());
+        let literal = serde_json::json!({"error": false, "statements": [{"node": {"from_table": {
+            "type": "TABLE_FUNCTION", "function": {"function_name": "generate_series", "children": []}}}}]});
+        assert_eq!(collect_sql_reads(&literal), SqlReads::default());
+    }
+
+    const BIND_DATA_SHA: &str = "492d5ea496056f1a6a6592241032fab764c321596317930b4fa0e1e8bc3b7470";
+
+    /// Artifact with data/a.csv, one computation and one verified claim citing it.
+    fn build_binding_fixture(computation_extra: Value, source_ref: &str) -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir_all(root.join("data")).unwrap();
+        fs::create_dir_all(root.join("computations")).unwrap();
+        fs::write(root.join("data/a.csv"), "a,b\n1,2\n").unwrap();
+        let mut record =
+            serde_json::json!({"schema_version": "0.7.0", "sql": "SELECT 1", "rows": []});
+        for (key, value) in computation_extra.as_object().unwrap() {
+            record[key] = value.clone();
+        }
+        let computation = format!("computations/{}.json", "c".repeat(64));
+        fs::write(root.join(&computation), record.to_string()).unwrap();
+        let claim = serde_json::json!({
+            "schema_version": "0.8.0", "claim_id": "claim-1", "status": "verified",
+            "source_refs": [source_ref], "computation_refs": [computation],
+            "verification": {"authority": "system", "source_resolved": true, "extraction_passed": true,
+                "computation_replayed": true, "claim_supported": true, "publishable": true,
+                "rule_id": "verification.source+extraction+computation+claim.v1"}
+        });
+        fs::write(root.join("claims.jsonl"), format!("{claim}\n")).unwrap();
+        temp
+    }
+
+    fn claim_errors(root: &Path) -> Vec<String> {
+        let mut report = VerificationReport::default();
+        verify_claims(root, &mut report).unwrap();
+        report.errors
+    }
+
+    #[test]
+    fn verified_claim_over_legacy_computation_is_an_integrity_error() {
+        // (c) no read_inputs at all: a legacy record, possibly a VALUES table.
+        let temp = build_binding_fixture(serde_json::json!({}), "data/a.csv");
+        let errors = claim_errors(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.starts_with("COMPUTATION_PROVENANCE_REQUIRED") && e.contains("legacy")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn verified_claim_over_literal_only_computation_is_an_integrity_error() {
+        let temp = build_binding_fixture(
+            serde_json::json!({"read_inputs": [], "input_binding": "literal_only"}),
+            "data/a.csv",
+        );
+        let errors = claim_errors(temp.path());
+        assert!(
+            errors.iter().any(|e| e.contains("literal_only")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn verified_claim_over_computation_reading_the_cited_file_passes() {
+        // (b)
+        let temp = build_binding_fixture(
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": BIND_DATA_SHA}], "input_binding": "source_bound"}),
+            "data/a.csv",
+        );
+        assert_eq!(claim_errors(temp.path()), Vec::<String>::new());
+        let mut report = VerificationReport::default();
+        let path = temp
+            .path()
+            .join(format!("computations/{}.json", "c".repeat(64)));
+        let value = read_json(&path).unwrap();
+        verify_computation_read_inputs(temp.path(), &path, &value, &mut report);
+        assert_eq!(report.errors, Vec::<String>::new());
+    }
+
+    #[test]
+    fn claim_citing_a_source_the_computation_did_not_read_is_refused() {
+        let temp = build_binding_fixture(
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": BIND_DATA_SHA}], "input_binding": "source_bound"}),
+            "data/other.csv",
+        );
+        let errors = claim_errors(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("cites no source read by computation")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn forged_or_stale_read_inputs_fail_record_validation() {
+        for extra in [
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": "0".repeat(64)}], "input_binding": "source_bound"}),
+            serde_json::json!({"read_inputs": [], "input_binding": "source_bound"}),
+            serde_json::json!({"read_inputs": [{"path": "data/a.csv", "sha256": BIND_DATA_SHA}], "input_binding": "literal_only"}),
+            serde_json::json!({"read_inputs": [{"path": "../x", "sha256": BIND_DATA_SHA}], "input_binding": "source_bound"}),
+            serde_json::json!({"input_binding": "source_bound"}),
+        ] {
+            let temp = build_binding_fixture(extra.clone(), "data/a.csv");
+            let path = temp
+                .path()
+                .join(format!("computations/{}.json", "c".repeat(64)));
+            let value = read_json(&path).unwrap();
+            let mut report = VerificationReport::default();
+            verify_computation_read_inputs(temp.path(), &path, &value, &mut report);
+            assert!(!report.errors.is_empty(), "{extra}");
+        }
+    }
+    // verify_derived_input: one chain per fixture, one link broken per test.
+    struct DerivedFixture {
+        temp: tempfile::TempDir,
+        sha: String,
+        rows_path: String,
+        meta_path: PathBuf,
+        origin_path: PathBuf,
+    }
+
+    fn derived_fixture() -> DerivedFixture {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for dir in ["data/derived", "data/origins"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let pdf = b"%PDF-1.4 synthetic pdf bytes";
+        let sha = sha256_bytes(pdf);
+        let source_file = format!("data/{sha}.data");
+        fs::write(root.join(&source_file), pdf).unwrap();
+        let rows = br#"[{"page":1,"line":1,"x":0,"text":"Alpha  10"}]"#;
+        let rows_path = format!("data/derived/{sha}.pdf-rows.json");
+        fs::write(root.join(&rows_path), rows).unwrap();
+        let rows_sha = sha256_bytes(rows);
+        let meta_path = root.join(format!("data/derived/{sha}.pdf-rows.meta.json"));
+        let meta = serde_json::json!({
+            "kind": "pdf_row_table", "rows_file": rows_path, "rows_sha256": rows_sha,
+            "source_sha256": sha, "source_file": source_file,
+        });
+        fs::write(&meta_path, meta.to_string()).unwrap();
+        let origin_path = root.join("data/origins/origin.json");
+        let origin = serde_json::json!({
+            "file": source_file, "sha256": sha,
+            "derived_text": { "file": rows_path, "rows_sha256": rows_sha },
+        });
+        fs::write(&origin_path, origin.to_string()).unwrap();
+        DerivedFixture {
+            temp,
+            sha,
+            rows_path,
+            meta_path,
+            origin_path,
+        }
+    }
+
+    fn rewrite_json(path: &Path, edit: impl FnOnce(&mut Value)) {
+        let mut value = read_json(path).unwrap();
+        edit(&mut value);
+        fs::write(path, value.to_string()).unwrap();
+    }
+
+    fn derived_error(fixture: &DerivedFixture) -> String {
+        verify_derived_input(fixture.temp.path(), &fixture.rows_path)
+            .expect_err("tampered chain must fail")
+    }
+
+    #[test]
+    fn derived_input_accepts_an_untouched_chain() {
+        let fixture = derived_fixture();
+        let source = verify_derived_input(fixture.temp.path(), &fixture.rows_path).unwrap();
+        assert_eq!(source, format!("data/{}.data", fixture.sha));
+    }
+
+    #[test]
+    fn derived_input_rejects_a_path_that_is_not_a_derived_table() {
+        let fixture = derived_fixture();
+        let err = verify_derived_input(fixture.temp.path(), "data/derived/stray.csv").unwrap_err();
+        assert_eq!(err, "not a recognised derived table path");
+    }
+
+    #[test]
+    fn derived_input_rejects_missing_meta() {
+        let fixture = derived_fixture();
+        fs::remove_file(&fixture.meta_path).unwrap();
+        assert!(derived_error(&fixture).starts_with("derived metadata unreadable:"));
+    }
+
+    #[test]
+    fn derived_input_rejects_missing_origin() {
+        let fixture = derived_fixture();
+        fs::remove_file(&fixture.origin_path).unwrap();
+        assert_eq!(
+            derived_error(&fixture),
+            "no download record binds this table to the PDF"
+        );
+    }
+
+    #[test]
+    fn derived_input_rejects_an_origin_that_does_not_bind_the_table() {
+        let fixture = derived_fixture();
+        rewrite_json(&fixture.origin_path, |origin| {
+            origin.as_object_mut().unwrap().remove("derived_text");
+        });
+        assert_eq!(
+            derived_error(&fixture),
+            "no download record binds this table to the PDF"
+        );
+    }
+
+    #[test]
+    fn derived_input_rejects_edited_rows_bytes() {
+        let fixture = derived_fixture();
+        fs::write(
+            fixture.temp.path().join(&fixture.rows_path),
+            br#"[{"page":1,"line":1,"x":0,"text":"Alphx  10"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            derived_error(&fixture),
+            "derived table bytes do not match rows_sha256"
+        );
+    }
+
+    #[test]
+    fn derived_input_rejects_a_changed_source_pdf() {
+        let fixture = derived_fixture();
+        fs::write(
+            fixture
+                .temp
+                .path()
+                .join(format!("data/{}.data", fixture.sha)),
+            b"%PDF-1.4 tampered",
+        )
+        .unwrap();
+        assert_eq!(
+            derived_error(&fixture),
+            "source PDF bytes do not match source_sha256"
+        );
+    }
+
+    #[test]
+    fn derived_input_rejects_a_wrong_source_sha() {
+        let fixture = derived_fixture();
+        rewrite_json(&fixture.meta_path, |meta| {
+            meta["source_sha256"] = Value::from("0".repeat(64))
+        });
+        assert_eq!(
+            derived_error(&fixture),
+            "derived table is not named for its source sha256"
+        );
+    }
+
+    #[test]
+    fn derived_input_rejects_a_rows_file_that_names_another_table() {
+        let fixture = derived_fixture();
+        let other = format!("data/derived/{}.pdf-rows.json", "1".repeat(64));
+        rewrite_json(&fixture.meta_path, |meta| {
+            meta["rows_file"] = Value::from(other)
+        });
+        assert_eq!(
+            derived_error(&fixture),
+            "derived metadata does not describe this table"
+        );
+    }
+
+    #[test]
+    fn derived_input_rejects_a_source_that_is_not_the_content_addressed_pdf() {
+        for source in [
+            // outside data/
+            format!("sources/{}.pdf", "a".repeat(64)),
+            // nested below data/
+            format!("data/nested/{}.data", "a".repeat(64)),
+            // under data/ but not named for the hash
+            "data/other.data".to_owned(),
+        ] {
+            let fixture = derived_fixture();
+            let source = source.replace(&"a".repeat(64), &fixture.sha);
+            rewrite_json(&fixture.meta_path, |meta| {
+                meta["source_file"] = Value::from(source.clone())
+            });
+            assert_eq!(
+                derived_error(&fixture),
+                "source_file is not the content-addressed PDF",
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn derived_tables_walk_reports_a_broken_chain_and_ignores_meta_files() {
+        let fixture = derived_fixture();
+        let mut report = VerificationReport::default();
+        verify_derived_tables(fixture.temp.path(), &mut report);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        fs::remove_file(&fixture.origin_path).unwrap();
+        verify_derived_tables(fixture.temp.path(), &mut report);
+        assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+        assert!(report.errors[0].contains(
+            "failed its provenance chain: no download record binds this table to the PDF"
+        ));
     }
 }

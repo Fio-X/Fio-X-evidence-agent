@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CHOROPLETH_RAMP, PALETTE, critiqueViz, lintVizSpec, renderVizBundle, validateVizSpec } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
+import { economyEntryFor } from "../runtime/pi/economy_names.mjs";
 import { TEXT_WIDTH_FACTORS, LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, BOLD_WEIGHT_THRESHOLD } from "../runtime/pi/render_qa_geometry.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import {
@@ -89,7 +90,8 @@ const AFRICA_ROWS = [
 console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matches the registry -- PASS");
 
 // --- sidecar: every feature whose iso3 the economy table can actually reach
-//     (i.e. every row this chart type could ever join to) has its own
+//     (the World Bank economies and the Natural Earth territories the table
+//     adds, i.e. every row this chart type could ever join to) has its own
 //     LABEL_X/LABEL_Y label point inside its own polygon, via a plain
 //     nonzero-winding point-in-polygon test on the vendored (raw lon/lat)
 //     geometry - except a small, documented allowlist of real Natural Earth
@@ -97,8 +99,16 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
 //     official label point sits in a bay/strait between its own islands,
 //     not a bug): Trinidad and Tobago, Sao Tome and Principe, St. Vincent
 //     and the Grenadines, New Zealand, Equatorial Guinea, Macao, Antigua and
-//     Barbuda. Those seven must still sit nearer their own polygon than any
-//     other feature's, so they prove the index alignment too. Loosening this
+//     Barbuda. Two more joined that list when the table gained the Natural
+//     Earth territories, each checked rather than assumed: British Indian
+//     Ocean Territory and South Georgia and the South Sandwich Islands (both
+//     archipelagic, label point between the islands). Those nine must still
+//     sit nearer their own polygon than any other feature's, so they prove
+//     the index alignment too. Vatican City is the one enclave: its label
+//     point falls 0.01 degrees outside its own sliver of a polygon, inside
+//     Italy's, so "nearest polygon" would name Italy; for it the proof of
+//     alignment is a 0.02 degree bound on the distance to its own polygon
+//     instead (a tighter, not looser, statement than "nearest"). Loosening this
 //     check to tolerate more than this list would silently hide a real
 //     indexing/coordinate bug; a new failure here means look at it, not add
 //     it to the list without checking.
@@ -131,9 +141,10 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
     }
     return best;
   }
-  const KNOWN_LABEL_POINT_OUTSIDE_OWN_POLYGON = new Set(["TTO", "STP", "VCT", "NZL", "GNQ", "MAC", "ATG"]);
+  const KNOWN_LABEL_POINT_OUTSIDE_OWN_POLYGON = new Set(["TTO", "STP", "VCT", "NZL", "GNQ", "MAC", "ATG", "IOT", "SGS"]);
+  const KNOWN_ENCLAVE_LABEL_POINT_MAX_DEGREES_FROM_OWN_POLYGON = new Map([["VAT", 0.02]]);
   const econAsset = JSON.parse(readFileSync(new URL("../runtime/pi/assets/economy-names.json", import.meta.url), "utf8"));
-  const reachableIso3 = new Set(econAsset.economies.map((e) => e.iso3));
+  const reachableIso3 = new Set([...econAsset.economies, ...econAsset.territories].map((e) => e.iso3));
   const asset = neAttributesAsset();
   const checked = [];
   const failures = [];
@@ -144,6 +155,12 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
     const [lx, ly] = feature.label;
     const inside = pointInRings(rings, lx, ly);
     if (inside) continue;
+    const enclaveBound = KNOWN_ENCLAVE_LABEL_POINT_MAX_DEGREES_FROM_OWN_POLYGON.get(feature.iso3);
+    if (enclaveBound !== undefined) {
+      const d = distanceToRings(rings, lx, ly);
+      if (d > enclaveBound) failures.push(`${feature.iso3} (label point is ${d.toFixed(4)} degrees from its own polygon, bound ${enclaveBound})`);
+      continue;
+    }
     if (!KNOWN_LABEL_POINT_OUTSIDE_OWN_POLYGON.has(feature.iso3)) { failures.push(feature.iso3); continue; }
     const nearest = asset.features.reduce((best, other) => {
       const d = distanceToRings(geometryRings(neFeatureGeometry(other.index)), lx, ly);
@@ -151,10 +168,11 @@ console.log("choropleth sidecar: 242 index-aligned entries, geometry hash matche
     }, { index: -1, d: Infinity });
     if (nearest.index !== feature.index) failures.push(`${feature.iso3} (nearest feature is index ${nearest.index})`);
   }
-  assert.ok(checked.length > 200, `expected to check the bulk of the ~217 reachable economies, only checked ${checked.length}`);
+  assert.ok(checked.length > 200, `expected to check the bulk of the ~239 reachable economies and territories, only checked ${checked.length}`);
+  for (const territory of econAsset.territories) assert.ok(checked.includes(territory.iso3), `territory ${territory.iso3} should be checked too (it has a basemap feature)`);
   assert.deepEqual(failures, [], `label point falls outside its own polygon for undocumented iso3(s): ${failures.join(", ")}`);
 }
-console.log("choropleth sidecar: every reachable economy's label point is inside its own polygon, and the 7 documented exceptions are nearest their own -- PASS");
+console.log("choropleth sidecar: every reachable economy's and territory's label point is inside its own polygon, the 9 documented exceptions are nearest their own, and the Vatican enclave is within 0.02 degrees of its own -- PASS");
 
 // --- join: row -> economy table -> iso3 -> basemap feature indices; several
 //     features can share one iso3 (AUS); an economy with no matching feature
@@ -645,7 +663,7 @@ function insetLabelsContainedReport(svg) {
     { choropleth: { rows: AFRICA_ROWS, category_field: base.category_field, value_field: base.value_field, category_names: base.category_names, unit: base.unit } },
   );
   assert.equal(qaWithLabels.passed, true, `en render-QA with value_labels failed: ${JSON.stringify(qaWithLabels.viewports, null, 2)}`);
-  assert.equal(qaWithLabels.value_labels_check_version, "1.3.0");
+  assert.equal(qaWithLabels.value_labels_check_version, "1.5.0");
   assert.equal(qaWithLabels.viewports.desktop.value_labels.passed, true, JSON.stringify(qaWithLabels.viewports.desktop.value_labels.failures));
   assert.equal(qaWithLabels.viewports.desktop.value_labels.checked, AFRICA_ROWS.length);
   assert.equal(qaWithLabels.viewports.mobile.value_labels.passed, true, JSON.stringify(qaWithLabels.viewports.mobile.value_labels.failures));
@@ -691,6 +709,110 @@ console.log("choropleth en render: real Africa fixture, locator + frame trace pr
   assert.equal(critic.passed, true, JSON.stringify(critic));
 }
 console.log("choropleth zh render: real Africa fixture shows localized names, no leader crosses an on-map label, render-QA passes (desktop/mobile) -- PASS");
+
+// --- iso2, territories and the blocked currency mode. The Africa fixture keyed by ISO 3166-1 alpha-2 codes joins to the
+//     same features and renders byte for byte like the World Bank-name keying (en and zh, desktop and mobile). The Natural
+//     Earth territories the economy table gained join by ISO3 or ISO2 only, never by an English name. A currency code is
+//     not a map feature, so iso4217 stays blocked with its own message. The 60-row cap is not touched (its test is in the
+//     lint block above).
+{
+  const ISO2_BY_NAME = { Chad: "TD", "Congo, Dem. Rep.": "CD", "Congo, Rep.": "CG", Guinea: "GN", Liberia: "LR", Mauritania: "MR", Niger: "NE", Nigeria: "NG", "Sierra Leone": "SL", "South Sudan": "SS", Zambia: "ZM" };
+  const iso2Rows = AFRICA_ROWS.map((row) => ({ ...row, country: ISO2_BY_NAME[row.country] }));
+  const iso3Rows = AFRICA_ROWS.map((row) => ({ ...row, country: economyEntryFor(row.country, "worldbank").iso3 }));
+  // The literal ISO2 table is checked against the economy table, so a typo cannot make the comparisons below vacuous.
+  for (const row of AFRICA_ROWS) {
+    assert.equal(economyEntryFor(ISO2_BY_NAME[row.country], "iso2").iso3, economyEntryFor(row.country, "worldbank").iso3, row.country);
+  }
+  const joinKey = (joined) => joined.map(({ iso3, featureIndices }) => ({ iso3, featureIndices }));
+  const byName = joinChoroplethRows(AFRICA_ROWS, base);
+  assert.ok(byName.every((row) => row.featureIndices.length >= 1));
+  assert.deepEqual(joinKey(joinChoroplethRows(iso2Rows, { ...base, category_names: "iso2" })), joinKey(byName), "ISO2 codes join to the same features as the World Bank names");
+  assert.deepEqual(joinKey(joinChoroplethRows(iso3Rows, { ...base, category_names: "iso3" })), joinKey(byName), "ISO3 codes join to the same features as the World Bank names");
+
+  const iso2Spec = { ...base, category_names: "iso2" };
+  const iso2Lint = lintVizSpec(iso2Spec, iso2Rows, { verified_claim_ids: [claimId] });
+  assert.equal(iso2Lint.passed, true, iso2Lint.blockers.join("; "));
+  assert.deepEqual(lintChoroplethSpec(iso2Spec, iso2Rows).blockers, []);
+  assert.deepEqual(validateVizSpec(iso2Spec), []);
+
+  const zhOverrides = {
+    language: "zh",
+    title: "非洲可再生能源消费占比",
+    subtitle: "部分非洲经济体，最新可得年份",
+    alt: "非洲多国可再生能源占最终能源消费比例的分级设色地图，颜色越深占比越高。",
+    source_note: "世界银行 EG.FEC.RNEW.ZS",
+  };
+  for (const [language, overrides] of [["en", {}], ["zh", zhOverrides]]) {
+    const named = renderVizBundle({ ...base, ...overrides }, AFRICA_ROWS);
+    for (const [mode, keyedRows] of [["iso2", iso2Rows], ["iso3", iso3Rows]]) {
+      const keyed = renderVizBundle({ ...base, ...overrides, category_names: mode }, keyedRows);
+      assert.equal(keyed.desktop, named.desktop, `${language} desktop render keyed by ${mode} must equal the World Bank-name render`);
+      assert.equal(keyed.mobile, named.mobile, `${language} mobile render keyed by ${mode} must equal the World Bank-name render`);
+    }
+  }
+
+  // Rows that cannot join are named, never guessed: an unknown code and a Eurostat aggregate.
+  for (const value of ["XX", "EU27_2020"]) {
+    const unmapped = lintVizSpec(iso2Spec, [...iso2Rows, { country: value, year: 2021, renewable_energy_consumption_pct: 1 }], { verified_claim_ids: [claimId] });
+    assert.equal(unmapped.passed, false, value);
+    assert.ok(unmapped.blockers.some((b) => b.startsWith(`category_names='iso2' cannot resolve 1 value(s) in 'country' (e.g. '${value}')`)), unmapped.blockers.join("; "));
+  }
+
+  // The join lint behind that check runs for iso2 like for the other economy modes: Greece spelled GR and EL (the Eurostat code)
+  // is one map feature twice, and only the join lint, not the unmapped-value check, can see that.
+  const greekRows = [{ country: "GR", year: 2021, renewable_energy_consumption_pct: 1 }, { country: "EL", year: 2021, renewable_energy_consumption_pct: 2 }];
+  const duplicated = lintChoroplethSpec(iso2Spec, [...iso2Rows, ...greekRows]);
+  assert.ok(duplicated.blockers.some((b) => b.includes("duplicate economy/economies mapping to the same map feature(s): GRC (GR, EL)")), duplicated.blockers.join("; "));
+
+  // The Natural Earth territories join by ISO3 or ISO2 (with the Eurostat spelling EL for Greece), and only by those.
+  const territoryCodes = [["TWN", "TW"], ["AIA", "AI"], ["VAT", "VA"]];
+  for (const [mode, column] of [["iso3", 0], ["iso2", 1]]) {
+    const joined = joinChoroplethRows(territoryCodes.map((codes) => ({ country: codes[column] })), { category_field: "country", category_names: mode });
+    joined.forEach((row, i) => {
+      assert.equal(row.iso3, territoryCodes[i][0], `${mode} ${territoryCodes[i][column]}`);
+      assert.equal(row.featureIndices.length, 1, `${mode} ${territoryCodes[i][column]} should have exactly one basemap feature`);
+      assert.deepEqual(row.featureIndices, featureIndicesForIso3(territoryCodes[i][0]));
+    });
+  }
+  assert.deepEqual(joinChoroplethRows([{ country: "EL" }], { category_field: "country", category_names: "iso2" }).map((row) => [row.iso3, row.featureIndices]), [["GRC", featureIndicesForIso3("GRC")]]);
+  assert.deepEqual(joinChoroplethRows([{ country: "Taiwan" }, { country: "Taiwan, China" }, { country: "Anguilla" }], { category_field: "country", category_names: "worldbank" }).map((row) => row.entry), [null, null, null], "a territory has no World Bank English name");
+
+  // A zh map says 中国台湾 and 中国香港 (policy rule 3), and its title must not say a bare 国家 (rule 4). The en render of Taiwan
+  // together with Hong Kong is a known layout limit (its footnote marker meets a data mark), which the render-QA gate catches, so
+  // this test draws en with Taiwan alone and zh with both.
+  const asia = (pairs) => pairs.map(([country, pct]) => ({ country, year: 2021, renewable_energy_consumption_pct: pct }));
+  const asiaBase = { ...base, category_names: "iso3", title: "East Asia renewable share", alt: "A choropleth map of renewable energy's share of final energy consumption across several East Asian economies, darker meaning a higher share.", source_note: "World Bank fixture" };
+  const asiaZh = { ...asiaBase, language: "zh", title: "东亚经济体可再生能源占比", subtitle: "国家和地区，最新可得年份", alt: "东亚多个经济体可再生能源占最终能源消费比例的分级设色地图，颜色越深占比越高。", source_note: "世界银行" };
+  const asiaRows = asia([["CHN", 20], ["TWN", 8], ["JPN", 12], ["KOR", 3], ["HKG", 1], ["MNG", 15]]);
+  const zhLint = lintVizSpec(asiaZh, asiaRows, { verified_claim_ids: [claimId] });
+  assert.equal(zhLint.passed, true, zhLint.blockers.join("; "));
+  assert.deepEqual(zhLint.warnings, []);
+  const zhAsia = renderVizBundle(asiaZh, asiaRows);
+  for (const [viewport, svg] of [["desktop", zhAsia.desktop], ["mobile", zhAsia.mobile]]) {
+    assert.match(svg, />中国台湾</, `${viewport} should name Taiwan 中国台湾`);
+    assert.match(svg, />中国香港</, `${viewport} should name Hong Kong 中国香港`);
+    assert.doesNotMatch(svg, /台湾省|中国香港特别行政区|>(TWN|HKG)</, `${viewport}: no raw code and no longer form in visible text (data-iso3 attributes are machine-readable and stay)`);
+  }
+  assert.equal(runRenderQa(zhAsia).passed, true, JSON.stringify(runRenderQa(zhAsia).viewports));
+  const badTitle = lintVizSpec({ ...asiaZh, title: "东亚国家可再生能源占比", subtitle: undefined }, asiaRows, { verified_claim_ids: [claimId] });
+  assert.ok(badTitle.warnings.includes("zh chart lists 中国香港 (HKG), 中国台湾 (TWN), but its title says 国家 without 和地区; write 国家和地区 (or 经济体) instead of a bare 国家 (zh naming policy rule 4)"), JSON.stringify(badTitle.warnings));
+  const enRows = asia([["CHN", 20], ["TWN", 8], ["JPN", 12], ["KOR", 3], ["MNG", 15]]);
+  const enAsia = renderVizBundle(asiaBase, enRows);
+  assert.match(enAsia.desktop, />Taiwan</);
+  assert.equal(runRenderQa(enAsia).passed, true, JSON.stringify(runRenderQa(enAsia).viewports));
+
+  // A currency code is not a map feature: the mode is a valid enum value elsewhere, so the schema allows it and choropleth lint
+  // refuses it, once, with the reason.
+  const currencyRows = [{ country: "TRY", year: 2021, renewable_energy_consumption_pct: 1 }];
+  const CURRENCY_BLOCKER = "choropleth requires category_names to be 'worldbank', 'iso3' or 'iso2'; 'iso4217' names a currency, which is not a map feature";
+  assert.deepEqual(validateVizSpec({ ...base, category_names: "iso4217" }), []);
+  assert.deepEqual(lintChoroplethSpec({ ...base, category_names: "iso4217" }, currencyRows).blockers, [CURRENCY_BLOCKER]);
+  const viaLint = lintVizSpec({ ...base, category_names: "iso4217" }, currencyRows, { verified_claim_ids: [claimId] });
+  assert.equal(viaLint.passed, false);
+  assert.deepEqual(viaLint.blockers, [CURRENCY_BLOCKER], "no second, unmapped-value blocker for the same mistake");
+  assert.ok(lintChoroplethSpec({ ...base, category_names: undefined }, AFRICA_ROWS).blockers.some((b) => b.includes("'worldbank', 'iso3' or 'iso2'")));
+}
+console.log("choropleth iso2: keyed by ISO2 the Africa fixture joins and renders like the World Bank names, territories join by code, a zh map says 中国台湾 and 中国香港, iso4217 stays blocked -- PASS");
 
 // --- reference_line and range_bracket annotations stay blocked on choropleth
 {
@@ -1062,9 +1184,185 @@ console.log("choropleth highlight outline: accent outline drawn only for spec-hi
     const vb = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
     assert.ok(panel.x >= 0 && panel.x + panel.w <= +vb[1] && panel.y + panel.h <= +vb[2], `${name}: inset panel must stay inside the canvas`);
     assert.match(svg, /data-role="choropleth-inset-source"/, `${name}: source-extent outline stays on the main map`);
-    assert.match(svg, /data-role="choropleth-inset-link"/, `${name}: connector links the source outline to the panel`);
+    // P3: the connector is drawn only when short and clear of data; otherwise
+    // the source box and the panel title carry the same letter.
+    const linked = /data-role="choropleth-inset-link"/.test(svg);
+    const srcLetter = svg.match(/data-role="choropleth-inset-source-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+    const panelLetter = svg.match(/data-role="choropleth-inset-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+    assert.ok(linked || (srcLetter && srcLetter === panelLetter), `${name}: source outline is tied to the panel by a connector or a shared letter`);
+    assert.ok(!(linked && (srcLetter || panelLetter)), `${name}: a drawn connector and a letter are mutually exclusive`);
   }
 }
 console.log("choropleth inset: panel reserved outside the map frame on desktop and mobile -- PASS");
 
+// --- projection choice by real spherical extent (diagnosis P1). The old
+//     framing centred on the lon/lat bbox midpoint, which for data straddling
+//     the antimeridian (New Zealand + Europe) is a useless centre; a 90-degree
+//     horizon then dropped every Southeast Asian / Pacific ring whole. Each
+//     shape of data below must draw every region that has a data row
+//     (choropleth-data path, desktop and mobile) and the existing render-QA
+//     rule value_label_missing_region must report nothing. Rows are synthetic;
+//     nothing here is specific to any one story.
+{
+  const SHAPES = {
+    global_cross_hemisphere: ["New Zealand", "Papua New Guinea", "Indonesia", "Cambodia", "Ethiopia", "Greece", "Brazil", "France", "Panama", "Viet Nam"],
+    antimeridian_pacific: ["New Zealand", "Fiji", "Tonga", "Samoa", "Vanuatu"],
+    fiji_kiribati: ["Fiji", "Kiribati"],
+    single_continent_africa: ["Nigeria", "Ghana", "Kenya", "Ethiopia", "Egypt, Arab Rep.", "South Africa", "Chad", "Mali"],
+    small_cluster_balkans: ["Serbia", "Croatia", "Bosnia and Herzegovina", "North Macedonia", "Albania", "Montenegro", "Slovenia", "Bulgaria"],
+    high_latitude_nordics: ["Norway", "Sweden", "Finland", "Iceland", "Denmark"],
+  };
+  for (const [shape, countries] of Object.entries(SHAPES)) {
+    const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 10 + i * 7, year: 2021 }));
+    const spec = { ...base, highlight_values: [] };
+    const bundle = renderVizBundle(spec, rows);
+    const joined = joinChoroplethRows(rows, spec);
+    const expected = joined.map((item) => item.iso3);
+    assert.equal(expected.length, countries.length, `${shape}: every fixture name must join to an iso3`);
+    for (const [variant, svg] of [["desktop", bundle.desktop], ["mobile", bundle.mobile]]) {
+      const drawn = new Set([...svg.matchAll(/<path data-role="choropleth-data" data-iso3="([A-Z]{3})"/g)].map((m) => m[1]));
+      for (const iso3 of expected) assert.ok(drawn.has(iso3), `${shape}/${variant}: ${iso3} has a data row but no choropleth-data path (drawn: ${[...drawn].join(",")})`);
+      // No land path may leap across the map (a ring wrapped over the antimeridian
+      // or the horizon): consecutive points stay within 0.6 of the canvas width.
+      const width = Number(svg.match(/viewBox="0 0 ([\d.]+)/)[1]);
+      for (const m of svg.matchAll(/<path data-role="choropleth-(?:data|context)"[^>]* d="([^"]+)"/g)) {
+        let prev = null;
+        for (const seg of m[1].match(/[ML][-\d.]+,[-\d.]+/g) ?? []) {
+          const x = Number(seg.slice(1).split(",")[0]);
+          if (seg[0] === "L" && prev !== null) assert.ok(Math.abs(x - prev) < 0.6 * width, `${shape}/${variant}: a path leaps ${Math.abs(x - prev).toFixed(0)}px across the map`);
+          prev = x;
+        }
+      }
+      // A locator, when shown, must contain land and the area marker must lie inside it.
+      const locator = svg.match(/<g data-role="choropleth-locator"><rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"[\s\S]*?<\/g><\/g>/);
+      if (locator) {
+        const [, lx, ly, lw, lh] = locator.map(Number);
+        const paths = locator[0].match(/<path /g) ?? [];
+        assert.ok(paths.length >= 2, `${shape}/${variant}: locator is empty (${paths.length} paths)`);
+        assert.ok(locator[0].includes(`fill="${PALETTE.context}"`), `${shape}/${variant}: locator draws no data-bearing land`);
+        const area = locator[0].match(/data-role="choropleth-locator-area" x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"/);
+        if (area) {
+          const [, ax, ay, aw, ah] = area.map(Number);
+          assert.ok(ax >= lx - 1 && ay >= ly - 1 && ax + aw <= lx + lw + 1 && ay + ah <= ly + lh + 1, `${shape}/${variant}: locator area marker leaves its panel`);
+        }
+      }
+    }
+    const qa = runRenderQa(
+      { desktop: bundle.desktop, mobile: bundle.mobile },
+      { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } },
+    );
+    for (const variant of ["desktop", "mobile"]) {
+      const bad = (qa.viewports[variant].value_labels?.failures ?? []).filter((f) => String(f.rule).startsWith("value_label_missing"));
+      assert.equal(bad.length, 0, `${shape}/${variant}: ${JSON.stringify(bad)}`);
+    }
+  }
+}
+console.log("choropleth projection choice: global, antimeridian, single-continent, small-cluster and high-latitude data draw every region -- PASS");
+
+// P3: the auto zoom inset magnifies ONE neighbourhood (regions within 25 deg of
+// each other), draws neighbouring land around them, and never merges far-apart
+// regions into one near-global extent. Synthetic data, three layouts: tiny
+// states scattered across the globe, a tight regional group, an island arc.
+{
+  const BIG = ["Brazil", "India", "Russian Federation", "Australia"];
+  const LAYOUTS = {
+    scattered: [["Djibouti", "Luxembourg", "Singapore", "Brunei Darussalam", "Malta", "Maldives"], ["SGP", "BRN"], false],
+    tight_group: [["Montenegro", "Albania", "North Macedonia", "Slovenia", "Luxembourg", "Kosovo"], ["MNE", "ALB", "MKD", "SVN", "LUX", "XKX"], true],
+    island_arc: [["Barbados", "Dominica", "St. Lucia", "Grenada", "Antigua and Barbuda"], ["BRB", "DMA", "LCA", "GRD", "ATG"], true],
+  };
+  for (const [layout, [small, group, exact]] of Object.entries(LAYOUTS)) {
+    const countries = [...small, ...BIG];
+    const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 5 + i * 8, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset: { auto: true } };
+    const bundle = renderVizBundle(spec, rows);
+    const qa = runRenderQa(
+      { desktop: bundle.desktop, mobile: bundle.mobile },
+      { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } },
+    );
+    for (const variant of ["desktop", "mobile"]) {
+      const svg = bundle[variant];
+      const inset = new Set([...svg.matchAll(/data-role="choropleth-inset-data" data-iso3="([A-Z]{3})"/g)].map((m) => m[1]));
+      assert.ok(inset.size > 0, `${layout}/${variant}: expected a zoom inset`);
+      for (const iso3 of inset) assert.ok(group.includes(iso3), `${layout}/${variant}: ${iso3} is far from the cluster and must stay out of the inset (got ${[...inset].join(",")})`);
+      if (exact) for (const iso3 of group) assert.ok(inset.has(iso3), `${layout}/${variant}: ${iso3} belongs in the inset`);
+      assert.match(svg, /data-role="choropleth-inset-context"/, `${layout}/${variant}: inset should draw neighbouring land`);
+      const missing = (qa.viewports[variant].value_labels?.failures ?? []).filter((f) => String(f.rule).startsWith("value_label_missing"));
+      assert.equal(missing.length, 0, `${layout}/${variant}: every region keeps a label somewhere: ${JSON.stringify(missing)}`);
+    }
+  }
+}
+console.log("choropleth inset cluster: one neighbourhood per inset, neighbouring land drawn, no region loses its label -- PASS");
+
 console.log("choropleth chart: PASS");
+
+// P3 shapes: dots for sub-threshold regions, wide inset with open-spot labels,
+// letter tags instead of long connectors, and the add-only QA gate
+// inset_region_too_small. Synthetic rows only; no shape here is a story.
+{
+  const FILLER = ["Brazil", "India", "Russian Federation", "Australia"];
+  const SHAPES = {
+    gulf: { names: ["Bahrain", "Qatar", "Kuwait", "United Arab Emirates", "Oman"], inset: { auto: true } },
+    pacific_island_nations: { names: ["Fiji", "Tonga", "Samoa", "Vanuatu", "Kiribati"], inset: { auto: true } },
+    most_countries_too_small: { names: ["Malta", "Luxembourg", "Singapore", "Maldives", "Barbados", "Djibouti"], inset: { auto: true } },
+    single_country_zoom: { names: ["Singapore"], inset: { iso3: ["SGP"], title: "Zoom" } },
+    malta_alone: { names: ["Malta"], inset: { auto: true } },
+    multi_territory_countries: { names: ["France", "United States", "Netherlands", "Denmark", "Norway"], inset: { auto: true } },
+  };
+  const qaOf = (bundle, rows, spec) =>
+    runRenderQa({ desktop: bundle.desktop, mobile: bundle.mobile }, { choropleth: { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit } });
+  for (const [shape, { names, inset }] of Object.entries(SHAPES)) {
+    const countries = [...names, ...FILLER];
+    const rows = countries.map((country, i) => ({ country, renewable_energy_consumption_pct: 5 + i * 7, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset };
+    assert.equal(joinChoroplethRows(rows, spec).length, countries.length, `${shape}: every fixture name joins`);
+    const bundle = renderVizBundle(spec, rows);
+    const qa = qaOf(bundle, rows, spec);
+    for (const variant of ["desktop", "mobile"]) {
+      const failures = qa.viewports[variant].value_labels?.failures ?? [];
+      assert.equal(failures.length, 0, `${shape}/${variant}: every region labelled exactly once, no QA failure: ${JSON.stringify(failures)}`);
+      const svg = bundle[variant];
+      // A drawn connector never exceeds a quarter of the main map width.
+      const link = svg.match(/data-role="choropleth-inset-link" d="([^"]+)"/);
+      if (link) {
+        const pts = (link[1].match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+        let len = 0;
+        for (let i = 2; i + 1 < pts.length; i += 2) len += Math.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]);
+        const ocean = svg.match(/data-role="choropleth-ocean" x="[-\d.]+" y="[-\d.]+" width="([\d.]+)"/);
+        assert.ok(len <= 0.25 * Number(ocean[1]) + 1, `${shape}/${variant}: connector is ${len.toFixed(0)}px, over a quarter of the map`);
+      }
+      // Source box and panel title share one letter whenever no connector is drawn.
+      if (/data-role="choropleth-inset-source"/.test(svg) && !link) {
+        const a = svg.match(/data-role="choropleth-inset-source-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+        const b = svg.match(/data-role="choropleth-inset-letter">.*?<text[^>]*>([A-Z])<\/text>/)?.[1];
+        assert.ok(a && a === b, `${shape}/${variant}: source box and panel title carry the same letter`);
+      }
+    }
+  }
+
+  // Malta alone is far below the dot threshold: value-coloured dot, one label.
+  {
+    const rows = ["Malta", ...FILLER].map((country, i) => ({ country, renewable_energy_consumption_pct: 20 + i * 11, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset: { auto: true } };
+    const svg = renderVizBundle(spec, rows).desktop;
+    const dot = svg.match(/<circle data-role="choropleth-data-dot" data-iso3="MLT"[^>]*fill="(#[0-9A-Fa-f]{6})"/);
+    assert.ok(dot, "Malta alone is drawn as a data dot");
+    const labels = svg.match(/data-role="choropleth-(?:inset-)?label" data-iso3="MLT"|data-role="choropleth-footnote-name" data-iso3="MLT"/g) ?? [];
+    assert.equal(labels.length, 1, "Malta is labelled exactly once");
+  }
+
+  // Add-only gate (item 7): an inset region drawn under the threshold must
+  // carry a dot. Must-pass: the real render. Must-fail: same render with the
+  // inset dots stripped.
+  {
+    const names = ["Tonga", "Fiji", "Samoa", "Vanuatu", "New Zealand"];
+    const rows = [...names, ...FILLER].map((country, i) => ({ country, renewable_energy_consumption_pct: 5 + i * 8, year: 2021 }));
+    const spec = { ...base, highlight_values: [], inset: { auto: true } };
+    const bundle = renderVizBundle(spec, rows);
+    assert.match(bundle.desktop, /data-role="choropleth-inset-dot"/, "fixture must contain inset dots");
+    const run = (desktop) => qaOf({ desktop, mobile: bundle.mobile }, rows, spec).viewports.desktop.value_labels.failures.filter((f) => f.rule === "inset_region_too_small");
+    assert.equal(run(bundle.desktop).length, 0, "must-pass: tiny inset regions with dots are accepted");
+    const stripped = bundle.desktop.replace(/<circle data-role="choropleth-inset-dot"[^>]*\/>/g, "");
+    assert.ok(run(stripped).length > 0, "must-fail: tiny inset regions without dots are blocked");
+  }
+}
+console.log("choropleth P3 shapes: gulf, island nations, mostly-tiny, single-country zoom, Malta alone, multi-territory; inset_region_too_small must-fail/must-pass -- PASS");

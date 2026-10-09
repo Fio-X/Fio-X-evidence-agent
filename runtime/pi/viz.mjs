@@ -1,17 +1,23 @@
 import { createHash } from "node:crypto";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
-import { ECONOMY_NAME_MODES, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, classifyValue, featurePath, fitAzimuthalProjection, geometryRings, joinChoroplethRows, lintChoroplethSpec, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
+import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
+import { checkSvgContrast } from "./render_qa_contrast.mjs";
+import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
+import { parseXml } from "./render_qa_svg.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
   "dot",
   "dumbbell",
+  "mirrored_bar",
   "slope",
   "line",
   "multi_line",
   "small_multiples",
   "scatter",
+  "strip_plot",
   "diverging_bar",
   "heatmap",
   "sankey",
@@ -30,6 +36,7 @@ export const CHART_TYPES = [
   "waffle",
   "choropleth",
   "treemap",
+  "stacked_bar_100",
 ];
 
 export const VISUAL_FAMILIES = [
@@ -151,7 +158,7 @@ export const HOUSE_PALETTES = {
     // one lighter tint (faint) reserved for "Other" - mirrors the "one
     // accent, everything else grey steps" house rule instead of reusing the
     // legacy blue-grey ramp's own hex values.
-    waffleGreySteps: ["#666666", "#757575", "#9E9E9E", "#BDBDBD", "#F2F2F2"],
+    waffleGreySteps: ["#404040", "#646464", "#8B8B8B", "#B9B9B9", "#F2F2F2"],
   },
 };
 
@@ -597,6 +604,17 @@ function addPointAnnotation(parts, annotation, x, y, opts = {}) {
       })();
   parts.push(`<line data-role="annotation-leader" x1="${x}" y1="${y}" x2="${placed.leaderX}" y2="${placed.leaderY}" stroke="${PALETTE.muted}" stroke-width="1"/>`);
   parts.push(`<text data-role="annotation" x="${placed.tx}" y="${placed.ty}" text-anchor="${placed.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${lines.map((line, index) => `<tspan x="${placed.tx}" dy="${index === 0 ? 0 : 15}">${esc(line)}</tspan>`).join("")}</text>`);
+}
+
+// Endpoint of the leader that joins a data point (x, y) to its placed label
+// (createAnnotationLayout.place() -> leaderX/leaderY). It stops `gap` px short
+// of the label's near edge: leaderX/leaderY sit exactly on the edge of the
+// label's text box, and render QA counts a leader that touches any text box as
+// crossing it (leader_crosses_text).
+function leaderEndShortOfLabel(x, y, placed, gap = 2) {
+  const dx = placed.leaderX - x, dy = placed.leaderY - y, len = Math.hypot(dx, dy);
+  if (!(len > gap)) return { x2: placed.leaderX, y2: placed.leaderY };
+  return { x2: placed.leaderX - (dx / len) * gap, y2: placed.leaderY - (dy / len) * gap };
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,22 +1079,108 @@ function autoValueDecimals(values) {
 // literally set style_id:"house", which is most of them now that "house" is
 // the default resolved style. Returning null here defers 100% to that
 // untouched mechanism, exactly as before fix 2.
+//
+// Shared-scale guarantees (what a reader may rely on, whatever the unit or sign):
+//   1. a non-zero value never prints as zero (0, 0.00亿, -0.00亿);
+//   2. no value loses or flips its sign;
+//   3. two different values print differently, whenever 3 decimals in the printed unit can show the difference;
+//   4. to meet 1-3 the shared decimal count is raised, up to 3;
+//   5. a value that 3 decimals still cannot show (it would print as zero) prints in its own unit (zh: its own
+//      万/亿/万亿, below 1万 a plain number; en: significant digits) - the one case where a chart mixes units.
+// `decimals` (spec.decimals or the auto count) is the count in the PRINTED unit: zh 10000.123 with decimals 3
+// prints 1.000万, not 10000.123. The count is a floor that rules 1-4 may raise; it is never lowered.
 function resolveChartDecimals(spec, values) {
   if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return null;
   const explicit = spec?.decimals;
-  if (Number.isInteger(explicit) && explicit >= 0 && explicit <= 3) return explicit;
-  return autoValueDecimals(values);
+  const finite = (values ?? []).filter((v) => Number.isFinite(v));
+  const hasExplicit = Number.isInteger(explicit) && explicit >= 0 && explicit <= 3;
+  // zh chart with a label at or above 1万: one unit (from the largest |value|)
+  // and one shared decimal count for every label, so 8.6万 never sits beside 8.757万.
+  if (vizLang(spec) === "zh" && finite.some((v) => Math.abs(v) >= 10_000)) {
+    const top = Math.max(...finite.map((v) => Math.abs(v)));
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+    const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+    return { zhScale: { div, suffix }, decimals: raiseSharedDecimals(finite, hasExplicit ? explicit : auto, div) };
+  }
+  if (hasExplicit) return raiseSharedDecimals(finite, explicit, 1);
+  const auto = autoValueDecimals(finite);
+  // every labelled value in the thousands: no decimals at all, decided per chart - unless that would print two
+  // different values the same (1000.1 and 1000.2), which rule 3 forbids
+  if (finite.length && finite.every((v) => Math.abs(v) >= 1000) && auto !== null && auto > 0 && raiseSharedDecimals(finite, 0, 1) === 0) return 0;
+  return auto === null ? auto : raiseSharedDecimals(finite, auto, 1);
 }
 
-export function fmt(value, unit = "", decimals = null) {
+// The smallest count in [start, 3] at which no non-zero value prints as zero and no two values that 3 decimals
+// can tell apart print the same; 3 when nothing smaller does (see the guarantees above).
+function raiseSharedDecimals(values, start, div) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  const at = (v, d) => (v / div).toFixed(d);
+  for (let d = Math.min(3, Math.max(0, start)); d < 3; d++) {
+    const seen = new Map();
+    let ok = true;
+    for (const v of finite) {
+      const short = at(v, d);
+      const full = at(v, 3);
+      if (v !== 0 && Number(short) === 0 && Number(full) !== 0) { ok = false; break; }
+      if (!seen.has(short)) seen.set(short, full);
+      else if (seen.get(short) !== full) { ok = false; break; }
+    }
+    if (ok) return d;
+  }
+  return 3;
+}
+
+// A value that the shared count cannot show without printing zero: significant digits, never zero, sign kept.
+function tinyValueText(value) {
+  const abs = Math.abs(value);
+  if (abs >= 1) return String(Number(value.toPrecision(4)));
+  const decimals = Math.min(20, 1 - Math.floor(Math.log10(abs)));
+  const text = value.toFixed(decimals).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return Number(text) === 0 ? value.toExponential(1) : text;
+}
+
+// Chart-level formatter: resolves the shared unit / decimal count once from all
+// the chart's values and returns a (value, unit) => text function.
+export function chartValueFormatter(spec, values) {
+  const decimals = resolveChartDecimals(spec, values);
+  return (value, unit = spec?.unit) => fmtSpec(spec, value, unit, decimals);
+}
+
+// zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
+// four significant digits (161.1万, -325.6万, 1.611亿, 1611万), never a trailing
+// zero. Exported so a hero number can print through the same formatter.
+// minDecimals keeps an explicit shared count: the result never shows fewer decimals than that.
+export function zhScaleText(value, minDecimals = 0) {
+  const abs = Math.abs(value);
+  const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+  const v = abs / div;
+  const d = v >= 1000 ? 0 : v >= 100 ? 1 : v >= 10 ? 2 : 3;
+  let digits = String(Number(v.toFixed(d)));
+  const have = digits.includes(".") ? digits.split(".")[1].length : 0;
+  const want = Math.min(3, Math.max(0, minDecimals));
+  if (have < want) digits = v.toFixed(want); // from the value: never pad a rounded string
+  const text = (value < 0 ? "-" : "") + digits;
+  return `${text}${suffix}`;
+}
+
+export function fmt(value, unit = "", decimals = null, lang = "en") {
   if (!Number.isFinite(value)) return "";
   // House style only: a percent value always prints one decimal (83.0%,
   // not 83%) so every value label in a chart shares the same decimal
   // count - the default style's own trailing-zero-stripping behaviour
   // below is untouched so its output stays byte-identical.
-  if (DECIMAL_MODE !== "default" && unit === "%") return `${value.toFixed(1)}%`;
+  if (DECIMAL_MODE !== "default" && unit === "%") return value !== 0 && Number(value.toFixed(1)) === 0 ? `${tinyValueText(value)}%` : `${value.toFixed(1)}%`;
   const abs = Math.abs(value);
   let text;
+  if (decimals && typeof decimals === "object" && decimals.zhScale) {
+    text = (value / decimals.zhScale.div).toFixed(decimals.decimals);
+    // rule 5: a value the shared unit cannot show at 3 decimals prints in its own unit
+    if (value !== 0 && Number(text) === 0) text = abs >= 10_000 ? zhScaleText(value) : tinyValueText(value);
+    else text += decimals.zhScale.suffix;
+    if (unit === "%") return `${text}%`;
+    return unit && !/^[£$€¥]$/.test(unit) ? `${text} ${unit}` : unit ? `${unit}${text}` : text;
+  }
   if (Number.isInteger(decimals)) {
     // Fix 2: a resolved shared decimal count (explicit spec.decimals, or
     // resolveChartDecimals()'s auto-picked default) always wins over the
@@ -1084,6 +1188,11 @@ export function fmt(value, unit = "", decimals = null) {
     // strips trailing zeros: every label in the chart must show exactly the
     // same number of decimal places (0.720 must stay "0.720", not "0.72").
     text = value.toFixed(decimals);
+    if (lang === "zh" && abs >= 10_000) {
+      text = zhScaleText(value, decimals);
+    } else if (value !== 0 && Number(text) === 0) {
+      text = tinyValueText(value);
+    }
     // Fix 2 follow-up (b): toFixed() never groups the integer part, and a
     // resolved decimals count takes this branch instead of the magnitude
     // branches below (whose own abbreviations - "k"/"m"/"bn" - never need
@@ -1091,11 +1200,19 @@ export function fmt(value, unit = "", decimals = null) {
     // instead of "67,500". Group only the integer part, only for |value| >=
     // 10,000 (the reported threshold), so a value below it (e.g. 9999) is
     // unaffected and stays byte-identical to before this fix.
-    if (abs >= 10_000) {
+    if (abs >= 10_000 && !(lang === "zh")) {
       const [intPart, fracPart] = text.replace("-", "").split(".");
       const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
       text = (value < 0 ? "-" : "") + grouped + (fracPart !== undefined ? `.${fracPart}` : "");
     }
+  }
+  else if (lang === "zh" && abs >= 1_000) {
+    // zh readers count in 万 and 亿, not k/m/bn: same one-decimal-below-10 rule per unit;
+    // 1,000-9,999 is the plain integer. Only a zh caller (fmtSpec, tick sites) passes lang.
+    if (abs >= 1_000_000_000_000) text = `${(value / 1_000_000_000_000).toFixed(abs >= 10_000_000_000_000 ? 0 : 1)}万亿`;
+    else if (abs >= 100_000_000) text = `${(value / 100_000_000).toFixed(abs >= 1_000_000_000 ? 0 : 1)}亿`;
+    else if (abs >= 10_000) text = `${(value / 10_000).toFixed(abs >= 100_000 ? 0 : 1)}万`;
+    else text = value.toFixed(0);
   }
   else if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1)}bn`;
   else if (abs >= 1_000_000) text = `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
@@ -1113,8 +1230,17 @@ export function fmt(value, unit = "", decimals = null) {
 // `abs>=10` stripping of a trailing ".0"/".00". Only choropleth per-region
 // labels (on-map, overflow and inset) use this; fmt() itself is untouched so
 // every other chart type's own formatting/snapshot tests are unaffected.
-export function choroplethValueText(value, unit = "") {
+export function choroplethValueText(value, unit = "", spec = null) {
   if (!Number.isFinite(value)) return "";
+  // P2: a calendar year or an integer count is spelled as the integer it is
+  // ("2017", "3"), never "2.0k" / "3.0". No thousands separator and no zh
+  // unit conversion here on purpose: the Python/Rust label verifiers read the
+  // leading number back out of this text and compare it to data-value.
+  const kind = spec ? specValueKind(spec) : null;
+  if (kind && Number.isInteger(value)) {
+    if (kind === "year" || !unit) return String(value);
+    return `${value} ${unit}`;
+  }
   const abs = Math.abs(value);
   let text;
   if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(1)}bn`;
@@ -1162,7 +1288,64 @@ function fmtLocalizedUnit(spec, value, unit = spec?.unit) {
     const zh = fmtZhUnit(value, unit);
     if (zh) return zh;
   }
-  return fmt(value, unit);
+  return fmtSpec(spec, value, unit);
+}
+
+// P2: one place that decides how a spec's numbers are *spelled*, so every
+// chart type agrees. fmt() only ever sees a unit string; it cannot tell a
+// calendar year or a count from a quantity, so 2017 became "2.0k" and 3
+// became "3.0". The kind comes from spec.measure_kind, or from a
+// spec.measure_semantics entry (same shape as measure_semantics.mjs: field,
+// unit, measure_kind) matching spec.value_field (or the only entry).
+// Returns "year" | "count" | null. Never guesses from the unit alone except
+// that a year-ish unit on an `index` measure is a calendar year (a year unit
+// on a `duration` is an elapsed span, e.g. 72.4 years, and stays a number).
+const YEAR_UNITS = new Set(["year", "years", "yr", "yrs", "年", "年份"]);
+export function specValueKind(spec) {
+  let kind = typeof spec?.measure_kind === "string" ? spec.measure_kind : null;
+  let unit = spec?.unit;
+  if (!kind && Array.isArray(spec?.measure_semantics)) {
+    const list = spec.measure_semantics.filter((m) => m && typeof m === "object");
+    const entry = list.find((m) => m.field && m.field === spec.value_field) ?? (list.length === 1 ? list[0] : null);
+    if (entry) {
+      kind = entry.measure_kind ?? null;
+      unit = unit ?? entry.unit;
+    }
+  }
+  if (kind === "year") return "year";
+  if (kind === "count") return "count";
+  if (kind === "index" && YEAR_UNITS.has(String(unit ?? "").trim().toLowerCase())) return "year";
+  return null;
+}
+
+function zhBillionsActive(spec, unit) {
+  return vizLang(spec) === "zh" && spec?.unit === "$B" && (unit === "$B" || unit === "");
+}
+
+// Value-label formatter shared by every chart type that has a spec.
+// `unit` is what this particular label should carry ("" for a bare number
+// on a house-style row that shows the unit once elsewhere).
+export function fmtSpec(spec, value, unit = spec?.unit, decimals = null) {
+  if (!Number.isFinite(value)) return "";
+  const kind = specValueKind(spec);
+  if (kind && Number.isInteger(value)) {
+    if (kind === "year") return String(value);
+    const text = Math.abs(value) >= 10_000 ? value.toLocaleString("en-US") : String(value);
+    return unit ? `${text} ${unit}` : text;
+  }
+  if (zhBillionsActive(spec, unit)) {
+    const num = treemapZhOkuFromBillions(value);
+    return unit ? `${num}亿美元` : num;
+  }
+  return fmt(value, unit, decimals, vizLang(spec));
+}
+
+export function tickLabelSpec(spec, value, unit = "") {
+  if (!spec) return tickLabel(value, unit);
+  const kind = specValueKind(spec);
+  if (kind && Number.isInteger(value)) return fmtSpec(spec, value, unit);
+  if (zhBillionsActive(spec, unit)) return fmtSpec(spec, value, unit);
+  return tickLabel(value, unit, vizLang(spec));
 }
 
 // JSON number parsing is not bit-for-bit identical across V8, serde_json and
@@ -1318,11 +1501,13 @@ function requiredFields(spec) {
     horizontal_bar: ["category_field", "value_field"],
     dot: ["category_field", "value_field"],
     dumbbell: ["category_field", "start_field", "end_field"],
+    mirrored_bar: ["category_field", "series_field", "value_field"],
     slope: ["category_field", "start_field", "end_field"],
     line: ["x_field", "value_field"],
     multi_line: ["x_field", "value_field", "series_field"],
     small_multiples: ["x_field", "value_field", "facet_field"],
     scatter: ["x_field", "y_field"],
+    strip_plot: ["category_field", "value_field"],
     diverging_bar: ["category_field", "value_field"],
     heatmap: ["x_field", "y_field", "value_field"],
     waffle: ["category_field", "value_field"],
@@ -1341,8 +1526,62 @@ function requiredFields(spec) {
     process_schematic: ["source_field", "target_field"],
     choropleth: ["category_field", "value_field", "category_names", "basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"],
     treemap: ["category_field", "value_field"],
+    stacked_bar_100: ["category_field", "series_field", "value_field"],
   };
   return [...common, ...(byType[spec.chart_type] ?? [])];
+}
+
+// K110: checks on the chart's own rows for a scatter whose two axes were paired at plan time (spec.semantic_gate.scatter_pair, only
+// present when NEWSROOM_SCATTER_PAIRED_MEASURES=1 made the plan). One point per object, one period for every row.
+// Limit: a join that put two sources' different years under one period column cannot be seen here; the recorded query shows it.
+const SCATTER_PERIOD_JOINERS = ["-", "–", "—", "/", " to ", "~"];
+function scatterPeriodMatches(declared, rowPeriod) {
+  const row = String(rowPeriod).trim();
+  const tokens = [declared.date, declared.start, declared.end].filter((v) => v != null && String(v).trim()).map((v) => String(v).trim());
+  const forms = new Set(tokens);
+  if (declared.start && declared.end) for (const j of SCATTER_PERIOD_JOINERS) forms.add(`${String(declared.start).trim()}${j}${String(declared.end).trim()}`);
+  if (forms.has(row)) return true;
+  return tokens.some((token) => /^\d{4}$/.test(row) && (token.startsWith(`${row}-`) || token.startsWith(`${row}/`)));
+}
+export function scatterPairBlockers(spec, rows) {
+  const out = [];
+  const entityField = String(spec.entity_field ?? "").trim();
+  const periodField = String(spec.period_field ?? "").trim();
+  const shown = (values) => values.slice(0, 5).map((v) => `'${v}'`).join(", ") + (values.length > 5 ? `, … (${values.length} in all)` : "");
+  if (!entityField) out.push("Scatter pairing requires entity_field (the field naming the object of each point)");
+  if (!periodField) out.push("Scatter pairing requires period_field (the field holding the single period every row covers)");
+  if (entityField && entityField === periodField) out.push("Scatter pairing: entity_field and period_field must be two different fields");
+  if (entityField && !fieldExists(rows, entityField)) out.push(`Field '${entityField}' (entity_field) is absent from query output`);
+  if (periodField && !fieldExists(rows, periodField)) out.push(`Field '${periodField}' (period_field) is absent from query output`);
+  const blank = (v) => v === null || v === undefined || String(v).trim() === "";
+  if (entityField && fieldExists(rows, entityField)) {
+    const empty = rows.filter((row) => blank(row[entityField])).length;
+    if (empty) out.push(`Scatter pairing: entity_field '${entityField}' is empty in ${empty} of ${rows.length} rows; every point must name its object`);
+    const seen = new Map();
+    for (const row of rows) if (!blank(row[entityField])) seen.set(String(row[entityField]).trim(), (seen.get(String(row[entityField]).trim()) ?? 0) + 1);
+    const repeated = [...seen].filter(([, count]) => count > 1).map(([name]) => name);
+    if (repeated.length) out.push(`Scatter pairing: entity_field '${entityField}' repeats ${shown(repeated)}; one point per object, so keep one row each (one period, no duplicate join rows)`);
+  }
+  if (periodField && fieldExists(rows, periodField)) {
+    const empty = rows.filter((row) => blank(row[periodField])).length;
+    if (empty) out.push(`Scatter pairing: period_field '${periodField}' is empty in ${empty} of ${rows.length} rows`);
+    const periods = [...new Set(rows.filter((row) => !blank(row[periodField])).map((row) => String(row[periodField]).trim()))];
+    if (periods.length > 1) out.push(`Scatter pairing: period_field '${periodField}' holds ${periods.length} periods (${shown(periods)}); every row must cover the same single period`);
+    if (periods.length === 1 && !empty) {
+      const pair = spec.semantic_gate.scatter_pair;
+      for (const [axis, id] of [["x", pair.x_measure], ["y", pair.y_measure]]) {
+        const measure = (spec.semantic_gate.measures ?? []).find((m) => m.id === id);
+        const declared = measure?.temporal_basis ?? {};
+        const isoLike = (v) => /^\d{4}(-\d{2}(-\d{2})?)?$/.test(String(v ?? "").trim());
+        if (declared.start && declared.end && isoLike(declared.start) && isoLike(declared.end) && String(declared.start).trim() > String(declared.end).trim()) {
+          out.push(`Scatter pairing: the ${axis} axis (measure '${id}') declares a period that starts after it ends (${declared.start} to ${declared.end}); swap start and end`);
+        } else if ((declared.date || declared.start || declared.end) && !scatterPeriodMatches(declared, periods[0])) {
+          out.push(`Scatter pairing: the ${axis} axis (measure '${id}') declares ${[declared.date, declared.start && declared.end ? `${declared.start} to ${declared.end}` : declared.start ?? declared.end].filter(Boolean).join(" / ")} but the rows' period is '${periods[0]}'; make the declaration and the rows state the same period`);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 export function validateVizSpec(spec) {
@@ -1350,7 +1589,7 @@ export function validateVizSpec(spec) {
   if (!spec || typeof spec !== "object") return ["Visualization spec must be an object"];
   if (spec.verification_mode !== undefined && !["verified", "draft"].includes(spec.verification_mode)) errors.push("verification_mode must be 'verified' or 'draft'");
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
-  if (spec.category_names !== undefined && !ECONOMY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${ECONOMY_NAME_MODES.join(", ")}`);
+  if (spec.category_names !== undefined && !CATEGORY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${CATEGORY_NAME_MODES.join(", ")}`);
   if (!CHART_TYPES.includes(spec.chart_type)) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
   if (!READER_TASKS.includes(spec.reader_task)) errors.push(`Unsupported reader_task '${spec.reader_task}'`);
   if (spec.visual_family !== undefined && !VISUAL_FAMILIES.includes(spec.visual_family)) errors.push(`Unsupported visual_family '${spec.visual_family}'`);
@@ -1360,6 +1599,16 @@ export function validateVizSpec(spec) {
   if (spec.decimals !== undefined && (!Number.isInteger(spec.decimals) || spec.decimals < 0 || spec.decimals > 3)) errors.push("decimals must be an integer between 0 and 3");
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
+  // world mode is behind NEWSROOM_MAP_WORLD (off by default): a spec that sets map_extent is refused on any chart
+  if (spec.map_extent !== undefined && !mapWorldEnabled()) errors.push("MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar");
+  if (spec.index_base !== undefined) {
+    if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
+    else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
+  }
+  if (spec.rank_cutoff !== undefined) {
+    if (spec.chart_type !== "slope") errors.push("RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff only applies to chart_type slope; drop rank_cutoff for this chart");
+    else if (!(Number.isInteger(spec.rank_cutoff) && spec.rank_cutoff >= 2 && spec.rank_cutoff <= 30)) errors.push("RANK_CUTOFF_NOT_APPLICABLE: rank_cutoff must be an integer from 2 to 30");
+  }
   if (spec.chart_type === "parallel_sets") {
     if (!Array.isArray(spec.dimension_fields) || spec.dimension_fields.length < 2 || spec.dimension_fields.length > 5) errors.push("parallel_sets requires dimension_fields with 2 to 5 field names");
     else if (spec.dimension_fields.some((field) => !String(field ?? "").trim())) errors.push("parallel_sets dimension_fields must be non-empty strings");
@@ -1419,6 +1668,8 @@ export function validateVizSpec(spec) {
         if (spec.basemap_content_hash !== basemap.content_hash) errors.push('basemap_content_hash does not match the registered basemap geometry');
       }
     }
+    // map_extent: opt-in whole-world mode; the only accepted value is "world".
+    if (spec.map_extent !== undefined && mapWorldEnabled() && spec.map_extent !== "world") errors.push("choropleth map_extent must be 'world' when provided");
     // inset (task: zoom inset for regions too small to label on the main
     // map): opt-in, so its absence changes nothing. Either an explicit ISO3
     // list (`iso3`) or automatic selection (`auto: true`), never both -
@@ -1454,6 +1705,39 @@ export function validateVizSpec(spec) {
     // this keeps the one-level grouping this task authorizes unambiguous
     // rather than inventing a per-group Other bucket nobody asked for.
     if (spec.group_field && spec.other_threshold_pct !== undefined) errors.push("treemap other_threshold_pct is not supported together with group_field");
+  }
+  if (spec.chart_type === "strip_plot") {
+    if (spec.group_order !== undefined && !STRIP_GROUP_ORDERS.includes(spec.group_order)) errors.push(`strip_plot group_order must be one of ${STRIP_GROUP_ORDERS.join(", ")}`);
+    if (spec.point_layout !== undefined && !STRIP_POINT_LAYOUTS.includes(spec.point_layout)) errors.push(`strip_plot point_layout must be one of ${STRIP_POINT_LAYOUTS.join(", ")}`);
+    if (spec.show_median !== undefined && typeof spec.show_median !== "boolean") errors.push("strip_plot show_median must be true or false");
+    if (spec.label_extremes !== undefined && (typeof spec.label_extremes !== "number" || !Number.isInteger(spec.label_extremes) || spec.label_extremes < 0 || spec.label_extremes > STRIP_MAX_LABEL_EXTREMES)) errors.push(`strip_plot label_extremes must be an integer between 0 and ${STRIP_MAX_LABEL_EXTREMES}`);
+  }
+  if (spec.chart_type === "stacked_bar_100") {
+    // All of these are optional; a malformed one is refused here so the
+    // renderer (which only ever sees a validated spec) never has to guess.
+    if (spec.decimals !== undefined && spec.decimals !== 0 && spec.decimals !== 1) errors.push("stacked_bar_100 decimals must be 0 or 1");
+    if (spec.sort !== undefined && !["asc", "desc", "none"].includes(spec.sort)) errors.push("stacked_bar_100 sort must be asc, desc or none");
+    if (spec.segment_order !== undefined) {
+      if (!Array.isArray(spec.segment_order) || spec.segment_order.length < 1 || spec.segment_order.length > STACKED_MAX_SEGMENTS || spec.segment_order.some((item) => typeof item !== "string" || !item.trim())) errors.push(`stacked_bar_100 segment_order must list 1 to ${STACKED_MAX_SEGMENTS} non-empty segment names`);
+      else if (new Set(spec.segment_order).size !== spec.segment_order.length) errors.push("stacked_bar_100 segment_order must not repeat a segment");
+    }
+    for (const key of ["sort_segment", "highlight_segment"]) {
+      if (spec[key] !== undefined && (typeof spec[key] !== "string" || !spec[key].trim())) errors.push(`stacked_bar_100 ${key} must be a non-empty segment name when provided`);
+    }
+    if (spec.segment_values !== undefined && !STACKED_SEGMENT_VALUES.includes(spec.segment_values)) errors.push(`stacked_bar_100 segment_values must be one of ${STACKED_SEGMENT_VALUES.join(", ")}`);
+  }
+  if (spec.chart_type === "mirrored_bar") {
+    // Optional mirrored_bar fields: reject malformed shapes here so the
+    // renderer and lintVizSpec can rely on the documented values. Whether a
+    // left_series / current_period value exists in the rows is a data check
+    // and lives in lintVizSpec.
+    if (spec.first_row !== undefined && !["bottom", "top"].includes(spec.first_row)) errors.push("mirrored_bar first_row must be 'bottom' or 'top'");
+    if (spec.compare_layout !== undefined && !["overlay", "side_by_side"].includes(spec.compare_layout)) errors.push("mirrored_bar compare_layout must be 'overlay' or 'side_by_side'");
+    for (const field of ["left_series", "current_period", "period_field"]) {
+      const value = spec[field];
+      if (value !== undefined && (value === null || typeof value === "object" || !String(value).trim())) errors.push(`mirrored_bar ${field} must be a non-empty string when provided`);
+    }
+    if (spec.direct_labels !== undefined && typeof spec.direct_labels !== "boolean") errors.push("mirrored_bar direct_labels must be true or false");
   }
   for (const field of requiredFields(spec)) {
     if (spec[field] === undefined || spec[field] === null || String(spec[field]).trim() === "") errors.push(`Missing required field '${field}'`);
@@ -1493,9 +1777,78 @@ function cartographicDataExtent(spec,rows){
   }return coordinateExtent(lines);
 }
 
+// Emphasis hint: a title/takeaway that names one of the chart's own
+// categories or series while highlight_values is empty leaves the whole chart
+// neutral grey. Only chart types whose renderer really paints highlight_values
+// are checked, each against the field that highlight_values is matched on.
+const HIGHLIGHT_NAME_FIELD = {
+  horizontal_bar: "category_field",
+  dot: "category_field",
+  diverging_bar: "category_field",
+  slope: "category_field",
+  multi_line: "series_field",
+  scatter: "label_field",
+  strip_plot: "category_field", // paints highlight_values on a whole group (or on a unit named by label_field)
+  mirrored_bar: "category_field",
+};
+const HIGHLIGHT_HINT_MAX_NAMES = 4;
+const HIGHLIGHT_HINT_MIN_NAME_LENGTH = 2;
+const HIGHLIGHT_HINT_CRITIC_PENALTY = 12;
+
+// Raw values of the highlight field that the title or takeaway names. Names
+// are compared by their displayed form (category_names applied) and by raw
+// value; the longest name matches first and consumes its text so a shorter
+// name inside it never counts; alphanumeric names (years included) must not
+// touch other letters or digits; names under HIGHLIGHT_HINT_MIN_NAME_LENGTH are skipped; more
+// than HIGHLIGHT_HINT_MAX_NAMES distinct hits is a list, not a focus.
+export function titleNamedHighlightValues(spec, rows, categoryNames = spec?.category_names) {
+  const field = spec?.[HIGHLIGHT_NAME_FIELD[spec?.chart_type]];
+  if (!field || (spec.highlight_values ?? []).length > 0 || !Array.isArray(rows)) return [];
+  const text = [spec.title, spec.takeaway].map((part) => String(part ?? "")).filter(Boolean).join("\n").toLowerCase();
+  if (!text) return [];
+  const lang = vizLang(spec);
+  const candidates = [];
+  for (const raw of unique(rows.map((row) => row?.[field]).filter((v) => v !== undefined && v !== null)).map(String)) {
+    for (const name of new Set([raw, String(resolveEconomyDisplayName(raw, categoryNames, lang))])) {
+      const key = name.trim().toLowerCase();
+      if ([...key].length >= HIGHLIGHT_HINT_MIN_NAME_LENGTH) candidates.push({ raw, name: name.trim(), key });
+    }
+  }
+  candidates.sort((a, b) => b.key.length - a.key.length);
+  const taken = new Array(text.length).fill(false);
+  const hits = new Map();
+  for (const { raw, name, key } of candidates) {
+    const alnum = /^[a-z0-9]+$/.test(key);
+    for (let at = text.indexOf(key); at !== -1; at = text.indexOf(key, at + 1)) {
+      const end = at + key.length;
+      if (taken.slice(at, end).some(Boolean)) continue;
+      if (alnum && (/[a-z0-9]/.test(text[at - 1] ?? "") || /[a-z0-9]/.test(text[end] ?? ""))) continue;
+      for (let i = at; i < end; i += 1) taken[i] = true;
+      if (!hits.has(raw)) hits.set(raw, name);
+    }
+  }
+  if (hits.size === 0 || hits.size > HIGHLIGHT_HINT_MAX_NAMES) return [];
+  return [...hits.entries()].map(([raw, name]) => ({ raw, name }));
+}
+
+// {message, suggestion} for the lint warning and the critic issue, in the chart's language.
+function emphasisHint(spec, named) {
+  const values = JSON.stringify(named.map((n) => n.raw));
+  if (vizLang(spec) === "zh") {
+    const names = named.map((n) => `\u300e${n.name}\u300f`).join("");
+    return `\u6807\u9898\u70b9\u540d\u4e86${names}\uff0c\u4f46 highlight_values \u4e3a\u7a7a\uff1b\u5efa\u8bae\u586b ${values}`;
+  }
+  const names = named.map((n) => `"${n.name}"`).join(", ");
+  return `The title names ${names} but highlight_values is empty; suggest ${values}`;
+}
+
 export function lintVizSpec(spec, rows, context = {}) {
+  const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
+  const unsignaledWarning = autoCategoryNames ? null : unsignaledEconomyWarning(spec, rows);
+  if (autoCategoryNames) spec = autoCategoryNames.spec;
   const blockers = [];
   const warnings = [];
+  if (unsignaledWarning) warnings.push(unsignaledWarning);
   const notes = [];
   const verificationMode = spec?.verification_mode ?? "verified";
   if (!["verified", "draft"].includes(verificationMode)) blockers.push("verification_mode must be 'verified' or 'draft'");
@@ -1508,7 +1861,10 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.semantic_gate?.status === "BLOCK") blockers.push("semantic_comparison_blocked");
   if (spec.semantic_gate?.status === "CONTEXTUAL") notes.push("Semantic comparison is contextual; visual roles must remain explicitly differentiated");
   if (!Array.isArray(rows) || rows.length === 0) blockers.push("Visualization query returned no rows");
-  if (rows.length > 240) blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
+  // strip_plot draws one dot per row (many units per group), so it carries its
+  // own point cap (STRIP_MAX_POINTS, checked in lintStripPlotSpec) instead of
+  // this general row cap; every other chart type keeps the 240-row limit.
+  if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
 
   const requiredDataFields = [
     spec.category_field,
@@ -1556,6 +1912,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (fieldExists(rows, spec.x_field) && numericCount(rows, spec.x_field) !== rows.length) blockers.push(`Scatter x_field '${spec.x_field}' must be numeric`);
     if (fieldExists(rows, spec.y_field) && numericCount(rows, spec.y_field) !== rows.length) blockers.push(`Scatter y_field '${spec.y_field}' must be numeric`);
   }
+  if (spec.chart_type === "scatter" && spec.semantic_gate?.scatter_pair) blockers.push(...scatterPairBlockers(spec, rows));
   if (spec.x_scale === "log" && spec.x_field && rows.some((row) => (n(row[spec.x_field]) ?? 0) <= 0)) blockers.push(`Log x_scale requires positive values in '${spec.x_field}'`);
   if (spec.y_scale === "log" && spec.y_field && rows.some((row) => (n(row[spec.y_field]) ?? 0) <= 0)) blockers.push(`Log y_scale requires positive values in '${spec.y_field}'`);
 
@@ -1563,11 +1920,24 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.claim_id && !verifiedClaimIds.has(spec.claim_id)) {
     blockers.push(`claim_id '${spec.claim_id}' is not a verified recorded claim`);
   }
+  // Binding of each cited claim to THIS chart's own computation. The verdicts
+  // come from claim_binding.mjs (computed in the async layer); absent context
+  // means the caller did not compute them and the check is skipped.
+  const claimBindings = context.claim_bindings && typeof context.claim_bindings === "object" ? context.claim_bindings : null;
+  const bindingBlocker = (label, claimId) => {
+    const verdict = claimBindings?.[claimId];
+    if (verdict && verdict.ok !== true) blockers.push(`${label} '${claimId}' is not bound to this chart's computation: ${verdict.message}`);
+  };
+  if (spec.claim_id && verifiedClaimIds.has(spec.claim_id)) bindingBlocker("claim_id", spec.claim_id);
   for (const [index, annotation] of annotations(spec).entries()) {
     if (annotation.claim_id && !verifiedClaimIds.has(annotation.claim_id)) blockers.push(`annotations[${index}].claim_id '${annotation.claim_id}' is not a verified recorded claim`);
+    else if (annotation.claim_id) bindingBlocker(`annotations[${index}].claim_id`, annotation.claim_id);
     if (["point", "node"].includes(annotation.type) && annotation.match_field) {
       if (!fieldExists(rows, annotation.match_field)) blockers.push(`annotations[${index}] match_field '${annotation.match_field}' is absent from query output`);
       else if (!rows.some((row) => String(row[annotation.match_field]) === String(annotation.match_value))) blockers.push(`annotations[${index}] target '${annotation.match_value}' was not found in '${annotation.match_field}'`);
+    }
+    if (["point", "node"].includes(annotation.type) && ["strip_plot", "mirrored_bar", "stacked_bar_100"].includes(spec.chart_type)) {
+      blockers.push(`annotations[${index}] ${annotation.type} is not supported on chart_type '${spec.chart_type}'; ${spec.chart_type === "strip_plot" ? "it draws no annotations, so name an extreme with label_field and label_extremes instead" : "it draws no annotations and nothing needs adding"}`);
     }
     if (annotation.type === "reference_line") {
       if (!REFERENCE_LINE_CHART_TYPES.has(spec.chart_type)) {
@@ -1592,6 +1962,14 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
   if (annotations(spec).length > 4) warnings.push(`Visualization has ${annotations(spec).length} annotations; editorial hierarchy may become crowded`);
+  if (["horizontal_bar", "bar"].includes(spec.chart_type) && (spec.highlight_values ?? []).length) {
+    // A declared emphasis that matches no category would silently draw an all-grey chart.
+    const categories = new Set(rows.map((row) => String(row[spec.category_field])));
+    const missing = spec.highlight_values.map(String).filter((v) => !categories.has(v));
+    if (missing.length) warnings.push(`highlight_values ${JSON.stringify(missing)} match no '${spec.category_field}' value, so those bars stay neutral`);
+  }
+  const namedForEmphasis = titleNamedHighlightValues(spec, rows);
+  if (namedForEmphasis.length) warnings.push(emphasisHint(spec, namedForEmphasis));
   if ((spec.highlight_values ?? []).length > 4) warnings.push(`Visualization highlights ${(spec.highlight_values ?? []).length} values; consider one primary focus and contextual series`);
 
   const rangeBrackets = annotations(spec).filter((a) => a?.type === "range_bracket");
@@ -1620,23 +1998,63 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (spec.subtitle && !hasCjk(spec.subtitle)) blockers.push("zh chart subtitle contains no CJK characters");
   }
 
+  const nameFields = categoryNameFields(spec);
   if (spec.category_names !== undefined) {
-    const field = categoryNamesField(spec);
-    if (!field) {
-      blockers.push(`category_names is not supported on chart_type '${spec.chart_type}'`);
-    } else if (fieldExists(rows, field)) {
-      const unmapped = unmappedEconomyNameValues(rows.map((row) => row[field]), spec.category_names);
-      if (unmapped.length) {
-        const shown = unmapped.slice(0, 5).map((value) => `'${value}'`).join(", ");
-        const guidance = spec.category_names === "iso3" ? "the exact ISO3 economy/aggregate code" : "the exact World Bank English name";
-        blockers.push(`category_names='${spec.category_names}' cannot resolve ${unmapped.length} value(s) in '${field}' (e.g. ${shown}); use ${guidance} instead of translating it yourself`);
+    if (!nameFields?.length) {
+      blockers.push(spec.chart_type === "scatter"
+        ? "category_names on chart_type 'scatter' needs label_field (the column whose values are the point names)"
+        : `category_names is not supported on chart_type '${spec.chart_type}'`);
+    } else if (spec.chart_type === "choropleth" && !ECONOMY_NAME_MODES.includes(spec.category_names)) {
+      // lintChoroplethSpec below owns this blocker (a currency code is not a map feature).
+    } else {
+      const presentNameFields = nameFields.filter((candidate) => fieldExists(rows, candidate));
+      for (const field of presentNameFields) {
+        const unmapped = unmappedEconomyNameValues(nameFieldValues(spec, rows, field), spec.category_names);
+        if (unmapped.length) {
+          const shown = unmapped.slice(0, 5).map((value) => `'${value}'`).join(", ");
+          blockers.push(`category_names='${spec.category_names}' cannot resolve ${unmapped.length} value(s) in '${field}' (e.g. ${shown}); use ${UNMAPPED_NAME_GUIDANCE[spec.category_names] ?? UNMAPPED_NAME_GUIDANCE.worldbank} instead of translating it yourself`);
+        }
+      }
+      if (AGGREGATE_MIX_BLOCKED_CHART_TYPES.has(spec.chart_type)) {
+        for (const field of presentNameFields) {
+          const mix = aggregateMixInNameField(spec, rows, field);
+          if (mix) blockers.push(aggregateMixBlocker(spec, field, mix));
+        }
+      }
+      if (spec.category_names === "iso2") {
+        const unsignalled = presentNameFields.filter((field) => !fieldNameSignalsEconomy(field));
+        if (unsignalled.length) blockers.push(iso2NeedsCountryColumnBlocker(unsignalled));
+      }
+      if (vizLang(spec) === "zh") {
+        const regions = specialRegionsInNameFields(spec, rows, presentNameFields);
+        const offending = [["title", spec.title], ["subtitle", spec.subtitle]].filter(([, text]) => saysCountryWithoutRegions(text)).map(([label]) => label);
+        if (regions.length && offending.length) {
+          const listed = regions.map((region) => `${region.zh} (${region.iso3})`).join(", ");
+          warnings.push(`zh chart lists ${listed}, but its ${offending.join(" and ")} ${offending.length > 1 ? "say" : "says"} 国家 without 和地区; write 国家和地区 (or 经济体) instead of a bare 国家 (zh naming policy rule 4)`);
+        }
       }
     }
-  } else if (vizLang(spec) === "zh") {
-    const field = categoryNamesField(spec);
-    if (field && fieldExists(rows, field)) {
-      const values = unique(rows.map((row) => row[field]));
-      if (values.length && values.every((value) => !hasCjk(value))) warnings.push(`zh chart's '${field}' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text`);
+  } else if (vizLang(spec) === "zh" && nameFields?.length) {
+    let fields = nameFields.filter((candidate) => fieldExists(rows, candidate));
+    // A column whose name says it holds economies or currencies has to resolve in full: one value without CJK characters
+    // blocks, whatever the match count (declaredNameFieldBlocker). The older rule below keeps every other column.
+    // Choropleth owns its own name blockers.
+    if (spec.chart_type !== "choropleth") {
+      const declared = fields.filter((field) => (fieldNameSignalsEconomy(field) || fieldNameSignalsCurrency(field)) && distinctNameValues(spec, rows, field).some((value) => !hasCjk(value)));
+      if (declared.length) {
+        blockers.push(declaredNameFieldBlocker(spec, rows, declared));
+        fields = fields.filter((field) => !declared.includes(field));
+      }
+    }
+    const raw = fields.flatMap((field) => nameFieldValues(spec, rows, field));
+    if (fields.length && raw.length && raw.every((value) => !hasCjk(value))) {
+      const values = [...new Set(raw.map((value) => String(value ?? "").trim()).filter(Boolean))];
+      const best = spec.chart_type === "choropleth" ? null : recognizableNameColumn(values, fields);
+      if (best) {
+        blockers.push(zhNameFieldBlocker(fields, values, best));
+      } else {
+        warnings.push(`zh chart's '${fields.join("' and '")}' values contain no CJK characters; consider setting category_names to show localized names instead of the raw World Bank English text`);
+      }
     }
   }
 
@@ -1661,9 +2079,18 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
 
+  if (spec.chart_type === "slope" && Number.isInteger(spec.rank_cutoff) && Array.isArray(rows)) {
+    const bad = nonIntegerRankRows(spec, rows);
+    if (bad.length) blockers.push(`RANK_NOT_INTEGER: with rank_cutoff, ${spec.start_field} and ${spec.end_field} must hold ranks that are positive integers (or be empty for outside the ranking); not rounded; rows: ${bad.slice(0, 8).join("; ")}${bad.length > 8 ? `; and ${bad.length - 8} more` : ""}. Compute integer ranks in SQL (RANK() or ROW_NUMBER()), or drop rank_cutoff`);
+  }
+
   if (spec.chart_type === "small_multiples") {
     if (!spec.panel_mark || !["line", "dot"].includes(spec.panel_mark)) {
       blockers.push("small_multiples requires panel_mark='line' or panel_mark='dot'");
+    }
+    if (spec.index_base !== undefined && spec.panel_mark === "line" && Number.isFinite(spec.index_base) && spec.index_base > 0 && Array.isArray(rows) && rows.length) {
+      const period = indexBasePeriod(spec, rows);
+      if (period.missing) blockers.push(`INDEX_BASE_NOT_IN_DATA: no x value equals index_base ${spec.index_base} in every panel (panels without it: ${period.missing.join(", ")}); rebase in SQL so each series equals ${spec.index_base} at the base period, or drop index_base`);
     }
   }
 
@@ -1719,13 +2146,91 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
   }
 
+  if (spec.chart_type === "stacked_bar_100") {
+    // Every bar is one entity's whole (0-100%) split into its segments. The
+    // renderer never rescales a value to make a bar add up, so the data must
+    // already do: each entity's values sum to 100 (+/- 1 for rounding in the
+    // source), and a value cannot be drawn as a negative width. A non-numeric
+    // or non-finite value is already blocked by the generic value_field check
+    // above, so it is not repeated here.
+    if (spec.unit !== "%") blockers.push("stacked_bar_100 requires unit='%'");
+    if (fieldExists(rows, spec.category_field) && fieldExists(rows, spec.series_field)) {
+      const model = stackedBarModel(spec, rows);
+      if (model.entities.length > STACKED_MAX_BARS) blockers.push(`stacked_bar_100 has ${model.entities.length} bars; maximum is ${STACKED_MAX_BARS} - filter rows in SQL to at most ${STACKED_MAX_BARS} entities`);
+      else if (model.entities.length > STACKED_WARN_BARS) warnings.push(`stacked_bar_100 has ${model.entities.length} bars; more than ${STACKED_WARN_BARS} bars make a long page - consider filtering to the entities the claim is about`);
+      if (model.segments.length > STACKED_MAX_SEGMENTS) blockers.push(`stacked_bar_100 has ${model.segments.length} segments; maximum is ${STACKED_MAX_SEGMENTS} - merge the smallest segments into one 'Other' segment in SQL`);
+      if (model.blank) blockers.push(`stacked_bar_100 has ${model.blank} row(s) with a blank category_field or series_field value`);
+      if (model.duplicates) blockers.push(`stacked_bar_100 has ${model.duplicates} repeated (category, series) pair(s); each segment may appear once per bar - aggregate in SQL`);
+      if (fieldExists(rows, spec.value_field)) {
+        if (rows.some((row) => { const value = n(row[spec.value_field]); return value !== null && value < 0; })) blockers.push(`stacked_bar_100 value_field '${spec.value_field}' must not be negative; a share cannot be drawn as a negative width`);
+        const offSum = model.entities
+          .map((entity) => {
+            const values = [...entity.cells.values()];
+            return { entity: entity.key, complete: values.every((value) => value !== null), sum: values.reduce((total, value) => total + (value ?? 0), 0) };
+          })
+          .filter((item) => item.complete && Math.abs(item.sum - 100) > STACKED_SUM_TOLERANCE + 1e-9);
+        if (offSum.length) blockers.push(`stacked_bar_100 bars must each sum to 100 +/- ${STACKED_SUM_TOLERANCE} (${offSum.slice(0, 3).map((item) => `${item.entity} sums to ${Number(item.sum.toFixed(4))}`).join(", ")}${offSum.length > 3 ? ", ..." : ""}); compute shares in SQL so that each row sums to 100`);
+      }
+      const knownSegments = new Set(model.segments);
+      for (const [name, value] of [["highlight_segment", spec.highlight_segment], ["sort_segment", spec.sort_segment]]) {
+        if (value !== undefined && !knownSegments.has(String(value))) blockers.push(`stacked_bar_100 ${name} '${value}' is not a value of series_field '${spec.series_field}'`);
+      }
+      if (Array.isArray(spec.segment_order)) {
+        const unknown = spec.segment_order.filter((value) => !knownSegments.has(String(value)));
+        if (unknown.length) blockers.push(`stacked_bar_100 segment_order lists ${unknown.map((value) => `'${value}'`).join(", ")}, not a value of series_field '${spec.series_field}'`);
+      }
+      const gaps = model.segments
+        .map((segment) => ({ segment, bars: model.entities.filter((entity) => !entity.cells.has(segment)).map((entity) => entity.key) }))
+        .filter((item) => item.bars.length > 0);
+      if (gaps.length) blockers.push(`stacked_bar_100 ${gaps.slice(0, 3).map((item) => `segment '${item.segment}' has no row for ${item.bars.length} bar(s): ${item.bars.slice(0, 5).map((bar) => `'${bar}'`).join(", ")}${item.bars.length > 5 ? ", ..." : ""}`).join("; ")}${gaps.length > 3 ? "; ..." : ""}; if the source data records this segment as zero, select that row from the data; a zero written into the SQL (a constant, a VALUES list or a COALESCE) is a filled-in fact; otherwise fetch the missing rows (a missing segment is never filled in)`);
+    }
+  }
+  if (spec.chart_type === "mirrored_bar" && Array.isArray(rows) && rows.length > 0) {
+    // Two sides, one bar per (category, series, period): the drawing has no
+    // way to show two values in one slot, so a duplicate row is a data error
+    // rather than something to sum or pick from. Non-numeric, missing and
+    // non-finite values are already blocked by the shared numericCount check
+    // above; this adds the floor (a bar cannot be negative) and the shape
+    // limits that keep the pyramid legible.
+    const periodField = spec.period_field ? String(spec.period_field) : "";
+    const periodPresent = Boolean(periodField) && fieldExists(rows, periodField);
+    if (periodField && !periodPresent) blockers.push(`Field '${periodField}' is absent from query output`);
+    if (fieldExists(rows, spec.category_field) && fieldExists(rows, spec.series_field)) {
+      const categories = unique(rows.map((row) => row[spec.category_field]));
+      const sides = unique(rows.map((row) => row[spec.series_field]));
+      const periods = periodPresent ? unique(rows.map((row) => row[periodField])) : [];
+      if (categories.length > 25) blockers.push(`mirrored_bar has ${categories.length} categories; maximum is 25 - merge bands in SQL`);
+      else if (categories.length > 20) warnings.push(`mirrored_bar has ${categories.length} categories; above 20 the rows get thin and only every second label is shown - consider merging bands`);
+      if (sides.length !== 2) blockers.push(`mirrored_bar series_field '${spec.series_field}' must have exactly 2 distinct values (one per side); found ${sides.length}`);
+      if (periods.length > 2) blockers.push(`mirrored_bar period_field '${periodField}' has ${periods.length} distinct values; maximum is 2 (current and one comparison period)`);
+      const cell = (row) => JSON.stringify([String(row[spec.category_field]), String(row[spec.series_field]), periodPresent ? String(row[periodField]) : ""]);
+      const seen = new Set();
+      let duplicates = 0;
+      for (const row of rows) {
+        const key = cell(row);
+        if (seen.has(key)) duplicates += 1;
+        seen.add(key);
+      }
+      if (duplicates) blockers.push(`mirrored_bar has ${duplicates} duplicate (category, series, period) row(s); each bar needs exactly one row`);
+      if (fieldExists(rows, spec.value_field) && rows.some((row) => { const value = n(row[spec.value_field]); return value !== null && value < 0; })) {
+        blockers.push(`mirrored_bar value_field '${spec.value_field}' must be >= 0; each side draws a magnitude from its own centre line`);
+      }
+      if (spec.left_series !== undefined && !sides.includes(String(spec.left_series))) blockers.push(`mirrored_bar left_series '${spec.left_series}' is not a value of '${spec.series_field}'`);
+      if (spec.current_period !== undefined && !periods.includes(String(spec.current_period))) {
+        blockers.push(periodPresent ? `mirrored_bar current_period '${spec.current_period}' is not a value of '${periodField}'` : "mirrored_bar current_period needs a period_field present in the query output");
+      }
+      const expected = categories.length * sides.length * Math.max(periods.length, 1);
+      if (seen.size < expected) warnings.push(`mirrored_bar is missing ${expected - seen.size} (category, series, period) combination(s); those bars stay empty`);
+    }
+  }
+
   const taskFit = {
     ranking: new Set(["horizontal_bar", "dot", "diverging_bar"]),
-    comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix"]),
+    comparison: new Set(["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "small_multiples", "adjacency_matrix", "mirrored_bar"]),
     change: new Set(["line", "multi_line", "slope", "small_multiples", "streamgraph"]),
-    distribution: new Set(["dot", "scatter", "heatmap"]),
+    distribution: new Set(["dot", "scatter", "heatmap", "strip_plot", "mirrored_bar"]),
     correlation: new Set(["scatter"]),
-    part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap"]),
+    part_to_whole: new Set(["sankey", "alluvial", "parallel_sets", "chord", "waffle", "treemap", "stacked_bar_100"]),
     spatial: new Set(["geo_flow_map", "cartographic_flow_map", "choropleth"]),
     flow: new Set(["sankey", "alluvial", "parallel_sets", "geo_flow_map", "cartographic_flow_map"]),
     relationship: new Set(["node_link", "adjacency_matrix", "chord"]),
@@ -1900,6 +2405,11 @@ export function lintVizSpec(spec, rows, context = {}) {
     const ys = unique(rows.map((r) => r[spec.y_field]));
     if (xs.length * ys.length > 400) blockers.push("Heatmap exceeds 400 cells");
   }
+  if (spec.chart_type === "strip_plot") {
+    const stripLint = lintStripPlotSpec(spec, rows);
+    blockers.push(...stripLint.blockers);
+    warnings.push(...stripLint.warnings);
+  }
 
   if (spec.title && /\b(latest|current|today|now)\b/i.test(spec.title) && spec.reference_period_field) {
     warnings.push("Title uses currentness language; verify the observation period is actually current");
@@ -1916,6 +2426,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     notes,
     data_hash: hashRows(rows),
     row_count: rows.length,
+    ...(autoCategoryNames ? { category_names_resolution: autoCategoryNames.resolution } : {}),
   };
 }
 
@@ -1932,9 +2443,16 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (lint.passed === false || (lint.blockers ?? []).length) add("blocker", "lint_not_passed", "Deterministic visualization lint has blocking failures.", 100, "Resolve every deterministic lint blocker before editorial review.");
   if (String(spec.title ?? "").length > 95) add("warning", "title_too_long", "Title is longer than 95 characters and may wrap heavily on mobile.", 8, "Shorten the title to one evidence-backed takeaway.");
   if (String(spec.subtitle ?? "").length > 180) add("warning", "subtitle_too_long", "Subtitle is too dense for a chart dek.", 5, "Move methodology details to the note and keep the subtitle focused on denominator and period.");
-  if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
+  const namedForEmphasis = titleNamedHighlightValues(spec, rows, spec.category_names ?? lint?.category_names_resolution?.mode);
+  if (namedForEmphasis.length) {
+    const hint = emphasisHint(spec, namedForEmphasis);
+    add("warning", "title_names_unhighlighted", hint, HIGHLIGHT_HINT_CRITIC_PENALTY, hint);
+  } else if ((spec.highlight_values ?? []).length === 0 && ["multi_line", "scatter", "slope", "horizontal_bar", "bar"].includes(spec.chart_type)) add("info", "no_visual_focus", "The chart has no explicit highlighted subject.", 6, "Highlight the series or entity that carries the governing claim when editorially justified.");
   if ((spec.highlight_values ?? []).length > 4) add("warning", "too_many_highlights", "Too many marks compete for attention.", 10, "Reduce highlights to one primary focus and a small number of comparisons.");
-  if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
+  if (spec.chart_type === "mirrored_bar" || spec.chart_type === "stacked_bar_100") {
+    // mirrored_bar and stacked_bar_100 draw no annotations, so there is nothing to add.
+  } else if (annotations(spec).length === 0 && rows.length >= 8 && spec.chart_type === "strip_plot") add("info", "no_annotation", "strip_plot draws no annotations; it labels its extreme points instead.", 4, "To name an outlier, set label_field and label_extremes; no annotation is needed.");
+  else if (annotations(spec).length === 0 && rows.length >= 8) add("info", "no_annotation", "The visual has enough data density that a local annotation could reduce reader search cost.", 4, "Add one verified annotation to the most decision-relevant point if it improves comprehension.");
   if (annotations(spec).length > 4) add("warning", "annotation_density", "More than four annotations are likely to compete with the data.", 9, "Keep only annotations that identify, compare, summarize, or explain the governing claim.");
   if (spec.chart_type === "multi_line") {
     const count = spec.series_field ? unique(rows.map((r) => r[spec.series_field])).length : 1;
@@ -2032,12 +2550,16 @@ export function vizLang(spec) {
 // logScale and group are standalone chrome words.
 const VIZ_STRINGS = {
   en: {
-    note: "Note: ", source: "Source: ", logScale: "log scale", group: "Group: ",
+    stripMedianKey: "Line: median",
+    note: "Note: ", source: "Source: ", logScale: "log scale", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `#${r}`, rankNone: "unranked", rankCutNote: (cut, shown, hidden) => `Showing only the ${shown} items that ranked in the top ${cut} in either period${hidden ? `; another ${hidden} were outside the top ${cut} in both periods and are not drawn` : ""}.`, rankEntered: "entered", rankLeft: "dropped out", noData: "No data", group: "Group: ",
     treemapOther: "Other", treemapOtherIncludes: "\u201COther\u201D includes: ", treemapUnlabeled: "Not labeled on the chart: ", treemapListSep: ", ",
+    stackedRoundingNote: "Figures may not add up to 100% because of rounding",
   },
   zh: {
-    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", group: "\u5206\u7EC4\uFF1A",
+    stripMedianKey: "\u7AD6\u7EBF\uFF1A\u4E2D\u4F4D\u6570",
+    note: "\u6CE8\uFF1A", source: "\u6570\u636E\u6765\u6E90\uFF1A", logScale: "\u5BF9\u6570\u523B\u5EA6", indexBase: (x, b) => `${x} = ${b}`, rankOutside: (r) => `\u7B2C${r}\u540D`, rankNone: "\u699C\u5916", rankCutNote: (cut, shown, hidden) => `\u53EA\u663E\u793A\u4EFB\u4E00\u671F\u8FDB\u5165\u524D ${cut} \u540D\u7684 ${shown} \u9879${hidden ? `\uFF1B\u53E6\u6709 ${hidden} \u9879\u4E24\u671F\u90FD\u4E0D\u5728\u524D ${cut} \u540D\uFF0C\u672A\u753B\u51FA` : ""}\u3002`, rankEntered: "\u65B0\u8FDB", rankLeft: "\u8DCC\u51FA", noData: "\u65E0\u6570\u636E", group: "\u5206\u7EC4\uFF1A",
     treemapOther: "\u5176\u4ED6", treemapOtherIncludes: "\u201C\u5176\u4ED6\u201D\u5305\u62EC\uFF1A", treemapUnlabeled: "\u56FE\u4E2D\u672A\u6807\u6CE8\uFF1A", treemapListSep: "\u3001",
+    stackedRoundingNote: "\u56E0\u56DB\u820D\u4E94\u5165\uFF0C\u5404\u9879\u76F8\u52A0\u53EF\u80FD\u4E0D\u7B49\u4E8E100%",
   },
 };
 
@@ -2290,20 +2812,30 @@ function svgTextLines(parts, text, x, y, opts = {}) {
   return lines.length * lineHeight;
 }
 
-function frame(spec, bodyHeight) {
-  const width = 1040;
-  const titleLines = headlineWrap(spec.title, 62, true).length;
-  const dekLines = spec.subtitle ? wrapText(spec.subtitle, 105).length : 0;
+// The width the desktop-family renderers lay out in. 1040 is the desktop
+// chart; renderVizCompactSvg temporarily sets it to COMPACT_VIEW_W so the
+// same renderers re-lay the chart out for an 8-of-12-column slot (text keeps
+// its house-style pixel size; nothing is scaled). Every width-derived value
+// below equals its old literal at 1040, so desktop output is unchanged.
+const DESKTOP_VIEW_W = 1040;
+let LAYOUT_W = DESKTOP_VIEW_W;
+// Characters per wrapped line, scaled to the plot's text width (932 at desktop).
+const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16, Math.floor((chars * (LAYOUT_W - 108)) / 932)));
+
+function frame(spec, bodyHeight, minHeight = 420) {
+  const width = LAYOUT_W;
+  const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
+  const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const footer = 70 + (spec.note ? wrapText(spec.note, 120).length * 16 : 0);
-  const height = Math.max(420, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">`];
+  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
+  const height = Math.max(minHeight, header + bodyHeight + footer);
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
   let y = 38;
-  y += svgTextLines(parts, spec.title, 54, y, { size: 28, lineHeight: 34, weight: 700, maxChars: 62, font: FONT_TITLE, headline: true });
-  if (spec.subtitle) y += svgTextLines(parts, spec.subtitle, 54, y + 2, { size: 15, lineHeight: 21, fill: PALETTE.muted, maxChars: 105 });
+  y += svgTextLines(parts, spec.title, 54, y, { size: 28, lineHeight: 34, weight: 700, maxChars: wrapChars(62), font: FONT_TITLE, headline: true });
+  if (spec.subtitle) y += svgTextLines(parts, spec.subtitle, 54, y + 2, { size: 15, lineHeight: 21, fill: PALETTE.muted, maxChars: wrapChars(105) });
   y += 14;
   const bodyTop = y;
   const bodyBottom = height - footer;
@@ -2314,16 +2846,16 @@ function frame(spec, bodyHeight) {
     bodyTop,
     bodyBottom,
     footerTop: height - footer + 15,
-    annotationLayout: createAnnotationLayout({ left: 54, right: 986, top: bodyTop + 4, bottom: bodyBottom - 8 }),
+    annotationLayout: createAnnotationLayout({ left: 54, right: width - 54, top: bodyTop + 4, bottom: bodyBottom - 8 }),
   };
 }
 
 function addFooter(parts, spec, footerTop) {
   const t = VIZ_STRINGS[vizLang(spec)];
-  parts.push(`<line x1="54" y1="${footerTop - 16}" x2="986" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
-  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 120 });
-  svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 120 });
+  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
+  svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
 }
 
 // Strips any leading source-label prefix the input data already carries
@@ -2357,19 +2889,347 @@ const REFERENCE_LINE_CHART_TYPES = new Set(["horizontal_bar", "dot", "dumbbell",
 // renderHorizontal's own defensive guard.
 const RANGE_BRACKET_CHART_TYPES = new Set(["horizontal_bar", "dot"]);
 
+// What the unmapped-value blocker tells the author to use, per mode. The
+// worldbank sentence is pinned byte-for-byte (scripts/test_range_bracket.mjs).
+const UNMAPPED_NAME_GUIDANCE = {
+  worldbank: "the exact World Bank English name",
+  iso3: "the exact ISO3 economy/aggregate code (filter other aggregate rows such as OWID_* regions and income groups out in SQL)",
+  iso2: "the exact ISO 3166-1 alpha-2 economy code (filter aggregate rows such as EU27_2020 or EA20 out in SQL)",
+  iso4217: "the exact ISO 4217 currency code",
+};
+
+// Zh-naming-policy rule 7: the chart types whose marks are peers of one another
+// (a ranking, a comparison, a share, a labelled point), so an aggregate row (the
+// World, a region, an income group) among economies would be ranked, compared or
+// drawn as if it were one. lintVizSpec blocks a name field that resolves to a
+// mix of aggregates and economies on exactly these types, keyed on the entry's
+// kind and never on a code prefix (OWID_KOS is Kosovo). One chart type per line,
+// so a later form is a one-line add. multi_line, small_multiples, sankey and
+// alluvial are left out on purpose: a World series, panel or node is a
+// reference there. choropleth is left out because lintChoroplethSpec already
+// blocks every aggregate by kind.
+const AGGREGATE_MIX_BLOCKED_CHART_TYPES = new Set([
+  "horizontal_bar",
+  "dot",
+  "dumbbell",
+  "slope",
+  "diverging_bar",
+  "waffle",
+  "treemap",
+  "strip_plot",
+  "stacked_bar_100",
+  "scatter",
+]);
+
 // E: the viz-spec field category_names localizes, keyed by chart_type -
-// category_field for the five ranking/comparison forms and waffle, facet_field for
+// category_field for the five ranking/comparison forms, waffle, strip_plot and stacked_bar_100, facet_field for
 // small_multiples (each panel's title is a name), series_field for
-// multi_line (each series' direct label is a name). Returns null for any
+// multi_line (each series' direct label is a name), label_field for scatter
+// (each highlighted point's direct label is a name). Returns null for any
 // other chart_type, which lintVizSpec turns into a blocker and the
 // renderers never call for. Shared by lintVizSpec's unmapped-value check
 // and every renderer's resolveEconomyDisplayName call so the two can never
 // key off different fields.
+const CATEGORY_NAMES_FIELD_KEY = new Map([
+  ["horizontal_bar", "category_field"],
+  ["dot", "category_field"],
+  ["dumbbell", "category_field"],
+  ["slope", "category_field"],
+  ["diverging_bar", "category_field"],
+  ["waffle", "category_field"],
+  ["choropleth", "category_field"],
+  ["treemap", "category_field"],
+  ["strip_plot", "category_field"],
+  ["stacked_bar_100", "category_field"],
+  ["small_multiples", "facet_field"],
+  ["multi_line", "series_field"],
+  ["scatter", "label_field"],
+]);
+
 function categoryNamesField(spec) {
-  if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar", "waffle", "choropleth", "treemap"].includes(spec.chart_type)) return spec.category_field;
-  if (spec.chart_type === "small_multiples") return spec.facet_field;
-  if (spec.chart_type === "multi_line") return spec.series_field;
-  return null;
+  const key = CATEGORY_NAMES_FIELD_KEY.get(spec.chart_type);
+  return key ? spec[key] : null;
+}
+
+// sankey and alluvial name their nodes from TWO row fields (every node id
+// comes from source_field or target_field, with the internal node-type prefix
+// stripped by stripNodePrefix) and renderSankey already resolves each node
+// name through category_names, so category_names is legal there too. They are
+// explicit-only: no auto-resolution, because source/target field names carry no
+// economy or currency token to key off.
+const CATEGORY_NAMES_NODE_CHART_TYPES = new Set(["sankey", "alluvial"]);
+
+// Every row field whose values category_names localizes on this chart type:
+// the single name field of the one-field forms, source_field and target_field
+// of the flow forms. null when category_names is not supported on the chart
+// type; an empty list when the type supports it but the field is not set.
+function categoryNameFields(spec) {
+  if (CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type)) return [spec.source_field, spec.target_field].filter(Boolean);
+  const field = categoryNamesField(spec);
+  if (field === null) return null;
+  return field ? [field] : [];
+}
+
+// The raw values of one name field, as the renderer resolves them: node ids
+// have their internal prefix stripped first.
+function nameFieldValues(spec, rows, field) {
+  const values = rows.map((row) => row[field]);
+  return CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type) ? values.map(stripNodePrefix) : values;
+}
+
+// The distinct values of one name field the way lint counts them: trimmed, with the empty ones dropped.
+function distinctNameValues(spec, rows, field) {
+  return [...new Set(nameFieldValues(spec, rows, field).map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+// Diagnosis P6: category_names is optional in the spec, so a chart whose name
+// column already holds exact World Bank English names (or ISO3 codes) used to
+// print the raw English text on a zh page unless the author remembered to set
+// it. When the field is unset, the chart type supports it and EVERY distinct
+// value resolves verbatim in one vendored table, resolve it that way: returns a
+// shallow-cloned spec carrying the mode plus a record of which mode was used
+// (kept in the lint report for audit). Any value that does not match keeps the
+// spec untouched (non-economy categories such as companies or provinces must
+// never be re-labelled), and an explicitly declared category_names is never
+// overridden. Choropleth is excluded: it requires an explicit declaration and
+// that blocker must stay visible.
+// Values alone never prove a column holds economies (Georgia, Jordan or Chad
+// are also states, people and institutions), so auto-resolution additionally
+// requires the FIELD NAME to carry a generic economy token (whole-token match
+// after splitting on non-alphanumerics and camelCase boundaries) - or, for
+// ISO 4217 currency codes, a generic currency token. iso2 is never inferred:
+// two-letter values (US state codes, country-subdivision codes ...) are too
+// ambiguous, so it stays explicit-only - and even declared (or suggested by the
+// zh blocker) it needs the same field-name signal: CA, GA, IN and PA are Canada,
+// Gabon, India and Panama as ISO 3166-1 alpha-2 codes and California, Georgia,
+// Indiana and Pennsylvania as state codes, so only a column whose name says
+// country, economy, iso2 or geo (Eurostat's column) may be read as countries.
+const ECONOMY_FIELD_TOKENS = new Set(["country", "countries", "economy", "economies", "nation", "nations", "geo", "iso2", "iso3", "iso3c", "国家", "经济体", "国别"]);
+const CURRENCY_FIELD_TOKENS = new Set(["currency", "currencies", "cur", "ccy", "货币", "币种"]);
+const AUTO_ECONOMY_NAME_MODES = Object.freeze(["worldbank", "iso3"]);
+
+function fieldNameTokens(field) {
+  return String(field ?? "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((t) => t.toLowerCase())
+    .filter(Boolean);
+}
+
+function fieldNameSignalsEconomy(field) {
+  return fieldNameTokens(field).some((t) => ECONOMY_FIELD_TOKENS.has(t));
+}
+
+function fieldNameSignalsCurrency(field) {
+  return fieldNameTokens(field).some((t) => CURRENCY_FIELD_TOKENS.has(t));
+}
+
+// Whether the field name carries the token family a mode belongs to.
+function fieldNameSignalsMode(field, mode) {
+  return CURRENCY_NAME_MODES.includes(mode) ? fieldNameSignalsCurrency(field) : fieldNameSignalsEconomy(field);
+}
+
+// `signalled`: the field name carries the token family of the chosen mode (the
+// mode a signalled field resolves to wins when several tables match, e.g. the
+// codes BTN/MKD/SLE are both ISO3 and ISO 4217).
+function economyValueMatch(spec, rows) {
+  if (!spec || spec.category_names !== undefined || spec.chart_type === "choropleth") return null;
+  const field = categoryNamesField(spec);
+  if (!field || !fieldExists(rows, field)) return null;
+  const values = unique(rows.map((row) => row[field]));
+  if (!values.length) return null;
+  const matching = [...AUTO_ECONOMY_NAME_MODES, ...CURRENCY_NAME_MODES].filter((mode) => unmappedEconomyNameValues(values, mode).length === 0);
+  if (!matching.length) return null;
+  const signalled = matching.find((mode) => fieldNameSignalsMode(field, mode));
+  return { field, mode: signalled ?? matching[0], values: values.length, signalled: signalled !== undefined };
+}
+
+// Warning text for a column whose values all match but whose name gives no
+// economy (or currency) signal (so nothing was auto-resolved); null otherwise.
+function unsignaledEconomyWarning(spec, rows) {
+  const match = economyValueMatch(spec, rows);
+  if (!match || match.signalled) return null;
+  if (CURRENCY_NAME_MODES.includes(match.mode)) {
+    return `category field '${match.field}' values all match ISO 4217 currency codes, but the field name does not say they are currencies, so names are not auto-resolved; if they are currencies, declare category_names explicitly`;
+  }
+  return `category field '${match.field}' values all match World Bank names, but the field name does not say they are economies, so names are not auto-resolved; if they are economies, declare category_names explicitly`;
+}
+
+export function resolveAutoCategoryNames(spec, rows) {
+  const match = economyValueMatch(spec, rows);
+  if (!match || !match.signalled) return null;
+  return { spec: { ...spec, category_names: match.mode }, resolution: { field: match.field, mode: match.mode, source: "auto", values: match.values } };
+}
+
+// The localized name a zh chart prints for a name-field value, as a lookup for
+// a caller that writes text about the chart outside the renderer (the inline
+// claim fill in newsroom.ts). It answers with the SAME table, mode and
+// fields the renderer and lint use: the mode is the spec's category_names
+// (explicit, else the one resolveAutoCategoryNames picks), the fields are
+// categoryNameFields(spec), and a value is localized only on an exact table
+// match - never translated, guessed or matched by text. Returns null when the
+// chart would print no localized name (not a zh chart, no mode, a chart type
+// without name fields); otherwise { mode, fields, display(column, value) }
+// where display() is the zh name for a string value of a name-field column and
+// null for any other column, any non-string value and any value the table
+// cannot resolve (the caller then keeps the raw value). It only reads: the
+// raw value stays the evidence, the localized name is how it is shown.
+export function chartNameDisplay(spec, rows) {
+  if (vizLang(spec) !== "zh") return null;
+  const mode = spec.category_names !== undefined ? spec.category_names : resolveAutoCategoryNames(spec, rows)?.spec.category_names;
+  if (!mode) return null;
+  const fields = categoryNameFields(spec);
+  if (!fields?.length) return null;
+  const nodeNames = CATEGORY_NAMES_NODE_CHART_TYPES.has(spec.chart_type);
+  return {
+    mode,
+    fields,
+    display(column, value) {
+      if (!fields.includes(column) || typeof value !== "string") return null;
+      const entry = economyEntryFor(nodeNames ? stripNodePrefix(value) : value, mode);
+      return entry ? entry.zh : null;
+    },
+  };
+}
+
+// zh name-field lint (blocker): a zh chart none of whose name values contains a
+// CJK character, while the values read as economies or currencies the vendored
+// tables can name, would print English names or bare codes to a Chinese
+// reader. Returns the best-matching table for the column, or null when the
+// column is not recognizable: fewer than 2 distinct values match, or fewer than
+// half of them do. `values` are the column's distinct trimmed non-empty
+// strings. Every mode is tried (exact World Bank English names, ISO3, ISO2,
+// ISO 4217); the one matching the most values wins, a tie goes to the mode
+// whose token family the field name carries (currency tokens -> iso4217,
+// economy tokens -> the economy modes), then to the fixed mode order. A
+// two-letter value can only match iso2; a three-letter value can be an ISO3
+// code or a currency code (BTN, MKD and SLE are both), which is exactly what
+// the match-count comparison and the signal tie-break settle.
+// Recognition only decides whether to block; it never resolves a name. So iso2
+// is a candidate whatever the field name: a column of codes the table knows
+// (FR, DE, PL) prints as raw codes on a Chinese page, and it must block there
+// too. What the field name decides is how the column is READ: two letters match
+// too many state and subdivision codes to read a bare column as countries, so
+// only a column whose name carries an economy token is told to set
+// category_names='iso2'; any other column is told to rename the column first
+// (zhNameFieldBlocker), the same rule iso2NeedsCountryColumnBlocker applies to
+// a declared category_names='iso2'.
+// A column whose NAME says it holds economies or currencies (an economy or
+// currency token, as for auto-resolution) is held to more than recognition: on
+// a zh chart with no category_names, one value without CJK characters blocks
+// (declaredNameFieldBlocker), whatever the match count. The column declared
+// what it holds, so a code the tables do not know, an aggregate outside the
+// policy table or a name typed by hand cannot be shown as it is; only a column
+// of Chinese values from a Chinese source passes. Columns whose names say
+// nothing keep the thresholds above.
+const ZH_NAME_MODE_TEXT = {
+  worldbank: { match: "exact World Bank English names", none: "World Bank economy name or code", readers: "English names", column: "ISO3 code column", target: "iso3", alt: " (category_names='worldbank' also resolves these exact names)" },
+  iso3: { match: "ISO3 codes", none: "World Bank economy name or code", readers: "raw codes", column: "ISO3 code column", target: "iso3", alt: "" },
+  iso2: { match: "ISO 3166-1 alpha-2 codes", none: "World Bank economy name or code", readers: "raw codes", column: "ISO2 code column", target: "iso2", alt: "" },
+  iso4217: { match: "ISO 4217 currency codes", none: "ISO 4217 currency code", readers: "bare currency codes", column: "ISO 4217 currency code column", target: "iso4217", alt: "" },
+};
+
+function recognizableNameColumn(values, fields, { threshold = true } = {}) {
+  if (threshold && values.length < 2) return null;
+  const candidates = CATEGORY_NAME_MODES.map((mode, order) => ({
+    mode,
+    order,
+    matched: values.length - unmappedEconomyNameValues(values, mode).length,
+    signalled: fields.some((field) => fieldNameSignalsMode(field, mode)),
+  }));
+  candidates.sort((a, b) => b.matched - a.matched || Number(b.signalled) - Number(a.signalled) || a.order - b.order);
+  const best = candidates[0];
+  return !threshold || (best.matched >= 2 && best.matched * 2 >= values.length) ? best : null;
+}
+
+// `cjk`: the distinct values that do contain CJK characters, which only the
+// declared-column rule can have (the older rule needs every value without).
+function zhNameFieldBlocker(fields, values, best, { cjk = [] } = {}) {
+  const text = ZH_NAME_MODE_TEXT[best.mode];
+  const unmapped = new Set(unmappedEconomyNameValues(values, best.mode));
+  const examples = (list) => list.slice(0, 3).map((value) => `'${value}'`).join(", ");
+  const fieldText = fields.map((field) => `'${field}'`).join(" and ");
+  const plural = fields.length > 1 ? "s" : "";
+  // The column name says they are economies or currencies, which only stands against recognized values: when no value is
+  // recognized, the hedge stays.
+  const notNames = best.signalled && best.matched > 0 ? "" : "; if these values are not economies or currencies, label them in Chinese instead";
+  const matches = best.matched > 0
+    ? `match ${text.match} (best mode '${best.mode}': ${best.matched} of ${values.length} distinct values, e.g. ${examples(values.filter((value) => !unmapped.has(value)))})`
+    : `match no ${text.none} (e.g. ${examples(values.filter((value) => !hasCjk(value)))})`;
+  const chinese = cjk.length ? `${cjk.length} of them ${cjk.length > 1 ? "contain" : "contains"} CJK characters (e.g. ${examples(cjk)})` : "none contains CJK characters";
+  const readers = `${best.matched > 0 ? text.readers : "the raw values"}${cjk.length ? " for the rest" : ""}`;
+  const head = `zh chart's ${fieldText} values ${matches} and ${chinese}, so readers would see ${readers}`;
+  // Two-letter codes are also US states and subdivisions, so a column whose name does not say countries cannot simply be
+  // told to set category_names='iso2' (iso2NeedsCountryColumnBlocker would refuse it): the rename comes first.
+  if (best.mode === "iso2" && !best.signalled) {
+    return `${head}; two-letter codes are also US states, provinces and other subdivisions; if these values are countries, rename ${plural ? "the columns" : "the column"} in SQL so ${plural ? "each name carries" : "the name carries"} country, economy, iso2 or geo (for example 'country_iso2') and set category_names='iso2'; if they are not countries, label them in Chinese instead; never translate a name yourself`;
+  }
+  return `${head}; select the ${text.column}${plural} as the name field${plural} and set category_names='${text.target}'${text.alt}; filter aggregate rows (OWID_*, regions, income groups) out in SQL; never translate a name yourself${notNames}`;
+}
+
+// The blocker for name fields that say they hold economies or currencies but
+// have a value without CJK characters: the recognizable-column message, with
+// no match threshold (best may match one value or none, and some values may be
+// Chinese). `fields` are the offending fields only.
+function declaredNameFieldBlocker(spec, rows, fields) {
+  const values = [...new Set(fields.flatMap((field) => distinctNameValues(spec, rows, field)))];
+  const best = recognizableNameColumn(values, fields, { threshold: false });
+  return zhNameFieldBlocker(fields, values, best, { cjk: values.filter((value) => hasCjk(value)) });
+}
+
+// category_names='iso2' on a column whose name does not say it holds countries
+// (see the token comment above): two letters also name states and subdivisions.
+function iso2NeedsCountryColumnBlocker(fields) {
+  const fieldText = fields.map((field) => `'${field}'`).join(" and ");
+  const plural = fields.length > 1;
+  return `category_names='iso2' on ${fieldText}: two-letter codes are also US states, provinces and other subdivisions, so the column name must say these are countries; rename ${plural ? "the columns" : "the column"} in SQL so ${plural ? "each name carries" : "the name carries"} country, economy, iso2 or geo (for example 'country_iso2'), or use an ISO3 code column with category_names='iso3'`;
+}
+
+// Policy rule 4 (zh-naming-policy-1003): a list that includes Hong Kong, Macao
+// or Taiwan must say 国家和地区 (or 经济体) in its title and subtitle, never a
+// bare 国家.
+const SPECIAL_REGION_ISO3 = Object.freeze(["HKG", "MAC", "TWN"]);
+
+function specialRegionsInNameFields(spec, rows, fields) {
+  if (!ECONOMY_NAME_MODES.includes(spec.category_names)) return [];
+  const found = new Map();
+  for (const field of fields) {
+    for (const value of nameFieldValues(spec, rows, field)) {
+      const entry = economyEntryFor(value, spec.category_names);
+      if (entry && SPECIAL_REGION_ISO3.includes(entry.iso3) && !found.has(entry.iso3)) found.set(entry.iso3, entry.zh);
+    }
+  }
+  return SPECIAL_REGION_ISO3.filter((iso3) => found.has(iso3)).map((iso3) => ({ iso3, zh: found.get(iso3) }));
+}
+
+function saysCountryWithoutRegions(text) {
+  const value = String(text ?? "");
+  return value.includes("国家") && !value.includes("和地区") && !value.includes("经济体");
+}
+
+// Policy rule 7: the distinct raw values of one name field that the economy
+// tables resolve to an aggregate, when the same field also resolves to at least
+// one economy or territory (null otherwise: an all-aggregate field is a chart
+// ABOUT aggregates, and values the table cannot resolve are the unmapped-value
+// blocker's business). It reads the entry's kind, so a code prefix never
+// decides anything.
+function aggregateMixInNameField(spec, rows, field) {
+  if (!ECONOMY_NAME_MODES.includes(spec.category_names)) return null;
+  const aggregates = [];
+  let economies = 0;
+  for (const value of unique(nameFieldValues(spec, rows, field).map((raw) => String(raw ?? "").trim()))) {
+    const entry = economyEntryFor(value, spec.category_names);
+    if (!entry) continue;
+    if (entry.kind === "aggregate") aggregates.push(value);
+    else economies += 1;
+  }
+  return aggregates.length && economies ? { aggregates, economies } : null;
+}
+
+function aggregateMixBlocker(spec, field, mix) {
+  const shown = mix.aggregates.slice(0, 5).map((value) => `'${value}'`).join(", ");
+  const more = mix.aggregates.length > 5 ? ` and ${mix.aggregates.length - 5} more` : "";
+  return `'${field}' on chart_type '${spec.chart_type}' mixes ${mix.aggregates.length} aggregate row(s) (${shown}${more}) with economies; an aggregate such as the World, a region or an income group is not a peer of a country, so it would be ranked, compared or drawn as one. Filter the aggregate rows out in SQL (World Bank 'region' = 'Aggregates'; Our World in Data aggregate codes start with 'OWID_' except OWID_KOS (Kosovo), or have an empty code); to compare with the world, put its value in the subtitle or a reference annotation instead; the renderer never drops rows for you`;
 }
 
 // The value-axis domain a reference_line must fall inside, mirroring each
@@ -2482,7 +3342,8 @@ export function logTickValues(logDomain) {
 // precision; a tick label reads better without the trailing ".0" ("2k", but
 // "2.5k" keeps its digit). Use only at tick sites - fmt() itself is
 // unchanged so data/value labels keep their precision.
-export function tickLabel(value, unit = "") {
+export function tickLabel(value, unit = "", lang = "en") {
+  if (lang === "zh") return fmt(value, unit, null, "zh").replace(/\.0(万亿|亿|万)/, "$1");
   return fmt(value, unit).replace(/\.0(k|m|bn)\b/, "$1");
 }
 
@@ -2524,17 +3385,28 @@ export function lineAxisDomain(values, includeZero = false, count = 4) {
   if (includeZero) min = Math.min(0, min);
   if (min === max) { min -= 1; max += 1; }
   const step = niceAxisStep((max - min) / count);
-  const niceMin = includeZero ? 0 : Math.floor(min / step) * step;
+  // includeZero pins the floor at 0 only when no value is below it; a series
+  // with negatives needs its nice floor below zero or points leave the axis.
+  const niceMin = includeZero && min >= 0 ? 0 : Math.floor(min / step) * step;
   const niceMax = Math.ceil(max / step) * step;
   return [niceMin, niceMax];
 }
 
-export function lineAxisTicks(domain, count = 4) {
+// `cover` (house style; renderLine/renderMobileLine pass HOUSE_STYLE_ACTIVE)
+// walks outward to the first tick at or beyond each edge of the domain.
+// lineAxisDomain widens by the step of the *data* range while this function
+// re-derives the step from the already-widened span, so the two can disagree
+// (data 18..64: domain [10, 70], tick step 20) and the nearest-tick rounding
+// below then lands the lowest tick just inside the domain (20) - above the
+// lowest plotted value, which fell off the axis. Legacy (`cover` false)
+// keeps the nearest-tick rounding byte-for-byte. The nudge keeps float noise
+// (an edge 3.0000000000000004 steps out) from adding a whole extra tick.
+export function lineAxisTicks(domain, count = 4, cover = true) {
   const [start, stop] = domain;
   if (!Number.isFinite(start) || !Number.isFinite(stop) || start === stop) return [start ?? 0];
   const step = niceAxisStep((stop - start) / count);
-  const i0 = Math.round(start / step);
-  const i1 = Math.round(stop / step);
+  const i0 = cover ? Math.floor(start / step + 1e-9) : Math.round(start / step);
+  const i1 = cover ? Math.ceil(stop / step - 1e-9) : Math.round(stop / step);
   const ticks = [];
   for (let i = i0; i <= i1; i++) ticks.push(i * step);
   return ticks.length ? ticks : [start, stop];
@@ -2658,16 +3530,47 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit) {
-  const ticks = tickValues(domain, 4);
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null) {
+  let ticks = tickValues(domain, 4);
+  // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
+  // zero-straddling axis that holds at least a quarter of the span gets at
+  // least two labelled ticks (0 counts as one), and no tick label may cross
+  // the SVG frame (it is slid inside, still as close to its tick as it fits).
+  if (frameW !== null && domain[0] < 0 && domain[1] > 0) {
+    const span = domain[1] - domain[0];
+    const nice = (extent) => {
+      let best = null;
+      for (let power = Math.floor(Math.log10(extent)) - 1; power <= Math.floor(Math.log10(extent)); power++) {
+        for (const f of [1, 2, 5]) { const v = f * 10 ** power; if (v <= extent + 1e-9 && (best === null || v > best)) best = v; }
+      }
+      return best;
+    };
+    const have = new Set(ticks.map((t) => Math.round(t * 1e9) / 1e9));
+    if (!have.has(0)) { ticks = [...ticks, 0]; have.add(0); }
+    for (const sign of [-1, 1]) {
+      const extent = sign < 0 ? -domain[0] : domain[1];
+      if (extent / span < 0.25) continue;
+      if (ticks.some((t) => t * sign > 1e-9)) continue;
+      const v = nice(extent);
+      if (v) ticks = [...ticks, sign * v];
+    }
+    ticks = [...ticks].sort((a, b) => a - b);
+  }
+  const scaleX = horizontalScale(domain, left, right);
   ticks.forEach((tick, i) => {
-    const x = horizontalScale(domain, left, right)(tick);
+    const x = scaleX(tick);
     if (!LAYERING_FIX) {
       parts.push(`<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
     }
     // Fix 3: the unit shows once, on the last (right-most) tick, not on
     // every one - see axisTickUnit.
-    parts.push(`<text x="${x}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, axisTickUnit(unit, i, ticks.length)))}</text>`);
+    const label = tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length));
+    let labelX = x;
+    if (frameW !== null) {
+      const half = (textUnits(label) * 12 * 0.56) / 2 + 2;
+      labelX = Math.min(Math.max(x, 8 + half), frameW - 8 - half);
+    }
+    parts.push(`<text x="${labelX}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(label)}</text>`);
   });
 }
 
@@ -2709,7 +3612,7 @@ function renderGroupedDots(spec, rows) {
     f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(68, String(name).length * 12 + 30);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -2728,7 +3631,7 @@ function renderGroupedDots(spec, rows) {
       const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5.5" fill="${color}"/>`);
-      const label = fmt(value, spec.label_unit ?? "");
+      const label = fmtSpec(spec, value, spec.label_unit ?? "");
       const labelWidth = Math.max(24, textUnits(label) * 6.8);
       const canPlaceRight = x + 9 + labelWidth <= right;
       const canPlaceLeft = x - 9 - labelWidth >= left;
@@ -2754,6 +3657,21 @@ function renderGroupedDots(spec, rows) {
   return f.parts.join("\n") + "\n";
 }
 
+// diverging_bar value labels always sit just outside their bar's end, on the
+// bar's own side. This returns how many px to keep free beyond the plot's left
+// (negative bars) and right (positive bars) edge for the widest such label plus
+// its `gap` from the bar, measured on the label texts as they are drawn, so a
+// label never has to move inside a bar that reaches the plot edge.
+function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap) {
+  const PX = 7.5; // per text unit; bold 12px digits and "%" run wider than the 6.4 the label column uses
+  const widest = (pred) => Math.ceil(Math.max(0, ...sorted.map((row, i) => {
+    const v = n(row[valueField]);
+    return v === null || !pred(v) ? 0 : textUnits(fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
+  })));
+  const neg = widest((v) => v < 0), pos = widest((v) => v >= 0);
+  return { neg: neg ? neg + gap : 0, pos: pos ? pos + gap : 0 };
+}
+
 function renderHorizontal(spec, rows, mode) {
   const valueField = spec.value_field;
   if (mode === "dot" && spec.series_field && fieldExists(rows, spec.series_field)) {
@@ -2764,25 +3682,64 @@ function renderHorizontal(spec, rows, mode) {
   const refMargin = referenceLineMargin(refLines);
   const rangeBrackets = spec.chart_type === "diverging_bar" ? [] : rangeBracketAnnotations(spec);
   const bracketMargin = rangeBracketMargin(rangeBrackets);
-  const bodyHeight = Math.max(230, sorted.length * 38 + 45) + refMargin;
-  const f = frame(spec, bodyHeight);
+  // Tight layout (house style, horizontal_bar only): the label column, the
+  // right edge and the blank band under the bars come from the labels'
+  // actual sizes instead of the fixed 250 / 955 / 230-minimum constants.
+  const tight = HOUSE_STYLE_ACTIVE && spec.chart_type === "horizontal_bar";
+  // diverging_bar takes the same label column sized from the drawn names (house style); its
+  // value-label room stays with divergingLabelMargins below, so negW/posW are not added for it.
+  const tightColumn = tight || (HOUSE_STYLE_ACTIVE && spec.chart_type === "diverging_bar");
+  const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin;
+  const f = frame(spec, bodyHeight, tight ? 300 : 420);
   const base = f.bodyTop + 4;
-  const left = 250, right = 955 - bracketMargin, top = base + refMargin, bottom = f.bodyBottom - 34;
+  let left = 250, right = 955 - bracketMargin, catX = 235;
+  const top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.map((r) => n(r[valueField])).filter((v) => v !== null);
   // Fix 2: every row's direct value label in this chart shares one decimal
   // count (see resolveChartDecimals) - resolved once, up front, from every
   // value the chart will actually display, not per-label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  let categoryLabels = null;
+  if (tightColumn) {
+    const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
+    const maxCatUnits = Math.max(6, Math.floor((LAYOUT_W * 0.4 - 69) / PX));
+    categoryLabels = sorted.map((row) => {
+      const name = String(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)));
+      // Never cut a name: one that does not fit the label column is folded
+      // onto a second line (a row is 38px, two 12px lines fit). If the second
+      // line is still too wide the text runs past the column and render QA
+      // blocks the chart; it is not shortened.
+      if (textUnits(name) <= maxCatUnits) return [name];
+      const head = sliceUnits(name, maxCatUnits);
+      const space = head.lastIndexOf(" ");
+      const cut = space > head.length * 0.4 ? space : head.length;
+      return [name.slice(0, cut).trimEnd(), name.slice(cut).trimStart()];
+    });
+    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: fmtSpec(spec, v, i > 0 ? "" : spec.unit, labelDecimals) }; });
+    const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
+    const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
+    catX = 54 + catW;
+    if (tight) {
+      const negW = widest((v) => v < 0), posW = widest((v) => v >= 0);
+      left = catX + 15 + (negW ? negW + 9 : 0);
+      right = LAYOUT_W - 54 - bracketMargin - (posW ? posW + 9 : 0);
+    } else left = catX + 15;
+  }
+  if (spec.chart_type === "diverging_bar") {
+    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9);
+    left += margins.neg; right -= margins.pos;
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
   // mode still uses it as a real reference (the stem starts here, no mark
   // covers it), so it stays there.
-  if (!(LAYERING_FIX && mode === "bar")) {
+  // diverging_bar keeps it as the reference its two-colour sign convention reads against (drawn before the bars).
+  if (!(LAYERING_FIX && mode === "bar" && spec.chart_type !== "diverging_bar")) {
     const zeroLineRole = LAYERING_FIX ? ` data-role="zero-line"` : "";
     f.parts.push(`<line${zeroLineRole} x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   }
@@ -2795,33 +3752,35 @@ function renderHorizontal(spec, rows, mode) {
     const value = n(row[valueField]);
     if (value === null) return;
     const y = top + step * i + step * 0.5;
-    f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
+    const catLines = categoryLabels ? categoryLabels[i] : [resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec))];
+    catLines.forEach((line, k) => f.parts.push(`<text x="${catX}" y="${catLines.length > 1 ? y - 3 + k * 14 : y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`));
     const x = scale(value);
     const highlighted = (spec.highlight_values ?? []).map(String).includes(String(row[spec.category_field]));
-    const fill = highlighted ? PALETTE.accent : PALETTE.context;
+    const diverging = spec.chart_type === "diverging_bar";
+    const anyHighlight = (spec.highlight_values ?? []).length > 0;
+    // diverging_bar: two colours by sign; with a highlight the other bars are drawn lighter.
+    const fill = diverging ? (value >= 0 ? PALETTE.positive : PALETTE.negative) : highlighted ? PALETTE.accent : PALETTE.context;
+    const barOpacity = diverging && anyHighlight && !highlighted ? ` fill-opacity="0.45"` : "";
     // Fix 3: the unit goes on the first (top-most, as drawn) direct value
     // label only - every other row's label is a bare number, matching the
     // axis-tick convention above.
     const rowUnit = HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit;
     if (mode === "bar") {
       const rx = Math.min(x, zero), width = Math.max(1, Math.abs(x - zero));
-      f.parts.push(`<rect data-role="data-bar" x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"/>`);
+      f.parts.push(`<rect data-role="data-bar" x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
     } else {
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
     }
     if (spec.chart_type === "diverging_bar") {
-      const nearLeft = x <= left + 44;
-      const nearRight = x >= right - 44;
-      const inside = (value < 0 && nearLeft) || (value >= 0 && nearRight);
-      const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
-      const labelX = inside ? x + (value < 0 ? 9 : -9) : x + (value >= 0 ? 9 : -9);
-      const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
+      const anchor = value >= 0 ? "start" : "end";
+      const labelX = x + (value >= 0 ? 9 : -9);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${anyHighlight && highlighted ? 700 : 600}" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout }));
   });
@@ -2832,18 +3791,41 @@ function renderHorizontal(spec, rows, mode) {
   return f.parts.join("\n") + "\n";
 }
 
+// Value labels for one dumbbell row, in the standard order: the lower value's
+// label sits beyond the lower end of the span and the higher value's beyond the
+// higher end, so the two labels always point away from each other. A reversed
+// pair (start above end) used to print each label on the inside of the span,
+// where close values stacked "18%" over "17%". Identical displayed values get
+// one label (beyond the right-hand dot) instead of the same text on both sides.
+function dumbbellValueLabels(x1, x2, a, b, startText, endText, pad) {
+  const start = { value: a, edge: x1, text: startText, fill: PALETTE.muted };
+  const end = { value: b, edge: x2, text: endText, fill: PALETTE.ink };
+  if (a === b || startText === endText) return [{ ...end, x: Math.max(x1, x2) + pad, anchor: "start" }];
+  const [low, high] = a < b ? [start, end] : [end, start];
+  return [{ ...low, x: low.edge - pad, anchor: "end" }, { ...high, x: high.edge + pad, anchor: "start" }];
+}
+
 function renderDumbbell(spec, rows) {
   const sorted = [...rows];
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
-  const bodyHeight = Math.max(230, sorted.length * 42 + 40) + refMargin;
+  const DUMBBELL_KEY_H = 22; // one key line above the plot, above the reference-line band
+  const bodyHeight = Math.max(230, sorted.length * 42 + 40) + refMargin + DUMBBELL_KEY_H;
   const f = frame(spec, bodyHeight);
-  const base = f.bodyTop + 4;
+  const base = f.bodyTop + 4 + DUMBBELL_KEY_H;
   const left = 250, right = 945, top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
+  {
+    // Key: which dot is which period (start colour first, then end colour).
+    const keyY = f.bodyTop + 4 + 12, KEY_PX = 6.4;
+    const startName = String(spec.start_label ?? spec.start_field), endName = String(spec.end_label ?? spec.end_field);
+    const endDotX = left + 22 + Math.ceil(textUnits(startName) * KEY_PX) + 24;
+    f.parts.push(`<g data-role="dumbbell-key"><circle cx="${left + 5}" cy="${keyY - 4}" r="5" fill="${PALETTE.accent2}"/><text x="${left + 15}" y="${keyY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(startName)}</text>`
+      + `<circle cx="${endDotX}" cy="${keyY - 4}" r="5" fill="${PALETTE.accent}"/><text x="${endDotX + 10}" y="${keyY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(endName)}</text></g>`);
+  }
   // LAYERING_FIX: draw reference lines before the connectors so a
   // connector/dot covers whatever it crosses (see renderHorizontal for the
   // same treatment on bars).
@@ -2857,12 +3839,307 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 7}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 7}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmt(b, spec.unit))}</text>`);
+    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// mirrored_bar: two sides back to back, e.g. a population pyramid.
+//
+// Ordered categories run up a centre gutter that also holds their labels. The
+// first series' bars grow left from the gutter's left edge and the second
+// series' bars grow right from its right edge, both on ONE symmetric axis, so
+// two bars of equal length are two equal values. The spec chooses which series
+// goes left (left_series) and where the first category sits (first_row); the
+// renderer assumes nothing about the topic. An optional second period
+// (period_field) is drawn either as an outline over the same rows
+// (compare_layout "overlay", the default) or as a second pyramid beside the
+// first on the same axis maximum ("side_by_side"). Every printed number is a
+// value_field value formatted by fmtSpec, or an axis tick: nothing is summed,
+// differenced or rescaled.
+// ---------------------------------------------------------------------------
+const MIRRORED_ROW_GAP = 2; // px between neighbouring rows (house rule: 1-2px)
+
+// Width of a text in px, for fitting only (the gutter, the series names, the
+// room a value label needs). Per-glyph classes charged at least what render
+// QA's own advance table charges that class, in either weight, times QA's
+// 1.05 margin: narrow letters and punctuation, capitals (and &), the wide m w
+// M W @ % and dashes, one em for CJK, and a full em for any other character
+// outside the ASCII range (QA's fallback for a glyph its table lacks). A
+// layout fitted to this never trips the text-outside-viewbox or
+// text-crosses-mark checks on its own labels, whatever the label's letters.
+const MIRRORED_NARROW_GLYPHS = new Set(Array.from("ijlI.,:;'|! "));
+const MIRRORED_WIDE_GLYPHS = new Set(Array.from("mwMW@%\u2026\u2014\u2192"));
+const MIRRORED_MEASURED_SYMBOLS = new Set(Array.from("\u00B7\u00A3\u20AC\u00A5\u201C\u201D\u2018\u2019\u2013\u00B0\u00B1\u00D7\u00F7\u2022"));
+function mirroredTextPx(text, fontSize = 12) {
+  let em = 0;
+  for (const ch of Array.from(String(text ?? ""))) {
+    if (isWideChar(ch)) em += 1;
+    else if (MIRRORED_NARROW_GLYPHS.has(ch)) em += 0.3;
+    else if (MIRRORED_WIDE_GLYPHS.has(ch)) em += 1.02;
+    else if (ch > "~" && !MIRRORED_MEASURED_SYMBOLS.has(ch)) em += 1.02;
+    else if ((ch >= "A" && ch <= "Z") || ch === "&") em += 0.78;
+    else em += 0.62;
+  }
+  return Math.ceil(em * fontSize * 1.05);
+}
+
+// The text itself if it fits capPx, else its longest prefix that fits with an
+// ellipsis appended (at least one character is always kept).
+function mirroredFit(text, fontSize, capPx) {
+  const chars = Array.from(String(text ?? ""));
+  if (mirroredTextPx(text, fontSize) <= capPx) return String(text ?? "");
+  let keep = chars.length - 1;
+  while (keep > 1 && mirroredTextPx(`${chars.slice(0, keep).join("")}\u2026`, fontSize) > capPx) keep -= 1;
+  return `${chars.slice(0, Math.max(keep, 1)).join("")}\u2026`;
+}
+
+// Rows -> the pieces the drawing needs. Category order is row order (first
+// appearance). Lint requires exactly 2 series, at most 2 periods and a
+// left_series / current_period that exist; a spec that skipped lint still
+// renders instead of throwing (extra series are ignored, a missing right side
+// stays empty).
+function mirroredModel(spec, rows) {
+  const periodField = spec.period_field ? String(spec.period_field) : "";
+  const categories = unique(rows.map((row) => row[spec.category_field]));
+  const seriesValues = unique(rows.map((row) => row[spec.series_field]));
+  const leftSeries = spec.left_series !== undefined && seriesValues.includes(String(spec.left_series)) ? String(spec.left_series) : (seriesValues[0] ?? "");
+  const rightSeries = seriesValues.find((series) => series !== leftSeries) ?? null;
+  const periodValues = periodField ? unique(rows.map((row) => row[periodField])) : [];
+  const numericPeriods = periodValues.length > 0 && periodValues.every((period) => period.trim() !== "" && Number.isFinite(Number(period)));
+  const periods = [...periodValues].sort((a, b) => (numericPeriods ? Number(a) - Number(b) : a < b ? -1 : a > b ? 1 : 0));
+  const current = periods.length ? (spec.current_period !== undefined && periods.includes(String(spec.current_period)) ? String(spec.current_period) : periods.at(-1)) : "";
+  const other = periods.find((period) => period !== current) ?? null;
+  const cells = new Map();
+  for (const row of rows) {
+    const value = n(row[spec.value_field]);
+    if (value === null) continue;
+    const key = JSON.stringify([String(row[spec.category_field]), String(row[spec.series_field]), periodField ? String(row[periodField]) : ""]);
+    if (!cells.has(key)) cells.set(key, value);
+  }
+  const valueAt = (category, series, period) => (series === null || period === null ? null : (cells.get(JSON.stringify([category, series, period])) ?? null));
+  let maxValue = 0;
+  for (const category of categories) {
+    for (const series of [leftSeries, rightSeries]) {
+      for (const period of [current, other]) {
+        const value = valueAt(category, series, period);
+        if (value !== null && value > maxValue) maxValue = value;
+      }
+    }
+  }
+  return { categories, leftSeries, rightSeries, periods, current, other, valueAt, maxValue };
+}
+
+// One half's axis, mirrored onto the other: ticks 0, step, 2*step ... up to
+// the nice ceiling of the largest value (over both sides and both periods).
+// The step is a 1/2/5 x 10^k number aiming at 4 intervals, then thinned (at
+// the limit down to just 0 and the maximum) while two neighbouring tick labels
+// would crowd: ticks are evenly spaced, so each pair needs the average of its
+// two label widths plus 14px between centres, and never less than 30px.
+// labelWidths(ticks) is the width in px of every label of a candidate tick list.
+function mirroredAxis(maxValue, halfLen, labelWidths) {
+  const peak = maxValue > 0 ? maxValue : 1;
+  const build = (step) => {
+    const count = Math.max(1, Math.ceil(peak / step - 1e-9));
+    return Array.from({ length: count + 1 }, (_, i) => Number((i * step).toPrecision(12)));
+  };
+  const crowded = (list) => {
+    if (!Number.isFinite(halfLen)) return false;
+    const spacing = halfLen / (list.length - 1);
+    const widths = labelWidths(list);
+    return widths.some((width, i) => i + 1 < widths.length && spacing < Math.max(30, (width + widths[i + 1]) / 2 + 14));
+  };
+  let step = niceAxisStep(peak / 4);
+  let ticks = build(step);
+  for (let guard = 0; guard < 16 && ticks.length > 2 && crowded(ticks); guard++) {
+    step = niceAxisStep(step * 1.6);
+    ticks = build(step);
+  }
+  return { max: ticks.at(-1), ticks };
+}
+
+function renderMirroredBar(spec, rows) {
+  const m = mirroredModel(spec, rows);
+  const total = m.categories.length;
+  const highlights = new Set((spec.highlight_values ?? []).map(String));
+  const sideBySide = spec.compare_layout === "side_by_side" && m.other !== null;
+  const overlay = !sideBySide && m.other !== null;
+  // side_by_side: the earlier period (sorted order) on the left.
+  const panelPeriods = sideBySide ? [m.current, m.other].sort((a, b) => m.periods.indexOf(a) - m.periods.indexOf(b)) : [m.current];
+  const sideSeries = [m.leftSeries, m.rightSeries];
+  const rowFromTop = (i) => (spec.first_row === "top" ? i : total - 1 - i);
+  const px = (value) => String(Math.round(value * 100) / 100);
+  const textPx = (text) => mirroredTextPx(text, 12);
+  const OUTLINE = `stroke="${PALETTE.ink}" stroke-opacity="0.8" stroke-width="1.5"`;
+
+  // Value labels: direct_labels prints each bar's own value at its end, for
+  // every row when there are 12 or fewer, else only for highlight_values rows.
+  // Overlay prints the current period only (the outline is context); in
+  // side_by_side each panel prints its own period.
+  const labelled = (category) => spec.direct_labels === true && (total <= 12 || highlights.has(category));
+  const printed = [];
+  for (const period of panelPeriods) {
+    for (const category of m.categories) {
+      if (!labelled(category)) continue;
+      for (const series of sideSeries) {
+        const value = m.valueAt(category, series, period);
+        if (value !== null) printed.push(value);
+      }
+    }
+  }
+  const decimals = resolveChartDecimals(spec, printed);
+  // House style states the unit once per half, on its top-most printed label.
+  const unitHolders = new Set();
+  panelPeriods.forEach((period, pk) => sideSeries.forEach((series, sk) => {
+    for (let d = 0; d < total; d++) {
+      const i = spec.first_row === "top" ? d : total - 1 - d;
+      if (labelled(m.categories[i]) && m.valueAt(m.categories[i], series, period) !== null) { unitHolders.add(`${pk}:${sk}:${i}`); break; }
+    }
+  }));
+  const labelUnit = (pk, sk, i) => (!HOUSE_STYLE_ACTIVE || unitHolders.has(`${pk}:${sk}:${i}`) ? spec.unit : "");
+
+  // Vertical layout: [panel titles | period key] row, series names, rows, ticks.
+  const pitch = Math.max(17, Math.min(32, Math.round(440 / Math.max(total, 1))));
+  const headRow = overlay || sideBySide;
+  const headerH = (headRow ? 24 : 0) + 28;
+  const f = frame(spec, headerH + total * pitch + 32);
+  const rowY = f.bodyTop + 16;
+  const namesY = rowY + (headRow ? 24 : 0);
+  const plotTop = namesY + 12;
+  const plotBottom = plotTop + total * pitch;
+  const tickY = plotBottom + 18;
+
+  // Horizontal layout: one pyramid, or two with a gap. The centre gutter fits
+  // the widest label that is shown; each half then spans the room between the
+  // gutter and the panel edge, less half the outermost tick label. A value
+  // label sits just past its bar, so the scale is shortened only as far as
+  // needed to keep the labels of the bars that carry one inside the panel.
+  const panelGap = 36;
+  const panelW = sideBySide ? (f.width - 108 - panelGap) / 2 : f.width - 108;
+  const categoryText = m.categories.map(String);
+  const gutterShown = (i) => total <= 12 || i % 2 === 0 || i === total - 1;
+  const widestCategory = Math.max(0, ...categoryText.map((text, i) => (gutterShown(i) ? textPx(text) : 0)));
+  // [value the label sits beyond, its width, its width without the unit]
+  const labelBars = [];
+  panelPeriods.forEach((period, pk) => {
+    m.categories.forEach((category, i) => {
+      if (!labelled(category)) return;
+      sideSeries.forEach((series, sk) => {
+        const value = m.valueAt(category, series, period);
+        if (value === null) return;
+        const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
+        labelBars.push([Math.max(value, otherValue ?? 0), textPx(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals)), textPx(fmtSpec(spec, value, "", decimals))]);
+      });
+    });
+  });
+  const tickLabelWidths = (ticks) => ticks.map((tick, ti) => textPx(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, ticks.length))));
+  const fullTicks = mirroredAxis(m.maxValue, Infinity, () => []).ticks; // before any thinning
+  // Room a half needs past its axis end: the widest tick label is centred on it.
+  const tickRoom = Math.ceil((Math.max(...tickLabelWidths(fullTicks)) + 8) / 2);
+  // The gutter may take whatever leaves each half 80px plus that room. The room
+  // is measured without the unit, so a long unit shortens bars (below), never
+  // the category labels.
+  const tickRoomBare = Math.ceil((Math.max(...fullTicks.map((tick) => textPx(tickLabelSpec(spec, tick, "")))) + 8) / 2);
+  const labelRoomBare = labelBars.length ? Math.max(...labelBars.map(([, , bare]) => bare)) + 9 : 0;
+  // The two "0" labels sit on the gutter's two edges; where the style puts the
+  // unit on every tick (legacy) the gutter must hold both side by side.
+  const zeroLabelPx = textPx(tickLabelSpec(spec, 0, axisTickUnit(spec.unit, 0, fullTicks.length)));
+  let gutterW = Math.max(56, widestCategory + 24, zeroLabelPx + 8);
+  let gutterText = categoryText;
+  const gutterCap = Math.max(56, panelW - 2 * (80 + Math.max(labelRoomBare, tickRoomBare)));
+  if (gutterW > gutterCap) {
+    // Only a label too long for any sensible gutter is shortened (with an ellipsis).
+    gutterW = gutterCap;
+    gutterText = categoryText.map((text) => mirroredFit(text, 12, gutterW - 24));
+  }
+  const halfFull = (panelW - gutterW) / 2;
+  const fitAxis = (halfLen) => {
+    const fitted = mirroredAxis(m.maxValue, halfLen, tickLabelWidths);
+    let scale = halfLen / fitted.max;
+    for (const [value, width] of labelBars) if (value > 0) scale = Math.min(scale, (halfFull - 9 - width) / value);
+    // A label too wide to sit beside even a short bar must not flip or erase
+    // the bars: the longest one keeps at least 40px (render QA then reports
+    // the label that no longer fits).
+    return { axis: fitted, k: Math.max(scale, 40 / fitted.max) };
+  };
+  let fit = fitAxis(Math.max(40, halfFull - tickRoom));
+  fit = fitAxis(fit.axis.max * fit.k); // shortened by a label: re-thin the ticks for the shorter axis
+  const { axis, k } = fit;
+  const halfLen = axis.max * k;
+  // A series name is centred over its half: it may reach toward the other name
+  // (up to 8px short of it) and out to its panel's edge, no further.
+  const nameCap = Math.min(halfLen + gutterW - 16, 2 * halfFull - halfLen);
+
+  // Layers are collected, then painted: gridlines under bars, outlines over
+  // bars, text last (text never sits on a bar: labels go beyond the bar ends).
+  const heads = [], grid = [], bars = [], outlines = [], valueTexts = [], gutterLabels = [], tickLabels = [];
+  panelPeriods.forEach((period, pk) => {
+    const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
+    const gl = cx - gutterW / 2, gr = cx + gutterW / 2;
+    if (sideBySide) heads.push(`<text data-role="panel-title" x="${px(cx)}" y="${px(rowY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="15" font-weight="700" fill="${PALETTE.ink}">${esc(mirroredFit(period, 15, panelW - 16))}</text>`);
+    sideSeries.forEach((series, sk) => {
+      if (series === null) return;
+      const mid = sk === 0 ? gl - halfLen / 2 : gr + halfLen / 2;
+      heads.push(`<text data-role="series-name" x="${px(mid)}" y="${px(namesY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="13" font-weight="700" fill="${PALETTE.ink}">${esc(mirroredFit(series, 13, nameCap))}</text>`);
+    });
+    axis.ticks.forEach((tick, ti) => {
+      for (const sk of [0, 1]) {
+        const x = sk === 0 ? gl - tick * k : gr + tick * k;
+        grid.push(`<line data-role="grid-line" x1="${px(x)}" y1="${px(plotTop)}" x2="${px(x)}" y2="${px(plotBottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, axis.ticks.length)))}</text>`);
+      }
+    });
+    m.categories.forEach((category, i) => {
+      const highlighted = highlights.has(category);
+      const rowTop = plotTop + rowFromTop(i) * pitch;
+      const barY = rowTop + MIRRORED_ROW_GAP / 2, barH = pitch - MIRRORED_ROW_GAP;
+      const baseline = rowTop + pitch / 2 + 4;
+      if (gutterShown(i)) gutterLabels.push(`<text data-role="category-label" x="${px(cx)}" y="${px(baseline)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="${highlighted ? 700 : 400}" fill="${PALETTE.ink}">${esc(gutterText[i])}</text>`);
+      sideSeries.forEach((series, sk) => {
+        const value = m.valueAt(category, series, period);
+        const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
+        const length = value === null ? 0 : value * k;
+        const otherLength = otherValue === null || otherValue <= 0 ? 0 : Math.max(2, otherValue * k);
+        const fill = highlighted ? PALETTE.accent : sk === 0 ? PALETTE.accent2 : PALETTE.series3;
+        if (length > 0) {
+          const w = Math.max(1, length);
+          bars.push(`<rect data-role="data-bar" x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
+        }
+        // The other period: a stroke with no fill, inset so its outer edge
+        // lands on the value and neighbouring rows' strokes keep a gap.
+        if (otherLength > 0) {
+          outlines.push(`<rect data-role="data-bar-outline" x="${px(sk === 0 ? gl - otherLength + 0.75 : gr + 0.75)}" y="${px(barY + 0.75)}" width="${px(otherLength - 1.5)}" height="${px(barH - 1.5)}" fill="none" ${OUTLINE}/>`);
+        }
+        if (value !== null && labelled(category)) {
+          const reach = Math.max(length, otherLength);
+          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals))}</text>`);
+        }
+      });
+    });
+  });
+
+  // Period key (overlay only): a filled swatch and an outline swatch, each
+  // with its period value from the rows.
+  if (overlay) {
+    // Each period value gets at most half the room left by the two swatches,
+    // so even an absurdly long period label stays on the page.
+    const keyCap = Math.floor((f.width - 108 - 66) / 2);
+    const keyCurrent = mirroredFit(m.current, 12, keyCap), keyOther = mirroredFit(m.other, 12, keyCap);
+    const w1 = textPx(keyCurrent), w2 = textPx(keyOther);
+    let x = f.width / 2 - (14 + 5 + w1 + 28 + 14 + 5 + w2) / 2;
+    heads.push(`<rect data-role="legend-swatch" x="${px(x)}" y="${px(rowY - 9)}" width="14" height="10" fill="${PALETTE.context}"/>`);
+    heads.push(`<text data-role="period-key-label" x="${px(x + 19)}" y="${px(rowY)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(keyCurrent)}</text>`);
+    x += 19 + w1 + 28;
+    heads.push(`<rect data-role="legend-swatch" x="${px(x)}" y="${px(rowY - 9)}" width="14" height="10" fill="none" ${OUTLINE}/>`);
+    heads.push(`<text data-role="period-key-label" x="${px(x + 19)}" y="${px(rowY)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(keyOther)}</text>`);
+  }
+  f.parts.push(...heads, ...grid, ...bars, ...outlines, ...valueTexts, ...gutterLabels, ...tickLabels);
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
 }
 
 // End-label height (12px font, single line, house-style-approved ascent/
@@ -2870,7 +4147,88 @@ function renderDumbbell(spec, rows) {
 // between two end labels sharing the same x column.
 const END_LABEL_MIN_GAP = 18;
 
+const UNRANKED = 1e9;
+const isMissingRank = (v) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
+// the rows whose start or end field holds a rank that is not a positive integer (a missing end is allowed)
+export function nonIntegerRankRows(spec, rows) {
+  const bad = [];
+  rows.forEach((row, i) => {
+    const fields = [spec.start_field, spec.end_field].filter((field) => {
+      const v = row[field];
+      if (isMissingRank(v)) return false;
+      const x = typeof v === "number" ? v : Number(v);
+      return !(Number.isInteger(x) && x >= 1);
+    });
+    if (fields.length) bad.push(`${String(row[spec.category_field] ?? `row ${i + 1}`)} (${fields.map((field) => `${field}=${String(row[field])}`).join(", ")})`);
+  });
+  return bad;
+}
+
+// Rank slope (bump chart). Opt-in through spec.rank_cutoff = N: the start and
+// end fields hold ranks (1 = best). Axis inverted so rank 1 is on top; one
+// ordinal row per rank 1..N, and an entity outside the top N at one end sits on
+// the shared "N+1" row with its true rank in the label (第13名). The name is
+// printed at both ends; an entity that enters the top N is coloured and tagged
+// 新进, one that drops out 跌出. An entity outside the top N at both ends is not
+// drawn (it is in neither list).
+function renderRankSlope(spec, rows, cutoff) {
+  // Lint refuses these ranks (RANK_NOT_INTEGER), but render only checks that some lint passed for this plan and data, so a PASS
+  // recorded before the rule existed must not draw them: refuse here too, on the same rows, and never round or drop.
+  const notRanks = nonIntegerRankRows(spec, rows);
+  if (notRanks.length) throw new Error(`RANK_NOT_INTEGER: with rank_cutoff, ${spec.start_field} and ${spec.end_field} must hold ranks that are positive integers (or be empty for outside the ranking); not rounded; rows: ${notRanks.slice(0, 8).join("; ")}${notRanks.length > 8 ? `; and ${notRanks.length - 8} more` : ""}`);
+  const lang = vizLang(spec);
+  const T = VIZ_STRINGS[lang];
+  // Ranks are positive integers (lint refuses anything else, RANK_NOT_INTEGER); a missing end means "outside the
+  // ranking" and sorts after every real rank on the N+1 row.
+  const rankOf = (v) => (isMissingRank(v) ? UNRANKED : Number(v));
+  const all = rows.map((row, i) => ({ row, i, a: rankOf(row[spec.start_field]), b: rankOf(row[spec.end_field]) }));
+  const entries = all.filter((e) => e.a <= cutoff || e.b <= cutoff);
+  const hiddenCount = all.length - entries.length;
+  // the chart says what it cut
+  spec = { ...spec, note: [spec.note, T.rankCutNote(cutoff, entries.length, hiddenCount)].filter(Boolean).join(" ") };
+  const outsideCount = (key) => entries.filter((e) => e[key] > cutoff).length;
+  const stack = Math.max(1, outsideCount("a"), outsideCount("b"));
+  const ROW = 30, STACK = 17;
+  const f = frame(spec, Math.max(300, (cutoff + 1) * ROW + (stack - 1) * STACK + 70));
+  const left = 250, right = 790, top = f.bodyTop + 24;
+  const rowY = (rank) => top + (Math.min(rank, cutoff + 1) - 1) * ROW;
+  const name = (e) => resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, lang);
+  const joinColor = HOUSE_STYLE_ACTIVE ? PALETTE.ink : PALETTE.accent2;
+  const leaveColor = PALETTE.accent;
+  const rankText = (r) => (r === UNRANKED ? T.rankNone : r > cutoff ? T.rankOutside(r) : String(r));
+  f.parts.push(`<text x="${left}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.start_label ?? spec.start_field)}</text>`);
+  f.parts.push(`<text x="${right}" y="${top - 18}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.end_label ?? spec.end_field)}</text>`);
+  // faint ordinal row guides: one per rank, the last one is the "N+1" row
+  for (let r = 1; r <= cutoff + 1; r++) f.parts.push(`<line data-role="rank-row" x1="${left}" y1="${rowY(r)}" x2="${right}" y2="${rowY(r)}" stroke="${PALETTE.grid}" stroke-width="0.5" stroke-dasharray="${r > cutoff ? "3 3" : "none"}"/>`);
+  // the N+1 row is stacked on each side by that side's own true rank
+  const slotOf = { a: new Map(), b: new Map() };
+  for (const key of ["a", "b"]) entries.filter((e) => e[key] > cutoff).sort((p, q) => p[key] - q[key] || p.i - q.i).forEach((e, k) => slotOf[key].set(e, k));
+  const placed = entries
+    .slice().sort((p, q) => (p.a - q.a) || (p.b - q.b))
+    .map((e) => ({ ...e, y1: rowY(e.a) + (slotOf.a.get(e) ?? 0) * STACK, y2: rowY(e.b) + (slotOf.b.get(e) ?? 0) * STACK }));
+  const marks = [];
+  placed.forEach((e) => {
+    const category = String(e.row[spec.category_field] ?? "");
+    const highlighted = (spec.highlight_values ?? []).map(String).includes(category);
+    const entered = e.a > cutoff, dropped = e.b > cutoff;
+    // a highlight that stays in the top N keeps the context colour (the accent is the 跌出 colour here)
+    const stroke = entered ? joinColor : dropped ? leaveColor : PALETTE.context;
+    const width = highlighted || entered || dropped ? 2.5 : 1.5;
+    const role = entered ? "rank-join" : dropped ? "rank-leave" : "data-line";
+    marks.push(`<line data-role="${role}" x1="${left}" y1="${e.y1}" x2="${right}" y2="${e.y2}" stroke="${stroke}" stroke-width="${width}"/>`);
+    marks.push(`<circle cx="${left}" cy="${e.y1}" r="4" fill="${stroke}"/><circle cx="${right}" cy="${e.y2}" r="4" fill="${stroke}"/>`);
+    const weight = entered || dropped || highlighted ? 700 : 400;
+    marks.push(`<text data-role="rank-label-start" x="${left - 10}" y="${e.y1 + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="${weight}" fill="${PALETTE.ink}">${esc(`${name(e)}  ${rankText(e.a)}`)}</text>`);
+    const tag = entered ? `  ${T.rankEntered}` : dropped ? `  ${T.rankLeft}` : "";
+    marks.push(`<text data-role="rank-label-end" x="${right + 10}" y="${e.y2 + 4}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="${weight}" fill="${entered || dropped ? stroke : PALETTE.ink}">${esc(`${rankText(e.b)}  ${name(e)}${tag}`)}</text>`);
+  });
+  f.parts.push(...marks);
+  addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
+
 function renderSlope(spec, rows) {
+  const rankCutoff = Number(spec.rank_cutoff);
+  if (Number.isInteger(rankCutoff) && rankCutoff >= 2 && rankCutoff <= 30) return renderRankSlope(spec, rows, rankCutoff);
   const f = frame(spec, Math.max(300, rows.length * 26));
   const left = 250, right = 790, top = f.bodyTop + 10, bottom = f.bodyBottom - 25;
   const values = rows.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
@@ -2899,8 +4257,8 @@ function renderSlope(spec, rows) {
   // right within a row), not `e.i` (the pre-filter row index used only as
   // repelEndLabels' identity key). Legacy is untouched: HOUSE_STYLE_ACTIVE
   // false keeps every label showing its unit, byte-for-byte.
-  const leftLabelText = (e, idx) => `${resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, vizLang(spec))} ${fmt(e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
-  const rightLabelText = (e) => fmt(e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
+  const leftLabelText = (e, idx) => `${resolveEconomyDisplayName(String(e.row[spec.category_field] ?? ""), spec.category_names, vizLang(spec))} ${fmtSpec(spec, e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
+  const rightLabelText = (e) => fmtSpec(spec, e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
   const leftPlaced = repelEndLabels(entries.map((e, idx) => ({ id: e.i, y: e.y1, text: leftLabelText(e, idx) })), top, bottom, END_LABEL_MIN_GAP);
   const rightPlaced = repelEndLabels(entries.map((e) => ({ id: e.i, y: e.y2, text: rightLabelText(e) })), top, bottom, END_LABEL_MIN_GAP);
   const leftById = new Map(leftPlaced.map((p) => [p.id, p]));
@@ -2936,6 +4294,22 @@ function renderSlope(spec, rows) {
 function sortX(values) {
   const numeric = values.every((v) => n(v) !== null);
   return [...values].sort((a, b) => numeric ? n(a) - n(b) : String(a).localeCompare(String(b), undefined, { numeric: true }));
+}
+
+// Category order (small_multiples panels, chord / adjacency_matrix nodes,
+// hierarchy_tree siblings, streamgraph series): a text category keeps the
+// order its rows first mention it in - the author's or the query's order, a
+// rank or a story - and is never re-sorted by name, because name order is
+// no reading order: UTF-16 code-unit order turns 甲乙丙丁 into 丁丙乙甲.
+// Keys that are all numbers (years) or all ISO dates (2024-03, 2024-03-15)
+// are a sequence, so facetOrder sorts those ascending whatever order the
+// rows came in. Takes and returns unique() strings.
+const ISO_DATE_KEY = /^\d{4}-\d{2}(?:-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)?$/;
+function facetOrder(keys) {
+  if (keys.every((key) => n(key) !== null)) return [...keys].sort((a, b) => n(a) - n(b));
+  const times = keys.map((key) => (ISO_DATE_KEY.test(key) ? Date.parse(key) : NaN));
+  if (times.every(Number.isFinite)) return keys.map((key, i) => ({ key, time: times[i] })).sort((a, b) => a.time - b.time).map((entry) => entry.key);
+  return keys;
 }
 
 // Fix 5 (end label crosses its own series' line, house style only): a
@@ -2977,12 +4351,72 @@ function layoutLineEndLabel(name, valueText, pointX, trueEdge, gap, pxPerUnit) {
   ];
 }
 
+// NEWSROOM_LINE_END_LABEL_FIT (default off): lines for a single-series end label
+// that would cross the canvas's right edge, or null when the label already
+// fits (the caller then draws exactly what it always drew). Same 8 px margin
+// as the multi-series label (layoutLineEndLabel); the text is only broken,
+// never edited. Break before an opening bracket first, else at a space, and
+// never so that a line starts with a unit sign that belongs to the number
+// before it (% per-mille ° etc.); with no usable break, or a first line that
+// is still too wide, every line is right-aligned to the edge.
+const LINE_END_LABEL_NO_LINE_START = /^[%\u2030\u2031\u00B0\u2103\u2109\u2032\u2033]/u;
+function lineEndLabelBreak(text) {
+  const ok = (i) => i > 0 && !LINE_END_LABEL_NO_LINE_START.test(text.slice(i).trimStart());
+  const bracket = text.search(/[\uFF08(]/u);
+  if (ok(bracket)) return bracket;
+  for (let i = text.indexOf(" "); i > 0; i = text.indexOf(" ", i + 1)) if (ok(i)) return i;
+  return -1;
+}
+function fitLineEndLabel(text, x, trueEdge) {
+  const safeEdge = trueEdge - 8;
+  const width = (t) => estimateTextWidth(t, 12, true);
+  if (x + width(text) <= safeEdge) return null;
+  const cut = lineEndLabelBreak(text);
+  const parts = cut > 0 ? [text.slice(0, cut).trimEnd(), text.slice(cut).trimStart()] : [text];
+  if (parts.every((t) => x + width(t) <= safeEdge)) return parts.map((t) => ({ text: t, x }));
+  return parts.map((t) => ({ text: t, x: safeEdge, anchor: "end" }));
+}
+
 function renderLine(spec, rows, multi = false) {
-  const left = 100, right = 940;
+  let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
   const seriesNames = seriesField ? unique(rows.map((r) => r[seriesField])) : ["series"];
   const xValues = sortX(unique(rows.map((r) => r[spec.x_field])));
   const xIndex = new Map(xValues.map((v, i) => [String(v), i]));
+  // Tight layout (house style): the y-tick column on the left and the
+  // end-label band on the right are sized from the real label text instead
+  // of the fixed 100 / (width - 100) constants. A label too wide for its
+  // band still wraps onto two lines (layoutLineEndLabel), so the band is
+  // capped at a share of the width.
+  const tight = HOUSE_STYLE_ACTIVE;
+  const lineSeriesGroup = (series) => rows.filter((r) => !seriesField || String(r[seriesField]) === series).sort((a, b) => xIndex.get(String(a[spec.x_field])) - xIndex.get(String(b[spec.x_field])));
+  const lineEndValues = seriesNames.map((series) => { const g = lineSeriesGroup(series); const last = g[g.length - 1]; return last ? n(last[spec.value_field]) : null; }).filter((v) => v !== null);
+  const labelDecimals = resolveChartDecimals(spec, lineEndValues);
+  if (tight) {
+    const PX = 6.8;
+    const earlyValues = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
+    const earlyTicks = lineAxisTicks(lineAxisDomain(earlyValues, spec.unit === "%", 4), 4);
+    const tickPx = Math.max(0, ...earlyTicks.map((tick, i) => textUnits(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, earlyTicks.length))) * PX));
+    left = Math.ceil(54 + tickPx + 12);
+    let band = 46;
+    if (multi && spec.direct_labels !== false) {
+      // A label that fits the 30% share sits on one line; a wider one splits
+      // (layoutLineEndLabel) and then needs the width of its longer line, up
+      // to 45% of the chart. Beyond that the text still crosses the line and
+      // render QA blocks the chart.
+      const oneLineCap = Math.floor(LAYOUT_W * 0.3);
+      const widest = Math.max(0, ...seriesNames.map((series) => {
+        const g = lineSeriesGroup(series); const last = g[g.length - 1];
+        const value = last ? n(last[spec.value_field]) : null;
+        const name = resolveEconomyDisplayName(series, spec.category_names, vizLang(spec));
+        const valueText = value === null ? "" : fmtSpec(spec, value, spec.unit, labelDecimals);
+        const oneLine = textUnits(value === null ? name : `${name} ${valueText}`) * PX + 14;
+        return oneLine <= oneLineCap ? oneLine : Math.max(textUnits(name), textUnits(valueText)) * PX + 14;
+      }));
+      band = Math.min(Math.max(band, Math.ceil(widest)), Math.floor(LAYOUT_W * 0.45));
+    }
+    right = LAYOUT_W - 54 - band;
+  }
   const xScale = (value) => xValues.length <= 1 ? (left + right) / 2 : left + (xIndex.get(String(value)) / (xValues.length - 1)) * (right - left);
   // Decide the event-annotation layout (lane vs. numbered-marker fallback)
   // before choosing a frame height: it only needs x positions and text
@@ -2991,10 +4425,10 @@ function renderLine(spec, rows, multi = false) {
   // 986 is the frame's own established safe-text right margin (see frame()'s
   // annotationLayout/footer rule) - wider than the plot's own right edge
   // (`right`, 940), which otherwise-empty margin a lane label may use.
-  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, 986);
+  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, LAYOUT_W - 54);
   const captionExtra = eventLayout.fallback && eventLayout.events.length ? eventLayout.events.length * 16 + 22 : 0;
   const f = frame(spec, 380 + captionExtra);
-  const bottom = f.bodyBottom - 48 - captionExtra;
+  const bottom = f.bodyBottom - (tight ? 40 : 48) - captionExtra;
   const hasLane = eventLayout.events.length > 0 && !eventLayout.fallback;
   const laneTop = f.bodyTop + 15 + (HOUSE_STYLE_ACTIVE ? TOP_TICK_CLEARANCE : 0);
   const rowsUsed = hasLane ? (eventLayout.events.some((e) => e.laneRow === 1) ? 2 : 1) : 0;
@@ -3017,7 +4451,7 @@ function renderLine(spec, rows, multi = false) {
   // domain or the tick list's own extremes, so every drawn tick - not just
   // the plotted data - is guaranteed to land inside [top, bottom]. Legacy
   // keeps the old, narrower yDomain-only scale, byte-identical.
-  const yTicks = lineAxisTicks(yDomain, 4);
+  const yTicks = lineAxisTicks(yDomain, 4, HOUSE_STYLE_ACTIVE);
   const yScaleDomain = HOUSE_STYLE_ACTIVE ? [Math.min(yDomain[0], yTicks[0]), Math.max(yDomain[1], yTicks[yTicks.length - 1])] : yDomain;
   const yScale = verticalScale(yScaleDomain, top, bottom);
   // Task A: monotone interpolation is only ever applied to a dense, regularly
@@ -3038,21 +4472,35 @@ function renderLine(spec, rows, multi = false) {
   yTicks.forEach((tick, i) => {
     const y = yScale(tick);
     f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
   });
   const labelEvery = Math.max(1, Math.ceil(xValues.length / 8));
   const directLabels = [];
+  // Opt-in (NEWSROOM_LINE_TICK_AVOID_OVERLAP=1): the first and last labels
+  // are kept; a label between them is dropped when its box would touch one
+  // already kept. Every data point is still drawn; only labels are dropped.
+  const avoidTickOverlap = process.env.NEWSROOM_LINE_TICK_AVOID_OVERLAP === "1";
+  const tickLabelKept = new Set();
+  if (avoidTickOverlap && xValues.length > 0) {
+    const gap = 4;
+    const boxOf = (i) => { const w = estimateTextWidth(String(xValues[i]), 12, false), c = xScale(xValues[i]); return [c - w / 2 - gap / 2, c + w / 2 + gap / 2]; };
+    const placed = [0, xValues.length - 1].map((i) => boxOf(i));
+    tickLabelKept.add(0); tickLabelKept.add(xValues.length - 1);
+    for (let i = 1; i < xValues.length - 1; i++) {
+      if (i % labelEvery !== 0) continue;
+      const [a, b] = boxOf(i);
+      if (placed.some(([pa, pb]) => a < pb && pa < b)) continue;
+      placed.push([a, b]); tickLabelKept.add(i);
+    }
+  }
   xValues.forEach((xv, i) => {
-    if (i % labelEvery !== 0 && i !== xValues.length - 1) return;
+    if (avoidTickOverlap ? !tickLabelKept.has(i) : (i % labelEvery !== 0 && i !== xValues.length - 1)) return;
     f.parts.push(`<text x="${xScale(xv)}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`);
   });
   // Fix 2: every end label in this chart (one per series) shares one
   // decimal count - resolved once, up front, from every series' final
   // value, not per-label. Axis ticks above already went through tickLabel()'s
   // own separate nice-number formatting and are unaffected by this.
-  const lineSeriesGroup = (series) => rows.filter((r) => !seriesField || String(r[seriesField]) === series).sort((a, b) => xIndex.get(String(a[spec.x_field])) - xIndex.get(String(b[spec.x_field])));
-  const lineEndValues = seriesNames.map((series) => { const g = lineSeriesGroup(series); const last = g[g.length - 1]; return last ? n(last[spec.value_field]) : null; }).filter((v) => v !== null);
-  const labelDecimals = resolveChartDecimals(spec, lineEndValues);
   seriesNames.forEach((series, seriesIndex) => {
     const group = lineSeriesGroup(series);
     const highlighted = !multi || (spec.highlight_values ?? []).map(String).includes(String(series));
@@ -3105,7 +4553,7 @@ function renderLine(spec, rows, multi = false) {
       // exact value appended to its end label, not just its name.
       const name = resolveEconomyDisplayName(series, spec.category_names, vizLang(spec));
       const value = n(last[spec.value_field]);
-      const valueText = value === null ? null : fmt(value, spec.unit, labelDecimals);
+      const valueText = value === null ? null : fmtSpec(spec, value, spec.unit, labelDecimals);
       const text = valueText === null ? name : `${name} ${valueText}`;
       const pointX = xScale(last[spec.x_field]);
       // The label now always carries its value appended (task B), which can
@@ -3116,12 +4564,24 @@ function renderLine(spec, rows, multi = false) {
       // its own point. Legacy, and the value === null case common to both
       // styles, keep this single clamped line exactly as before.
       const lines = HOUSE_STYLE_ACTIVE && valueText !== null
-        ? layoutLineEndLabel(name, valueText, pointX, 1040, 7, 6.8)
-        : [{ text, x: Math.min(1032 - textUnits(text) * 6.8, pointX + 7) }];
+        ? layoutLineEndLabel(name, valueText, pointX, LAYOUT_W, 7, 6.8)
+        : [{ text, x: Math.min(LAYOUT_W - 8 - textUnits(text) * 6.8, pointX + 7) }];
       directLabels.push({ lines, y: yScale(value) + 4, highlighted });
     }
     if (last && !multi && spec.direct_labels === true) {
-      f.parts.push(`<text data-role="direct-label" x="${Math.min(972, xScale(last[spec.x_field]) + 8)}" y="${yScale(n(last[spec.value_field])) - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmt(n(last[spec.value_field]), spec.unit, labelDecimals))}</text>`);
+      const endText = fmtSpec(spec, n(last[spec.value_field]), spec.unit, labelDecimals);
+      const endX = Math.min(LAYOUT_W - 68, xScale(last[spec.x_field]) + 8), endY = yScale(n(last[spec.value_field])) - 8;
+      const endAttrs = `font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}"`;
+      // Opt-in (NEWSROOM_LINE_END_LABEL_FIT=1): a single-line end label whose
+      // estimated box would cross the right edge is split at its first space
+      // (value above, unit below; no text is dropped or changed) and, when a
+      // line still would not fit, both lines are right-aligned to the edge.
+      const fit = process.env.NEWSROOM_LINE_END_LABEL_FIT === "1" ? fitLineEndLabel(endText, endX, LAYOUT_W) : null;
+      if (fit) {
+        fit.forEach((line, k) => f.parts.push(`<text data-role="direct-label" x="${line.x}" y="${endY - 14 * (fit.length - 1 - k)}"${line.anchor ? ` text-anchor="${line.anchor}"` : ""} ${endAttrs}>${esc(line.text)}</text>`));
+      } else {
+        f.parts.push(`<text data-role="direct-label" x="${endX}" y="${endY}" ${endAttrs}>${esc(endText)}</text>`);
+      }
     }
   });
   if (multi && spec.direct_labels !== false) {
@@ -3158,10 +4618,95 @@ function renderLine(spec, rows, multi = false) {
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
-function renderSmallMultiples(spec, rows) {
-  const facets = sortX(unique(rows.map((r) => r[spec.facet_field])));
-  const cols = facets.length === 1 ? 1 : 2;
+// P4: stamp every <text> pushed to `parts` since `startIdx` with the box of the
+// panel (its facet cell, out to the gutter that separates it from the next panel) it belongs to, so render QA's text_outside_panel can prove
+// no label spills into a neighbouring panel. Pure attribute addition.
+function tagPanelTexts(parts, startIdx, box) {
+  const attr = ` data-panel-box="${box.map((v) => Number(v).toFixed(1)).join(",")}"`;
+  for (let i = startIdx; i < parts.length; i++) {
+    if (typeof parts[i] === "string" && parts[i].includes("<text ")) parts[i] = parts[i].replace(/<text (?![^>]*data-panel-box)/g, `<text${attr} `);
+  }
+}
+
+// Index-panel labels (end value, 「基期 = 100」) go only where render QA's own estimate finds no data mark: the first
+// candidate whose estimated box (padded 2 px) clears every polyline segment and point circle of the panel, the panel
+// edges and the panel's other texts wins; no clear spot means no label, never one drawn over a mark.
+function indexLabelBox(x, y, text, anchor, bold) {
+  const w = estimateTextWidth(text, 12, bold), x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+  return { x: x0 - 2, y: y - 12 * ASCENT_RATIO - 2, w: w + 4, h: 12 * (ASCENT_RATIO + DESCENT_RATIO) + 4 };
+}
+function indexBoxClear(box, marks, bounds, others) {
+  if (box.x < bounds[0] || box.x + box.w > bounds[2] || box.y < bounds[1] || box.y + box.h > bounds[3]) return false;
+  if (others.some((o) => box.x < o.x + o.w && box.x + box.w > o.x && box.y < o.y + o.h && box.y + box.h > o.y)) return false;
+  for (const c of marks.circles) {
+    const nx = Math.min(Math.max(c.x, box.x), box.x + box.w), ny = Math.min(Math.max(c.y, box.y), box.y + box.h);
+    if ((c.x - nx) ** 2 + (c.y - ny) ** 2 <= (c.r + 1) ** 2) return false;
+  }
+  for (const [a, b] of marks.segments) {
+    let t0 = 0, t1 = 1;
+    const dx = b.x - a.x, dy = b.y - a.y, p = [-dx, dx, -dy, dy], q = [a.x - box.x, box.x + box.w - a.x, a.y - box.y, box.y + box.h - a.y];
+    let hit = true;
+    for (let k = 0; k < 4 && hit; k++) {
+      if (p[k] === 0) { if (q[k] < 0) hit = false; continue; }
+      const r = q[k] / p[k];
+      if (p[k] < 0) { if (r > t1) hit = false; else if (r > t0) t0 = r; } else if (r < t0) hit = false; else if (r < t1) t1 = r;
+    }
+    if (hit) return false;
+  }
+  return true;
+}
+function placeIndexLabel(candidates, text, anchor, bold, marks, bounds, others) {
+  for (const c of candidates) {
+    const box = indexLabelBox(c.x, c.y, text, anchor, bold);
+    if (indexBoxClear(box, marks, bounds, others)) return { x: c.x, y: c.y, box };
+  }
+  return null;
+}
+
+// The base period of a rebased index: the one x value at which every panel's value equals index_base (relative
+// tolerance 1e-9). Returns { x } (first such x in axis order) or { missing: [panels...] }, naming the panels that
+// do not hold the base period the most panels share (every panel when no panel holds the base at all).
+const INDEX_BASE_TOLERANCE = 1e-9;
+export function indexBasePeriod(spec, rows) {
+  const base = n(spec.index_base);
+  const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
+  const holders = new Map();
+  for (const facet of facets) {
+    for (const r of rows) {
+      if (String(r[spec.facet_field]) !== facet) continue;
+      const v = n(r[spec.value_field]);
+      if (v === null || Math.abs(v - base) > INDEX_BASE_TOLERANCE * Math.abs(base)) continue;
+      const key = String(r[spec.x_field]);
+      if (!holders.has(key)) holders.set(key, new Set());
+      holders.get(key).add(facet);
+    }
+  }
+  const common = [...holders.entries()].filter(([, set]) => set.size === facets.length).map(([key]) => key);
+  if (common.length) {
+    const order = sortX(unique(rows.map((r) => r[spec.x_field])));
+    return { x: order.find((v) => common.includes(String(v))) };
+  }
+  const best = [...holders.values()].reduce((m, set) => (set.size > m.size ? set : m), new Set());
+  return { missing: facets.filter((facet) => !best.has(facet)) };
+}
+
+function renderSmallMultiples(spec, rows, { labelRow = false } = {}) {
+  const facets = facetOrder(unique(rows.map((r) => r[spec.facet_field])));
+  // Rebased index panels (opt-in spec.index_base, e.g. 100): 7+ panels go 3-4
+  // columns wide, every panel gets a labelled base line and an end value, and
+  // the first column carries y tick labels.
+  const indexBase = spec.panel_mark !== "dot" && n(spec.index_base) !== null && n(spec.index_base) > 0 ? n(spec.index_base) : null;
+  const cols = facets.length === 1 ? 1 : indexBase !== null && facets.length >= 7 ? (facets.length >= 10 ? 4 : 3) : 2;
   const gapX = 34, gapY = 44;
+  // a rebased index names its base period, never a bare "base": <x> = <base>, e.g. 2023-01 = 100
+  let baseText = "";
+  if (indexBase !== null) {
+    const period = indexBasePeriod(spec, rows);
+    if (period.missing) throw new Error(`INDEX_BASE_NOT_IN_DATA: no x value holds index_base ${indexBase} in every panel (panels without it: ${period.missing.join(", ")})`);
+    baseText = VIZ_STRINGS[vizLang(spec)].indexBase(String(period.x), fmtSpec(spec, indexBase, "", 0));
+  }
+  // when no panel has a clear spot for the label it goes on its own row above the first row of panels
+  const rowShift = labelRow ? 18 : 0;
 
   if (spec.panel_mark === "dot") {
     const groups = facets.map((facet) => rows.filter((r) => String(r[spec.facet_field]) === facet));
@@ -3179,6 +4724,7 @@ function renderSmallMultiples(spec, rows) {
     facets.forEach((facet, fi) => {
       const col = fi % cols, rowN = Math.floor(fi / cols);
       const x0 = 54 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+      const facetPartStart = f.parts.length;
       const group = sortRows(rows.filter((r) => String(r[spec.facet_field]) === facet), spec, spec.value_field);
       const labelW = 150;
       const plotLeft = x0 + labelW, plotRight = x0 + panelW - 12;
@@ -3188,7 +4734,7 @@ function renderSmallMultiples(spec, rows) {
       tickValues(domain, 2).forEach((tick) => {
         const x = xScale(tick);
         f.parts.push(`<line x1="${x}" y1="${plotTop - 4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-        f.parts.push(`<text x="${x}" y="${plotTop - 10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x}" y="${plotTop - 10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.unit))}</text>`);
       });
       const step = Math.max(27, (plotBottom - plotTop) / Math.max(group.length, 1));
       group.forEach((r, i) => {
@@ -3200,7 +4746,7 @@ function renderSmallMultiples(spec, rows) {
         f.parts.push(`<text x="${plotLeft - 9}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(category)}</text>`);
         f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.5"/>`);
         f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted ? 6 : 4.8}" fill="${highlighted ? PALETTE.accent : PALETTE.accent2}"/>`);
-        f.parts.push(`<text x="${x + 7}" y="${y + 4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, spec.unit))}</text>`);
+        f.parts.push(`<text x="${x + 7}" y="${y + 4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, spec.unit))}</text>`);
         pointAnnotations(spec, r).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: "right", layout: f.annotationLayout }));
       });
       refLines.forEach((line, i) => {
@@ -3214,20 +4760,59 @@ function renderSmallMultiples(spec, rows) {
           f.parts.push(`<text data-role="reference-line-label" x="${x + (anchor === "end" ? -5 : 5)}" y="${labelY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 26))}</text>`);
         }
       });
+      tagPanelTexts(f.parts, facetPartStart, [x0 - gapX + 2, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
     });
     addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
   }
 
   const refLines = referenceLineAnnotations(spec);
   const refMargin = referenceLineMargin(refLines);
-  const panelW = 430, panelH = 230 + refMargin;
-  const rowsN = Math.ceil(facets.length / cols);
-  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + 20);
-  const allY = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const yDomain = extent(allY, false);
-  facets.forEach((facet, fi) => {
-    const col = fi % cols, rowN = Math.floor(fi / cols);
-    const x0 = 70 + col * (panelW + gapX), y0 = f.bodyTop + rowN * (panelH + gapY);
+  const idxLeft = indexBase !== null ? 54 + 40 : 70;
+  const panelH = 230 + refMargin;
+  const valuesOf = (list) => list.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
+  const domainOf = (values) => extent(indexBase !== null ? [...values, indexBase] : values, false);
+  const allY = valuesOf(rows);
+  const yDomain = domainOf(allY);
+  // One facet whose range dwarfs the rest squashes every other panel on the shared scale: with at least 4 facets, no
+  // reference line, and a shared span at least 3x the span without the facet that narrows it most, that facet moves to its
+  // own panel under the grid (its own vertical scale, said in a note) and the rest share the narrower domain.
+  // Default off (NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL=1 turns it on): off, the SVG is byte-identical to what it was without this.
+  const outlier = (() => {
+    if (process.env.NEWSROOM_SMALL_MULTIPLES_OUTLIER_PANEL !== "1") return null;
+    if (facets.length < 4 || refLines.length) return null;
+    const span = (d) => d[1] - d[0];
+    let best = null;
+    for (const facet of facets) {
+      const rest = valuesOf(rows.filter((r) => String(r[spec.facet_field]) !== String(facet)));
+      if (!rest.length) continue;
+      const domain = domainOf(rest);
+      if (!best || span(domain) < span(best.domain)) best = { facet, domain };
+    }
+    if (!best || !(span(yDomain) >= 3 * span(best.domain))) return null;
+    const own = valuesOf(rows.filter((r) => String(r[spec.facet_field]) === String(best.facet)));
+    return own.length ? { ...best, ownDomain: domainOf(own) } : null;
+  })();
+  const gridFacets = outlier ? facets.filter((facet) => facet !== outlier.facet) : facets;
+  const gridDomain = outlier ? outlier.domain : yDomain;
+  // the grid's columns follow the facets that stay in it
+  const gridCols = gridFacets.length === 1 ? 1 : indexBase !== null && gridFacets.length >= 7 ? (gridFacets.length >= 10 ? 4 : 3) : 2;
+  const panelW = indexBase !== null && gridCols > 2 ? Math.floor((LAYOUT_W - 54 - idxLeft - (gridCols - 1) * gapX) / gridCols) : 430;
+  const rowsN = Math.ceil(gridFacets.length / gridCols);
+  const f = frame(spec, rowsN * panelH + Math.max(0, rowsN - 1) * gapY + (outlier ? gapY + panelH : 0) + 20 + rowShift);
+  // an index panel puts its gridlines and labels at nice 1-2-5 values that include the base
+  const ticksFor = (domain, nice = indexBase !== null) => {
+    if (!nice) return [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
+    const span = domain[1] - domain[0] || 1, raw = span / 4, mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 5, 10].map((m) => m * mag).find((c) => c >= raw);
+    const out = [];
+    for (let v = Math.ceil((domain[0] - 1e-9) / step) * step; v <= domain[1] + 1e-9; v += step) out.push(Number(v.toPrecision(12)));
+    if (indexBase !== null && !out.some((v) => Math.abs(v - indexBase) < step * 1e-6)) out.push(indexBase);
+    return out.sort((a, b) => a - b);
+  };
+  const idxTicks = ticksFor(gridDomain);
+  let indexBaseNamed = false;
+  const drawFacet = (facet, fi, col, x0, y0, yDomain, idxTicks, panelW, axisLabels = false, boxLeft = x0 - gapX + 2) => {
+    const facetPartStart = f.parts.length;
     const group = rows.filter((r) => String(r[spec.facet_field]) === facet);
     const xs = sortX(unique(group.map((r) => r[spec.x_field])));
     const xMap = new Map(xs.map((v, i) => [String(v), i]));
@@ -3235,10 +4820,24 @@ function renderSmallMultiples(spec, rows) {
     const plotBase = y0 + 30;
     const yScale = verticalScale(yDomain, plotBase + refMargin, y0 + panelH - 30);
     f.parts.push(`<text x="${x0}" y="${y0 + 14}" font-family="${FONT_SANS}" font-size="14" font-weight="700" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(facet, spec.category_names, vizLang(spec)))}</text>`);
-    [yDomain[0], (yDomain[0] + yDomain[1]) / 2, yDomain[1]].forEach((tick) => {
+    idxTicks.forEach((tick) => {
       const y = yScale(tick);
       f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0 + panelW}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
     });
+    if (indexBase !== null) {
+      const by = yScale(indexBase);
+      f.parts.push(`<line data-role="index-base-line" x1="${x0}" y1="${by}" x2="${x0 + panelW}" y2="${by}" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
+      if (col === 0 || axisLabels) {
+        idxTicks.forEach((tick) => {
+          f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
+        });
+      }
+    }
+    if (indexBase === null && axisLabels) {
+      idxTicks.forEach((tick) => {
+        f.parts.push(`<text data-role="value-axis-tick" x="${x0 - 6}" y="${yScale(tick) + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, ""))}</text>`);
+      });
+    }
     const sorted = [...group].sort((a, b) => xMap.get(String(a[spec.x_field])) - xMap.get(String(b[spec.x_field])));
     if (xs.length > 1) {
       const coords = sorted.map((r) => `${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");
@@ -3249,6 +4848,36 @@ function renderSmallMultiples(spec, rows) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.2" fill="${PALETTE.accent2}"/>`);
       pointAnnotations(spec, r).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: "right", layout: f.annotationLayout }));
     });
+    if (indexBase !== null) {
+      const pts = sorted.map((r) => ({ x: xScale(r[spec.x_field]), y: yScale(n(r[spec.value_field])) }));
+      const marks = { circles: pts.map((p) => ({ x: p.x, y: p.y, r: 4.2 })), segments: xs.length > 1 ? pts.slice(1).map((p, i) => [pts[i], p]) : [] };
+      const bounds = [x0, y0, x0 + panelW, y0 + panelH + 4];
+      const others = [indexLabelBox(x0, y0 + 14, resolveEconomyDisplayName(facet, spec.category_names, vizLang(spec)), "start", true)];
+      if (xs.length > 1) others.push(indexLabelBox(x0, y0 + panelH, String(xs[0]), "start", false), indexLabelBox(x0 + panelW, y0 + panelH, String(xs[xs.length - 1]), "end", false));
+      const lv = sorted.length ? n(sorted[sorted.length - 1][spec.value_field]) : null;
+      if (lv !== null) {
+        const ey = yScale(lv), above = lv >= indexBase;
+        const text = fmtSpec(spec, lv, "", 1), ex = x0 + panelW;
+        const cands = [];
+        for (const dy of above ? [-9, 17, -23, 31] : [17, -9, 31, -23]) for (const dx of [0, -14, -28, -42]) cands.push({ x: ex + dx, y: ey + dy });
+        const spot = placeIndexLabel(cands, text, "end", true, marks, bounds, others);
+        if (spot) {
+          others.push(spot.box);
+          f.parts.push(`<text data-role="index-end-value" x="${spot.x}" y="${spot.y}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(text)}</text>`);
+        }
+      }
+      // the base is named once, in the first panel where a clear spot exists; every panel still draws the line
+      if (!indexBaseNamed && !labelRow) {
+        const by = yScale(indexBase), text = baseText;
+        const cands = [];
+        for (const fx of [0, 0.25, 0.5, 0.75]) for (const dy of [-5, 13, -19, 27]) cands.push({ x: x0 + 4 + fx * panelW, y: by + dy });
+        const spot = placeIndexLabel(cands, text, "start", false, marks, bounds, others);
+        if (spot) {
+          indexBaseNamed = true;
+          f.parts.push(`<text data-role="index-base-label" x="${spot.x}" y="${spot.y}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+        }
+      }
+    }
     if (xs.length > 1) {
       f.parts.push(`<text x="${x0}" y="${y0 + panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);
       f.parts.push(`<text x="${x0 + panelW}" y="${y0 + panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length - 1])}</text>`);
@@ -3260,7 +4889,40 @@ function renderSmallMultiples(spec, rows) {
         f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase, i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line, 34))}</text>`);
       }
     });
+    tagPanelTexts(f.parts, facetPartStart, [boxLeft, y0 - gapY + 2, x0 + panelW + gapX - 2, y0 + panelH + gapY - 2]);
+  };
+  gridFacets.forEach((facet, fi) => {
+    const col = fi % gridCols, rowN = Math.floor(fi / gridCols);
+    drawFacet(facet, fi, col, idxLeft + col * (panelW + gapX), f.bodyTop + rowShift + rowN * (panelH + gapY), gridDomain, idxTicks, panelW);
   });
+  if (outlier) {
+    const gridW = gridCols * panelW + (gridCols - 1) * gapX;
+    const y0 = f.bodyTop + rowShift + rowsN * (panelH + gapY);
+    const name = resolveEconomyDisplayName(outlier.facet, spec.category_names, vizLang(spec));
+    // y labels come from tickValues on the panel's own domain: at least 3 inside it, plus the base when one is set
+    let ownTicks = [];
+    for (const count of [4, 6, 8, 12, 16, 24]) {
+      ownTicks = tickValues(outlier.ownDomain, count).filter((v) => v >= outlier.ownDomain[0] - 1e-9 && v <= outlier.ownDomain[1] + 1e-9);
+      if (ownTicks.length >= 3) break;
+    }
+    if (ownTicks.length < 3) ownTicks = [outlier.ownDomain[0], (outlier.ownDomain[0] + outlier.ownDomain[1]) / 2, outlier.ownDomain[1]];
+    if (indexBase !== null && !ownTicks.some((v) => Math.abs(v - indexBase) < 1e-9 * Math.max(1, Math.abs(indexBase)))) ownTicks.push(indexBase);
+    ownTicks.sort((a, b) => a - b);
+    // keep the widest y label 2 px inside the panel box: move the panel's left edge right by any shortfall
+    const boxLeft = idxLeft - gapX + 2;
+    const labelW = Math.max(...ownTicks.map((tick) => estimateTextWidth(tickLabelSpec(spec, tick, ""), 12, false)));
+    const shift = Math.max(0, Math.ceil(boxLeft + 2 + 6 + 2 + labelW - idxLeft));
+    const x0 = idxLeft + shift;
+    const noteStart = f.parts.length;
+    const note = vizLang(spec) === "zh" ? `${name}与其他各项数值相差悬殊，单独成图，纵轴刻度与上面各图不同` : `${name} is far outside the others' range, so it has its own panel with a different vertical scale.`;
+    f.parts.push(`<text data-role="outlier-note" x="${x0}" y="${y0 - 14}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(note)}</text>`);
+    tagPanelTexts(f.parts, noteStart, [boxLeft, y0 - gapY + 2, idxLeft + gridW + gapX - 2, y0 + panelH + gapY - 2]);
+    drawFacet(outlier.facet, gridFacets.length, 0, x0, y0, outlier.ownDomain, ownTicks, gridW - shift, true, boxLeft);
+  }
+  if (indexBase !== null && !indexBaseNamed) {
+    if (!labelRow) return renderSmallMultiples(spec, rows, { labelRow: true });
+    f.parts.push(`<text data-role="index-base-label" x="${idxLeft}" y="${f.bodyTop + 12}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(baseText)}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
@@ -3277,10 +4939,10 @@ function renderScatter(spec, rows) {
   const yTicks = spec.y_scale === "log" ? logTickValues(yDomainRaw) : tickValues(yDomainRaw, 4);
   yTicks.forEach((tick) => {
     const y = yScale(tick); f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.y_unit ?? spec.unit))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.y_unit ?? spec.unit))}</text>`);
   });
   xInfo.ticks.forEach((tick) => {
-    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? ""))}</text>`);
+    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? "", vizLang(spec)))}</text>`);
   });
   if (spec.x_label) f.parts.push(`<text x="${(left + right) / 2}" y="${bottom + 50}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   if (spec.y_label) f.parts.push(`<text x="18" y="${(top + bottom) / 2}" transform="rotate(-90 18 ${(top + bottom) / 2})" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.y_label)}</text>`);
@@ -3292,15 +4954,102 @@ function renderScatter(spec, rows) {
     f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted ? 6 : 4}" fill="${highlighted ? PALETTE.accent : PALETTE.accent2}" opacity="${highlighted ? 1 : 0.68}"/>`);
     if (highlighted) {
       const labelSide = px > right - 150 ? "left" : "right";
-      const placedLabel = f.annotationLayout.place(px, py, label, labelSide, 1);
-      if (Math.abs(placedLabel.ty - (py - 13)) > 10) f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${px + placedLabel.dx * 0.7}" y2="${placedLabel.ty + 3}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
-      f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);
+      // The raw value stays the point's identity (the highlight match above); what is measured, laid out and drawn is its resolved name.
+      const shownLabel = resolveEconomyDisplayName(label, spec.category_names, vizLang(spec));
+      const placedLabel = f.annotationLayout.place(px, py, shownLabel, labelSide, 1);
+      if (Math.abs(placedLabel.ty - (py - 13)) > 10) {
+        const leaderEnd = leaderEndShortOfLabel(px, py, placedLabel);
+        f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+      }
+      f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(shownLabel)}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, px, py, { side: px > right - 180 ? "left" : "right", layout: f.annotationLayout, maxChars: 38, maxLines: 3 }));
   });
-  if (spec.x_scale === "log") f.parts.push(`<text x="${right}" y="${bottom + 50}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${VIZ_STRINGS[vizLang(spec)].logScale}</text>`);
+  // Auto labels (a scatter of many points names only its outliers): the two
+  // extremes on each axis (up to 8 distinct points, most extreme first), after
+  // the highlighted entities, capped so labelled points total about 8. Same
+  // collision-avoiding placer and leader as the highlighted labels.
+  const autoLabelField = spec.label_field ?? spec.category_field;
+  if (autoLabelField) {
+    const lang = vizLang(spec);
+    const highlightSet = new Set((spec.highlight_values ?? []).map(String));
+    const pts = rows.map((row) => ({ row, x: n(row[spec.x_field]), y: n(row[spec.y_field]), label: String(row[autoLabelField] ?? "") })).filter((p) => p.x !== null && p.y !== null && p.label);
+    const shown = new Set(pts.filter((p) => highlightSet.has(p.label)).map((p) => p.label));
+    const byX = [...pts].sort((a, b) => b.x - a.x), byY = [...pts].sort((a, b) => b.y - a.y);
+    const order = [];
+    for (let k = 0; k < 2; k++) order.push(byX[k], byX[byX.length - 1 - k], byY[k], byY[byY.length - 1 - k]);
+    const MAX_LABELLED = 8;
+    for (const p of order) {
+      if (!p || shown.size >= MAX_LABELLED) continue;
+      if (shown.has(p.label)) continue;
+      shown.add(p.label);
+      const px = xInfo.scale(p.x), py = yScale(p.y);
+      const labelSide = px > right - 150 ? "left" : "right";
+      const text = resolveEconomyDisplayName(p.label, spec.category_names, lang);
+      const placedLabel = f.annotationLayout.place(px, py, text, labelSide, 1);
+      if (Math.hypot(placedLabel.tx - px, placedLabel.ty - py) > 28) {
+        const leaderEnd = leaderEndShortOfLabel(px, py, placedLabel);
+        f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+      }
+      f.parts.push(`<text data-role="auto-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(text)}</text>`);
+    }
+  }
+  // 对数刻度 / log scale: said once per log axis. An axis title or the subtitle
+  // that already says it counts; the chart then adds nothing of its own.
+  {
+    const logWord = VIZ_STRINGS[vizLang(spec)].logScale;
+    const said = (text) => String(text ?? "").includes(logWord);
+    if (spec.x_scale === "log" && !said(spec.x_label) && !said(spec.subtitle)) f.parts.push(`<text x="${right}" y="${bottom + 50}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${logWord}</text>`);
+    if (spec.y_scale === "log" && !said(spec.y_label) && !said(spec.subtitle)) f.parts.push(`<text x="${left}" y="${top - 8}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${logWord}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
+
+// Desktop heatmap tidy-up (exact "1", default off): the colour domain and legend ends are the data's own min and max,
+// cells carry bare numbers on the shared decimal count, and the unit is said once beside the legend.
+function heatmapFixedDecimals(spec, values, count) {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (HOUSE_STYLE_ACTIVE && spec?.unit !== "%" && vizLang(spec) === "zh" && finite.some((v) => Math.abs(v) >= 10_000)) {
+    const top = Math.max(...finite.map((v) => Math.abs(v)));
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    return { zhScale: { div, suffix }, decimals: count };
+  }
+  return count;
+}
+function heatmapTidyEnabled(){ return process.env.NEWSROOM_HEATMAP_TIDY==="1"; }
+// Shared decimal count of the tidy heatmap (cells and legend); render QA re-derives the expected cell text from it.
+function heatmapTidyDecimals(spec, vals){
+  // An explicit spec.decimals is kept as written (heatmap-only exception: ties at the stated precision are normal in a
+  // grid, the colour carries the rest). A non-zero value still never prints as zero: fmt() falls back to its own digits.
+  const explicitDecimals = Number.isInteger(spec.decimals) && spec.decimals >= 0 && spec.decimals <= 3 ? spec.decimals : null;
+  return explicitDecimals === null ? heatmapBaseDecimals(spec, vals) : heatmapFixedDecimals(spec, vals, explicitDecimals);
+}
+// The real chart path never carries spec.decimals, so the tidy heatmap's own default is the shared formatter's BASE
+// precision - fmt()'s magnitude rule applied once, to the largest value (>=100: none, 10..100: one, below 10: two) -
+// without resolveChartDecimals' collision raise: ties at the stated precision are normal in a grid and the colour carries
+// the rest (rule 3's raise turned a 0.668-22.087 grid into three decimals). Rule 5 still holds: fmt() never prints a
+// non-zero value as zero. A "%" unit or house style off keeps one decimal, as before.
+function heatmapBaseDecimals(spec, vals){
+  if (!HOUSE_STYLE_ACTIVE || spec?.unit === "%") return 1;
+  const finite = vals.filter((v) => Number.isFinite(v));
+  if (!finite.length) return 1;
+  const top = Math.max(...finite.map((v) => Math.abs(v)));
+  if (vizLang(spec) === "zh" && top >= 10_000) {
+    const [div, suffix] = top >= 1e12 ? [1e12, "万亿"] : top >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
+    const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+    const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+    return { zhScale: { div, suffix }, decimals: auto };
+  }
+  return top >= 100 ? 0 : top >= 10 ? 1 : top > 0 ? 2 : 1;
+}
+// What a heatmap cell prints for a value, exactly as renderHeatmap spells it (render QA proves it against the SVG).
+export function heatmapCellText(spec, rows, value){
+  const vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null);
+  return heatmapTidyEnabled() ? fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals)) : fmtSpec(spec, value, spec.unit);
+}
+// NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1"): desktop cells carry data-role/data-x/data-y/data-value so render QA can prove
+// every cell shows its value (editorial_validators.mjs heatmapValueLabelsProven).
+function heatmapValueLabelsEnabled(){ return process.env.NEWSROOM_HEATMAP_VALUE_LABELS==="1"; }
 
 function renderHeatmap(spec, rows) {
   const xs = unique(rows.map((r) => r[spec.x_field]));
@@ -3310,7 +5059,10 @@ function renderHeatmap(spec, rows) {
   const left = 190, right = 950, top = f.bodyTop + 35, bottom = f.bodyBottom - 40;
   const cellW = (right - left) / Math.max(1, xs.length), cellH = (bottom - top) / Math.max(1, ys.length);
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
-  const [min, max] = extent(vals, false);
+  const tidy = heatmapTidyEnabled();
+  const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const tidyDecimals = tidy ? heatmapTidyDecimals(spec, vals) : null;
+  const proofOn = heatmapValueLabelsEnabled();
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
   const mixChannels = (t) => {
     const a = [242, 243, 244], b = [209, 73, 63];
@@ -3327,22 +5079,522 @@ function renderHeatmap(spec, rows) {
       const value = index.get(`${xv}\u0000${yv}`); if (value === null || value === undefined) return;
       const t = (value - min) / (max - min || 1);
       const x = left + xi * cellW, y = top + yi * cellH;
-      f.parts.push(`<rect x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
+      const cellAttrs = proofOn ? ` data-role="heatmap-cell" data-x="${esc(xv)}" data-y="${esc(yv)}" data-value="${value}"` : "";
+      f.parts.push(`<rect${cellAttrs} x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value, spec.unit))}</text>`);
+        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
   const legendY=bottom+13, legendW=150;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-d" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-d)"/>`);
-  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(min,spec.unit))}</text>`);
-  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(max,spec.unit))}</text>`);
+  if (tidy) {
+    const legendText = (x, anchor, v) => `<text x="${x}" y="${legendY+22}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, v, "", tidyDecimals))}</text>`;
+    f.parts.push(legendText(left, "start", min), legendText(left+legendW/2, "middle", (min+max)/2), legendText(left+legendW, "end", max));
+    if (spec.unit) f.parts.push(`<text data-role="heatmap-unit" x="${left+legendW+16}" y="${legendY+8}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${vizLang(spec)==="zh"?"单位：":"Unit: "}${spec.unit}`)}</text>`);
+  } else {
+  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
+  }
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+
+// ===========================================================================
+// strip_plot: a dot strip plot. One row per group on one shared linear value
+// axis and one dot per unit inside the group - "how spread out is each group,
+// and where are the extremes?". The FT Visual Vocabulary files it under
+// Distribution and Datawrapper draws its range/strip plots the same way. The
+// form is generic: groups, units and values are named by role
+// (category_field / label_field / value_field), never by topic.
+//
+// Text the chart prints: the group names (row labels), the axis ticks, the
+// median key, and at most STRIP_MAX_LABEL_EXTREMES "name value" labels whose
+// value is the unit's own value_field value through fmtSpec. The per-group
+// median (and the jitter offset) are derived, so they are drawn as marks only
+// and never printed.
+//
+// Everything below is deterministic: jitter offsets come from a sha256 of the
+// unit's label and row index, the beeswarm is a greedy dodge, and the extreme
+// labels are placed by a fixed candidate search - no Math.random anywhere.
+// The label search measures text with the same width tables the render-QA
+// geometry check uses (imported, not copied), so a label it accepts is one
+// that check accepts too.
+// ===========================================================================
+const STRIP_GROUP_ORDERS = ["median_desc", "median_asc", "data"];
+const STRIP_POINT_LAYOUTS = ["jitter", "beeswarm"]; // point_layout: "beeswarm" is the default, "jitter" the opt-in
+const STRIP_MAX_LABEL_EXTREMES = 6;
+const STRIP_DEFAULT_LABEL_EXTREMES = 4;
+const STRIP_MAX_GROUPS = 40;
+const STRIP_WARN_GROUPS = 30;
+const STRIP_MAX_POINTS = 600;
+const STRIP_DOT_RADIUS = 3;
+const STRIP_DOT_OPACITY = 0.5;
+const STRIP_FONT_SIZE = 12;
+const STRIP_LABEL_WEIGHT = 600;
+// Row band: 480px of rows shared by the groups, never thinner than 17px (a
+// 35-row chart is 17px per row) and never fatter than 28px, so a chart with
+// more rows grows taller instead of squeezing its rows.
+const STRIP_BAND_TARGET = 480;
+const STRIP_MIN_BAND = 17;
+const STRIP_MAX_BAND = 28;
+const STRIP_MAX_JITTER = 9;
+const STRIP_TICK_TARGET = 6;
+const STRIP_MIN_PLOT_WIDTH = 360;
+// Extreme-label search: the label sits STRIP_LABEL_GAP px from the dot's edge
+// (no leader) or, when that spot is taken, further out along one of
+// STRIP_LABEL_TURNS directions in STRIP_LABEL_STEP px steps, with a short
+// leader once it no longer touches the dot.
+const STRIP_LABEL_GAP = 4;
+const STRIP_LABEL_STEP = 6;
+const STRIP_LABEL_STEPS = 24;
+const STRIP_LABEL_TURNS = 24;
+// Extra px reserved right of a high label so rounding never pushes it past the limit.
+const STRIP_LABEL_SLACK = 3;
+// Label layout search: candidates tried per label at each level, and the total
+// number of placements it may try before settling for the first-choice layout.
+const STRIP_SEARCH_BREADTH = 10;
+const STRIP_SEARCH_BUDGET = 20000;
+// Same literal as WIDE_CHAR_RE in render_qa_geometry.mjs (not exported there):
+// CJK, kana, hangul and full-width forms all measure one em wide.
+const STRIP_WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
+// render_qa_geometry.mjs FALLBACK_LATIN_WIDTH (not exported there): the width
+// it assumes for a character missing from both advance-width tables.
+const STRIP_FALLBACK_LATIN_WIDTH = 1.02;
+
+// Lint for the strip_plot-only rules. The generic rules (non-finite or missing
+// value, unknown fields, ...) stay in lintVizSpec; the field-value rules
+// (label_extremes, group_order, ...) are validateVizSpec errors, which
+// lintVizSpec already turns into blockers.
+function lintStripPlotSpec(spec, rows) {
+  const blockers = [];
+  const warnings = [];
+  const list = Array.isArray(rows) ? rows : [];
+  const groupCount = new Set(list.map((row) => String(row?.[spec.category_field] ?? "")).filter(Boolean)).size;
+  if (groupCount > STRIP_MAX_GROUPS) blockers.push(`strip_plot has ${groupCount} groups; maximum is ${STRIP_MAX_GROUPS}`);
+  else if (groupCount > STRIP_WARN_GROUPS) warnings.push(`strip_plot has ${groupCount} groups; more than ${STRIP_WARN_GROUPS} rows are hard to read`);
+  if (list.length > STRIP_MAX_POINTS) blockers.push(`strip_plot has ${list.length} points; maximum is ${STRIP_MAX_POINTS}`);
+  const extremes = spec.label_extremes ?? STRIP_DEFAULT_LABEL_EXTREMES;
+  if (Number.isInteger(extremes) && extremes > 0) {
+    if (!spec.label_field) warnings.push("strip_plot label_extremes is above 0 but no label_field is set, so no extreme labels are drawn");
+    else if (!fieldExists(list, spec.label_field)) warnings.push(`strip_plot label_field '${spec.label_field}' is absent from the rows, so no extreme labels are drawn`);
+  }
+  return { blockers, warnings };
+}
+
+// Text size exactly as render_qa_geometry.mjs estimates it (same tables, same
+// 1.05 safety margin, same bold switch), so label placement and the QA gate
+// agree on every box.
+function stripTextWidth(text, bold) {
+  const table = bold ? QA_LATIN_BOLD_ADVANCE_WIDTHS : QA_LATIN_ADVANCE_WIDTHS;
+  let units = 0;
+  for (const ch of Array.from(String(text))) {
+    if (/\s/.test(ch)) units += QA_TEXT_WIDTH_FACTORS.space;
+    else if (STRIP_WIDE_CHAR_RE.test(ch)) units += QA_TEXT_WIDTH_FACTORS.cjk;
+    else units += table[ch] ?? STRIP_FALLBACK_LATIN_WIDTH;
+  }
+  return units * STRIP_FONT_SIZE * QA_TEXT_WIDTH_FACTORS.safetyMargin;
+}
+
+function stripTextBox(text, x, baseline, anchor, bold) {
+  const width = stripTextWidth(text, bold);
+  const x0 = anchor === "end" ? x - width : anchor === "middle" ? x - width / 2 : x;
+  return { x0, x1: x0 + width, y0: baseline - STRIP_FONT_SIZE * QA_ASCENT_RATIO, y1: baseline + STRIP_FONT_SIZE * QA_DESCENT_RATIO };
+}
+
+function stripBoxesOverlap(a, b, pad = 0) {
+  return a.x0 - pad < b.x1 && a.x1 + pad > b.x0 && a.y0 - pad < b.y1 && a.y1 + pad > b.y0;
+}
+
+function stripCircleHitsBox(circle, box, pad = 0) {
+  const nearestX = Math.max(box.x0 - pad, Math.min(circle.x, box.x1 + pad));
+  const nearestY = Math.max(box.y0 - pad, Math.min(circle.y, box.y1 + pad));
+  return Math.hypot(circle.x - nearestX, circle.y - nearestY) <= circle.r;
+}
+
+// Liang-Barsky clip of the segment a-b against the box grown by pad.
+function stripSegmentHitsBox(a, b, box, pad = 0) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  let t0 = 0, t1 = 1;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0;
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    return true;
+  };
+  return clip(-dx, a.x - (box.x0 - pad)) && clip(dx, box.x1 + pad - a.x) && clip(-dy, a.y - (box.y0 - pad)) && clip(dy, box.y1 + pad - a.y);
+}
+
+function stripSegmentsCross(a1, a2, b1, b2) {
+  const side = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = side(b1, b2, a1), d2 = side(b1, b2, a2), d3 = side(a1, a2, b1), d4 = side(a1, a2, b2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+function stripPointSegmentDistance(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// The median of an ascending, non-empty list. It orders the rows and places
+// the median tick; it is never printed.
+function stripMedian(sorted) {
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Value axis: starts at 0 when every value is >= 0 and the smallest is below a
+// quarter of the largest (a zero baseline then costs the dots no resolution);
+// otherwise at a rounded value strictly below the smallest. The top end is a
+// rounded value strictly above the largest. Ticks are integer multiples of one
+// {1,2,5}x10^k step, so none is float noise like 0.30000000000000004.
+function stripAxis(values) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const fromZero = min >= 0 && min < max / 4;
+  const span = fromZero ? max : (max > min ? max - min : Math.max(Math.abs(max), 1));
+  const step = niceAxisStep(span / STRIP_TICK_TARGET);
+  let first = fromZero ? 0 : Math.floor(min / step);
+  if (!fromZero && first * step >= min) first -= 1;
+  let last = Math.ceil(max / step);
+  if (last * step <= max) last += 1;
+  const ticks = [];
+  for (let k = first; k <= last; k++) ticks.push(Number((k * step).toPrecision(12)));
+  return { lo: ticks[0], hi: ticks[ticks.length - 1], step, ticks };
+}
+
+// A reproducible number in [0, 1) from a seed string (jitter offsets).
+function stripHashUnit(seed) {
+  return createHash("sha256").update(seed).digest().readUInt32BE(0) / 4294967296;
+}
+
+// Greedy beeswarm dodge inside one row band. Dots are placed left to right;
+// each takes the lane (vertical offset, whole pixels, centre lane first and
+// alternating sides) nearest the row centre where it clears every dot already
+// placed, or the lane with the most clearance when the band is too tight.
+function stripBeeswarmOffsets(xs, amp, minDistance) {
+  const order = xs.map((_x, i) => i).sort((a, b) => xs[a] - xs[b] || a - b);
+  const lanes = [0];
+  for (let k = 1; k <= Math.floor(amp); k++) lanes.push(k, -k);
+  const placed = [];
+  const offsets = new Array(xs.length).fill(0);
+  order.forEach((i, rank) => {
+    let chosen = 0, chosenGap = -1;
+    for (const lane of lanes) {
+      const y = rank % 2 === 1 ? -lane : lane;
+      let gap = Infinity;
+      for (const other of placed) gap = Math.min(gap, Math.hypot(other.x - xs[i], other.y - y));
+      if (gap >= minDistance) { chosen = y; chosenGap = gap; break; }
+      if (gap > chosenGap) { chosen = y; chosenGap = gap; }
+    }
+    offsets[i] = chosen;
+    placed.push({ x: xs[i], y: chosen });
+  });
+  return offsets;
+}
+
+// Every position an extreme label may take, cheapest first. The label is set
+// at distance d from its dot's centre along one of STRIP_LABEL_TURNS evenly
+// spaced directions, reading rightwards when the direction points right and
+// leftwards otherwise, and always keeps STRIP_LABEL_GAP px clear of its own
+// dot. Cost grows with the distance and with the turn away from "straight to
+// the right"; a label that does not touch its dot gets a leader that stops 2px
+// before the text.
+function stripLabelCandidates(label) {
+  const dot = label.dot;
+  const bold = STRIP_LABEL_WEIGHT >= QA_BOLD_WEIGHT_THRESHOLD;
+  const found = [];
+  const round2 = (value) => Math.round(value * 100) / 100;
+  for (let s = 0; s < STRIP_LABEL_STEPS; s++) {
+    const d = STRIP_DOT_RADIUS + STRIP_LABEL_GAP + s * STRIP_LABEL_STEP;
+    for (let k = 0; k < STRIP_LABEL_TURNS; k++) {
+      const turn = (k < STRIP_LABEL_TURNS / 2 ? k : k - STRIP_LABEL_TURNS) * (360 / STRIP_LABEL_TURNS);
+      const rad = (turn * Math.PI) / 180;
+      const ux = Math.round(Math.cos(rad) * 1e4) / 1e4;
+      const uy = Math.round(Math.sin(rad) * 1e4) / 1e4;
+      const anchor = ux >= -0.01 ? "start" : "end";
+      const tx = round2(dot.x + d * ux);
+      const baseline = round2(dot.y + d * uy + 4);
+      const box = stripTextBox(label.text, tx, baseline, anchor, bold);
+      const nearX = Math.max(box.x0, Math.min(dot.x, box.x1));
+      const nearY = Math.max(box.y0, Math.min(dot.y, box.y1));
+      const near = Math.hypot(nearX - dot.x, nearY - dot.y);
+      if (near < STRIP_DOT_RADIUS + STRIP_LABEL_GAP - 0.01) continue;
+      const touching = near <= STRIP_DOT_RADIUS + STRIP_LABEL_GAP + 1;
+      let leader = null;
+      if (!touching) {
+        const end = { x: anchor === "start" ? box.x0 - 2 : box.x1 + 2, y: baseline - 4 };
+        const length = Math.hypot(end.x - dot.x, end.y - dot.y);
+        const f = (STRIP_DOT_RADIUS + 0.8) / length;
+        leader = { a: { x: dot.x + (end.x - dot.x) * f, y: dot.y + (end.y - dot.y) * f }, b: end };
+      }
+      found.push({ tx, baseline, anchor, box, leader, cost: d + 0.2 * Math.abs(turn) + (touching ? 0 : 6) + (anchor === "end" ? 1 : 0) });
+    }
+  }
+  return found.sort((a, b) => a.cost - b.cost);
+}
+
+// Constraints that depend only on what is already on the page (dots, fixed
+// text, median ticks, the label bounds). strict: a leader may not pass within a
+// dot's radius (+1.5px) of any other dot or cross a median tick; the relaxed
+// test drops only those two rules. A label never overlaps a dot, other text or
+// a median tick, and a leader never crosses text, in either test.
+function stripCandidateFitsFixed(candidate, label, ctx, strict) {
+  const { box, leader } = candidate;
+  const b = ctx.bounds;
+  if (box.x0 < b.x0 || box.x1 > b.x1 || box.y0 < b.y0 || box.y1 > b.y1) return false;
+  for (const circle of ctx.circles) if (stripCircleHitsBox(circle, box, 1.5)) return false;
+  for (const other of ctx.boxes) if (stripBoxesOverlap(box, other, 2)) return false;
+  for (const tick of ctx.segments) if (stripSegmentHitsBox(tick.a, tick.b, box, 1.5)) return false;
+  if (!leader) return true;
+  if (stripSegmentHitsBox(leader.a, leader.b, box, 1.5)) return false;
+  for (const other of ctx.boxes) if (stripSegmentHitsBox(leader.a, leader.b, other, 1.5)) return false;
+  if (strict) {
+    for (const circle of ctx.circles) {
+      if (circle === label.dot) continue;
+      if (stripPointSegmentDistance(circle, leader.a, leader.b) < circle.r + 1.5) return false;
+    }
+    for (const tick of ctx.segments) if (stripSegmentsCross(leader.a, leader.b, tick.a, tick.b)) return false;
+  }
+  return true;
+}
+
+// Constraints against the labels already placed: no overlapping text, no label
+// on another label's leader, no leader across another label's text or leader.
+function stripCandidateFitsPlaced(candidate, placed) {
+  const { box, leader } = candidate;
+  for (const other of placed) {
+    if (stripBoxesOverlap(box, other.box, 2)) return false;
+    if (other.leader && stripSegmentHitsBox(other.leader.a, other.leader.b, box, 1.5)) return false;
+    if (!leader) continue;
+    if (stripSegmentHitsBox(leader.a, leader.b, other.box, 1.5)) return false;
+    if (other.leader && stripSegmentsCross(leader.a, leader.b, other.leader.a, other.leader.b)) return false;
+  }
+  return true;
+}
+
+// Places the labels (highest values first, then lowest). Each label has its
+// candidates in preference order - strict ones before relaxed ones, cheapest
+// first. The labels are placed one after another at their first candidate that
+// clears the labels already placed; when a later label is left with no
+// position, the search backs up and gives an earlier label its next candidate
+// (depth first, STRIP_SEARCH_BREADTH candidates per label, STRIP_SEARCH_BUDGET
+// steps in all, so the layout is always the same for the same input). Whenever
+// the first choices already work the result is exactly that first-choice
+// layout. A label that still has no position is left out rather than drawn over
+// something.
+function stripPlaceLabels(labels, ctx) {
+  const options = labels.map((label) => {
+    const strict = [];
+    const relaxed = [];
+    for (const candidate of stripLabelCandidates(label)) {
+      if (!stripCandidateFitsFixed(candidate, label, ctx, false)) continue;
+      (stripCandidateFitsFixed(candidate, label, ctx, true) ? strict : relaxed).push(candidate);
+    }
+    return [...strict, ...relaxed];
+  });
+  const omitted = labels.filter((_label, i) => options[i].length === 0);
+  const todo = labels.map((_label, i) => i).filter((i) => options[i].length > 0);
+  const picks = [];
+  let budget = STRIP_SEARCH_BUDGET;
+  const search = (depth) => {
+    if (depth === todo.length) return true;
+    let tried = 0;
+    for (const candidate of options[todo[depth]]) {
+      if (budget <= 0 || tried >= STRIP_SEARCH_BREADTH) return false;
+      if (!stripCandidateFitsPlaced(candidate, picks)) continue;
+      tried++;
+      budget--;
+      picks.push(candidate);
+      if (search(depth + 1)) return true;
+      picks.pop();
+    }
+    return false;
+  };
+  if (search(0)) return { placed: picks.map((candidate, k) => ({ label: labels[todo[k]], ...candidate })), omitted };
+  const placed = [];
+  for (const i of todo) {
+    const candidate = options[i].find((option) => stripCandidateFitsPlaced(option, placed));
+    if (candidate) placed.push({ label: labels[i], ...candidate });
+    else omitted.push(labels[i]);
+  }
+  return { placed, omitted };
+}
+
+function renderStripPlot(spec, rows) {
+  const lang = vizLang(spec);
+  const strings = VIZ_STRINGS[lang];
+  const categoryField = spec.category_field;
+  const valueField = spec.value_field;
+  const labelField = spec.label_field && fieldExists(rows, spec.label_field) ? spec.label_field : null;
+  const order = STRIP_GROUP_ORDERS.includes(spec.group_order) ? spec.group_order : "median_desc";
+  const layout = spec.point_layout === "jitter" ? "jitter" : "beeswarm"; // beeswarm unless jitter is asked for
+  const showMedian = spec.show_median !== false;
+  const extremeCount = Number.isInteger(spec.label_extremes) ? spec.label_extremes : STRIP_DEFAULT_LABEL_EXTREMES;
+  const highlight = new Set((Array.isArray(spec.highlight_values) ? spec.highlight_values : []).map(String));
+  const q = (value) => Math.round(value * 100) / 100;
+  const r = STRIP_DOT_RADIUS;
+
+  // Units, then groups (rows). A unit without a group name or a finite value
+  // is not drawn (lintVizSpec blocks a non-finite value before this point).
+  const points = [];
+  rows.forEach((row, index) => {
+    const group = String(row[categoryField] ?? "");
+    const value = n(row[valueField]);
+    if (!group || value === null) return;
+    points.push({ index, group, value, name: labelField ? String(row[labelField] ?? "").trim() : "" });
+  });
+  const byGroup = new Map();
+  for (const point of points) {
+    if (!byGroup.has(point.group)) byGroup.set(point.group, { key: point.group, first: byGroup.size, pts: [] });
+    byGroup.get(point.group).pts.push(point);
+  }
+  const groups = [...byGroup.values()];
+  for (const group of groups) group.median = stripMedian(group.pts.map((point) => point.value).sort((a, b) => a - b));
+  if (order !== "data") {
+    const sign = order === "median_desc" ? -1 : 1;
+    groups.sort((a, b) => sign * (a.median - b.median) || a.first - b.first);
+  }
+  groups.forEach((group, row) => {
+    group.row = row;
+    group.display = String(resolveEconomyDisplayName(group.key, spec.category_names, lang));
+    for (const point of group.pts) point.row = row;
+  });
+  const rowCount = groups.length;
+
+  // Extreme units of the whole chart: the ceil(n/2) highest and the floor(n/2)
+  // lowest, never the same unit twice. Labels read "name value"; in house style
+  // only the top-most label carries the unit (the "unit once" convention).
+  let highs = [];
+  let lows = [];
+  if (labelField && extremeCount > 0) {
+    highs = [...points].sort((a, b) => b.value - a.value || a.index - b.index).slice(0, Math.ceil(extremeCount / 2));
+    const taken = new Set(highs);
+    lows = [...points].sort((a, b) => a.value - b.value || a.index - b.index).filter((point) => !taken.has(point)).slice(0, Math.floor(extremeCount / 2));
+  }
+  const labeled = [...highs.map((point) => ({ point, high: true })), ...lows.map((point) => ({ point, high: false }))];
+  const labelDecimals = resolveChartDecimals(spec, labeled.map((item) => item.point.value));
+  const unitOwner = labeled.reduce((best, item) => (!best || item.point.row < best.point.row ? item : best), null);
+  for (const item of labeled) {
+    const valueText = fmtSpec(spec, item.point.value, HOUSE_STYLE_ACTIVE && item !== unitOwner ? "" : spec.unit, labelDecimals);
+    item.text = item.point.name ? `${item.point.name} ${valueText}` : valueText;
+    item.width = stripTextWidth(item.text, STRIP_LABEL_WEIGHT >= QA_BOLD_WEIGHT_THRESHOLD);
+  }
+
+  // Frame and plot box. The row-label column is as wide as the widest group
+  // name; the right edge leaves room for the high-side labels, which sit just
+  // right of their dots.
+  const axis = stripAxis(points.length ? points.map((point) => point.value) : [0, 1]);
+  const catX = 54 + Math.max(24, Math.ceil(Math.max(0, ...groups.map((group) => stripTextWidth(group.display, false)))));
+  const left = catX + 20;
+  const band = clamp(Math.round(STRIP_BAND_TARGET / Math.max(rowCount, 1)), STRIP_MIN_BAND, STRIP_MAX_BAND);
+  const amp = Math.min(STRIP_MAX_JITTER, (band - 2 * r - 1.5) / 2);
+  const keyHeight = showMedian && rowCount ? 26 : 8;
+  const f = frame(spec, keyHeight + rowCount * band + 34, 300);
+  const top = f.bodyTop + keyHeight;
+  const bottom = top + rowCount * band;
+  const rowCenters = groups.map((_group, i) => top + band * (i + 0.5));
+  const labelLimit = LAYOUT_W - 54;
+  let right = labelLimit;
+  for (const item of labeled) {
+    if (!item.high) continue;
+    const fraction = (item.point.value - axis.lo) / (axis.hi - axis.lo);
+    if (fraction > 0) right = Math.min(right, left + (labelLimit - (r + STRIP_LABEL_GAP + item.width + STRIP_LABEL_SLACK) - left) / fraction);
+  }
+  right = Math.min(labelLimit, Math.max(right, left + STRIP_MIN_PLOT_WIDTH));
+  const scale = (value) => left + ((value - axis.lo) / (axis.hi - axis.lo)) * (right - left);
+
+  // Dot positions: x from the value, y offset inside the row band by the
+  // chosen layout. A group with a single unit sits on its row's centre line.
+  for (const group of groups) {
+    const xs = group.pts.map((point) => scale(point.value));
+    const offsets = group.pts.length < 2
+      ? group.pts.map(() => 0)
+      : layout === "beeswarm"
+        ? stripBeeswarmOffsets(xs, amp, 2 * r + 0.4)
+        : group.pts.map((point) => (stripHashUnit(`${point.name || group.key}|${point.index}`) * 2 - 1) * amp);
+    group.pts.forEach((point, k) => {
+      point.dot = { x: q(xs[k]), y: q(rowCenters[group.row] + offsets[k]), r };
+    });
+  }
+
+  const parts = f.parts;
+  const fixedBoxes = [];
+  // Row guides and vertical gridlines come first so every mark covers them.
+  for (const group of groups) {
+    const y = q(rowCenters[group.row]);
+    parts.push(`<line x1="${q(left)}" y1="${y}" x2="${q(right)}" y2="${y}" stroke="${PALETTE.faint}" stroke-width="1"/>`);
+  }
+  axis.ticks.forEach((tick) => {
+    const x = q(scale(tick));
+    parts.push(`<line x1="${x}" y1="${q(top)}" x2="${x}" y2="${q(bottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  });
+  if (axis.lo === 0) {
+    parts.push(`<line data-role="zero-line" x1="${q(left)}" y1="${q(top)}" x2="${q(left)}" y2="${q(bottom)}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
+  }
+  axis.ticks.forEach((tick, i) => {
+    const x = q(scale(tick));
+    const text = tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, axis.ticks.length));
+    parts.push(`<text x="${x}" y="${q(bottom + 21)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+    fixedBoxes.push(stripTextBox(text, x, q(bottom + 21), "middle", false));
+  });
+  for (const group of groups) {
+    const y = q(rowCenters[group.row] + 4);
+    parts.push(`<text x="${catX}" y="${y}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(group.display)}</text>`);
+    fixedBoxes.push(stripTextBox(group.display, catX, y, "end", false));
+  }
+  if (showMedian && rowCount) {
+    const y = q(f.bodyTop + 12);
+    parts.push(`<text data-role="strip-median-key" x="${q(left)}" y="${y}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(strings.stripMedianKey)}</text>`);
+    fixedBoxes.push(stripTextBox(strings.stripMedianKey, q(left), y, "start", false));
+  }
+
+  // Dots: every ordinary unit in the house data colour at half opacity (so
+  // overlap darkens), highlighted units in the accent on top of them.
+  const isHighlighted = (point) => highlight.has(point.group) || (point.name !== "" && highlight.has(point.name));
+  const dotMarkup = (point, accent) => `<circle data-role="data-point" cx="${point.dot.x}" cy="${point.dot.y}" r="${r}" fill="${accent ? PALETTE.accent : PALETTE.accent2}"${accent ? "" : ` opacity="${STRIP_DOT_OPACITY}"`}/>`;
+  for (const point of points) if (!isHighlighted(point)) parts.push(dotMarkup(point, false));
+  for (const point of points) if (isHighlighted(point)) parts.push(dotMarkup(point, true));
+
+  // Median ticks: a mark only (no number); the key above the plot names it.
+  const medianTicks = [];
+  if (showMedian) {
+    const half = Math.min(10, band / 2 - 1.5);
+    for (const group of groups) {
+      const x = q(scale(group.median));
+      const cy = rowCenters[group.row];
+      parts.push(`<line data-role="data-median" x1="${x}" y1="${q(cy - half)}" x2="${x}" y2="${q(cy + half)}" stroke="${PALETTE.ink}" stroke-width="1.5"/>`);
+      medianTicks.push({ a: { x, y: cy - half }, b: { x, y: cy + half } });
+    }
+  }
+
+  // Extreme labels, highest first then lowest first, each clear of every dot,
+  // text, median tick and other leader.
+  const placement = stripPlaceLabels(
+    labeled.map((item) => ({ text: item.text, dot: item.point.dot })),
+    {
+      circles: points.map((point) => point.dot),
+      boxes: fixedBoxes,
+      segments: medianTicks,
+      bounds: { x0: left + 2, x1: labelLimit, y0: top - 1, y1: bottom + 1 },
+    },
+  );
+  for (const item of placement.placed) {
+    if (item.leader) {
+      parts.push(`<line data-role="direct-label-leader" x1="${q(item.leader.a.x)}" y1="${q(item.leader.a.y)}" x2="${q(item.leader.b.x)}" y2="${q(item.leader.b.y)}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);
+    }
+    parts.push(`<text data-role="direct-label" x="${q(item.tx)}" y="${q(item.baseline)}" text-anchor="${item.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${STRIP_LABEL_WEIGHT}" fill="${PALETTE.ink}">${esc(item.label.text)}</text>`);
+  }
+  addFooter(parts, spec, f.footerTop);
+  parts.push("</svg>");
+  return parts.join("\n") + "\n";
+}
 
 function mobileFrame(spec, bodyHeight) {
   const width = 640;
@@ -3391,15 +5643,20 @@ function renderMobileHorizontal(spec, rows, mode) {
   const refMargin = referenceLineMargin(refLines);
   const f = mobileFrame(spec, Math.max(250, sorted.length * 42 + 50) + refMargin);
   const base = f.bodyTop + 5;
-  const left = 178, right = 595, top = base + refMargin, bottom = f.bodyBottom - 36;
+  let left = 178, right = 595;
+  const top = base + refMargin, bottom = f.bodyBottom - 36;
   const values = sorted.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   // Fix 2: see the matching comment in renderHorizontal - resolved once, up
   // front, from every value this chart will display as a direct label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  if (spec.chart_type === "diverging_bar") {
+    const margins = divergingLabelMargins(spec, sorted, spec.value_field, labelDecimals, 8);
+    left += margins.neg; right -= margins.pos;
+  }
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(1, sorted.length);
   sorted.forEach((row, i) => {
@@ -3421,17 +5678,14 @@ function renderMobileHorizontal(spec, rows, mode) {
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.8" fill="${fill}"/>`);
     }
     if (spec.chart_type === "diverging_bar") {
-      const nearLeft = x <= left + 40;
-      const nearRight = x >= right - 40;
-      const inside = (value < 0 && nearLeft) || (value >= 0 && nearRight);
-      const anchor = inside ? (value < 0 ? "start" : "end") : (value >= 0 ? "start" : "end");
-      const labelX = inside ? x + (value < 0 ? 8 : -8) : x + (value >= 0 ? 8 : -8);
-      const labelFill = inside && highlighted ? "#fff" : PALETTE.ink;
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${labelFill}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
+      const anchor = value >= 0 ? "start" : "end";
+      const labelX = x + (value >= 0 ? 8 : -8);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 8 : -8);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout, maxChars: 30 }));
   });
@@ -3469,7 +5723,7 @@ function renderGroupedDotsMobile(spec, rows) {
     f.parts.push(`<text x="${legendX + 8}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(56, String(name).length * 11 + 24);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.1"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -3488,7 +5742,7 @@ function renderGroupedDotsMobile(spec, rows) {
       const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.5"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="4.8" fill="${color}"/>`);
-      const label = fmt(value, spec.label_unit ?? "");
+      const label = fmtSpec(spec, value, spec.label_unit ?? "");
       const labelWidth = Math.max(22, textUnits(label) * 6.9);
       const canPlaceRight = x + 7 + labelWidth <= right;
       const canPlaceLeft = x - 7 - labelWidth >= left;
@@ -3521,7 +5775,7 @@ function renderMobileDumbbell(spec, rows) {
   const values = rows.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
   const step = (bottom - top) / Math.max(1, rows.length);
   rows.forEach((row, i) => {
     const a = n(row[spec.start_field]), b = n(row[spec.end_field]); if (a === null || b === null) return;
@@ -3530,8 +5784,7 @@ function renderMobileDumbbell(spec, rows) {
     f.parts.push(`<text x="165" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category) > 20 ? sliceUnits(category, 19) + "…" : category)}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="4.8" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="4.8" fill="${PALETTE.accent}"/>`);
-    f.parts.push(`<text x="${x1 - 6}" y="${y - 9}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(a, spec.unit))}</text>`);
-    f.parts.push(`<text x="${x2 + 6}" y="${y - 9}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(fmt(b, spec.unit))}</text>`);
+    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 6).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout, maxChars: 30 }));
   });
   drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -3555,8 +5808,8 @@ function renderMobileSlope(spec, rows) {
     .map((e) => ({ ...e, y1: scaleY(e.a), y2: scaleY(e.b) }));
   // Fix 13: see the matching comment in renderSlope - unit on row 0's left
   // label only (the first label actually drawn); every other label bare.
-  const leftText = (e, idx) => `${textUnits(String(e.row[spec.category_field] ?? "")) > 18 ? sliceUnits(String(e.row[spec.category_field] ?? ""), 17) + "…" : String(e.row[spec.category_field] ?? "")} ${fmt(e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
-  const rightText = (e) => fmt(e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
+  const leftText = (e, idx) => `${textUnits(String(e.row[spec.category_field] ?? "")) > 18 ? sliceUnits(String(e.row[spec.category_field] ?? ""), 17) + "…" : String(e.row[spec.category_field] ?? "")} ${fmtSpec(spec, e.a, HOUSE_STYLE_ACTIVE && idx > 0 ? "" : spec.unit, labelDecimals)}`;
+  const rightText = (e) => fmtSpec(spec, e.b, HOUSE_STYLE_ACTIVE ? "" : spec.unit, labelDecimals);
   const leftPlaced = repelEndLabels(entries.map((e, idx) => ({ id: e.i, y: e.y1, text: leftText(e, idx) })), top, bottom, END_LABEL_MIN_GAP);
   const rightPlaced = repelEndLabels(entries.map((e) => ({ id: e.i, y: e.y2, text: rightText(e) })), top, bottom, END_LABEL_MIN_GAP);
   const leftById = new Map(leftPlaced.map((p) => [p.id, p]));
@@ -3609,7 +5862,7 @@ function renderMobileLine(spec, rows, multi=false) {
   const yDomain=lineAxisDomain(yValues,includeZero,4);
   // Fix 4 (mobile): same header/top-tick scale-overshoot fix as renderLine -
   // see the comment there.
-  const yTicksMobile=lineAxisTicks(yDomain,4);
+  const yTicksMobile=lineAxisTicks(yDomain,4,HOUSE_STYLE_ACTIVE);
   const yScaleDomain=HOUSE_STYLE_ACTIVE?[Math.min(yDomain[0],yTicksMobile[0]),Math.max(yDomain[1],yTicksMobile[yTicksMobile.length-1])]:yDomain;
   const yScale=verticalScale(yScaleDomain,top,bottom);
   const pointAnnotationAssignment=assignPointAnnotations(spec,rows,spec.value_field);
@@ -3617,7 +5870,7 @@ function renderMobileLine(spec, rows, multi=false) {
   for (const [annotation,row] of pointAnnotationAssignment) { if(!annotationsByRow.has(row)) annotationsByRow.set(row,[]); annotationsByRow.get(row).push(annotation); }
   // Fix 3: see the matching comment in renderLine - unit once, on the
   // top-most tick.
-  yTicksMobile.forEach((tick,i)=>{ const y=yScale(tick); f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`); f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,axisTickUnit(spec.unit,i,yTicksMobile.length)))}</text>`); });
+  yTicksMobile.forEach((tick,i)=>{ const y=yScale(tick); f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`); f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,axisTickUnit(spec.unit,i,yTicksMobile.length)))}</text>`); });
   const every=Math.max(1,Math.ceil(xValues.length/5)); xValues.forEach((xv,i)=>{ if(i%every!==0&&i!==xValues.length-1)return; f.parts.push(`<text x="${xScale(xv)}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`); });
   const directLabels=[];
   // Fix 2: see the matching comment in renderLine - one decimal count per
@@ -3643,7 +5896,7 @@ function renderMobileLine(spec, rows, multi=false) {
     const last=group[group.length-1];
     if(last&&multi&&spec.direct_labels!==false) {
       const name=String(series); const value=n(last[spec.value_field]);
-      const valueText=value===null?null:fmt(value,spec.unit,labelDecimals);
+      const valueText=value===null?null:fmtSpec(spec, value,spec.unit,labelDecimals);
       const text=valueText===null?name:`${name} ${valueText}`;
       const pointX=xScale(last[spec.x_field]);
       // Fix 5 (mobile): same end-label-crosses-its-own-line fix as
@@ -3654,7 +5907,7 @@ function renderMobileLine(spec, rows, multi=false) {
         : [{text,x:Math.min(632-textUnits(text)*6.8,pointX+6)}];
       directLabels.push({lines,y:yScale(value)+4,highlighted});
     }
-    if(last&&!multi&&spec.direct_labels===true) f.parts.push(`<text data-role="direct-label" x="${Math.min(602,xScale(last[spec.x_field])+7)}" y="${yScale(n(last[spec.value_field]))-8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmt(n(last[spec.value_field]),spec.unit,labelDecimals))}</text>`);
+    if(last&&!multi&&spec.direct_labels===true) f.parts.push(`<text data-role="direct-label" x="${Math.min(602,xScale(last[spec.x_field])+7)}" y="${yScale(n(last[spec.value_field]))-8}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(fmtSpec(spec, n(last[spec.value_field]),spec.unit,labelDecimals))}</text>`);
   });
   if(multi&&spec.direct_labels!==false) {
     const anyTwoLine=directLabels.some((d)=>d.lines.length>1);
@@ -3680,33 +5933,35 @@ function renderMobileLine(spec, rows, multi=false) {
 }
 
 function renderMobileSmallMultiples(spec, rows) {
-  const facets=sortX(unique(rows.map((r)=>r[spec.facet_field]))), gapY=34, panelW=576;
+  const facets=facetOrder(unique(rows.map((r)=>r[spec.facet_field]))), gapY=34, panelW=576;
   if(spec.panel_mark==="dot") {
     const groups=facets.map((facet)=>rows.filter((r)=>String(r[spec.facet_field])===String(facet))), maxItems=Math.max(...groups.map((g)=>g.length),1);
     const refLines=referenceLineAnnotations(spec),refMargin=referenceLineMargin(refLines);
     const panelH=Math.max(245,maxItems*36+68)+refMargin, f=mobileFrame(spec,facets.length*panelH+Math.max(0,facets.length-1)*gapY+20);
     const all=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null); let domain=extent(all,true); if(spec.unit==="%"&&Math.min(...all)>=0&&Math.max(...all)<=100)domain=[0,100];
     facets.forEach((facet,fi)=>{
+      const facetPartStart=f.parts.length;
       const x0=32,y0=f.bodyTop+fi*(panelH+gapY),group=sortRows(rows.filter((r)=>String(r[spec.facet_field])===String(facet)),spec,spec.value_field),labelW=138,plotLeft=x0+labelW,plotRight=x0+panelW-6,plotBase=y0+38,plotTop=plotBase+refMargin,plotBottom=y0+panelH-34,xScale=horizontalScale(domain,plotLeft,plotRight);
       f.parts.push(`<text x="${x0}" y="${y0+16}" font-family="${FONT_SANS}" font-size="14" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);
-      tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.unit))}</text>`);});
-      const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmt(value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
+      tickValues(domain,2).forEach((tick)=>{const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${plotTop-4}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${x}" y="${plotTop-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.unit))}</text>`);});
+      const step=Math.max(27,(plotBottom-plotTop)/Math.max(group.length,1)); group.forEach((r,i)=>{const value=n(r[spec.value_field]);if(value===null)return;const y=plotTop+i*step+step*.48,x=xScale(value),category=String(r[spec.x_field]??""),highlighted=(spec.highlight_values??[]).map(String).includes(category);f.parts.push(`<text x="${plotLeft-8}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(category)>18?sliceUnits(category,17)+"…":category)}</text>`);f.parts.push(`<line x1="${plotLeft}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1.4"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?5.7:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+6}" y="${y+4}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value,spec.unit))}</text>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:36}));});
       refLines.forEach((line,i)=>{const x=xScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x}" y1="${plotTop}" x2="${x}" y2="${plotBottom}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){const anchor=x>(plotLeft+plotRight)/2?"end":"start";f.parts.push(`<text data-role="reference-line-label" x="${x+(anchor==="end"?-5:5)}" y="${referenceLineRowY(plotBase,i)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,26))}</text>`);}});
+      tagPanelTexts(f.parts,facetPartStart,[x0-30,y0-gapY+2,x0+panelW+30,y0+panelH+gapY-2]);
     });
     addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
   }
   const refLines=referenceLineAnnotations(spec),refMargin=referenceLineMargin(refLines);
   const panelH=220+refMargin, f=mobileFrame(spec,facets.length*panelH+Math.max(0,facets.length-1)*gapY+20), all=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null), yDomain=extent(all,false);
-  facets.forEach((facet,fi)=>{const x0=42,y0=f.bodyTop+fi*(panelH+gapY),group=rows.filter((r)=>String(r[spec.facet_field])===String(facet)),xs=sortX(unique(group.map((r)=>r[spec.x_field]))),xMap=new Map(xs.map((v,i)=>[String(v),i])),xScale=(value)=>xs.length<=1?x0+panelW/2:x0+(xMap.get(String(value))/(xs.length-1))*panelW,plotBase=y0+30,yScale=verticalScale(yDomain,plotBase+refMargin,y0+panelH-30);f.parts.push(`<text x="${x0}" y="${y0+14}" font-family="${FONT_SANS}" font-size="13.5" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);[yDomain[0],(yDomain[0]+yDomain[1])/2,yDomain[1]].forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.grid}"/>`);});const sorted=[...group].sort((a,b)=>xMap.get(String(a[spec.x_field]))-xMap.get(String(b[spec.x_field])));if(xs.length>1){const coords=sorted.map((r)=>`${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");f.parts.push(`<polyline fill="none" stroke="${PALETTE.accent2}" stroke-width="2.2" points="${coords}"/>`);}sorted.forEach((r)=>{const x=xScale(r[spec.x_field]),y=yScale(n(r[spec.value_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="${PALETTE.accent2}"/>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:28}));});if(xs.length>1){f.parts.push(`<text x="${x0}" y="${y0+panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${x0+panelW}" y="${y0+panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length-1])}</text>`);}refLines.forEach((line,i)=>{const y=yScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase,i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,34))}</text>`);}});});
+  facets.forEach((facet,fi)=>{const facetPartStart=f.parts.length;const x0=42,y0=f.bodyTop+fi*(panelH+gapY),group=rows.filter((r)=>String(r[spec.facet_field])===String(facet)),xs=sortX(unique(group.map((r)=>r[spec.x_field]))),xMap=new Map(xs.map((v,i)=>[String(v),i])),xScale=(value)=>xs.length<=1?x0+panelW/2:x0+(xMap.get(String(value))/(xs.length-1))*panelW,plotBase=y0+30,yScale=verticalScale(yDomain,plotBase+refMargin,y0+panelH-30);f.parts.push(`<text x="${x0}" y="${y0+14}" font-family="${FONT_SANS}" font-size="13.5" font-weight="700" fill="${PALETTE.ink}">${esc(facet)}</text>`);[yDomain[0],(yDomain[0]+yDomain[1])/2,yDomain[1]].forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.grid}"/>`);});const sorted=[...group].sort((a,b)=>xMap.get(String(a[spec.x_field]))-xMap.get(String(b[spec.x_field])));if(xs.length>1){const coords=sorted.map((r)=>`${xScale(r[spec.x_field])},${yScale(n(r[spec.value_field]))}`).join(" ");f.parts.push(`<polyline fill="none" stroke="${PALETTE.accent2}" stroke-width="2.2" points="${coords}"/>`);}sorted.forEach((r)=>{const x=xScale(r[spec.x_field]),y=yScale(n(r[spec.value_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="4" fill="${PALETTE.accent2}"/>`);pointAnnotations(spec,r).forEach((annotation)=>addPointAnnotation(f.parts,annotation,x,y,{side:"right",layout:f.annotationLayout,maxChars:28}));});if(xs.length>1){f.parts.push(`<text x="${x0}" y="${y0+panelH}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${x0+panelW}" y="${y0+panelH}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[xs.length-1])}</text>`);}refLines.forEach((line,i)=>{const y=yScale(line.value);f.parts.push(`<line data-role="reference-line" x1="${x0}" y1="${y}" x2="${x0+panelW}" y2="${y}" stroke="${PALETTE.muted}" stroke-width="1.5" stroke-dasharray="4 3"/>`);if(fi===0){f.parts.push(`<text data-role="reference-line-label" x="${x0}" y="${referenceLineRowY(plotBase,i)}" text-anchor="start" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(annotationLabel(line,34))}</text>`);}});tagPanelTexts(f.parts,facetPartStart,[x0-30,y0-gapY+2,x0+panelW+30,y0+panelH+gapY-2]);});
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
 function renderMobileScatter(spec, rows) {
   const f=mobileFrame(spec,420),left=72,right=594,top=f.bodyTop+12,bottom=f.bodyBottom-64,xs=rows.map((r)=>n(r[spec.x_field])).filter((v)=>v!==null),ys=rows.map((r)=>n(r[spec.y_field])).filter((v)=>v!==null),xInfo=makeScale(xs,left,right,spec.x_scale??"linear"),yRaw=spec.y_scale==="log"?ys.map(Math.log10):ys,yDomainRaw=extent(yRaw,false),yLinear=verticalScale(yDomainRaw,top,bottom),yScale=(value)=>yLinear(spec.y_scale==="log"?Math.log10(value):value),yTicks=spec.y_scale==="log"?logTickValues(yDomainRaw):tickValues(yDomainRaw,4);
-  yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.y_unit??spec.unit))}</text>`);});
-  xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??""))}</text>`);});
+  yTicks.forEach((tick)=>{const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);f.parts.push(`<text x="${left-9}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick,spec.y_unit??spec.unit))}</text>`);});
+  xInfo.ticks.forEach((tick)=>{const x=xInfo.scale(tick);f.parts.push(`<text x="${x}" y="${bottom+23}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick,spec.x_unit??"",vizLang(spec)))}</text>`);});
   if(spec.x_label)f.parts.push(`<text x="${(left+right)/2}" y="${bottom+47}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
-  rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",placedLabel=f.annotationLayout.place(px,py,label,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10)f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${px+placedLabel.dx*.7}" y2="${placedLabel.ty+3}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
+  rows.forEach((row)=>{const x=n(row[spec.x_field]),y=n(row[spec.y_field]);if(x===null||y===null)return;const label=spec.label_field?String(row[spec.label_field]??""):"",highlighted=label&&(spec.highlight_values??[]).map(String).includes(label),px=xInfo.scale(x),py=yScale(y);f.parts.push(`<circle cx="${px}" cy="${py}" r="${highlighted?5.8:3.8}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" opacity="${highlighted?1:.68}"/>`);if(highlighted){const labelSide=px>right-125?"left":"right",shownLabel=resolveEconomyDisplayName(label,spec.category_names,vizLang(spec)),placedLabel=f.annotationLayout.place(px,py,shownLabel,labelSide,1);if(Math.abs(placedLabel.ty-(py-13))>10){const leaderEnd=leaderEndShortOfLabel(px,py,placedLabel);f.parts.push(`<line data-role="direct-label-leader" x1="${px}" y1="${py}" x2="${leaderEnd.x2}" y2="${leaderEnd.y2}" stroke="${PALETTE.muted}" stroke-width=".8"/>`);}f.parts.push(`<text data-role="direct-label" x="${placedLabel.tx}" y="${placedLabel.ty}" text-anchor="${placedLabel.anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(shownLabel)}</text>`);}pointAnnotations(spec,row).forEach((annotation)=>addPointAnnotation(f.parts,annotation,px,py,{side:px>right-150?"left":"right",layout:f.annotationLayout,maxChars:30,maxLines:3}));});
   if(spec.x_scale==="log")f.parts.push(`<text x="${right}" y="${bottom+47}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${VIZ_STRINGS[vizLang(spec)].logScale}</text>`);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
@@ -3718,8 +5973,8 @@ function renderMobileHeatmap(spec, rows) {
   const legendY=bottom+13,legendW=140;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-m" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-m)"/>`);
-  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(min,spec.unit))}</text>`);
-  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmt(max,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
+  f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
@@ -3787,6 +6042,75 @@ function stripNodePrefix(id) {
 function flowGreyLink() { return PALETTE.context; } // non-highlighted link tone
 const FLOW_GREY_NODE = "#9E9E9E"; // near-neutral node bar for a non-highlighted node, per the approved redesign spec
 
+// The flow band sankeyPath() draws, as a strip of quads: the centreline is
+// sampled densely and each sample is offset by half the stroke width along
+// its normal, so the edges are the band's own, not a bounding box.
+function sankeyBandQuads(x1,y1,x2,y2,sw,steps=80) {
+  const pts=[];
+  for(let i=0;i<=steps;i++){
+    const t=i/steps, a=sankeyPointAt(x1,y1,x2,y2,Math.max(0,t-0.001)), b=sankeyPointAt(x1,y1,x2,y2,Math.min(1,t+0.001)), c=sankeyPointAt(x1,y1,x2,y2,t);
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, nx=-dy/len, ny=dx/len;
+    pts.push([{x:c.x+nx*sw/2,y:c.y+ny*sw/2},{x:c.x-nx*sw/2,y:c.y-ny*sw/2}]);
+  }
+  const quads=[];
+  for(let i=0;i<steps;i++) quads.push([pts[i][0],pts[i+1][0],pts[i+1][1],pts[i][1]]);
+  return quads;
+}
+
+// Whether a convex quad and an axis-aligned box overlap (separating axes).
+function quadHitsBox(q,b) {
+  if (Math.max(...q.map((p)=>p.x))<=b.x || Math.min(...q.map((p)=>p.x))>=b.x+b.w) return false;
+  if (Math.max(...q.map((p)=>p.y))<=b.y || Math.min(...q.map((p)=>p.y))>=b.y+b.h) return false;
+  const corners=[{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}];
+  for (let i=0;i<4;i++) {
+    const p=q[i], r=q[(i+1)%4], ax=-(r.y-p.y), ay=r.x-p.x;
+    const qs=q.map((v)=>v.x*ax+v.y*ay), bs=corners.map((v)=>v.x*ax+v.y*ay);
+    if (Math.max(...qs)<=Math.min(...bs) || Math.max(...bs)<=Math.min(...qs)) return false;
+  }
+  return true;
+}
+
+// NEWSROOM_SANKEY_OTHER_NOTE=1 (default off; off = byte-identical SVG): the merged "other" node is named
+// apart from every data node in its column, the chart footer names the nodes it holds (names only), and a
+// highlight that names only a target marks that target's largest incoming flow.
+// Desktop-only larger Sankey: taller node bars and thicker bands. Exact "1"; anything else keeps today's output.
+function biggerChartsEnabled(){ return process.env.NEWSROOM_BIGGER_CHARTS==="1"; }
+function sankeyOtherNoteEnabled(){ return process.env.NEWSROOM_SANKEY_OTHER_NOTE==="1"; }
+function sankeyColumnName(li,maxLevel,zh){
+  if(li===0) return zh?"左列":"left column";
+  if(li===maxLevel) return zh?"右列":"right column";
+  return zh?`第${li+1}列`:`column ${li+1}`;
+}
+// One entry per merged column: {label, column, members:[names]} - names only, no values.
+export function sankeyMergeSummary(spec, rows){
+  return sankeyMergeNotes(spec,rows);
+}
+function sankeyMergeNotes(spec, rows){
+  const zh=vizLang(spec)==="zh";
+  const grandTotal=Math.max(rows.reduce((sum,r)=>sum+Math.max(0,n(r[spec.value_field])??0),0),1);
+  const otherLabel=zh?"其他":"Other";
+  const prelim=flowLayout(rows,spec), notes=[];
+  prelim.levels.forEach((level,li)=>{
+    const nameOf=(node)=>resolveEconomyDisplayName(stripNodePrefix(node.id), spec.category_names, vizLang(spec));
+    const candidates=level.filter((node)=>Math.max(node.in,node.out)/grandTotal<0.03);
+    if(candidates.length<2) return;
+    const used=new Set(level.filter((node)=>!candidates.includes(node)).map((node)=>nameOf(node).trim().toLowerCase()));
+    let label=otherLabel;
+    for(let k=0; used.has(label.toLowerCase()); k++) label=zh?`其他（合并${k?k+1:""}）`:`Other (combined${k?` ${k+1}`:""})`;
+    notes.push({label,column:sankeyColumnName(li,prelim.maxLevel,zh),members:candidates.map(nameOf)});
+  });
+  return notes;
+}
+function sankeyOtherFootnote(spec, rows){
+  const zh=vizLang(spec)==="zh";
+  const notes=sankeyMergeNotes(spec,rows);
+  if(!notes.length) return "";
+  return notes.map((m)=>{
+    const head=m.label===(zh?"其他":"Other") ? (zh?`其他（${m.column}）`:`Other (${m.column})`) : (zh?m.label.replace(/）$/,`，${m.column}）`):m.label.replace(/\)$/,`, ${m.column})`));
+    return `${head}${zh?"：":": "}${m.members.join(zh?"、":", ")}`;
+  }).join(zh?"；":"; ");
+}
+
 function renderSankey(spec, rows, mobile=false) {
   const width=mobile?640:1040, nodeW=mobile?16:20;
   const gap=Math.max(12, mobile?20:16);
@@ -3798,12 +6122,23 @@ function renderSankey(spec, rows, mobile=false) {
   // only actually merges when it holds >=2 such candidates (merging a
   // single small node would just rename it, not declutter anything).
   const prelim=flowLayout(rows,spec);
+  const noteOn=sankeyOtherNoteEnabled();
   const mergedIdFor=new Map(); // original node id -> synthetic "other" id
   const mergedMembers=new Map(); // synthetic id -> [{id,name,value}]
+  const mergedLabels=new Map(); // synthetic id -> label (NEWSROOM_SANKEY_OTHER_NOTE=1 only)
+  const mergedColumns=new Map(); // synthetic id -> column index (NEWSROOM_SANKEY_OTHER_NOTE=1 only)
   prelim.levels.forEach((level,li)=>{
+    const nameOf=(node)=>resolveEconomyDisplayName(stripNodePrefix(node.id), spec.category_names, vizLang(spec));
     const candidates=level.filter((node)=>Math.max(node.in,node.out)/grandTotal<0.03);
     if(candidates.length<2) return;
     const syntheticId=`__other_L${li}__`;
+    if(noteOn){
+      const used=new Set(level.filter((node)=>!candidates.includes(node)).map((node)=>nameOf(node).trim().toLowerCase()));
+      const zh=vizLang(spec)==="zh";
+      let label=otherLabel;
+      for(let k=0; used.has(label.toLowerCase()); k++) label=zh?`其他（合并${k?k+1:""}）`:`Other (combined${k?` ${k+1}`:""})`;
+      mergedLabels.set(syntheticId,label); mergedColumns.set(syntheticId,li);
+    }
     for(const node of candidates){
       mergedIdFor.set(node.id,syntheticId);
       if(!mergedMembers.has(syntheticId)) mergedMembers.set(syntheticId,[]);
@@ -3845,12 +6180,13 @@ function renderSankey(spec, rows, mobile=false) {
       if(String(level[i].id).startsWith("__other_")){ const [node]=level.splice(i,1); level.push(node); }
     }
   });
-  const displayNameOf=(id)=> String(id).startsWith("__other_") ? otherLabel : resolveEconomyDisplayName(stripNodePrefix(id), spec.category_names, vizLang(spec));
+  const displayNameOf=(id)=> String(id).startsWith("__other_") ? (mergedLabels.get(String(id))??otherLabel) : resolveEconomyDisplayName(stripNodePrefix(id), spec.category_names, vizLang(spec));
 
   const nodeValues=[...layout.nodes.values()].map((node)=>Math.max(node.in,node.out)); const maxNode=Math.max(...nodeValues,1);
-  const barHeight=(node)=>Math.max(22,Math.min(100,(Math.max(node.in,node.out)/maxNode)*130));
+  const bigger=!mobile&&biggerChartsEnabled();
+  const barHeight=bigger?(node)=>Math.max(22,Math.min(140,(Math.max(node.in,node.out)/maxNode)*180)):(node)=>Math.max(22,Math.min(100,(Math.max(node.in,node.out)/maxNode)*130));
   const neededH=Math.max(...layout.levels.map((level)=>level.reduce((sum,node)=>sum+barHeight(node),0)+gap*Math.max(0,level.length-1)),120);
-  const bodyH=neededH+(mobile?96:88);
+  const bodyH=neededH+(mobile?96:88)+(!mobile&&biggerChartsEnabled()?16:0); // larger bars leave a through node less room for its label above it
 
   // Reserve side margins for the actually measured label widths (name bold
   // 14px, value 12.5px) instead of a fixed constant, so a long country name
@@ -3871,13 +6207,16 @@ function renderSankey(spec, rows, mobile=false) {
   });
   const leftMargin=Math.max(60,maxLeftWidth+18), rightMargin=Math.max(60,maxRightWidth+18);
 
-  const f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH), left=leftMargin, right=width-rightMargin, top=f.bodyTop+28, bottom=f.bodyBottom-28;
+  // With the note on, the merged nodes' members join the chart note, so the frame grows the footer for it.
+  const footnote=noteOn&&mergedIdFor.size?sankeyOtherFootnote(spec,rows):"";
+  const frameSpec=footnote?{...spec,note:[spec.note,footnote].filter(Boolean).join(vizLang(spec)==="zh"?" ":" ")}:spec;
+  const f=mobile?mobileFrame(frameSpec,bodyH):frame(frameSpec,bodyH), left=leftMargin, right=width-rightMargin, top=f.bodyTop+28, bottom=f.bodyBottom-28;
   const levels=Math.max(layout.maxLevel+1,2), xAt=(level)=>left+(right-left-nodeW)*(level/Math.max(1,levels-1));
   const positions=new Map();
   layout.levels.forEach((level,li)=>{const totalH=bottom-top, usable=totalH-gap*Math.max(0,level.length-1), raw=level.map(barHeight), sum=raw.reduce((a,b)=>a+b,0), scale=sum>usable?usable/sum:1;let y=top+(usable-sum*scale)/2;level.forEach((node,i)=>{const h=raw[i]*scale;positions.set(node.id,{x:xAt(li),y,h});y+=h+gap;});});
 
   const maxFlow=Math.max(...flowRows.map((r)=>n(r[spec.value_field])??0),1);
-  const strokeWidthOf=(row)=>Math.max(1.5,(Math.max(0,n(row[spec.value_field])??0)/maxFlow)*(mobile?22:30));
+  const strokeWidthOf=(row)=>Math.max(1.5,(Math.max(0,n(row[spec.value_field])??0)/maxFlow)*(mobile?22:bigger?44:30));
 
   // Crossing minimization (Task C): order each node's outgoing links by
   // their target's own vertical order, and each node's incoming links by
@@ -3965,11 +6304,25 @@ function renderSankey(spec, rows, mobile=false) {
     const cur=maxRowForSource.get(a);
     if(!cur||v>cur.v) maxRowForSource.set(a,{row,v});
   }
+  const maxRowForTarget=new Map();
+  if(noteOn) for (const row of flowRows) {
+    const b=String(row[spec.target_field]);
+    const v=Math.max(0,n(row[spec.value_field])??0);
+    const cur=maxRowForTarget.get(b);
+    if(!cur||v>cur.v) maxRowForTarget.set(b,{row,v});
+  }
   const isHighlightedRow=(row)=>{
     if(highlightSet.size===0) return false;
     const a=String(row[spec.source_field]);
     const sourceHighlighted=highlightSet.has(a)||highlightSet.has(stripNodePrefix(a));
-    if(!sourceHighlighted) return false;
+    if(!sourceHighlighted){
+      // Target only (note on): mirror the source-only rule - the target's largest incoming flow.
+      if(!noteOn) return false;
+      const b=String(row[spec.target_field]);
+      if(!(highlightSet.has(b)||highlightSet.has(stripNodePrefix(b)))) return false;
+      if(bySource.has(b)) return false; // a through node keeps the source rule (its largest outgoing flow)
+      return maxRowForTarget.get(b)?.row===row;
+    }
     const explicitTargets=explicitTargetsForSource.get(a);
     if(explicitTargets&&explicitTargets.size>0) return explicitTargets.has(String(row[spec.target_field]));
     return maxRowForSource.get(a)?.row===row;
@@ -3998,28 +6351,64 @@ function renderSankey(spec, rows, mobile=false) {
     // ends exactly at (x1,y1)/(x2,y2), flush against the node's straight
     // edge, with no protrusion.
     f.parts.push(`<path data-role="flow-link" data-flow-key="${esc(flowKey)}" d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="butt" pointer-events="none"/>`);
-    // Only the single highlighted flow gets an inline value, placed ON its
-    // own centreline near whichever end (source t~0.22, or target t~0.78)
+    // Only the single highlighted flow gets an inline value, on paper beside
+    // its own band near whichever end (source t~0.22, or target t~0.78)
     // isn't already claimed - every other flow's value lives only in its
     // node labels, so the diagram never shows an ambiguous floating number.
     if (highlighted) {
       const text=fmtLocalizedUnit(spec, v);
       const fontSize=mobile?12:12.5;
       const boxW=text.length*fontSize*0.8+8;
-      const linkRgb=compositeOverWhite(hexToRgb(color), opacity);
-      const style=labelStyleOnFill(linkRgb);
-      const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round"`:"";
+      // The label sits on paper beside its band, never on it, in the accent's
+      // text-safe shade with no halo. A candidate is clear when its box keeps
+      // 2px from every node label box, other value label, node bar and every
+      // flow band (this one included), and its own band is at least 1px nearer
+      // than any other (gap: text box to centreline, less half the width);
+      // when no candidate qualifies, no inline label is drawn.
+      const labelFill=textSafeColor(PALETTE.accent);
+      const clearance=2;
+      const inflate=(b)=>({x:b.x-clearance,y:b.y-clearance,w:b.w+2*clearance,h:b.h+2*clearance});
+      const barBoxes=[...positions.values()].map((p)=>({x:p.x,y:p.y,w:nodeW,h:p.h}));
+      const bandInfo=flowRows.map((r)=>{
+        const pa2=positions.get(String(r[spec.source_field])), pb2=positions.get(String(r[spec.target_field]));
+        if(!pa2||!pb2) return null;
+        const bx1=pa2.x+nodeW, by1=rowY1.get(r)??pa2.y+pa2.h/2, bx2=pb2.x, by2=rowY2.get(r)??pb2.y+pb2.h/2, bsw=strokeWidthOf(r);
+        return { own:r===row, sw:bsw, quads:sankeyBandQuads(bx1,by1,bx2,by2,bsw), line:Array.from({length:161},(_,i)=>sankeyPointAt(bx1,by1,bx2,by2,i/160)) };
+      }).filter(Boolean);
+      const bands=bandInfo.map((b)=>b.quads);
+      const bandGap=(tb,b)=>Math.min(...b.line.map((p)=>Math.hypot(Math.max(tb.x-p.x,0,p.x-(tb.x+tb.w)),Math.max(tb.y-p.y,0,p.y-(tb.y+tb.h)))))-b.sw/2;
+      const ownIsNearest=(cx,baseY)=>{
+        const tw=estimateTextWidth(text,fontSize,true);
+        const tb={x:cx-tw/2,y:baseY-fontSize*ASCENT_RATIO,w:tw,h:fontSize*(ASCENT_RATIO+DESCENT_RATIO)};
+        const ownGap=bandGap(tb,bandInfo.find((b)=>b.own));
+        return bandInfo.every((b)=>b.own||bandGap(tb,b)>=ownGap+1);
+      };
+      const isClear=(box)=>{
+        const wide=inflate(box);
+        if (wide.x<0||wide.x+wide.w>width) return false;
+        if (valueLabelBoxes.some((o)=>boxesOverlap(wide,o))||barBoxes.some((o)=>boxesOverlap(wide,o))) return false;
+        return !bands.some((quads)=>quads.some((q)=>quadHitsBox(q,wide)));
+      };
       let placed=null;
-      for (const t of [0.22, 0.78, 0.5]) {
+      candidates: for (const t of [0.22, 0.78, 0.5, 0.35, 0.65]) {
         const pt=sankeyPointAt(x1,y1,x2,y2,t);
-        const preferredY=t<0.5 ? pt.y-sw/2-5 : pt.y+sw/2+13;
-        const placedY=resolveLabelCollisionY(pt.x, preferredY, boxW, fontSize, valueLabelBoxes, top+10, bottom-4);
-        const box={x:pt.x-boxW/2, y:placedY-fontSize-3, w:boxW, h:fontSize+7};
-        if (!valueLabelBoxes.some((o)=>boxesOverlap(box,o))) { placed={x:pt.x,y:placedY,box}; break; }
+        const above=t<0.5;
+        for (const side of [above, !above]) {
+          const preferredY=side ? pt.y-sw/2-5 : pt.y+sw/2+13;
+          const placedY=resolveLabelCollisionY(pt.x, preferredY, boxW+2*clearance, fontSize, valueLabelBoxes, top+10, bottom-4);
+          // Today's nudge first; a band that slopes under the box needs more room than
+          // a flat one, so the box then moves away from its band in 2px steps.
+          for (let push=0; push<=8; push+=2) {
+            const y=placedY+(side ? -push : push);
+            const box={x:pt.x-boxW/2, y:y-fontSize-3, w:boxW, h:fontSize+7};
+            if (y<top+10 || y>bottom-4) break;
+            if (isClear(box)&&ownIsNearest(pt.x,y)) { placed={x:pt.x,y,box}; break candidates; }
+          }
+        }
       }
       if (placed) {
         valueLabelBoxes.push(placed.box);
-        f.parts.push(`<text data-role="flow-value-label" data-flow-key="${esc(flowKey)}" x="${placed.x}" y="${placed.y}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${fontSize}" font-weight="700" fill="${style.fill}" paint-order="stroke fill"${halo}>${esc(text)}</text>`);
+        f.parts.push(`<text data-role="flow-value-label" data-flow-key="${esc(flowKey)}" x="${placed.x}" y="${placed.y}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${fontSize}" font-weight="700" fill="${labelFill}">${esc(text)}</text>`);
       }
     }
   });
@@ -4104,7 +6493,7 @@ function renderSankey(spec, rows, mobile=false) {
     });
   });
   addPointlessFlowAnnotations(f.parts,spec,positions,nodeW,f.annotationLayout,mobile);
-  (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
+  (mobile?addMobileFooter:addFooter)(f.parts,frameSpec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
 function addPointlessFlowAnnotations(parts,spec,positions,nodeW,layout,mobile){for(const annotation of annotations(spec)){if(annotation.type!=="node")continue;const p=positions.get(String(annotation.match_value));if(!p)continue;const lines=wrapText(annotationLabel(annotation,mobile?26:34),mobile?26:34).slice(0,3),cx=p.x+nodeW/2,above=p.y>90,step=mobile?15:16,anchorY=above?p.y-18:p.y+p.h+24,baseY=above?anchorY-(lines.length-1)*step:anchorY;parts.push(`<line data-role="annotation-leader" x1="${cx}" y1="${above?p.y:p.y+p.h}" x2="${cx}" y2="${above?anchorY+7:anchorY-13}" stroke="${PALETTE.muted}" stroke-width="1"/>`);lines.forEach((line,i)=>parts.push(`<text data-role="annotation" x="${cx}" y="${baseY+i*step}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.ink}">${esc(line)}</text>`));}}
@@ -4113,9 +6502,11 @@ function networkLayout(rows,spec,width,height,left,top,right,bottom){const ids=u
 
 function renderNodeLink(spec,rows,mobile=false){const f=mobile?mobileFrame(spec,440):frame(spec,440),left=mobile?58:110,right=mobile?582:930,top=f.bodyTop+35,bottom=f.bodyBottom-35,layout=networkLayout(rows,spec,mobile?640:1040,440,left,top,right,bottom),maxDegree=Math.max(...layout.ids.map((id)=>layout.degree.get(id)),1);for(const row of rows){const a=layout.pos.get(String(row[spec.source_field])),b=layout.pos.get(String(row[spec.target_field]));if(!a||!b)continue;const value=spec.value_field?(n(row[spec.value_field])??1):1;f.parts.push(`<line data-role="network-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${PALETTE.context}" stroke-width="${Math.min(5,Math.max(.7,Math.sqrt(Math.abs(value))))}" stroke-opacity=".48"/>`);}for(const id of layout.ids){const p=layout.pos.get(id),highlighted=(spec.highlight_values??[]).includes(id),r=4.5+(p.degree/maxDegree)*8;f.parts.push(`<circle data-role="network-node" cx="${p.x}" cy="${p.y}" r="${r}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}" stroke="#fff" stroke-width="1.4"/>`);if(layout.ids.length<=24||highlighted)f.parts.push(`<text data-role="direct-label" x="${p.x+(p.x<(left+right)/2?-(r+5):(r+5))}" y="${p.y-7}" text-anchor="${p.x<(left+right)/2?"end":"start"}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
-function renderAdjacencyMatrix(spec,rows,mobile=false){const ids=unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]])).sort(),nIds=ids.length,bodyH=Math.max(mobile?360:420,nIds*(mobile?22:25)+100),f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?130:220,top=f.bodyTop+105,size=Math.min((mobile?640:1040)-left-(mobile?38:70),f.bodyBottom-top-25),cell=Math.max(3,size/Math.max(1,nIds)),index=new Map(ids.map((id,i)=>[String(id),i])),values=rows.map((row)=>spec.value_field?(n(row[spec.value_field])??1):1),max=Math.max(...values.map(Math.abs),1),edgeMap=new Map();rows.forEach((row)=>edgeMap.set(`${row[spec.source_field]}\0${row[spec.target_field]}`,spec.value_field?(n(row[spec.value_field])??1):1));ids.forEach((id,i)=>{const y=top+(i+.5)*cell,x=left+(i+.5)*cell;f.parts.push(`<text x="${left-8}" y="${y+3}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(id))>(mobile?11:16)?sliceUnits(String(id),mobile?10:15)+"…":id)}</text>`);if(nIds<=28)f.parts.push(`<text x="${x}" y="${top-8}" transform="rotate(-90 ${x} ${top-8})" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(textUnits(String(id))>13?sliceUnits(String(id),12)+"…":id)}</text>`);});for(const [key,value] of edgeMap){const [a,b]=key.split("\0"),i=index.get(a),j=index.get(b),t=Math.sqrt(Math.abs(value)/max);f.parts.push(`<rect data-role="matrix-cell" x="${left+j*cell+1}" y="${top+i*cell+1}" width="${Math.max(1,cell-2)}" height="${Math.max(1,cell-2)}" fill="${PALETTE.accent2}" fill-opacity="${.12+.78*t}"/>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
+// Nodes keep their first-appearance order (see facetOrder), not name order.
+function renderAdjacencyMatrix(spec,rows,mobile=false){const ids=facetOrder(unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]]))),nIds=ids.length,bodyH=Math.max(mobile?360:420,nIds*(mobile?22:25)+100),f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?130:220,top=f.bodyTop+105,size=Math.min((mobile?640:1040)-left-(mobile?38:70),f.bodyBottom-top-25),cell=Math.max(3,size/Math.max(1,nIds)),index=new Map(ids.map((id,i)=>[String(id),i])),values=rows.map((row)=>spec.value_field?(n(row[spec.value_field])??1):1),max=Math.max(...values.map(Math.abs),1),edgeMap=new Map();rows.forEach((row)=>edgeMap.set(`${row[spec.source_field]}\0${row[spec.target_field]}`,spec.value_field?(n(row[spec.value_field])??1):1));ids.forEach((id,i)=>{const y=top+(i+.5)*cell,x=left+(i+.5)*cell;f.parts.push(`<text x="${left-8}" y="${y+3}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(id))>(mobile?11:16)?sliceUnits(String(id),mobile?10:15)+"…":id)}</text>`);if(nIds<=28)f.parts.push(`<text x="${x}" y="${top-8}" transform="rotate(-90 ${x} ${top-8})" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(textUnits(String(id))>13?sliceUnits(String(id),12)+"…":id)}</text>`);});for(const [key,value] of edgeMap){const [a,b]=key.split("\0"),i=index.get(a),j=index.get(b),t=Math.sqrt(Math.abs(value)/max);f.parts.push(`<rect data-role="matrix-cell" x="${left+j*cell+1}" y="${top+i*cell+1}" width="${Math.max(1,cell-2)}" height="${Math.max(1,cell-2)}" fill="${PALETTE.accent2}" fill-opacity="${.12+.78*t}"/>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
-function hierarchyLayout(rows,spec){const byId=new Map(rows.map((row)=>[String(row[spec.node_field]),row])),children=new Map(),root=rows.find((row)=>row[spec.parent_field]===null||row[spec.parent_field]===undefined||String(row[spec.parent_field])==="");for(const row of rows){const p=row[spec.parent_field];if(p===null||p===undefined||String(p)==="")continue;const key=String(p);if(!children.has(key))children.set(key,[]);children.get(key).push(String(row[spec.node_field]));}for(const list of children.values())list.sort();const positions=new Map(),levels=[];let leaf=0;const visit=(id,level)=>{if(!levels[level])levels[level]=[];levels[level].push(id);const kids=children.get(id)??[];if(!kids.length){positions.set(id,{leaf:leaf++,level});return positions.get(id).leaf;}const xs=kids.map((kid)=>visit(kid,level+1));const x=xs.reduce((a,b)=>a+b,0)/xs.length;positions.set(id,{leaf:x,level});return x;};if(root)visit(String(root[spec.node_field]),0);return {byId,children,positions,levels,leafCount:Math.max(leaf,1)};}
+// Siblings keep their first-appearance order (see facetOrder), not name order.
+function hierarchyLayout(rows,spec){const byId=new Map(rows.map((row)=>[String(row[spec.node_field]),row])),children=new Map(),root=rows.find((row)=>row[spec.parent_field]===null||row[spec.parent_field]===undefined||String(row[spec.parent_field])==="");for(const row of rows){const p=row[spec.parent_field];if(p===null||p===undefined||String(p)==="")continue;const key=String(p);if(!children.has(key))children.set(key,[]);children.get(key).push(String(row[spec.node_field]));}for(const [key,list] of children)children.set(key,facetOrder(list));const positions=new Map(),levels=[];let leaf=0;const visit=(id,level)=>{if(!levels[level])levels[level]=[];levels[level].push(id);const kids=children.get(id)??[];if(!kids.length){positions.set(id,{leaf:leaf++,level});return positions.get(id).leaf;}const xs=kids.map((kid)=>visit(kid,level+1));const x=xs.reduce((a,b)=>a+b,0)/xs.length;positions.set(id,{leaf:x,level});return x;};if(root)visit(String(root[spec.node_field]),0);return {byId,children,positions,levels,leafCount:Math.max(leaf,1)};}
 
 function renderHierarchyTree(spec,rows,mobile=false){const h=hierarchyLayout(rows,spec),depth=Math.max(...[...h.positions.values()].map((p)=>p.level),0),bodyH=Math.max(mobile?420:410,h.leafCount*(mobile?36:32)+80),f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?70:100,right=mobile?590:940,top=f.bodyTop+28,bottom=f.bodyBottom-28,x=(leaf)=>left+(leaf/(Math.max(1,h.leafCount-1)))*(right-left),y=(level)=>top+(level/Math.max(1,depth))*(bottom-top);for(const [parent,kids] of h.children){const pp=h.positions.get(parent);for(const kid of kids){const kp=h.positions.get(kid);f.parts.push(`<path d="M${x(pp.leaf)},${y(pp.level)} C${x(pp.leaf)},${(y(pp.level)+y(kp.level))/2} ${x(kp.leaf)},${(y(pp.level)+y(kp.level))/2} ${x(kp.leaf)},${y(kp.level)}" fill="none" stroke="${PALETTE.context}" stroke-width="1.5"/>`);}}for(const [id,p] of h.positions){const highlighted=(spec.highlight_values??[]).includes(id);f.parts.push(`<circle cx="${x(p.leaf)}" cy="${y(p.level)}" r="${highlighted?6:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x(p.leaf)}" y="${y(p.level)+(p.level===depth?16:-10)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(textUnits(String(id))>(mobile?11:15)?sliceUnits(String(id),mobile?10:14)+"…":id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
@@ -4123,7 +6514,9 @@ function timelineValues(rows,spec){const parse=(v)=>{if(typeof v==="number")retu
 
 function renderTimeline(spec,rows,mobile=false){const sorted=timelineValues(rows,spec);if(mobile){const bodyH=Math.max(390,sorted.length*64+40),f=mobileFrame(spec,bodyH),x=75,top=f.bodyTop+20,bottom=f.bodyBottom-20;f.parts.push(`<line x1="${x}" y1="${top}" x2="${x}" y2="${bottom}" stroke="${PALETTE.grid}" stroke-width="2"/>`);sorted.forEach((row,i)=>{const y=top+(i/(Math.max(1,sorted.length-1)))*(bottom-top),highlighted=(spec.highlight_values??[]).includes(String(row[spec.label_field]));f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?6:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x+18}" y="${y-5}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(String(row[spec.x_field]))}</text>`);svgTextLines(f.parts,String(row[spec.label_field]),x+18,y+10,{size:12,lineHeight:16,weight:highlighted?700:500,maxChars:50});});addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}const f=frame(spec,390),left=90,right=950,y=(f.bodyTop+f.bodyBottom)/2,min=sorted[0]?.__time??0,max=sorted.at(-1)?.__time??1,scale=(v)=>left+((v-min)/(max-min||1))*(right-left);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);sorted.forEach((row,i)=>{const x=scale(row.__time),up=i%2===0,highlighted=(spec.highlight_values??[]).includes(String(row[spec.label_field])),stemEnd=y+(up?-42:42),dateY=y+(up?-49:51),eventY=y+(up?-78:72);f.parts.push(`<line x1="${x}" y1="${y}" x2="${x}" y2="${stemEnd}" stroke="${PALETTE.context}"/>`);f.parts.push(`<circle cx="${x}" cy="${y}" r="${highlighted?6:4.5}" fill="${highlighted?PALETTE.accent:PALETTE.accent2}"/>`);f.parts.push(`<text x="${x}" y="${dateY}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.muted}">${esc(String(row[spec.x_field]))}</text>`);svgTextLines(f.parts,String(row[spec.label_field]),x,eventY,{size:12,lineHeight:16,weight:highlighted?700:500,maxChars:22,anchor:"middle"});});addFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
-function renderStreamgraph(spec,rows,mobile=false){const xs=sortX(unique(rows.map((r)=>r[spec.x_field]))),series=unique(rows.map((r)=>r[spec.series_field])).sort(),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\0${r[spec.series_field]}`,Math.max(0,n(r[spec.value_field])??0)])),totals=xs.map((x)=>series.reduce((sum,ser)=>sum+(index.get(`${x}\0${ser}`)??0),0)),maxTotal=Math.max(...totals,1),bodyH=mobile?380:400,f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?45:85,right=mobile?600:950,top=f.bodyTop+22,bottom=f.bodyBottom-40,xScale=(i)=>xs.length<=1?(left+right)/2:left+(i/(xs.length-1))*(right-left),yScale=(v)=>((v/maxTotal)*(bottom-top)*.82),upper=new Array(xs.length).fill(0);series.forEach((ser,si)=>{const topPts=[],bottomPts=[];xs.forEach((x,xi)=>{const total=totals[xi],baseline=(bottom+top)/2+yScale(total)/2,low=baseline-yScale(upper[xi]),value=index.get(`${x}\0${ser}`)??0,high=low-yScale(value);bottomPts.push(`${xScale(xi)},${low}`);topPts.push(`${xScale(xi)},${high}`);upper[xi]+=value;});const path=[`M${topPts[0]}`,...topPts.slice(1).map((p)=>`L${p}`),...bottomPts.reverse().map((p)=>`L${p}`),"Z"].join(" ");f.parts.push(`<path data-role="stream" d="${path}" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}" fill-opacity=".78" stroke="#fff" stroke-width=".8"/>`);});if(xs.length){f.parts.push(`<text x="${left}" y="${bottom+24}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${right}" y="${bottom+24}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs.at(-1))}</text>`);}let ly=top+4;series.forEach((ser,si)=>{f.parts.push(`<rect x="${right-(mobile?145:175)}" y="${ly-9}" width="9" height="9" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}"/>`);f.parts.push(`<text x="${right-(mobile?132:162)}" y="${ly}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(ser))>20?sliceUnits(String(ser),19)+"…":ser)}</text>`);ly+=17;});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
+// Series keep their first-appearance order (see facetOrder), not name order;
+// the x axis is a sequence and still sorts.
+function renderStreamgraph(spec,rows,mobile=false){const xs=sortX(unique(rows.map((r)=>r[spec.x_field]))),series=facetOrder(unique(rows.map((r)=>r[spec.series_field]))),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\0${r[spec.series_field]}`,Math.max(0,n(r[spec.value_field])??0)])),totals=xs.map((x)=>series.reduce((sum,ser)=>sum+(index.get(`${x}\0${ser}`)??0),0)),maxTotal=Math.max(...totals,1),bodyH=mobile?380:400,f=mobile?mobileFrame(spec,bodyH):frame(spec,bodyH),left=mobile?45:85,right=mobile?600:950,top=f.bodyTop+22,bottom=f.bodyBottom-40,xScale=(i)=>xs.length<=1?(left+right)/2:left+(i/(xs.length-1))*(right-left),yScale=(v)=>((v/maxTotal)*(bottom-top)*.82),upper=new Array(xs.length).fill(0);series.forEach((ser,si)=>{const topPts=[],bottomPts=[];xs.forEach((x,xi)=>{const total=totals[xi],baseline=(bottom+top)/2+yScale(total)/2,low=baseline-yScale(upper[xi]),value=index.get(`${x}\0${ser}`)??0,high=low-yScale(value);bottomPts.push(`${xScale(xi)},${low}`);topPts.push(`${xScale(xi)},${high}`);upper[xi]+=value;});const path=[`M${topPts[0]}`,...topPts.slice(1).map((p)=>`L${p}`),...bottomPts.reverse().map((p)=>`L${p}`),"Z"].join(" ");f.parts.push(`<path data-role="stream" d="${path}" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}" fill-opacity=".78" stroke="#fff" stroke-width=".8"/>`);});if(xs.length){f.parts.push(`<text x="${left}" y="${bottom+24}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs[0])}</text>`);f.parts.push(`<text x="${right}" y="${bottom+24}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xs.at(-1))}</text>`);}let ly=top+4;series.forEach((ser,si)=>{f.parts.push(`<rect x="${right-(mobile?145:175)}" y="${ly-9}" width="9" height="9" fill="${SERIES_COLORS[si%SERIES_COLORS.length]}"/>`);f.parts.push(`<text x="${right-(mobile?132:162)}" y="${ly}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.ink}">${esc(textUnits(String(ser))>20?sliceUnits(String(ser),19)+"…":ser)}</text>`);ly+=17;});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";}
 
 
 function geoProjection(lon, lat, left, right, top, bottom) {
@@ -4188,7 +6581,7 @@ function renderGeoFlowMap(spec, rows, mobile=false) {
     candidates.forEach((row)=>{
       const a=geoProjection(n(row[spec.source_lon_field]),n(row[spec.source_lat_field]),left,right,top,bottom),b=geoProjection(n(row[spec.target_lon_field]),n(row[spec.target_lat_field]),left,right,top,bottom),value=n(row[spec.value_field])??0;
       if(value<=0)return;
-      const lift=Math.min(70,Math.hypot(b.x-a.x,b.y-a.y)*0.16),mx=(a.x+b.x)/2,my0=clamp((a.y+b.y)/2-Math.max(20,lift*.5),top+12,bottom-12),label=fmt(value,spec.unit),font=mobile?12:12.5,w=Math.max(28,textUnits(label)*font*.55+8);
+      const lift=Math.min(70,Math.hypot(b.x-a.x,b.y-a.y)*0.16),mx=(a.x+b.x)/2,my0=clamp((a.y+b.y)/2-Math.max(20,lift*.5),top+12,bottom-12),label=fmtSpec(spec, value,spec.unit),font=mobile?12:12.5,w=Math.max(28,textUnits(label)*font*.55+8);
       const my=resolveLabelCollisionY(mx,my0,w,font,[...pointLabelBoxes,...placedValueBoxes],top+12,bottom-12);
       placedValueBoxes.push({x:mx-w/2,y:my-font-3,w,h:font+7});
       f.parts.push(`<rect data-role="geo-value-bg" x="${mx-w/2}" y="${my-font-3}" width="${w}" height="${font+7}" rx="2" fill="#fff" fill-opacity=".8"/>`);f.parts.push(`<text data-role="geo-value" x="${mx}" y="${my}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.muted}">${esc(label)}</text>`);
@@ -4249,10 +6642,10 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
     if(points&&points.length){const markerPoints=[{p:points[0],label:'coverage starts'},...points.filter((p,j)=>j>0&&p.segment!==points[j-1].segment).map(p=>({p,label:'coverage resumes'})),{p:points[points.length-1],label:points[points.length-1].altitude_ft===0?'ground / coverage ends':'coverage ends'}];const maxAlt=points.reduce((best,p)=>Number(p.altitude_ft)>Number(best.altitude_ft)?p:best,points[0]);if(maxAlt&&Number(maxAlt.altitude_ft)>0)markerPoints.splice(markerPoints.length-1,0,{p:maxAlt,label:`${Math.round(Number(maxAlt.altitude_ft)).toLocaleString('en-US')} ft`});for(const [mi,item] of markerPoints.entries()){const q=project(item.p.lon,item.p.lat),anchor=q.x>(left+right)/2?'end':'start',tx=q.x+(anchor==='end'?-7:7),ty=q.y+(mi%2?12:-8);f.parts.push(`<circle data-role="trajectory-marker" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${mobile?2.4:2.8}" fill="#fff" stroke="${color}" stroke-width="1.5"/><text data-role="trajectory-marker-label" x="${tx.toFixed(1)}" y="${clamp(ty,top+10,bottom-4).toFixed(1)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(item.label)}</text>`);}}
     if(a)f.parts.push(`<circle data-role="cartographic-origin" cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="${mobile?2.6:3.2}" fill="${PALETTE.ink}"/>`); if(b)f.parts.push(`<circle data-role="cartographic-destination" cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${mobile?2.9:3.5}" fill="${PALETTE.accent}"/>`);
     const routeLength=a&&b?Math.hypot(b.x-a.x,b.y-a.y):Infinity,sourceKey=spec.source_field&&row[spec.source_field]!==undefined?String(row[spec.source_field]):'',valueAtSource=routeLength<(mobile?105:145)&&sourceKey&&(sourceFrequency.get(sourceKey)??0)===1;
-    if(spec.source_field&&a&&row[spec.source_field]!==undefined){const text=valueAtSource?`${sourceKey} · ${fmt(value,'')}`:sourceKey;pointLabels.set(`s:${sourceKey}`,{...a,text,anchor:a.x>(left+right)/2?'end':'start'});} if(spec.target_field&&b&&row[spec.target_field]!==undefined)pointLabels.set(`t:${row[spec.target_field]}`,{...b,text:String(row[spec.target_field]),anchor:b.x>(left+right)/2?'end':'start'}); routeInfos.push({row,value,color,mid,routeLength,valueAtSource});
+    if(spec.source_field&&a&&row[spec.source_field]!==undefined){const text=valueAtSource?`${sourceKey} · ${fmtSpec(spec, value,'')}`:sourceKey;pointLabels.set(`s:${sourceKey}`,{...a,text,anchor:a.x>(left+right)/2?'end':'start'});} if(spec.target_field&&b&&row[spec.target_field]!==undefined)pointLabels.set(`t:${row[spec.target_field]}`,{...b,text:String(row[spec.target_field]),anchor:b.x>(left+right)/2?'end':'start'}); routeInfos.push({row,value,color,mid,routeLength,valueAtSource});
   });
   f.parts.push('</g>');
-  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmt(info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
+  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
   if(pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
   if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
   const keyY=bottom+18; f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
@@ -4267,8 +6660,8 @@ function renderTrajectoryProfile(spec,rows,mobile=false){
   const xMin=Math.min(0,...xs),xMax=Math.max(...xs),xDomain=xMax>xMin?[xMin,xMax]:[xMin,xMin+1],xScale=horizontalScale(xDomain,left,right),altDomain=[0,Math.max(1,...alts)*1.06],speedDomain=[0,Math.max(1,...speeds)*1.08],altY=verticalScale(altDomain,top,top+panelH),speedTop=top+panelH+gap,speedY=verticalScale(speedDomain,speedTop,speedTop+panelH);
   const transitions=[];for(let i=1;i<sorted.length;i++)if(String(sorted[i][spec.segment_field])!==String(sorted[i-1][spec.segment_field]))transitions.push({a:sorted[i-1],b:sorted[i]});
   for(const tr of transitions){const x1=xScale(n(tr.a[spec.x_field])),x2=xScale(n(tr.b[spec.x_field])),w=Math.max(2,x2-x1),mins=(n(tr.b[spec.x_field])-n(tr.a[spec.x_field]));f.parts.push(`<rect data-role="trajectory-gap" x="${x1.toFixed(1)}" y="${top}" width="${w.toFixed(1)}" height="${(bottom-top).toFixed(1)}" fill="#f3eee9" fill-opacity=".78"/><text data-role="trajectory-gap-label" x="${((x1+x2)/2).toFixed(1)}" y="${(top+13).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.muted}">${esc(`${Math.round(mins)} min source gap`)}</text>`);}
-  function panel(label,domain,yScale,y0,field,color,unit){for(const tick of tickValues(domain,4)){const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/><text x="${left-10}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(tickLabel(tick,unit))}</text>`);}f.parts.push(`<text x="${left}" y="${y0-8}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);const groups=[];for(const row of sorted){let g=groups.at(-1);if(!g||String(g.segment)!==String(row[spec.segment_field])){g={segment:row[spec.segment_field],rows:[]};groups.push(g);}if(n(row[field])!==null)g.rows.push(row);}for(const g of groups){if(g.rows.length<2)continue;const coords=g.rows.map(r=>`${xScale(n(r[spec.x_field])).toFixed(1)},${yScale(n(r[field])).toFixed(1)}`).join(' ');f.parts.push(`<polyline data-role="trajectory-profile-line" fill="none" stroke="${color}" stroke-width="${mobile?2.2:2.7}" points="${coords}"/>`);g.rows.forEach(r=>f.parts.push(`<circle cx="${xScale(n(r[spec.x_field])).toFixed(1)}" cy="${yScale(n(r[field])).toFixed(1)}" r="${mobile?2:2.4}" fill="${color}"/>`));}const last=sorted.filter(r=>n(r[field])!==null).at(-1);if(last)f.parts.push(`<text data-role="direct-label" x="${(xScale(n(last[spec.x_field]))-5).toFixed(1)}" y="${(yScale(n(last[field]))-8).toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${textSafeColor(color)}">${esc(fmt(n(last[field]),unit))}</text>`);}
-  panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');
+  function panel(label,domain,yScale,y0,field,color,unit){for(const tick of tickValues(domain,4)){const y=yScale(tick);f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/><text x="${left-10}" y="${y+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(tickLabel(tick,unit,vizLang(spec)))}</text>`);}f.parts.push(`<text x="${left}" y="${y0-8}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);const groups=[];for(const row of sorted){let g=groups.at(-1);if(!g||String(g.segment)!==String(row[spec.segment_field])){g={segment:row[spec.segment_field],rows:[]};groups.push(g);}if(n(row[field])!==null)g.rows.push(row);}for(const g of groups){if(g.rows.length<2)continue;const coords=g.rows.map(r=>`${xScale(n(r[spec.x_field])).toFixed(1)},${yScale(n(r[field])).toFixed(1)}`).join(' ');f.parts.push(`<polyline data-role="trajectory-profile-line" fill="none" stroke="${color}" stroke-width="${mobile?2.2:2.7}" points="${coords}"/>`);g.rows.forEach(r=>f.parts.push(`<circle cx="${xScale(n(r[spec.x_field])).toFixed(1)}" cy="${yScale(n(r[field])).toFixed(1)}" r="${mobile?2:2.4}" fill="${color}"/>`));}const last=sorted.filter(r=>n(r[field])!==null).at(-1);if(last)f.parts.push(`<text data-role="direct-label" x="${(xScale(n(last[spec.x_field]))-5).toFixed(1)}" y="${(yScale(n(last[field]))-8).toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${textSafeColor(color)}">${esc(fmt(n(last[field]),unit))}</text>`);}
+  {const ps=f.parts.length;panel('Pressure altitude',altDomain,altY,top,spec.altitude_field,PALETTE.accent2,spec.altitude_unit??'ft');tagPanelTexts(f.parts,ps,[0,top-30,right+30,top+panelH+16]);}{const ps=f.parts.length;panel('Ground speed',speedDomain,speedY,speedTop,spec.speed_field,PALETTE.accent,spec.speed_unit??'kt');tagPanelTexts(f.parts,ps,[0,speedTop-30,right+30,speedTop+panelH+16]);}
   for(const tick of tickValues(xDomain,4)){const x=xScale(tick);f.parts.push(`<line x1="${x}" y1="${speedTop+panelH}" x2="${x}" y2="${speedTop+panelH+4}" stroke="${PALETTE.muted}"/><text x="${x}" y="${speedTop+panelH+20}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(`${Math.round(tick)} min`)}</text>`);}f.parts.push(`<text x="${(left+right)/2}" y="${speedTop+panelH+37}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">elapsed time since observed coverage begins</text>`);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
 }
@@ -4288,8 +6681,9 @@ function renderParallelSets(spec, rows, mobile=false) {
 function polar(cx,cy,r,a){return{x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r};}
 function arcPath(cx,cy,r,a0,a1){const p0=polar(cx,cy,r,a0),p1=polar(cx,cy,r,a1),large=a1-a0>Math.PI?1:0;return`M${p0.x},${p0.y} A${r},${r} 0 ${large} 1 ${p1.x},${p1.y}`;}
 
+// Nodes keep their first-appearance order (see facetOrder), not name order.
 function renderChord(spec, rows, mobile=false) {
-  const ids=unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]])).sort(), totals=new Map(ids.map((id)=>[id,0]));for(const row of rows){const v=Math.max(0,n(row[spec.value_field])??0);totals.set(String(row[spec.source_field]),(totals.get(String(row[spec.source_field]))??0)+v);totals.set(String(row[spec.target_field]),(totals.get(String(row[spec.target_field]))??0)+v);}const grand=Math.max([...totals.values()].reduce((a,b)=>a+b,0),1),f=mobile?mobileFrame(spec,470):frame(spec,470),cx=mobile?320:520,cy=(f.bodyTop+f.bodyBottom)/2+8,r=mobile?170:190,gap=.025,angles=new Map();let angle=-Math.PI/2;for(const id of ids){const span=(Math.PI*2-gap*ids.length)*(totals.get(id)/grand);angles.set(id,{a0:angle,a1:angle+span,mid:angle+span/2});angle+=span+gap;}const max=Math.max(...rows.map((row)=>n(row[spec.value_field])??0),1);let i=0;for(const row of rows){const a=angles.get(String(row[spec.source_field])),b=angles.get(String(row[spec.target_field]));if(!a||!b)continue;const p1=polar(cx,cy,r-8,a.mid),p2=polar(cx,cy,r-8,b.mid),v=n(row[spec.value_field])??0;if(v<=0)continue;const sw=Math.max(1.2,Math.sqrt(v/max)*(mobile?18:23));f.parts.push(`<path data-role="chord-ribbon" d="M${p1.x},${p1.y} Q${cx},${cy} ${p2.x},${p2.y}" fill="none" stroke="${SERIES_COLORS[i++%SERIES_COLORS.length]}" stroke-width="${sw}" stroke-opacity=".42" stroke-linecap="round"/>`);}for(let j=0;j<ids.length;j++){const id=ids[j],a=angles.get(id),highlighted=(spec.highlight_values??[]).includes(id);f.parts.push(`<path data-role="chord-arc" d="${arcPath(cx,cy,r,a.a0,a.a1)}" fill="none" stroke="${highlighted?PALETTE.accent:PALETTE.ink}" stroke-width="${mobile?12:14}"/>`);const p=polar(cx,cy,r+(mobile?22:26),a.mid),anchor=Math.cos(a.mid)>.18?'start':Math.cos(a.mid)<-.18?'end':'middle';f.parts.push(`<text x="${p.x}" y="${p.y+3}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(textUnits(id)>(mobile?11:15)?sliceUnits(id,mobile?10:14)+'…':id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
+  const ids=facetOrder(unique(rows.flatMap((row)=>[row[spec.source_field],row[spec.target_field]]))), totals=new Map(ids.map((id)=>[id,0]));for(const row of rows){const v=Math.max(0,n(row[spec.value_field])??0);totals.set(String(row[spec.source_field]),(totals.get(String(row[spec.source_field]))??0)+v);totals.set(String(row[spec.target_field]),(totals.get(String(row[spec.target_field]))??0)+v);}const grand=Math.max([...totals.values()].reduce((a,b)=>a+b,0),1),f=mobile?mobileFrame(spec,470):frame(spec,470),cx=mobile?320:520,cy=(f.bodyTop+f.bodyBottom)/2+8,r=mobile?170:190,gap=.025,angles=new Map();let angle=-Math.PI/2;for(const id of ids){const span=(Math.PI*2-gap*ids.length)*(totals.get(id)/grand);angles.set(id,{a0:angle,a1:angle+span,mid:angle+span/2});angle+=span+gap;}const max=Math.max(...rows.map((row)=>n(row[spec.value_field])??0),1);let i=0;for(const row of rows){const a=angles.get(String(row[spec.source_field])),b=angles.get(String(row[spec.target_field]));if(!a||!b)continue;const p1=polar(cx,cy,r-8,a.mid),p2=polar(cx,cy,r-8,b.mid),v=n(row[spec.value_field])??0;if(v<=0)continue;const sw=Math.max(1.2,Math.sqrt(v/max)*(mobile?18:23));f.parts.push(`<path data-role="chord-ribbon" d="M${p1.x},${p1.y} Q${cx},${cy} ${p2.x},${p2.y}" fill="none" stroke="${SERIES_COLORS[i++%SERIES_COLORS.length]}" stroke-width="${sw}" stroke-opacity=".42" stroke-linecap="round"/>`);}for(let j=0;j<ids.length;j++){const id=ids[j],a=angles.get(id),highlighted=(spec.highlight_values??[]).includes(id);f.parts.push(`<path data-role="chord-arc" d="${arcPath(cx,cy,r,a.a0,a.a1)}" fill="none" stroke="${highlighted?PALETTE.accent:PALETTE.ink}" stroke-width="${mobile?12:14}"/>`);const p=polar(cx,cy,r+(mobile?22:26),a.mid),anchor=Math.cos(a.mid)>.18?'start':Math.cos(a.mid)<-.18?'end':'middle';f.parts.push(`<text x="${p.x}" y="${p.y+3}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="${highlighted?700:500}" fill="${PALETTE.ink}">${esc(textUnits(id)>(mobile?11:15)?sliceUnits(id,mobile?10:14)+'…':id)}</text>`);} (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
 }
 
 function processLayout(rows,spec){const pseudo=rows.map((row)=>({[spec.source_field]:row[spec.source_field],[spec.target_field]:row[spec.target_field],__value:1})),flowSpec={source_field:spec.source_field,target_field:spec.target_field,value_field:'__value',chart_type:'process_schematic'},layout=flowLayout(pseudo,flowSpec);return layout;}
@@ -4358,7 +6752,7 @@ function renderWaffle(spec, rows, mobile = false) {
     const periodTspan = period !== undefined && period !== null && String(period).trim() !== ""
       ? `<tspan dx="6" font-family="${FONT_SANS}" font-weight="400" font-size="12" fill="${PALETTE.muted}">${esc(period)}</tspan>`
       : "";
-    f.parts.push(`<text x="${x0}" y="${valueY}" font-family="Georgia, 'Times New Roman', serif" font-weight="900" font-size="${mobile ? 24 : 30}" fill="${highlighted ? PALETTE.accent : PALETTE.ink}"><tspan>${esc(fmt(value, spec.unit))}</tspan>${periodTspan}</text>`);
+    f.parts.push(`<text x="${x0}" y="${valueY}" font-family="Georgia, 'Times New Roman', serif" font-weight="900" font-size="${mobile ? 24 : 30}" fill="${highlighted ? PALETTE.accent : PALETTE.ink}"><tspan>${esc(fmtSpec(spec, value, spec.unit))}</tspan>${periodTspan}</text>`);
     const filled = Math.round(value);
     for (let i = 0; i < 100; i++) {
       const r = Math.floor(i / 10);
@@ -4463,6 +6857,9 @@ function fmtWafflePercent(value) {
   return `${value.toFixed(1)}%`;
 }
 
+// Outline of the lightest grey (a #F2F2F2 cell alone is 1.14:1 against white).
+const WAFFLE_OUTLINE = "#8B8B8B";
+
 // Single-grid waffle: one 10x10 grid (100 cells, largest-remainder
 // apportionment above so the integer cell counts always sum to exactly
 // 100 regardless of rounding) shared by all of the spec's categories,
@@ -4490,14 +6887,45 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
     ...visible.map((e) => ({ row: e.row, value: e.value, highlighted: e.highlighted })),
     ...(hasOther ? [{ row: null, value: otherValue, highlighted: false }] : []),
   ];
-  let greyIdx = 0;
-  const colors = entries.map((e) => {
-    if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
-    if (e.highlighted) return PALETTE.accent;
-    const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
-    greyIdx += 1;
-    return color;
-  });
+  let colors;
+  let strokeIdx = -1; // the entry that takes the lightest grey also gets an outline
+  if (HOUSE_STYLE_ACTIVE) {
+    // A literal row named 其他/其它/Other/Others is the catch-all too (when no
+    // merged bucket exists), highlighted or not: it is drawn last, takes the
+    // lightest grey, or the accent when highlighted.
+    // Rows keep today's order otherwise. A highlighted row keeps the accent.
+    const isLiteralOther = (e) => e.row !== null && /^(其他|其它|others?)$/i.test(String(e.row[spec.category_field] ?? "").trim());
+    if (!hasOther) {
+      const at = entries.findIndex(isLiteralOther);
+      if (at >= 0 && at < entries.length - 1) entries.push(...entries.splice(at, 1));
+    }
+    const catchAll = entries.findIndex((e, k) => e.row === null || (!hasOther && k === entries.length - 1 && isLiteralOther(e)));
+    const named = entries.map((e, k) => (k !== catchAll && !e.highlighted ? k : -1)).filter((k) => k >= 0);
+    // Exactly two plain rows read best two steps apart; otherwise darkest first.
+    const stepOf = named.length === 2 ? [0, 2] : named.map((_k, i) => i);
+    const lightest = WAFFLE_GREYS.length - 1;
+    colors = entries.map((e, k) => {
+      if (k === catchAll) {
+        if (e.highlighted) return PALETTE.accent; // a highlighted catch-all keeps the accent and has no outline
+        strokeIdx = k;
+        return WAFFLE_GREYS[lightest];
+      }
+      if (e.highlighted) return PALETTE.accent;
+      return WAFFLE_GREYS[Math.min(stepOf[named.indexOf(k)], lightest)];
+    });
+    // With no catch-all, a fifth plain row is the one that takes the lightest grey.
+    if (catchAll < 0 && named.length === WAFFLE_GREYS.length) strokeIdx = named[named.length - 1];
+  } else {
+    let greyIdx = 0;
+    colors = entries.map((e) => {
+      if (e.row === null) return WAFFLE_GREYS[WAFFLE_GREYS.length - 1];
+      if (e.highlighted) return PALETTE.accent;
+      const color = WAFFLE_GREYS[Math.min(greyIdx, WAFFLE_GREYS.length - 2)];
+      greyIdx += 1;
+      return color;
+    });
+  }
+  const outline = (k) => (k === strokeIdx ? ` stroke="${WAFFLE_OUTLINE}" stroke-width="1"` : "");
   const cellCounts = largestRemainderCells(entries.map((e) => e.value));
   const cell = mobile ? 20 : 28;
   const gap = mobile ? 2 : 3;
@@ -4528,7 +6956,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
       const c = cursor % 10;
       const x = left + c * (cell + gap);
       const y = gridTop + r * (cell + gap);
-      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"/>`);
+      f.parts.push(`<rect data-role="waffle-cell" x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${color}"${outline(k)}/>`);
     }
   });
   const legendLeft = mobile ? left : left + grid + gutter;
@@ -4543,7 +6971,7 @@ function renderWaffleSingleGrid(spec, rows, mobile = false) {
   const valueRightX = nameX + maxNameWidth + 16 + 56; // fixed-width value column, right-aligned
   entries.forEach((e, k) => {
     const rowY = legendTop + k * legendRowHeight;
-    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"/>`);
+    f.parts.push(`<rect data-role="legend-swatch" x="${legendLeft}" y="${rowY}" width="12" height="12" fill="${colors[k]}"${outline(k)}/>`);
     f.parts.push(`<text x="${nameX}" y="${rowY + 10}" font-family="${FONT_SANS}" font-size="13" font-weight="600" fill="${PALETTE.ink}">${esc(names[k])}</text>`);
     f.parts.push(`<text data-cell-count="${cellCounts[k]}" x="${valueRightX}" y="${rowY + 10}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtWafflePercent(e.value))}</text>`);
   });
@@ -4787,7 +7215,7 @@ function renderTreemap(spec, rows, mobile = false) {
     const categoryLabel = tile.row.__treemapOther ? String(tile.row[spec.category_field]) : resolveEconomyDisplayName(tile.row[spec.category_field], spec.category_names, lang);
     const rawValue = n(tile.row[spec.value_field]) ?? 0;
     const shareLabel = treemapSharePercent(total > 0 ? (rawValue / total) * 100 : 0);
-    const valueLabel = treemapValueLabel(rawValue, spec.unit, lang);
+    const valueLabel = specValueKind(spec) && Number.isInteger(rawValue) ? fmtSpec(spec, rawValue) : treemapValueLabel(rawValue, spec.unit, lang);
     tile.categoryLabel = categoryLabel;
     tile.shareLabel = shareLabel;
     tile.valueLabel = valueLabel;
@@ -4878,6 +7306,333 @@ function renderTreemap(spec, rows, mobile = false) {
   return f.parts.join("\n") + "\n";
 }
 
+// ---------------------------------------------------------------------------
+// stacked_bar_100: composition across many entities. Each entity gets one
+// horizontal bar running 0-100%, split into its segments (for example
+// employment by sector in each country), so the reader compares how the mix
+// differs from bar to bar. The bars are ordered by one named segment and that
+// segment is drawn against the 0 baseline (FT Visual Vocabulary lists the
+// form under part-to-whole; Datawrapper Academy: sort by one segment and keep
+// it on the baseline).
+//
+// Every number drawn is a value_field value read from the rows and rounded
+// only with fmtSpec and the spec's decimals (the axis ticks aside). A
+// segment's width is its value divided by its own row's sum, so a bar always
+// ends exactly at 100% and no value is ever adjusted to make a row add up;
+// lintVizSpec refuses rows that do not already sum to 100 +/- 1 instead.
+// ---------------------------------------------------------------------------
+import { LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS } from "./render_qa_geometry.mjs";
+
+const STACKED_MAX_BARS = 25;
+const STACKED_WARN_BARS = 20;
+const STACKED_MAX_SEGMENTS = 5;
+const STACKED_SUM_TOLERANCE = 1;
+const STACKED_SEGMENT_VALUES = ["in_bar", "highlight_column"]; // segment_values: "highlight_column" is the default, "in_bar" the opt-in
+const STACKED_LABEL_PAD = 4; // px between an in-bar label and each edge of its segment
+const STACKED_FALLBACK_ADVANCE = 1.02; // render QA's width for a glyph outside its tables (not exported there)
+
+// Width of one line of text, estimated the way render QA measures it (same
+// per-glyph tables and 1.05 safety margin), so "this label fits inside its
+// segment" here and "this text overflows or overlaps" there cannot disagree.
+function stackedTextWidth(text, fontSize = 12, bold = false) {
+  const table = bold ? LATIN_BOLD_ADVANCE_WIDTHS : LATIN_ADVANCE_WIDTHS;
+  let units = 0;
+  for (const ch of Array.from(String(text ?? ""))) {
+    if (/\s/.test(ch)) units += TEXT_WIDTH_FACTORS.space;
+    else if (isWideChar(ch)) units += TEXT_WIDTH_FACTORS.cjk;
+    else units += table[ch] ?? STACKED_FALLBACK_ADVANCE;
+  }
+  return units * fontSize * TEXT_WIDTH_FACTORS.safetyMargin;
+}
+
+// Coordinates are written to two decimals; adjacent segments share the one
+// rounded boundary, so neighbours never overlap or leave a hairline gap.
+function stackedPx(value) {
+  return Math.round(value * 100) / 100;
+}
+
+// The rows read once into entities (bars, in first-appearance order) x
+// segments. cells maps a segment to that entity's value (null when the value
+// is not numeric). Shared by the renderer and by lintVizSpec so both see the
+// same bars, segments and repeats.
+function stackedBarModel(spec, rows) {
+  const entities = [];
+  const byKey = new Map();
+  const segments = [];
+  const seenSegment = new Set();
+  let duplicates = 0;
+  let blank = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = String(row?.[spec.category_field] ?? "");
+    const segment = String(row?.[spec.series_field] ?? "");
+    if (key.trim() === "" || segment.trim() === "") blank += 1;
+    if (!seenSegment.has(segment)) { seenSegment.add(segment); segments.push(segment); }
+    let entity = byKey.get(key);
+    if (!entity) { entity = { key, row, cells: new Map() }; byKey.set(key, entity); entities.push(entity); }
+    if (entity.cells.has(segment)) { duplicates += 1; continue; }
+    entity.cells.set(segment, n(row?.[spec.value_field]));
+  }
+  return { entities, segments, duplicates, blank };
+}
+
+// Segment order, highlight and sort segment, resolved from the spec's
+// defaults: highlight_segment defaults to sort_segment, sort_segment to the
+// first segment of segment_order, and segment_order to the highlight segment
+// followed by the segments in the order they first appear. A segment the
+// spec's segment_order does not list is appended (in first-appearance order)
+// rather than dropped, so a bar can never end short of 100%.
+function stackedPlan(spec, model) {
+  const known = new Set(model.segments);
+  const named = (value) => (value === undefined || value === null || String(value).trim() === "" ? null : String(value));
+  const listed = Array.isArray(spec.segment_order) ? [...new Set(spec.segment_order.map(String))].filter((segment) => known.has(segment)) : [];
+  const highlight = named(spec.highlight_segment) ?? named(spec.sort_segment) ?? listed[0] ?? model.segments[0] ?? null;
+  let order;
+  if (listed.length) order = [...listed, ...model.segments.filter((segment) => !listed.includes(segment))];
+  else if (highlight !== null && known.has(highlight)) order = [highlight, ...model.segments.filter((segment) => segment !== highlight)];
+  else order = [...model.segments];
+  const sortSegment = named(spec.sort_segment) ?? order[0] ?? null;
+  return { order, highlight, sortSegment };
+}
+
+// Bars ordered by the sort segment's own value (a bar without that segment
+// counts as 0); "none" keeps the SQL row order. Ties keep the SQL row order.
+function stackedSortedEntities(spec, model, sortSegment) {
+  const entities = [...model.entities];
+  const mode = spec.sort === "asc" || spec.sort === "none" ? spec.sort : "desc";
+  if (mode === "none") return entities;
+  const keyOf = (entity) => entity.cells.get(sortSegment) ?? 0;
+  entities.sort((a, b) => (mode === "asc" ? keyOf(a) - keyOf(b) : keyOf(b) - keyOf(a)));
+  return entities;
+}
+
+// 0 or 1 decimals: the spec's own choice, else one decimal when any value is
+// not a whole number.
+function stackedDecimals(spec, model) {
+  if (spec.decimals === 0 || spec.decimals === 1) return spec.decimals;
+  const fractional = model.entities.some((entity) => [...entity.cells.values()].some((value) => value !== null && Math.abs(value - Math.round(value)) > 1e-9));
+  return fractional ? 1 : 0;
+}
+
+// True when some bar's values, as printed at this precision, do not add up to
+// exactly 100. The printed strings are what get summed (never the raw values),
+// and nothing is nudged so that they do.
+function stackedNeedsRoundingNote(spec, entities, decimals) {
+  const scale = 10 ** decimals;
+  return entities.some((entity) => {
+    let total = 0;
+    for (const value of entity.cells.values()) {
+      if (value !== null && value > 0) total += Math.round(Number(fmtSpec(spec, value, "", decimals)) * scale);
+    }
+    return total !== 100 * scale;
+  });
+}
+
+// One accent for the highlight segment; every other segment takes the next of
+// five distinct greys (the style's own grey steps, darkest to lightest), so
+// two adjacent segments never share a fill (render QA's indistinct-adjacent-
+// marks rule), even when a bar skips a segment. The steps are taken
+// mid / darkest / light / dark so that neighbours differ strongly in
+// lightness, which keeps the 1px gap between them easy to see.
+function stackedFills(order, highlight) {
+  const greys = [2, 0, 3, 1, 4].map((index) => WAFFLE_GREYS[index]);
+  let next = 0;
+  return new Map(order.map((segment) => [segment, segment === highlight ? PALETTE.accent : greys[next++ % greys.length]]));
+}
+
+// A name is never cut: one that is wider than its column (an entity name in
+// the label column, the highlight name over the value column) is folded onto
+// further lines (at a space when there is one past the first 40% of the line,
+// else between characters).
+function stackedFoldName(name, maxWidth, bold = false) {
+  const lines = [];
+  let rest = String(name);
+  while (stackedTextWidth(rest, 12, bold) > maxWidth) {
+    const chars = Array.from(rest);
+    let cut = chars.length;
+    while (cut > 1 && stackedTextWidth(chars.slice(0, cut).join(""), 12, bold) > maxWidth) cut -= 1;
+    const head = chars.slice(0, cut).join("");
+    const space = head.lastIndexOf(" ");
+    const at = space > head.length * 0.4 ? space : head.length;
+    lines.push(rest.slice(0, at).trimEnd());
+    rest = rest.slice(at).trimStart();
+  }
+  lines.push(rest);
+  return lines;
+}
+
+function renderStackedBar100(spec, rows) {
+  const lang = vizLang(spec);
+  const t = VIZ_STRINGS[lang];
+  const model = stackedBarModel(spec, rows);
+  const { order, highlight, sortSegment } = stackedPlan(spec, model);
+  const entities = stackedSortedEntities(spec, model, sortSegment);
+  const decimals = stackedDecimals(spec, model);
+  const valueText = (value) => fmtSpec(spec, value, "", decimals);
+  const fills = stackedFills(order, highlight);
+  // segment_values "highlight_column" (the default; "in_bar" is the opt-in): no
+  // value inside the bars; only the highlight segment's value is printed,
+  // right-aligned in a column just past the 100% end.
+  const columnMode = spec.segment_values !== "in_bar" && highlight !== null && order.includes(highlight);
+  const accentText = textSafeColor(PALETTE.accent);
+
+  const left0 = 54, right0 = LAYOUT_W - 54;
+  const roomy = entities.length <= 12;
+  const barH = roomy ? 24 : 18;
+  const nameLines = entities.map((entity) => stackedFoldName(String(resolveEconomyDisplayName(entity.row[spec.category_field], spec.category_names, lang)), Math.floor(LAYOUT_W * 0.3)));
+  const nameLineCount = Math.max(1, ...nameLines.map((lines) => lines.length));
+  const pitch = Math.max(roomy ? 36 : 26, nameLineCount > 1 ? 14 * nameLineCount + 6 : 0);
+  const nameColW = Math.ceil(Math.min(Math.max(0, ...nameLines.flat().map((line) => stackedTextWidth(line))), LAYOUT_W * 0.4));
+  const plotLeft = left0 + nameColW + 14;
+  const columnTexts = columnMode ? entities.map((entity) => { const value = entity.cells.get(highlight); return value === undefined || value === null ? null : `${valueText(value)}%`; }) : [];
+  const columnW = columnMode ? Math.ceil(Math.min(Math.max(stackedTextWidth(highlight, 12, true), ...columnTexts.filter((text) => text !== null).map((text) => stackedTextWidth(text))), LAYOUT_W * 0.2)) : 0;
+  const plotRight = columnMode ? right0 - columnW - 14 : right0 - 16;
+  const plotW = Math.max(1, plotRight - plotLeft);
+  // The column header is the highlight name; a name wider than the column
+  // folds onto further lines, and the rows below it move down to make room.
+  const headerLines = columnMode ? stackedFoldName(highlight, columnW, true) : [];
+  const headerExtra = Math.max(0, headerLines.length - 1) * 14;
+
+  // Each bar's segments, left to right in segment order. A segment's width is
+  // its value over this bar's own sum; the last segment ends exactly at the
+  // 100% mark.
+  const pieces = entities.map((entity) => {
+    const present = order.filter((segment) => (entity.cells.get(segment) ?? 0) > 0);
+    const total = present.reduce((sum, segment) => sum + entity.cells.get(segment), 0);
+    let running = 0;
+    return present.map((segment, index) => {
+      const value = entity.cells.get(segment);
+      const x0 = plotLeft + (plotW * running) / total;
+      running += value;
+      const x1 = index === present.length - 1 ? plotRight : plotLeft + (plotW * running) / total;
+      return { segment, value, x0: stackedPx(x0), x1: stackedPx(x1) };
+    });
+  });
+
+  // Segment names go once, centred on their own segment directly above the
+  // first bar. If any name does not fit its segment (or direct labels are
+  // switched off), one plain key line above the chart names them instead.
+  const firstPieces = pieces[0] ?? [];
+  const namesFit = spec.direct_labels !== false && firstPieces.length > 0 && order.every((segment) => {
+    const piece = firstPieces.find((candidate) => candidate.segment === segment);
+    return piece !== undefined && stackedTextWidth(segment, 12, segment === highlight) + 2 * STACKED_LABEL_PAD <= piece.x1 - piece.x0;
+  });
+  const keyLines = [];
+  if (!namesFit && order.length) {
+    const maxKeyW = (columnMode ? plotRight : right0) - plotLeft;
+    let line = [], cursor = 0;
+    for (const segment of order) {
+      const width = 16 + stackedTextWidth(segment, 12, segment === highlight);
+      if (line.length && cursor + 20 + width > maxKeyW) { keyLines.push(line); line = []; cursor = 0; }
+      const x = line.length ? cursor + 20 : 0;
+      line.push({ segment, x, width });
+      cursor = x + width;
+    }
+    if (line.length) keyLines.push(line);
+  }
+  // The rounding note is about printed figures that a reader could add up, so
+  // it is only drawn when a bar prints several of them (in-bar values); the
+  // single highlight column prints one figure per bar, with nothing to add.
+  const needNote = !columnMode && stackedNeedsRoundingNote(spec, entities, decimals);
+
+  // Vertical layout, relative to the top of the chart body: key line(s), the
+  // axis row, the segment-name row, then the bars and the rounding note.
+  let rel = 0;
+  const keyRel = [];
+  if (keyLines.length) { keyLines.forEach((_, k) => keyRel.push(rel + 12 + k * 18)); rel += keyLines.length * 18 + 8 + headerExtra; }
+  const axisRel = rel + 12;
+  rel = axisRel + 10;
+  let namesRel = null;
+  if (namesFit) { namesRel = rel + 12; rel = namesRel + 9 + headerExtra; } else rel += 2;
+  const barsRel = rel;
+  const barsEndRel = barsRel + Math.max(0, entities.length - 1) * pitch + barH;
+  const gridEndRel = barsEndRel + 6;
+  const noteRel = barsEndRel + 26;
+  const bodyHeight = (needNote ? noteRel + 6 : gridEndRel + 6) + 4;
+
+  // A short chart (a handful of bars) keeps the canvas its content needs
+  // instead of the 420px default, which would leave a blank band under the
+  // bars; 300 is the same floor renderHorizontal's tight layout uses.
+  const f = frame(spec, bodyHeight, 300);
+  const o = f.bodyTop + 2;
+  const parts = f.parts;
+  const ticks = [0, 25, 50, 75, 100];
+  const tickX = (tick) => stackedPx(plotLeft + (plotW * tick) / 100);
+
+  // Gridlines first, so every bar and label paints over them.
+  for (const tick of ticks) {
+    parts.push(`<line data-role="grid-line" x1="${tickX(tick)}" y1="${o + axisRel + 5}" x2="${tickX(tick)}" y2="${o + gridEndRel}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
+  }
+  // A paper-coloured plate behind each segment name keeps a gridline from
+  // running through the text.
+  if (namesFit) {
+    for (const piece of firstPieces) {
+      const width = stackedTextWidth(piece.segment, 12, piece.segment === highlight);
+      parts.push(`<rect x="${stackedPx((piece.x0 + piece.x1) / 2 - width / 2 - 3)}" y="${o + namesRel - 11}" width="${stackedPx(width + 6)}" height="15" fill="${PAPER}"/>`);
+    }
+  }
+  ticks.forEach((tick, i) => {
+    parts.push(`<text x="${tickX(tick)}" y="${o + axisRel}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${tick}${axisTickUnit("%", i, ticks.length)}`)}</text>`);
+  });
+  if (namesFit) {
+    for (const piece of firstPieces) {
+      const isHighlight = piece.segment === highlight;
+      parts.push(`<text data-role="stacked-segment-name" x="${stackedPx((piece.x0 + piece.x1) / 2)}" y="${o + namesRel}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="${isHighlight ? 700 : 400}" fill="${isHighlight ? accentText : PALETTE.ink}">${esc(piece.segment)}</text>`);
+    }
+  } else {
+    keyLines.forEach((line, k) => {
+      for (const item of line) {
+        const isHighlight = item.segment === highlight;
+        parts.push(`<rect data-role="legend-swatch" x="${stackedPx(plotLeft + item.x)}" y="${o + keyRel[k] - 9}" width="10" height="10" fill="${fills.get(item.segment)}"/>`);
+        parts.push(`<text data-role="stacked-key" x="${stackedPx(plotLeft + item.x + 16)}" y="${o + keyRel[k]}" font-family="${FONT_SANS}" font-size="12" font-weight="${isHighlight ? 700 : 400}" fill="${isHighlight ? accentText : PALETTE.ink}">${esc(item.segment)}</text>`);
+      }
+    });
+  }
+  headerLines.forEach((line, k) => {
+    parts.push(`<text data-role="stacked-column-header" x="${right0}" y="${o + (namesFit ? namesRel : keyRel[0]) + 14 * k}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${accentText}">${esc(line)}</text>`);
+  });
+
+  // The bars: one rect per segment, a 1px paper-coloured stroke making the gap
+  // between neighbours.
+  entities.forEach((entity, i) => {
+    const barTop = o + barsRel + i * pitch;
+    for (const piece of pieces[i]) {
+      parts.push(`<rect data-role="stacked-segment" data-category="${esc(entity.key)}" data-series="${esc(piece.segment)}" data-value="${piece.value}" x="${piece.x0}" y="${barTop}" width="${stackedPx(piece.x1 - piece.x0)}" height="${barH}" fill="${fills.get(piece.segment)}" stroke="${PAPER}" stroke-width="1"/>`);
+    }
+  });
+  // In-bar values only where the label fits inside its segment with the
+  // padding on each side; white on the accent or a dark grey, ink on a light
+  // grey, whichever clears the contrast floor.
+  if (!columnMode) {
+    entities.forEach((entity, i) => {
+      const barTop = o + barsRel + i * pitch;
+      for (const piece of pieces[i]) {
+        const text = valueText(piece.value);
+        if (stackedTextWidth(text) + 2 * STACKED_LABEL_PAD > piece.x1 - piece.x0) continue;
+        const style = labelStyleOnFill(hexToRgb(fills.get(piece.segment)));
+        const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
+        parts.push(`<text data-role="stacked-value" x="${stackedPx((piece.x0 + piece.x1) / 2)}" y="${barTop + barH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(text)}</text>`);
+      }
+    });
+  }
+  entities.forEach((entity, i) => {
+    const centre = o + barsRel + i * pitch + barH / 2;
+    const lines = nameLines[i];
+    lines.forEach((line, k) => {
+      parts.push(`<text data-role="stacked-entity" x="${plotLeft - 14}" y="${centre + 4 - 7 * (lines.length - 1) + 14 * k}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(line)}</text>`);
+    });
+    if (columnMode && columnTexts[i] !== null) {
+      parts.push(`<text data-role="stacked-column-value" x="${right0}" y="${centre + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(columnTexts[i])}</text>`);
+    }
+  });
+  if (needNote) {
+    parts.push(`<text data-role="stacked-rounding-note" x="${left0}" y="${o + noteRel}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(t.stackedRoundingNote)}</text>`);
+  }
+
+  addFooter(parts, spec, f.footerTop);
+  parts.push("</svg>");
+  return parts.join("\n") + "\n";
+}
+
 // Average glyph advance width (em/char) used only for this renderer's own
 // label-placement math (does a label's estimated box fit on the map / does
 // it collide with another placed label) - the same 0.56em/char heuristic
@@ -4890,6 +7645,41 @@ function renderTreemap(spec, rows, mobile = false) {
 // own placement rarely disagrees with it.
 function choroplethLabelWidth(text, font) {
   return textUnits(text) * font * 0.56 + 8;
+}
+
+// Projected, horizon-filtered rings of one feature. The label-placement
+// searches below test thousands of candidate points/boxes/segments against the
+// same few features, and each test used to re-filter and re-project every ring
+// vertex; the projected points depend only on (projection, feature, centre),
+// so they are computed once per projection function and reused. Callers only
+// read the returned arrays.
+const PROJECTED_RING_CACHE = new WeakMap();
+function projectedFeatureRings(index, project, lon0, lat0) {
+  let byKey = PROJECTED_RING_CACHE.get(project);
+  if (!byKey) PROJECTED_RING_CACHE.set(project, (byKey = new Map()));
+  const key = `${index}|${lon0}|${lat0}`;
+  let rings = byKey.get(key);
+  if (!rings) {
+    rings = geometryRings(neFeatureGeometry(index))
+      .filter((ring) => ringWithinHorizon(ring, lon0, lat0, 90))
+      .map((ring) => {
+        const pts = ring.map(([lon, lat]) => project(lon, lat));
+        // Bounding box of the finite vertices: lets the callers skip a ring
+        // that provably cannot intersect the point/box/segment they test.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const q of pts) {
+          if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+          if (q.x < minX) minX = q.x;
+          if (q.x > maxX) maxX = q.x;
+          if (q.y < minY) minY = q.y;
+          if (q.y > maxY) maxY = q.y;
+        }
+        pts.bb = { minX, minY, maxX, maxY };
+        return pts;
+      });
+    byKey.set(key, rings);
+  }
+  return rings;
 }
 
 // Nonzero-winding point-in-polygon over feature `index`'s own projected
@@ -4907,10 +7697,10 @@ function choroplethLabelWidth(text, font) {
 // this renderer's own contrast decision always agree with that gate, rather
 // than relying on the halo alone to paper over a wrong colour choice.
 function pointOnFeature(index, x, y, project, lon0, lat0) {
-  const rings = geometryRings(neFeatureGeometry(index)).filter((ring) => ringWithinHorizon(ring, lon0, lat0, 90));
   let inside = false;
-  for (const ring of rings) {
-    const pts = ring.map(([lon, lat]) => project(lon, lat));
+  for (const pts of projectedFeatureRings(index, project, lon0, lat0)) {
+    // A crossing needs y inside the ring's y-range and x left of its far edge.
+    if (y < pts.bb.minY || y > pts.bb.maxY || x >= pts.bb.maxX) continue;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
       const a = pts[i], b = pts[j];
       if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -4932,7 +7722,59 @@ function pointOnFeature(index, x, y, project, lon0, lat0) {
  * africa/page.js, read-only reference) translated from d3 into this file's
  * own hand-written SVG/geometry conventions (no mapping dependency added).
  */
+// Adaptive zoom-inset ladder (desktop only). Rung 0 is the long-standing
+// default (a third of the plot width, 25-degree cluster radius) and is what
+// every render that already places its markers gets, byte for byte. Only when
+// rung 0 has a zoom inset AND leaves numbered regions without a map marker are
+// the later rungs tried: progressively larger frames (share of the plot width,
+// fraction of the map height) and tighter cluster radii, with a strip panel
+// that spans the plot width. Every candidate is scored by the same render QA
+// the gate runs (geometry, contrast, value labels - no rule or threshold is
+// changed). A candidate replaces the incumbent when it has fewer QA failures
+// in total (every failure blocks equally, whichever rule it is), or the same
+// number and strictly fewer list-only regions without any failure rule the
+// incumbent lacks; remaining ties keep the earlier, less intrusive rung. A
+// candidate whose QA cannot be computed is never chosen (fail closed). The
+// search stops at the first rung with no list-only regions and no failures.
+const INSET_LADDER = [
+  { share: 0.33, heightFrac: 0.62, clusterDeg: 25 },
+  { share: 0.5, heightFrac: 0.75, clusterDeg: 25, wideStrip: true },
+  { share: 0.5, heightFrac: 0.75, clusterDeg: 18, wideStrip: true },
+  { share: 0.7, heightFrac: 0.85, clusterDeg: 18, wideStrip: true },
+  { share: 0.7, heightFrac: 0.85, clusterDeg: 12, wideStrip: true },
+  { share: 0.9, heightFrac: 0.92, clusterDeg: 12, wideStrip: true },
+  { share: 0.9, heightFrac: 0.92, clusterDeg: 8, wideStrip: true },
+];
+// Rule names of every render-QA failure in `svg`, or null when the QA itself
+// could not run (never treated as "no failures").
+function insetRenderQaRules(svg, spec, rows) {
+  try {
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+    return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
+  } catch {
+    return null;
+  }
+}
 function renderChoropleth(spec, rows, mobile = false) {
+  const meta0 = {};
+  const first = renderChoroplethOnce(spec, rows, mobile, INSET_LADDER[0], meta0);
+  if (mobile || !meta0.hasInset || meta0.listOnly === 0) return first;
+  let best = null;
+  const consider = (svg, meta) => {
+    const qa = insetRenderQaRules(svg, spec, rows);
+    if (!qa) return;
+    const noNewRule = qa.every((rule) => best?.qa.includes(rule));
+    if (!best || qa.length < best.qa.length || (qa.length === best.qa.length && noNewRule && meta.listOnly < best.meta.listOnly)) best = { svg, meta, qa };
+  };
+  consider(first, meta0);
+  for (const tune of INSET_LADDER.slice(1)) {
+    if (best && best.meta.listOnly === 0 && best.qa.length === 0) break;
+    const meta = {};
+    consider(renderChoroplethOnce(spec, rows, mobile, tune, meta), meta);
+  }
+  return best ? best.svg : first;
+}
+function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   const lang = vizLang(spec);
   const font = mobile ? 12 : 12.5;
   const lineH = mobile ? 14 : 15;
@@ -4959,7 +7801,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(n(item.row[spec.value_field]))
   );
   const values = joined.map((item) => n(item.row[spec.value_field]));
-  const breaks = niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5);
+  const classOpts = { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) };
+  const classPlan = mobile ? { breaks: niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, classOpts), skewed: false } : classBreaks(values, 5, classOpts);
+  const breaks = classPlan.breaks;
   const colorForValue = (value) => CHOROPLETH_RAMP[classifyValue(value, breaks)];
 
   const width = mobile ? 640 : 1040;
@@ -4996,18 +7840,35 @@ function renderChoropleth(spec, rows, mobile = false) {
   const dataPoints = [];
   for (const item of joined) {
     for (const idx of item.featureIndices) {
-      for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
+      for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
     }
   }
+  // World mode: a fixed Equal Earth frame (never the data's bbox) with no Antarctica.
+  const worldMode = isWorldExtent(spec);
+  if (worldMode) dataPoints.splice(0, dataPoints.length, ...WORLD_FRAME_POINTS);
   // Review fix (framing): ~6% padding around the data bbox, not the wider
   // 10% this renderer started with - a caller's data footprint (e.g. a
   // handful of West/Central African states) otherwise leaves the projection
   // free to show a third of the map as geography no plotted region actually
   // occupies (Arabia, the Indian Ocean) once fitAzimuthalProjection's own
   // uniform scale binds to the tighter of width/height.
-  const [lon0, lat0] = bboxCenter(dataPoints.length ? dataPoints : [[0, 0]]);
-  let proj = fitAzimuthalProjection(lon0, lat0, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+  // Diagnosis P1: the projection follows the data's real spherical extent (see
+  // chooseMapProjection), not the bbox midpoint alone - data spread over more
+  // than one azimuthal hemisphere gets a world projection instead of silently
+  // losing every ring beyond the horizon. horizonLat0 is lat0 for the
+  // azimuthal projection and null for the world one (no horizon to filter on).
+  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : chooseMapProjection(dataPoints);
+  const { lon0, lat0 } = mapChoice;
+  const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
+  let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
+
+  // Coverage contract for framingRings: a region's far, tiny pieces do not
+  // drive the frame, so when one lies wholly outside the map rect (and is big
+  // enough to see, >= 1 deg^2) the chart note names the region instead of
+  // clipping it silently.
+  const clippedTerritoryItems = joined.filter((item) => item.featureIndices.some((idx) =>
+    clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
 
   const dataByIndex = new Map();
   for (const item of joined) for (const idx of item.featureIndices) dataByIndex.set(idx, item);
@@ -5022,22 +7883,66 @@ function renderChoropleth(spec, rows, mobile = false) {
   // above. A region chosen for the inset gets no main-map label at all (see
   // labelItems below) - only its colour fill and white outline stay on the
   // main map, same as any other plotted region.
-  const insetSpec = spec.inset && typeof spec.inset === "object" ? spec.inset : null;
+  const insetSpec = !worldMode && spec.inset && typeof spec.inset === "object" ? spec.inset : null;
   const insetIso3Set = new Set();
+  const INSET_CLUSTER_DEG = tune.clusterDeg;
+  // Centre for a secondary view (locator, zoom inset, clustering): the same
+  // rule as the main map (bbox centre when everything is within reach, else the
+  // minimal enclosing cap), never the bbox midpoint alone, which lands on the
+  // far side of the globe for data straddling the antimeridian.
+  const viewCentre = (pts) => {
+    const choice = chooseMapProjection(pts);
+    if (choice.kind === "azimuthal") return [choice.lon0, choice.lat0];
+    const cap = enclosingCap(pts);
+    return [cap.lon, cap.lat];
+  };
+  const insetCentreOf = (item) => viewCentre(item.featureIndices.flatMap((idx) => geometryRings(neFeatureGeometry(idx)).flat()));
+  const angDeg = (p1, p2) => {
+    const r = Math.PI / 180;
+    const cosd = Math.sin(p1[1] * r) * Math.sin(p2[1] * r) + Math.cos(p1[1] * r) * Math.cos(p2[1] * r) * Math.cos((p1[0] - p2[0]) * r);
+    return Math.acos(Math.max(-1, Math.min(1, cosd))) / r;
+  };
+  // A region demoted later (its leader would be too long) may only join the
+  // zoom inset when it lies near the regions already in it; otherwise the
+  // panel's extent would balloon and shrink everything back to a dot.
+  const farFromInset = (iso3) => {
+    if (!insetIso3Set.size) return false;
+    const item = joined.find((j) => j.iso3 === iso3);
+    if (!item) return false;
+    const c = insetCentreOf(item);
+    return !joined.some((j) => insetIso3Set.has(j.iso3) && angDeg(c, insetCentreOf(j)) <= INSET_CLUSTER_DEG);
+  };
   if (insetSpec) {
     if (Array.isArray(insetSpec.iso3) && insetSpec.iso3.length) {
       for (const code of insetSpec.iso3) insetIso3Set.add(String(code ?? "").trim().toUpperCase());
     } else if (insetSpec.auto) {
+      const autoCandidates = [];
       for (const item of joined) {
         const bbox = projectedFeatureBBox(item.featureIndices, project);
         const value = n(item.row[spec.value_field]) ?? 0;
         const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-        const valueText = choroplethValueText(value, spec.unit);
+        const valueText = choroplethValueText(value, spec.unit, spec);
         const neededW = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
         const neededH = lineH * 2 + 6;
         const tooSmall = !bbox || bbox.maxX - bbox.minX < neededW || bbox.maxY - bbox.minY < neededH;
-        if (tooSmall) insetIso3Set.add(item.iso3);
+        if (tooSmall) autoCandidates.push(item);
       }
+      // A zoom panel only magnifies one neighbourhood: merging regions that sit
+      // far apart fits a near-global extent and shrinks each back to a dot. Keep
+      // the largest group of candidates that lie within INSET_CLUSTER_DEG of one
+      // another (ties: tighter, then iso3); the rest keep their main-map labels.
+      const centres = autoCandidates.map((item) => ({ item, c: insetCentreOf(item) }));
+      let bestGroup = [];
+      let bestSpread = Infinity;
+      for (const seed of centres) {
+        const group = centres.filter((o) => angDeg(seed.c, o.c) <= INSET_CLUSTER_DEG);
+        const spread = Math.max(...group.map((o) => angDeg(seed.c, o.c)));
+        const better = group.length > bestGroup.length
+          || (group.length === bestGroup.length && (spread < bestSpread
+            || (spread === bestSpread && group.map((o) => o.item.iso3).sort().join() < bestGroup.map((o) => o.item.iso3).sort().join())));
+        if (better) { bestGroup = group; bestSpread = spread; }
+      }
+      for (const o of bestGroup) insetIso3Set.add(o.item.iso3);
     }
   }
   // Zoom inset natural size (magnification >=2.5x, see the layout further
@@ -5052,12 +7957,34 @@ function renderChoropleth(spec, rows, mobile = false) {
   const MIN_INSET_MAGNIFICATION = 2.5;
   function insetNaturalMapSize(points, mainScale) {
     const pts = points.length ? points : [[lon0, lat0]];
-    const [zl0, zl1] = bboxCenter(pts);
+    const [zl0, zl1] = viewCentre(pts);
     const probe = fitAzimuthalProjection(zl0, zl1, pts, 0, 1, 0, 1, 0.12);
     const raw = probe.scale > 0 ? (mainScale * (MIN_INSET_MAGNIFICATION + 0.1)) / probe.scale : mobile ? 90 : 120;
     return Math.max(mobile ? 70 : 90, Math.min(mobile ? 170 : 230, raw));
   }
   const insetPanelWidthFor = (mapSize) => Math.max(mapSize + 12, mobile ? 140 : 170);
+  // P3 (items 3 and 5): on desktop the panel is about a third as wide as the
+  // main map, and its height follows the aspect of the selected extent (never
+  // below the natural square size, capped so it cannot swallow the frame).
+  // The map inside is then fitted to that W x H rectangle, so the extent is
+  // widened to the panel's aspect and the surrounding land fills the rest.
+  function insetNaturalDims(points, mainScale, widthOverride) {
+    const nat = insetNaturalMapSize(points, mainScale);
+    if (mobile) return { w: nat, h: nat };
+    const pts = points.length ? points : [[lon0, lat0]];
+    const [zl0, zl1] = viewCentre(pts);
+    const probe = fitAzimuthalProjection(zl0, zl1, pts, 0, 1000, 0, 1000, 0);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const pt of pts) {
+      const q = probe.project(pt[0], pt[1]);
+      if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+      x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+    }
+    const aspect = x1 > x0 && y1 > y0 ? Math.min(3, Math.max(0.5, (x1 - x0) / (y1 - y0))) : 1;
+    const w = widthOverride ?? Math.max(nat, Math.round((INSET_WIDTH_SHARE * (plotRight - plotLeft - INSET_COLUMN_GAP)) / (1 + INSET_WIDTH_SHARE)));
+    const h = Math.max(nat, Math.min(w / aspect, tune.heightFrac * mapH));
+    return { w, h };
+  }
 
   // Task (inset outside the map): when a zoom inset is requested, the panel
   // gets its own column to the LEFT of the map instead of floating over it -
@@ -5075,25 +8002,31 @@ function renderChoropleth(spec, rows, mobile = false) {
   // of their own labels and into the inset), the panel gets a strip BELOW the
   // map instead (insetStripH), between the map and the legend.
   const INSET_COLUMN_GAP = 14;
+  const INSET_WIDTH_SHARE = tune.share;
   const MIN_MAP_W_WITH_COLUMN = 560;
   const INSET_STRIP_LEGEND_GAP = 8;
   let insetColumnW = 0;
   let insetStripH = 0;
+  // Enlarged ladder rungs: a strip panel spans the whole plot width (more
+  // surrounding context and label room) instead of the share-based width,
+  // which would leave blank page areas on both sides of it. The default rung
+  // keeps its original strip width.
+  const stripPanelWidth = tune.wideStrip ? plotRight - plotLeft - 12 : undefined;
   if (insetIso3Set.size) {
     const pts = [];
     for (const item of joined) {
       if (!insetIso3Set.has(item.iso3)) continue;
       for (const idx of item.featureIndices) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) pts.push(pt);
     }
-    const reserve = insetPanelWidthFor(insetNaturalMapSize(pts, proj.scale)) + INSET_COLUMN_GAP;
+    const reserve = insetPanelWidthFor(insetNaturalDims(pts, proj.scale).w) + INSET_COLUMN_GAP;
     if (plotRight - plotLeft - reserve >= MIN_MAP_W_WITH_COLUMN) {
       insetColumnW = reserve;
       mapLeft = plotLeft + insetColumnW;
-      proj = fitAzimuthalProjection(lon0, lat0, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
+      proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
     } else {
       // Same upper-bound reasoning for the height: the title row, the
       // natural-size map and the panel's own padding (see insetPanelH).
-      const mapSize = insetNaturalMapSize(pts, proj.scale);
+      const mapSize = insetNaturalDims(pts, proj.scale, stripPanelWidth).h;
       insetStripH = Math.min(mapH - 2 * 8, 18 + mapSize + 8) + INSET_COLUMN_GAP + INSET_STRIP_LEGEND_GAP;
       f = mobile ? mobileFrame(spec, bodyH + insetStripH) : frame(spec, bodyH + insetStripH);
     }
@@ -5141,13 +8074,41 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
   }
 
-  const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3)).map((item) => {
+  // A region whose largest piece projects below TINY_REGION_PX on both sides
+  // is invisible as a polygon; it is also drawn as a value-coloured dot at the
+  // centre of that piece, and its label/leader anchors on the dot (an
+  // archipelago's label point can sit in open sea between its islands).
+  const TINY_REGION_PX = mobile ? 5 : 6;
+  const tinyRegionDot = (featureIndices, projectFn, lonC, latC, limit = TINY_REGION_PX) => {
+    let best = null;
+    for (const idx of featureIndices) {
+      for (const ring of geometryRings(neFeatureGeometry(idx))) {
+        if (!ringWithinHorizon(ring, lonC, latC)) continue;
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const [lo, la] of ring) {
+          const q = projectFn(lo, la);
+          if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+        }
+        const size = Math.max(x1 - x0, y1 - y0);
+        if (!best || size > best.size) best = { size, x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+      }
+    }
+    return best && best.size < limit ? best : null;
+  };
+  const tinyDots = new Map();
+  for (const item of joined) {
+    const dot = tinyRegionDot(item.featureIndices, project, lon0, horizonLat0);
+    if (dot) tinyDots.set(item.iso3, dot);
+  }
+  // World mode: only the range ends and highlight_values carry text (at most 8); every other economy is colour only.
+  const worldLabelled = worldMode ? worldLabelIso3s(joined, spec) : null;
+  const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3) && (!worldLabelled || worldLabelled.has(item.iso3))).map((item) => {
     const idx = item.featureIndices[0];
     const point = neFeatureAttributes(idx)?.label ?? [lon0, lat0];
-    const p = project(point[0], point[1]);
+    const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-    const valueText = choroplethValueText(value, spec.unit);
+    const valueText = choroplethValueText(value, spec.unit, spec);
     const w = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
     return { item, x: p.x, y: p.y, fill: colorForValue(value), name, valueText, w, h: lineH * 2 + 6 };
   });
@@ -5217,9 +8178,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   function interiorMargin(featureIndices, x, y, projectFn, lonC, latC) {
     let best = Infinity;
     for (const idx of featureIndices) {
-      const rings = geometryRings(neFeatureGeometry(idx)).filter((ring) => ringWithinHorizon(ring, lonC, latC, 90));
-      for (const ring of rings) {
-        const pts = ring.map(([lon, lat]) => projectFn(lon, lat));
+      for (const pts of projectedFeatureRings(idx, projectFn, lonC, latC)) {
         for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
           const a = pts[i], b = pts[j];
           if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -5313,9 +8272,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
   }
   function segmentCrossesFeature(idx, p1, p2, projectFn, lonC, latC) {
-    const rings = geometryRings(neFeatureGeometry(idx)).filter((ring) => ringWithinHorizon(ring, lonC, latC, 90));
-    for (const ring of rings) {
-      const pts = ring.map(([lon, lat]) => projectFn(lon, lat));
+    for (const pts of projectedFeatureRings(idx, projectFn, lonC, latC)) {
+      const bb = pts.bb;
+      if (Math.max(p1.x, p2.x) < bb.minX || Math.min(p1.x, p2.x) > bb.maxX || Math.max(p1.y, p2.y) < bb.minY || Math.min(p1.y, p2.y) > bb.maxY) continue;
       for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
         const a = pts[i], b = pts[j];
         if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -5351,6 +8310,10 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
     for (const leader of acceptedLeaders) {
       if (segmentsIntersect(p1, p2, leader.a, leader.b)) return false;
+      // A label may not sit on a leader accepted earlier either: boxes were
+      // only ever tested against earlier boxes, so a later label could land
+      // on top of another region's leader line.
+      if (ownBox && segmentCrossesBox(leader.a, leader.b, ownBox)) return false;
     }
     for (const box of acceptedBoxes) {
       if (segmentCrossesBox(p1, p2, box)) return false;
@@ -5369,61 +8332,98 @@ function renderChoropleth(spec, rows, mobile = false) {
     return true;
   }
 
-  // Footnote-fallback numbered markers (leader research point 3: this tier
-  // draws no leader at all, so it has no boundary-column layout to keep it
-  // crossing-free). Their default position is each region's own raw
-  // centroid, which is fine when regions are spread out but can put two
-  // small, geographically adjacent countries' markers closer together than
-  // the marker's own rendered footprint (r=9 circle + numeral) allows -
-  // worse at a compressed inset scale. A short pairwise-repulsion pass keeps
-  // each marker close to its true centroid while guaranteeing no two
-  // markers (and therefore no two numerals) overlap.
-  // A marker can also land on top of a fixed obstacle it must never move
-  // (an on-polygon inline label, e.g.) - pushed out to the nearest edge of
-  // that obstacle's box (expanded by the marker's own footprint) rather than
-  // just kept clear of other markers.
-  function pushOutOfBox(p, box, margin) {
-    const bx0 = box.x - margin, bx1 = box.x + box.w + margin;
-    const by0 = box.y - margin, by1 = box.y + box.h + margin;
-    if (p.x < bx0 || p.x > bx1 || p.y < by0 || p.y > by1) return p;
-    const dLeft = p.x - bx0, dRight = bx1 - p.x, dTop = p.y - by0, dBottom = by1 - p.y;
-    const min = Math.min(dLeft, dRight, dTop, dBottom);
-    if (min === dLeft) return { x: bx0, y: p.y };
-    if (min === dRight) return { x: bx1, y: p.y };
-    if (min === dTop) return { x: p.x, y: by0 };
-    return { x: p.x, y: by1 };
-  }
-  function declutterPoints(points, minDist, obstacleBoxes = [], obstacleMargin = 0) {
-    let pts = points.map((p) => ({ x: p.x, y: p.y }));
-    for (let iter = 0; iter < 8; iter++) {
-      let moved = false;
-      for (const box of obstacleBoxes) {
-        pts = pts.map((p) => {
-          const moved2 = pushOutOfBox(p, box, obstacleMargin);
-          if (moved2.x !== p.x || moved2.y !== p.y) moved = true;
-          return moved2;
-        });
+  // Numbered-marker placement (dense small regions). Markers go in order, each
+  // at its own centroid if that is clear, otherwise at the nearest clear spot
+  // on growing rings around it (fixed radii and angles, so the result never
+  // varies): clear of every placed marker, every label box, every leader
+  // segment and every rect (e.g. the inset panel), and inside the bounds. A
+  // marker with no clear spot keeps the position that breaks the fewest rules
+  // and the numbered list under the chart still names it.
+  function placeNumberedMarkers(points, { bounds, boxes = [], segments = [], dots = [], radius = 9, nearDotTolerance = 0 } = {}) {
+    const R = radius;
+    const keepOut = R + 1;
+    const segDist = (q, a, b) => {
+      const vx = b.x - a.x, vy = b.y - a.y;
+      const len2 = vx * vx + vy * vy;
+      const t = len2 ? Math.max(0, Math.min(1, ((q.x - a.x) * vx + (q.y - a.y) * vy) / len2)) : 0;
+      return Math.hypot(q.x - (a.x + t * vx), q.y - (a.y + t * vy));
+    };
+    const clampToBounds = (q) => (bounds
+      ? { x: Math.min(bounds.x + bounds.w - R, Math.max(bounds.x + R, q.x)), y: Math.min(bounds.y + bounds.h - R, Math.max(bounds.y + R, q.y)) }
+      : q);
+    // A region's own data dot may sit under its marker only when the marker
+    // is concentric with it (the default, unmoved placement).
+    const violations = (q, placed, origin) => {
+      let v = 0;
+      for (const d of dots) {
+        if (q.x === origin.x && q.y === origin.y && Math.hypot(d.x - origin.x, d.y - origin.y) < 1) continue;
+        if (Math.hypot(q.x - d.x, q.y - d.y) < R + (d.r ?? 3.5) + 1) v++;
       }
-      for (let i = 0; i < pts.length; i++) {
-        for (let j = i + 1; j < pts.length; j++) {
-          const dx = pts[j].x - pts[i].x;
-          const dy = pts[j].y - pts[i].y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < minDist) {
-            moved = true;
-            const push = (minDist - dist) / 2;
-            const ux = dist > 0.01 ? dx / dist : 1;
-            const uy = dist > 0.01 ? dy / dist : 0;
-            pts[i].x -= ux * push;
-            pts[i].y -= uy * push;
-            pts[j].x += ux * push;
-            pts[j].y += uy * push;
-          }
+      for (const o of placed) if (Math.hypot(q.x - o.x, q.y - o.y) < 2 * R + 2) v++;
+      for (const b of boxes) if (q.x > b.x - keepOut && q.x < b.x + b.w + keepOut && q.y > b.y - keepOut && q.y < b.y + b.h + keepOut) v++;
+      for (const sg of segments) if (segDist(q, sg.a, sg.b) < R + 2) v++;
+      for (const t of tethers) if (segDist(q, t.a, t.b) < R + 1) v++;
+      return v;
+    };
+    const placed = [];
+    const out = [];
+    const tethers = [];
+    const RADII = [0, ...Array.from({ length: 25 }, (_, i) => 8 + i * 8)];
+    const ANGLES = 24;
+    const inBounds = (q) => !bounds || (q.x >= bounds.x + R && q.x <= bounds.x + bounds.w - R && q.y >= bounds.y + R && q.y <= bounds.y + bounds.h - R);
+    // A marker whose circle no longer covers its true point keeps a visible
+    // tether back to it (see MARKER_TETHER below); the tether, like the
+    // marker, must stay clear of labels, other markers, dots and leaders.
+    const tetherViolations = (q, pt, ownIndex) => {
+      if (Math.hypot(q.x - pt.x, q.y - pt.y) <= R) return 0;
+      const a = pt, b = markerTetherStart(q, pt, R);
+      let v = 0;
+      for (const bx of boxes) if (segmentCrossesBox(a, b, bx)) v++;
+      for (const sg of segments) if (segmentsIntersect(a, b, sg.a, sg.b)) v++;
+      placed.forEach((o, i) => { if (i !== ownIndex && segDist(o, a, b) < R + 1) v++; });
+      // nearDotTolerance (world mode only): a dot this close to the true point is part of the same cluster, so its tether may graze it.
+      for (const d of dots) if (Math.hypot(d.x - pt.x, d.y - pt.y) >= Math.max(1, nearDotTolerance) && segDist(d, a, b) < (d.r ?? 3.5) + 1) v++;
+      for (const t of tethers) if (segmentsIntersect(a, b, t.a, t.b)) v++;
+      return v;
+    };
+    for (const pt of points) {
+      const origin = clampToBounds(pt);
+      let best = { q: origin, v: Infinity };
+      search:
+      for (const r of RADII) {
+        for (let k = 0; k < (r === 0 ? 1 : ANGLES); k++) {
+          const ang = (k / ANGLES) * Math.PI * 2;
+          const q = { x: origin.x + Math.cos(ang) * r, y: origin.y + Math.sin(ang) * r };
+          if (!inBounds(q)) continue;
+          const v = violations(q, placed, origin) * 100 + tetherViolations(q, pt, -1);
+          if (v === 0) { best = { q, v }; break search; }
+          if (v < best.v) best = { q, v };
         }
       }
-      if (!moved) break;
+      const displaced = Math.hypot(best.q.x - pt.x, best.q.y - pt.y) > R;
+      // No clean spot that also keeps a clean tether: the region stays in the
+      // numbered list only (null = no map marker, so nothing claims a position).
+      if (best.v > 0) { out.push(null); continue; }
+      placed.push(best.q);
+      out.push(best.q);
+      if (displaced) tethers.push({ a: pt, b: markerTetherStart(best.q, pt, R) });
     }
-    return pts;
+    return out;
+  }
+  // Where a tether leaves a displaced marker: on its circle, towards the true point.
+  function markerTetherStart(marker, point, radius = 9) {
+    const d = Math.hypot(point.x - marker.x, point.y - marker.y) || 1;
+    return { x: marker.x + ((point.x - marker.x) / d) * radius, y: marker.y + ((point.y - marker.y) / d) * radius };
+  }
+  // A displaced numbered marker (its circle no longer covers its true point)
+  // is joined back to that point by a hairline in the same leader style, so a
+  // reader can tell which place the number stands for. render-QA rule
+  // marker_displaced_without_tether fails any displaced marker without one.
+  function markerTetherSvg(role, marker, point, iso3, num, radius = 9) {
+    if (Math.hypot(marker.x - point.x, marker.y - point.y) <= radius) return "";
+    const a = markerTetherStart(marker, point, radius);
+    return `<path data-role="${role}-leader" data-iso3="${esc(iso3)}" data-number="${num}" d="M${a.x.toFixed(1)},${a.y.toFixed(1)} L${point.x.toFixed(1)},${point.y.toFixed(1)}" fill="none" stroke="${LEADER_STYLE.color}" stroke-width="${LEADER_STYLE.width}"/>`
+      + `<circle data-role="${role}-leader-dot" data-iso3="${esc(iso3)}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="1" fill="${LEADER_STYLE.color}"/>`;
   }
 
   // Coordinator research (scratchpad/reports/research-leaders.md): every
@@ -5467,6 +8467,21 @@ function renderChoropleth(spec, rows, mobile = false) {
   function anchorDotSvg(dataRole, anchor) {
     return `<circle data-role="${dataRole}" cx="${anchor.x.toFixed(1)}" cy="${anchor.y.toFixed(1)}" r="1" fill="${LEADER_STYLE.color}"/>`;
   }
+  // The point on the label box's (gap-padded) outline nearest the anchor, so a
+  // leader always ends on the edge facing its own point instead of running to
+  // a fixed side and back across the text it labels.
+  function nearestBoxEdgeTip(anchor, box) {
+    const g = LEADER_GAP_PX;
+    const x0 = box.x - g, x1 = box.x + box.w + g, y0 = box.y - g, y1 = box.y + box.h + g;
+    const inside = anchor.x > x0 && anchor.x < x1 && anchor.y > y0 && anchor.y < y1;
+    if (!inside) return { x: Math.min(x1, Math.max(x0, anchor.x)), y: Math.min(y1, Math.max(y0, anchor.y)) };
+    const d = [anchor.x - x0, x1 - anchor.x, anchor.y - y0, y1 - anchor.y];
+    const m = Math.min(...d);
+    if (m === d[0]) return { x: x0, y: anchor.y };
+    if (m === d[1]) return { x: x1, y: anchor.y };
+    if (m === d[2]) return { x: anchor.x, y: y0 };
+    return { x: anchor.x, y: y1 };
+  }
   function elbowSegments(anchor, tip) {
     const bend = elbowBend(anchor, tip);
     return [[anchor, bend], [bend, tip]];
@@ -5481,6 +8496,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   // map) its own anchor already sits on, so it always travels the short way
   // out rather than crossing back over the map.
   const mapCenterX = (mapLeft + mapRight) / 2;
+  // P4: main-map name/value labels must stay in the main-map panel. When an
+  // inset column sits to the left of the map (mapLeft > plotLeft) a left-hand
+  // boundary label may not run into it; otherwise the canvas edge is the bound.
+  // Every main-map label carries this box as data-panel-box so render QA can
+  // prove it (text_outside_panel) instead of only comparing to the viewBox.
+  const labelLeftBound = mapLeft > plotLeft ? mapLeft : 0;
+  const mainPanelAttr = ` data-panel-box="${labelLeftBound.toFixed(1)},${top.toFixed(1)},${width.toFixed(1)},${bottom.toFixed(1)}"`;
   const mapCenterY = (top + bottom) / 2;
   const allDataFeatureIdxFlat = joined.flatMap((item) => item.featureIndices);
 
@@ -5567,9 +8589,9 @@ function renderChoropleth(spec, rows, mobile = false) {
   const MIN_LEADER_DRAWN_LENGTH = 10;
   function boxOverlapsFeature(featureIndices, box, projectFn, lonC, latC) {
     for (const idx of featureIndices) {
-      const rings = geometryRings(neFeatureGeometry(idx)).filter((ring) => ringWithinHorizon(ring, lonC, latC, 90));
-      for (const ring of rings) {
-        const pts = ring.map(([lon, lat]) => projectFn(lon, lat));
+      for (const pts of projectedFeatureRings(idx, projectFn, lonC, latC)) {
+        const bb = pts.bb;
+        if (box.x + box.w < bb.minX || box.x > bb.maxX || box.y + box.h < bb.minY || box.y > bb.maxY) continue;
         for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
           const a = pts[i], b = pts[j];
           if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) continue;
@@ -5615,7 +8637,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     const overflowCandidates = [];
     for (const li of activeItems) {
       const idx0 = li.item.featureIndices[0];
-      const anchor = findLabelAnchor(idx0, li.item.featureIndices, li.w, project, lon0, lat0, li.x, li.y, onMap.map((p) => p.box));
+      const anchor = findLabelAnchor(idx0, li.item.featureIndices, li.w, project, lon0, horizonLat0, li.x, li.y, onMap.map((p) => p.box));
       if (anchor) {
         const box = { x: anchor.x - li.w / 2, y: anchor.y - lineH - 2, w: li.w, h: li.h };
         const insideMap = box.x >= mapLeft && box.x + box.w <= mapRight && box.y >= top && box.y + box.h <= bottom;
@@ -5647,7 +8669,7 @@ function renderChoropleth(spec, rows, mobile = false) {
     // canvas, whatever anchors happen to be clustered there.
     const leftMaxW = leftItems.length ? Math.max(...leftItems.map((li) => li.w)) : 0;
     const rightMaxW = rightItems.length ? Math.max(...rightItems.map((li) => li.w)) : 0;
-    const leftColumnX = leftItems.length ? Math.max(mapLeft + 4, leftMaxW + 4, Math.min(...leftItems.map((li) => li.x)) - columnGap) : mapLeft + 4;
+    const leftColumnX = leftItems.length ? Math.max(mapLeft + 4, labelLeftBound + leftMaxW + 4, Math.min(...leftItems.map((li) => li.x)) - columnGap) : mapLeft + 4;
     const rightColumnX = rightItems.length ? Math.min(mapRight - 4, width - rightMaxW - 4, Math.max(...rightItems.map((li) => li.x)) + columnGap) : mapRight - 4;
     const leftLayout = layoutBoundaryColumn(leftItems, "left", leftColumnX, top + 4, bottom - 4, MAX_OVERFLOW_LEADER_PX);
     const rightLayout = layoutBoundaryColumn(rightItems, "right", rightColumnX, top + 4, bottom - 4, MAX_OVERFLOW_LEADER_PX);
@@ -5657,9 +8679,48 @@ function renderChoropleth(spec, rows, mobile = false) {
     // this still confirms it empirically (belt-and-braces) and catches the
     // rarer case of a leader clipping a neighbouring polygon's own coastline.
     const acceptedLeaders = [];
-    const acceptedBoxes = onMap.map((p) => p.box);
+    // World mode: the many unlabelled tiny-country dots are obstacles too, so a leader label never lands on one.
+    const worldDotBoxes = worldMode ? [...tinyDots.entries()].filter(([iso3]) => !worldLabelled.has(iso3)).map(([, d]) => ({ x: d.x - 4, y: d.y - 4, w: 8, h: 8 })) : [];
+    const acceptedBoxes = [...onMap.map((p) => p.box), ...worldDotBoxes];
     let allPlaced = true;
     placedOverflow = [];
+    // Numbering is the last resort: before it, look for any open spot on the
+    // map near the region where its label fits, and run a short leader to it.
+    // Candidate boxes sit on rings around the anchor (16 directions, growing
+    // distance), shortest leader first; each must lie inside the map frame,
+    // clear every data region and every accepted label, and its leader must
+    // cross nothing (same checks as the boundary column).
+    const tryFreeSpot = (li) => {
+      const idx0 = li.item.featureIndices[0];
+      const anchor = { x: li.x, y: li.y };
+      const cands = [];
+      for (let dist = 14; dist <= MAX_OVERFLOW_LEADER_PX; dist += 10) {
+        for (let k = 0; k < 16; k++) {
+          const ang = (k / 16) * Math.PI * 2;
+          const px = li.x + Math.cos(ang) * dist, py = li.y + Math.sin(ang) * dist;
+          const side = Math.cos(ang) >= 0 ? "right" : "left";
+          const box = side === "right" ? { x: px, y: py - lineH - 2, w: li.w, h: li.h } : { x: px - li.w, y: py - lineH - 2, w: li.w, h: li.h };
+          const tip = nearestBoxEdgeTip(anchor, box);
+          if (box.x < mapLeft + 2 || box.x + box.w > mapRight - 2 || box.y < top + 2 || box.y + box.h > bottom - 2) continue;
+          const len = elbowLength(anchor, tip);
+          if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) continue;
+          cands.push({ li, box, anchor, tip, side, len });
+        }
+      }
+      cands.sort((u, v) => u.len - v.len);
+      for (const cand of cands) {
+        if (acceptedBoxes.some((b) => boxesOverlap(b, cand.box))) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
+        const segs = elbowSegments(cand.anchor, cand.tip);
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) return cand;
+      }
+      return null;
+    };
+    const acceptFree = (cand) => {
+      placedOverflow.push(cand);
+      for (const [p1, p2] of elbowSegments(cand.anchor, cand.tip)) acceptedLeaders.push({ a: p1, b: p2 });
+      acceptedBoxes.push(cand.box);
+    };
     for (const entry of [...leftLayout.placed, ...rightLayout.placed]) {
       const idx0 = entry.li.item.featureIndices[0];
       // v7 fix: try the column's own slot first (step 0, unchanged for every
@@ -5672,23 +8733,25 @@ function renderChoropleth(spec, rows, mobile = false) {
         const len = elbowLength(cand.anchor, cand.tip);
         if (len > MAX_OVERFLOW_LEADER_PX) break;
         if (len < MIN_LEADER_DRAWN_LENGTH) continue;
-        if (cand.box.x < 0 || cand.box.x + cand.box.w > width) break;
-        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, lat0)) continue;
+        if (cand.box.x < labelLeftBound || cand.box.x + cand.box.w > width) break;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, cand.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(cand.anchor, cand.tip);
-        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, lat0, acceptedBoxes, cand.box))) accepted = cand;
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, cand.box))) accepted = cand;
       }
       if (accepted) {
         placedOverflow.push(accepted);
         for (const [p1, p2] of elbowSegments(accepted.anchor, accepted.tip)) acceptedLeaders.push({ a: p1, b: p2 });
         acceptedBoxes.push(accepted.box);
       } else {
+        const free = tryFreeSpot(entry.li);
+        if (free) { acceptFree(free); continue; }
         allPlaced = false;
         // Only demote into the zoom inset when one is actually configured
         // (spec.inset) - with no inset panel to receive it, forcing this
         // iso3 into forcedInsetIso3 would materialize a one-country inset
         // panel out of nowhere. Without an inset, fall back the same way an
         // over-length column entry already does: the numbered footnote list.
-        if (insetSpec) forcedInsetIso3.add(entry.li.item.iso3);
+        if (insetSpec && !farFromInset(entry.li.item.iso3)) forcedInsetIso3.add(entry.li.item.iso3);
         else footnoteIso3.add(entry.li.item.iso3);
       }
     }
@@ -5723,9 +8786,9 @@ function renderChoropleth(spec, rows, mobile = false) {
         const idx0 = candidate.li.item.featureIndices[0];
         // v7 fix: same two hard requirements as the shared column above.
         if (elbowLength(candidate.anchor, candidate.tip) < MIN_LEADER_DRAWN_LENGTH) continue;
-        if (boxOverlapsFeature(allDataFeatureIdxFlat, candidate.box, project, lon0, lat0)) continue;
+        if (boxOverlapsFeature(allDataFeatureIdxFlat, candidate.box, project, lon0, horizonLat0)) continue;
         const segs = elbowSegments(candidate.anchor, candidate.tip);
-        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, lat0, acceptedBoxes, candidate.box))) {
+        if (segs.every(([p1, p2]) => leaderIsClear(p1, p2, idx0, allDataFeatureIdxFlat, acceptedLeaders, project, lon0, horizonLat0, acceptedBoxes, candidate.box))) {
           personal = candidate;
           break;
         }
@@ -5739,6 +8802,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       // Neither side worked - task: "fall back to numbered markers + a
       // footnote list, same as the line-chart" rather than stretch a leader
       // past a legible length or through another region's own polygon.
+      const free = tryFreeSpot(li);
+      if (free) { acceptFree(free); continue; }
       allPlaced = false;
       footnoteIso3.add(li.item.iso3);
     }
@@ -5765,8 +8830,8 @@ function renderChoropleth(spec, rows, mobile = false) {
     const valueAnchorY = cy + labelLineDy;
     const style = labelStyleOnFill(hexToRgb(li.fill));
     onMapParts.push(
-      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${nameAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
-      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${valueAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
+      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${cx.toFixed(1)}" y="${nameAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
+      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${cx.toFixed(1)}" y="${valueAnchorY.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
     );
   }
 
@@ -5793,8 +8858,8 @@ function renderChoropleth(spec, rows, mobile = false) {
     overflowParts.push(anchorDotSvg("choropleth-leader-dot", anchor));
     overflowParts.push(leaderSvg("choropleth-leader", anchor, tip, ` data-iso3="${esc(li.item.iso3)}"`));
     overflowParts.push(
-      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}" x="${textX.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.name)}</text>`,
-      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}" x="${textX.toFixed(1)}" y="${valueY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.valueText)}</text>`
+      `<text data-role="choropleth-label" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${textX.toFixed(1)}" y="${nameY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.name)}</text>`,
+      `<text data-role="choropleth-label-value" data-iso3="${esc(li.item.iso3)}"${mainPanelAttr} x="${textX.toFixed(1)}" y="${valueY.toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(li.valueText)}</text>`
     );
   }
 
@@ -5972,13 +9037,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   // only when at least one region was actually selected into it.
   const insetLabelItems = insetItems.map((item) => {
     const value = n(item.row[spec.value_field]) ?? 0;
-    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit), fill: colorForValue(value) };
+    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec), fill: colorForValue(value) };
   });
   const insetTitleH = 18;
 
   const insetPoints2 = [];
   for (const idx of insetFeatureIndices) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) insetPoints2.push(pt);
-  const [zLon0, zLat0] = bboxCenter(insetPoints2.length ? insetPoints2 : [[lon0, lat0]]);
+  const [zLon0, zLat0] = viewCentre(insetPoints2.length ? insetPoints2 : [[lon0, lat0]]);
 
   // Review fix (magnification >=2.5x): see insetNaturalMapSize above. When a
   // column was reserved the size is also capped to it, so a later-forced
@@ -5991,10 +9056,18 @@ function renderChoropleth(spec, rows, mobile = false) {
   // so the common case (room for the panel at its natural size) never
   // shrinks anything.
   const insetMapSizeNatural = insetNaturalMapSize(insetPoints2, proj.scale);
+  const insetDimsNatural = insetNaturalDims(insetPoints2, proj.scale, insetStripH ? stripPanelWidth : undefined);
+  // Wide panel only where it has its own reserved space (column / strip); a
+  // floating in-plot panel stays square so it covers as little as possible.
   const insetMapSizeFull = insetColumnW
-    ? Math.min(insetMapSizeNatural, insetColumnW - INSET_COLUMN_GAP - 12)
+    ? Math.min(insetDimsNatural.w, insetColumnW - INSET_COLUMN_GAP - 12)
     : insetStripH
-      ? Math.min(insetMapSizeNatural, insetStripH - INSET_COLUMN_GAP - INSET_STRIP_LEGEND_GAP - insetTitleH - 8)
+      ? Math.min(insetDimsNatural.w, plotRight - plotLeft - 12)
+      : insetMapSizeNatural;
+  const insetMapHFull = insetColumnW
+    ? Math.min(insetDimsNatural.h, mapH - 2 * cornerPad - insetTitleH - 12)
+    : insetStripH
+      ? Math.min(insetDimsNatural.h, insetStripH - INSET_COLUMN_GAP - INSET_STRIP_LEGEND_GAP - insetTitleH - 8)
       : insetMapSizeNatural;
 
   // Probe which regions can hold both label lines on their own magnified
@@ -6020,8 +9093,20 @@ function renderChoropleth(spec, rows, mobile = false) {
   // current size clears every on-map label/marker too. Font sizes are
   // untouched (font, lineH etc. stay outer-scope constants); only
   // insetMapSize itself, and everything measured from it, shrinks.
-  function layoutInsetAtSize(insetMapSize) {
-  const sizingProbe = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], 0, insetMapSize, 0, insetMapSize, 0.12);
+  // P3: when a region cannot be labelled in the panel at the default margin,
+  // widen the margin (less magnification, more open space around the extent)
+  // before any region is given a number.
+  function layoutInsetAtSize(insetMapSize, insetMapH = insetMapSize) {
+    let best = null;
+    for (const pad of [0.12, 0.22, 0.34]) {
+      const layout = layoutInsetAtSizePad(insetMapSize, insetMapH, pad);
+      if (!best || layout.listFallbackItems.length < best.listFallbackItems.length) best = layout;
+      if (!layout.listFallbackItems.length) break;
+    }
+    return best;
+  }
+  function layoutInsetAtSizePad(insetMapSize, insetMapH, insetPad) {
+  const sizingProbe = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], 0, insetMapSize, 0, insetMapH, insetPad);
   // Review fix (inset containment - "Guinea/Liberia/Sierra Leone likely
   // fit"): a single bbox-centre containment probe fails the same way the old
   // main-map labelOnFeature did - it can reject a feature with plenty of
@@ -6053,8 +9138,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     const bbox = projectedFeatureBBox(ownIndices, sizingProbe.project);
     const w = Math.max(choroplethLabelWidth(li.name, font), choroplethLabelWidth(li.valueText, font));
     const placedBoxes = onPolygonItems.map((p) => insetBoxAt(p.ax, p.ay, p.w));
-    const preferred = bbox ? { x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2 } : null;
-    const anchor = bbox
+    const tinyDot = tinyRegionDot(ownIndices, sizingProbe.project, zLon0, zLat0);
+    const preferred = tinyDot ? { x: tinyDot.x, y: tinyDot.y } : bbox ? { x: (bbox.minX + bbox.maxX) / 2, y: (bbox.minY + bbox.maxY) / 2 } : null;
+    const anchor = bbox && !tinyDot
       ? findLabelAnchor(idx0, ownIndices, w, sizingProbe.project, zLon0, zLat0, preferred.x, preferred.y, placedBoxes)
       : null;
     if (anchor) {
@@ -6085,8 +9171,8 @@ function renderChoropleth(spec, rows, mobile = false) {
   const insetRightMaxW = insetRightCandidates.length ? Math.max(...insetRightCandidates.map((c) => c.w)) : 0;
   const insetLeftColumnX = Math.min(insetMapSize - 4, Math.max(4, insetLeftMaxW + 4));
   const insetRightColumnX = Math.max(4, Math.min(insetMapSize - 4, insetMapSize - insetRightMaxW - 4));
-  const insetLeftLayout = layoutBoundaryColumn(insetLeftCandidates, "left", insetLeftColumnX, 4, insetMapSize - 4, MAX_OVERFLOW_LEADER_PX);
-  const insetRightLayout = layoutBoundaryColumn(insetRightCandidates, "right", insetRightColumnX, 4, insetMapSize - 4, MAX_OVERFLOW_LEADER_PX);
+  const insetLeftLayout = layoutBoundaryColumn(insetLeftCandidates, "left", insetLeftColumnX, 4, insetMapH - 4, MAX_OVERFLOW_LEADER_PX);
+  const insetRightLayout = layoutBoundaryColumn(insetRightCandidates, "right", insetRightColumnX, 4, insetMapH - 4, MAX_OVERFLOW_LEADER_PX);
   const insetAcceptedLeaders = [];
   const insetOverflowItems = [];
   const listFallbackItems = [];
@@ -6103,7 +9189,13 @@ function renderChoropleth(spec, rows, mobile = false) {
   // against ALL of them (own box excluded), not just the ones some
   // particular concatenation order happened to accept first.
   const insetAllEntries = [...insetLeftLayout.placed, ...insetRightLayout.placed];
-  for (const entry of insetAllEntries) {
+  // A candidate the boundary column had no room for (or whose leader would be
+  // too long) is not placed above; without this it vanished with no label at
+  // all. It takes the numbered-marker fallback like any other unplaceable region.
+  // Candidates the boundary column could not take still get an open-spot
+  // search (below) before they fall to the numbered list.
+  const insetOverflowOnly = [...insetLeftLayout.overflow, ...insetRightLayout.overflow].map((c) => ({ li: c, overflowOnly: true }));
+  for (const entry of [...insetAllEntries, ...insetOverflowOnly]) {
     const candidate = entry.li;
     const ownIndices = candidate.src.item.featureIndices;
     const otherIndices = insetFeatureIndices.filter((idx) => !ownIndices.includes(idx));
@@ -6120,29 +9212,63 @@ function renderChoropleth(spec, rows, mobile = false) {
     // border, not a polygon, is what runs out of room) - if every nudge on
     // the assigned side fails, the same search is retried once more from the
     // *other* side's column before giving up to the numbered-marker tier.
-    const tryClear = (cand) => {
+    const tryClear = (cand, strictOwn = false) => {
       const len = elbowLength(cand.anchor, cand.tip);
       if (len > MAX_OVERFLOW_LEADER_PX || len < MIN_LEADER_DRAWN_LENGTH) return false;
-      if (cand.box.x < 4 || cand.box.x + cand.box.w > insetMapSize - 4) return false;
+      if (cand.box.x < 4 || cand.box.x + cand.box.w > insetMapSize - 4 || cand.box.y < 2 || cand.box.y + cand.box.h > insetMapH - 2) return false;
       if (boxOverlapsFeature(insetFeatureIndices, cand.box, sizingProbe.project, zLon0, zLat0)) return false;
       const segs = elbowSegments(cand.anchor, cand.tip);
+      // A leader never runs through its own label.
+      if (strictOwn && segs.some(([p1, p2]) => segmentCrossesBox(p1, p2, cand.box))) return false;
       return (
         segs.every(([p1, p2]) => leaderIsClear(p1, p2, candidate.idx0, otherIndices, insetAcceptedLeaders, sizingProbe.project, zLon0, zLat0, obstacleBoxes, cand.box)) &&
         !otherIndices.some((idx) => pointOnFeature(idx, cand.tip.x, cand.tip.y, sizingProbe.project, zLon0, zLat0))
       );
     };
     let accepted = null;
-    for (let step = 0; step <= 24 && !accepted; step++) {
-      const cand = step === 0 ? entry : extendEntryOutward(entry, entry.side, step * 8);
-      if (tryClear(cand)) accepted = cand;
-    }
+    // Placement tiers, each tried first without any leader through its own
+    // label: the boundary column (own side, then the other side). Only if that
+    // fails does the column accept a leader that touches its own label, so no
+    // placement is ever lost; the open-spot tier below still follows.
+    const tryColumn = (strictOwn) => {
+      for (let step = 0; step <= 24 && !accepted && !entry.overflowOnly; step++) {
+        const cand = step === 0 ? entry : extendEntryOutward(entry, entry.side, step * 8);
+        if (tryClear(cand, strictOwn)) accepted = cand;
+      }
+      if (!accepted && !entry.overflowOnly) {
+        const altSide = entry.side === "right" ? "left" : "right";
+        const altColumnX = altSide === "right" ? insetRightColumnX : insetLeftColumnX;
+        const flipped = flipEntrySide(entry, altSide, altColumnX);
+        for (let step = 0; step <= 24 && !accepted; step++) {
+          const cand = step === 0 ? flipped : extendEntryOutward(flipped, altSide, step * 8);
+          if (tryClear(cand, strictOwn)) accepted = cand;
+        }
+      }
+    };
+    tryColumn(true);
+    if (!accepted) tryColumn(false);
+    // P3: a short leader to an open spot beside the region, before numbering.
     if (!accepted) {
-      const altSide = entry.side === "right" ? "left" : "right";
-      const altColumnX = altSide === "right" ? insetRightColumnX : insetLeftColumnX;
-      const flipped = flipEntrySide(entry, altSide, altColumnX);
-      for (let step = 0; step <= 24 && !accepted; step++) {
-        const cand = step === 0 ? flipped : extendEntryOutward(flipped, altSide, step * 8);
-        if (tryClear(cand)) accepted = cand;
+      const anchorPt = { x: candidate.x, y: candidate.y };
+      const angles = [0, 180, -35, 35, 145, -145, -70, 70, 110, -110, -90, 90];
+      for (const dist of [12, 20, 30, 44, 60, 80]) {
+        for (const deg of angles) {
+          const rad = (deg * Math.PI) / 180;
+          const tip = { x: anchorPt.x + Math.cos(rad) * dist, y: anchorPt.y + Math.sin(rad) * dist };
+          const side = Math.abs(Math.cos(rad)) < 0.3 ? (anchorPt.x < insetCenterX ? "right" : "left") : Math.cos(rad) >= 0 ? "right" : "left";
+          const box = { x: side === "right" ? tip.x + LEADER_GAP_PX : tip.x - LEADER_GAP_PX - candidate.w, y: tip.y - candidate.h / 2, w: candidate.w, h: candidate.h };
+          const cand = { anchor: anchorPt, tip, box, side };
+          if (tryClear(cand, true)) { accepted = cand; break; }
+        }
+        if (accepted) break;
+        // Label centred above or below the point, on a straight vertical leader.
+        for (const dir of [1, -1]) {
+          const tip = { x: anchorPt.x, y: anchorPt.y + dir * dist };
+          const box = { x: Math.min(insetMapSize - 4 - candidate.w, Math.max(4, anchorPt.x - candidate.w / 2)), y: dir > 0 ? tip.y + LEADER_GAP_PX : tip.y - LEADER_GAP_PX - candidate.h, w: candidate.w, h: candidate.h };
+          const cand = { anchor: anchorPt, tip, box, side: "center" };
+          if (tryClear(cand, true)) { accepted = cand; break; }
+        }
+        if (accepted) break;
       }
     }
     if (accepted) {
@@ -6168,8 +9294,8 @@ function renderChoropleth(spec, rows, mobile = false) {
   // its own centroid, numbered from the one shared sequence below) - so the
   // panel no longer needs to reserve its own list rows.
   const insetPanelW = insetLabelItems.length ? insetPanelWidthFor(insetMapSize) : 0;
-  const insetPanelH = insetLabelItems.length ? Math.min(mapH - 2 * cornerPad, insetTitleH + insetMapSize + 8) : 0;
-  return { insetMapSize, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH };
+  const insetPanelH = insetLabelItems.length ? Math.min(mapH - 2 * cornerPad, insetTitleH + insetMapH + 8) : 0;
+  return { insetMapSize, insetMapH, insetPad, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH };
   }
 
   // Source extent: the union bbox of every inset region's own projected
@@ -6242,7 +9368,7 @@ function renderChoropleth(spec, rows, mobile = false) {
   if (insetLabelItems.length && insetStripH) {
     // Reserved strip below the map (narrow canvas): the panel is centred
     // horizontally under the source extent, clamped into the plot width.
-    chosenLayout = layoutInsetAtSize(insetMapSizeFull);
+    chosenLayout = layoutInsetAtSize(insetMapSizeFull, insetMapHFull);
     const w = chosenLayout.insetPanelW, h = chosenLayout.insetPanelH;
     const srcMidX = sourceOutline ? sourceOutline.x + sourceOutline.w / 2 : (mapLeft + mapRight) / 2;
     insetCorner = { key: "strip-bottom", x: Math.min(plotRight - w, Math.max(plotLeft, srcMidX - w / 2)), y: bottom + INSET_COLUMN_GAP, w, h };
@@ -6252,14 +9378,14 @@ function renderChoropleth(spec, rows, mobile = false) {
     // into the map's own top..bottom band. Nothing in the column competes
     // with land or labels, so there is no size ladder to walk - the panel
     // keeps its natural (column-capped) size.
-    chosenLayout = layoutInsetAtSize(insetMapSizeFull);
+    chosenLayout = layoutInsetAtSize(insetMapSizeFull, insetMapHFull);
     const w = chosenLayout.insetPanelW, h = chosenLayout.insetPanelH;
     const srcMidY = sourceOutline ? sourceOutline.y + sourceOutline.h / 2 : (top + bottom) / 2;
     insetCorner = { key: "column-left", x: mapLeft - INSET_COLUMN_GAP - w, y: Math.min(bottom - h, Math.max(top, srcMidY - h / 2)), w, h };
   } else if (insetLabelItems.length) {
     let fullSizeLayout = null;
     for (const scale of INSET_SCALE_STEPS) {
-      const candidateLayout = layoutInsetAtSize(insetMapSizeFull * scale);
+      const candidateLayout = layoutInsetAtSize(insetMapSizeFull * scale, insetMapHFull * scale);
       if (scale === 1) fullSizeLayout = candidateLayout;
       const best = insetHardCandidates(candidateLayout.insetPanelW, candidateLayout.insetPanelH, sourceOutline)[0];
       if (best) {
@@ -6273,9 +9399,9 @@ function renderChoropleth(spec, rows, mobile = false) {
       insetCorner = bestInsetPosition(chosenLayout.insetPanelW, chosenLayout.insetPanelH, insetObstacles, sourceOutline);
     }
   } else {
-    chosenLayout = layoutInsetAtSize(insetMapSizeFull);
+    chosenLayout = layoutInsetAtSize(insetMapSizeFull, insetMapHFull);
   }
-  const { insetMapSize, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH } = chosenLayout;
+  const { insetMapSize, insetMapH, insetPad, onPolygonItems, insetOverflowItems, listFallbackItems, insetPanelW, insetPanelH } = chosenLayout;
 
   // One global numbering sequence covers both fallback tiers (main-map
   // boundary-column overflow, then inset boundary-column overflow) so a
@@ -6284,11 +9410,26 @@ function renderChoropleth(spec, rows, mobile = false) {
   // single place a reader looks up every numbered region's name/value.
   const numberedFallbackItems = [...footnoteItems, ...listFallbackItems];
   const fallbackNumberByIso3 = new Map(numberedFallbackItems.map((li, i) => [li.item.iso3, i + 1]));
-  footnoteItems.forEach((li) => {
+  // Numbered regions that got no map marker (no clean spot plus tether): they
+  // stay in the numbered list, and are counted so the chart note and render QA
+  // can say so instead of letting a data point vanish silently.
+  const listOnlyIso3 = [];
+  let markerTotal = footnoteItems.length;
+  const footnoteMarkerPositions = placeNumberedMarkers(footnoteItems.map((li) => ({ x: li.x, y: li.y })), {
+    bounds: { x: mapLeft, y: top, w: mapRight - mapLeft, h: bottom - top },
+    boxes: [...allLabelBoxes, ...(insetCorner ? [{ x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h }] : [])],
+    segments: placedOverflow.flatMap(({ anchor, tip }) => elbowSegments(anchor, tip).map(([a, b]) => ({ a, b }))),
+    dots: [...tinyDots.values()].map((d) => ({ x: d.x, y: d.y, r: mobile ? 3 : 3.5 })),
+    ...(worldMode ? { nearDotTolerance: 8 } : {}),
+  });
+  footnoteItems.forEach((li, i) => {
     const num = fallbackNumberByIso3.get(li.item.iso3);
+    const mk = footnoteMarkerPositions[i];
+    if (!mk) { listOnlyIso3.push(li.item.iso3); return; }
     footnoteParts.push(
-      `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" cx="${li.x.toFixed(1)}" cy="${li.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
-      `<text data-role="choropleth-footnote-marker-label" x="${li.x.toFixed(1)}" y="${(li.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
+      markerTetherSvg("choropleth-footnote-marker", mk, { x: li.x, y: li.y }, li.item.iso3, num),
+      `<circle data-role="choropleth-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${li.x.toFixed(1)}" data-anchor-y="${li.y.toFixed(1)}" cx="${mk.x.toFixed(1)}" cy="${mk.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
+      `<text data-role="choropleth-footnote-marker-label" x="${mk.x.toFixed(1)}" y="${(mk.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
     );
   });
   // The list starts below the legend's own tick-label row (legendY=bottom+22,
@@ -6310,7 +9451,26 @@ function renderChoropleth(spec, rows, mobile = false) {
   // zero whenever the list is short enough to already fit inside it - so
   // the frame grows by exactly what the extra rows need and no more.
   const baseSlotBottom = bottom + insetStripH + (mobile ? 74 : 80);
-  const footnoteBlockBottom = footnoteListTop + numberedFallbackItems.length * footnoteRowH + 10;
+  // Footnote list layout: the number column is right-aligned at one fixed x
+  // (so "9." and "10." share an edge and every name/value starts at the same
+  // x from row 1 down), and a long list is split into side-by-side columns
+  // filled top to bottom so the frame does not grow by one row per region.
+  const FOOTNOTE_ROWS_PER_COLUMN = 12;
+  const footnoteFieldGap = 4;
+  const footnoteColumnGap = 28;
+  const footnoteNumW = numberedFallbackItems.length
+    ? Math.max(...numberedFallbackItems.map((_, i) => choroplethLabelWidth(`${i + 1}.`, font)))
+    : 0;
+  const footnoteNameW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.name, font))) : 0;
+  const footnoteValueW = numberedFallbackItems.length ? Math.max(...numberedFallbackItems.map((li) => choroplethLabelWidth(li.valueText, font))) : 0;
+  const footnoteColumnW = footnoteNumW + footnoteFieldGap + footnoteNameW + footnoteFieldGap + footnoteValueW;
+  const footnoteColumnsFit = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (footnoteColumnW + footnoteColumnGap)));
+  const footnoteColumns = Math.min(
+    footnoteColumnsFit,
+    Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
+  );
+  const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
+  const footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
   const footnoteH = numberedFallbackItems.length ? Math.max(0, footnoteBlockBottom - baseSlotBottom) : 0;
   if (numberedFallbackItems.length) {
     // Split into three text runs so the name and value each land in their
@@ -6320,9 +9480,13 @@ function renderChoropleth(spec, rows, mobile = false) {
     // each footnoted region's exact value from markup alone, the same
     // guarantee every other plotted region gets, not a weaker one.
     footnoteParts.push(`<g data-role="choropleth-footnote-list">`);
+    // P3 (item 6): values sit in one right-aligned column, so the numbers can
+    // be compared down the list.
     numberedFallbackItems.forEach((li, i) => {
-      const rowY = footnoteListTop + i * footnoteRowH;
-      const prefix = `${i + 1}. `;
+      const column = Math.floor(i / footnoteRows);
+      const rowY = footnoteListTop + (i % footnoteRows) * footnoteRowH;
+      const columnX = plotLeft + column * (footnoteColumnW + footnoteColumnGap);
+      const prefix = `${i + 1}.`;
       // Review fix (footnote list "Togo" overlapping its own "—" separator
       // on mobile): each field used to start 8px BEHIND where the previous
       // field's estimated width said it ended, so a name whose true
@@ -6339,13 +9503,13 @@ function renderChoropleth(spec, rows, mobile = false) {
       // leaves exactly the same proven two-field gap pattern already used
       // between the numeral prefix and the name, now reused once more
       // between name and value, instead of a third, dash-carrying field.
-      const footnoteFieldGap = 4;
-      const nameX = plotLeft + choroplethLabelWidth(prefix, font) + footnoteFieldGap;
-      const valueX = nameX + choroplethLabelWidth(li.name, font) + footnoteFieldGap;
+      const numX = columnX + footnoteNumW;
+      const nameX = numX + footnoteFieldGap;
+      const valueX = nameX + footnoteNameW + footnoteFieldGap + footnoteValueW;
       footnoteParts.push(
-        `<text x="${plotLeft.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
+        `<text data-role="choropleth-footnote-number" x="${numX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" style="font-variant-numeric: tabular-nums" fill="${PALETTE.ink}">${esc(prefix)}</text>`,
         `<text data-role="choropleth-footnote-name" data-iso3="${esc(li.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(li.name)}</text>`,
-        `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
+        `<text data-role="choropleth-footnote-value" data-iso3="${esc(li.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(li.valueText)}</text>`
       );
     });
     footnoteParts.push(`</g>`);
@@ -6396,6 +9560,34 @@ function renderChoropleth(spec, rows, mobile = false) {
     }
   }
 
+  // P3 (item 2): a connector longer than a quarter of the main map, or one
+  // that would run across a data region, is not drawn. The source box and the
+  // panel title carry the same letter instead.
+  let insetLetter = "";
+  if (insetLinkPath) {
+    const nums = (insetLinkPath.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    const pts = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push({ x: nums[i], y: nums[i + 1] });
+    let len = 0, crosses = false;
+    const insetOwn = new Set(insetFeatureIndices);
+    const dataOthers = [];
+    for (const it of joined) for (const idx of it.featureIndices) if (!insetOwn.has(idx)) dataOthers.push(idx);
+    for (let i = 0; i + 1 < pts.length && !crosses; i++) {
+      const seg = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      len += seg;
+      for (let t = 0; t <= seg && !crosses; t += 5) {
+        const px = pts[i].x + ((pts[i + 1].x - pts[i].x) * t) / (seg || 1), py = pts[i].y + ((pts[i + 1].y - pts[i].y) * t) / (seg || 1);
+        if (dataOthers.some((idx) => pointOnFeature(idx, px, py, project, lon0, horizonLat0))) crosses = true;
+      }
+    }
+    if (len > 0.25 * (mapRight - mapLeft) || crosses) {
+      insetLinkPath = "";
+      insetLetter = "A";
+    }
+  }
+  const letterTagSvg = (role, x, y, letter) =>
+    `<g data-role="${role}"><rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="16" height="16" rx="2" fill="${PALETTE.ink}"/><text x="${(x + 8).toFixed(1)}" y="${(y + 12.4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="#fff">${esc(letter)}</text></g>`;
+
   // Locator inset (task 5): only earns its place when the main map is a
   // genuine zoom-in on a small slice of its continent - review fix: at
   // continent scale (e.g. an 11-country spread across most of Africa) a
@@ -6427,7 +9619,9 @@ function renderChoropleth(spec, rows, mobile = false) {
     const b = projectedFeatureBBox(locatorIndices, project);
     return b ? Math.max(0, b.maxX - b.minX) * Math.max(0, b.maxY - b.minY) : 0;
   })();
-  const showLocator = continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
+  // A world projection already shows every region, so a locator would only repeat it
+  // (and its bbox-centred azimuthal view breaks for data straddling the antimeridian).
+  let showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
 
   const locatorSize = mobile ? 104 : 150;
   // Review fix (mobile inset/locator collision): the zoom inset panel (if
@@ -6440,11 +9634,32 @@ function renderChoropleth(spec, rows, mobile = false) {
   // already-placed inset panel whenever every corner collided with
   // *something*).
   const insetCornerRect = insetCorner ? { x: insetCorner.x, y: insetCorner.y, w: insetCorner.w, h: insetCorner.h } : null;
-  const corner = showLocator ? bestCorner(locatorSize, locatorSize, insetObstacles, insetCornerRect ? [insetCornerRect] : []) : null;
+  // The locator sits inside the map frame, so it must never cover a region that
+  // carries data: every corner/edge slot is checked against the projected boxes
+  // of the data regions' pieces, and when none is free the locator is dropped
+  // (it is orientation only; the map itself still shows every region).
+  const dataPieceBoxes = [];
+  for (const idx of allDataFeatureIndices) {
+    for (const ring of geometryRings(neFeatureGeometry(idx))) {
+      if (!ringWithinHorizon(ring, lon0, horizonLat0)) continue;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [lo, la] of ring) {
+        const q = project(lo, la);
+        if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+      }
+      if (x1 - x0 >= 1 || y1 - y0 >= 1) dataPieceBoxes.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    }
+  }
+  const locatorMustAvoid = [...(insetCornerRect ? [insetCornerRect] : []), ...dataPieceBoxes];
+  let corner = showLocator ? bestCorner(locatorSize, locatorSize, insetObstacles, locatorMustAvoid) : null;
+  if (corner && dataPieceBoxes.some((b) => boxesOverlap({ x: corner.x, y: corner.y, w: locatorSize, h: locatorSize }, b))) {
+    showLocator = false;
+    corner = null;
+  }
 
   const locatorPoints = [];
   if (showLocator) for (const index of locatorIndices) for (const ring of geometryRings(neFeatureGeometry(index))) for (const pt of ring) locatorPoints.push(pt);
-  const [locatorLon0, locatorLat0] = bboxCenter(locatorPoints.length ? locatorPoints : [[lon0, lat0]]);
+  const [locatorLon0, locatorLat0] = viewCentre(locatorPoints.length ? locatorPoints : [[lon0, lat0]]);
   const locatorProj = showLocator
     ? fitAzimuthalProjection(
         locatorLon0, locatorLat0, locatorPoints.length ? locatorPoints : [[lon0, lat0]],
@@ -6490,9 +9705,12 @@ function renderChoropleth(spec, rows, mobile = false) {
     if (dataLons.length) {
       const dMinLon = Math.min(...dataLons), dMaxLon = Math.max(...dataLons);
       const dMinLat = Math.min(...dataLats), dMaxLat = Math.max(...dataLats);
-      const zoomCorners = [
-        [dMinLon, dMinLat], [dMinLon, dMaxLat], [dMaxLon, dMinLat], [dMaxLon, dMaxLat],
-      ].map(([flon, flat]) => locatorProj.project(flon, flat));
+      // Data crossing the antimeridian has a naive lon span near 360 deg, so its
+      // bbox corners project to the far side of the globe; project the data's
+      // own points instead.
+      const zoomCorners = dMaxLon - dMinLon > 180
+        ? dataPoints.map(([flon, flat]) => locatorProj.project(flon, flat))
+        : [[dMinLon, dMinLat], [dMinLon, dMaxLat], [dMaxLon, dMinLat], [dMaxLon, dMaxLat]].map(([flon, flat]) => locatorProj.project(flon, flat));
       const zx0 = Math.min(...zoomCorners.map((p) => p.x));
       const zx1 = Math.max(...zoomCorners.map((p) => p.x));
       const zy0 = Math.min(...zoomCorners.map((p) => p.y));
@@ -6500,6 +9718,14 @@ function renderChoropleth(spec, rows, mobile = false) {
       locatorParts.push(
         `<rect data-role="choropleth-locator-area" x="${zx0.toFixed(1)}" y="${zy0.toFixed(1)}" width="${Math.max(1, zx1 - zx0).toFixed(1)}" height="${Math.max(1, zy1 - zy0).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.5"/>`
       );
+    }
+    // A data region too small to show at locator scale gets an accent dot, so the
+    // marker never frames a stretch of empty sea.
+    for (const item of joined) {
+      const dot = tinyRegionDot(item.featureIndices, locatorProj.project, locatorLon0, locatorLat0, 3);
+      if (!dot) continue;
+      if (dot.x < corner.x || dot.x > corner.x + locatorSize || dot.y < corner.y || dot.y > corner.y + locatorSize) continue;
+      locatorParts.push(`<circle data-role="choropleth-locator-dot" data-iso3="${esc(item.iso3)}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="2.2" fill="${PALETTE.accent}"/>`);
     }
     locatorParts.push("</g>");
     locatorParts.push("</g>");
@@ -6514,24 +9740,65 @@ function renderChoropleth(spec, rows, mobile = false) {
   const insetPanelParts = [];
   if (insetCorner) {
     const px = insetCorner.x, py = insetCorner.y;
+    const insetPanelAttr = ` data-panel-box="${px.toFixed(1)},${py.toFixed(1)},${(px + insetPanelW).toFixed(1)},${(py + insetPanelH).toFixed(1)}"`;
     const insetTitle = String(insetSpec?.title ?? (lang === "zh" ? "局部放大" : "Inset")).trim();
-    const mapX0 = px + 6, mapX1 = px + insetMapSize + 6, mapY0 = py + insetTitleH + 4, mapY1 = mapY0 + insetMapSize;
-    const zoomProj = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], mapX0, mapX1, mapY0, mapY1, 0.12);
+    const mapX0 = px + 6, mapX1 = px + insetMapSize + 6, mapY0 = py + insetTitleH + 4, mapY1 = mapY0 + insetMapH;
+    const zoomProj = fitAzimuthalProjection(zLon0, zLat0, insetPoints2.length ? insetPoints2 : [[lon0, lat0]], mapX0, mapX1, mapY0, mapY1, insetPad);
     const zoomClipId = `choropleth-inset-clip-${mobile ? "m" : "d"}`;
 
     // Task (leader research, point 4): the panel's own frame and the
     // main-map source-extent outline share one style (1px dark grey,
     // PALETTE.muted) so the reader reads them as "the same box, drawn twice".
     insetPanelParts.push(`<g data-role="choropleth-inset"><rect x="${px.toFixed(1)}" y="${py.toFixed(1)}" width="${insetPanelW.toFixed(1)}" height="${insetPanelH.toFixed(1)}" rx="3" fill="${PAPER}" fill-opacity=".97" stroke="${PALETTE.muted}" stroke-width="1"/>`);
-    insetPanelParts.push(`<text x="${(px + 8).toFixed(1)}" y="${(py + 13).toFixed(1)}" font-family="${FONT_SANS}" font-size="12.5" font-weight="700" fill="${PALETTE.ink}">${esc(insetTitle)}</text>`);
+    insetPanelParts.push(`<text x="${(px + (insetLetter ? 28 : 8)).toFixed(1)}" y="${(py + 13).toFixed(1)}" font-family="${FONT_SANS}" font-size="12.5" font-weight="700" fill="${PALETTE.ink}">${esc(insetTitle)}</text>`);
+    if (insetLetter) insetPanelParts.push(letterTagSvg("choropleth-inset-letter", px + 8, py + 1, insetLetter));
     insetPanelParts.push(`<defs><clipPath id="${zoomClipId}"><rect x="${mapX0.toFixed(1)}" y="${mapY0.toFixed(1)}" width="${(mapX1 - mapX0).toFixed(1)}" height="${(mapY1 - mapY0).toFixed(1)}"/></clipPath></defs>`);
     insetPanelParts.push(`<g clip-path="url(#${zoomClipId})">`);
+    // Neighbouring land for orientation: every other feature whose lon/lat box
+    // meets the selected regions' box widened by 35% (at least 3 deg). Drawn
+    // beneath the data paths and clipped to the panel like them.
+    if (insetPoints2.length) {
+      const ils = insetPoints2.map((pt) => pt[0]), ibs = insetPoints2.map((pt) => pt[1]);
+      const padLon = Math.max(3, (Math.max(...ils) - Math.min(...ils)) * 0.35), padLat = Math.max(3, (Math.max(...ibs) - Math.min(...ibs)) * 0.35);
+      let wMinLon = Math.min(...ils) - padLon, wMaxLon = Math.max(...ils) + padLon, wMinLat = Math.min(...ibs) - padLat, wMaxLat = Math.max(...ibs) + padLat;
+      // P3 (item 3): the panel is wider/taller than the extent, so the land
+      // that fills it is whatever lies under the rectangle itself - widen the
+      // window by the lon/lat the rectangle's own edge samples invert to.
+      {
+        const sl = [], sb = [];
+        for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) {
+          const q = zoomProj.invert(mapX0 + fx * (mapX1 - mapX0), mapY0 + fy * (mapY1 - mapY0));
+          if (q && Number.isFinite(q[0]) && Number.isFinite(q[1])) { sl.push(q[0]); sb.push(q[1]); }
+        }
+        if (sl.length && Math.max(...sl) - Math.min(...sl) < 270) {
+          wMinLon = Math.min(wMinLon, ...sl); wMaxLon = Math.max(wMaxLon, ...sl);
+          wMinLat = Math.min(wMinLat, ...sb); wMaxLat = Math.max(wMaxLat, ...sb);
+        }
+      }
+      const inInset = new Set(insetFeatureIndices);
+      for (let idx = 0; idx < featureCount; idx++) {
+        if (inInset.has(idx)) continue;
+        let fMinLon = Infinity, fMaxLon = -Infinity, fMinLat = Infinity, fMaxLat = -Infinity;
+        for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) {
+          if (pt[0] < fMinLon) fMinLon = pt[0]; if (pt[0] > fMaxLon) fMaxLon = pt[0];
+          if (pt[1] < fMinLat) fMinLat = pt[1]; if (pt[1] > fMaxLat) fMaxLat = pt[1];
+        }
+        if (fMaxLon < wMinLon || fMinLon > wMaxLon || fMaxLat < wMinLat || fMinLat > wMaxLat) continue;
+        const d = featurePath(neFeatureGeometry(idx), zoomProj.project, { lon0: zLon0, lat0: zLat0, limitDeg: 90, precision: 1, minDist: 0.4, clipRect: { left: mapX0, right: mapX1, top: mapY0, bottom: mapY1 } });
+        if (d) insetPanelParts.push(`<path data-role="choropleth-inset-context" d="${d}" fill="${PALETTE.grid}" stroke="${PAPER}" stroke-width="0.5"/>`);
+      }
+    }
     for (const item of insetLabelItems) {
       for (const idx of item.item.featureIndices) {
         const d = featurePath(neFeatureGeometry(idx), zoomProj.project, { lon0: zLon0, lat0: zLat0, limitDeg: 90, precision: 1, minDist: 0.4, clipRect: { left: mapX0, right: mapX1, top: mapY0, bottom: mapY1 } });
         if (!d) continue;
         insetPanelParts.push(`<path data-role="choropleth-inset-data" data-iso3="${esc(item.item.iso3)}" data-value="${n(item.item.row[spec.value_field]) ?? 0}" d="${d}" fill="${item.fill}" stroke="${PAPER}" stroke-width="0.5"/>`);
       }
+    }
+    for (const item of insetLabelItems) {
+      const dot = tinyRegionDot(item.item.featureIndices, zoomProj.project, zLon0, zLat0);
+      if (!dot) continue;
+      insetPanelParts.push(`<circle data-role="choropleth-inset-dot" data-iso3="${esc(item.item.iso3)}" data-value="${n(item.item.row[spec.value_field]) ?? 0}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="3.2" fill="${item.fill}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
     }
     // Review fix (containment search): the anchor placement decided above
     // (onPolygonItems' own ax/ay) was found in the sizingProbe's own
@@ -6545,8 +9812,8 @@ function renderChoropleth(spec, rows, mobile = false) {
       const cy = li.ay + mapY0;
       const style = labelStyleOnFill(hexToRgb(li.fill));
       insetPanelParts.push(
-        `<text data-role="choropleth-inset-label" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${(cy - labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
-        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(li.item.iso3)}" x="${cx.toFixed(1)}" y="${(cy + labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
+        `<text data-role="choropleth-inset-label" data-iso3="${esc(li.item.iso3)}"${insetPanelAttr} x="${cx.toFixed(1)}" y="${(cy - labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${style.fill}">${esc(li.name)}</text>`,
+        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(li.item.iso3)}"${insetPanelAttr} x="${cx.toFixed(1)}" y="${(cy + labelLineDy).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${style.fill}">${esc(li.valueText)}</text>`
       );
     }
     insetPanelParts.push("</g>");
@@ -6575,13 +9842,13 @@ function renderChoropleth(spec, rows, mobile = false) {
       // between the end of the text and the leader (choroplethLabelWidth's
       // own padding plus LEADER_GAP_PX) with nothing drawn in it. Right-side
       // labels are unaffected (their near edge already is boxX).
-      const textX = item.side === "right" ? boxX : boxX + item.box.w;
-      const textAnchor = item.side === "right" ? "start" : "end";
+      const textX = item.side === "center" ? boxX + item.box.w / 2 : item.side === "right" ? boxX : boxX + item.box.w;
+      const textAnchor = item.side === "center" ? "middle" : item.side === "right" ? "start" : "end";
       insetPanelParts.push(
         anchorDotSvg("choropleth-inset-leader-dot", from),
         leaderSvg("choropleth-inset-leader", from, to, ` data-iso3="${esc(item.item.iso3)}"`),
-        `<text data-role="choropleth-inset-label" data-iso3="${esc(item.item.iso3)}" x="${textX.toFixed(1)}" y="${(boxMidY - labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.name)}</text>`,
-        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(item.item.iso3)}" x="${textX.toFixed(1)}" y="${(boxMidY + labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.valueText)}</text>`
+        `<text data-role="choropleth-inset-label" data-iso3="${esc(item.item.iso3)}"${insetPanelAttr} x="${textX.toFixed(1)}" y="${(boxMidY - labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.name)}</text>`,
+        `<text data-role="choropleth-inset-label-value" data-iso3="${esc(item.item.iso3)}"${insetPanelAttr} x="${textX.toFixed(1)}" y="${(boxMidY + labelLineDy).toFixed(1)}" text-anchor="${textAnchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}"${OVERFLOW_LABEL_HALO}>${esc(item.valueText)}</text>`
       );
     }
 
@@ -6613,20 +9880,29 @@ function renderChoropleth(spec, rows, mobile = false) {
       }).concat(
         insetOverflowItems.map((item) => ({ x: item.box.x + mapX0, y: item.box.y + mapY0, w: item.box.w, h: item.box.h }))
       );
-      const declutteredCentroids = declutterPoints(
-        rawCentroids.filter(Boolean),
-        20,
-        onPolygonLabelBoxes,
-        11
+      const insetLeaderSegments = insetOverflowItems.flatMap((item) =>
+        elbowSegments(
+          { x: item.from.x + mapX0, y: item.from.y + mapY0 },
+          { x: item.to.x + mapX0, y: item.to.y + mapY0 },
+        ).map(([a, b]) => ({ a, b })),
       );
+      const declutteredCentroids = placeNumberedMarkers(rawCentroids.filter(Boolean), {
+        bounds: { x: mapX0, y: mapY0, w: mapX1 - mapX0, h: mapY1 - mapY0 },
+        boxes: onPolygonLabelBoxes,
+        segments: insetLeaderSegments,
+        dots: insetLabelItems.map((item) => tinyRegionDot(item.item.featureIndices, zoomProj.project, zLon0, zLat0)).filter(Boolean).map((d) => ({ x: d.x, y: d.y, r: 3.2 })),
+      });
       let centroidCursor = 0;
-      const markerCentroids = rawCentroids.map((c) => (c ? declutteredCentroids[centroidCursor++] : null));
+      const markerCentroids = rawCentroids.map((c) => (c ? declutteredCentroids[centroidCursor++] ?? null : null));
       listFallbackItems.forEach((li, i) => {
         const marker = markerCentroids[i];
         const num = fallbackNumberByIso3.get(li.item.iso3);
+        if (rawCentroids[i]) markerTotal++;
+        if (rawCentroids[i] && !marker) listOnlyIso3.push(li.item.iso3);
         if (marker) {
           insetPanelParts.push(
-            `<circle data-role="choropleth-inset-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" cx="${marker.x.toFixed(1)}" cy="${marker.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
+            markerTetherSvg("choropleth-inset-footnote-marker", marker, rawCentroids[i], li.item.iso3, num),
+            `<circle data-role="choropleth-inset-footnote-marker" data-iso3="${esc(li.item.iso3)}" data-number="${num}" data-anchor-x="${rawCentroids[i].x.toFixed(1)}" data-anchor-y="${rawCentroids[i].y.toFixed(1)}" cx="${marker.x.toFixed(1)}" cy="${marker.y.toFixed(1)}" r="9" fill="${PALETTE.ink}"/>`,
             `<text data-role="choropleth-inset-footnote-marker-label" x="${marker.x.toFixed(1)}" y="${(marker.y + 4).toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PAPER}">${num}</text>`
           );
         }
@@ -6647,12 +9923,15 @@ function renderChoropleth(spec, rows, mobile = false) {
   // live-bound match to that same shade) so it tracks the current style like
   // the rest of this renderer instead of staying frozen while everything
   // around it repaints under house/legacy.
+  let noDataDrawn = false;
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
   for (let index = 0; index < featureCount; index++) {
-    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    if (worldMode && isAntarcticaFeature(index)) continue;
+    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
     if (!d) continue;
     const item = dataByIndex.get(index);
+    if (!item) noDataDrawn = true;
     const value = item ? n(item.row[spec.value_field]) ?? 0 : undefined;
     const fill = item ? colorForValue(value) : PALETTE.grid;
     // data-iso3/data-value: machine-readable proof for render_qa_labels.mjs's
@@ -6662,6 +9941,15 @@ function renderChoropleth(spec, rows, mobile = false) {
     // claim that a value is shown.
     const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"` : "";
     f.parts.push(`<path data-role="${item ? "choropleth-data" : "choropleth-context"}"${dataAttrs} d="${d}" fill="${fill}" stroke="${PAPER}" stroke-width="${mobile ? 0.5 : 0.7}" stroke-linejoin="round"/>`);
+  }
+  // World mode: a numbered marker sitting exactly on its region's dot already marks it, and its digit would cross the dot circle.
+  const dotCoveredByMarker = new Set();
+  if (worldMode) footnoteItems.forEach((li, i) => { const mk = footnoteMarkerPositions[i], dot = tinyDots.get(li.item.iso3); if (mk && dot && Math.hypot(mk.x - dot.x, mk.y - dot.y) < 1) dotCoveredByMarker.add(li.item.iso3); });
+  for (const item of joined) {
+    const dot = tinyDots.get(item.iso3);
+    if (!dot || dotCoveredByMarker.has(item.iso3)) continue;
+    const value = n(item.row[spec.value_field]) ?? 0;
+    f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
   }
   // Review fix (colour ramp/highlight): spec.highlight_values is reserved
   // for an outline only, never a fill change - drawing it as a stroke over
@@ -6673,8 +9961,10 @@ function renderChoropleth(spec, rows, mobile = false) {
   const highlightSet = new Set((spec.highlight_values ?? []).map(String));
   for (const item of joined) {
     if (!highlightSet.has(String(item.row[spec.category_field]))) continue;
+    // World mode: a numbered marker already singles the region out, and its digit would sit on the outline stroke.
+    if (worldMode && footnoteIso3.has(item.iso3)) continue;
     for (const idx of item.featureIndices) {
-      const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+      const d = featurePath(neFeatureGeometry(idx), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
       if (!d) continue;
       f.parts.push(`<path data-role="choropleth-highlight-outline" data-iso3="${esc(item.iso3)}" d="${d}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.5"/>`);
     }
@@ -6693,6 +9983,10 @@ function renderChoropleth(spec, rows, mobile = false) {
   if (sourceOutline) {
     f.parts.push(`<rect data-role="choropleth-inset-source" x="${sourceOutline.x.toFixed(1)}" y="${sourceOutline.y.toFixed(1)}" width="${sourceOutline.w.toFixed(1)}" height="${sourceOutline.h.toFixed(1)}" fill="none" stroke="${PALETTE.muted}" stroke-width="1"/>`);
   }
+  if (sourceOutline && insetLetter) {
+    const ly = sourceOutline.y - 17 >= top ? sourceOutline.y - 17 : sourceOutline.y + sourceOutline.h + 1;
+    f.parts.push(letterTagSvg("choropleth-inset-source-letter", Math.min(mapRight - 16, Math.max(mapLeft, sourceOutline.x)), ly, insetLetter));
+  }
   if (insetLinkPath) {
     f.parts.push(`<path data-role="choropleth-inset-link" d="${insetLinkPath}" fill="none" stroke="${LEADER_STYLE.color}" stroke-width="${LEADER_STYLE.width}"/>`);
   }
@@ -6705,27 +9999,91 @@ function renderChoropleth(spec, rows, mobile = false) {
   const legendY = bottom + insetStripH + 22;
   const legendW = Math.min(mobile ? 240 : 320, plotRight - plotLeft);
   const legendStep = legendW / CHOROPLETH_RAMP.length;
-  const legendTitleBase = String(spec.legend_title ?? spec.title ?? "").trim();
-  const legendTitle = spec.unit && !legendTitleBase.includes(spec.unit) ? `${legendTitleBase}（${spec.unit}）` : legendTitleBase;
+  // The legend names the measure being coloured, never the chart title (which
+  // sits right above the map and would only repeat itself): an explicit
+  // legend_title, else the measure's own label from measure_semantics, else
+  // just its unit.
+  const measureEntry = Array.isArray(spec.measure_semantics)
+    ? spec.measure_semantics.filter((m) => m && typeof m === "object").find((m) => m.field && m.field === spec.value_field) ?? null
+    : null;
+  const measureName = String(measureEntry?.label ?? measureEntry?.name ?? measureEntry?.title ?? "").trim();
+  const legendTitleBase = String(spec.legend_title ?? measureName ?? "").trim();
+  const legendTitle = legendTitleBase
+    ? spec.unit && !legendTitleBase.includes(spec.unit) ? `${legendTitleBase}（${spec.unit}）` : legendTitleBase
+    : String(spec.unit ?? "").trim();
   f.parts.push('<g data-role="choropleth-legend">');
   if (legendTitle) {
     f.parts.push(`<text data-role="choropleth-legend-title" x="${plotLeft}" y="${legendY - 8}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(legendTitle)}</text>`);
   }
-  CHOROPLETH_RAMP.forEach((c, i) => {
+  // Whole-number measures (years, counts): the class edges are only bin
+  // bounds, so the top edge (e.g. 2018 for data ending in 2017) names a value
+  // no region has. The legend therefore stops at the class holding the data
+  // max: no swatch or tick is drawn for a class above it (a single value gets
+  // one swatch labelled with that value, never a 5..9 scale). Swatches, ticks
+  // and the displayed range all come from the same shownClasses, so they
+  // cannot disagree. One value per class: each swatch is labelled with its own
+  // value (centred); wider classes: the last edge is capped at the data max
+  // when the max falls inside that class (classifyValue puts a value equal to
+  // a lower bound in the class that starts there).
+  const legendIntegerData = Boolean(specValueKind(spec)) && values.length > 0 && values.every(Number.isInteger);
+  const legendDataMax = legendIntegerData ? Math.max(...values) : null;
+  const legendOneValuePerClass = legendIntegerData && breaks.length > 1 && breaks.every((b, i) => i === 0 || b - breaks[i - 1] === 1);
+  const legendClassCount = breaks.length - 1;
+  // Every region has the same value (one region, or all equal): one swatch
+  // labelled with that value, whatever the measure kind.
+  const legendSingleValue = values.length > 0 && values.every((v) => v === values[0]);
+  const shownClasses = legendSingleValue ? 1 : legendIntegerData ? Math.min(legendClassCount, Math.max(1, classifyValue(legendDataMax, breaks) + 1)) : legendClassCount;
+  CHOROPLETH_RAMP.slice(0, shownClasses).forEach((c, i) => {
     f.parts.push(`<rect x="${(plotLeft + i * legendStep).toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${c}"/>`);
   });
-  breaks.forEach((edgeValue, i) => {
-    const isLast = i === breaks.length - 1;
-    const x = plotLeft + i * legendStep;
-    f.parts.push(
-      `<text x="${(isLast ? x - 2 : x).toFixed(1)}" y="${legendY + 26}" text-anchor="${isLast ? "end" : "middle"}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(isLast ? fmt(edgeValue, spec.unit) : fmt(edgeValue, ""))}</text>`
-    );
-  });
+  const legendTick = (edgeValue, x, anchor, unit) =>
+    `<text x="${x.toFixed(1)}" y="${legendY + 26}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, edgeValue, unit))}</text>`;
+  if (legendSingleValue) {
+    f.parts.push(legendTick(values[0], plotLeft + 0.5 * legendStep, "middle", spec.unit));
+  } else if (classPlan.skewed) {
+    // Open-ended classes: the outer edges are only the data min/max, so they
+    // are never printed; the first and last swatches say "<e1" and ">=e4".
+    const e1 = breaks[1], e4 = breaks[breaks.length - 2];
+    f.parts.push(legendTick(e1, plotLeft + 0.5 * legendStep, "middle", "").replace(/>([^<]*)<\/text>/, (m, t) => `>&lt;${t}</text>`));
+    for (let i = 2; i < breaks.length - 2; i++) f.parts.push(legendTick(breaks[i], plotLeft + i * legendStep, "middle", ""));
+    f.parts.push(legendTick(e4, plotLeft + (legendClassCount - 0.5) * legendStep, "middle", spec.unit).replace(/>([^<]*)<\/text>/, (m, t) => `>\u2265${t}</text>`));
+  } else if (legendOneValuePerClass) {
+    for (let i = 0; i < shownClasses; i++) {
+      f.parts.push(legendTick(breaks[i], plotLeft + (i + 0.5) * legendStep, "middle", i === shownClasses - 1 ? spec.unit : ""));
+    }
+  } else {
+    // The end-anchored last label carries the unit and can reach back over the
+    // previous tick; that interior tick is left unlabelled (its swatch edge
+    // stays) rather than printed on top of it.
+    const tickText = (i) => {
+      const isLast = i === shownClasses;
+      const v = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(breaks[i], legendDataMax) : breaks[i];
+      return fmtSpec(spec, v, isLast ? spec.unit : "");
+    };
+    const lastLeft = plotLeft + shownClasses * legendStep - 2 - (choroplethLabelWidth(tickText(shownClasses), 12) - 8);
+    for (let i = 0; i <= shownClasses; i++) {
+      const isLast = i === shownClasses;
+      const x = plotLeft + i * legendStep;
+      if (i === shownClasses - 1 && i > 0 && x + (choroplethLabelWidth(tickText(i), 12) - 8) / 2 + 4 > lastLeft) continue;
+      const shown = isLast && legendIntegerData && legendDataMax > breaks[i - 1] ? Math.min(breaks[i], legendDataMax) : breaks[i];
+      f.parts.push(legendTick(shown, isLast ? x - 2 : x, isLast ? "end" : "middle", isLast ? spec.unit : ""));
+    }
+  }
   f.parts.push("</g>");
+  if (noDataDrawn && !mobile && !isRowSlice(spec)) {
+    // Regions drawn without a value are filled PALETTE.grid; name that fill.
+    // Its own group, so the legend group still holds only the class swatches.
+    const ndX = plotLeft + legendStep * CHOROPLETH_RAMP.length + 18;
+    f.parts.push(`<g data-role="choropleth-no-data"><rect data-role="choropleth-no-data-swatch" x="${ndX.toFixed(1)}" y="${legendY}" width="${(legendStep - 2).toFixed(1)}" height="12" fill="${PALETTE.grid}"/>`);
+    f.parts.push(`<text data-role="choropleth-no-data-label" x="${(ndX + (legendStep - 2) / 2).toFixed(1)}" y="${legendY + 26}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(VIZ_STRINGS[lang].noData)}</text></g>`);
+  }
 
   f.parts.push(...onMapParts);
   f.parts.push(...overflowParts);
   f.parts.push(...footnoteParts);
+  if (listOnlyIso3.length) {
+    f.parts.push(`<g data-role="choropleth-marker-list-only" data-count="${listOnlyIso3.length}" data-total="${markerTotal}" data-iso3="${esc(listOnlyIso3.join(","))}"/>`);
+  }
   f.parts.push(...insetPanelParts);
   f.parts.push(...locatorParts);
 
@@ -6754,17 +10112,32 @@ function renderChoropleth(spec, rows, mobile = false) {
   // under the legend into the footer's own source line, rather than sitting
   // as a second, disconnected attribution line on the map body.
   const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
+  let framingNote = "";
+  if (clippedTerritoryItems.length) {
+    const shownNames = clippedTerritoryItems.slice(0, 3).map((item) => resolveEconomyDisplayName(item.raw, spec.category_names, lang));
+    const more = clippedTerritoryItems.length > shownNames.length;
+    framingNote = lang === "zh"
+      ? `${shownNames.join("、")}${more ? "等" : ""}的远离本土的岛屿等领土在此范围外，未画出。`
+      : `Distant territories of ${shownNames.join(", ")}${more ? " and others" : ""} lie outside this frame and are not drawn.`;
+  }
+  const listOnlyNote = listOnlyIso3.length
+    ? (lang === "zh" ? `另有 ${listOnlyIso3.length} 个地区因位置过密未在图上标号，见下方列表。` : `${listOnlyIso3.length} more region(s) are too crowded to number on the map; see the list below.`)
+    : "";
   const effectiveSpec = {
     ...spec,
-    note: [spec.note, yearsNote].filter(Boolean).join(" "),
+    note: [spec.note, yearsNote, framingNote, listOnlyNote].filter(Boolean).join(" "),
     source_note: [spec.source_note, basemapCredit].filter(Boolean).join(" · "),
   };
   (mobile ? addMobileFooter : addFooter)(f.parts, effectiveSpec, f.footerTop);
   f.parts.push("</svg>");
+  meta.listOnly = listOnlyIso3.length;
+  meta.markerTotal = markerTotal;
+  meta.hasInset = insetIso3Set.size > 0;
   return f.parts.join("\n") + "\n";
 }
 
 export function renderVizMobileSvg(spec, rows) {
+  spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors=validateVizSpec(spec); if(errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);
   switch(spec.chart_type){
@@ -6772,11 +10145,13 @@ export function renderVizMobileSvg(spec, rows) {
     case "dot": return renderMobileHorizontal(spec,rows,"dot");
     case "diverging_bar": return renderMobileHorizontal(spec,rows,"bar");
     case "dumbbell": return renderMobileDumbbell(spec,rows);
+    case "mirrored_bar": return renderMirroredBar(spec,rows);
     case "slope": return renderMobileSlope(spec,rows);
     case "line": return renderMobileLine(spec,rows,false);
     case "multi_line": return renderMobileLine(spec,rows,true);
     case "small_multiples": return renderMobileSmallMultiples(spec,rows);
     case "scatter": return renderMobileScatter(spec,rows);
+    case "strip_plot": return renderStripPlot(spec,rows);
     case "heatmap": return renderMobileHeatmap(spec,rows);
     case "sankey": return renderSankey(spec,rows,true);
     case "alluvial": return renderSankey(spec,rows,true);
@@ -6794,16 +10169,46 @@ export function renderVizMobileSvg(spec, rows) {
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, true) : renderWaffle(spec, rows, true);
     case "choropleth": return renderChoropleth(spec, rows, true);
     case "treemap": return renderTreemap(spec, rows, true);
+    case "stacked_bar_100": return renderStackedBar100(spec, rows);
     default: throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
   }
 }
 
-export function renderVizBundle(spec, rows, { mobilePages = true } = {}) {
+// The 8-of-12-column chart. 822 is the pixel width of an 8-column slot on the
+// 1440px infographic page (see infographic.mjs layoutDesktop), so the page
+// embeds this SVG at scale ~1.0 and the chart keeps its 12px house-style text.
+export const COMPACT_VIEW_W = 822;
+// Only these are re-laid out for the slot; any other chart type has no
+// compact variant, so the page lint keeps blocking it in a narrow slot.
+export const COMPACT_CHART_TYPES = new Set(["horizontal_bar", "line", "multi_line"]);
+
+export function hasCompactVariant(spec) {
+  return COMPACT_CHART_TYPES.has(spec?.chart_type);
+}
+
+// The same desktop renderers, re-laid out (not scaled) for COMPACT_VIEW_W.
+export function renderVizCompactSvg(spec, rows) {
+  if (!hasCompactVariant(spec)) throw new Error(`No compact variant for chart_type '${spec?.chart_type}'`);
+  const previousLayoutW = LAYOUT_W;
+  LAYOUT_W = COMPACT_VIEW_W;
+  try {
+    return renderVizSvg(spec, rows);
+  } finally {
+    LAYOUT_W = previousLayoutW;
+  }
+}
+
+// compact: also render the 8-column variant (desktop-only pages; the caller
+// decides). Absent unless asked for, so every existing caller is unchanged.
+export function renderVizBundle(spec, rows, { mobilePages = true, compact = false } = {}) {
   const desktop = renderVizSvg(spec, rows);
-  return mobilePages ? { desktop, mobile: renderVizMobileSvg(spec, rows) } : { desktop };
+  const bundle = mobilePages ? { desktop, mobile: renderVizMobileSvg(spec, rows) } : { desktop };
+  if (compact && hasCompactVariant(spec)) bundle.compact = renderVizCompactSvg(spec, rows);
+  return bundle;
 }
 
 export function renderVizSvg(spec, rows) {
+  spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors = validateVizSpec(spec);
   if (errors.length) throw new Error(errors.join("; "));
   applyStyle(spec);
@@ -6812,11 +10217,13 @@ export function renderVizSvg(spec, rows) {
     case "dot": return renderHorizontal(spec, rows, "dot");
     case "diverging_bar": return renderHorizontal(spec, rows, "bar");
     case "dumbbell": return renderDumbbell(spec, rows);
+    case "mirrored_bar": return renderMirroredBar(spec, rows);
     case "slope": return renderSlope(spec, rows);
     case "line": return renderLine(spec, rows, false);
     case "multi_line": return renderLine(spec, rows, true);
     case "small_multiples": return renderSmallMultiples(spec, rows);
     case "scatter": return renderScatter(spec, rows);
+    case "strip_plot": return renderStripPlot(spec, rows);
     case "heatmap": return renderHeatmap(spec, rows);
     case "sankey": return renderSankey(spec, rows, false);
     case "alluvial": return renderSankey(spec, rows, false);
@@ -6834,6 +10241,7 @@ export function renderVizSvg(spec, rows) {
     case "waffle": return spec.waffle_layout === "single_grid" ? renderWaffleSingleGrid(spec, rows, false) : renderWaffle(spec, rows, false);
     case "choropleth": return renderChoropleth(spec, rows, false);
     case "treemap": return renderTreemap(spec, rows, false);
+    case "stacked_bar_100": return renderStackedBar100(spec, rows);
     default: throw new Error(`Renderer does not support '${spec.chart_type}'`);
   }
 }

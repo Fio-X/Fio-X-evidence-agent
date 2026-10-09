@@ -15,7 +15,7 @@ try {
   if(proc.status!==0) throw new Error(`basemap preparation failed: ${proc.stderr||proc.stdout}`);
   const asset=JSON.parse(await readFile(out,'utf8'));
   if(asset.detail_class!=='intermediate'||!Array.isArray(asset.features)||asset.features.length<1) throw new Error('prepared basemap lacks intermediate physical features');
-  const spec={schema_version:'0.2.0',projection:'equirectangular',crs:'EPSG:4326',task:'local',style_intent:'nature_scientific_map',extent:request.extent,basemap_asset:asset,scale:{enabled:true,unit:'km',length_km:100},layers:[{id:'observations',type:'observations',points:[{lon:110,lat:-5}],encoding:{color_scale:'scientific'}}]};
+  const spec={schema_version:'0.2.0',projection:'equirectangular',crs:'EPSG:4326',task:'local',style_intent:'nature_scientific_map',extent:request.extent,basemap_asset:asset,scale:{enabled:true,unit:'km',length_km:100},layers:[{id:'observations',type:'observations',source:{path:`data/${'0'.repeat(64)}.csv`,sha256:'0'.repeat(64),format:'csv',lon_field:'lon',lat_field:'lat'},encoding:{color_scale:'scientific'}}]};
   const good=validateMapSpec(spec); if(good.status!=='PASS') throw new Error(`valid prepared map blocked: ${good.errors.join(' | ')}`);
   const low=structuredClone(spec); low.basemap_asset.detail_class='low'; const lowGate=validateMapSpec(low); if(lowGate.status!=='BLOCK'||!lowGate.errors.some(x=>x.includes('basemap_inadequate'))) throw new Error('low-detail local basemap should block');
   const rainbow=structuredClone(spec); rainbow.layers[0].encoding.color_scale='rainbow'; const rb=validateMapSpec(rainbow); if(rb.status!=='BLOCK'||!rb.errors.some(x=>x.includes('rainbow_color_scale_disallowed'))) throw new Error('rainbow encoding should block');

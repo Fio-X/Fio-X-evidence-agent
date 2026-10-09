@@ -1,0 +1,74 @@
+{
+ "africa": [
+  {
+   "country": "Chad",
+   "v": 70.0
+  },
+  {
+   "country": "Congo, Dem. Rep.",
+   "v": 96.3
+  },
+  {
+   "country": "Congo, Rep.",
+   "v": 71.4
+  },
+  {
+   "country": "Guinea",
+   "v": 66.6
+  },
+  {
+   "country": "Liberia",
+   "v": 92.8
+  },
+  {
+   "country": "Mauritania",
+   "v": 19.6
+  },
+  {
+   "country": "Niger",
+   "v": 79.6
+  },
+  {
+   "country": "Nigeria",
+   "v": 80.3
+  },
+  {
+   "country": "Sierra Leone",
+   "v": 71.6
+  },
+  {
+   "country": "South Sudan",
+   "v": 32.4
+  },
+  {
+   "country": "Zambia",
+   "v": 83.0
+  }
+ ],
+ "west_africa": [
+  {
+   "country": "Benin",
+   "v": 46.8
+  },
+  {
+   "country": "Gambia, The",
+   "v": 46.6
+  },
+  {
+   "country": "Ghana",
+   "v": 30.9
+  },
+  {
+   "country": "Guinea-Bissau",
+   "v": 55.4
+  },
+  {
+   "country": "Nigeria",
+   "v": 80.3
+  },
+  {
+   "country": "Togo",
+   "v": 43.5
+  }
+ ]
+}

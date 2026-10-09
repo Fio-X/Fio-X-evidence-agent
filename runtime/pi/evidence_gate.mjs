@@ -32,7 +32,7 @@ export function isSystemVerifiedClaim(claim) {
 }
 
 const AUTO_VERIFIABLE_CLAIM_KINDS = new Set(["descriptive", "quantitative", "comparative", "uncertainty"]);
-const UNSUPPORTED_INFERENCE_LANGUAGE = /\b(caus(?:e|ed|al)|driv(?:e|en)|because|labou?r|war|conflict)\b|驱动|导致|因为|劳动力|战争|冲突|反映.{0,12}(原因|危机|政策)/iu;
+const UNSUPPORTED_INFERENCE_LANGUAGE = /\b(caus(?:e|ed|al)|driv(?:e|en)|because|labou?r|war|conflict)\b|驱动|导致|因为|劳动力|战争|冲突|反映.{0,12}(原因|危机|政策)|造成|引起|由于(?!统计口径|口径|四舍五入|舍入|取整|数据缺失|缺测|数据修订|统计修订|数据调整|统计调整|季节调整)|归因|致使|促使|所致|(?<!(?:数据|资料|信息)来?)源于|\b(?:(?:due to|owing to)(?!\s+(?:rounding|round-off|data revisions?|missing data|missing values|changes? in (?:definition|methodology)|methodology))|thanks to|led to|leads? to|result(?:s|ed|ing)? in)\b/iu;
 
 export function evaluateClaimSupport({ requested_status, claim_kind, claim } = {}) {
   const reasons = [];
@@ -94,9 +94,25 @@ export function assertDatasetPayload(ref, size) {
   }
 }
 
-export function assertInlineRowsHaveEvidence(sql, hasUsableEvidence) {
-  if (INLINE_ROW_SQL.test(String(sql ?? "")) && !hasUsableEvidence) {
-    throw new Error("SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed");
+// `readsEvidence` must be true only when the statement itself reads at least
+// one data/ or sources/ file (derived from the SQL, never from what happens to
+// exist in the artifact directory).
+export function assertInlineRowsHaveEvidence(sql, readsEvidence) {
+  if (INLINE_ROW_SQL.test(String(sql ?? "")) && !readsEvidence) {
+    throw new Error("SYNTHETIC_DATA_BLOCKED: EVIDENCE_REQUIRED before inline VALUES or generated rows can be analyzed; the query must read a data/ or sources/ input");
+  }
+}
+
+// A computation may support a claim only when it reads at least one of the
+// cited data/ or sources/ artifacts. `effectiveInputs` are the files the SQL
+// really reads (transitively), never the directory-wide snapshot.
+export function assertComputationBoundToSources(ref, binding, effectiveInputs, sourceRefs) {
+  if (binding !== "source_bound") {
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} reads no resolvable data/ or sources/ input (binding: ${binding || "legacy"}); literal-only or unresolved computations cannot support a claim`);
+  }
+  const inputs = new Set(effectiveInputs ?? []);
+  if (!(sourceRefs ?? []).some((sourceRef) => inputs.has(sourceRef))) {
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} does not read any cited source artifact`);
   }
 }
 
@@ -110,6 +126,15 @@ export function evidenceRefFromFingerprint(fingerprint) {
   if (kind === "source" && stored) return `sources/${stored}`;
   if (kind === "data" && stored.startsWith("data/")) return stored;
   return null;
+}
+
+// True when the error, or an error it wraps, is an AbortError. Only the circuit calls this, on the raw error, and
+// keeps nothing but the boolean.
+function abortInChain(error) {
+  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+    if (current.name === "AbortError") return true;
+  }
+  return false;
 }
 
 export function createSourceAccessCircuit(limit = 3) {
@@ -131,9 +156,13 @@ export function createSourceAccessCircuit(limit = 3) {
       if (failures >= boundedLimit) return blocked(normalizedKey);
       const message = String(error?.message ?? error ?? "");
       const http = message.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
-      const reason = error?.name === "AbortError" ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : "could not reach a public source";
-      return new Error(
-        `SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). Do not substitute synthetic data; try a bounded alternative source.`,
+      const aborted = abortInChain(error);
+      const reason = aborted ? "timed out or was cancelled" : http ? `returned HTTP ${http}` : "could not reach a public source";
+      // The raw error can carry the request URL or provider diagnostics, so it is not attached as `cause`. The only
+      // thing a caller needs from it is whether the request was aborted, and that travels as a boolean.
+      return Object.assign(
+        new Error(`SOURCE_ACCESS_FAILED: ${String(tool ?? "source tool")} ${reason} (${failures}/${boundedLimit}). Do not substitute synthetic data; try a bounded alternative source.`),
+        aborted ? { request_aborted: true } : {},
       );
     },
     // A successful source proves that the route is usable. Keep the circuit
@@ -144,6 +173,85 @@ export function createSourceAccessCircuit(limit = 3) {
     },
     failureCount(key) {
       return countFor(key);
+    },
+    // Read-only twin of assertAvailable, for callers that must let the stronger
+    // SOURCE_ACCESS_BLOCKED stop instruction win over a softer refusal.
+    isBlocked(key) {
+      return countFor(key) >= boundedLimit;
+    },
+  };
+}
+
+// download_data aborts a request after 30 s. A bare AbortError told the model
+// nothing and four identical retries cost two minutes, so the abort becomes a
+// structured error. One identical retry is allowed (a slow server is sometimes
+// fast the second time); after the second timeout of the same request the key is
+// refused. Counts live in this process's memory only and are never written to
+// disk: one CLI run is the reset boundary.
+export const DOWNLOAD_TIMEOUT_HINT = "One identical retry is allowed; after a second timeout that exact request is refused for the rest of this run. Prefer splitting it into smaller requests (fewer series or a shorter period each) and combining them in SQL, but every series and period the question needs must still be fetched. For SDMX APIs (ECB, Eurostat, OECD, IMF, BIS) add `detail=dataonly`; or use another source.";
+export const DOWNLOAD_TIMEOUTS_ALLOWED = 2;
+
+// The key of a request: method, scheme, host and path, the query parameters stably sorted by name only (repeated
+// names keep their relative order, which a first- or last-value server can tell apart), and the body. URL parsing lowercases scheme and host and drops a default port; the fragment never
+// reaches the server and is dropped.
+export function downloadRequestKey({ method, url, body } = {}) {
+  let target = String(url ?? "");
+  try {
+    const parsed = new URL(target);
+    const pairs = [...parsed.searchParams.entries()].sort(([an], [bn]) => (an < bn ? -1 : an > bn ? 1 : 0));
+    const query = pairs.map(([name, value]) => `${encodeURIComponent(name)}=${encodeURIComponent(value)}`).join("&");
+    target = `${parsed.protocol}//${parsed.host}${parsed.pathname}${query ? `?${query}` : ""}`;
+  } catch { /* keep the raw text */ }
+  const payload = body === undefined || body === null ? ""
+    : typeof body === "string" ? body
+    : ArrayBuffer.isView(body) ? Array.from(new Uint8Array(body.buffer, body.byteOffset, body.byteLength)).join(",")
+    : JSON.stringify(body);
+  return `${String(method || "GET").toUpperCase()} ${target}\n${payload}`;
+}
+
+// The circuit's error carries a boolean instead of its cause; a bare AbortError (thrown while the body is read)
+// carries its name.
+function downloadAbortSurfaced(error) {
+  return error?.name === "AbortError" || error?.request_aborted === true;
+}
+
+export function createDownloadTimeoutGuard(limitMs = 30_000) {
+  const timedOut = new Map(); // key -> { count, elapsedMs of the latest timeout }
+  const limitSeconds = Math.round(limitMs / 1000);
+  const seconds = (ms) => (Math.max(0, Number(ms) || 0) / 1000).toFixed(1);
+  const hostOf = (url) => {
+    try { return new URL(String(url)).hostname.toLowerCase(); } catch { return undefined; }
+  };
+  const structured = (code, message, fields) => Object.assign(new Error(`${code}: ${message} ${DOWNLOAD_TIMEOUT_HINT}`), { code, hint: DOWNLOAD_TIMEOUT_HINT, ...fields });
+  return {
+    hostOf,
+    // Refuses a request that timed out twice in this process. The first timeout
+    // allows one identical retry. Any change to the URL (other than query order
+    // or a fragment), method or body is a different key and passes.
+    assertNotRepeat(request) {
+      const earlier = timedOut.get(downloadRequestKey(request));
+      if (!earlier || earlier.count < DOWNLOAD_TIMEOUTS_ALLOWED) return;
+      const host = hostOf(request?.url) ?? "unknown host";
+      throw structured(
+        "DOWNLOAD_TIMEOUT_REPEAT",
+        `this exact request to ${host} timed out ${earlier.count} times (the last after ${seconds(earlier.elapsedMs)} s), so it is refused for the rest of this run and was not sent again; the count starts over with the next CLI run.`,
+        { host, elapsed_seconds: Number(seconds(earlier.elapsedMs)) },
+      );
+    },
+    // Called when the tool's own timer fired. Returns the error to throw: the
+    // structured DOWNLOAD_TIMEOUT when the failure is the abort surfacing, and
+    // the original error otherwise. SOURCE_ACCESS_BLOCKED is a stop instruction
+    // and passes through unchanged.
+    recordTimeout(request, elapsedMs, error) {
+      if (!downloadAbortSurfaced(error) || /^SOURCE_ACCESS_BLOCKED:/.test(String(error?.message ?? ""))) return error;
+      const key = downloadRequestKey(request);
+      timedOut.set(key, { count: (timedOut.get(key)?.count ?? 0) + 1, elapsedMs });
+      const host = hostOf(request?.url) ?? "unknown host";
+      return structured(
+        "DOWNLOAD_TIMEOUT",
+        `${host} did not finish the download in ${seconds(elapsedMs)} s (limit ${limitSeconds} s).`,
+        { host, elapsed_seconds: Number(seconds(elapsedMs)) },
+      );
     },
   };
 }

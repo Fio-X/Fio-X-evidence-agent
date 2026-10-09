@@ -229,7 +229,8 @@ export async function localSpotlight(query, { limit = 50 } = {}) {
   if (typeof query !== 'string' || !query.trim()) throw new Error('query must be non-empty');
   const root = artifactRoot();
   const capped = Math.max(1, Math.min(Number(limit) || 50, 200));
-  if (process.platform === 'darwin' && await available(NATIVE.mdfind)) {
+  // mdfind has no `--` separator, so a query starting with '-' would be read as an option.
+  if (!query.trim().startsWith('-') && process.platform === 'darwin' && await available(NATIVE.mdfind)) {
     try {
       const { stdout } = await runCommand(NATIVE.mdfind, ['-onlyin', root, query], { maxBytes: 2 * 1024 * 1024 });
       const results = stdout.split(/\r?\n/).map((v) => v.trim()).filter(Boolean).filter((p) => within(root, path.resolve(p))).slice(0, capped);
@@ -239,9 +240,58 @@ export async function localSpotlight(query, { limit = 50 } = {}) {
   return { backend: 'portable:filename-walk', query, root, results: await walkNames(root, query, capped) };
 }
 
-function safeReadOnlySql(sql) {
-  const normalized = String(sql || '').trim().replace(/^--.*$/gm, '').trim();
-  return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(normalized) && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(normalized);
+// sqlite3's -readonly protects only the database file, not the shell's file
+// functions, so these names are rejected here and `-safe` is passed as a second layer.
+const SQLITE_FILE_FUNCTIONS = /\b(writefile|readfile|edit|load_extension|fsdir|zipfile|fts3_tokenizer)\b/i;
+
+// Drops comments and replaces string literals and quoted identifiers with a
+// placeholder, so a ';' inside them is not mistaken for a statement separator.
+// Returns null when a quote or block comment is left open: unsure means refuse.
+function stripSqliteLiterals(sql) {
+  let out = '';
+  for (let i = 0; i < sql.length;) {
+    const c = sql[i];
+    if (c === '-' && sql[i + 1] === '-') {
+      const end = sql.indexOf('\n', i);
+      if (end < 0) break;
+      i = end;
+    } else if (c === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      if (end < 0) return null;
+      out += ' ';
+      i = end + 2;
+    } else if (c === "'" || c === '"' || c === '`' || c === '[') {
+      const close = c === '[' ? ']' : c;
+      let j = i + 1;
+      for (;;) {
+        if (j >= sql.length) return null;
+        if (sql[j] === close) {
+          if (close !== ']' && sql[j + 1] === close) { j += 2; continue; }
+          break;
+        }
+        j += 1;
+      }
+      out += '?';
+      i = j + 1;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  return out;
+}
+
+export function safeReadOnlySql(sql) {
+  const text = String(sql || '');
+  const stripped = stripSqliteLiterals(text);
+  if (stripped === null) return false;
+  // One statement only: a single trailing ';' is fine, any other ';' is refused,
+  // so the PRAGMA allow-list below applies to the whole input.
+  const body = stripped.trim().replace(/;\s*$/, '').trim();
+  if (body.includes(';')) return false;
+  return /^(select|with|pragma\s+(table_info|table_list|index_list|index_info)\b)/i.test(body)
+    && !/\b(attach|detach|insert|update|delete|replace|create|drop|alter|vacuum|reindex)\b/i.test(text)
+    && !SQLITE_FILE_FUNCTIONS.test(text);
 }
 
 export async function localSqliteQuery(input, sql) {
@@ -250,7 +300,7 @@ export async function localSqliteQuery(input, sql) {
   if (process.platform !== 'darwin' || !(await available(NATIVE.sqlite3))) {
     throw new Error('sqlite3 is only available on the macOS local backend');
   }
-  const { stdout } = await runCommand(NATIVE.sqlite3, ['-readonly', '-json', target, String(sql)], { timeoutMs: 30_000 });
+  const { stdout } = await runCommand(NATIVE.sqlite3, ['-safe', '-readonly', '-json', target, String(sql)], { timeoutMs: 30_000 });
   let rows;
   try { rows = stdout.trim() ? JSON.parse(stdout) : []; }
   catch { rows = stdout.trim(); }

@@ -23,6 +23,12 @@ pub struct InvestigationBundle {
     pub claims_path: PathBuf,
     pub manifest_path: PathBuf,
     pub session_dir: PathBuf,
+    /// Name and sha256 of the method recipe appended to the first prompt (`NEWSROOM_SPEED_RECIPES`),
+    /// set by the caller; a bundle reopened later reads it back from the manifest instead.
+    pub recipe: Option<(String, String)>,
+    /// Reasons a `<file>.source.json` beside a local data file was ignored (`NEWSROOM_LOCAL_SOURCE_NOTE`): file name and
+    /// reason only, never the note's content. Written to the manifest when not empty.
+    pub source_note_warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,6 +45,17 @@ struct Manifest<'a> {
     autonomy: Autonomy,
     evidence: Evidence,
     delivery: Delivery,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recipe: Option<RecipeRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    source_note_warnings: Vec<String>,
+}
+
+/// The recipe the program appended to the first prompt: its name and the sha256 of the text sent.
+#[derive(Debug, Serialize)]
+struct RecipeRecord {
+    name: String,
+    sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -181,6 +198,8 @@ impl InvestigationBundle {
             claims_path: dir.join("claims.jsonl"),
             manifest_path: dir.join("story.json"),
             session_dir: dir.join("session"),
+            recipe: None,
+            source_note_warnings: Vec::new(),
             dir,
         })
     }
@@ -194,7 +213,7 @@ impl InvestigationBundle {
             .context("story.json has no topic")
     }
 
-    pub fn import_data(&self, source: &Path) -> Result<String> {
+    pub fn import_data(&mut self, source: &Path) -> Result<String> {
         if !source.is_file() {
             bail!(
                 "local data file does not exist or is not a regular file: {}",
@@ -283,13 +302,22 @@ impl InvestigationBundle {
                 .with_context(|| format!("failed to write {}", metadata_path.display()))?;
         }
 
-        let origin = serde_json::json!({
+        let mut origin = serde_json::json!({
             "schema_version": "0.7.0",
             "origin": "local_file",
             "original_filename": original_name,
             "sha256": sha256,
             "file": relative_file
         });
+        if local_source_note_enabled() {
+            match read_local_source_note(source, &sha256) {
+                Ok(Some(note)) => origin["source_note_file"] = note,
+                Ok(None) => {}
+                Err(reason) => self
+                    .source_note_warnings
+                    .push(format!("{original_name}.source.json ignored: {reason}")),
+            }
+        }
         let origin_bytes = serde_json::to_vec(&origin)?;
         let origin_hash = sha256_bytes(&origin_bytes);
         let origin_dir = self.dir.join("data").join("origins");
@@ -411,6 +439,61 @@ impl InvestigationBundle {
         Ok(())
     }
 
+    /// With NEWSROOM_LOCAL_SOURCE_NOTE=1: the warnings of this import, the ones an earlier turn left in the manifest, and the
+    /// page-level ones the runtime wrote beside a rendered page. Switch off: this import's warnings only (always empty), as before.
+    fn all_source_note_warnings(&self) -> Vec<String> {
+        let mut all = self.source_note_warnings.clone();
+        if !local_source_note_enabled() {
+            return all;
+        }
+        let mut earlier = Vec::new();
+        if let Ok(text) = fs::read_to_string(&self.manifest_path) {
+            if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                earlier.extend(string_array(value.get("source_note_warnings")));
+            }
+        }
+        if let Ok(files) = relative_files(&self.dir, "infographics") {
+            for file in files {
+                // Only the page manifests directly under infographics/ (key.json), not plans, lints, qa or critics.
+                if file.matches('/').count() == 1 && file.ends_with(".json") {
+                    if let Ok(text) = fs::read_to_string(self.dir.join(&file)) {
+                        if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                            earlier.extend(string_array(value.get("source_note_warnings")));
+                        }
+                    }
+                }
+            }
+        }
+        earlier.extend(all.drain(..));
+        let mut seen = std::collections::HashSet::new();
+        earlier.retain(|warning| seen.insert(warning.clone()));
+        earlier
+    }
+
+    /// A follow-up import reopens the bundle and never writes the manifest itself. With NEWSROOM_LOCAL_SOURCE_NOTE=1 and at least one
+    /// warning from this import, add them to the existing manifest's `source_note_warnings` (the rest of the file is kept as is).
+    /// Switch off, or no warnings, or no manifest yet: nothing is read or written.
+    pub fn persist_source_note_warnings(&self) -> Result<()> {
+        if !local_source_note_enabled() || self.source_note_warnings.is_empty() {
+            return Ok(());
+        }
+        let Ok(text) = fs::read_to_string(&self.manifest_path) else {
+            return Ok(());
+        };
+        let mut value: Value = serde_json::from_str(&text)
+            .with_context(|| format!("failed to parse {}", self.manifest_path.display()))?;
+        let mut warnings = string_array(value.get("source_note_warnings"));
+        for warning in &self.source_note_warnings {
+            if !warnings.contains(warning) {
+                warnings.push(warning.clone());
+            }
+        }
+        value["source_note_warnings"] = serde_json::json!(warnings);
+        let json = serde_json::to_string_pretty(&value)?;
+        fs::write(&self.manifest_path, format!("{json}\n"))
+            .with_context(|| format!("failed to write {}", self.manifest_path.display()))
+    }
+
     pub fn write_manifest(
         &self,
         topic: &str,
@@ -426,6 +509,8 @@ impl InvestigationBundle {
             generated_at: now.clone(),
             turns: 0,
             tool_calls: 0,
+            outer_tool_calls: 0,
+            inner_tool_calls: 0,
             capability_tool_calls: 0,
             successful_capability_tool_calls: 0,
             failed_tool_calls: 0,
@@ -516,6 +601,12 @@ impl InvestigationBundle {
                 infographics: relative_files(&self.dir, "infographics")?,
             },
             delivery,
+            source_note_warnings: self.all_source_note_warnings(),
+            recipe: self
+                .recipe
+                .clone()
+                .or_else(|| existing_recipe(&self.manifest_path))
+                .map(|(name, sha256)| RecipeRecord { name, sha256 }),
         };
 
         let json = serde_json::to_string_pretty(&manifest)?;
@@ -560,6 +651,129 @@ impl InvestigationBundle {
         }
         Ok(gaps)
     }
+
+    /// `Some(reason)` unless a measured publication exists: a top-level
+    /// publication that is not a Lieflat page (Lieflat pages carry no
+    /// measured lint, critic or browser QA) and whose HTML is bound, by
+    /// `html_sha256`, to a PASSing `publications/qa/*/browser-qa.json`.
+    /// `newsroom_publication_qa` returns a non-error result both when QA
+    /// could not run and for a FAIL verdict, so a successful tool call is
+    /// not evidence; only this artifact-level binding is.
+    pub fn measured_publication_gap(&self) -> Result<Option<String>> {
+        let root = &self.dir;
+        let passing = passing_browser_qa_html_hashes(root)?;
+        let publications_dir = root.join("publications");
+        let mut lieflat_only = false;
+        if publications_dir.is_dir() {
+            for entry in fs::read_dir(&publications_dir)? {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir()
+                    || matches!(
+                        entry.file_name().to_str(),
+                        Some("plans" | "qa" | "rejected")
+                    )
+                {
+                    continue;
+                }
+                let Some(manifest) = read_manifest_json(&entry.path().join("manifest.json")) else {
+                    continue;
+                };
+                let Some(html_ref) = manifest.get("html_ref").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(html) = accept_ref(root, html_ref) else {
+                    continue;
+                };
+                let is_lieflat = manifest
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| kind.starts_with("lieflat"));
+                if is_lieflat {
+                    lieflat_only = true;
+                    continue;
+                }
+                if sha256_file(&root.join(&html)).is_ok_and(|hash| passing.contains(&hash)) {
+                    return Ok(None);
+                }
+            }
+        }
+        Ok(Some(if lieflat_only {
+            "only a Lieflat page exists: it carries no measured lint, critic or browser QA, so the measured publication with a PASSing browser-qa.json report is still missing".to_string()
+        } else {
+            "no publication with a PASSing browser-qa.json report bound to its HTML exists"
+                .to_string()
+        }))
+    }
+
+    /// The tool profile the most recent Pi invocation of this investigation
+    /// actually ran with: the last `newsroom_rpc_metrics` event in
+    /// `events.jsonl` whose `tool_profile` is a known profile, falling back
+    /// to the last `run-metrics.jsonl` row that lists exactly one. `None`
+    /// when nothing usable was recorded.
+    pub fn recorded_tool_profile(&self) -> Option<String> {
+        let known = |profile: &str| crate::tool_registry::tools_for_profile(profile).is_some();
+        let mut latest: Option<String> = None;
+        if let Ok(file) = fs::File::open(&self.events_path) {
+            for line in BufReader::new(file).lines().map_while(|line| line.ok()) {
+                let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
+                if event.get("type").and_then(Value::as_str) != Some("newsroom_rpc_metrics") {
+                    continue;
+                }
+                if let Some(profile) = event
+                    .get("tool_profile")
+                    .and_then(Value::as_str)
+                    .filter(|profile| known(profile))
+                {
+                    latest = Some(profile.to_string());
+                }
+            }
+        }
+        if latest.is_some() {
+            return latest;
+        }
+        let file = fs::File::open(&self.run_metrics_path).ok()?;
+        for line in BufReader::new(file).lines().map_while(|line| line.ok()) {
+            let Ok(row) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            let Some(profiles) = row
+                .pointer("/pi_rpc/tool_profiles")
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            if let [only] = profiles.as_slice() {
+                if let Some(profile) = only.as_str().filter(|profile| known(profile)) {
+                    latest = Some(profile.to_string());
+                }
+            }
+        }
+        latest
+    }
+}
+
+/// `html_sha256` of every PASSing `publications/qa/*/browser-qa.json`.
+fn passing_browser_qa_html_hashes(root: &Path) -> Result<std::collections::BTreeSet<String>> {
+    let mut hashes = std::collections::BTreeSet::new();
+    let qa_dir = root.join("publications/qa");
+    if !qa_dir.is_dir() {
+        return Ok(hashes);
+    }
+    for entry in fs::read_dir(&qa_dir)? {
+        let report_dir = entry?.path();
+        let Some(report) = read_manifest_json(&report_dir.join("browser-qa.json")) else {
+            continue;
+        };
+        if report.get("status").and_then(Value::as_str) != Some("PASS") {
+            continue;
+        }
+        if let Some(hash) = report.get("html_sha256").and_then(Value::as_str) {
+            hashes.insert(hash.to_string());
+        }
+    }
+    Ok(hashes)
 }
 
 fn read_rpc_metrics(path: &Path) -> Value {
@@ -661,6 +875,96 @@ fn existing_created_at(path: &Path) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
     value.get("created_at")?.as_str().map(str::to_owned)
+}
+
+/// `NEWSROOM_LOCAL_SOURCE_NOTE=1` (default off): a user data file `X.csv` may carry `X.csv.source.json` beside it.
+fn local_source_note_enabled() -> bool {
+    std::env::var("NEWSROOM_LOCAL_SOURCE_NOTE").as_deref() == Ok("1")
+}
+
+const SOURCE_NOTE_FIELD_MAX: usize = 120;
+const SOURCE_NOTE_FILE_MAX_BYTES: u64 = 16 * 1024;
+
+/// Characters a note field may not carry: C0/C1 controls, zero-width and bidirectional controls, and the byte-order mark.
+/// The same set is refused in `acceptedLocalSourceNote` (runtime/pi/newsroom.ts).
+fn is_refused_note_char(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
+/// The note beside `source`, or None when there is no such file. Err carries only the reason it is refused.
+/// Accepted only when it parses, publisher/dataset/license/sha256 are present, non-empty strings of at most 120 chars,
+/// url (if present) is https, retrieved (if present) is YYYY-MM-DD, and sha256 equals the data file's sha256.
+fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Result<Option<Value>, &'static str> {
+    let mut note_path = source.as_os_str().to_owned();
+    note_path.push(".source.json");
+    let note_path = PathBuf::from(note_path);
+    let meta = match fs::symlink_metadata(&note_path) {
+        Ok(meta) => meta,
+        Err(_) => return Ok(None),
+    };
+    if meta.file_type().is_symlink() {
+        return Err("the note is a link");
+    }
+    if !meta.is_file() {
+        return Ok(None);
+    }
+    if meta.len() > SOURCE_NOTE_FILE_MAX_BYTES {
+        return Err("the note is too large");
+    }
+    let bytes = fs::read(&note_path).map_err(|_| "the note file cannot be read")?;
+    if bytes.len() as u64 > SOURCE_NOTE_FILE_MAX_BYTES {
+        return Err("the note is too large");
+    }
+    let parsed: Value = serde_json::from_slice(&bytes).map_err(|_| "the note is not valid JSON")?;
+    let object = parsed.as_object().ok_or("the note is not a JSON object")?;
+    let field = |name: &str| object.get(name).and_then(Value::as_str).map(str::trim);
+    let mut accepted = serde_json::Map::new();
+    for required in ["publisher", "dataset", "license"] {
+        let value = field(required).filter(|v| !v.is_empty()).ok_or(match required {
+            "publisher" => "publisher is missing or empty",
+            "dataset" => "dataset is missing or empty",
+            _ => "license is missing or empty",
+        })?;
+        if value.chars().count() > SOURCE_NOTE_FIELD_MAX || value.chars().any(is_refused_note_char) {
+            return Err("a field is longer than 120 characters or has control characters");
+        }
+        accepted.insert(required.to_owned(), Value::String(value.to_owned()));
+    }
+    if let Some(url) = object.get("url") {
+        let url = url.as_str().ok_or("url is not a string")?.trim();
+        if !url.starts_with("https://") || url.len() <= "https://".len() || url.chars().count() > SOURCE_NOTE_FIELD_MAX * 2 || url.chars().any(|c| is_refused_note_char(c) || c.is_whitespace()) {
+            return Err("url is not an https address");
+        }
+        accepted.insert("url".to_owned(), Value::String(url.to_owned()));
+    }
+    if let Some(retrieved) = object.get("retrieved") {
+        let retrieved = retrieved.as_str().ok_or("retrieved is not a string")?.trim();
+        if chrono::NaiveDate::parse_from_str(retrieved, "%Y-%m-%d").is_err() || retrieved.len() != 10 {
+            return Err("retrieved is not a YYYY-MM-DD date");
+        }
+        accepted.insert("retrieved".to_owned(), Value::String(retrieved.to_owned()));
+    }
+    let claimed = field("sha256").filter(|v| !v.is_empty()).ok_or("sha256 is missing or empty")?;
+    if !claimed.eq_ignore_ascii_case(data_sha256) {
+        return Err("sha256 does not match the data file");
+    }
+    accepted.insert("sha256".to_owned(), Value::String(data_sha256.to_owned()));
+    accepted.insert("note_sha256".to_owned(), Value::String(sha256_bytes(&bytes)));
+    Ok(Some(Value::Object(accepted)))
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default()
+}
+
+fn existing_recipe(path: &Path) -> Option<(String, String)> {
+    let text = fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    let recipe = value.get("recipe")?;
+    Some((recipe.get("name")?.as_str()?.to_owned(), recipe.get("sha256")?.as_str()?.to_owned()))
 }
 
 fn relative_files(root: &Path, child: &str) -> Result<Vec<String>> {
@@ -1093,6 +1397,79 @@ mod tests {
             metrics["tool_profiles"],
             serde_json::json!(["investigate", "visual-story"])
         );
+    }
+
+    #[test]
+    fn recorded_tool_profile_is_the_latest_valid_profile() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "profile memory").unwrap();
+        assert_eq!(bundle.recorded_tool_profile(), None);
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual-story\"}\n",
+                "not json\n",
+                "{\"type\":\"turn_end\",\"tool_profile\":\"publication\"}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"no-such-profile\"}\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            bundle.recorded_tool_profile().as_deref(),
+            Some("visual-story")
+        );
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual-story\"}\n",
+                "{\"type\":\"newsroom_rpc_metrics\",\"tool_profile\":\"visual\"}\n"
+            ),
+        )
+        .unwrap();
+        assert_eq!(bundle.recorded_tool_profile().as_deref(), Some("visual"));
+    }
+
+    #[test]
+    fn measured_publication_needs_a_passing_browser_qa_binding() {
+        let root = tempdir().unwrap();
+        let bundle = super::InvestigationBundle::create(root.path(), "measured page").unwrap();
+        assert!(bundle.measured_publication_gap().unwrap().is_some());
+
+        // A Lieflat page never qualifies, even with a PASS report for its HTML.
+        let lieflat = bundle.dir.join("publications/lieflat");
+        fs::create_dir_all(&lieflat).unwrap();
+        fs::write(lieflat.join("index.html"), "<html>lieflat</html>").unwrap();
+        fs::write(
+            lieflat.join("manifest.json"),
+            r#"{"kind":"lieflat_publication","html_ref":"publications/lieflat/index.html"}"#,
+        )
+        .unwrap();
+        let write_qa = |key: &str, status: &str, html: &std::path::Path| {
+            let dir = bundle.dir.join("publications/qa").join(key);
+            fs::create_dir_all(&dir).unwrap();
+            let hash = crate::hash::sha256_file(html).unwrap();
+            fs::write(
+                dir.join("browser-qa.json"),
+                format!(r#"{{"status":"{status}","html_sha256":"{hash}"}}"#),
+            )
+            .unwrap();
+        };
+        write_qa("lieflat", "PASS", &lieflat.join("index.html"));
+        let gap = bundle.measured_publication_gap().unwrap().unwrap();
+        assert!(gap.contains("Lieflat"), "{gap}");
+
+        let measured = bundle.dir.join("publications/measured");
+        fs::create_dir_all(&measured).unwrap();
+        fs::write(measured.join("index.html"), "<html>measured</html>").unwrap();
+        fs::write(
+            measured.join("manifest.json"),
+            r#"{"kind":"publication","html_ref":"publications/measured/index.html"}"#,
+        )
+        .unwrap();
+        write_qa("measured", "FAIL", &measured.join("index.html"));
+        assert!(bundle.measured_publication_gap().unwrap().is_some());
+        write_qa("measured", "PASS", &measured.join("index.html"));
+        assert_eq!(bundle.measured_publication_gap().unwrap(), None);
     }
 
     #[test]
@@ -1553,4 +1930,253 @@ mod tests {
         let delivery = discover_delivery(dir.path()).expect("delivery");
         assert_eq!(delivery.primary_artifact, None);
     }
+
+    static NOTE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_note_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        let _guard = NOTE_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let old = std::env::var("NEWSROOM_LOCAL_SOURCE_NOTE").ok();
+        match value {
+            Some(v) => std::env::set_var("NEWSROOM_LOCAL_SOURCE_NOTE", v),
+            None => std::env::remove_var("NEWSROOM_LOCAL_SOURCE_NOTE"),
+        }
+        let out = f();
+        match old {
+            Some(v) => std::env::set_var("NEWSROOM_LOCAL_SOURCE_NOTE", v),
+            None => std::env::remove_var("NEWSROOM_LOCAL_SOURCE_NOTE"),
+        }
+        out
+    }
+
+    /// Imports `X.csv` (with an optional note built from the data's sha256) and returns the origin record and the warnings.
+    fn import_with_note(switch: Option<&str>, note: Option<&dyn Fn(&str) -> String>) -> (serde_json::Value, Vec<String>) {
+        with_note_switch(switch, || {
+            let src = tempdir().unwrap();
+            let data = src.path().join("X.csv");
+            fs::write(&data, "a,b\n1,2\n").unwrap();
+            if let Some(make) = note {
+                let sha = crate::hash::sha256_file(&data).unwrap();
+                fs::write(src.path().join("X.csv.source.json"), make(&sha)).unwrap();
+            }
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "note").unwrap();
+            bundle.import_data(&data).unwrap();
+            let origins: Vec<_> = fs::read_dir(bundle.dir.join("data/origins")).unwrap().collect();
+            assert_eq!(origins.len(), 1);
+            let origin: serde_json::Value = serde_json::from_str(&fs::read_to_string(origins[0].as_ref().unwrap().path()).unwrap()).unwrap();
+            (origin, bundle.source_note_warnings.clone())
+        })
+    }
+
+    fn good_note(sha: &str) -> String {
+        format!(r#"{{"publisher":"Our World in Data","dataset":"Energy mix","license":"CC BY 4.0","url":"https://ourworldindata.org/energy","retrieved":"2026-10-01","sha256":"{sha}"}}"#)
+    }
+
+    #[test]
+    fn matching_note_is_recorded_in_the_origin_with_its_own_hash() {
+        let (origin, warnings) = import_with_note(Some("1"), Some(&good_note));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let note = &origin["source_note_file"];
+        assert_eq!(note["publisher"], "Our World in Data");
+        assert_eq!(note["dataset"], "Energy mix");
+        assert_eq!(note["license"], "CC BY 4.0");
+        assert_eq!(note["sha256"], origin["sha256"]);
+        assert_eq!(note["note_sha256"].as_str().unwrap().len(), 64);
+    }
+
+    #[test]
+    fn bad_notes_are_ignored_with_a_reason_and_never_their_content() {
+        let wrong_sha = |_: &str| good_note(&"0".repeat(64));
+        let no_license = |sha: &str| format!(r#"{{"publisher":"P","dataset":"D","sha256":"{sha}"}}"#);
+        let http = |sha: &str| good_note(sha).replace("https://", "http://");
+        let not_json = |_: &str| "publisher: secret-name".to_owned();
+        let long = |sha: &str| good_note(sha).replace("Energy mix", &"x".repeat(121));
+        let cases: [(&dyn Fn(&str) -> String, &str); 5] = [
+            (&wrong_sha, "sha256 does not match"),
+            (&no_license, "license is missing"),
+            (&http, "url is not an https"),
+            (&not_json, "not valid JSON"),
+            (&long, "longer than 120"),
+        ];
+        for (make, reason) in cases {
+            let (origin, warnings) = import_with_note(Some("1"), Some(make));
+            assert!(origin.get("source_note_file").is_none(), "{reason}");
+            assert_eq!(warnings.len(), 1, "{reason} {warnings:?}");
+            assert!(warnings[0].contains(reason), "{warnings:?}");
+            assert!(!warnings[0].contains("secret-name") && !warnings[0].contains("Our World"), "{warnings:?}");
+        }
+    }
+
+    #[test]
+    fn switch_off_origin_is_identical_with_or_without_a_note_file() {
+        let (plain, w1) = import_with_note(None, None);
+        for off in [None, Some("0"), Some("true")] {
+            let (with_note, w2) = import_with_note(off, Some(&good_note));
+            assert_eq!(with_note, plain, "{off:?}");
+            assert!(w1.is_empty() && w2.is_empty());
+        }
+        // no note file at all with the switch on: nothing recorded, no warning
+        let (none_on, w3) = import_with_note(Some("1"), None);
+        assert_eq!(none_on, plain);
+        assert!(w3.is_empty());
+    }
+
+    fn note_dir_with(file_bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let src = tempdir().unwrap();
+        let data = src.path().join("X.csv");
+        fs::write(&data, "a,b\n1,2\n").unwrap();
+        fs::write(src.path().join("X.csv.source.json"), file_bytes).unwrap();
+        (src, data)
+    }
+
+    #[test]
+    fn note_file_that_is_a_link_or_too_large_is_refused_by_reason_only() {
+        with_note_switch(Some("1"), || {
+            let src = tempdir().unwrap();
+            let data = src.path().join("X.csv");
+            fs::write(&data, "a,b\n1,2\n").unwrap();
+            let sha = crate::hash::sha256_file(&data).unwrap();
+            // a link to a perfectly good note elsewhere
+            let real = src.path().join("elsewhere.json");
+            fs::write(&real, good_note(&sha)).unwrap();
+            #[cfg(unix)]
+            {
+                std::os::unix::fs::symlink(&real, src.path().join("X.csv.source.json")).unwrap();
+                assert_eq!(super::read_local_source_note(&data, &sha), Err("the note is a link"));
+                fs::remove_file(src.path().join("X.csv.source.json")).unwrap();
+            }
+            // 17 KiB: refused before it is parsed
+            let mut big = good_note(&sha).into_bytes();
+            big.extend(std::iter::repeat(b' ').take(17 * 1024));
+            fs::write(src.path().join("X.csv.source.json"), &big).unwrap();
+            assert_eq!(super::read_local_source_note(&data, &sha), Err("the note is too large"));
+            // exactly at the cap is still read
+            let mut edge = good_note(&sha).into_bytes();
+            edge.resize(16 * 1024, b' ');
+            fs::write(src.path().join("X.csv.source.json"), &edge).unwrap();
+            assert!(matches!(super::read_local_source_note(&data, &sha), Ok(Some(_))));
+        });
+    }
+
+    #[test]
+    fn hidden_and_bidirectional_characters_are_refused_in_every_field() {
+        with_note_switch(Some("1"), || {
+            for (label, c) in [("C1", "\u{85}"), ("zwsp", "\u{200B}"), ("lrm", "\u{200E}"), ("rlo", "\u{202E}"), ("isolate", "\u{2066}"), ("bom", "\u{FEFF}"), ("c0", "\u{7}")] {
+                for field in ["publisher", "dataset", "license"] {
+                    let src = tempdir().unwrap();
+                    let data = src.path().join("X.csv");
+                    fs::write(&data, "a,b\n1,2\n").unwrap();
+                    let sha = crate::hash::sha256_file(&data).unwrap();
+                    let mut note: serde_json::Value = serde_json::from_str(&good_note(&sha)).unwrap();
+                    note[field] = serde_json::Value::String(format!("Our{c}World"));
+                    fs::write(src.path().join("X.csv.source.json"), note.to_string()).unwrap();
+                    assert_eq!(
+                        super::read_local_source_note(&data, &sha),
+                        Err("a field is longer than 120 characters or has control characters"),
+                        "{label} in {field}"
+                    );
+                }
+            }
+            let (_keep, data) = note_dir_with(b"{}");
+            let sha = crate::hash::sha256_file(&data).unwrap();
+            assert!(super::read_local_source_note(&data, &sha).is_err());
+        });
+    }
+
+    fn write_a_manifest(bundle: &super::InvestigationBundle) {
+        bundle.write_manifest("topic", None, None, "running", None).unwrap();
+    }
+
+    fn manifest_warnings(dir: &std::path::Path) -> Vec<String> {
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join("story.json")).unwrap()).unwrap();
+        value.get("source_note_warnings").and_then(|w| w.as_array()).map(|w| w.iter().map(|x| x.as_str().unwrap().to_owned()).collect()).unwrap_or_default()
+    }
+
+    fn data_with_bad_note(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let src = tempdir().unwrap();
+        let data = src.path().join(name);
+        fs::write(&data, format!("a,b\n1,{name}\n")).unwrap();
+        fs::write(src.path().join(format!("{name}.source.json")), "not json").unwrap();
+        (src, data)
+    }
+
+    #[test]
+    fn first_turn_manifest_holds_the_warning_when_the_switch_is_on() {
+        // the same calls commands/investigate.rs makes: create, import_data, write_manifest on the one bundle
+        with_note_switch(Some("1"), || {
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+            let (_keep, data) = data_with_bad_note("one.csv");
+            bundle.import_data(&data).unwrap();
+            write_a_manifest(&bundle);
+            let warnings = manifest_warnings(&bundle.dir);
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("not valid JSON") && !warnings[0].contains("not json"));
+        });
+    }
+
+    #[test]
+    fn follow_up_import_keeps_both_warnings() {
+        with_note_switch(Some("1"), || {
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+            let (_k1, first) = data_with_bad_note("one.csv");
+            bundle.import_data(&first).unwrap();
+            write_a_manifest(&bundle);
+            // a follow-up turn reopens the bundle, imports another file and persists its warnings
+            let mut reopened = super::InvestigationBundle::open(&bundle.dir).unwrap();
+            let (_k2, second) = data_with_bad_note("two.csv");
+            reopened.import_data(&second).unwrap();
+            reopened.persist_source_note_warnings().unwrap();
+            let warnings = manifest_warnings(&bundle.dir);
+            assert_eq!(warnings.len(), 2, "{warnings:?}");
+            // persisting twice does not duplicate; a later full manifest write keeps both
+            reopened.persist_source_note_warnings().unwrap();
+            write_a_manifest(&super::InvestigationBundle::open(&bundle.dir).unwrap());
+            assert_eq!(manifest_warnings(&bundle.dir).len(), 2);
+        });
+    }
+
+    #[test]
+    fn switch_off_follow_up_import_leaves_the_manifest_bytes_unchanged() {
+        with_note_switch(None, || {
+            let out = tempdir().unwrap();
+            let mut bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+            let (_k1, first) = data_with_bad_note("one.csv");
+            bundle.import_data(&first).unwrap();
+            write_a_manifest(&bundle);
+            let before = fs::read(bundle.dir.join("story.json")).unwrap();
+            let mut reopened = super::InvestigationBundle::open(&bundle.dir).unwrap();
+            let (_k2, second) = data_with_bad_note("two.csv");
+            reopened.import_data(&second).unwrap();
+            assert!(reopened.source_note_warnings.is_empty());
+            reopened.persist_source_note_warnings().unwrap();
+            assert_eq!(fs::read(bundle.dir.join("story.json")).unwrap(), before);
+            // and a full manifest write with the switch off ignores page-level warning files
+            fs::create_dir_all(bundle.dir.join("infographics")).unwrap();
+            fs::write(bundle.dir.join("infographics").join(format!("{}.json", "a".repeat(64))), r#"{"source_note_warnings":["page source_note replaced by an accepted local note"]}"#).unwrap();
+            assert!(manifest_warnings(&bundle.dir).is_empty());
+            write_a_manifest(&super::InvestigationBundle::open(&bundle.dir).unwrap());
+            assert!(manifest_warnings(&bundle.dir).is_empty());
+        });
+    }
+
+    #[test]
+    fn page_level_warning_from_a_rendered_page_reaches_the_manifest_only_when_the_switch_is_on() {
+        for (switch, expected) in [(Some("1"), 1usize), (None, 0usize)] {
+            with_note_switch(switch, || {
+                let out = tempdir().unwrap();
+                let bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
+                fs::create_dir_all(bundle.dir.join("infographics/plans")).unwrap();
+                let page = r#"{"source_note_warnings":["page source_note replaced by an accepted local note"]}"#;
+                fs::write(bundle.dir.join("infographics").join(format!("{}.json", "b".repeat(64))), page).unwrap();
+                // only page manifests directly under infographics/ count, not plans
+                fs::write(bundle.dir.join("infographics/plans").join(format!("{}.json", "c".repeat(64))), page).unwrap();
+                write_a_manifest(&bundle);
+                write_a_manifest(&bundle);
+                assert_eq!(manifest_warnings(&bundle.dir).len(), expected, "{switch:?}");
+            });
+        }
+    }
+
 }

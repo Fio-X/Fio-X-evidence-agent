@@ -158,6 +158,13 @@ if 'include_str!("../runtime/pi/assets/economy-names.json")' not in runtime:
     raise SystemExit('economy-names.json asset is not embedded in the Rust runtime materializer')
 if not has_materializer_call('economy_names_asset_path', 'ECONOMY_NAMES_ASSET'):
     raise SystemExit('economy-names.json is embedded but not materialized beside newsroom.ts')
+# The currency name table (category_names 'iso4217') is read by the same
+# economy_names.mjs module from the same assets/ directory, so it ships and
+# materializes exactly like the economy table.
+if 'include_str!("../runtime/pi/assets/currency-names.json")' not in runtime:
+    raise SystemExit('currency-names.json asset is not embedded in the Rust runtime materializer')
+if not has_materializer_call('currency_names_asset_path', 'CURRENCY_NAMES_ASSET'):
+    raise SystemExit('currency-names.json is embedded but not materialized beside newsroom.ts')
 for module, const, path_var in [('net.mjs', 'NET_RUNTIME', 'net_path'), ('provenance.mjs', 'PROVENANCE_RUNTIME', 'provenance_path')]:
     if f'include_str!("../runtime/pi/{module}")' not in runtime:
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
@@ -252,8 +259,10 @@ for module, const, path_var in [
     ('scientific_map.mjs','SCIENTIFIC_MAP_RUNTIME','scientific_map_path'),
     ('basemap_registry.mjs','BASEMAP_REGISTRY_RUNTIME','basemap_registry_path'),
     ('flow_layout.mjs','FLOW_LAYOUT_RUNTIME','flow_layout_path'),
+    ('map_reference_layers.mjs','MAP_REFERENCE_LAYERS_RUNTIME','map_reference_layers_path'),
     ('browser_qa.py','BROWSER_QA_RUNTIME','browser_qa_path'),
     ('computation_rows.mjs','COMPUTATION_ROWS_RUNTIME','computation_rows_path'),
+    ('number_words.mjs','NUMBER_WORDS_RUNTIME','number_words_path'),
     ('networkx_analyze.py','NETWORKX_ANALYZE_RUNTIME','networkx_analyze_path'),
     ('networkx_reduce.py','NETWORKX_REDUCE_RUNTIME','networkx_reduce_path'),
     ('scientific_basemap_prepare.py','SCIENTIFIC_BASEMAP_PREPARE_RUNTIME','scientific_basemap_prepare_path'),
@@ -265,7 +274,7 @@ for module, const, path_var in [
         raise SystemExit(f'{module} is not embedded in the Rust runtime materializer')
     if not has_materializer_call(path_var, const):
         raise SystemExit(f'{module} is embedded but not materialized beside newsroom.ts')
-for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs','computation_rows.mjs']:
+for module in ['publication.mjs','model_spec.mjs','style_mapping.mjs','map_spec.mjs','publication_binding.mjs','svg_security.mjs','tool_phase_policy.mjs','computation_rows.mjs','number_words.mjs']:
     if f'./{module}' not in extension:
         raise SystemExit(f'newsroom.ts does not import required runtime module {module}')
 if 'scientific_map.mjs' not in (ROOT/'runtime/pi/publication.mjs').read_text(encoding='utf-8'):
