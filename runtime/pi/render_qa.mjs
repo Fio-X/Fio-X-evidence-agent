@@ -44,7 +44,15 @@ const EMPTY_PASS_RULES = [
   ["text_outside_viewbox", "texts"], ["text_outside_panel", "texts"], ["text_outside_nested_svg", "texts"], ["text_overlap", "texts"],
   ["font_below_floor", "texts"], ["text_crosses_data_mark", "texts"], ["text_crosses_data_mark", "marks"], ["text_contrast", "contrast_texts"],
 ];
-export function checkEmptyPasses(geometry, contrast, { heatmap = false } = {}) {
+// Roles the infographic composer gives its own page structure (runtime/pi/infographic.mjs). A viewport whose only shapes are untagged or carry
+// these roles has no chart on it; the geometry check already treats untagged rects and lines as backgrounds and cards, not data marks.
+const PAGE_STRUCTURE_ROLES = new Set(["hero-stat", "illustration-credit", "module-boundary", "out-of-set-frame", "scene-boundary", "source-quote-note"]);
+export function viewportHasNoChartShapes(svgText) {
+  const body = String(svgText ?? "").replace(/<defs\b[\s\S]*?<\/defs>/g, "");
+  if (/<(?:path|circle|polyline|polygon|ellipse)\b/.test(body)) return false;
+  return [...body.matchAll(/<(?:rect|line)\b[^>]*\bdata-role="([^"]+)"/g)].every((m) => PAGE_STRUCTURE_ROLES.has(m[1]));
+}
+export function checkEmptyPasses(geometry, contrast, { heatmap = false, noChartShapes = false } = {}) {
   const s = geometry?.summary ?? {};
   const texts = (s.texts_checked ?? 0) - (s.texts_unmeasured ?? 0);
   const population = { texts, marks: s.marks_checked ?? 0, contrast_texts: (s.texts_checked ?? 0) - (contrast?.unmeasured?.length ?? 0) };
@@ -53,14 +61,16 @@ export function checkEmptyPasses(geometry, contrast, { heatmap = false } = {}) {
   for (const [rule, kind] of EMPTY_PASS_RULES) {
     // a heatmap without cell attributes (the value-label proof is off) has no taggable marks: not applicable, never a pass
     if (population[kind] <= 0 && kind === "marks" && heatmap) { notApplicable.push({ checked_rule: rule, reason: "heatmap cells carry no data-role without NEWSROOM_HEATMAP_VALUE_LABELS=1" }); continue; }
+    // a page with no chart shapes at all (text, hero numbers, structure) has no data marks to cross: not applicable, never a pass
+    if (population[kind] <= 0 && kind === "marks" && noChartShapes) { notApplicable.push({ checked_rule: rule, reason: "the viewport has no chart shapes: page text and structure only" }); continue; }
     if (population[kind] <= 0) failures.push({ rule: "qa_rule_matched_nothing", message: `${rule} matched no ${kind.replace("_", " ")}, so its pass proves nothing`, checked_rule: rule });
   }
   return { passed: failures.length === 0, failures, population, ...(notApplicable.length ? { not_applicable: notApplicable } : {}) };
 }
 
 function checkViewport(svgText, options) {
-  // NEWSROOM_QA_NO_EMPTY_PASS=1 also counts heatmap cells as data marks (see checkEmptyPasses); unset, the geometry call is exactly as before
-  const geometry = checkSvgGeometry(svgText, process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" ? { ...options?.geometry, heatmapCellMarks: true } : options?.geometry);
+  // NEWSROOM_QA_NO_EMPTY_PASS=1 also counts heatmap cells, waffle cells, treemap tiles and 100% stacked segments as data marks (see checkEmptyPasses); unset, the geometry call is exactly as before
+  const geometry = checkSvgGeometry(svgText, process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" ? { ...options?.geometry, heatmapCellMarks: true, chartTileMarks: true } : options?.geometry);
   const contrast = checkSvgContrast(svgText, options?.contrast);
   const sharedWidth = sharedWidthEnabled() ? { textWidth: estimateTextWidth } : {};
   let valueLabels = null;
@@ -79,7 +89,7 @@ function checkViewport(svgText, options) {
   // Default-off extra checks (exact "1"): findings only; with every switch unset the report is byte-identical
   const extra = {};
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
-  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap });
+  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText) });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
   return {
     svg_sha256: sha256Hex(svgText),
