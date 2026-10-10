@@ -1248,6 +1248,8 @@ pub async fn run_prompt(
         let mut composed_answer: Option<String> = None;
         let mut compose_abort_sent = false;
         let mut plan_progress_seq = 0u64;
+        // NEWSROOM_REPEAT_FAILURE_STOP=1: the same tool failing 5 times in a row with equal arguments ends the run.
+        let mut repeat_watch = crate::repeat_failure::enabled().then(crate::repeat_failure::RepeatFailureWatch::default);
 
         let mut line = Vec::new();
         loop {
@@ -1326,6 +1328,17 @@ pub async fn run_prompt(
                     Some("tool_execution_end") => {
                         for line in tracker.on_end(&event, crate::step_lines::secs_now(), crate::step_lines::language_zh()) {
                             eprintln!("{line}");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(watch) = repeat_watch.as_mut() {
+                match event.get("type").and_then(Value::as_str) {
+                    Some("tool_execution_start") => watch.on_start(&event),
+                    Some("tool_execution_end") => {
+                        if let Some(stop) = watch.on_end(&event) {
+                            bail!("{stop}");
                         }
                     }
                     _ => {}
