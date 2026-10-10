@@ -370,12 +370,13 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 None
             };
             let primary = bundle.primary_artifact()?;
-            // A publication page still comes first (same choice primary_artifact makes today); only without one does the
-            // line name the round's own newest passing chart.
-            let latest = if followup_primary_latest_on()
-                && !primary.as_ref().is_some_and(|(_, kind)| kind == "html")
-            {
-                bundle.latest_passing_chart_since(round_started_at)?
+            // A qualified publication page comes first (the order discover_delivery uses when nothing is declared); only
+            // without one does the line name the round's own newest passing chart.
+            let latest = if followup_primary_latest_on() {
+                match bundle.publication_page()? {
+                    Some(page) => Some(page),
+                    None => bundle.latest_passing_chart_since(round_started_at)?,
+                }
             } else {
                 None
             };

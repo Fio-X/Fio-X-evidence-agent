@@ -620,6 +620,16 @@ impl InvestigationBundle {
         Ok(delivery.primary_artifact.zip(delivery.primary_kind))
     }
 
+    /// The first publication page a top-level publication manifest hands a reader: the same candidates and test
+    /// `discover_delivery` uses to prefer a page when story.json declares nothing. Unlike `primary_artifact` it is not
+    /// overridden by a declared chart.
+    pub fn publication_page(&self) -> Result<Option<(String, String)>> {
+        Ok(delivery_candidates(&self.dir)?
+            .into_iter()
+            .find(is_publication_html)
+            .map(|candidate| (candidate.path, "html".to_string())))
+    }
+
     /// The newest chart a follow-up round made that passed its checks, read from the program's own
     /// records only: a `visualizations/<key>.json` manifest written at or after `since` whose
     /// `render_qa.passed` is true and `artifact_status` is `VERIFIED`, with a passing critic record
