@@ -2,6 +2,7 @@
 // H1: with the hero value gate on (the runtime default, NEWSROOM_HERO_VALUE_GATE=0 turns it off; the pure lint takes it as
 // context.hero_value_gate and stays off without it), a hero_stat's number must be in its own claim's rows. Synthetic
 // data only. Off: lint output is unchanged from a4d4cb0 (compared when that commit exists).
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync } from 'node:fs';
@@ -37,7 +38,7 @@ bad('empty verified set (gate off)', hero({ claim_id: UNV }), [`hero_stat 'h1' r
 const cases = [hero(), hero({ value: '9.9' }), hero({ value: '约一半', unit: '' }), hero({ claim_id: UNV }), hero({ value: '1.2 to 12.3', unit: '' })];
 let base = null;
 try {
-  const dir = mkdtempSync(join(tmpdir(), 'hero-base-'));
+  const dir = makeTestTmp('hero-base-');
   mkdirSync(join(dir, 'runtime'), { recursive: true });
   execFileSync('sh', ['-c', `git -C '${ROOT}' archive a4d4cb0 runtime/pi | tar -x -C '${dir}'`], { stdio: 'pipe' });
   base = await import(pathToFileURL(join(dir, 'runtime/pi/infographic.mjs')).href);

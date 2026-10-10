@@ -8,6 +8,7 @@
 //   C  wording       an unsupported quantifier or a vague time in running copy warns (copy fields only)
 //   D  hero gate     on unless NEWSROOM_HERO_VALUE_GATE=0, seen through the real tool definitions and the real lint tool
 //   E  guidance      the new one-sentence guidance reaches the model
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -392,7 +393,7 @@ export const Type = {
   Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
-const TREE = mkdtempSync(join(tmpdir(), 'page-top-tree-'));
+const TREE = makeTestTmp('page-top-tree-');
 cpSync(join(ROOT, 'runtime'), join(TREE, 'runtime'), { recursive: true });
 cpSync(join(ROOT, 'config'), join(TREE, 'config'), { recursive: true });
 stub(TREE, 'typebox', TYPEBOX);
@@ -426,7 +427,7 @@ eq(Object.keys(moduleProps(off)), defKeys, '=0 changes no other module property'
 // the real lint tool, on a small artifact root: system-verified claims, three hand-stored plans
 const verification = { authority: 'system', rule_id: 'verification.source+extraction+computation+claim.v1', source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true };
 function miniRoot() {
-  const art = join(mkdtempSync(join(tmpdir(), 'page-top-run-')), 'run');
+  const art = join(makeTestTmp('page-top-run-'), 'run');
   for (const dir of ['infographics/plans', 'infographics/lints', 'computations']) mkdirSync(join(art, dir), { recursive: true });
   cpSync(join(ROOT, 'config'), join(art, 'config'), { recursive: true });
   const claims = [

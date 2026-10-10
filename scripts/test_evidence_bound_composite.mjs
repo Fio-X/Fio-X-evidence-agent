@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,7 +7,7 @@ import { buildEvidenceBoundModule } from '../runtime/pi/publication_binding.mjs'
 import { hashRows } from '../runtime/pi/viz.mjs';
 import { renderPublication, validatePublicationSpec } from '../runtime/pi/publication.mjs';
 
-const OUT=path.join(os.tmpdir(),'evidence-bound-composite');
+const OUT=makeTestTmp('evidence-bound-composite-');
 fs.mkdirSync(OUT,{recursive:true});
 const claims={geo:'claim-fixture-geo',flow:'claim-fixture-flow',network:'claim-fixture-network'};
 const rows={

@@ -3,6 +3,7 @@
 // the switch off, and against the head with it on. Verdict (accepted / refused) must agree in all three; off must equal the baseline's message
 // exactly; on must start with the baseline's message (the first problem keeps its text) and may only add independent problems. A refused call
 // must not run SQL or write anything (artifact root listing unchanged), and a refusal never records the inline claim.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -21,7 +22,7 @@ export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number
   Any: () => ({}), Null: () => ({ type: "null" }), Unknown: () => ({}), Literal: (v) => ({ const: v }), Optional: (s) => ({ ...s, [OPT]: true }),
   Array: (items, opts = {}) => ({ type: "array", items, ...opts }), Union: (anyOf) => ({ anyOf }), Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }) };`;
-const TREE = mkdtempSync(join(tmpdir(), "viz-report-all-"));
+const TREE = makeTestTmp("viz-report-all-");
 const stub = (name, source) => {
   mkdirSync(join(TREE, "node_modules", name), { recursive: true });
   writeFileSync(join(TREE, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -53,7 +54,7 @@ const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true 
 const listing = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).sort().map((f) => [f, sha(readFileSync(f.startsWith("/") ? f : join(art, f)))]));
 
 // ---- one artifact root with a verified claim, shared by every call (refusals must leave it unchanged) -----------------------
-const art = join(mkdtempSync(join(tmpdir(), "viz-report-all-art-")), "run");
+const art = join(makeTestTmp("viz-report-all-art-"), "run");
 for (const d of ["data", "sources", "computations", "runtime/query-rows", "visualizations/plans", "visualizations/lints", "visualizations/critics", "editorial/story-graphs"]) mkdirSync(join(art, d), { recursive: true });
 cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
 process.env.NEWSROOM_ARTIFACT_DIR = art;
@@ -118,7 +119,7 @@ const norm = (buf) => {
 const trace = (root) => Object.fromEntries(walk(root).map((f) => relative(root, f)).sort().map((f) => [f, norm(readFileSync(join(root, f)))]));
 const run = async (tools, params, flag, { env = {}, signal, tool = "newsroom_viz_plan", times = 1 } = {}) => {
   if (flag === undefined) delete process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL; else process.env.NEWSROOM_SPEED_VIZ_REPORT_ALL = flag; // read at call time, so set it per call
-  const root = join(mkdtempSync(join(tmpdir(), "viz-report-all-run-")), "run");
+  const root = join(makeTestTmp("viz-report-all-run-"), "run");
   cpSync(art, root, { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = root;
   for (const [k, v] of Object.entries(env)) process.env[k] = v;

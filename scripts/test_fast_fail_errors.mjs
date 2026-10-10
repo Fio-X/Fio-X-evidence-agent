@@ -18,6 +18,7 @@
 //   4. quantity_kind (infographic plan) carries one clause of at most 160 bytes
 //      mapping the values a model reaches for onto the enum; the enum is unchanged.
 //   5. Each tool's explanatory_dimension enum is pinned exactly, with the set it had before 83d5ad1.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -88,7 +89,7 @@ export const Type = {
 `;
 // One copy of runtime/ and config/ with the two Pi packages stubbed. Importing the test copy
 // with a different query string gives a fresh newsroom.ts instance (fresh module-level state).
-const treeDir = mkdtempSync(join(tmpdir(), "fast-fail-tree-"));
+const treeDir = makeTestTmp("fast-fail-tree-");
 cpSync(join(ROOT, "runtime"), join(treeDir, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(treeDir, "config"), { recursive: true });
 stub(treeDir, "typebox", TYPEBOX);
@@ -201,7 +202,7 @@ let fetchCalls = [];
 const stubFetch = (handler) => { fetchCalls = []; globalThis.fetch = (url, init) => { fetchCalls.push(String(url)); return handler(String(url), init); }; };
 
 try {
-  const artifact = join(mkdtempSync(join(tmpdir(), "fast-fail-art-")), "run");
+  const artifact = join(makeTestTmp("fast-fail-art-"), "run");
   mkdirSync(artifact, { recursive: true });
   const tools = await freshTools({ NEWSROOM_ARTIFACT_DIR: artifact });
   const download = tools.get("download_data");
@@ -304,7 +305,7 @@ try {
   check("HTTP status, 25 MB cap, scheme and private-host checks keep their messages and are not rewritten as timeouts");
 
   // ---- host circuit and error hygiene (fresh process state, own artifact folder) ----
-  const art2 = join(mkdtempSync(join(tmpdir(), "fast-fail-circuit-")), "run");
+  const art2 = join(makeTestTmp("fast-fail-circuit-"), "run");
   mkdirSync(art2, { recursive: true });
   const download2 = (await freshTools({ NEWSROOM_ARTIFACT_DIR: art2 })).get("download_data");
   const run2 = (url) => download2.execute("id", { url });
@@ -402,7 +403,7 @@ try {
 
 // ---------------------------------------------------------------- 2. grammar hint
 {
-  const artifact = join(mkdtempSync(join(tmpdir(), "fast-fail-grammar-")), "run");
+  const artifact = join(makeTestTmp("fast-fail-grammar-"), "run");
   mkdirSync(artifact, { recursive: true });
   const tools = await freshTools({ NEWSROOM_ARTIFACT_DIR: artifact });
   const plan = tools.get("newsroom_viz_plan");

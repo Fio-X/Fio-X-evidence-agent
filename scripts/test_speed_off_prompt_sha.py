@@ -3,6 +3,7 @@
 investigation prompt must be byte-identical to the 1531ab5 baseline recorded in the fixture."""
 import hashlib, json, os, subprocess, sys, tempfile
 from pathlib import Path
+from tmp_helper import make_test_tmp
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "scripts/fixtures/speed-off/dry-run-prompt-sha.json").read_text())
@@ -12,7 +13,7 @@ if not Path(binary).exists():
     subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=ROOT, check=True)
 
 def prompt_sha(topic, extra):
-    home = tempfile.mkdtemp()  # no user config is read
+    home = make_test_tmp('speed-off-sha-')  # no user config is read
     env = {"HOME": home, "PATH": os.environ["PATH"], **extra}
     out = subprocess.run([binary, "investigate", "--dry-run", topic], env=env, capture_output=True, check=True).stdout
     return hashlib.sha256(out).hexdigest()

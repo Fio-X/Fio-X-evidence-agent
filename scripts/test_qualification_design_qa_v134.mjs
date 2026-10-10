@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import {spawnSync} from 'node:child_process';
-const out=fs.mkdtempSync(path.join(os.tmpdir(),'adn-q-v134-'));
+const out=makeTestTmp('adn-q-v134-');
 const r=spawnSync('node',['scripts/run_backend_qualification.mjs','--case','nasa_climate_trend','--output',out,'--health','outputs/runtime-health.json'],{encoding:'utf8',timeout:90000});
 if(r.status!==0)throw new Error(r.stderr||r.stdout);
 const s=JSON.parse(fs.readFileSync(path.join(out,'run-summary.json'),'utf8')); const c=s.cases[0]; const row=c.rows.find(x=>x.backend==='python_publication');

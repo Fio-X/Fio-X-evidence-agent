@@ -21,6 +21,7 @@
 //   3. Omitting `inset` produces a plan byte-identical to the one the
 //      pre-change newsroom.ts (read from git HEAD) would have produced for
 //      the same call - i.e. existing plans/plan hashes are unaffected.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -43,7 +44,7 @@ function stub(dir, name, source) {
 // exactly like test_render_qa_tool_path.mjs's harness, and returns its
 // registered tools plus the artifact root they write into.
 async function harness(newsroomSource, { artifactDir } = {}) {
-  const tmp = mkdtempSync(join(tmpdir(), "viz-plan-inset-"));
+  const tmp = makeTestTmp("viz-plan-inset-");
   execFileSync("cp", ["-R", join(ROOT, "runtime"), join(tmp, "runtime")]);
   execFileSync("cp", ["-R", join(ROOT, "config"), join(tmp, "config")]);
   stub(tmp, "typebox", "const builder = () => ({});\nexport const Type = new Proxy({}, { get: () => builder });\n");
@@ -51,7 +52,7 @@ async function harness(newsroomSource, { artifactDir } = {}) {
   const pi = join(tmp, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(newsroomSource, { mode: "strip" }));
 
-  const art = artifactDir ?? mkdtempSync(join(tmpdir(), "viz-plan-inset-artifact-"));
+  const art = artifactDir ?? makeTestTmp("viz-plan-inset-artifact-");
   for (const dir of ["visualizations/plans", "visualizations/lints", "computations"]) mkdirSync(join(art, dir), { recursive: true });
   execFileSync("cp", ["-R", join(ROOT, "config"), join(art, "config")]);
   process.env.NEWSROOM_ARTIFACT_DIR = art;

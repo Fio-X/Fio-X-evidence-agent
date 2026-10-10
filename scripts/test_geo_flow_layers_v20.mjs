@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -11,7 +12,7 @@ import { critiqueViz, hashRows, lintVizSpec } from '../runtime/pi/viz.mjs';
 import { renderGeoFlowCompositeHtml, renderGeoFlowLayers, validateGeoFlowLayers } from '../runtime/pi/geo_flow_layers.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const OUT = process.env.GEO_FLOW_OUT ?? '/private/tmp/fio-x-map-flow-20260917';
+const OUT = process.env.GEO_FLOW_OUT ?? makeTestTmp('geo-flow-v20-');
 const CLAIM = 'claim-geo-flow-v20';
 const DETAIL_BASEMAP = getBasemap('naturalearth_admin0_50m');
 assert.ok(DETAIL_BASEMAP, 'the pinned 1:50m basemap must be registered');

@@ -3,6 +3,7 @@
 // (duckdb) write the .compact.svg + manifest hashes + render-QA hash; the real page tools
 // (newsroom_infographic_plan/lint/render) bind to them. Loads a type-stripped copy of newsroom.ts.
 // Mobile pages are off (NEWSROOM_MOBILE_PAGES unset). Needs the duckdb binary.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -41,7 +42,7 @@ export const Type = {
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };
 `;
-const treeDir = mkdtempSync(join(tmpdir(), "compact-rt-tree-"));
+const treeDir = makeTestTmp("compact-rt-tree-");
 cpSync(join(ROOT, "runtime"), join(treeDir, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(treeDir, "config"), { recursive: true });
 stub(treeDir, "typebox", TYPEBOX);
@@ -74,7 +75,7 @@ const chartPlan = (chartType, claimId) => ({
 // A run directory holding: the page fixture (map/sankey hand-written manifests), plus the page's third visual
 // ("trend") rendered by the real viz tools as `chartType`. Claim c-trend is bound to that chart's computation.
 async function freshPage(label, chartType = "horizontal_bar") {
-  const art = join(mkdtempSync(join(tmpdir(), `compact-rt-${label}-`)), "run");
+  const art = join(makeTestTmp(`compact-rt-${label}-`), "run");
   for (const d of ["visualizations/plans", "visualizations/lints", "visualizations/critics", "computations", "data", "sources", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   writeFileSync(join(art, "data", "africa.csv"), CSV);

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,7 @@ import { localSqliteQuery, localText } from '../runtime/pi/local_backend.mjs';
 import { runTaskDag } from '../runtime/pi/parallel_scheduler.mjs';
 
 assert.equal(process.platform, 'darwin', 'the semantic local backend path requires macOS');
-const root = await mkdtemp(join(tmpdir(), 'newsroom-r6-parallel-replay-'));
+const root = makeTestTmp('newsroom-r6-parallel-replay-');
 process.env.NEWSROOM_ARTIFACT_DIR = root;
 const text = 'complete local evidence '.repeat(4_000);
 await writeFile(join(root, 'evidence.txt'), text, 'utf8');

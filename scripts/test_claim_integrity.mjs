@@ -8,6 +8,7 @@
 //   - claim templates: direction words, plus the placeholder shapes fillClaimTemplate refuses
 //   - a cancel after the replay query and before the claim is written
 //   - legitimate SQL (ROUND, power-of-ten factors) still records
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -18,7 +19,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const tmp = mkdtempSync(join(tmpdir(), "claim-integrity-"));
+const tmp = makeTestTmp("claim-integrity-");
 const stub = (name, source) => {
   mkdirSync(join(tmp, "node_modules", name), { recursive: true });
   writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -59,7 +60,7 @@ let runs = 0;
 // A fresh artifact root with one data file and a computation recorded for `sql`.
 async function story(sql = (ref) => `SELECT country, year, share FROM '${ref}' ORDER BY country`) {
   runs += 1;
-  const art = join(mkdtempSync(join(tmpdir(), `claim-integrity-run${runs}-`)), "run");
+  const art = join(makeTestTmp(`claim-integrity-run${runs}-`), "run");
   mkdirSync(join(art, "computations"), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = art;
@@ -167,7 +168,7 @@ const BYTES = /^Error: INVALID_SOURCE_EVIDENCE: data bytes do not match their re
 { // a replay that returns the same rows in another order says so; a changed value does not
   const rewrite = (to) => {
     const real = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
-    const wrapper = join(mkdtempSync(join(tmpdir(), "claim-integrity-wrap-")), "wrap-duckdb.py");
+    const wrapper = join(makeTestTmp("claim-integrity-wrap-"), "wrap-duckdb.py");
     writeFileSync(wrapper, `#!/usr/bin/env python3\nimport os, sys\nargs = sys.argv[1:]\nif not any("json_serialize_sql" in a for a in args):\n    args = [a.replace("ORDER BY country", ${JSON.stringify(to)}) for a in args]\nos.execvp(${JSON.stringify(real)}, [${JSON.stringify(real)}] + args)\n`);
     chmodSync(wrapper, 0o755);
     return wrapper;
