@@ -293,6 +293,10 @@
   "src/recipes.rs": {
    "group": "agent"
   },
+  "src/repeat_failure.rs": {
+   "group": "agent",
+   "note": "V398: decides when a run stops after the same tool fails the same way five times (NEWSROOM_REPEAT_FAILURE_STOP, default off); changes no check."
+  },
   "src/step_lines.rs": {
    "group": "system",
    "also_used_by": [
