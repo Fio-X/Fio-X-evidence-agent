@@ -368,7 +368,7 @@ function isOwnMarkerDigit(node, box, mark) {
 }
 
 // opt-in (chartTileMarks): rects these renderers tag with a role of their own rather than "data-..."; they are marks, so a label over one reports
-const CHART_TILE_ROLES = new Set(["waffle-cell", "treemap-tile", "stacked-segment"]);
+const CHART_TILE_ROLES = new Set(["waffle-cell", "treemap-tile", "stacked-segment", "matrix-cell"]);
 // text a tile or segment carries inside itself by design (a treemap tile's name/share/value, a 100% bar's in-bar value); only fully inside it is exempt
 const INSIDE_MARK_TEXT_ROLES = new Map([["treemap-tile-label", "treemap-tile"], ["treemap-tile-share", "treemap-tile"], ["treemap-tile-value", "treemap-tile"], ["stacked-value", "stacked-segment"]]);
 function boxInside(inner, outer) {

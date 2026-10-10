@@ -4533,7 +4533,9 @@ export default function newsroomExtension(pi: ExtensionAPI) {
             }
           : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
             ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
-            : {};
+            : spec.chart_type === "heatmap" && process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1"
+              ? { heatmapChart: true }
+              : {};
       const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}), ...(bundle.compact !== undefined ? { compact: bundle.compact } : {}) }, process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && valuesAllZero(spec, rows) ? { ...renderQaOptions, allZero: true } : renderQaOptions);
       if (!renderQa.passed) {
         const rejected = await writeRejectedRender("visualizations", key, bundle.desktop, mobilePages ? bundle.mobile : undefined, renderQa, bundle.compact);

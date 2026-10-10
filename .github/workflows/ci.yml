@@ -257,6 +257,8 @@ jobs:
           node scripts/test_qa_no_empty_pass.mjs
           node scripts/test_qa_not_applicable.mjs
           node scripts/test_qa_all_zero.mjs
+          node scripts/test_qa_all_zero_tool.mjs
+          node scripts/test_qa_empty_pass_shapes.mjs
           node scripts/test_qa_no_empty_pass_fixtures.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
