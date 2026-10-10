@@ -76,6 +76,47 @@ for (const [type, spec, rows] of charts) {
   }
 }
 
+// a tick label slid sideways to stay inside the frame: the picture carries data-tick-x (where the tick really is), the read-back
+// passes on it, and without that attribute the same picture fails (the label sits 40+ px from where its value belongs)
+{
+  const unit = "million tonnes of carbon dioxide equivalent emitted per year ".repeat(3).slice(0, 96);
+  const spec = { ...hbSpec, language: "en", unit, title: "Emissions", subtitle: "" };
+  const rows = [["A", 80000], ["B", 45678]].map(([city, pop]) => ({ city, pop }));
+  const svg = render(spec, rows, { NEWSROOM_QA_TICK_READBACK: "1" });
+  const last = svg.match(/<text data-role="axis-tick-label" data-tick-value="80000" data-tick-x="([^"]+)" x="([^"]+)"/);
+  assert.ok(last, "squeezed sample: the slid tick label has no data-tick-x");
+  assert.ok(Math.abs(Number(last[1]) - Number(last[2])) > 1, `squeezed sample: label not slid (tick ${last[1]}, label ${last[2]})`);
+  assert.equal((svg.match(/data-tick-x=/g) ?? []).length, 1, "squeezed sample: only the slid label carries data-tick-x");
+  const squeezedCtx = { chart_type: "horizontal_bar", rows, category_field: "city", value_field: "pop", unit, language: "en" };
+  process.env.NEWSROOM_QA_TICK_READBACK = "1";
+  const slid = runRenderQa({ desktop: svg }, { tick_readback: squeezedCtx }).viewports.desktop.tick_readback;
+  assert.equal(slid.status, "covered");
+  assert.deepEqual(slid.failures, [], `squeezed sample failed the read-back: ${JSON.stringify(slid.failures)}`);
+  const noTickX = svg.replace(/ data-tick-x="[^"]*"/, "");
+  assert.notEqual(noTickX, svg);
+  assert.equal(runRenderQa({ desktop: noTickX }, { tick_readback: squeezedCtx }).viewports.desktop.tick_readback.passed, false, "squeezed sample passed without data-tick-x");
+  delete process.env.NEWSROOM_QA_TICK_READBACK;
+  // switch off: nothing about it is written, the slid label is the one off draws
+  assert.ok(!/data-tick-x/.test(render(spec, rows, {})), "squeezed sample: off carries data-tick-x");
+  n++;
+}
+
+// a picture with no bar at all (ticks and value labels only): the switch on does not let it through. Several rules stop it, and the
+// data-anchor one must keep saying so even for a period chart (its "this period was not drawn" excuse needs a drawn period to compare with)
+for (const [type, spec, rows] of charts) {
+  const ctx = { chart_type: type, rows, category_field: spec.category_field, value_field: spec.value_field, ...(spec.series_field ? { series_field: spec.series_field } : {}), ...(spec.period_field ? { period_field: spec.period_field } : {}), unit: spec.unit, language: spec.language };
+  const svg = render(spec, rows, { ...B, NEWSROOM_QA_TICK_READBACK: "1" });
+  const noBars = svg.replace(/<rect data-role="data-bar(?:-outline)?"[^>]*\/>/g, "");
+  assert.ok(!/data-role="data-bar/.test(noBars) && noBars !== svg, `${type}: could not take the bars out of the picture`);
+  process.env.NEWSROOM_QA_TICK_READBACK = "1";
+  const got = runRenderQa({ desktop: noBars }, { tick_readback: ctx });
+  delete process.env.NEWSROOM_QA_TICK_READBACK;
+  const rules = new Set(got.viewports.desktop.tick_readback.failures.map((x) => x.rule));
+  assert.equal(got.passed, false, `${type}: a picture with no bar passed`);
+  for (const rule of ["bar_attrs", "data_anchor", "tick_position"]) assert.ok(rules.has(rule), `${type}: no-bar picture not stopped by ${rule} (got ${[...rules]})`);
+  n++;
+}
+
 // the scale on the unit line is the scale the unit word names (万 -> 1e4, 亿 -> 1e8), not a constant
 for (const [mult, word, scale] of [[1, "万", 10000], [10000, "亿", 100000000]]) {
   const big = hbRows.map((r) => ({ ...r, pop: r.pop * mult }));
