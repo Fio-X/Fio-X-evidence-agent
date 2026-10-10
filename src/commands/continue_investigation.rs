@@ -369,12 +369,17 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             } else {
                 None
             };
-            let latest = if followup_primary_latest_on() {
+            let primary = bundle.primary_artifact()?;
+            // A publication page still comes first (same choice primary_artifact makes today); only without one does the
+            // line name the round's own newest passing chart.
+            let latest = if followup_primary_latest_on()
+                && !primary.as_ref().is_some_and(|(_, kind)| kind == "html")
+            {
                 bundle.latest_passing_chart_since(round_started_at)?
             } else {
                 None
             };
-            match latest.or(bundle.primary_artifact()?) {
+            match latest.or(primary) {
                 Some((path, kind)) => {
                     eprintln!(
                         "\nprimary_artifact: {} ({kind})",

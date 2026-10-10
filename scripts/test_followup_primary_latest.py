@@ -7,10 +7,10 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 binary = str(Path(sys.argv[1] if len(sys.argv) > 1 else root / 'target/debug/news').resolve())
 MOCK = r'''
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 state = Path(os.environ["MOCK_STATE"])
-plans = json.loads(os.environ["MOCK_PLANS"])  # one entry per prompt: [[tool, args], ...]; tool "__write" writes args["path"] under the artifact dir
+plans = json.loads(os.environ["MOCK_PLANS"])  # one entry per prompt: [[tool, args], ...]; tool "__write" writes args["path"] under the artifact dir; "__utime" sets its mtime to now + args["offset"] seconds
 def emit(**v): print(json.dumps(v), flush=True)
 for line in sys.stdin:
     cmd = json.loads(line)
@@ -25,6 +25,11 @@ for line in sys.stdin:
                 target = Path(os.environ["NEWSROOM_ARTIFACT_DIR"]) / args["path"]
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(args["text"])
+                continue
+            if tool == "__utime":
+                target = Path(os.environ["NEWSROOM_ARTIFACT_DIR"]) / args["path"]
+                t = time.time() + args["offset"]
+                os.utime(target, (t, t))
                 continue
             emit(type="tool_execution_start", toolName=tool, toolCallId=f"c{n}-{i}", args=args)
             emit(type="tool_execution_end", toolName=tool, toolCallId=f"c{n}-{i}", isError=False)
@@ -42,6 +47,14 @@ mock_path.chmod(0o755)
 
 def w(path, value):
     return ['__write', {'path': path, 'text': value if isinstance(value, str) else json.dumps(value)}]
+
+def at(path, offset):
+    """Set a file's mtime to now + offset seconds (the mock runs this after the writes it follows)."""
+    return ['__utime', {'path': path, 'offset': offset}]
+
+def page(key='p1'):
+    """A publication page: manifest with html_ref plus the html file."""
+    return [w(f'publications/{key}/index.html', '<html></html>'), w(f'publications/{key}/manifest.json', {'html_ref': f'publications/{key}/index.html'})]
 
 def chart(key, qa=True, status='VERIFIED', critic=True, svg=True):
     """The records the runtime writes for one rendered chart: svg, manifest, critic."""
@@ -108,6 +121,17 @@ assert line == NEW, line
 # F. on, two passing new charts: the newest.
 line, _ = scenario(A, chart('chart-b') + chart('chart-c'), '1')
 assert line == ('chart-c.svg', 'svg'), line
+# F2. the same with clearly different mtimes: the newer manifest has the lexicographically SMALLER path, so path order alone would pick chart-m.
+line, _ = scenario(A, chart('chart-m') + chart('chart-d') + [at('visualizations/chart-m.json', 10), at('visualizations/chart-d.json', 30)], '1')
+assert line == ('chart-d.svg', 'svg'), line
+# F3. on, the new chart's manifest is older than the round's start (a file this round did not write): not taken as this round's.
+line, _ = scenario(A, chart('chart-b') + [at('visualizations/chart-b.json', -3600)], '1')
+assert line == OLD, line
+# H. on, the round produced a qualified publication page as well as a passing chart: the page comes first, as primary_artifact has it today.
+line, text = scenario(A, chart('chart-b') + page(), '1')
+assert line == ('index.html', 'html'), (line, text[-400:])
+line, _ = scenario(A, chart('chart-b') + page(), None)
+assert line == ('index.html', 'html'), line
 # G. on, nothing new this round: a passing chart from the first turn is never taken as this round's, even when it is the newer file
 # (chart-z was written after chart-a; today's line is the first candidate in path order, chart-a).
 line, _ = scenario(chart('chart-a') + chart('chart-z'), [], '1')
