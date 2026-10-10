@@ -1,0 +1,313 @@
+[
+ {
+  "name": "ok hb_A",
+  "fixture": "hb_A",
+  "expect": "green"
+ },
+ {
+  "name": "ok hb_B",
+  "fixture": "hb_B",
+  "expect": "green"
+ },
+ {
+  "name": "ok hb_OFF",
+  "fixture": "hb_OFF",
+  "expect": "green"
+ },
+ {
+  "name": "ok hb_K202",
+  "fixture": "hb_K202",
+  "expect": "green"
+ },
+ {
+  "name": "ok mb_A",
+  "fixture": "mb_A",
+  "expect": "green"
+ },
+ {
+  "name": "ok mb_B",
+  "fixture": "mb_B",
+  "expect": "green"
+ },
+ {
+  "name": "t1 tick text 500万 -> 5000万 (A)",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": ">500万<",
+    "replace": ">5000万<"
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "t1 tick text 500 -> 5000 (B)",
+  "fixture": "hb_B",
+  "edits": [
+   {
+    "find": ">500<",
+    "replace": ">5000<"
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "t1 tick text 500万 -> 5000万 (mirrored A)",
+  "fixture": "mb_A",
+  "edits": [
+   {
+    "find": ">500万<",
+    "replace": ">5000万<"
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "t1 tick text 1亿 -> 10亿 (OFF mixed writing)",
+  "fixture": "hb_OFF",
+  "edits": [
+   {
+    "find": ">1亿<",
+    "replace": ">10亿<"
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "t2 unit line 万人 -> 亿人 (B, text only)",
+  "fixture": "hb_B",
+  "edits": [
+   {
+    "find": "单位：万人",
+    "replace": "单位：亿人"
+   }
+  ],
+  "expect": "red",
+  "rule": "unit_line"
+ },
+ {
+  "name": "t2 unit line 万人 -> 亿人 (B, text and scale)",
+  "fixture": "hb_B",
+  "edits": [
+   {
+    "find": "单位：万人",
+    "replace": "单位：亿人"
+   },
+   {
+    "find": "data-scale=\"10000\"",
+    "replace": "data-scale=\"100000000\""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "t2 unit line 万人 -> 亿人 (mirrored B, text only)",
+  "fixture": "mb_B",
+  "edits": [
+   {
+    "find": "单位：万人",
+    "replace": "单位：亿人"
+   }
+  ],
+  "expect": "red",
+  "rule": "unit_line"
+ },
+ {
+  "name": "t2 unit line 万人 -> 亿人 (mirrored B, text and scale)",
+  "fixture": "mb_B",
+  "edits": [
+   {
+    "find": "单位：万人",
+    "replace": "单位：亿人"
+   },
+   {
+    "find": "data-scale=\"10000\"",
+    "replace": "data-scale=\"100000000\""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "t3 one tick moved one grid (bar)",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": "x=\"260.6614195020403\" y=\"331\"",
+    "replace": "x=\"426.32283900408055\" y=\"331\""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_position"
+ },
+ {
+  "name": "t3 one tick moved one grid (mirrored)",
+  "fixture": "mb_B",
+  "edits": [
+   {
+    "find": "x=\"408.2\" y=\"281\"",
+    "replace": "x=\"328.4\" y=\"281\""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_position"
+ },
+ {
+  "name": "t4 bar data-value changed (bar)",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": "data-role=\"data-bar\" data-category=\"上海\" data-value=\"24870003\"",
+    "replace": "data-role=\"data-bar\" data-category=\"上海\" data-value=\"24780003\""
+   }
+  ],
+  "expect": "red",
+  "rule": "data_anchor"
+ },
+ {
+  "name": "t4 bar data-value changed (mirrored)",
+  "fixture": "mb_B",
+  "edits": [
+   {
+    "find": "data-category=\"0-14\" data-series=\"男\" data-value=\"12000005\"",
+    "replace": "data-category=\"0-14\" data-series=\"男\" data-value=\"12100005\""
+   }
+  ],
+  "expect": "red",
+  "rule": "data_anchor"
+ },
+ {
+  "name": "t5 data-tick-value deleted (bar)",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": " data-tick-value=\"5000000\"",
+    "replace": ""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_attrs"
+ },
+ {
+  "name": "t5 data-tick-value deleted (mirrored)",
+  "fixture": "mb_B",
+  "edits": [
+   {
+    "find": " data-tick-value=\"5000000\" data-side=\"left\"",
+    "replace": " data-side=\"left\""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_attrs"
+ },
+ {
+  "name": "v1 label 71万 -> 7.1万",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": ">71万<",
+    "replace": ">7.1万<"
+   }
+  ],
+  "expect": "red",
+  "rule": "value_label_text"
+ },
+ {
+  "name": "v2 label key swapped to another bar",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": "data-role=\"value-label\" data-category=\"上海\"",
+    "replace": "data-role=\"value-label\" data-category=\"北京\""
+   }
+  ],
+  "expect": "red",
+  "rule": "value_label_key"
+ },
+ {
+  "name": "v3 label data-value deleted",
+  "fixture": "hb_A",
+  "edits": [
+   {
+    "find": "data-role=\"value-label\" data-category=\"上海\" data-value=\"24870003\" ",
+    "replace": "data-role=\"value-label\" data-category=\"上海\" "
+   }
+  ],
+  "expect": "red",
+  "rule": "value_label_attrs"
+ },
+ {
+  "name": "k202 unit line 万人 -> 亿人 (text only)",
+  "fixture": "hb_K202",
+  "edits": [
+   {
+    "find": "单位：万人",
+    "replace": "单位：亿人"
+   }
+  ],
+  "expect": "red",
+  "rule": "unit_line"
+ },
+ {
+  "name": "k202 unit line 万人 -> 亿人 (text and scale): bare label 2487 no longer fits",
+  "fixture": "hb_K202",
+  "edits": [
+   {
+    "find": "单位：万人",
+    "replace": "单位：亿人"
+   },
+   {
+    "find": "data-scale=\"10000\"",
+    "replace": "data-scale=\"100000000\""
+   }
+  ],
+  "expect": "red",
+  "rule": "value_label_text"
+ },
+ {
+  "name": "k202 bare label 2487 -> 24870",
+  "fixture": "hb_K202",
+  "edits": [
+   {
+    "find": ">2487<",
+    "replace": ">24870<"
+   }
+  ],
+  "expect": "red",
+  "rule": "value_label_text"
+ },
+ {
+  "name": "no data rows -> fail closed",
+  "fixture": "hb_A",
+  "edits": [],
+  "expect": "red",
+  "rule": "data_anchor",
+  "ctx_drop": [
+   "rows"
+  ]
+ },
+ {
+  "name": "extra data row without a bar",
+  "fixture": "hb_A",
+  "edits": [],
+  "expect": "red",
+  "rule": "data_anchor",
+  "rows_extra": {
+   "city": "重庆",
+   "pop": 1
+  }
+ },
+ {
+  "name": "chart type outside the list is reported uncovered, not passed",
+  "fixture": "hb_A",
+  "expect": "uncovered",
+  "ctx": {
+   "chart_type": "line"
+  }
+ }
+]

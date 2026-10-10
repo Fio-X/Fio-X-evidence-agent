@@ -29,6 +29,7 @@ import { checkChoroplethValueLabels, checkHeatmapValueLabels, RENDER_QA_LABELS_V
 import { joinChoroplethRows, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, PALETTE } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
+import { checkTickReadback } from "./render_qa_ticks.mjs";
 
 export const RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0";
 
@@ -53,9 +54,12 @@ function checkViewport(svgText, options) {
     // proof needs passing contrast too: any contrast failure in the viewport fails the labels
     if (!contrast.passed) valueLabels = { passed: false, failures: [...valueLabels.failures, { rule: "value_label_contrast", message: "the viewport has a text contrast failure" }] };
   }
+  // NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back, only when the
+  // caller passes options.tick_readback (chart_type, rows, field names). Adds a rule; off, the report is unchanged.
+  const tickReadback = process.env.NEWSROOM_QA_TICK_READBACK === "1" && options?.tick_readback ? checkTickReadback(svgText, options.tick_readback) : null;
   return {
     svg_sha256: sha256Hex(svgText),
-    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true),
+    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true) && (tickReadback && tickReadback.status === "covered" ? tickReadback.passed : true),
     geometry: {
       passed: geometry.passed,
       failures: geometry.failures,
@@ -68,6 +72,7 @@ function checkViewport(svgText, options) {
       unmeasured: contrast.unmeasured,
     },
     ...(valueLabels ? { value_labels: valueLabels } : {}),
+    ...(tickReadback ? { tick_readback: tickReadback } : {}),
   };
 }
 
@@ -118,7 +123,8 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
       total +
       viewports[viewport].geometry.failures.length +
       viewports[viewport].contrast.failures.length +
-      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1),
+      (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1) +
+      (viewports[viewport].tick_readback?.failures.length ?? 0),
     0,
   );
   return {
