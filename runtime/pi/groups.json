@@ -448,6 +448,10 @@
   "runtime/pi/evidence_gate.mjs": {
    "group": "knowledge"
   },
+  "runtime/pi/fetch_split_probe.mjs": {
+   "group": "knowledge",
+   "note": "Report-only planner for splitting slow downloads (NEWSROOM_FETCH_SPLIT_PROBE); its diagnostic is written under runtime/, which the boundary report counts as agent-owned (cross_group)."
+  },
   "runtime/pi/claim_binding.mjs": {
    "group": "knowledge",
    "also_used_by": [
