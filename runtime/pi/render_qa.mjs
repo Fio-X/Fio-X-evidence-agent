@@ -26,7 +26,7 @@ import { checkSvgGeometry, RENDER_QA_GEOMETRY_VERSION } from "./render_qa_geomet
 import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contrast.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, checkHeatmapValueLabels, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
-import { joinChoroplethRows, worldLabelIso3s } from "./choropleth.mjs";
+import { joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, PALETTE } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 
@@ -43,7 +43,7 @@ function checkViewport(svgText, options) {
   let valueLabels = null;
   let proofOnly = false;
   if (options?.choropleth) {
-    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled });
   }
   if (options?.heatmap) {
     // proof only: a heatmap whose cells cannot all be labelled still renders as before; the report just does not prove the labels

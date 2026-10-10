@@ -183,7 +183,7 @@ function glyphWidth(text, size) {
  *   PALETTE.grid through.
  */
 export function checkChoroplethValueLabels(svgText, options, deps) {
-  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s } = deps;
+  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s, worldListEnabled } = deps;
   const expectedNoDataFill = String(noDataFill ?? "").toLowerCase();
   const rows = Array.isArray(options?.rows) ? options.rows : [];
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
@@ -254,6 +254,18 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     ? worldLabelIso3s(joined, { value_field, category_field: options?.category_field, highlight_values: options?.highlight_values })
     : null;
 
+  // World list mode (the program's own NEWSROOM_MAP_WORLD_LIST switch, passed in as deps.worldListEnabled; never read
+  // from the chart spec): every country with data carries exactly one name and one value, on the map or in the list
+  // under it, so the "labelled although world mode labels only..." rule gives way to the same exactly-one rule below.
+  // The expected set is the rows' own iso3s, not anything read from the SVG; a label for a country with no data row fails.
+  const worldList = Boolean(worldLabelled) && typeof worldListEnabled === "function" && worldListEnabled() === true;
+  if (worldList) {
+    const dataIso3 = new Set(joined.map((item) => item.iso3));
+    for (const iso3 of new Set([...namesByIso3.keys(), ...valuesByIso3.keys()])) {
+      if (!dataIso3.has(iso3)) failures.push({ rule: "value_label_unexpected", message: `${iso3} is labelled although it has no data row` });
+    }
+  }
+
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
@@ -266,7 +278,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     if (Number.isFinite(renderedValue) && Math.abs(renderedValue - value) > 1e-9) {
       failures.push({ rule: "region_value_mismatch", message: `${iso3} region data-value is ${renderedValue}, row value is ${value}` });
     }
-    if (worldLabelled && !worldLabelled.has(iso3)) {
+    if (worldLabelled && !worldList && !worldLabelled.has(iso3)) {
       if ((namesByIso3.get(iso3) ?? []).length || (valuesByIso3.get(iso3) ?? []).length) {
         failures.push({ rule: "value_label_unexpected", message: `${iso3} is labelled although world mode labels only the range ends and highlight_values` });
       }
