@@ -1,5 +1,6 @@
 import { runProcess } from "./process.mjs";
 import { decisionWriter } from "./decision_writer.mjs";
+import { probeWriter } from "./probe_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
 import { boundaryReportEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
@@ -3794,7 +3795,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
             if (plan.splittable) {
               const seconds = Math.round((Date.now() - startedAt) / 10) / 100;
               const record = diagnosticRecord({ plan, mode: probeOutcome === "timeout" ? "after_timeout" : "observed", parentSeconds: seconds, parentOutcome: probeOutcome });
-              await writeArtifactIfAbsent(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
+              await probeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) }).writeDiagnostic(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
             }
           } catch {}
         }
