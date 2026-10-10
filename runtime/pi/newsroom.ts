@@ -46,7 +46,7 @@ import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from ".
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { numberWordIn } from "./number_words.mjs";
-import { composeDataNote, drawnFlagCells, flagCellsFromFile } from "./data_notes.mjs";
+import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -2463,7 +2463,7 @@ export async function dataNoteForChart(spec: any, rows: Record<string, unknown>[
   const root = artifactRoot();
   const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/") && !ref.includes("..") && /\.(?:json|csv|tsv|txt)$/i.test(ref)))].sort();
   if (!root || !dataRefs.length) return null;
-  const cells: any[] = [];
+  const read: { cells: any[]; dimensions: any[] } = { cells: [], dimensions: [] };
   const diagnostics: any[] = [];
   for (const ref of dataRefs) {
     let text: string;
@@ -2471,11 +2471,14 @@ export async function dataNoteForChart(spec: any, rows: Record<string, unknown>[
       if ((await stat(join(root, ref))).size > 8_000_000) continue;
       text = await readFile(join(root, ref), "utf8");
     } catch { continue; }
-    const read = flagCellsFromFile(ref, text);
-    cells.push(...read.cells);
-    diagnostics.push(...read.diagnostics.map((item: any) => ({ ...item, file: ref })));
+    const file = flagCellsFromFile(ref, text);
+    read.cells.push(...file.cells);
+    read.dimensions.push(...file.dimensions);
+    diagnostics.push(...file.diagnostics.map((item: any) => ({ ...item, file: ref })));
   }
-  const note = composeDataNote(drawnFlagCells(cells, rows));
+  // The chart's own name mapping (chartNameDisplay) gives the Chinese names a partly flagged chart's sentence uses for its rows.
+  const names = chartNameDisplay(spec, rows);
+  const note = composeDataNote(read, rows, { sql: spec?.sql, categoryField: spec?.category_field, display: names ? (column: string, value: string) => names.display(column, value) : undefined });
   diagnostics.push(...(note?.diagnostics ?? []));
   if (!note?.text) return diagnostics.length ? { text: null, full: null, truncated: false, diagnostics } : null;
   return { text: note.text as string, full: note.full as string, truncated: Boolean(note.truncated), diagnostics };

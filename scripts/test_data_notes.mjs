@@ -23,7 +23,7 @@ const ok = (name) => { results.push(name); console.log(`${name} -- PASS`); };
 
 // ---------------------------------------------------------------- Part A: the module
 const dn = await import(process.env.DATA_NOTES_MODULE ? pathToFileURL(process.env.DATA_NOTES_MODULE).href : pathToFileURL(join(ROOT, "runtime/pi/data_notes.mjs")).href);
-const { composeDataNote, drawnFlagCells, flagCellsFromCsv, flagCellsFromJsonStat, splitFlag } = dn;
+const { composeDataNote, flagCellsFromCsv, flagCellsFromJsonStat, splitFlag } = dn;
 
 // A JSON-stat file shaped like Eurostat's: geo x time, flat position = geo * 2 + time.
 const jsonStat = (status, value = { 0: 1, 1: 2, 2: 3, 3: 4 }) => JSON.stringify({
@@ -34,8 +34,18 @@ const jsonStat = (status, value = { 0: 1, 1: 2, 2: 3, 3: 4 }) => JSON.stringify(
   },
   status, value,
 });
-const drawn = (status, rows, value) => composeDataNote(drawnFlagCells(flagCellsFromJsonStat(jsonStat(status, value)).cells, rows));
+// four countries, one year: flat position = geo
+const jsonStat4 = (status) => JSON.stringify({
+  version: "2.0", class: "dataset", id: ["geo", "time"], size: [4, 1],
+  dimension: { geo: { category: { index: { DE: 0, FR: 1, IT: 2, ES: 3 } } }, time: { category: { index: { 2023: 0 } } } },
+  status, value: { 0: 1, 1: 2, 2: 3, 3: 4 },
+});
+const NAMES = { DE: "德国", FR: "法国", IT: "意大利" }; // ES has no Chinese display name on purpose
+const OPTS = { categoryField: "country", display: (_column, value) => NAMES[value] ?? null };
+const drawn = (status, rows, value, opts = OPTS) => composeDataNote(flagCellsFromJsonStat(jsonStat(status, value)), rows, opts);
+const drawn4 = (status, rows, opts = OPTS) => composeDataNote(flagCellsFromJsonStat(jsonStat4(status)), rows, opts);
 const row = (geo, time) => ({ country: geo, year: time, v: 1 });
+const all4 = ["DE", "FR", "IT", "ES"].map((geo) => row(geo, "2023"));
 
 { // every code of the table, exact sentence; no raw code in the line
   const want = { e: "2023 年为估计值", p: "2023 年为初步数", f: "2023 年为预测值", b: "2023 年起统计口径改变，前后不宜直接比较", d: "2023 年口径与其余不同" };
@@ -62,10 +72,10 @@ const row = (geo, time) => ({ country: geo, year: time, v: 1 });
   assert.equal(long.text, "详见数据说明");
   assert.equal(long.truncated, true);
   assert.ok(long.full.includes("统计口径改变"), "the full sentence is kept for the page foot");
-  const cells = flagCellsFromJsonStat(jsonStat({ 1: "p" })).cells;
+  const read = flagCellsFromJsonStat(jsonStat({ 1: "p" }));
   const exact = Array.from("注：2023 年为初步数").length;
-  assert.equal(composeDataNote(drawnFlagCells(cells, [row("DE", "2023")]), { lineMax: exact }).text, "2023 年为初步数", "exactly at the limit stays");
-  const over = composeDataNote(drawnFlagCells(cells, [row("DE", "2023")]), { lineMax: exact - 1 });
+  assert.equal(composeDataNote(read, [row("DE", "2023")], { ...OPTS, lineMax: exact }).text, "2023 年为初步数", "exactly at the limit stays");
+  const over = composeDataNote(read, [row("DE", "2023")], { ...OPTS, lineMax: exact - 1 });
   assert.equal(over.text, "详见数据说明", "one over the limit becomes the pointer");
   assert.equal(over.full, "2023 年为初步数");
   ok("A3 the 40-character rule counts the printed 注： and turns a longer sentence into 详见数据说明 with the full text kept");
@@ -94,17 +104,17 @@ const row = (geo, time) => ({ country: geo, year: time, v: 1 });
 }
 { // the existing number-word check is applied to the final text
   const csv = "country,year,share,flag\nChad,三年,70,p\n";
-  const cells = flagCellsFromCsv(csv).cells;
-  const note = composeDataNote(drawnFlagCells(cells, [{ country: "Chad", year: "三年", share: 70 }]));
+  const note = composeDataNote(flagCellsFromCsv(csv), [{ country: "Chad", year: "三年", share: 70 }], OPTS);
   assert.equal(note.text, null);
   assert.equal(note.diagnostics.at(-1).rule, "number_word");
   ok("A6 a sentence the number-word check refuses is dropped and recorded");
 }
 { // CSV flag column, and shapes that must not match
   const csv = "country,year,share,flag\nChad,2022,70,\nChad,2023,66,p\nNiger,2023,,e\nNiger,2022,80,\n";
-  const cells = flagCellsFromCsv(csv).cells;
-  assert.equal(cells.length, 1, "the flag on an empty value is skipped");
-  assert.equal(composeDataNote(drawnFlagCells(cells, [{ country: "Chad", year: "2023", share: 66 }])).text, "2023 年为初步数");
+  const read = flagCellsFromCsv(csv);
+  assert.equal(read.cells.length, 3, "the row with no number is not a cell");
+  assert.equal(read.cells.filter((c) => c.code).length, 1, "so the flag on it is gone");
+  assert.equal(composeDataNote(read, [{ country: "Chad", year: "2023", share: 66 }], OPTS).text, "2023 年为初步数");
   assert.equal(flagCellsFromCsv("country,year,share\nChad,2023,66\n").cells.length, 0, "no flag column, no cells");
   assert.equal(flagCellsFromJsonStat("{}").cells.length, 0);
   assert.equal(flagCellsFromJsonStat("not json").cells.length, 0);
@@ -114,6 +124,40 @@ const row = (geo, time) => ({ country: geo, year: time, v: 1 });
   assert.equal(drawn("p", [row("DE", "2023")]).text, "2023 年为初步数");
   assert.equal(drawn(["", "", "", "e"], [row("FR", "2023")]).text, "2023 年为估计值");
   ok("A8 JSON-stat status as one string or as an array");
+}
+{ // K118 review 1: only some drawn rows flagged -> the rows are named with the chart's Chinese display names
+  assert.equal(drawn4({ 0: "ep", 1: "ep", 2: "ep", 3: "ep" }, all4).text, "2023 年为估计值、初步数", "every drawn row flagged: no names");
+  assert.equal(drawn4({ 0: "ep", 1: "ep", 2: "", 3: "" }, all4.slice(0, 3)).text, "德国、法国 2023 年为估计值、初步数", "two of three drawn rows flagged: named");
+  assert.equal(drawn4({ 0: "e" }, all4.slice(0, 3)).text, "德国 2023 年为估计值", "one of three");
+  assert.equal(drawn4({ 0: "ep", 1: "ep", 2: "ep" }, all4.slice(0, 3)).text, "2023 年为估计值、初步数", "the undrawn fourth row does not matter");
+  assert.equal(drawn4({ 0: "ep" }, all4.slice(0, 1).concat([{ year: "2023", v: 9 }])).text, "德国 2023 年为估计值、初步数", "a drawn row that cannot be tied is not 'all rows': the flagged row is named");
+  ok("A9 all drawn rows flagged -> no names; some flagged -> those rows by their Chinese display names");
+}
+{ // never a code as a name; the long named sentence falls back to the pointer
+  const noName = drawn4({ 0: "e", 3: "e" }, all4);
+  assert.equal(noName.text, null, "a flagged row with no Chinese display name leaves the sentence out");
+  assert.deepEqual(noName.diagnostics, [{ rule: "no_display_name", period: "2023", letter: "e" }]);
+  assert.ok(!JSON.stringify(noName).includes("ES"), "the code is not printed as a name");
+  assert.equal(drawn4({ 0: "e" }, all4.slice(0, 3), { categoryField: "country" }).text, null, "no display mapping and a Latin value: no name");
+  assert.equal(drawn4({ 0: "e" }, [{ country: "德国", year: "2023", v: 1 }, { country: "法国", year: "2023", v: 1 }], { categoryField: "country" }), null, "an unrelated Chinese value ties no cell");
+  assert.equal(drawn4({ 0: "e" }, all4.slice(0, 3), { display: OPTS.display }).text, null, "without a category field the rows cannot be named");
+  const long = drawn4({ 0: "ep", 1: "ep", 2: "ep" }, all4);
+  assert.equal(long.text, "德国、法国、意大利 2023 年为估计值、初步数", "an unflagged row without a name is fine; the flagged ones have names");
+  ok("A10 a flagged row with no Chinese display name (or no category field) leaves the sentence out; a code is never printed as a name");
+}
+{ // K118 review 2: a row built from cells of which only some carry the flag says 含, never 为
+  const csv = ["country,year,product,value,flag", "Chad,2024,oil,10,e", "Chad,2024,gas,20,", "Niger,2024,oil,5,e", "Niger,2024,gas,6,e"].join("\n");
+  const read = flagCellsFromCsv(csv);
+  const rows = [{ country: "Chad", year: 2024, v: 30 }, { country: "Niger", year: 2024, v: 11 }];
+  const sum = "SELECT country, year, SUM(value) AS v FROM 'data/x.csv' GROUP BY country, year";
+  const names = { categoryField: "country", display: (_c, v) => ({ Chad: "乍得", Niger: "尼日尔" })[v] ?? null };
+  assert.equal(composeDataNote(read, rows, { ...names, sql: sum }).text, "2024 年数据含估计值", "Chad is partly flagged, Niger wholly: 含");
+  assert.equal(composeDataNote(read, rows.slice(1), { ...names, sql: sum }).text, "2024 年为估计值", "only the wholly flagged row drawn: 为");
+  const csv2 = ["country,year,product,value,flag", "Chad,2024,oil,10,e", "Chad,2024,gas,20,", "Niger,2024,oil,5,", "Niger,2024,gas,6,"].join("\n");
+  assert.equal(composeDataNote(flagCellsFromCsv(csv2), rows, { ...names, sql: sum }).text, "乍得 2024 年数据含估计值", "one of two rows, partly flagged: named and 含");
+  assert.equal(composeDataNote(read, rows, { ...names }), null, "no aggregate in the SQL: the product dimension is not summed away, so the rows tie to no cell");
+  assert.equal(composeDataNote(read, rows, { ...names, sql: `${sum.replace("GROUP BY", "WHERE product = 'oil' GROUP BY")}` }), null, "a literal filter on the dimension is not a sum");
+  ok("A11 a row summed from partly flagged cells reads 含 (never 为); aggregation is accepted only when the SQL sums the dimension away");
 }
 
 // ---------------------------------------------------------------- Part B: the tool path
@@ -163,6 +207,7 @@ export const Type = {
   // Eurostat-shaped synthetic data: one row per country for 2024, flagged `ep` for Niger and Chad, plus a 2023 row that is not drawn.
   const CSV_EP = ["country,year,share,flag", "Chad,2024,70.0,ep", "Guinea,2024,66.6,", "Liberia,2024,92.8,", "Niger,2024,79.6,ep", "Niger,2023,60.0,e"].join("\n") + "\n";
   const CSV_LONG = ["country,year,share,flag", "Chad,2024,70.0,b", "Guinea,2024,66.6,e", "Liberia,2024,92.8,d", "Niger,2024,79.6,p"].join("\n") + "\n";
+  const CSV_ALL = ["country,year,share,flag", "Chad,2024,70.0,p", "Guinea,2024,66.6,p", "Liberia,2024,92.8,p", "Niger,2024,79.6,p"].join("\n") + "\n";
   const CSV_NONE = ["country,year,share,flag", "Chad,2024,70.0,", "Guinea,2024,66.6,", "Liberia,2024,92.8,"].join("\n") + "\n";
 
   const planParams = (claim_id) => ({
@@ -214,14 +259,15 @@ export const Type = {
   {
     const on = await run({ NEWSROOM_DATA_NOTES: "1" }, CSV_EP);
     exportSvg("on-ep.svg", on.svg);
-    assert.equal(on.manifest.data_note, "2024 年为估计值、初步数");
+    assert.equal(on.manifest.data_note, "乍得、尼日尔 2024 年为估计值、初步数");
     assert.deepEqual(keysOf(on.manifest), ["data_note"]);
-    assert.ok(on.svg.includes("注：2024 年为估计值、初步数"), "the note is printed under the chart");
+    assert.ok(on.svg.includes("注：乍得、尼日尔 2024 年为估计值、初步数"), "the note names the two flagged of four drawn rows, by their Chinese names");
+    assert.ok(!on.svg.includes("Chad 2024") && !on.svg.includes("Niger 2024"), "no Latin code as a name");
     assert.ok(!/注：[^<]*\bep\b/.test(on.svg), "the raw code is not printed");
     assert.ok(!on.svg.includes("2023 年"), "the undrawn 2023 row's flag is not mentioned");
     // the note comes before the model's note and the source line, on its own line
     const lines = texts(on.svg);
-    const noteAt = lines.findIndex((x) => x.startsWith("注：2024"));
+    const noteAt = lines.findIndex((x) => x.startsWith("注：乍得"));
     const modelAt = lines.findIndex((x) => x.includes(MODEL_TEXT));
     assert.ok(noteAt >= 0 && modelAt > noteAt, "the flag line is above the source line");
     // nothing else changed: every other text of the off chart is still there, in order
@@ -256,7 +302,9 @@ export const Type = {
     const unknown = await run({ NEWSROOM_DATA_NOTES: "1" }, CSV_EP.replace(/,ep\n/g, ",zz\n"));
     assert.deepEqual(keysOf(unknown.manifest), ["data_note_diagnostics"]);
     assert.ok(unknown.manifest.data_note_diagnostics.some((x) => x.rule === "unknown_code" && x.code === "zz"));
-    assert.ok(!unknown.svg.includes("注：2024") && !unknown.svg.includes("zz"), "an unknown code reaches neither the chart nor the page");
+    assert.ok(!unknown.svg.includes("注：乍得") && !unknown.svg.includes("zz"), "an unknown code reaches neither the chart nor the page");
+    const everyRow = await run({ NEWSROOM_DATA_NOTES: "1" }, CSV_ALL);
+    assert.equal(everyRow.manifest.data_note, "2024 年为初步数", "every drawn row flagged: no names");
     ok("B4 on: nothing flagged = the off chart; an unknown code is recorded in the manifest's diagnostics and printed nowhere");
   }
 }
