@@ -675,7 +675,7 @@
   },
   "runtime/pi/extreme_probe.mjs": {
    "group": "visual",
-   "note": "Report-only extreme-value probe of a drawn chart (NEWSROOM_EXTREME_PROBE=1); hands its diagnosis record to the agent-group writer."
+   "note": "Report-only extreme-value probe of a drawn chart (NEWSROOM_EXTREME_PROBE=1); hands its diagnosis record to the agent-group writer. Also holds the caption note behind NEWSROOM_EXTREME_NOTE=1 (visual group, board item K117; delete when the note is installed as the default or K117 is dropped; writes no file)."
   },
   "runtime/pi/extreme_probe_writer.mjs": {
    "group": "agent",
