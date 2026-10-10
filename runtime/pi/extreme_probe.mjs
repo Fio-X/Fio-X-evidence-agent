@@ -26,7 +26,17 @@
 // null, no epsilon, no Infinity) | too_few_objects | ambiguous_object | unsupported_chart.
 // Both ends far: each end is computed with the other end kept among "the others"; both are reported and flagged
 // `both_ends_far`, a known limitation (they inflate each other).
+//
+// K117 stage 2 (fe order 1010h). Two additions, both default off / record-only:
+//  (a) PAIR D, written into every high/low record next to the single-value D (which is unchanged). Rule, fixed before the eight calibration
+//      topics were re-run: the group is the end value together with the value next to it (the second from that end); the others are the
+//      remaining n - 2 values (at least 2 of them); pair_d = (distance from the group's inner member to the nearest other value) /
+//      (span of the other values). Same statuses and the same candidate threshold (D >= 1) as the single value. It exists for two far values
+//      side by side, each of which hides the other as "nearest neighbour".
+//  (b) NEWSROOM_EXTREME_NOTE=1: when a record fires (single D or pair D), the program adds one candidate sentence to the chart's note line
+//      ("far above / below the rest of the data"), from the rows the chart is drawn from. See extremeNoteText.
 import { performance } from "node:perf_hooks";
+import { numberWordIn } from "./number_words.mjs";
 import { fmtSpec } from "./viz.mjs";
 import { shadowKey } from "./shadow.mjs";
 import { EXTREME_PROBE_FOLDER, writeExtremeProbeRecord } from "./extreme_probe_writer.mjs";
@@ -85,6 +95,27 @@ export function endDistance(points, end) {
 }
 
 /**
+ * Pair D for one end (rule in the header). `points` as for endDistance. The group is the extreme and the next point inward; the
+ * others are everything else. Returns { status, d, gap, members, rest_min, rest_max }.
+ */
+export function pairDistance(points, end) {
+  const sorted = [...points].sort((a, b) => a.value - b.value || String(a.object).localeCompare(String(b.object)));
+  const ordered = end === "high" ? [...sorted].reverse() : sorted;
+  const members = ordered.slice(0, 2);
+  const rest = ordered.slice(2);
+  if (members.length < 2 || rest.length < 2) return { status: "too_few_objects", d: null, members, rest_min: null, rest_max: null };
+  const values = rest.map((r) => r.value);
+  const restMin = Math.min(...values);
+  const restMax = Math.max(...values);
+  const inner = members[1].value;
+  const gap = Math.abs(inner - (end === "high" ? restMax : restMin));
+  const span = restMax - restMin;
+  if (gap === 0) return { status: "tie", d: 0, gap, members, rest_min: restMin, rest_max: restMax };
+  if (span === 0) return { status: "degenerate", d: null, gap, members, rest_min: restMin, rest_max: restMax };
+  return { status: "ok", d: gap / span, gap, members, rest_min: restMin, rest_max: restMax };
+}
+
+/**
  * Probe one value set. `set` = { metric, period, entries, log }, entries = [{ object, label, values }].
  * Returns up to two records (high, low).
  */
@@ -128,6 +159,14 @@ export function probeValueSet(spec, set) {
       if (withoutOther(r) !== null) out.d_without_other_end = Number(withoutOther(r).toFixed(6));
       if (bothFar) out.limitation = "both_ends_far";
       if (r.status === "ok") out.candidate_notes = candidateNotes(spec, out);
+      const pair = pairDistance(points, r.end);
+      const rawOf2 = (v) => (set.log ? 10 ** v : v);
+      out.pair_status = pair.status;
+      out.pair_d = pair.d === null ? null : Number(pair.d.toFixed(6));
+      out.pair_members = pair.members.map((m) => m.label);
+      if (pair.members.length === 2) out.pair_values = pair.members.map((m) => m.raw);
+      if (pair.status !== "too_few_objects") { out.pair_rest_min = rawOf2(pair.rest_min); out.pair_rest_max = rawOf2(pair.rest_max); }
+      out.pair_candidate_trigger = pair.status === "ok" && pair.d >= EXTREME_PROBE_CANDIDATE_D;
     }
     return out;
   });
@@ -222,6 +261,57 @@ export function probeExtremes(spec, rows) {
     return { chart_type: chart, records: [{ metric: null, period: null, object: null, end: null, d: null, n: 0, status: "unsupported_chart" }] };
   }
   return { chart_type: chart, records: sets.flatMap((set) => probeValueSet(spec, set)) };
+}
+
+export function extremeNoteEnabled(env = process.env) {
+  return String(env?.NEWSROOM_EXTREME_NOTE ?? "") === "1";
+}
+
+// How the numbers in the note were obtained, from the chart's own SQL: "computed" when the query aggregates or does arithmetic (the number
+// does not exist in the source as printed); otherwise "source" when the chart prints the value as it is, "rounded" when the chart's display
+// rule rounds it. The wording differs: computed gets a "calculated from the data" lead, rounded says the display is rounded.
+const COMPUTED_SQL = /\b(?:sum|avg|count|min|max|median|stddev|round|ln|log|exp)\s*\(|\bgroup\s+by\b|\bover\s*\(|[\w)"\]]\s*[*/]\s*[\w("]|[\w)"\]]\s+-\s+[\w("]/i;
+const computedSql = (sql) => COMPUTED_SQL.test(String(sql ?? "").replace(/'(?:[^']|'')*'/g, "''").replace(/\bselect\s+(?:distinct\s+)?\*|[\w"]+\.\*|\(\s*\*\s*\)/gi, (m) => (m.startsWith("(") ? "(x)" : "select_all")));
+const rawText = (spec, v) => `${String(Number(Number(v).toPrecision(15)))}${spec?.unit === "%" ? "%" : spec?.unit ? ` ${spec.unit}` : ""}`;
+
+/**
+ * The note for the chart caption, or null. Written only from a firing record (single D or pair D, status ok) of a chart with exactly one
+ * value set (several series / facets / axes would need a per-set label, which is left out), a source note, and no number word in the text.
+ * Wording is only "far above / below the rest of the data" with the bound of the rest; no cause, never "abnormal" or "error".
+ * Numbers are the chart's own displayed values (fmtSpec); the model writes none of them.
+ */
+export function extremeNoteText(spec, rows) {
+  if (String(spec?.source_note ?? "").trim().length < 3) return null;
+  if (spec?.chart_type === "scatter") return null;
+  const sets = valueSets(spec, rows);
+  if (sets.length !== 1) return null;
+  const records = probeValueSet(spec, sets[0]);
+  const zh = String(spec?.language ?? "en") === "zh";
+  const shown = (v) => fmtSpec(spec, v);
+  let rounded = false;
+  const show = (v) => { const t = shown(v); if (t !== rawText(spec, v)) rounded = true; return t; };
+  const sentences = [];
+  for (const rec of records) {
+    if (rec.end !== "high" && rec.end !== "low") continue;
+    const high = rec.end === "high";
+    const pairFires = rec.pair_candidate_trigger === true && rec.pair_status === "ok";
+    const singleFires = rec.candidate_trigger === true && rec.status === "ok";
+    if (!singleFires && !pairFires) continue;
+    const names = singleFires ? [rec.object] : rec.pair_members;
+    const values = singleFires ? [rec.value] : rec.pair_values;
+    const bound = singleFires ? (high ? rec.rest_max : rec.rest_min) : (high ? rec.pair_rest_max : rec.pair_rest_min);
+    if (names.some((n) => !n) || values.some((v) => !Number.isFinite(Number(v))) || !Number.isFinite(Number(bound))) continue;
+    const items = names.map((n, i) => `${n} ${show(values[i])}`);
+    sentences.push(zh
+      ? `${items.join("、")}，${high ? "远高于" : "远低于"}其余数据（其余都${high ? "不超过" : "不低于"} ${show(bound)}）`
+      : `${items.join(" and ")}, far ${high ? "above" : "below"} the rest of the data (all others ${high ? "no higher than" : "no lower than"} ${show(bound)})`);
+  }
+  if (!sentences.length) return null;
+  const computed = computedSql(spec?.sql);
+  let text = zh ? `${sentences.join("；")}。` : `${sentences.join("; ")}.`;
+  if (computed) text = zh ? `按所给数据计算：${text}` : `Calculated from the data: ${text}`;
+  else if (rounded) text += zh ? "数值按图上取整显示。" : " Values are rounded as on the chart.";
+  return numberWordIn(text) ? null : text;
 }
 
 /** Run the probe and write runtime/extreme-probe/extreme_probe-<key>.json (once; an existing file is left alone). Returns { path }. */
