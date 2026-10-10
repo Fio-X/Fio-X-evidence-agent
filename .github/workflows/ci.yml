@@ -272,6 +272,12 @@ jobs:
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
           node scripts/test_held_chart_types.mjs
+          node scripts/test_qa_no_empty_pass.mjs
+          node scripts/test_qa_not_applicable.mjs
+          node scripts/test_qa_all_zero.mjs
+          node scripts/test_qa_all_zero_tool.mjs
+          node scripts/test_qa_empty_pass_shapes.mjs
+          node scripts/test_qa_no_empty_pass_fixtures.mjs
       # The two off-state byte comparisons (flow maps back against 1296164, flow-map labels against the tree before the label layer) need history;
       # fetch-depth is 0 above, and a SKIP here would be a failure, not a pass.
       - name: Flow-map tests (a skipped comparison fails)
