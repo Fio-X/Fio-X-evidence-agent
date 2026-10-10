@@ -3,9 +3,12 @@
 // everywhere it is read; geo_flow_map (fails render QA on all three flow topics), hierarchy_tree and trajectory_profile stay held.
 // geo_edges is offered again because cartographic_flow_map's default data_topology is geo_edges (newsroom.ts plan defaults).
 //  1. Off (unset, 0, true, yes, "", " 1", 01), and on without the hold: tool definitions of every profile are byte-identical to the base (1296164).
-//  2. On: both flow maps are in the plan and chain enums and accepted (no CHART_TYPE_HELD); the other two are still refused by plan, lint, render.
-//  3. On: geo_edges is offered again, hierarchy values stay refused (PLAN_VALUE_HELD); the strict-grammar refusal lists the flow maps for flow and
-//     geography but never a held type; the wording and hints name the flow maps and never hierarchy_tree/trajectory_profile.
+//  2. On: cartographic_flow_map is in the plan and chain enums and accepted (no CHART_TYPE_HELD); geo_flow_map, hierarchy_tree and trajectory_profile
+//     are still refused by plan, lint, render.
+//  3. On: geo_edges is offered again, hierarchy values stay refused (PLAN_VALUE_HELD); the strict-grammar refusal lists cartographic_flow_map for flow
+//     and geography but never a held type; the wording and hints say "cartographic flow map" (the name the plan accepts, so no retry on geo_flow_map)
+//     and never name geo_flow_map, hierarchy_tree or trajectory_profile.
+//  Without the base history (a shallow clone) the byte comparison prints SKIP; NEWSROOM_REQUIRE_NO_SKIP=1 turns that SKIP into a failure.
 //  4. The difference between base+hold and on is exactly those enum entries, values and sentences, shown path by path.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -17,6 +20,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASE = "1296164";
+// read before tools() clears every NEWSROOM_ variable from the environment
+const REQUIRE_NO_SKIP = process.env.NEWSROOM_REQUIRE_NO_SKIP === "1";
 const scratch = mkdtempSync(join(tmpdir(), "flow-back-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const stub = (dir, name, source) => {
@@ -78,7 +83,7 @@ for (const hints of [{}, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) {
   for (const t of STAY) assert.ok(!text.includes(t), `no mention of ${t} outside enums${JSON.stringify(hints)}`);
   const plan = on.get("newsroom_viz_plan");
   assert.ok(plan.description.includes("spatial flows") && !plan.description.includes("hierarch"), "description names spatial flows, no hierarchies");
-  assert.ok(plan.promptGuidelines.some((s) => s.includes("geographic flow map, adjacency matrix, timeline")), "guideline names the flow map, not the hierarchy tree");
+  assert.ok(plan.promptGuidelines.some((s) => s.includes("cartographic flow map, adjacency matrix, timeline") && !s.includes("geographic flow map")), "guideline names the cartographic flow map, not geo_flow_map or the hierarchy tree");
   if (hints.NEWSROOM_SPEED_RULE_HINTS) assert.ok(JSON.stringify(plan.parameters).includes("flow sankey/alluvial/parallel_sets/cartographic_flow_map;") && !JSON.stringify(plan.parameters).includes("geo_flow_map/"), "rule hint names cartographic_flow_map only");
   // refusals: held pair refused by plan, lint and render; the flow maps are not refused (they fail later, on missing data, not as held)
   const refused = (t) => new RegExp(`^CHART_TYPE_HELD: chart_type '${t}' is not available`);
@@ -108,7 +113,8 @@ for (const hints of [{}, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) {
 // ---- 1: off is byte-identical to the base; 4: the exact difference ----------------------------------------------------------------
 const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", BASE, "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
 if (archive.status !== 0) {
-  console.log(`${BASE} history unavailable; skipped the byte comparison with it`);
+  console.log(`SKIP flow-maps-back: ${BASE} history unavailable, so the byte comparison with it did not run`);
+  if (REQUIRE_NO_SKIP) throw new Error("skipped check under NEWSROOM_REQUIRE_NO_SKIP=1");
 } else {
   const bdir = mkdtempSync(join(scratch, "base-"));
   writeFileSync(join(bdir, "b.tar"), archive.stdout);
