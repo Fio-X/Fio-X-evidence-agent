@@ -216,7 +216,7 @@ export function summarizeAwardMode(input, options = {}) {
     if (!Number.isFinite(value) || value < 0) throw new Error(`award-mode metric '${key}' must be a finite non-negative number`);
   }
   const missingRefs = Object.entries(refs).filter(([key, value]) => key !== 'preference_ref' && !value).map(([key]) => key);
-  const conceptBudgetOk = metrics.concepts_generated >= 8 && metrics.concepts_generated <= 20 && metrics.concepts_killed >= Math.ceil(metrics.concepts_generated / 2);
+  const conceptBudgetOk = metrics.concepts_generated >= (options?.minConcepts ?? 8) && metrics.concepts_generated <= 20 && metrics.concepts_killed >= Math.ceil(metrics.concepts_generated / 2);
   const prototypeBudgetOk = metrics.prototype_count >= 2;
   const rasterObserved = metrics.raster_revision_count >= 1;
   const claimedStatus = text(input?.preference_status || 'PENDING').toUpperCase();
