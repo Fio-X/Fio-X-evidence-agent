@@ -5,7 +5,7 @@ import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -8102,6 +8102,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   }
   // World mode: only the range ends and highlight_values carry text (at most 8); every other economy is colour only.
   const worldLabelled = worldMode ? worldLabelIso3s(joined, spec) : null;
+  // World list mode (NEWSROOM_MAP_WORLD_LIST=1): every other country is printed once in a grouped list under the map.
+  const worldListMode = worldMode && isWorldListMode(spec);
   const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3) && (!worldLabelled || worldLabelled.has(item.iso3))).map((item) => {
     const idx = item.featureIndices[0];
     const point = neFeatureAttributes(idx)?.label ?? [lon0, lat0];
@@ -9470,8 +9472,55 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
   );
   const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
-  const footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
-  const footnoteH = numberedFallbackItems.length ? Math.max(0, footnoteBlockBottom - baseSlotBottom) : 0;
+  let footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
+  // World list mode: the countries the map does not label, once each, grouped by legend class under the map. Rows use
+  // the footnote name/value roles (data-iso3), so both verifiers read them back under NEWSROOM_VERIFY_MAP_FOOTNOTES=1.
+  const worldListParts = [];
+  if (worldListMode) {
+    const listIso3 = worldListIso3s(joined, spec);
+    const entries = joined.filter((item) => listIso3.has(item.iso3)).map((item) => {
+      const value = n(item.row[spec.value_field]) ?? 0;
+      return { item, value, cls: classifyValue(value, breaks), name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec) };
+    });
+    if (entries.length) {
+      const swatchW = 10, listNameW = Math.max(...entries.map((e) => choroplethLabelWidth(e.name, font))), listValueW = Math.max(...entries.map((e) => choroplethLabelWidth(e.valueText, font)));
+      const listColumnW = swatchW + footnoteFieldGap + listNameW + footnoteFieldGap + listValueW;
+      const listColumns = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (listColumnW + footnoteColumnGap)));
+      const unitSuffix = spec.unit ? ` ${spec.unit}` : "";
+      const classCount = breaks.length - 1;
+      const classRange = (i) => {
+        if (classPlan.skewed && i === 0) return `<${fmtSpec(spec, breaks[1], "")}${unitSuffix}`;
+        if (classPlan.skewed && i === classCount - 1) return `\u2265${fmtSpec(spec, breaks[classCount - 1], "")}${unitSuffix}`;
+        return `${fmtSpec(spec, breaks[i], "")}\u2013${fmtSpec(spec, breaks[i + 1], "")}${unitSuffix}`;
+      };
+      let cursor = (numberedFallbackItems.length ? footnoteBlockBottom + 6 : footnoteListTop);
+      worldListParts.push(`<g data-role="choropleth-world-list">`);
+      for (let cls = 0; cls < classCount; cls++) {
+        const group = entries.filter((e) => e.cls === cls).sort((a, b) => b.value - a.value || String(a.item.iso3).localeCompare(String(b.item.iso3)));
+        if (!group.length) continue;
+        worldListParts.push(
+          `<rect data-role="choropleth-world-list-swatch" x="${plotLeft}" y="${(cursor - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${CHOROPLETH_RAMP[cls]}"/>`,
+          `<text data-role="choropleth-world-list-group" data-class="${cls}" x="${plotLeft + swatchW + footnoteFieldGap}" y="${cursor.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(classRange(cls))}</text>`
+        );
+        const groupRows = Math.ceil(group.length / listColumns);
+        group.forEach((e, i) => {
+          const rowY = cursor + footnoteRowH + (i % groupRows) * footnoteRowH;
+          const columnX = plotLeft + Math.floor(i / groupRows) * (listColumnW + footnoteColumnGap);
+          const nameX = columnX + swatchW + footnoteFieldGap;
+          const valueX = nameX + listNameW + footnoteFieldGap + listValueW;
+          worldListParts.push(
+            `<rect data-role="choropleth-world-list-swatch" x="${columnX.toFixed(1)}" y="${(rowY - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${CHOROPLETH_RAMP[cls]}"/>`,
+            `<text data-role="choropleth-footnote-name" data-iso3="${esc(e.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(e.name)}</text>`,
+            `<text data-role="choropleth-footnote-value" data-iso3="${esc(e.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(e.valueText)}</text>`
+          );
+        });
+        cursor += footnoteRowH + groupRows * footnoteRowH + 8;
+      }
+      worldListParts.push(`</g>`);
+      footnoteBlockBottom = Math.max(footnoteBlockBottom, cursor + 2);
+    }
+  }
+  const footnoteH = numberedFallbackItems.length || worldListParts.length ? Math.max(0, footnoteBlockBottom - baseSlotBottom) : 0;
   if (numberedFallbackItems.length) {
     // Split into three text runs so the name and value each land in their
     // own data-role="choropleth-label"/"choropleth-label-value" node (same
@@ -9514,6 +9563,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     });
     footnoteParts.push(`</g>`);
   }
+  footnoteParts.push(...worldListParts);
   if (footnoteH) {
     f = mobile ? mobileFrame(spec, bodyH + insetStripH + footnoteH) : frame(spec, bodyH + insetStripH + footnoteH);
   }
@@ -9926,9 +9976,22 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   let noDataDrawn = false;
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
+  const worldListDrawn = new Set();
   for (let index = 0; index < featureCount; index++) {
     if (worldMode && isAntarcticaFeature(index)) continue;
-    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    const listItem = worldListMode ? dataByIndex.get(index) : null;
+    // A country the basemap draws in several pieces (Australia has three) is one choropleth-data path, so it carries
+    // one data-iso3/data-value pair for the verifiers' "exactly one region" count.
+    if (listItem && listItem.featureIndices.length > 1 && worldListDrawn.has(listItem.iso3)) continue;
+    let d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    if (listItem && listItem.featureIndices.length > 1) {
+      worldListDrawn.add(listItem.iso3);
+      d = listItem.featureIndices
+        .filter((idx) => !isAntarcticaFeature(idx))
+        .map((idx) => featurePath(neFeatureGeometry(idx), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } }))
+        .filter(Boolean)
+        .join(" ");
+    }
     if (!d) continue;
     const item = dataByIndex.get(index);
     if (!item) noDataDrawn = true;
