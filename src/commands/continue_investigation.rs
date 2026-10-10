@@ -370,10 +370,10 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 None
             };
             let primary = bundle.primary_artifact()?;
-            // A qualified publication page comes first (the order discover_delivery uses when nothing is declared); only
-            // without one does the line name the round's own newest passing chart.
+            // This round's own qualified publication page comes first (the order discover_delivery uses when nothing is
+            // declared); only without one does the line name the round's own newest passing chart.
             let latest = if followup_primary_latest_on() {
-                match bundle.publication_page()? {
+                match bundle.publication_page(round_started_at)? {
                     Some(page) => Some(page),
                     None => bundle.latest_passing_chart_since(round_started_at)?,
                 }
