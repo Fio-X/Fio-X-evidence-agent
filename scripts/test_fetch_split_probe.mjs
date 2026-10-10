@@ -312,30 +312,51 @@ try {
   }
   check("on: results, errors, requests and data files are identical; only runtime/fetch-split-probe/<hash>.json diagnostics are added, one per splittable request, with the four outcome types apart");
 
-  // One probe run with NEWSROOM_GROUP_BOUNDARY=1: what the boundary report says about the diagnostic write.
+  // One probe run with NEWSROOM_GROUP_BOUNDARY=1: the diagnostic is written by the flow group's writer (probe_writer.mjs, K117 pattern), so the
+  // report row is ok, names download_data as requested_by, and neither cross_group nor 待查 grows against the same scenario with the probe off.
   {
+    const rowsOf = (artifact) => {
+      const report = JSON.parse(readFileSync(join(artifact, "runtime/group-boundary-report.json"), "utf8"));
+      return (report.records ?? report.entries ?? report.rows ?? []);
+    };
+    const count = (rows, status) => rows.filter((r) => r.status === status).reduce((sum, r) => sum + (r.count ?? 1), 0);
     const withBoundary = await scenario({ NEWSROOM_FETCH_SPLIT_PROBE: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
-    const reportPath = join(withBoundary.artifact, "runtime/group-boundary-report.json");
-    assert.ok(existsSync(reportPath), "the boundary report was written");
-    const report = JSON.parse(readFileSync(reportPath, "utf8"));
-    const rows = (report.records ?? report.entries ?? report.rows ?? []).map((r) => ({ tool: r.tool, kind: r.kind, owner: r.owner, status: r.status, count: r.count }));
+    assert.ok(existsSync(join(withBoundary.artifact, "runtime/group-boundary-report.json")), "the boundary report was written");
+    const rows = rowsOf(withBoundary.artifact);
     if (process.env.K99_PRINT_BOUNDARY === "1") console.log(JSON.stringify(rows));
-    const probeRow = rows.find((r) => r.kind === "project_state");
-    assert.ok(probeRow, "the diagnostic write is reported");
-    assert.equal(probeRow.tool, "download_data");
-    assert.equal(probeRow.status, "cross_group", "download_data (knowledge) writing under runtime/ (project_state, agent) is cross_group");
+    const probeRows = rows.filter((r) => r.kind === "project_state");
+    assert.equal(probeRows.length, 1, "exactly one report row for the diagnostic write");
+    const probeRow = probeRows[0];
+    assert.equal(probeRow.tool, "probe_writer");
+    assert.equal(probeRow.requested_by, "download_data", "the asking tool stays visible");
+    assert.equal(probeRow.tool_group, "agent");
+    assert.equal(probeRow.owner, "agent");
+    assert.equal(probeRow.status, "ok", "the flow group's writer writing under runtime/ (project_state, agent) is ok");
     const plain = await scenario({ NEWSROOM_GROUP_BOUNDARY: "1" });
-    const plainReport = JSON.parse(readFileSync(join(plain.artifact, "runtime/group-boundary-report.json"), "utf8"));
-    const plainRows = (plainReport.records ?? plainReport.entries ?? plainReport.rows ?? []);
-    assert.ok(!plainRows.some((r) => r.kind === "project_state"), "with the probe off the same scenario adds no project_state / cross_group row");
-    check("boundary run (NEWSROOM_GROUP_BOUNDARY=1): probe on adds exactly one cross_group row (download_data -> runtime/, project_state); probe off adds none");
+    const plainRows = rowsOf(plain.artifact);
+    assert.ok(!plainRows.some((r) => r.kind === "project_state"), "with the probe off the same scenario adds no project_state row");
+    assert.equal(count(rows, "cross_group"), count(plainRows, "cross_group"), "cross_group does not grow");
+    assert.equal(count(rows, "待查"), count(plainRows, "待查"), "待查 does not grow");
+    check("boundary run (NEWSROOM_GROUP_BOUNDARY=1): the probe write is one ok row by probe_writer (requested_by download_data); cross_group and 待查 equal the probe-off run");
   }
 
-  // The boundary report with the probe on: the diagnostic lands under runtime/ (project_state, agent) written by download_data (knowledge).
   const groupsMod = await import(pathToFileURL(join(treeDir, "runtime/pi/groups.mjs")).href);
   const classified = groupsMod.classifyArtifact(`runtime/fetch-split-probe/${"a".repeat(64)}.json`);
   assert.deepEqual(classified, { kind: "project_state", owner: "agent" });
-  check("boundary: the diagnostic path classifies as project_state (owner agent), so a download_data write is cross_group (reported, see the report)");
+  check("boundary: the diagnostic path classifies as project_state (owner agent), which the flow group's probe_writer owns");
+
+  // The writer accepts only its own folder.
+  {
+    const writerMod = await import(pathToFileURL(join(treeDir, "runtime/pi/probe_writer.mjs")).href);
+    const writes = [];
+    const w = writerMod.probeWriter({ writeArtifactIfAbsent: async (ref, value) => { writes.push(ref); return ref; } });
+    await w.writeDiagnostic("runtime/fetch-split-probe/x.json", { a: 1 });
+    for (const bad of ["claims.jsonl", "runtime/fetch-split-probe/../claims.jsonl", "data/x.json", 5]) {
+      await assert.rejects(async () => w.writeDiagnostic(bad, {}), /PROBE_WRITER_REF/);
+    }
+    assert.deepEqual(writes, ["runtime/fetch-split-probe/x.json"]);
+    check("probe_writer: accepts only runtime/fetch-split-probe/, refuses any other path");
+  }
 } finally {
   globalThis.fetch = realFetch;
   globalThis.setTimeout = realSetTimeout;
