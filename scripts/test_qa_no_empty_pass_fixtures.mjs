@@ -20,6 +20,7 @@ const TABLE = [
 const run = (name, on) => {
   const env = { ...process.env };
   delete env.NEWSROOM_QA_NO_EMPTY_PASS;
+  delete env.NEWSROOM_GROUP_BOUNDARY; // test_shadow_parity compares the file set with the baseline and the boundary report adds one
   if (on) env.NEWSROOM_QA_NO_EMPTY_PASS = "1";
   return spawnSync("node", [`scripts/test_${name}.mjs`], { cwd: ROOT, env, encoding: "utf8", timeout: 240000 }).status === 0;
 };
