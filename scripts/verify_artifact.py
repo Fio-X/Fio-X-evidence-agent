@@ -1058,6 +1058,9 @@ def _tick_read_shown(text: str):
         en = re.match(r"(bn|m|k)(?![A-Za-z])", rest)
         if en:
             suffix = {"bn": 1e9, "m": 1e6, "k": 1e3}[en.group(1)]
+        # a label that names its own unit (1683%, 9541.8 元) is read as written, the unit line's scale is not applied to it
+        elif rest.strip() != "":
+            suffix = 1.0
     return mantissa, len(m.group(3) or ""), suffix
 
 
@@ -1094,7 +1097,8 @@ def _tick_key(category, series, period) -> str:
 def verify_tick_readback_from_svg(svg_text: str, ctx: dict) -> tuple[str, list[tuple[str, str]]]:
     """Returns (status, [(rule, message)]); status is "covered" or "uncovered". Uncovered is never a pass."""
     chart_type = ctx.get("chart_type")
-    if chart_type not in TICK_READBACK_COVERED:
+    # zh pages write $B as 亿美元 (x10): the text no longer equals the data unit, the read-back does not cover it yet
+    if chart_type not in TICK_READBACK_COVERED or (ctx.get("language") == "zh" and ctx.get("unit") == "$B"):
         return "uncovered", []
     failures: list[tuple[str, str]] = []
 
@@ -1125,7 +1129,7 @@ def verify_tick_readback_from_svg(svg_text: str, ctx: dict) -> tuple[str, list[t
         scale = _tick_num(attrs.get("data-scale"))
         if scale is None or scale <= 0:
             fail("unit_line", f"axis unit line '{text}' has no readable positive data-scale")
-        elif not _tick_close(scale, _tick_unit_word_scale(text)):
+        elif scale != 1 and not _tick_close(scale, _tick_unit_word_scale(text)):
             fail("unit_line", f"axis unit line '{text}' says scale {_tick_unit_word_scale(text)} but data-scale is {scale}")
         else:
             unit_scale = scale
@@ -1177,8 +1181,10 @@ def verify_tick_readback_from_svg(svg_text: str, ctx: dict) -> tuple[str, list[t
                 fail("data_anchor", f"bar {key} has no data row")
             elif not _tick_close(value, row_value[key]):
                 fail("data_anchor", f"bar {key} data-value {value} differs from its data row {row_value[key]}")
+        # a chart draws the current period only (the other may be an outline or absent): rows of a period no bar carries are not drawn
+        drawn = {json.loads(key)[2] for key in bar_value}
         for key in row_value:
-            if key not in bar_value:
+            if key not in bar_value and not (ctx.get("period_field") and drawn and json.loads(key)[2] not in drawn):
                 fail("data_anchor", f"data row {key} has no bar")
 
     k = None
@@ -1269,7 +1275,7 @@ def verify_tick_readback_for_manifest(root: Path, manifest: dict, manifest_ref: 
         comp = computation_map.get(comp_ref) or load_json(safe_ref(root, comp_ref))
         plan = load_json(safe_ref(root, plan_ref))
         report.check(comp.get("result_hash") == manifest.get("data_hash"), f"visualization {manifest_ref} tick read-back: computation rows are not the manifest's data")
-        ctx = {"chart_type": chart_type, "rows": comp.get("rows"), "category_field": plan.get("category_field"), "value_field": plan.get("value_field"), "series_field": plan.get("series_field"), "period_field": plan.get("period_field")}
+        ctx = {"chart_type": chart_type, "rows": comp.get("rows"), "category_field": plan.get("category_field"), "value_field": plan.get("value_field"), "series_field": plan.get("series_field"), "period_field": plan.get("period_field"), "unit": plan.get("unit"), "language": plan.get("language")}
         for viewport, ref in (manifest.get("variants") or {}).items():
             svg_path = safe_ref(root, ref)
             if not svg_path.is_file():

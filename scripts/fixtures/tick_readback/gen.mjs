@@ -69,7 +69,7 @@ function annotateMirrored(svg, rows, writing) {
 const fixtures = {};
 function add(name, svg, spec, rows) {
   writeFileSync(join(here, `${name}.svg`), svg);
-  fixtures[name] = { file: `${name}.svg`, chart_type: spec.chart_type, category_field: spec.category_field, value_field: spec.value_field, ...(spec.series_field ? { series_field: spec.series_field } : {}), rows };
+  fixtures[name] = { file: `${name}.svg`, chart_type: spec.chart_type, category_field: spec.category_field, value_field: spec.value_field, ...(spec.series_field ? { series_field: spec.series_field } : {}), ...(spec.period_field ? { period_field: spec.period_field } : {}), unit: spec.unit, language: spec.language, rows };
 }
 const hb = renderVizSvg(hbSpec, hbRows);
 add("hb_A", annotateHorizontal(hb, hbRows, "A"), hbSpec, hbRows);
@@ -80,5 +80,29 @@ add("hb_OFF", annotateHorizontal(renderVizSvg(hbSpec, hbRowsBig), hbRowsBig, "A"
 const mb = renderVizSvg(mbSpec, mbRows);
 add("mb_A", annotateMirrored(mb, mbRows, "A"), mbSpec, mbRows);
 add("mb_B", annotateMirrored(mb, mbRows, "B"), mbSpec, mbRows);
+
+// Real renderer output with NEWSROOM_QA_TICK_READBACK=1 (no hand annotation): the renderer's own attributes under the three writings,
+// a unit that holds a scale word (百万吨: data-scale stays 1), and a mirrored chart with two periods of which one is drawn.
+function renderOn(spec, rows, env) {
+  const keys = ["NEWSROOM_QA_TICK_READBACK", ...Object.keys(env)];
+  for (const k of keys) process.env[k] = k === "NEWSROOM_QA_TICK_READBACK" ? "1" : env[k];
+  try { return renderVizSvg(spec, rows); } finally { for (const k of keys) delete process.env[k]; }
+}
+const B_ENV = { NEWSROOM_TYPESET_AXIS_NOTATION: "1" };
+const K_ENV = { NEWSROOM_TYPESET_AXIS_NOTATION: "1", NEWSROOM_TYPESET_VALUE_LABEL_AXIS: "1", NEWSROOM_AXIS_NICE_MAX: "1" };
+add("rw_hb_off", renderOn(hbSpec, hbRows, {}), hbSpec, hbRows);
+add("rw_hb_B", renderOn(hbSpec, hbRows, B_ENV), hbSpec, hbRows);
+add("rw_hb_K", renderOn(hbSpec, hbRows, K_ENV), hbSpec, hbRows);
+const tonSpec = { ...hbSpec, unit: "百万吨", title: "各国排放", subtitle: "百万吨" };
+const tonRows = [["中国", 11472.5], ["美国", 4853.1], ["印度", 2693.4], ["俄罗斯", 1652.9]].map(([city, pop]) => ({ city, pop }));
+add("rw_hb_unitword", renderOn(tonSpec, tonRows, B_ENV), tonSpec, tonRows);
+const mpSpec = { ...mbSpec, period_field: "year" };
+const mpRows = [];
+for (const year of ["2014", "2024"]) bands.forEach((b, i) => { mpRows.push({ band: b, side: "男", year, pop: (1200 + i * 310 + (year === "2014" ? -90 : 0)) * 10000 + 5 }); mpRows.push({ band: b, side: "女", year, pop: (1100 + i * 280 + (year === "2014" ? -80 : 0)) * 10000 + 7 }); });
+add("rw_mb_period", renderOn(mpSpec, mpRows, B_ENV), mpSpec, mpRows);
+const usdSpec = { ...hbSpec, unit: "$B", title: "各国投资", subtitle: "十亿美元" };
+const usdRows = [["中国", 9.4], ["美国", 6.1], ["日本", 2.2], ["德国", 1.9]].map(([city, pop]) => ({ city, pop }));
+add("rw_hb_usd_zh", renderOn(usdSpec, usdRows, {}), usdSpec, usdRows);
+add("rw_mb_K", renderOn(mbSpec, mbRows, K_ENV), mbSpec, mbRows);
 writeFileSync(join(here, "fixtures.json"), JSON.stringify(fixtures, null, 1) + "\n");
 console.log(Object.keys(fixtures).join(" "));
