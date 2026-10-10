@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 const results = [];
+const scratch = []; // every temp directory this test makes; removed on exit unless NEWSROOM_TEST_KEEP_TMP=1
+process.on("exit", () => { if (process.env.NEWSROOM_TEST_KEEP_TMP !== "1") for (const dir of scratch) rmSync(dir, { recursive: true, force: true }); });
 const ok = (name) => { results.push(name); console.log(`${name} -- PASS`); };
 
 // ---------------------------------------------------------------- Part A: the module
@@ -135,6 +137,7 @@ export const Type = {
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
   const tree = mkdtempSync(join(tmpdir(), "data-notes-tree-"));
+  scratch.push(tree);
   cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(tree, "config"), { recursive: true });
   stub(tree, "typebox", TYPEBOX);
@@ -169,7 +172,9 @@ export const Type = {
   });
   async function run(env, csv) {
     const tools = register(env);
-    const art = join(mkdtempSync(join(tmpdir(), "data-notes-run-")), "run");
+    const runDir = mkdtempSync(join(tmpdir(), "data-notes-run-"));
+    scratch.push(runDir);
+    const art = join(runDir, "run");
     for (const d of ["visualizations/plans", "visualizations/lints", "computations", "data/origins", "sources"]) mkdirSync(join(art, d), { recursive: true });
     writeFileSync(join(art, "data", "africa.csv"), csv);
     writeFileSync(join(art, "data", "africa.meta.json"), JSON.stringify({ file: "africa.csv", sha256: sha256(csv) }));
