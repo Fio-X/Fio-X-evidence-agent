@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 pub struct InvestigationBundle {
@@ -619,6 +620,28 @@ impl InvestigationBundle {
         Ok(delivery.primary_artifact.zip(delivery.primary_kind))
     }
 
+    /// The first publication page a top-level publication manifest hands a reader that was written at or after
+    /// `since` (the round's start): the same candidates and test `discover_delivery` uses to prefer a page when
+    /// story.json declares nothing. A page an earlier round left does not count. Unlike `primary_artifact` it is not
+    /// overridden by a declared chart.
+    pub fn publication_page(&self, since: SystemTime) -> Result<Option<(String, String)>> {
+        let mut candidates = publication_candidates(&self.dir, Some(since))?;
+        candidates.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(candidates
+            .into_iter()
+            .find(is_publication_html)
+            .map(|candidate| (candidate.path, "html".to_string())))
+    }
+
+    /// The newest chart a follow-up round made that passed its checks, read from the program's own
+    /// records only: a `visualizations/<key>.json` manifest written at or after `since` whose
+    /// `render_qa.passed` is true and `artifact_status` is `VERIFIED`, with a passing critic record
+    /// under `visualizations/critics/` bound to that manifest. Nothing here reads the model's text.
+    /// `None` when the round made no such chart.
+    pub fn latest_passing_chart_since(&self, since: SystemTime) -> Result<Option<(String, String)>> {
+        latest_passing_chart(&self.dir, since)
+    }
+
     /// `required_pngs` is how many PNG renders a PNG/screenshot request
     /// needs: 0 when none was requested, 1 for the desktop page alone, 2 for
     /// the desktop/mobile pair when mobile pages are enabled.
@@ -1111,19 +1134,10 @@ fn is_publication_html(candidate: &DeliveryCandidate) -> bool {
         && candidate.path.to_ascii_lowercase().ends_with(".html")
 }
 
-/// Every path a top-level manifest can hand a reader as its delivered
-/// output - the same manifests `verify.rs` and `verify_artifact.py` check:
-/// `publications/<k>/manifest.json` for a direct child `k` of
-/// `publications/` other than `plans`, `qa` or `rejected`, plus direct-child
-/// `infographics/*.json` and `visualizations/*.json`. A rejected render
-/// (kept only under `<dir>/rejected/<key>/`), an orphaned SVG whose manifest
-/// a critic rejected, a publication moved to `publications/rejected/<k>/`,
-/// and a QA screenshot under `publications/qa/<k>/` all fall outside this
-/// set, so none of them can ever be picked as the primary. A manifest that
-/// fails to parse, or that has no usable ref, contributes nothing.
-fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
+/// The publication entries of `delivery_candidates`. With `since`, only a manifest written at or after that
+/// time counts (the page this round made, not one an earlier round left).
+fn publication_candidates(root: &Path, since: Option<SystemTime>) -> Result<Vec<DeliveryCandidate>> {
     let mut candidates = Vec::new();
-
     let publications_dir = root.join("publications");
     if publications_dir.is_dir() {
         for entry in fs::read_dir(&publications_dir)? {
@@ -1137,7 +1151,14 @@ fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
             ) {
                 continue;
             }
-            let Some(manifest) = read_manifest_json(&entry.path().join("manifest.json")) else {
+            let manifest_path = entry.path().join("manifest.json");
+            if let Some(since) = since {
+                match fs::metadata(&manifest_path).and_then(|meta| meta.modified()) {
+                    Ok(modified) if modified >= since => {}
+                    _ => continue,
+                }
+            }
+            let Some(manifest) = read_manifest_json(&manifest_path) else {
                 continue;
             };
             let Some(html_ref) = manifest.get("html_ref").and_then(Value::as_str) else {
@@ -1151,6 +1172,23 @@ fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
             }
         }
     }
+    Ok(candidates)
+}
+
+/// Every path a top-level manifest can hand a reader as its delivered
+/// output - the same manifests `verify.rs` and `verify_artifact.py` check:
+/// `publications/<k>/manifest.json` for a direct child `k` of
+/// `publications/` other than `plans`, `qa` or `rejected`, plus direct-child
+/// `infographics/*.json` and `visualizations/*.json`. A rejected render
+/// (kept only under `<dir>/rejected/<key>/`), an orphaned SVG whose manifest
+/// a critic rejected, a publication moved to `publications/rejected/<k>/`,
+/// and a QA screenshot under `publications/qa/<k>/` all fall outside this
+/// set, so none of them can ever be picked as the primary. A manifest that
+/// fails to parse, or that has no usable ref, contributes nothing.
+fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
+    let mut candidates = Vec::new();
+
+    candidates.extend(publication_candidates(root, None)?);
 
     for (child, origin) in [
         ("infographics", ManifestOrigin::Infographic),
@@ -1184,6 +1222,73 @@ fn delivery_candidates(root: &Path) -> Result<Vec<DeliveryCandidate>> {
 
     candidates.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(candidates)
+}
+
+fn latest_passing_chart(root: &Path, since: SystemTime) -> Result<Option<(String, String)>> {
+    let dir = root.join("visualizations");
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let mut passing_critics = std::collections::BTreeSet::new();
+    let critics = dir.join("critics");
+    if critics.is_dir() {
+        for entry in fs::read_dir(&critics)? {
+            let path = entry?.path();
+            let Some(record) = read_manifest_json(&path) else {
+                continue;
+            };
+            if record.get("passed").and_then(Value::as_bool) == Some(true) {
+                if let Some(manifest_ref) = record.get("manifest_ref").and_then(Value::as_str) {
+                    passing_critics.insert(manifest_ref.to_string());
+                }
+            }
+        }
+    }
+    let mut newest: Option<(SystemTime, String)> = None;
+    for entry in fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() || path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) else {
+            continue;
+        };
+        if modified < since {
+            continue;
+        }
+        let Some(manifest) = read_manifest_json(&path) else {
+            continue;
+        };
+        let manifest_ref = format!("visualizations/{}", entry.file_name().to_string_lossy());
+        let passed = manifest.pointer("/render_qa/passed").and_then(Value::as_bool) == Some(true)
+            && manifest.get("artifact_status").and_then(Value::as_str) == Some("VERIFIED")
+            && passing_critics.contains(&manifest_ref);
+        if !passed {
+            continue;
+        }
+        let reference = manifest
+            .pointer("/variants/desktop")
+            .and_then(Value::as_str)
+            .or_else(|| manifest.get("svg").and_then(Value::as_str));
+        let Some(path) = reference.and_then(|reference| accept_ref(root, reference)) else {
+            continue;
+        };
+        if newest
+            .as_ref()
+            .map_or(true, |(time, key)| (modified, &path) > (*time, key))
+        {
+            newest = Some((modified, path));
+        }
+    }
+    Ok(newest.map(|(_, path)| {
+        let kind = if path.to_ascii_lowercase().ends_with(".png") {
+            "png"
+        } else {
+            "svg"
+        };
+        (path, kind.to_string())
+    }))
 }
 
 fn read_manifest_json(path: &Path) -> Option<Value> {
