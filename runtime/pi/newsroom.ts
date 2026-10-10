@@ -4658,7 +4658,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         ...(spec.source_note_program === true ? { source_note_program: true } : {}),
         alt: spec.alt,
       });
-      // NEWSROOM_EXTREME_PROBE=1 (default off): record-only diagnosis of a value far from the rest, into shadow/. Nothing is
+      // NEWSROOM_EXTREME_PROBE=1 (default off): record-only diagnosis of a value far from the rest, into runtime/extreme-probe/. Nothing is
       // returned to the model, written to the manifest, or hashed; a failure here never touches the result.
       if (extremeProbeEnabled()) await runShadow(() => writeExtremeProbe({ root: artifactRoot(), spec, rows, planRef: params.plan_ref, dataHash: currentHash }));
       // NEWSROOM_SANKEY_OTHER_NOTE=1: say which nodes the merged "other" node holds (names only).

@@ -207,5 +207,13 @@ try {
 } finally {
   // the harness folders are removed inside build()
 }
+// ---- D exactly at the candidate threshold triggers (>=, not >) ------------------------------------------------------
+{
+  const edge = pick(probeExtremes(bar(), rowsOf([0, 2, 4, 6, 8, 10, 20])), "high");  // gap 10, rest span 10 -> D = 1
+  near(edge.d, 1, "D at threshold");
+  assert.equal(edge.d, EXTREME_PROBE_CANDIDATE_D);
+  assert.equal(edge.candidate_trigger, true);
+}
+
 console.log("boundary totals (probe on):", JSON.stringify(results[0]));
 console.log("extreme probe: PASS");
