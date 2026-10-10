@@ -57,6 +57,8 @@ const MAP_SPEC_RUNTIME: &str = include_str!("../runtime/pi/map_spec.mjs");
 const SCIENTIFIC_MAP_RUNTIME: &str = include_str!("../runtime/pi/scientific_map.mjs");
 const BASEMAP_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/basemap_registry.mjs");
 const FLOW_LAYOUT_RUNTIME: &str = include_str!("../runtime/pi/flow_layout.mjs");
+const FLOW_MAP_LABELS_RUNTIME: &str = include_str!("../runtime/pi/flow_map_labels.mjs");
+const FLOW_STYLES_RUNTIME: &str = include_str!("../runtime/pi/flow_styles.mjs");
 const MAP_REFERENCE_LAYERS_RUNTIME: &str = include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
@@ -275,6 +277,8 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&scientific_map_path, SCIENTIFIC_MAP_RUNTIME)?;
     write_if_changed(&basemap_registry_path, BASEMAP_REGISTRY_RUNTIME)?;
     write_if_changed(&flow_layout_path, FLOW_LAYOUT_RUNTIME)?;
+    write_if_changed(&runtime_dir.join("flow_map_labels.mjs"), FLOW_MAP_LABELS_RUNTIME)?;
+    write_if_changed(&runtime_dir.join("flow_styles.mjs"), FLOW_STYLES_RUNTIME)?;
     write_if_changed(&map_reference_layers_path, MAP_REFERENCE_LAYERS_RUNTIME)?;
     write_if_changed(&publication_binding_path, PUBLICATION_BINDING_RUNTIME)?;
     write_if_changed(&svg_security_path, SVG_SECURITY_RUNTIME)?;
