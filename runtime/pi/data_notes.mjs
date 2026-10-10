@@ -2,13 +2,13 @@
 // different definition, forecast) become one plain Chinese line under the chart, written by the program from the file and never by the model.
 // Pure: no imports besides number_words.mjs, no file access (newsroom.ts reads the data files and hands the text in).
 //
-//   flagCellsFromJsonStat(text)   / flagCellsFromCsv(text)   -> { cells, diagnostics }   flagged cells that hold a value
-//   drawnFlagCells(cells, rows)                              -> the flagged cells some drawn row can be tied to
-//   composeDataNote(drawn, { lineMax })                      -> { text, full, truncated, diagnostics } or null
+//   flagCellsFromFile(ref, text)        -> { cells, dimensions, diagnostics }   every cell that holds a value, with its flag
+//   composeDataNote(read, rows, opts)   -> { text, full, truncated, diagnostics } or null
 //
-// A flagged cell is tied to a drawn row only when the row names the cell's period AND every other dimension that has more than one
-// category (by code or by label). A row that lacks one of them cannot be tied, so no note is written: leaving a flag out is allowed,
-// stating one about a number the chart does not draw is not.
+// A cell is tied to a drawn row only when the row names the cell's period and every other multi-category dimension (by code or by label),
+// or the plan's SQL sums that dimension away. A row that cannot be tied carries no flag: leaving a flag out is allowed, stating one about
+// a number the chart does not draw is not. When only some drawn rows carry a flag the sentence names them; when only some of a row's
+// cells do it says 含, never 为.
 import { numberWordIn } from "./number_words.mjs";
 
 export const DATA_NOTE_LINE_MAX = 40; // the whole drawn line, label included (research R6)
@@ -33,20 +33,25 @@ export function splitFlag(code) {
   return FLAG_COMBOS[raw] ?? null;
 }
 
-// ---- reading the flags out of a source file -----------------------------------------------------------------------------------------
+// ---- reading a source file ------------------------------------------------------------------------------------------------------------
+// A cell is one number of the file: { code, period: {code, label}, dims: [{id, code, label}] }. `code` is its flag ("" when unflagged).
+// `dims` holds only the dimensions with more than one category; `dimensions` lists their categories so a drawn row can be asked
+// whether it names that dimension at all.
 
 const PERIOD_DIMENSIONS = /^(?:time|time_period|timeperiod|year|period|date|年份|年度|时期|时间)$/i;
+const MAX_CELLS = 1_000_000;
 
 /** JSON-stat 2.0 (Eurostat): `status` keys a flat position to a code (object, array, or one string for every cell). */
 export function flagCellsFromJsonStat(text) {
-  const diagnostics = [];
   let doc;
-  try { doc = JSON.parse(text); } catch { return { cells: [], diagnostics: [{ rule: "unreadable", message: "not JSON" }] }; }
-  if (!doc || typeof doc !== "object" || !Array.isArray(doc.id) || !Array.isArray(doc.size) || !doc.dimension || doc.status === undefined) return { cells: [], diagnostics };
+  try { doc = JSON.parse(text); } catch { return { cells: [], dimensions: [], diagnostics: [{ rule: "unreadable", message: "not JSON" }] }; }
+  const none = (diagnostics = []) => ({ cells: [], dimensions: [], diagnostics });
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.id) || !Array.isArray(doc.size) || !doc.dimension || doc.status === undefined) return none();
   const ids = doc.id.map(String);
   const size = doc.size.map(Number);
   const total = size.reduce((a, b) => a * b, 1);
-  if (!(total > 0) || ids.length !== size.length) return { cells: [], diagnostics: [{ rule: "unreadable", message: "id and size do not agree" }] };
+  if (!(total > 0) || ids.length !== size.length) return none([{ rule: "unreadable", message: "id and size do not agree" }]);
+  if (total > MAX_CELLS) return none([{ rule: "too_large", message: "more cells than the reader takes" }]);
   const categories = ids.map((id, d) => {
     const category = doc.dimension?.[id]?.category ?? {};
     const index = category.index;
@@ -54,30 +59,31 @@ export function flagCellsFromJsonStat(text) {
     return { id, codes, labels: category.label ?? {}, size: size[d] };
   });
   const periodDim = ids.findIndex((id) => PERIOD_DIMENSIONS.test(id) || (Array.isArray(doc.role?.time) && doc.role.time.includes(id)));
-  if (periodDim < 0) return { cells: [], diagnostics: [{ rule: "no_period", message: "no time dimension" }] };
-  const positionsOf = (status) => {
-    if (typeof status === "string") return Array.from({ length: total }, (_, i) => [i, status]);
-    if (Array.isArray(status)) return status.map((code, i) => [i, code]).filter(([, code]) => typeof code === "string" && code !== "");
-    return Object.entries(status).map(([key, code]) => [Number(key), code]);
-  };
+  if (periodDim < 0) return none([{ rule: "no_period", message: "no time dimension" }]);
+  const flagAt = new Map();
+  const status = doc.status;
+  if (typeof status === "string") { for (let i = 0; i < total; i++) flagAt.set(i, status); }
+  else if (Array.isArray(status)) status.forEach((code, i) => { if (typeof code === "string" && code !== "") flagAt.set(i, code); });
+  else for (const [key, code] of Object.entries(status)) flagAt.set(Number(key), code);
   const values = doc.value;
   const hasValue = (i) => {
     const v = Array.isArray(values) ? values[i] : values?.[String(i)];
     return v !== null && v !== undefined && v !== "";
   };
+  const dimensions = categories.flatMap((c, d) => (d === periodDim || c.size <= 1 ? [] : [{ id: c.id, categories: c.codes.map((code) => ({ code, label: clean(c.labels?.[code]) })) }]));
   const cells = [];
-  for (const [position, code] of positionsOf(doc.status)) {
-    if (!Number.isInteger(position) || position < 0 || position >= total || !hasValue(position)) continue; // a flag on a missing value draws nothing
+  for (let position = 0; position < total; position++) {
+    if (!hasValue(position)) continue; // a missing value draws nothing, flagged or not
     let rest = position;
     const coordinates = new Array(ids.length);
     for (let d = ids.length - 1; d >= 0; d--) { coordinates[d] = rest % size[d]; rest = Math.floor(rest / size[d]); }
     const dims = coordinates.map((at, d) => {
-      const code2 = categories[d].codes[at];
-      return { id: categories[d].id, size: categories[d].size, code: code2 ?? String(at), label: clean(categories[d].labels?.[code2]) };
+      const code = categories[d].codes[at];
+      return { id: categories[d].id, code: code ?? String(at), label: clean(categories[d].labels?.[code]) };
     });
-    cells.push({ code: clean(code), period: dims[periodDim], dims: dims.filter((_, d) => d !== periodDim && dims[d].size > 1) });
+    cells.push({ code: clean(flagAt.get(position)), period: dims[periodDim], dims: dims.filter((_, d) => d !== periodDim && categories[d].size > 1) });
   }
-  return { cells, diagnostics };
+  return { cells, dimensions, diagnostics: [] };
 }
 
 const FLAG_COLUMN = /^(?:obs_?)?(?:flags?|status)$|^(?:flag|status)_?(?:code)?$|^标[记志]$/i;
@@ -101,78 +107,158 @@ function csvRows(text) {
   return rows;
 }
 
-/** CSV or TSV with a flag column: the rows whose flag is set and that hold a number. */
+/** CSV or TSV with a flag column: every row that holds a number; its flag is the column's value ("" when unflagged). */
 export function flagCellsFromCsv(text) {
   const table = csvRows(text);
-  if (table.length < 2) return { cells: [], diagnostics: [] };
+  const none = (diagnostics = []) => ({ cells: [], dimensions: [], diagnostics });
+  if (table.length < 2) return none();
   const header = table[0].map(clean);
   const flagAt = header.findIndex((name) => FLAG_COLUMN.test(name));
-  if (flagAt < 0) return { cells: [], diagnostics: [] };
+  if (flagAt < 0) return none();
   const periodAt = header.findIndex((name) => PERIOD_COLUMN.test(name));
-  if (periodAt < 0) return { cells: [], diagnostics: [{ rule: "no_period", message: "flag column but no period column" }] };
-  const cells = [];
+  if (periodAt < 0) return none([{ rule: "no_period", message: "flag column but no period column" }]);
+  const raw = [];
   for (const row of table.slice(1)) {
-    const code = clean(row[flagAt]);
-    if (!code) continue;
-    const numeric = row.some((value, at) => at !== flagAt && at !== periodAt && isNumberLike(value));
-    if (!numeric) continue; // a flag on an empty row draws nothing
-    const dims = header.flatMap((name, at) => (at === flagAt || at === periodAt || !name || !clean(row[at]) || isNumberLike(row[at]) ? [] : [{ id: name, size: 2, code: clean(row[at]), label: "" }]));
-    cells.push({ code, period: { id: header[periodAt], size: 2, code: clean(row[periodAt]), label: "" }, dims });
+    if (!row.some((value, at) => at !== flagAt && at !== periodAt && isNumberLike(value))) continue; // no number, nothing drawn
+    raw.push(row);
   }
-  return { cells, diagnostics: [] };
+  const textual = header.map((name, at) => (at === flagAt || at === periodAt || !name ? false : raw.every((row) => !isNumberLike(row[at]))));
+  const distinct = header.map((_, at) => new Set(raw.map((row) => clean(row[at])).filter(Boolean)));
+  const dimColumns = header.flatMap((name, at) => (textual[at] && distinct[at].size > 1 ? [at] : []));
+  const dimensions = dimColumns.map((at) => ({ id: header[at], categories: [...distinct[at]].map((code) => ({ code, label: "" })) }));
+  const cells = raw.map((row) => ({
+    code: clean(row[flagAt]),
+    period: { id: header[periodAt], code: clean(row[periodAt]), label: "" },
+    dims: dimColumns.filter((at) => clean(row[at]) !== "").map((at) => ({ id: header[at], code: clean(row[at]), label: "" })),
+  }));
+  return { cells, dimensions, diagnostics: [] };
 }
 
-// ---- tying flagged cells to what is drawn ---------------------------------------------------------------------------------------------
+/** The cells of one data file by its extension; other formats carry none this module reads. */
+export function flagCellsFromFile(ref, text) {
+  if (/\.json$/i.test(ref)) return flagCellsFromJsonStat(text);
+  if (/\.(?:csv|tsv|txt)$/i.test(ref)) return flagCellsFromCsv(text);
+  return { cells: [], dimensions: [], diagnostics: [] };
+}
+
+// ---- tying cells to the drawn rows ----------------------------------------------------------------------------------------------------
 
 const same = (a, b) => clean(a).toLowerCase() === clean(b).toLowerCase();
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const HAN = /\p{Script=Han}/u;
 
-/** The flagged cells at least one drawn row names completely (period and every multi-category dimension). */
-export function drawnFlagCells(cells, rows) {
-  const rowValues = (Array.isArray(rows) ? rows : []).map((row) => Object.values(row ?? {}).map(clean).filter(Boolean));
-  const names = (values, dim) => values.some((value) => same(value, dim.code) || (dim.label !== "" && same(value, dim.label)));
-  return cells.filter((cell) => rowValues.some((values) => names(values, cell.period) && cell.dims.every((dim) => names(values, dim))));
+/**
+ * For each drawn row, the cells it stands for and what flags they carry.
+ *   - The row must name a cell's period (by code or label), and every dimension with more than one category it names must match
+ *     the cell's own code or label.
+ *   - A dimension the row does not name at all counts as summed away only when the plan's SQL aggregates (SUM/AVG/COUNT/MIN/MAX/GROUP BY)
+ *     and does not mention any of that dimension's categories as a quoted literal (that would be a filter, not a sum); otherwise the row
+ *     cannot be tied to its cells and carries no flag.
+ * Result per row: { tied, period, letters: Map letter -> "all" | "some", unknown: [codes], name }.
+ */
+export function tieRows(read, rows, options = {}) {
+  const cells = read?.cells ?? [];
+  const dimensions = read?.dimensions ?? [];
+  const sql = String(options.sql ?? "");
+  const aggregated = /\b(?:sum|avg|count|min|max|group\s+by)\b/i.test(sql);
+  const mentionedInSql = (dimension) => dimension.categories.some(({ code, label }) => [code, label].some((x) => x !== "" && new RegExp(`['"]${escapeRe(x)}['"]`, "i").test(sql)));
+  const summable = new Map(dimensions.map((dimension) => [dimension.id, aggregated && !mentionedInSql(dimension)]));
+  const out = [];
+  for (const raw of Array.isArray(rows) ? rows : []) {
+    const values = Object.values(raw ?? {}).map(clean).filter(Boolean);
+    const names = (dim) => values.some((value) => same(value, dim.code) || (dim.label !== "" && same(value, dim.label)));
+    const namesDimension = new Map(dimensions.map((dimension) => [dimension.id, dimension.categories.some((category) => names(category))]));
+    const matched = cells.filter((cell) => names(cell.period) && cell.dims.every((dim) => (namesDimension.get(dim.id) ? names(dim) : summable.get(dim.id) === true)));
+    const periods = new Set(matched.map((cell) => clean(cell.period.label) || clean(cell.period.code)));
+    const info = { tied: matched.length > 0 && periods.size === 1, period: [...periods][0] ?? null, letters: new Map(), unknown: [], row: raw };
+    if (info.tied) {
+      const carrying = new Map(); // letter -> number of matched cells carrying it
+      for (const cell of matched) {
+        if (!cell.code) continue;
+        const letters = splitFlag(cell.code);
+        if (!letters) { info.unknown.push(clean(cell.code)); continue; }
+        for (const letter of letters) carrying.set(letter, (carrying.get(letter) ?? 0) + 1);
+      }
+      for (const [letter, count] of carrying) info.letters.set(letter, count === matched.length ? "all" : "some");
+    }
+    out.push(info);
+  }
+  return out;
 }
 
 // ---- the sentence ---------------------------------------------------------------------------------------------------------------------
 
 const yearsText = (years) => `${years.join("、")} 年`;
-const sentenceFor = {
-  e: (y) => `${y}为估计值`,
-  p: (y) => `${y}为初步数`,
-  f: (y) => `${y}为预测值`,
-  b: (y) => `${y}起统计口径改变，前后不宜直接比较`,
-  d: (y) => `${y}口径与其余不同`,
+const WORD = { e: "估计值", p: "初步数", f: "预测值" };
+// whole-row wording ("为 …") and part-of-row wording ("数据含 …")
+const isText = {
+  e: (y) => `${y}为估计值`, p: (y) => `${y}为初步数`, f: (y) => `${y}为预测值`,
+  b: (y) => `${y}起统计口径改变，前后不宜直接比较`, d: (y) => `${y}口径与其余不同`,
+};
+const hasText = {
+  e: (y) => `${y}数据含估计值`, p: (y) => `${y}数据含初步数`, f: (y) => `${y}数据含预测值`,
+  b: (y) => `${y}数据含统计口径改变的值`, d: (y) => `${y}数据含口径不同的值`,
 };
 
 /**
- * The note for the drawn flagged cells, in Chinese. Years are the period labels of those cells, as the file spells them.
- * `text` is the line to print; when the sentence would not fit one line (DATA_NOTE_LINE_MAX counting the printed label), `text` is only
- * DATA_NOTE_POINTER and `full` carries the sentence for the data-notes block of the page foot. Null when nothing is left to say.
- * `diagnostics` lists the codes the table does not know and anything the number-word check refused; none of it reaches the page.
+ * The note for a data file's flags as they bear on the drawn rows, in Chinese. `read` is a reader result (several files: concatenate
+ * cells and dimensions), `rows` the rows the chart is drawn from. Options: sql, categoryField and display(column, value) (the chart's own
+ * name mapping, chartNameDisplay(...).display), lineMax.
+ *   - Every drawn row of a period carries the flag: "2024 年为估计值". Only some do: the rows are named with the chart's Chinese display
+ *     names, "乍得、尼日尔 2024 年为估计值"; a row without a Chinese display name leaves the sentence out (the code is never a name).
+ *   - A row built from several cells of which only some carry the flag: "2024 年数据含估计值" (never "为").
+ * `text` is the line to print; over the line limit (counting the printed label) it is only DATA_NOTE_POINTER and `full` keeps the
+ * sentence for the page foot. Null when nothing is left to say. `diagnostics` never reaches the page.
  */
-export function composeDataNote(drawn, options = {}) {
+export function composeDataNote(read, rows, options = {}) {
   const lineMax = options.lineMax ?? DATA_NOTE_LINE_MAX;
   const diagnostics = [];
-  const periods = new Map(); // letter -> Set of period labels
+  const tied = tieRows(read, rows, options);
   const unknown = new Map();
-  for (const cell of drawn) {
-    const letters = splitFlag(cell.code);
-    if (!letters) { unknown.set(clean(cell.code), (unknown.get(clean(cell.code)) ?? 0) + 1); continue; }
-    const label = clean(cell.period.label) || clean(cell.period.code);
-    for (const letter of letters) {
-      if (!periods.has(letter)) periods.set(letter, new Set());
-      periods.get(letter).add(label);
+  for (const info of tied) for (const code of info.unknown) unknown.set(code, (unknown.get(code) ?? 0) + 1);
+  for (const [code, count] of [...unknown].sort()) diagnostics.push({ rule: "unknown_code", code, count });
+  const nameOf = (info) => {
+    const value = options.categoryField ? clean(info.row?.[options.categoryField]) : "";
+    if (!value) return null;
+    const shown = clean(typeof options.display === "function" ? (options.display(options.categoryField, value) ?? value) : value);
+    return HAN.test(shown) ? shown : null;
+  };
+  const untied = tied.filter((info) => !info.tied).length;
+  const periods = [...new Set(tied.filter((info) => info.tied).map((info) => info.period))];
+  // entries: letter|mode|subject -> { letter, whole, names, years }
+  const entries = new Map();
+  for (const period of periods) {
+    const inPeriod = tied.filter((info) => info.tied && info.period === period);
+    for (const letter of ORDER) {
+      const flagged = inPeriod.filter((info) => info.letters.has(letter));
+      if (!flagged.length) continue;
+      const whole = flagged.every((info) => info.letters.get(letter) === "all");
+      const allCarry = flagged.length === inPeriod.length && untied === 0 && periods.length >= 1;
+      let names = null;
+      if (!allCarry) {
+        names = flagged.map(nameOf);
+        if (names.some((name) => name === null)) { diagnostics.push({ rule: "no_display_name", period, letter }); continue; }
+        names = [...new Set(names)];
+      }
+      const key = `${letter}|${whole}|${names ? names.join("、") : ""}`;
+      if (!entries.has(key)) entries.set(key, { letter, whole, names, years: new Set() });
+      entries.get(key).years.add(period);
     }
   }
-  for (const [code, count] of [...unknown].sort()) diagnostics.push({ rule: "unknown_code", code, count });
   const sortedYears = (set) => [...set].sort((a, b) => (Number(a) - Number(b)) || a.localeCompare(b));
+  const list = [...entries.values()].map((entry) => ({ ...entry, years: sortedYears(entry.years) }));
   const parts = [];
-  const ep = periods.get("e") && periods.get("p") && sortedYears(periods.get("e")).join("|") === sortedYears(periods.get("p")).join("|");
-  for (const letter of ORDER) {
-    if (!periods.has(letter)) continue;
-    const years = yearsText(sortedYears(periods.get(letter)));
-    if (ep && letter === "p") continue;
-    parts.push(ep && letter === "e" ? `${years}为估计值、初步数` : sentenceFor[letter](years));
+  const used = new Set();
+  const subject = (entry) => (entry.names ? `${entry.names.join("、")} ` : "");
+  for (const entry of list) {
+    if (used.has(entry)) continue;
+    used.add(entry);
+    const years = yearsText(entry.years);
+    if (entry.letter === "e") { // estimated + provisional for the same years and the same rows read as one clause
+      const mate = list.find((other) => !used.has(other) && other.letter === "p" && other.whole === entry.whole && subject(other) === subject(entry) && other.years.join("|") === entry.years.join("|"));
+      if (mate) { used.add(mate); parts.push(`${subject(entry)}${years}${entry.whole ? "为估计值、初步数" : "数据含估计值、初步数"}`); continue; }
+    }
+    parts.push(`${subject(entry)}${(entry.whole ? isText : hasText)[entry.letter](years)}`);
   }
   if (!parts.length) return diagnostics.length ? { text: null, full: null, truncated: false, diagnostics } : null;
   const full = parts.join("，");
@@ -180,11 +266,4 @@ export function composeDataNote(drawn, options = {}) {
   if (worded !== null) return { text: null, full: null, truncated: false, diagnostics: [...diagnostics, { rule: "number_word", message: `refused near "${worded}"` }] };
   const fits = Array.from(DATA_NOTE_LABEL + full).length <= lineMax;
   return { text: fits ? full : DATA_NOTE_POINTER, full, truncated: !fits, diagnostics };
-}
-
-/** The flag cells of one data file by its extension; other formats carry none this module reads. */
-export function flagCellsFromFile(ref, text) {
-  if (/\.json$/i.test(ref)) return flagCellsFromJsonStat(text);
-  if (/\.(?:csv|tsv|txt)$/i.test(ref)) return flagCellsFromCsv(text);
-  return { cells: [], diagnostics: [] };
 }
