@@ -36,6 +36,14 @@ const mystery = `${head}<rect data-role="mystery-bar" x="20" y="20" width="40" h
 const gridOnly = `${head}<line data-role="grid-line" x1="10" y1="50" x2="390" y2="50" stroke="#ddd"/><rect data-role="legend-swatch" x="20" y="170" width="10" height="10" fill="#345"/>${text(40, 180, "系列")}</svg>`;
 const polygon = `${head}<polygon points="20,20 120,20 70,90" fill="#345"/>${text(20, 150, "说明")}</svg>`;
 
+// cd's probes (1010e F4): charts the renderer forgot to tag. None of them may be "not applicable".
+const rolelessBars = `${head}<rect width="400" height="200" fill="#fff"/>${[0, 1, 2, 3].map((i) => `<rect x="${40 + i * 80}" y="${150 - (i + 1) * 30}" width="50" height="${(i + 1) * 30}" fill="#345"/>`).join("")}${text(20, 190, "说明")}</svg>`;
+const rolelessLines = `${head}<line x1="20" y1="150" x2="120" y2="100" stroke="#345"/><line x1="120" y1="100" x2="220" y2="120" stroke="#345"/><line x1="220" y1="120" x2="320" y2="40" stroke="#345"/>${text(20, 190, "说明")}</svg>`;
+const useOnly = `${head}<defs><path id="m" d="M0 0 L40 0 L40 -60 L0 -60 Z" fill="#345"/></defs><use href="#m" x="40" y="150"/><use href="#m" x="120" y="150"/>${text(20, 190, "说明")}</svg>`;
+const singleQuoted = `${head}<rect data-role='mystery-bar' x='20' y='20' width='40' height='60' fill='#345'/>${text(20, 150, "说明")}</svg>`;
+const dataAttrOnly = `${head}<rect data-value="3" x="20" y="20" width="40" height="6" fill="#345"/><rect data-series='甲' x="80" y="20" width="40" height="6" fill="#345"/>${text(20, 150, "说明")}</svg>`;
+const quotedPage = `${head}<rect width='400' height='200' fill='#fff'/><rect data-role='hero-stat' x='20' y='20' width='120' height='60' fill='#eee'/><line x1='10' y1='100' x2='390' y2='100' stroke='#ccc'/>${text(30, 50, "42%")}</svg>`;
+
 const lineSpec = { schema_version: "0.7.0", reader_task: "change", takeaway: "fixture", chart_type: "multi_line", title: "三国产量", alt: "三条线", source_note: "合成数据", claim_id: "c1", sql: "SELECT 1", unit: "指数", x_field: "year", value_field: "value", series_field: "series", direct_labels: true, annotations: [] };
 const lineRows = ["甲国", "乙国", "丙国"].flatMap((s, i) => [2019, 2020, 2021, 2022].map((year, j) => ({ year, series: s, value: 10 + i * 20 + j * (i + 1) * 3 })));
 const line = renderVizBundle(lineSpec, lineRows, { mobilePages: false }).desktop;
@@ -57,11 +65,16 @@ for (const [name, svg] of [["hero page", heroPage], ["text only", textOnly]]) {
 // ---- nothing that has marks, or shapes the check cannot place, gets "not applicable" -------------------------------------------
 for (const [name, svg] of [["line chart", line], ["waffle", waffle], ["treemap", treemap]]) assert.equal(nep(svg).not_applicable, undefined, `${name} has marks`);
 assert.ok(nep(line).population.marks > 0);
-for (const [name, svg] of [["unknown role", mystery], ["gridlines and a legend only", gridOnly], ["a polygon", polygon]]) {
+for (const [name, svg] of [["unknown role", mystery], ["gridlines and a legend only", gridOnly], ["a polygon", polygon],
+  ["roleless rect bars", rolelessBars], ["roleless diagonal lines", rolelessLines], ["a chart drawn through <use>", useOnly],
+  ["single-quoted unknown role", singleQuoted], ["data attributes on thin rects", dataAttrOnly]]) {
   const n = nep(svg);
   assert.equal(n.not_applicable, undefined, `${name} must not be "not applicable"`);
   assert.ok(n.failures.some((f) => f.checked_rule === "text_crosses_data_mark"), `${name}: still reported as an empty pass`);
 }
+
+// page furniture stays not applicable in either quote style
+assert.deepEqual(nep(quotedPage).not_applicable?.map((x) => x.checked_rule), ["text_crosses_data_mark"], "a single-quoted page is still a page");
 
 // a chart whose data roles are stripped still has paths: it is never "not applicable" (whatever else it reports)
 assert.equal(nep(line.replace(/data-role="[a-z-]*"/g, "")).not_applicable, undefined, "a chart with its roles stripped still has chart shapes");
@@ -93,12 +106,12 @@ if (archive.status !== 0) {
   writeFileSync(join(dir, "base.tar"), archive.stdout);
   assert.equal(spawnSync("tar", ["-xf", join(dir, "base.tar"), "-C", dir]).status, 0);
   const base = await import(pathToFileURL(join(dir, "runtime/pi/render_qa.mjs")).href);
-  for (const [name, svg] of [["hero page", heroPage], ["text only", textOnly], ["line", line], ["waffle", waffle], ["treemap", treemap], ["labelled waffle", labelled], ["moved treemap label", across], ["mystery", mystery]]) {
+  for (const [name, svg] of [["hero page", heroPage], ["text only", textOnly], ["line", line], ["waffle", waffle], ["treemap", treemap], ["labelled waffle", labelled], ["moved treemap label", across], ["roleless bars", rolelessBars], ["roleless lines", rolelessLines], ["use only", useOnly], ["single quoted", singleQuoted], ["data attrs", dataAttrOnly], ["quoted page", quotedPage], ["mystery", mystery]]) {
     const was = JSON.stringify(qa(svg, undefined, base.runRenderQa));
     for (const v of [undefined, "0", "true", "", " 1", "01"]) assert.equal(JSON.stringify(qa(svg, v)), was, `${name}: off (${JSON.stringify(v)}) is byte-identical to d36d7ff`);
   }
   // on, a chart this change does not touch: the same report as d36d7ff with the switch on
   assert.equal(JSON.stringify(qa(line, "1")), JSON.stringify(qa(line, "1", base.runRenderQa)), "a line chart reports the same with the switch on");
-  console.log("ok: off is byte-identical to d36d7ff (8 SVGs x 6 values)");
+  console.log("ok: off is byte-identical to d36d7ff (14 SVGs x 6 values)");
 }
 console.log("PASS qa not applicable");

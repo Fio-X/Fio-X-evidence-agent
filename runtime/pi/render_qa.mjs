@@ -47,10 +47,38 @@ const EMPTY_PASS_RULES = [
 // Roles the infographic composer gives its own page structure (runtime/pi/infographic.mjs). A viewport whose only shapes are untagged or carry
 // these roles has no chart on it; the geometry check already treats untagged rects and lines as backgrounds and cards, not data marks.
 const PAGE_STRUCTURE_ROLES = new Set(["hero-stat", "illustration-credit", "module-boundary", "out-of-set-frame", "scene-boundary", "source-quote-note"]);
+// "Not applicable" is a narrow claim: the whole viewport is page furniture. Everything it cannot positively place as furniture is judged by the
+// original rule (a mark-less viewport is an empty pass). Attributes are read in either quote style.
+// - no path/circle/polyline/polygon/ellipse, no <use> or <image> (a chart drawn through <defs> references still counts as a chart);
+// - every role on a rect/line is a page-structure role;
+// - no data- attribute except the composer's own structure ones (data-x, data-value, data-series, data-category... mean data is drawn here);
+// - a rect/line without a role is only a page backdrop (covers the viewBox), a thin accent bar, or an axis-aligned rule: bars wider than that and
+//   diagonal segments are chart marks that forgot their role.
+const PAGE_STRUCTURE_DATA_ATTRS = new Set(["role", "infographic-version", "viewport", "layout-strategy", "module-id"]);
+const attrsOf = (tag) => {
+  const out = {};
+  for (const m of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) out[m[1]] = m[2] ?? m[3];
+  return out;
+};
 export function viewportHasNoChartShapes(svgText) {
-  const body = String(svgText ?? "").replace(/<defs\b[\s\S]*?<\/defs>/g, "");
-  if (/<(?:path|circle|polyline|polygon|ellipse)\b/.test(body)) return false;
-  return [...body.matchAll(/<(?:rect|line)\b[^>]*\bdata-role="([^"]+)"/g)].every((m) => PAGE_STRUCTURE_ROLES.has(m[1]));
+  const text = String(svgText ?? "");
+  const body = text.replace(/<defs\b[\s\S]*?<\/defs>/g, "");
+  if (/<(?:path|circle|polyline|polygon|ellipse|use|image)\b/.test(body)) return false;
+  if (/<use\b|<image\b/.test(text)) return false;
+  for (const m of text.matchAll(/<[a-zA-Z][^>]*>/g)) for (const name of Object.keys(attrsOf(m[0]))) {
+    if (name.startsWith("data-") && !PAGE_STRUCTURE_DATA_ATTRS.has(name.slice(5))) return false;
+  }
+  const box = (attrsOf((/<svg\b[^>]*>/.exec(text) ?? [""])[0]).viewBox ?? "").trim().split(/[\s,]+/).map(Number);
+  const [vw, vh] = box.length === 4 && box.every(Number.isFinite) ? [box[2], box[3]] : [NaN, NaN];
+  const num = (value) => (value === undefined ? 0 : Number(value));
+  for (const m of body.matchAll(/<(rect|line)\b[^>]*>/g)) {
+    const a = attrsOf(m[0]);
+    if (a["data-role"] !== undefined) { if (!PAGE_STRUCTURE_ROLES.has(a["data-role"])) return false; continue; }
+    if (m[1] === "line") { if (num(a.x1) !== num(a.x2) && num(a.y1) !== num(a.y2)) return false; continue; }
+    const w = num(a.width), h = num(a.height);
+    if (!(Math.min(w, h) <= 8 || (w >= 0.9 * vw && h >= 0.9 * vh))) return false;
+  }
+  return true;
 }
 export function checkEmptyPasses(geometry, contrast, { heatmap = false, noChartShapes = false } = {}) {
   const s = geometry?.summary ?? {};
