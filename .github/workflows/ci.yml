@@ -255,14 +255,22 @@ jobs:
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
           node scripts/test_held_chart_types.mjs
+      # The two off-state byte comparisons (flow maps back against 1296164, flow-map labels against the tree before the label layer) need history;
+      # fetch-depth is 0 above, and a SKIP here would be a failure, not a pass.
+      - name: Flow-map tests (a skipped comparison fails)
+        env:
+          NEWSROOM_REQUIRE_NO_SKIP: "1"
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/flow-labels-base" f2aec34
+          BASE="$RUNNER_TEMP/flow-labels-base"
           node scripts/test_flow_maps_back.mjs
           node scripts/test_flow_trunk_cap.mjs
           node scripts/test_zh_route_disclosure.mjs
           node scripts/test_flow_extent_hint.mjs
           node scripts/test_flow_styles.mjs
-          node scripts/test_flow_map_labels.mjs
+          BASE_WT="$BASE" node scripts/test_flow_map_labels.mjs
           node scripts/test_flow_map_round3.mjs
-          node scripts/test_flow_map_round3_b.mjs
+          BASE_WT="$BASE" node scripts/test_flow_map_round3_b.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
       - name: Investigate and continue exit-code acceptance

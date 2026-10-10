@@ -67,14 +67,16 @@ const base = await load(bdir);
 let compared = 0;
 for (const profile of PROFILES) for (const extra of [{}, { NEWSROOM_HELD_CHART_TYPES: "1", NEWSROOM_FLOW_MAPS_BACK: "1" }, { NEWSROOM_SPEED_RULE_HINTS: "1" }]) {
   const env = { NEWSROOM_TOOL_PROFILE: profile, ...extra };
-  const was = JSON.stringify(plain(await tools(base, env)));
+  // K190 reworded one string under NEWSROOM_FLOW_MAPS_BACK=1 ("geographic" -> "cartographic" flow map); that is the only difference allowed from the base
+  const baseText = JSON.stringify(plain(await tools(base, env)));
+  const was = extra.NEWSROOM_FLOW_MAPS_BACK === "1" ? baseText.split("chord, geographic flow map, adjacency matrix, timeline").join("chord, cartographic flow map, adjacency matrix, timeline") : baseText;
   for (const v of [undefined, "0", "true", "yes", "", " 1", "01", "11"]) {
     const got = JSON.stringify(plain(await tools(current, { ...env, ...(v === undefined ? {} : { NEWSROOM_FLOW_EXTENT_HINT: v }) })));
     assert.equal(got, was, `${profile} ${JSON.stringify(extra)} NEWSROOM_FLOW_EXTENT_HINT=${JSON.stringify(v)} is byte-identical to ${BASE}`);
     compared++;
   }
   const on = plain(await tools(current, { ...env, NEWSROOM_FLOW_EXTENT_HINT: "1" }));
-  const off = plain(await tools(base, env));
+  const off = JSON.parse(was);
   const changes = diff(off, on);
   for (const c of changes) assert.match(c.path, /^\/newsroom_viz_(plan|chain)\/parameters\/properties\/extent_mode\/description$/, `unexpected difference at ${c.path}`);
   const plan = on.newsroom_viz_plan?.parameters?.properties?.extent_mode;
