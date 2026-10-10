@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, COMPACT_VIEW_W } from "./viz.mjs";
+import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, houseFontSans, tabularRootAttrs, COMPACT_VIEW_W } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
 import { evaluateQuestionClosure, STORY_DIMENSIONS, unsupportedDimensionError } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
@@ -103,7 +103,7 @@ function applyInfographicStyle(spec) {
     // Fix 12: all sans under house style - SERIF collapses onto the same CJK
     // stack as SANS instead of keeping its own (formerly Georgia-only) face,
     // so every page-chrome text element reads one typeface family.
-    SANS = HOUSE_FONT_SANS; SERIF = HOUSE_FONT_SANS;
+    SANS = houseFontSans(); SERIF = houseFontSans();
   }
   INFOGRAPHIC_HOUSE_STYLE_ACTIVE = style !== "legacy";
   return style;
@@ -1780,7 +1780,7 @@ function drawHeader(parts, spec, width, margin, mobile) {
   const t = INFOGRAPHIC_STRINGS[pageLang(spec)];
   parts.push(`<line x1="${margin}" y1="${h.top - 18}" x2="${width - margin}" y2="${h.top - 18}" stroke="${INK}" stroke-width="${mobile ? 5 : 6}"/>`);
   parts.push(`<text x="${margin}" y="${h.top}" font-family="${SANS}" font-size="${mobile ? 13 : 14}" font-weight="700" letter-spacing="2" fill="${ACCENT}">${esc(String(spec.kicker ?? t.kicker).toUpperCase())}</text>`);
-  if (!mobile) parts.push(`<text x="${width - margin}" y="${h.top}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.5" fill="${MUTED}">AGENTIC DATA NEWSROOM · 01</text>`);
+  if (!mobile && process.env.NEWSROOM_TYPESET_FOOTER !== "1") parts.push(`<text x="${width - margin}" y="${h.top}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.5" fill="${MUTED}">AGENTIC DATA NEWSROOM · 01</text>`);
   let y = h.top + h.kicker;
   textBlock(parts, spec.title, margin, y, { family: SERIF, size: h.titleSize, lineHeight: h.titleLH, weight: 700, maxChars: mobile ? 19 : 31, maxLines: mobile ? 6 : 4, headline: true });
   y += h.titleLines * h.titleLH + (mobile ? 18 : 22);
@@ -2189,7 +2189,7 @@ function composeOne(spec, assets, mobile) {
   const footerH = mobile ? 150 : 128;
   const startY = header.height;
   const pageHeight = startY + layout.contentHeight + footerH + (mobile ? 34 : 42);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${layout.width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="${mobile ? "mobile" : "desktop"}" data-layout-strategy="${esc(layout.strategy ?? (mobile ? "single_column" : "balanced"))}">`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${layout.width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="${mobile ? "mobile" : "desktop"}" data-layout-strategy="${esc(layout.strategy ?? (mobile ? "single_column" : "balanced"))}"${tabularRootAttrs()}>`];
   parts.push(`<title id="info-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="info-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${layout.width}" height="${pageHeight}" fill="${PAPER}"/>`);
@@ -2212,7 +2212,11 @@ function composeOne(spec, assets, mobile) {
   parts.push(`<text x="${layout.margin}" y="${footerY + 30}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
   const sources = sourceList(spec, assets);
   textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
-  parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>`);
+  // NEWSROOM_TYPESET_FOOTER=1 (exact): a zh page prints no English footer line, and an en page prints the brand without a
+  // verification claim - the page is rendered before verification runs and nothing re-renders it afterwards, so the word
+  // "VERIFIED" is never earned at render time.
+  const footerLine = process.env.NEWSROOM_TYPESET_FOOTER === "1" ? (pageLang(spec) === "zh" ? null : "AGENTIC DATA NEWSROOM") : "AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY";
+  if (footerLine) parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">${footerLine}</text>`);
   for (const box of shiftedBoxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
   parts.push("</svg>");
   const visualKinds = uniq((spec.modules ?? []).flatMap((m) => {
