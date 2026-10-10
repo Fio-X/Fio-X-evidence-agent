@@ -44,7 +44,7 @@ import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLi
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
-import { extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
+import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { numberWordIn } from "./number_words.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
@@ -4569,13 +4569,16 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
-      const bundle = renderVizBundle(spec, rows, { mobilePages, compact: !mobilePages });
+      // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
+      // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
+      const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;
+      const bundle = renderVizBundle(extremeNote ? { ...spec, note: [spec.note, extremeNote].filter(Boolean).join(" ") } : spec, rows, { mobilePages, compact: !mobilePages });
       // The same plan_ref+data_hash must not collide across a mobile-pages
       // toggle if the same artifact directory is reused between runs (the
       // manifest's variants/hashes shape differs); omitted rather than
       // included so the ON path's hash input is unchanged from before this
       // switch existed.
-      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, data_hash: currentHash, ...(mobilePages ? {} : { mobile_pages: false }) }));
+      const key = sha256Hex(JSON.stringify({ plan_ref: params.plan_ref, data_hash: currentHash, ...(mobilePages ? {} : { mobile_pages: false }), ...(extremeNote ? { extreme_note: extremeNote } : {}) }));
       if (await isRejectedKey("visualizations", key)) throw new Error(`REJECTED: this exact plan was rejected by its critic; revise it (see visualizations/rejected/${key}/rejection.json)`);
       // Choropleth-only: hand the render-QA composer the same rows and field
       // names the chart was built from, so checkChoroplethValueLabels can
@@ -4656,6 +4659,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         sql: spec.sql,
         source_note: spec.source_note,
         ...(spec.source_note_program === true ? { source_note_program: true } : {}),
+        ...(extremeNote ? { extreme_note: extremeNote, extreme_note_program: true } : {}),
         alt: spec.alt,
       });
       // NEWSROOM_EXTREME_PROBE=1 (default off): record-only diagnosis of a value far from the rest, into runtime/extreme-probe/. Nothing is
