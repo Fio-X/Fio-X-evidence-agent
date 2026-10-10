@@ -10010,7 +10010,8 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   if (worldMode) footnoteItems.forEach((li, i) => { const mk = footnoteMarkerPositions[i], dot = tinyDots.get(li.item.iso3); if (mk && dot && Math.hypot(mk.x - dot.x, mk.y - dot.y) < 1) dotCoveredByMarker.add(li.item.iso3); });
   for (const item of joined) {
     const dot = tinyDots.get(item.iso3);
-    if (!dot || dotCoveredByMarker.has(item.iso3)) continue;
+    // World list mode: every country is in the list under the map, so a small country is not also drawn as a dot.
+    if (!dot || dotCoveredByMarker.has(item.iso3) || worldListMode) continue;
     const value = n(item.row[spec.value_field]) ?? 0;
     f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
   }
