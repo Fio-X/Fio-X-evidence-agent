@@ -85,6 +85,7 @@ jobs:
         run: |
           python3 scripts/test_fact_editorial_contracts.py
           python3 scripts/test_speed_off_prompt_sha.py
+          python3 scripts/test_repeat_failure_stop.py target/debug/news
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
           python3 scripts/test_followup_completion_gate.py target/debug/news
@@ -299,3 +300,5 @@ jobs:
           node scripts/test_tool_result_budget_integration.mjs
           node scripts/test_followup_alt_source.mjs
           node scripts/test_reader_task_example_fix.mjs
+          node scripts/test_scene_duplicate_wording.mjs
+          node scripts/test_refused_options_fix.mjs
