@@ -29,10 +29,11 @@ function canonical(value){
 }
 function hash(value){ return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex'); }
 
-export function normalizeStoryGraph(input){
+// trim (NEWSROOM_TRIM_UNREAD_FIELDS=1): story_id, nodes[].evidence_refs, nodes[].module_hint and edges[].note are no longer kept; nothing reads them.
+export function normalizeStoryGraph(input,{trim=false}={}){
   const graph={
     schema_version: STORY_GRAPH_SCHEMA_VERSION,
-    story_id: text(input?.story_id) || 'story',
+    ...(trim ? {} : {story_id: text(input?.story_id) || 'story'}),
     reader_question: text(input?.reader_question),
     visual_thesis: text(input?.visual_thesis),
     nodes: Array.isArray(input?.nodes) ? input.nodes.map((node)=>({
@@ -41,14 +42,13 @@ export function normalizeStoryGraph(input){
       summary:text(node?.summary),
       explanatory_dimension:text(node?.explanatory_dimension),
       claim_ids:uniq(node?.claim_ids),
-      evidence_refs:uniq(node?.evidence_refs),
-      module_hint:text(node?.module_hint),
+      ...(trim ? {} : {evidence_refs:uniq(node?.evidence_refs),module_hint:text(node?.module_hint)}),
     })) : [],
     edges: Array.isArray(input?.edges) ? input.edges.map((edge)=>({
       from:text(edge?.from),
       to:text(edge?.to),
       relation:text(edge?.relation),
-      note:text(edge?.note),
+      ...(trim ? {} : {note:text(edge?.note)}),
     })) : [],
     entry_node_ids:uniq(input?.entry_node_ids),
     answer_node_ids:uniq(input?.answer_node_ids),
@@ -106,8 +106,8 @@ function reachability(graph){
   return {fromEntries:walk(graph.entry_node_ids,forward),toAnswers:walk(graph.answer_node_ids,reverse)};
 }
 
-export function assessStoryGraph(input){
-  const graph=normalizeStoryGraph(input);
+export function assessStoryGraph(input,{trim=false}={}){
+  const graph=normalizeStoryGraph(input,{trim});
   const errors=validateStoryGraph(graph);
   if(errors.length) throw new Error(errors.join('; '));
   const {fromEntries,toAnswers}=reachability(graph);
