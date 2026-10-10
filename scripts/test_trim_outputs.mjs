@@ -168,4 +168,19 @@ ok(cB.concepts.every((c) => !("information_hierarchy" in c) && !("why_reject" in
   assert.ok(saved.concepts.every((x) => !("why_reject" in x) && !("reporting_gaps" in x)));
   ok(true, "all copy switches plus trim on: discovery_ref copied verbatim, saved concepts still trimmed");
 }
+// 9. the other places that required 8 concepts follow the same switch: award status (art_direction.mjs) and the Python verifier's two checks
+{
+  const art = await import(join(ROOT, "runtime/pi/art_direction.mjs"));
+  const input = { discovery_ref: "d", concepts_ref: "c", asset_plan_ref: "a", novelty_ref: "n", page_ref: "p", metrics: { concepts_generated: 3, concepts_killed: 2, prototype_count: 2, raster_revision_count: 1 } };
+  const off = art.summarizeAwardMode(input); const offExplicit = art.summarizeAwardMode(input, { minConcepts: 8 }); const on = art.summarizeAwardMode(input, { minConcepts: 3 });
+  assert.equal(off.status, "BLOCKED"); assert.ok(off.blockers.includes("concept_search_budget_not_met"));
+  assert.equal(JSON.stringify(off), JSON.stringify(offExplicit), "default floor is 8, byte-identical to passing 8");
+  assert.equal(on.status, "READY_FOR_HUMAN");
+  assert.equal(art.summarizeAwardMode({ ...input, metrics: { ...input.metrics, concepts_generated: 2, concepts_killed: 1 } }, { minConcepts: 3 }).status, "BLOCKED", "2 still refused with the floor at 3");
+  const py = (switchValue, snippet) => spawnSync("python3", ["-c", `import sys; sys.path.insert(0, ${JSON.stringify(join(ROOT, "scripts"))}); import verify_artifact as v\n${snippet}`], { env: { PATH: process.env.PATH, ...(switchValue === undefined ? {} : { NEWSROOM_CONCEPT_COUNT_3: switchValue }) }, encoding: "utf8" });
+  const probe = "m = {'concepts_generated': 3, 'concepts_killed': 2, 'prototype_count': 2, 'raster_revision_count': 1}\nitem = {'refs': {k: 'x' for k in ['discovery_ref','concepts_ref','asset_plan_ref','novelty_ref','page_ref']}, 'metrics': m}\nprint(v.concept_min_count(), v.replay_award_mode_status(item)[0])";
+  for (const value of [undefined, "0", "", "yes", " 1", "on", "true", "11"]) assert.equal(py(value, probe).stdout.trim(), "8 BLOCKED", `python floor stays 8 for ${JSON.stringify(value)}`);
+  assert.equal(py("1", probe).stdout.trim(), "3 READY_FOR_HUMAN");
+  ok(true, "count switch: award status and the Python verifier's floor follow NEWSROOM_CONCEPT_COUNT_3 (exact 1 only); off is unchanged");
+}
 console.log(`trim outputs: ${passed} checks -- PASS`);

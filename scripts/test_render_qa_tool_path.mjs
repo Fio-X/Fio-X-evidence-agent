@@ -1388,6 +1388,64 @@ sys.exit(0)
     const acceptedSpec = JSON.parse(readFileSync(join(art, accepted.details.planRef), "utf8"));
     assert.equal(acceptedSpec.infographic_plan_ref, approvedPlanRef);
     console.log("newsroom_publication_plan accepts an infographic_plan_ref whose rendered page has a passing critic and passing vision critic -- PASS");
+
+    // NEWSROOM_SPEED_FILL_PUBLICATION_COPIED=1 commit test: omitted fields are copied from the approved plan; the lineage gate and
+    // the comparison of given values stay. Mutations that must turn this red: (a) overwrite given values with the plan's; (b) skip the
+    // approval check when the switch is on.
+    try {
+      const omit = (o, ...keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return c; };
+      const three = ["story_graph_ref", "reader_question", "visual_thesis"];
+      const msgOf = async (p) => { try { await p; return "ACCEPTED"; } catch (e) { return String(e?.message ?? e); } };
+      delete process.env.NEWSROOM_SPEED_FILL_PUBLICATION_COPIED;
+      // e0: switch off, three omitted -> refused (today's behaviour)
+      delete process.env.NEWSROOM_SPEED_FILL_PUBLICATION_COPIED;
+      const e0 = await msgOf(publicationPlan.execute("v580-e0", omit(publicationPlanParams(approvedPlanRef, "eq"), ...three)));
+      assert.notEqual(e0, "ACCEPTED"); console.log("V580 e0 off+omitted refused:", e0.slice(0, 120));
+      // e1: explicit (off) and copied (on) with the same remaining params must produce the same content-addressed spec
+      const explicitOff = await publicationPlan.execute("v580-e1-off", publicationPlanParams(approvedPlanRef, "eq"));
+      process.env.NEWSROOM_SPEED_FILL_PUBLICATION_COPIED = "1";
+      const copiedOn = await publicationPlan.execute("v580-e1-on", omit(publicationPlanParams(approvedPlanRef, "eq"), ...three));
+      assert.match(copiedOn.content[0].text, /^PublicationSpec 0\.3 recorded\./);
+      assert.equal(copiedOn.details.planRef, explicitOff.details.planRef, "copied spec must be byte-for-byte the explicit spec (same content hash)");
+      const copiedSpec = JSON.parse(readFileSync(join(art, copiedOn.details.planRef), "utf8"));
+      assert.equal(copiedSpec.reader_question, pubGateReaderQuestion); assert.equal(copiedSpec.visual_thesis, pubGateVisualThesis); assert.equal(copiedSpec.story_graph_ref, pubGateStoryGraphRef);
+      console.log("V580 e1 on+omitted accepted, same planRef as explicit:", copiedOn.details.planRef === explicitOff.details.planRef);
+      // e1b: on + only one omitted
+      const oneOmitted = await publicationPlan.execute("v580-e1b", omit(publicationPlanParams(approvedPlanRef, "eq"), "visual_thesis"));
+      assert.equal(oneOmitted.details.planRef, explicitOff.details.planRef); console.log("V580 e1b on+one omitted same planRef: true");
+      // e2/e3/e3b: on + omitted, unapproved plans -> lineage still refuses
+      const e2 = await msgOf(publicationPlan.execute("v580-e2", omit(publicationPlanParams(rejectPlanRef, "e2"), ...three)));
+      assert.match(e2, /no top-level, non-rejected infographic manifest/); console.log("V580 e2 rejected plan refused:", e2.slice(0, 100));
+      const e3 = await msgOf(publicationPlan.execute("v580-e3", omit(publicationPlanParams(noCriticPlanRef, "e3"), ...three)));
+      assert.match(e3, /has no passing critic/); console.log("V580 e3 no-critic plan refused:", e3.slice(0, 100));
+      const e3b = await msgOf(publicationPlan.execute("v580-e3b", omit(publicationPlanParams(noVisionPlanRef, "e3b"), ...three)));
+      assert.match(e3b, /image-aware vision critic/); console.log("V580 e3b no-vision plan refused:", e3b.slice(0, 100));
+      // e4/e5/e6/e9: on + a given wrong value is kept and compared
+      const e4 = await msgOf(publicationPlan.execute("v580-e4", { ...omit(publicationPlanParams(approvedPlanRef, "e4"), ...three), reader_question: "A different question?" }));
+      assert.match(e4, /reader_question must exactly match/); console.log("V580 e4 wrong reader_question refused:", e4);
+      const e6 = await msgOf(publicationPlan.execute("v580-e6", { ...omit(publicationPlanParams(approvedPlanRef, "e6"), ...three), visual_thesis: "Another thesis." }));
+      assert.match(e6, /visual_thesis must exactly match/); console.log("V580 e6 wrong visual_thesis refused:", e6);
+      const otherGraphRef = "editorial/story-graphs/v580-other-graph.json";
+      writeFileSync(join(art, otherGraphRef), JSON.stringify({ passed: true, reader_question: pubGateReaderQuestion, visual_thesis: pubGateVisualThesis, nodes: [{ id: "n1" }, { id: "n2" }] }));
+      const e5 = await msgOf(publicationPlan.execute("v580-e5", { ...omit(publicationPlanParams(approvedPlanRef, "e5"), ...three), story_graph_ref: otherGraphRef }));
+      assert.match(e5, /story_graph_ref must match/); console.log("V580 e5 other story graph refused:", e5);
+      const e9 = await msgOf(publicationPlan.execute("v580-e9", { ...omit(publicationPlanParams(approvedPlanRef, "e9"), ...three), reader_question: "" }));
+      assert.match(e9, /reader_question must exactly match/); console.log("V580 e9 empty-string reader_question kept and refused:", e9);
+      // e7: on + plan with no reader_question -> refused with reason, nothing invented
+      const bareSpec = JSON.parse(readFileSync(join(art, approvedPlanRef), "utf8")); delete bareSpec.reader_question; bareSpec.visual_thesis = "   ";
+      const barePlanRef = "infographics/plans/v580-bare.json"; writeFileSync(join(art, barePlanRef), JSON.stringify(bareSpec));
+      const e7 = await msgOf(publicationPlan.execute("v580-e7", omit(publicationPlanParams(barePlanRef, "e7"), ...three)));
+      assert.match(e7, /reader_question is missing and could not be derived/); assert.match(e7, /visual_thesis is missing and could not be derived/); console.log("V580 e7 plan lacking fields refused:", e7.slice(0, 260));
+      // e8: on + infographic_plan_ref outside infographics/plans/ -> refused before any copy
+      const e8 = await msgOf(publicationPlan.execute("v580-e8", omit(publicationPlanParams(pubGateStoryGraphRef, "e8"), ...three)));
+      assert.notEqual(e8, "ACCEPTED"); console.log("V580 e8 plan_ref outside plans/ refused:", e8.slice(0, 160));
+      // e10: on + approved plan + same explicit values -> identical planRef (switch does not alter given values)
+      const e10 = await publicationPlan.execute("v580-e10", publicationPlanParams(approvedPlanRef, "eq"));
+      assert.equal(e10.details.planRef, explicitOff.details.planRef); console.log("V580 e10 on+all given same planRef: true");
+      } finally {
+      delete process.env.NEWSROOM_SPEED_FILL_PUBLICATION_COPIED;
+    }
+    console.log("newsroom_publication_plan copy switch: omitted fields copied from the approved plan, gates and given values kept -- PASS");
   }
 } finally {
   rmSync(tmp, { recursive: true, force: true });

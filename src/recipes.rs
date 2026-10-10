@@ -172,6 +172,24 @@ fn select_multi(shapes: &[TableShape]) -> Option<&'static MultiRecipe> {
     }
 }
 
+/// The two V580 comparison switches (exact "1", default off) change what the concept tool asks for, so a recipe that spells the
+/// old requirement out would pull the model back. With both off the body is returned untouched, byte for byte.
+fn follow_concept_switches(body: &str, count_three: bool, trim_unread: bool) -> String {
+    let mut text = body.to_string();
+    if count_three {
+        text = text.replace("一次写满八个方案（少于八个会被拒）", "按工具要求的个数写方案");
+    }
+    if trim_unread {
+        text = text
+            .replace("、risk_flags、reporting_gaps，后四项没有内容就写空数组，risk_flags 和 reporting_gaps 的每一项都是一句字符串", "、risk_flags，后三项没有内容就写空数组，risk_flags 的每一项都是一句字符串");
+    }
+    text
+}
+
+fn switch_on(name: &str) -> bool {
+    std::env::var(name).map(|v| v == "1").unwrap_or(false)
+}
+
 /// Recipe text for the declared local files, from their measured shape only.
 /// Each pair is the path the model sees and the file to read it from.
 pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
@@ -183,6 +201,7 @@ pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
             (recipe.name, recipe.body)
         }
     };
+    let body = follow_concept_switches(body, switch_on("NEWSROOM_CONCEPT_COUNT_3"), switch_on("NEWSROOM_TRIM_UNREAD_FIELDS"));
     let text = format!("{RECIPES_HEADING}{body}");
     Some(Loaded {
         name,
@@ -359,5 +378,39 @@ mod tests {
         assert_eq!(section(&[edges.clone(), grid.clone(), oil.clone()]).unwrap().name, "flow-with-origin-map");
         assert_eq!(section(&[edges, oil]).unwrap().name, "flow-with-origin-map");
         // Case one's Germany tables are unchanged by the new recipes.
+    }
+
+    #[test]
+    fn the_concept_switches_change_only_the_two_sentences_and_nothing_when_off() {
+        let bodies: Vec<&str> = RECIPES.iter().map(|r| r.body).chain(MULTI_RECIPES.iter().map(|r| r.body)).collect();
+        for body in &bodies {
+            assert_eq!(follow_concept_switches(body, false, false), *body, "off must be byte-identical");
+        }
+        let map = MULTI_RECIPES.iter().find(|r| r.name == "flow-with-origin-map").unwrap().body;
+        assert!(map.contains("八个") && map.contains("reporting_gaps"));
+        let count = follow_concept_switches(map, true, false);
+        assert!(!count.contains("八个") && count.contains("按工具要求的个数写方案") && count.contains("reporting_gaps"));
+        let trim = follow_concept_switches(map, false, true);
+        assert!(trim.contains("八个") && !trim.contains("reporting_gaps") && trim.contains("后三项没有内容就写空数组"));
+        let both = follow_concept_switches(map, true, true);
+        assert!(!both.contains("八个") && !both.contains("reporting_gaps"));
+        // Only that one recipe names the count or the field; the other recipes are untouched even with both on.
+        for body in bodies.iter().filter(|b| **b != map) {
+            assert_eq!(follow_concept_switches(body, true, true), *body);
+        }
+        // Everything outside the two sentences is the same text.
+        assert_eq!(count.replace("按工具要求的个数写方案", "一次写满八个方案（少于八个会被拒）"), map);
+        assert_eq!(trim.replace("、risk_flags，后三项没有内容就写空数组，risk_flags 的每一项都是一句字符串", "、risk_flags、reporting_gaps，后四项没有内容就写空数组，risk_flags 和 reporting_gaps 的每一项都是一句字符串"), map);
+    }
+
+    #[test]
+    fn the_global_carbon_tables_load_flow_with_grid_which_names_no_concept_count() {
+        // data-complex/14-global-carbon: gcb_2023_flows.csv (source,target,value_GtC) and owid_percap_top15_grid.csv (country,year,co2_per_capita; 15 x 8).
+        let dir = tempfile::tempdir().unwrap();
+        let flows = write(dir.path(), "gcb_2023_flows.csv", "source,target,value_GtC\n其他,化石排放,0.1160\n化石排放,总排放,10.3968\n");
+        let grid = write(dir.path(), "owid_percap_top15_grid.csv", &grid_csv(15, 8));
+        let loaded = section(&[flows, grid]).unwrap();
+        assert_eq!(loaded.name, "flow-with-grid");
+        assert!(loaded.text.contains("按工具要求的个数写方案") && !loaded.text.contains("写满八个") && !loaded.text.contains("reporting_gaps"));
     }
 }

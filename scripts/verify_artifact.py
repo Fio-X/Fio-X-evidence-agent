@@ -619,6 +619,11 @@ def verify_infographic_source_quotes(root: Path, manifest_ref: str, plan: dict, 
             report.check("译述" in desktop_svg_text, f"infographic {manifest_ref} text module '{module_id}' has a translation but the rendered page has no 译述 label")
 
 
+def concept_min_count() -> int:
+    # NEWSROOM_CONCEPT_COUNT_3=1 (exact) relaxes only the lower bound of the concept count, 8 -> 3; runtime/pi/newsroom.ts conceptMinCount() is the same rule.
+    return 3 if os.environ.get("NEWSROOM_CONCEPT_COUNT_3") == "1" else 8
+
+
 def replay_award_mode_status(item: dict) -> tuple[str, list[str]]:
     refs = item.get("refs") or {}
     metrics = item.get("metrics") or {}
@@ -626,7 +631,7 @@ def replay_award_mode_status(item: dict) -> tuple[str, list[str]]:
     missing_refs = [key for key in required_refs if not str(refs.get(key) or "").strip()]
     concepts_generated = int(metrics.get("concepts_generated") or 0)
     concepts_killed = int(metrics.get("concepts_killed") or 0)
-    concept_ok = 8 <= concepts_generated <= 20 and concepts_killed >= ((concepts_generated + 1) // 2)
+    concept_ok = concept_min_count() <= concepts_generated <= 20 and concepts_killed >= ((concepts_generated + 1) // 2)
     prototype_ok = int(metrics.get("prototype_count") or 0) >= 2
     raster_ok = int(metrics.get("raster_revision_count") or 0) >= 1
     blockers = []
@@ -1455,7 +1460,7 @@ def verify(root: Path) -> Report:
                 concepts = item.get("concepts") or []
                 report.check(item.get("schema_version") == VISUAL_CONCEPT_SET_VERSION, f"visual concepts {rel} schema_version mismatch")
                 report.check(item.get("content_hash") == editorial_hash(item), f"visual concepts {rel} content hash mismatch")
-                report.check(8 <= len(concepts) <= 20, f"visual concepts {rel} must contain 8..20 candidates")
+                report.check(concept_min_count() <= len(concepts) <= 20, f"visual concepts {rel} must contain 8..20 candidates" if concept_min_count() == 8 else f"visual concepts {rel} must contain {concept_min_count()}..20 candidates")
                 report.check(len({str(c.get('framing')) for c in concepts}) >= 3, f"visual concepts {rel} insufficient framing diversity")
                 finalists = replay_concept_finalists(concepts)
                 report.check(item.get("finalists") == finalists, f"visual concepts {rel} finalists are not independently replayable")
