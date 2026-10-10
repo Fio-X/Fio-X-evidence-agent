@@ -227,6 +227,7 @@ jobs:
           node scripts/test_run_as_writer_users.mjs
           node scripts/test_group_coverage.mjs
           node scripts/test_runtime_embed_guard.mjs
+          node scripts/test_switch_exact_one.mjs
           node scripts/test_data_notes.mjs
           node scripts/test_review_from_records.mjs
           python3 scripts/test_review_from_records.py
