@@ -3000,13 +3000,36 @@ function footerBlock(text, urlLine) {
 }
 // Only a URL-bearing note or source takes the new block path; every other footer keeps the old wrapText path unchanged.
 const footerUrlBlock = (text) => (noteUrlLineEnabled() && FOOTER_URL_RE.test(text) ? footerBlock(text, true) : null);
-function emitFooterBlock(parts, block, y) {
-  block.forEach((l, i) => parts.push(`<text x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
+function emitFooterBlock(parts, block, y, x = 54) {
+  block.forEach((l, i) => parts.push(`<text x="${x}" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
   return block.length * 16;
 }
 
 function dataNoteLines(spec) {
-  return typeof spec.data_note === "string" && spec.data_note !== "" ? wrapText(`${VIZ_STRINGS[vizLang(spec)].note}${spec.data_note}`, wrapChars(120)).length : 0;
+  return footerNoteEntries(spec).filter((e) => e.kind === "data_note").reduce((n, e) => n + e.lines, 0);
+}
+
+// The note lines under the chart, in print order (the program's data-flag line, the model's note, the extreme-value
+// line). As in Eurostat's footnotes, the block carries one "注：" / "Note: ": only the first entry has the prefix, each
+// later entry starts where the first entry's text starts, and every entry ends with a full stop. With one entry the line
+// is the old one plus the full stop.
+const NOTE_END_RE = /[。．.!！?？]\s*$/u;
+function noteSentence(text, lang) {
+  const body = String(text).trimEnd();
+  return NOTE_END_RE.test(body) ? body : `${body}${lang === "zh" ? "\u3002" : "."}`;
+}
+function footerNoteEntries(spec, { x0 = 54, maxChars = wrapChars(120), dataNote = true } = {}) {
+  const lang = vizLang(spec), prefix = VIZ_STRINGS[lang].note;
+  const raw = [];
+  if (dataNote && typeof spec.data_note === "string" && spec.data_note !== "") raw.push(["data_note", spec.data_note]);
+  if (spec.note) raw.push(["note", spec.note]);
+  if (spec.extreme_note) raw.push(["extreme_note", spec.extreme_note]);
+  const indentUnits = textUnits(prefix);
+  return raw.map(([kind, text], i) => i === 0
+    // lines: the footer height this entry reserves; the first entry is counted as before this rule (the model's note and the
+    // extreme line without the prefix), only with the full stop
+    ? { kind, text: `${prefix}${noteSentence(text, lang)}`, x: x0, maxChars, lines: wrapText(`${kind === "data_note" ? prefix : ""}${noteSentence(text, lang)}`, maxChars).length }
+    : { kind, text: noteSentence(text, lang), x: x0 + Math.round(indentUnits * 12 * 0.56), maxChars: maxChars - indentUnits, lines: wrapText(noteSentence(text, lang), maxChars - indentUnits).length });
 }
 
 function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
@@ -3014,9 +3037,9 @@ function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
   const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const lang = vizLang(spec), noteBlock = spec.note ? footerUrlBlock(`${VIZ_STRINGS[lang].note}${spec.note}`) : null, srcBlock = footerUrlBlock(sourceAttribution(spec.source_note, lang));
-  const footer = 70 + (noteBlock ? noteBlock.length * 16 : spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16 + dataNoteLines(spec) * 16
-    + (spec.extreme_note ? wrapText(spec.extreme_note, wrapChars(120)).length * 16 : 0);
+  const lang = vizLang(spec), notes = footerNoteEntries(spec), modelNote = notes.find((e) => e.kind === "note"), noteBlock = modelNote ? footerUrlBlock(modelNote.text) : null, srcBlock = footerUrlBlock(sourceAttribution(spec.source_note, lang));
+  const footer = 70 + (noteBlock ? noteBlock.length * 16 : modelNote ? modelNote.lines * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16 + dataNoteLines(spec) * 16
+    + notes.filter((e) => e.kind === "extreme_note").reduce((n, e) => n + e.lines * 16, 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
@@ -3040,16 +3063,17 @@ function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
 }
 
 function addFooter(parts, spec, footerTop, extraBlock = []) {
-  const t = VIZ_STRINGS[vizLang(spec)];
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
+  const notes = footerNoteEntries(spec), noteLine = (e) => svgTextLines(parts, e.text, e.x, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: e.maxChars });
   // NEWSROOM_DATA_NOTES: the program-written source-flag line, its own line before the model's note (spec.data_note is set only by the render tool).
-  if (dataNoteLines(spec)) y += svgTextLines(parts, `${t.note}${spec.data_note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
-  if (spec.note) { const nb = footerUrlBlock(`${t.note}${spec.note}`); y += nb ? emitFooterBlock(parts, nb, y) : svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) }); }
+  for (const e of notes.filter((n) => n.kind === "data_note")) y += noteLine(e);
+  for (const e of notes.filter((n) => n.kind === "note")) { const nb = footerUrlBlock(e.text); y += nb ? emitFooterBlock(parts, nb, y, e.x) : noteLine(e); }
   // The flow map's route_provenance_note: under the chart beside the note, never inside the map panel.
   extraBlock.forEach((l, i) => parts.push(`<text data-role="cartographic-provenance-note" x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
   y += extraBlock.length * 16;
-  if (spec.extreme_note) y += svgTextLines(parts, `${t.note}${spec.extreme_note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) }); // K117: its own line, set by the runtime, after the data-source notes
+  // K117: its own line, set by the runtime, after the data-source notes
+  for (const e of notes.filter((n) => n.kind === "extreme_note")) y += noteLine(e);
   const attr = sourceAttribution(spec.source_note, vizLang(spec)), sb = footerUrlBlock(attr);
   if (sb) emitFooterBlock(parts, sb, y + 3);
   else svgTextLines(parts, attr, 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
@@ -5946,8 +5970,8 @@ function mobileFrame(spec, bodyHeight) {
   const titleLines = headlineWrap(spec.title, 38, true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, 58).length : 0;
   const header = 26 + titleLines * 31 + dekLines * 20 + 20;
-  const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0)
-    + (spec.extreme_note ? wrapText(spec.extreme_note, 70).length * 16 : 0);
+  const mobileNotes = footerNoteEntries(spec, { x0: 32, maxChars: 70, dataNote: false });
+  const footer = 78 + mobileNotes.reduce((n, e) => n + e.lines * 16, 0);
   const height = Math.max(440, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title-mobile">${esc(spec.title)}</title>`);
@@ -5972,11 +5996,9 @@ function mobileFrame(spec, bodyHeight) {
 }
 
 function addMobileFooter(parts, spec, footerTop) {
-  const t = VIZ_STRINGS[vizLang(spec)];
   parts.push(`<line x1="32" y1="${footerTop - 16}" x2="608" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
-  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
-  if (spec.extreme_note) y += svgTextLines(parts, `${t.note}${spec.extreme_note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
+  for (const e of footerNoteEntries(spec, { x0: 32, maxChars: 70, dataNote: false })) y += svgTextLines(parts, e.text, e.x, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: e.maxChars });
   svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 32, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
 }
 

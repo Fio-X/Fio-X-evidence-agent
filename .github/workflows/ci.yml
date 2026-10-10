@@ -330,3 +330,4 @@ jobs:
           node scripts/test_refused_options_fix.mjs
           node scripts/test_extreme_probe.mjs
           node scripts/test_extreme_note.mjs
+          node scripts/test_footer_notes.mjs
