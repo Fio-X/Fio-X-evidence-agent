@@ -1,0 +1,55 @@
+{
+"note": "topic 5 inflation, 10 pairs (start 2020, end 2024); rows as drawn",
+"rows": [
+{
+"iso3": "ARG",
+"infl_start": 42.02,
+"infl_end": 219.88
+},
+{
+"iso3": "SSD",
+"infl_start": 29.68,
+"infl_end": 91.44
+},
+{
+"iso3": "TUR",
+"infl_start": 12.28,
+"infl_end": 58.51
+},
+{
+"iso3": "PSE",
+"infl_start": -0.74,
+"infl_end": 53.67
+},
+{
+"iso3": "LBN",
+"infl_start": 84.86,
+"infl_end": 45.24
+},
+{
+"iso3": "NGA",
+"infl_start": 13.25,
+"infl_end": 33.24
+},
+{
+"iso3": "IRN",
+"infl_start": 30.59,
+"infl_end": 32.46
+},
+{
+"iso3": "MWI",
+"infl_start": 8.63,
+"infl_end": 32.18
+},
+{
+"iso3": "SLE",
+"infl_start": 13.45,
+"infl_end": 28.63
+},
+{
+"iso3": "EGY",
+"infl_start": 5.04,
+"infl_end": 28.27
+}
+]
+}

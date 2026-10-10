@@ -1,0 +1,85 @@
+{
+"note": "topic 12 annual forest area change 2025, top and bottom 10",
+"rows": [
+{
+"iso3": "CHN",
+"change": 1611000
+},
+{
+"iso3": "RUS",
+"change": 839550
+},
+{
+"iso3": "TUR",
+"change": 117080.08
+},
+{
+"iso3": "FRA",
+"change": 89400
+},
+{
+"iso3": "ZAF",
+"change": 87566.016
+},
+{
+"iso3": "IND",
+"change": 86000
+},
+{
+"iso3": "IDN",
+"change": 81479.69
+},
+{
+"iso3": "NZL",
+"change": 67548.05
+},
+{
+"iso3": "KEN",
+"change": 64470.02
+},
+{
+"iso3": "AUS",
+"change": 54093.75
+},
+{
+"iso3": "ARG",
+"change": -179517.97
+},
+{
+"iso3": "BOL",
+"change": -239760.16
+},
+{
+"iso3": "MOZ",
+"change": -267027.75
+},
+{
+"iso3": "COD",
+"change": -282893.75
+},
+{
+"iso3": "MMR",
+"change": -289712.12
+},
+{
+"iso3": "PER",
+"change": -299339.06
+},
+{
+"iso3": "KHM",
+"change": -308734
+},
+{
+"iso3": "TZA",
+"change": -469000
+},
+{
+"iso3": "AGO",
+"change": -510029.7
+},
+{
+"iso3": "BRA",
+"change": -3256050
+}
+]
+}
