@@ -100,6 +100,7 @@ jobs:
           node scripts/test_viz_plan_schema.mjs
           node scripts/test_map_world_switch.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
+          NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
           python3 scripts/test_migration_flow_fixture.py
           python3 scripts/test_migration_story_ir.py
           node scripts/test_migration_story_ir.mjs
