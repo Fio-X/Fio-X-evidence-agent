@@ -66,6 +66,7 @@ const KIND_RULES = [
   [/^visualizations\/graph-analysis\//, "evidence"],
   [/^editorial\/(preferences|award-runs)\//, "pass_decision"],
   [/^infographics\/(vision-critics|competition-preflight)\//, "pass_decision"],
+  [/^verification-rounds\//, "pass_decision"],  // chain-reuse records (K131): the program decides whether a text-only follow-up may reuse the last verified chain
   [/^plan\.json$/, "project_state"],
   [/^runtime\//, "project_state"],
   [/^infographics\/(plan-rejections|plan-patches|chain-rejections|chain-patches)\//, "project_state"],
