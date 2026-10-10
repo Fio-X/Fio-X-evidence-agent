@@ -60,6 +60,8 @@ const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} 
   const dec = rowsOf([1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 40.123456]);
   const rounded = extremeNoteText(bar(), dec);
   assert.match(rounded, /数值按图上取整显示。$/, rounded);
+  assert.equal(rounded, "o8 40.1，远高于其余数据（其余都不超过 1.7）。数值按图上取整显示。", "the numbers are the chart's own rounding, not the raw 40.123456");
+  assert.equal(extremeNoteText(bar(), rowsOf([1100.4, 1200.4, 1300.4, 1400.4, 1500.4, 1600.4, 1700.4, 90000.4])), "o8 9.0万，远高于其余数据（其余都不超过 1700）。数值按图上取整显示。");
   assert.ok(!/^按所给数据计算/.test(rounded));
   const computed = extremeNoteText(bar({ sql: "SELECT k, SUM(v) AS v FROM t GROUP BY k" }), far);
   assert.equal(computed, "按所给数据计算：o8 500，远高于其余数据（其余都不超过 21）。");
@@ -68,7 +70,6 @@ const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} 
   assert.ok(!/^按所给数据计算/.test(extremeNoteText(bar({ sql: "SELECT k, v FROM read_csv_auto('/x/y.csv')" }), far)), "a path is not arithmetic");
   for (const note of [zhNote, rounded, computed]) assert.ok(!/异常|错误|因为|由于|离群|outlier|abnormal|error/i.test(note), note);
   // the displayed numbers are the chart's own (a value under 100 keeps its decimals in the chart's rule: take the formatter's answer)
-  assert.match(rounded, /o8 40(\.\d+)?，/);
 
   // nothing to say
   assert.equal(extremeNoteText(bar(), rowsOf([10, 12, 14, 15, 17, 19, 21, 25])), null, "nothing fires: no note");
@@ -108,7 +109,7 @@ async function build(note, probe, values = [10, 12, 14, 15, 17, 19, 21, 500]) {
   const claim = await h.recordClaim("o8 is 500", [file], [qa]);
   const spec = {
     schema_version: "0.9.0", reader_task: "ranking", language: "en", title: "Values by object", takeaway: "o8 is largest at 500.", alt: "Bar chart of eight objects.",
-    source_note: "Source: test data", claim_id: claim.claim_id, sql, unit: "units", chart_type: "horizontal_bar", category_field: "k", value_field: "v", highlight_values: ["o8"], sort: "desc",
+    source_note: "Source: test data", claim_id: claim.claim_id, sql, unit: "units", note: "Prior note.", chart_type: "horizontal_bar", category_field: "k", value_field: "v", highlight_values: ["o8"], sort: "desc",
   };
   const planRef = "visualizations/plans/plan.json";
   writeFileSync(join(h.art, planRef), JSON.stringify(spec));
@@ -139,6 +140,11 @@ const on = await build("1", undefined);
 const svgOn = svgOf(on);
 assert.ok(svgOn.includes("far above the rest of the data"), "the note is in the chart's note line");
 assert.match(svgOn, /all others no higher than 21 units/);
+const textBlocks = svgOn.match(/<text\b[^>]*>[\s\S]*?<\/text>/g) ?? [];
+const withNote = textBlocks.filter((b) => b.includes("far above the rest"));
+assert.equal(withNote.length >= 1, true);
+assert.ok(withNote.every((b) => !b.includes("Prior note.")), "the extreme note is its own line, not joined to the other note");
+assert.ok(textBlocks.some((b) => b.includes("Prior note.")), "the other note is still there");
 assert.ok(/Note:?\s*/i.test(svgOn) || svgOn.includes("o8 500 units"), "caption text present");
 assert.deepEqual(widths(svgOn), widths(svgOf(off)), "no bar changed: values and scale are untouched");
 const mOn = manifestOf(on), mOff = manifestOf(off);
