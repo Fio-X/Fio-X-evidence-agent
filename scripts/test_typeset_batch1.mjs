@@ -178,6 +178,56 @@ function onOffNear(name, run) {
   assert.equal(classes(bar.on).size, 1, `one notation on the rendered chart: ${bar.on}`);
 }
 
+// ---- K84 B: bare tick numbers, the unit once above the axis, one scale per axis -------------------------------------
+{
+  const base = { schema_version: "0.9.0", reader_task: "ranking", language: "zh", takeaway: "甲最多。", alt: "条形图。", source_note: "S", claim_id: "claim-axis-b", sql: "SELECT 1" };
+  const barSpec = (title, unit) => ({ ...base, title, unit, chart_type: "horizontal_bar", category_field: "k", value_field: "v", highlight_values: ["甲"], sort: "desc" });
+  const rowsOf = (pairs) => pairs.map(([k, v]) => ({ k, v }));
+  const ticksOf = (svg) => [...svg.matchAll(/y="[\d.]+" text-anchor="middle"[^>]*fill="[^"]*">([^<]*)<\/text>/g)].map((m) => m[1]);
+  const unitOf = (svg) => [...svg.matchAll(/data-role="axis-unit"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const draw = (spec, rows) => renderVizBundle(spec, rows, { mobilePages: false }).desktop;
+  const pin = (spec, rows, ticks, unitLine) => {
+    const { off, on } = onOffNear("NEWSROOM_TYPESET_AXIS_NOTATION", () => { const svg = draw(spec, rows); return { ticks: ticksOf(svg), unit: unitOf(svg) }; });
+    assert.deepEqual(off.unit, [], "off: no unit line");
+    assert.deepEqual(on.ticks, ticks, `on: ${on.ticks}`);
+    assert.deepEqual(on.unit, [unitLine], `on: ${on.unit}`);
+    return { off, on };
+  };
+  // chart 1: refugees hosted by Germany at the end of 2023 (UNHCR), persons -> 万人
+  const refugees = rowsOf([["乌克兰", 1097503], ["叙利亚", 705812], ["阿富汗", 255077], ["伊拉克", 146481], ["厄立特里亚", 67087], ["伊朗", 48224], ["土耳其", 44263], ["索马里", 36252], ["俄罗斯", 17437], ["尼日利亚", 13083], ["巴基斯坦", 9416], ["埃塞俄比亚", 7433]]);
+  const c1 = pin(barSpec("2023 年底德国收容的难民，按来源国", "人"), refugees, ["0", "20", "40", "60", "80", "100"], "单位：万人");
+  assert.ok(c1.off.ticks.some((t) => /万/.test(t)), `defect: ${c1.off.ticks}`);
+  // chart 3: population of ten countries, persons -> 亿人
+  const people = rowsOf([["俄罗斯", 145440502], ["墨西哥", 129739761], ["埃塞俄比亚", 128691695], ["日本", 124370947], ["菲律宾", 114891199], ["埃及", 114535772], ["刚果（金）", 105789733], ["越南", 100352189], ["伊朗", 90608708], ["土耳其", 87270502]]);
+  pin(barSpec("2023 年人口排第 9 到 18 位的国家", "人"), people, ["0", "0.5", "1"], "单位：亿人");
+  // chart 2: the mirrored bar, 万人 already in the unit -> numbers only, no second 万
+  const stock = [["美国", 2562, 2675], ["德国", 838, 838], ["沙特阿拉伯", 1064, 305], ["英国", 610, 574], ["法国", 438, 480], ["西班牙", 429, 458], ["加拿大", 417, 463], ["阿联酋", 549, 267], ["澳大利亚", 394, 417], ["俄罗斯", 374, 386]];
+  const mirror = { ...base, title: "2024 年国际移民存量：男性与女性，主要目的地", unit: "万人", chart_type: "mirrored_bar", category_field: "k", series_field: "s", value_field: "v", left_series: "男性" };
+  const mirrorRows = stock.flatMap(([k, m, f]) => [{ k, s: "男性", v: m }, { k, s: "女性", v: f }]);
+  const mirrorTicks = (svg) => [...svg.matchAll(/data-role="axis-tick-label"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const m = onOffNear("NEWSROOM_TYPESET_AXIS_NOTATION", () => { const svg = draw(mirror, mirrorRows); return { ticks: mirrorTicks(svg), unit: unitOf(svg) }; });
+  assert.deepEqual(m.on.ticks, ["0", "0", "500", "500", "1000", "1000", "1500", "1500", "2000", "2000", "2500", "2500", "3000", "3000"], "step 500: the bare numbers are short enough for the finer axis");
+  assert.deepEqual(m.on.unit, ["单位：万人"]);
+  assert.deepEqual(m.off.unit, []);
+  assert.ok(!m.on.ticks.some((t) => /万/.test(t)) && !unitOf(draw(mirror, mirrorRows)).length, "no 万 on a tick, no unit line with the switch off");
+  // crossings: the largest tick decides the scale of the whole axis
+  const spans = (max) => rowsOf([["甲", max], ["乙", max / 2]]);
+  const span = (max, unit = "人") => withSwitch("NEWSROOM_TYPESET_AXIS_NOTATION", "1", () => { const svg = draw(barSpec("T", unit), spans(max)); return [ticksOf(svg), unitOf(svg)]; });
+  assert.deepEqual(span(9000)[1], ["单位：人"], "under 1万: no scale");
+  assert.ok(span(9000)[0].every((t) => !/万|亿/.test(t)));
+  assert.deepEqual(span(12000)[1], ["单位：万人"], "just over 1万: 万");
+  assert.ok(span(12000)[0].every((t) => !/万|亿/.test(t)));
+  assert.deepEqual(span(99000000)[1], ["单位：万人"], "just under 1亿: still 万");
+  assert.deepEqual(span(120000000)[1], ["单位：亿人"], "just over 1亿: 亿");
+  // a unit that already carries a scale is not given a second one
+  assert.deepEqual(span(30000, "万吨")[1], ["单位：万吨"], "no \"万 万吨\"");
+  assert.ok(span(30000, "万吨")[0].every((t) => /^[\d.]+$/.test(t)), span(30000, "万吨")[0].join("|"));
+  assert.deepEqual(span(3e9, "亿元")[1], ["单位：亿元"]);
+  // English pages are not touched by B
+  const enSpec = { ...barSpec("Count", ""), language: "en", unit: "people" };
+  assert.deepEqual(withSwitch("NEWSROOM_TYPESET_AXIS_NOTATION", "1", () => unitOf(draw(enSpec, spans(30000000)))), [], "en: no unit line");
+}
+
 // ---- K85: equal-width digits ---------------------------------------------------------------------------------------
 {
   const sample = { schema_version: "0.9.0", reader_task: "ranking", title: "T", takeaway: "A.", alt: "A bar chart.", source_note: "S", claim_id: "c", sql: "SELECT 1", unit: "pts", chart_type: "horizontal_bar", category_field: "k", value_field: "v", highlight_values: [], annotations: [] };
