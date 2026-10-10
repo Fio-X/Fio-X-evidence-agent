@@ -138,6 +138,18 @@ const RELATIVE_WINDOW_GUIDELINE = "A relative window such as 近三年 means the
 // otherwise); with the switch off the tool definition is untouched.
 const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record<string, string> }> = [
   {
+    env: "NEWSROOM_SPEED_FILL_PUBLICATION_COPIED",
+    tools: {
+      newsroom_publication_plan: "You may omit reader_question, visual_thesis and story_graph_ref; the runtime copies them verbatim from the infographic plan named by infographic_plan_ref and never overrides a value you give.",
+    },
+  },
+  {
+    env: "NEWSROOM_CONCEPT_COUNT_3",
+    tools: {
+      newsroom_visual_concepts: "Send 3-20 concepts in ONE call; fewer than 3 is refused before the tool runs and nothing is saved.",
+    },
+  },
+  {
     env: "NEWSROOM_SPEED_PREFLIGHT",
     tools: {
       newsroom_infographic_plan: "You may omit reader_question, visual_thesis, editorial_discovery_ref, visual_concept_ref, novelty_ref, asset_plan_ref and a visual module's critic_ref when exactly one existing artifact is bound to what you already named; the runtime copies it verbatim, never overrides a value you give, and lists every unmet precondition in one error. selected_concept_id, claim ids and story nodes are never filled for you.",
@@ -189,7 +201,7 @@ const SPEED_GUIDELINES: Array<{ env: string; when?: () => boolean; tools: Record
   {
     env: "NEWSROOM_SPEED_EDITORIAL_HINTS",
     tools: {
-      newsroom_visual_concepts: "Send all 8-20 concepts in ONE call; fewer than 8 is refused before the tool runs and nothing is saved.",
+      newsroom_visual_concepts: `Send all ${conceptMinCount()}-20 concepts in ONE call; fewer than ${conceptMinCount()} is refused before the tool runs and nothing is saved.`,
     },
   },
 ];
@@ -407,6 +419,21 @@ function fillCopiedEnabled() {
   return process.env.NEWSROOM_SPEED_FILL_COPIED_REFS === "1";
 }
 const optionalWhenFillCopied = (schema: any) => (fillCopiedEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_SPEED_FILL_PUBLICATION_COPIED=1: the publication plan's reader_question, visual_thesis and story_graph_ref may be left out; code copies
+// them verbatim from the bound infographic plan. A value the model gives is kept and still compared to that plan, so the comparison stays. Off: nothing changes.
+function fillPublicationCopiedEnabled() {
+  return process.env.NEWSROOM_SPEED_FILL_PUBLICATION_COPIED === "1";
+}
+const optionalWhenFillPublication = (schema: any) => (fillPublicationCopiedEnabled() ? Type.Optional(schema) : schema);
+// NEWSROOM_TRIM_UNREAD_FIELDS=1: fields the model wrote that no later code reads are left out of the formats and dropped from the saved artifacts
+// (see editorial.mjs / story_graph.mjs). Every field a check, the score or a later stage reads stays. Off: nothing changes.
+function trimUnreadEnabled() {
+  return process.env.NEWSROOM_TRIM_UNREAD_FIELDS === "1";
+}
+// NEWSROOM_CONCEPT_COUNT_3=1: a comparison switch for the concept count only: 3 to 20 concepts instead of 8 to 20. Everything else in the tournament is unchanged. Off: 8.
+function conceptMinCount() {
+  return process.env.NEWSROOM_CONCEPT_COUNT_3 === "1" ? 3 : 8;
+}
 async function onlyArtifactRef(tool: string, field: string, dir: string, none: string) {
   const found = await candidates(preflightIo, dir, () => true);
   if (found.truncated) throw preflightError(tool, [`${field} is missing and could not be derived: more than 200 artifacts to scan; supply it explicitly`]);
@@ -5177,17 +5204,16 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       reader_problem: Type.String(),
       candidate_questions: Type.Array(Type.String(), ruleHint(RULE_HINT_QUESTIONS, { minItems: 1, maxItems: 12 })),
       surprises: Type.Array(Type.String(), { maxItems: 12 }),
-      counterintuitive_findings: Type.Array(Type.String(), { maxItems: 12 }),
-      human_scale_refs: Type.Array(Type.String(), { maxItems: 12 }),
+      ...(trimUnreadEnabled() ? {} : { counterintuitive_findings: Type.Array(Type.String(), { maxItems: 12 }), human_scale_refs: Type.Array(Type.String(), { maxItems: 12 }) }),
       spatial_dimensions: Type.Array(Type.String(), { maxItems: 12 }),
-      temporal_dimensions: Type.Array(Type.String(), { maxItems: 12 }),
+      ...(trimUnreadEnabled() ? {} : { temporal_dimensions: Type.Array(Type.String(), { maxItems: 12 }) }),
       mechanisms: Type.Array(Type.String(), { maxItems: 12 }),
-      uncertainties: Type.Array(Type.String(), { maxItems: 12 }),
-      missing_reporting: Type.Array(Type.Object({ need: Type.String(), blocking: Type.Boolean(), reason: Type.Optional(Type.String()) }), { maxItems: 12 }),
+      ...(trimUnreadEnabled() ? {} : { uncertainties: Type.Array(Type.String(), { maxItems: 12 }) }),
+      missing_reporting: Type.Array(Type.Object(trimUnreadEnabled() ? { need: Type.String(), blocking: Type.Boolean() } : { need: Type.String(), blocking: Type.Boolean(), reason: Type.Optional(Type.String()) }), { maxItems: 12 }),
       kill_reasons: Type.Array(Type.String(), { maxItems: 12 }),
     }),
     async execute(_id, params) {
-      const discovery = assessEditorialDiscovery(params);
+      const discovery = assessEditorialDiscovery(params, { trim: trimUnreadEnabled() });
       const rel = `editorial/discovery/${discovery.content_hash}.json`;
       await writeArtifactIfAbsent(rel, discovery);
       return textResult(`${discovery.decision}: editorial discovery\nArtifact: ${rel}\nQuestions: ${discovery.metrics.candidate_question_count}\nBlocking reporting gaps: ${discovery.metrics.blocking_reporting_gap_count}`, { discoveryRef: rel, decision: discovery.decision, metrics: discovery.metrics });
@@ -5200,8 +5226,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     summary: Type.String(),
     explanatory_dimension: StringEnum([...STORY_DIMENSIONS]),
     claim_ids: Type.Optional(Type.Array(Type.String(), editorialHint(EDITORIAL_HINT_CLAIM_IDS, { maxItems: 20 }))),
-    evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })),
-    module_hint: Type.Optional(Type.String()),
+    ...(trimUnreadEnabled() ? {} : { evidence_refs: Type.Optional(Type.Array(Type.String(), { maxItems: 20 })), module_hint: Type.Optional(Type.String()) }),
   });
 
   registerScopedTool(pi, {
@@ -5215,14 +5240,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Every answer node must be reachable from the entry nodes. A collection of unrelated chart ideas is not a passing story graph.",
     ],
     parameters: Type.Object({
-      story_id: Type.Optional(Type.String()),
+      ...(trimUnreadEnabled() ? {} : { story_id: Type.Optional(Type.String()) }),
       reader_question: Type.String(),
       visual_thesis: Type.String(),
       nodes: Type.Array(storyNodeParameters, { minItems: 3, maxItems: 24 }),
       edges: Type.Array(Type.Object({
         from: Type.String(), to: Type.String(),
         relation: StringEnum(["supports", "causes", "contributes_to", "explains", "contrasts_with", "qualifies", "locates", "precedes", "benchmarks"] as const),
-        note: Type.Optional(Type.String()),
+        ...(trimUnreadEnabled() ? {} : { note: Type.Optional(Type.String()) }),
       }), { minItems: 2, maxItems: 48 }),
       entry_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
       answer_node_ids: Type.Array(Type.String(), { minItems: 1, maxItems: 12 }),
@@ -5230,7 +5255,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     async execute(_id, params) {
       const verified = new Set(await verifiedClaimIds());
       for (const node of params.nodes) for (const claimId of node.claim_ids ?? []) if (!verified.has(String(claimId))) throw new Error(`Story node '${node.id}' references unverified claim '${claimId}'${editorialHintsEnabled() ? await storyGraphRefusalHint(params.nodes, verified) : ""}`);
-      const graph = assessStoryGraph(params);
+      const graph = assessStoryGraph(params, { trim: trimUnreadEnabled() });
       const rel = `editorial/story-graphs/${graph.content_hash}.json`;
       await writeArtifactIfAbsent(rel, graph);
       return textResult(`${graph.passed ? "PASS" : "REVISE"}: visual story graph\nArtifact: ${rel}\nClosure coverage: ${(graph.metrics.closure_coverage * 100).toFixed(1)}%\nDimensions: ${graph.explanatory_dimensions.join(", ")}\nIssues: ${graph.issues.length ? graph.issues.map((issue: any) => `${issue.severity}:${issue.code}`).join(" | ") : "none"}`, { storyGraphRef: rel, passed: graph.passed, metrics: graph.metrics, issues: graph.issues });
@@ -5251,14 +5276,14 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       framing: StringEnum(["spatial", "temporal", "mechanism", "comparison", "human_scale", "object_scene", "progressive_reveal"] as const),
       hero_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
       supporting_evidence_refs: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 20 })),
-      asset_requirements: optionalWhenCompact(Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), note: Type.Optional(Type.String()) }), { maxItems: 12 })),
+      asset_requirements: optionalWhenCompact(Type.Array(Type.Object({ kind: Type.String(), available: Type.Boolean(), blocking: Type.Boolean(), ...(trimUnreadEnabled() ? {} : { note: Type.Optional(Type.String()) }) }), { maxItems: 12 })),
       media_mix: optionalWhenCompact(Type.Array(Type.String(), { minItems: 1, maxItems: 12 })),
-      information_hierarchy: Type.Optional(Type.String()),
+      ...(trimUnreadEnabled() ? {} : { information_hierarchy: Type.Optional(Type.String()) }),
       mobile_treatment: Type.Optional(Type.String()),
       risk_flags: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
-      reporting_gaps: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })),
+      ...(trimUnreadEnabled() ? {} : { reporting_gaps: optionalWhenCompact(Type.Array(Type.String(), { maxItems: 12 })) }),
       why_memorable: Type.String(),
-      why_reject: Type.Optional(Type.String()),
+      ...(trimUnreadEnabled() ? {} : { why_reject: Type.Optional(Type.String()) }),
     });
   };
   const conceptParameters = buildConceptParameters(compactSetupEnabled());
@@ -5266,17 +5291,19 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
   registerScopedTool(pi, {
     name: "newsroom_visual_concepts",
     label: "Run visual concept tournament",
-    description: "Generate a content-addressed award-mode concept tournament. Eight to twenty materially different concepts are compared deterministically and pruned to at most three finalists before polished page rendering.",
+    description: `Generate a content-addressed award-mode concept tournament. ${conceptMinCount() === 8 ? "Eight" : "Three"} to twenty materially different concepts are compared deterministically and pruned to at most three finalists before polished page rendering.`,
     promptSnippet: "Explore and prune story-specific visual premises",
     promptGuidelines: [
-      "Provide 8-20 genuinely different concepts spanning at least three framings. A change of chart type alone does not count as concept diversity.",
-      "Describe missing assets and blocking reporting gaps explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject.",
+      `Provide ${conceptMinCount()}-20 genuinely different concepts spanning at least three framings. A change of chart type alone does not count as concept diversity.`,
+      trimUnreadEnabled()
+        ? "Describe missing assets explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject."
+        : "Describe missing assets and blocking reporting gaps explicitly. Generic dashboard or collection-of-charts concepts should be easy to reject.",
       "Use the finalists as prototypes, not as permission to alter verified claims or source provenance.",
     ],
     parameters: Type.Object({
       discovery_ref: optionalWhenCompact(Type.String()),
       ...(compactSetupEnabled() ? { shared: Type.Optional(Type.Object({}, { additionalProperties: true, description: "Defaults merged under every concept (shallow; the concept wins; arrays are replaced). Never concept_id, framing, visual_metaphor, hero_scene or why_memorable." })) } : {}),
-      concepts: Type.Array(conceptParameters, { minItems: 8, maxItems: 20 }),
+      concepts: Type.Array(conceptParameters, { minItems: conceptMinCount(), maxItems: 20 }),
     }),
     async execute(_id, rawParams) {
       let params = rawParams;
@@ -5289,7 +5316,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
-      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: mobilePagesEnabled() });
+      const tournament = tournamentVisualConcepts({ discovery_ref: params.discovery_ref, concepts: params.concepts }, { mobilePages: mobilePagesEnabled(), trim: trimUnreadEnabled(), minConcepts: conceptMinCount() });
       const rel = `editorial/concepts/${tournament.content_hash}.json`;
       await writeArtifactIfAbsent(rel, tournament);
       return textResult(`Visual concept tournament recorded.\nArtifact: ${rel}\nSelected: ${tournament.selected_concept_id}\nFinalists: ${tournament.finalists.join(", ")}\nRejected: ${tournament.rejected.length}`, { conceptRef: rel, selectedConceptId: tournament.selected_concept_id, finalists: tournament.finalists, rejected: tournament.rejected.length });
@@ -5406,8 +5433,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = reviewFromRecordsEnabled()
-        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref) })
-        : summarizeAwardMode(params);
+        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: conceptMinCount() })
+        : summarizeAwardMode(params, { minConcepts: conceptMinCount() });
       const rel = `editorial/award-runs/${result.content_hash}.json`;
       await saveDecision(rel, result);
       return textResult(`${result.status_display && result.status !== "BLOCKED" ? `${result.status} (${result.status_display})` : result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
@@ -5973,11 +6000,11 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     ],
     parameters: Type.Object({
       infographic_plan_ref: Type.String(),
-      story_graph_ref: Type.String(),
+      story_graph_ref: optionalWhenFillPublication(Type.String()),
       title: Type.String(),
       dek: Type.String(),
-      reader_question: Type.String(),
-      visual_thesis: Type.String(),
+      reader_question: optionalWhenFillPublication(Type.String()),
+      visual_thesis: optionalWhenFillPublication(Type.String()),
       source_note: Type.Optional(Type.String()),
       style_profile: Type.Optional(StringEnum(["analytical_precision", "systems_explainer", "investigative_network", "uncertainty_forecast", "spatial_monitor", "nature_scientific_map", "japanese_editorial"] as const)),
       delivery_mode: Type.Optional(StringEnum(["html", "scrollytelling", "hybrid"] as const)),
@@ -5991,9 +6018,17 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       language: Type.Optional(StringEnum(["zh", "en"] as const)),
       modules: Type.Array(publicationModuleParameters, { minItems: 2, maxItems: 20 }),
     }),
-    async execute(_id, params) {
+    async execute(_id, givenParams) {
+      let params = givenParams;
       const mobilePages = mobilePagesEnabled();
       const infographic = await readArtifactJson(params.infographic_plan_ref, "infographics/plans/");
+      if (fillPublicationCopiedEnabled()) {
+        // Copy only what the model left out, from the plan it named; a given value stays and is compared below as today.
+        const missing = ["story_graph_ref", "reader_question", "visual_thesis"].filter((field) => params?.[field] === undefined);
+        const empty = missing.filter((field) => typeof infographic?.[field] !== "string" || !String(infographic[field]).trim());
+        if (empty.length) throw preflightError("newsroom_publication_plan", empty.map((field) => `${field} is missing and could not be derived: the infographic plan has no ${field}; supply it explicitly`));
+        if (missing.length) params = { ...params, ...Object.fromEntries(missing.map((field) => [field, String(infographic[field])])) };
+      }
       await assertApprovedInfographicLineage(params.infographic_plan_ref);
       const graph = await readArtifactJson(params.story_graph_ref, "editorial/story-graphs/");
       if (String(infographic.story_graph_ref ?? "") !== params.story_graph_ref) throw new Error("Publication story_graph_ref must match the bound InfographicSpec");

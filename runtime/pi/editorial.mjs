@@ -18,12 +18,30 @@ function canonical(value) {
 }
 export function editorialHash(value) { return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex'); }
 
-export function validateEditorialDiscovery(discovery) {
+// NEWSROOM_TRIM_UNREAD_FIELDS=1: fields the model wrote but no later code reads are not asked for, and are dropped from the saved artifact when the model
+// still writes them. Every field a check, the score or a later stage reads is kept. Off: nothing here runs.
+export const UNREAD_DISCOVERY_LISTS = ['counterintuitive_findings', 'human_scale_refs', 'uncertainties', 'temporal_dimensions'];
+export const UNREAD_CONCEPT_FIELDS = ['information_hierarchy', 'why_reject', 'reporting_gaps'];
+export function trimDiscoveryInput(input) {
+  const out = { ...input };
+  for (const field of UNREAD_DISCOVERY_LISTS) delete out[field];
+  if (Array.isArray(out.missing_reporting)) out.missing_reporting = out.missing_reporting.map((item) => { if (!item || typeof item !== 'object') return item; const { reason: _reason, ...rest } = item; return rest; });
+  return out;
+}
+export function trimConceptInput(concept) {
+  if (!concept || typeof concept !== 'object') return concept;
+  const out = { ...concept };
+  for (const field of UNREAD_CONCEPT_FIELDS) delete out[field];
+  if (Array.isArray(out.asset_requirements)) out.asset_requirements = out.asset_requirements.map((item) => { if (!item || typeof item !== 'object') return item; const { note: _note, ...rest } = item; return rest; });
+  return out;
+}
+
+export function validateEditorialDiscovery(discovery, { trim = false } = {}) {
   const errors = [];
   if (!discovery || typeof discovery !== 'object') return ['editorial discovery must be an object'];
   if (discovery.schema_version && discovery.schema_version !== EDITORIAL_DISCOVERY_SCHEMA_VERSION) errors.push(`schema_version must be ${EDITORIAL_DISCOVERY_SCHEMA_VERSION}`);
   if (!text(discovery.reader_problem)) errors.push('reader_problem is required');
-  const listFields = ['candidate_questions', 'surprises', 'counterintuitive_findings', 'human_scale_refs', 'spatial_dimensions', 'temporal_dimensions', 'mechanisms', 'uncertainties', 'kill_reasons'];
+  const listFields = trim ? ['candidate_questions', 'surprises', 'spatial_dimensions', 'mechanisms', 'kill_reasons'] : ['candidate_questions', 'surprises', 'counterintuitive_findings', 'human_scale_refs', 'spatial_dimensions', 'temporal_dimensions', 'mechanisms', 'uncertainties', 'kill_reasons'];
   for (const field of listFields) if (!Array.isArray(discovery[field])) errors.push(`${field} must be an array`);
   if (Array.isArray(discovery.candidate_questions) && (discovery.candidate_questions.length < 1 || discovery.candidate_questions.length > 12)) errors.push('candidate_questions must contain 1..12 items');
   if (discovery.missing_reporting !== undefined && !Array.isArray(discovery.missing_reporting)) errors.push('missing_reporting must be an array');
@@ -34,9 +52,9 @@ export function validateEditorialDiscovery(discovery) {
   return errors;
 }
 
-export function assessEditorialDiscovery(input) {
-  const discovery = { schema_version: EDITORIAL_DISCOVERY_SCHEMA_VERSION, ...input };
-  const errors = validateEditorialDiscovery(discovery);
+export function assessEditorialDiscovery(input, { trim = false } = {}) {
+  const discovery = { schema_version: EDITORIAL_DISCOVERY_SCHEMA_VERSION, ...(trim ? trimDiscoveryInput(input) : input) };
+  const errors = validateEditorialDiscovery(discovery, { trim });
   if (errors.length) throw new Error(errors.join('; '));
   const questions = uniq(discovery.candidate_questions);
   const blockingGaps = (discovery.missing_reporting ?? []).filter((item) => item.blocking === true);
@@ -59,15 +77,15 @@ export function assessEditorialDiscovery(input) {
     metrics: {
       candidate_question_count: questions.length,
       blocking_reporting_gap_count: blockingGaps.length,
-      discovery_dimension_count: [discovery.surprises, discovery.human_scale_refs, discovery.spatial_dimensions, discovery.temporal_dimensions, discovery.mechanisms, discovery.uncertainties].filter((items) => (items ?? []).length).length,
+      ...(trim ? {} : { discovery_dimension_count: [discovery.surprises, discovery.human_scale_refs, discovery.spatial_dimensions, discovery.temporal_dimensions, discovery.mechanisms, discovery.uncertainties].filter((items) => (items ?? []).length).length }),
     },
   };
   artifact.content_hash = editorialHash(artifact);
   return artifact;
 }
 
-function normalizeConcept(concept) {
-  return {
+function normalizeConcept(concept, { trim = false } = {}) {
+  const out = {
     ...concept,
     concept_id: text(concept.concept_id),
     reader_question: text(concept.reader_question),
@@ -83,18 +101,21 @@ function normalizeConcept(concept) {
     reporting_gaps: uniq(concept.reporting_gaps),
     asset_requirements: Array.isArray(concept.asset_requirements) ? concept.asset_requirements : [],
   };
+  if (trim) delete out.reporting_gaps;
+  return out;
 }
 
-export function validateVisualConcepts(concepts, { mobilePages = true } = {}) {
+// minConcepts stays 8 unless the caller passes NEWSROOM_CONCEPT_COUNT_3's 3 (a comparison switch, default off).
+export function validateVisualConcepts(concepts, { mobilePages = true, minConcepts = 8, trim = false } = {}) {
   const errors = [];
   if (!Array.isArray(concepts)) return ['concepts must be an array'];
-  if (concepts.length < 8 || concepts.length > 20) errors.push('award-mode concepts must contain 8..20 candidates');
+  if (concepts.length < minConcepts || concepts.length > 20) errors.push(`award-mode concepts must contain ${minConcepts}..20 candidates`);
   const ids = new Set();
   const requiredFields = mobilePages
     ? ['reader_question', 'editorial_premise', 'visual_metaphor', 'hero_scene', 'mobile_treatment', 'why_memorable']
     : ['reader_question', 'editorial_premise', 'visual_metaphor', 'hero_scene', 'why_memorable'];
   for (const raw of concepts) {
-    const concept = normalizeConcept(raw ?? {});
+    const concept = normalizeConcept(raw ?? {}, { trim });
     if (!concept.concept_id) errors.push('every concept requires concept_id');
     else if (ids.has(concept.concept_id)) errors.push(`duplicate concept_id '${concept.concept_id}'`);
     else ids.add(concept.concept_id);
@@ -138,9 +159,9 @@ export function scoreVisualConcept(raw) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-export function tournamentVisualConcepts(input, { mobilePages = true } = {}) {
-  const concepts = (input.concepts ?? []).map(normalizeConcept);
-  const errors = validateVisualConcepts(concepts, { mobilePages });
+export function tournamentVisualConcepts(input, { mobilePages = true, trim = false, minConcepts = 8 } = {}) {
+  const concepts = (input.concepts ?? []).map((raw) => normalizeConcept(trim ? trimConceptInput(raw) : raw, { trim }));
+  const errors = validateVisualConcepts(concepts, { mobilePages, minConcepts, trim });
   if (errors.length) throw new Error(errors.join('; '));
   const scores = Object.fromEntries(concepts.map((concept) => [concept.concept_id, scoreVisualConcept(concept)]));
   const pairwise = [];
