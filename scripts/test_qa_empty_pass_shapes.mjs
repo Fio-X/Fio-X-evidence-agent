@@ -49,6 +49,18 @@ assert.equal(empties(hv).length, 0);
 assert.ok(/12 heatmap cell/.test(hv.extra_checks.no_empty_pass.not_applicable[0].reason), "12 cells drawn");
 assert.equal(empties(nep(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><text x="20" y="40" font-size="14" fill="#111">无数据</text><rect data-role="legend-swatch" x="20" y="170" width="10" height="10" fill="#345"/></svg>`, { heatmapChart: true })).length, 1, "a heatmap with no cells still fails");
 
+// wide heatmaps: with 76+ columns every cell is under 8 px, but they are still drawn cells (fe's review: thin cells beyond the furniture cap count)
+for (const cols of [8, 40, 75, 76, 120]) {
+  const wideRows = ["甲国", "乙国", "丙国"].flatMap((country, i) => Array.from({ length: cols }, (_, j) => ({ country, fuel: `F${j}`, share: 5 + ((i * 7 + j * 3) % 40) })));
+  const wide = renderVizBundle(spec, wideRows, { mobilePages: false }).desktop;
+  const wv = nep(wide, { heatmapChart: true });
+  assert.equal(empties(wv).length, 0, `${cols} columns: not an empty pass`);
+  assert.ok(new RegExp(`${cols * 3} heatmap cell`).test(wv.extra_checks.no_empty_pass.not_applicable?.[0]?.reason ?? ""), `${cols} columns: every cell counted`);
+}
+// the same thin rects without the heatmap hint are not counted as cells, and a heatmap whose cells are gone still fails
+const noCells = nep(renderVizBundle(spec, rows, { mobilePages: false }).desktop.replace(/<rect\b(?![^>]*(?:data-role|width="(?:[89]\d\d|\d{4})"))[^>]*>/g, ""), { heatmapChart: true });
+assert.equal(empties(noCells).length, 1, "a heatmap with its cells removed still fails");
+
 // thin untagged rects: a few are accent bars, a row of them is a chart
 const head = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200">';
 const thin = (n) => `${head}${Array.from({ length: n }, (_, i) => `<rect x="${20 + i * 40}" y="${150 - 6 - i * 5}" width="30" height="6" fill="#345"/>`).join("")}<text x="20" y="190" font-size="14" fill="#111">说明</text></svg>`;
