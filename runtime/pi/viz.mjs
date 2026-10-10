@@ -3723,12 +3723,20 @@ function horizontalAxisTicks(domain, frameW = null) {
   }
   return ticks;
 }
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null, unitY = null) {
+// NEWSROOM_TYPESET_VALUE_LABEL_AXIS=1 (with notation B): the unit line is 13px, flush left with the start of the axis, a little closer to
+// the first bar. Off, it stays the 12px line at the axis's right end.
+function unitLineLeft(spec) {
+  return process.env.NEWSROOM_TYPESET_VALUE_LABEL_AXIS === "1" && process.env.NEWSROOM_TYPESET_AXIS_NOTATION === "1" && spec && vizLang(spec) === "zh";
+}
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null, unitY = null, unitAtLeft = false) {
   const ticks = horizontalAxisTicks(domain, frameW);
   const scaleX = horizontalScale(domain, left, right);
   const notationB = unitY === null ? null : axisNotationB(spec, ticks, unit);
   const tickTexts = notationB ? notationB.texts : axisTickTexts(spec, ticks, unit, labelDecimals);
-  if (notationB?.unitLine) parts.push(`<text x="${right}" y="${unitY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}" data-role="axis-unit">${esc(notationB.unitLine)}</text>`);
+  if (notationB?.unitLine) {
+    if (unitAtLeft && unitLineLeft(spec)) parts.push(`<text x="${left}" y="${unitY + 4}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}" data-role="axis-unit">${esc(notationB.unitLine)}</text>`);
+    else parts.push(`<text x="${right}" y="${unitY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}" data-role="axis-unit">${esc(notationB.unitLine)}</text>`);
+  }
   ticks.forEach((tick, i) => {
     const x = scaleX(tick);
     if (!LAYERING_FIX) {
@@ -3785,7 +3793,7 @@ function renderGroupedDots(spec, rows) {
     f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(68, String(name).length * 12 + 30);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, null, null, base - 6);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, null, null, base - 6, true);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -3908,7 +3916,7 @@ function renderHorizontal(spec, rows, mode) {
   }
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals, base - 6);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals, base - 6, true);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -4263,7 +4271,10 @@ function renderMirroredBar(spec, rows) {
   const axisTickLabelTexts = mirrorTickTexts(axis.ticks, spec.unit);
   const unitLine = axisNotationB(spec, axis.ticks, spec.unit)?.unitLine;
   const labelPlan = axisLabelPlan(spec, printed, axis.ticks, spec.unit);
-  if (unitLine) heads.push(`<text data-role="axis-unit" x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+  if (unitLine) {
+    if (unitLineLeft(spec)) heads.push(`<text data-role="axis-unit" x="54" y="${px(f.bodyTop + 12)}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+    else heads.push(`<text data-role="axis-unit" x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+  }
   panelPeriods.forEach((period, pk) => {
     const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
     const gl = cx - gutterW / 2, gr = cx + gutterW / 2;

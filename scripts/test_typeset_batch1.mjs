@@ -303,6 +303,22 @@ function onOffNear(name, run) {
   assert.ok(labelsOf(mOn).every((t) => /^\d+$/.test(t)) && labelsOf(mOn).length === 6, `mirrored: no unit on any label: ${labelsOf(mOn)}`);
   assert.ok(labelsOf(withEnv(B, () => draw(mirror, mirrorRows))).some((t) => /万人/.test(t)), "mirrored defect: the last label still carried the unit");
 
+  // the unit line moves to the axis's start (13px, flush left) with the label switch; B alone keeps it right-aligned at 12px
+  {
+    const unitTag = (svg) => [...svg.matchAll(/<text([^>]*data-role="axis-unit"[^>]*)>/g)].map((m) => m[1]);
+    const attr = (tag, name) => (tag.match(new RegExp(`${name}="([^"]*)"`)) ?? [])[1];
+    const [tb] = unitTag(withEnv(B, () => draw(barSpec("人"), refugees)));
+    assert.equal(attr(tb, "text-anchor"), "end"); assert.equal(attr(tb, "font-size"), "12");
+    const [tl] = unitTag(withEnv({ ...B, ...L }, () => draw(barSpec("人"), refugees)));
+    assert.equal(attr(tl, "text-anchor"), "start"); assert.equal(attr(tl, "font-size"), "13");
+    const firstBarX = Number(withEnv({ ...B, ...L }, () => draw(barSpec("人"), refugees)).match(/data-role="data-bar" x="([\d.]+)"/)[1]);
+    assert.equal(Number(attr(tl, "x")), firstBarX, "flush with the axis start (where the bars start)");
+    const [tm] = unitTag(withEnv({ ...B, ...L }, () => draw(mirror, mirrorRows)));
+    assert.equal(attr(tm, "text-anchor"), "start"); assert.equal(attr(tm, "x"), "54");
+    const unitY = Number(attr(tl, "y")), barTop = Number(withEnv({ ...B, ...L }, () => draw(barSpec("人"), refugees)).match(/data-role="data-bar" x="[\d.]+" y="([\d.]+)"/)[1]);
+    assert.ok(barTop - unitY >= 4 && barTop - unitY <= 20, `a small gap above the first bar: ${barTop - unitY}`);
+  }
+
   // K203: the axis ends on a whole tick
   assert.deepEqual(withEnv(N, () => niceAxisDomain([0, 1097503])), [0, 1200000], "refugees: 109.75万 -> axis to 120万");
   assert.deepEqual(withEnv(N, () => niceAxisDomain([0, 145440502])), [0, 150000000]);
