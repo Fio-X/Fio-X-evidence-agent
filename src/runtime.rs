@@ -65,6 +65,7 @@ const CLAIM_BINDING_RUNTIME: &str = include_str!("../runtime/pi/claim_binding.mj
 const NUMBER_SHADOW_RUNTIME: &str = include_str!("../runtime/pi/number_shadow.mjs");
 const COMPACT_SETUP_RUNTIME: &str = include_str!("../runtime/pi/compact_setup.mjs");
 const NUMBER_WORDS_RUNTIME: &str = include_str!("../runtime/pi/number_words.mjs");
+const DATA_NOTES_RUNTIME: &str = include_str!("../runtime/pi/data_notes.mjs");
 const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
 const PATCH_RETRY_RUNTIME: &str = include_str!("../runtime/pi/patch_retry.mjs");
 const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
@@ -187,6 +188,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let number_shadow_path = runtime_dir.join("number_shadow.mjs");
     let compact_setup_path = runtime_dir.join("compact_setup.mjs");
     let number_words_path = runtime_dir.join("number_words.mjs");
+    let data_notes_path = runtime_dir.join("data_notes.mjs");
     let preflight_path = runtime_dir.join("preflight.mjs");
     let patch_retry_path = runtime_dir.join("patch_retry.mjs");
     let shadow_path = runtime_dir.join("shadow.mjs");
@@ -277,6 +279,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&number_shadow_path, NUMBER_SHADOW_RUNTIME)?;
     write_if_changed(&compact_setup_path, COMPACT_SETUP_RUNTIME)?;
     write_if_changed(&number_words_path, NUMBER_WORDS_RUNTIME)?;
+    write_if_changed(&data_notes_path, DATA_NOTES_RUNTIME)?;
     write_if_changed(&preflight_path, PREFLIGHT_RUNTIME)?;
     write_if_changed(&patch_retry_path, PATCH_RETRY_RUNTIME)?;
     write_if_changed(&shadow_path, SHADOW_RUNTIME)?;
@@ -339,6 +342,7 @@ mod tests {
             "asof_probe.mjs",
             "claim_binding.mjs",
             "compact_setup.mjs",
+            "data_notes.mjs",
             "number_shadow.mjs",
             "number_words.mjs",
             "patch_retry.mjs",

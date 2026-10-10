@@ -467,6 +467,9 @@
   "runtime/pi/number_words.mjs": {
    "group": "knowledge"
   },
+  "runtime/pi/data_notes.mjs": {
+   "group": "knowledge"
+  },
   "runtime/pi/number_shadow.mjs": {
    "group": "knowledge"
   },
