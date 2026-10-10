@@ -37,8 +37,19 @@ export const RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0";
 // field names the chart was built from. Anything else (bar/line/etc. charts,
 // or a choropleth render call that omits it) gets exactly the pre-existing
 // geometry+contrast report, unchanged.
+// V568: a D-style flow-map trunk is at most 12 px wide. Only a map drawn with the trunk style carries these paths, so every other SVG is untouched.
+export const FLOW_TRUNK_MAX_PX = 12;
+function flowTrunkWidthFailures(svgText) {
+  const failures = [];
+  for (const m of svgText.matchAll(/<path data-role="cartographic-flow-trunk"[^>]*?stroke-width="([\d.]+)"/g)) {
+    if (Number(m[1]) > FLOW_TRUNK_MAX_PX + 0.01) failures.push({ rule: "flow_trunk_too_wide", message: `a flow-map trunk is ${m[1]} px wide; the widest allowed is ${FLOW_TRUNK_MAX_PX} px` });
+  }
+  return failures;
+}
 function checkViewport(svgText, options) {
   const geometry = checkSvgGeometry(svgText, options?.geometry);
+  const trunkFailures = flowTrunkWidthFailures(svgText);
+  if (trunkFailures.length) { geometry.failures = [...geometry.failures, ...trunkFailures]; geometry.passed = false; }
   const contrast = checkSvgContrast(svgText, options?.contrast);
   let valueLabels = null;
   let proofOnly = false;
