@@ -216,6 +216,10 @@ const heldChartTypesEnabled = () => process.env.NEWSROOM_HELD_CHART_TYPES === "1
 // NEWSROOM_FLOW_MAPS_BACK=1 (default off, only with the hold on): cartographic_flow_map leaves the held list everywhere it is read (enum, refusal,
 // grammar-blocked message, hint texts, the geo_edges plan value, which that map's default data_topology uses); geo_flow_map (fails render QA), hierarchy_tree and trajectory_profile stay held. Off: nothing below changes.
 const FLOW_MAP_TYPES: readonly string[] = ["cartographic_flow_map"];
+// NEWSROOM_FLOW_EXTENT_HINT=1 (exact "1", default off): the plan field says to leave extent_mode out so the program picks the extent from the
+// data, and to write world only when the story needs the whole world. The extent thresholds are not touched.
+const flowExtentHintEnabled = () => process.env.NEWSROOM_FLOW_EXTENT_HINT === "1";
+const FLOW_EXTENT_HINT = "Leave this out so the program picks the extent from the data (it zooms in when the flows sit in one region). Write world only when the story needs the whole world.";
 const flowMapsBackEnabled = () => heldChartTypesEnabled() && process.env.NEWSROOM_FLOW_MAPS_BACK === "1";
 const isHeldChartType = (chartType: unknown) => heldChartTypesEnabled() && HELD_CHART_TYPES.includes(String(chartType ?? "")) && !(flowMapsBackEnabled() && FLOW_MAP_TYPES.includes(String(chartType ?? "")));
 // Plan values that fit only held chart types: sent with any other chart_type they fail lint with "does not match chart_type".
@@ -4158,7 +4162,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
       flow_layer_order: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 6 })),
       time_field: Type.Optional(Type.String()),
       trajectory_points_field: Type.Optional(Type.String()),
-      extent_mode: Type.Optional(StringEnum(["world", "data"] as const)),
+      extent_mode: Type.Optional(StringEnum(["world", "data"] as const, flowExtentHintEnabled() ? { description: FLOW_EXTENT_HINT } : undefined)),
       extent_padding_ratio: Type.Optional(Type.Number({ minimum: 0, maximum: 0.35 })),
       reference_path: Type.Optional(StringEnum(["none", "great_circle"] as const)),
       locator_inset: Type.Optional(Type.Boolean()),
