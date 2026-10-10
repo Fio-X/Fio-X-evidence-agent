@@ -6,6 +6,7 @@ node --check runtime/pi/cartography.mjs
 node --check runtime/pi/basemap_registry.mjs
 node --check runtime/pi/flow_layout.mjs
 node --check runtime/pi/movement_track.mjs
+node --check runtime/pi/label_layout.mjs
 node --check runtime/gis/backend_registry.mjs
 node --check runtime/gis/ai_visual_compiler.mjs
 node --check runtime/visual/runtime_registry.mjs
@@ -80,6 +81,7 @@ node scripts/test_ais_local_cartography_v16.mjs
 node scripts/test_ais_local_cartography_v17.mjs
 node scripts/test_movement_track_v18.mjs
 node scripts/test_basemap_registry_v17.mjs
+node scripts/test_label_layout_v112.mjs
 node scripts/test_gis_backend_v115.mjs
 node scripts/test_ai_visual_compiler_v115.mjs
 python3 scripts/runtime_health.py --output outputs/runtime-health.json >/dev/null

@@ -595,6 +595,9 @@
   "runtime/pi/adapters/geometric_cover.mjs": {
    "group": "visual"
   },
+  "runtime/pi/label_layout.mjs": {
+   "group": "visual"
+  },
   "runtime/pi/style_mapping.mjs": {
    "group": "visual"
   },
