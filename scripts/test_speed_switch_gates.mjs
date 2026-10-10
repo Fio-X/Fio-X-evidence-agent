@@ -10,6 +10,7 @@
 //
 // Add a switch: add ONE line to SWITCHES. Run: node scripts/test_speed_switch_gates.mjs
 // Options: --only=<case-number> --config=<name> (substring)  --json=<file>
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -91,7 +92,7 @@ export const Type = {
   Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
-const TREE = mkdtempSync(join(tmpdir(), "speed-gates-tree-"));
+const TREE = makeTestTmp("speed-gates-tree-");
 cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
 stub(TREE, "typebox", TYPEBOX);
@@ -104,7 +105,7 @@ const { toolEnabled, VALID_TOOL_PHASES } = await import(join(ROOT, "runtime/pi/t
 
 // One stub for python: the page rasterizer (writes a fixed PNG) and browser_qa.py (writes the report named by
 // NEWSROOM_TEST_QA_MODE). Only these two processes are replaced; every gate that reads their output runs for real.
-const STUB_DIR = mkdtempSync(join(tmpdir(), "speed-gates-stub-"));
+const STUB_DIR = makeTestTmp("speed-gates-stub-");
 writeFileSync(join(STUB_DIR, "fixed.png"), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(256, 7)]));
 writeFileSync(join(STUB_DIR, "python-stub.sh"), `#!/bin/sh
 case "$1" in
@@ -168,7 +169,7 @@ async function refuse(art, tool, params, label, expect) {
 }
 
 function newArt(label) {
-  const art = join(mkdtempSync(join(tmpdir(), `speed-gates-${label}-`)), "run");
+  const art = join(makeTestTmp(`speed-gates-${label}-`), "run");
   for (const d of ["data", "sources", "computations", "runtime/query-rows", "visualizations/plans", "visualizations/lints", "visualizations/critics", "infographics/plans", "infographics/lints", "infographics/previews", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -209,7 +210,7 @@ const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect 
 const VIZ = [["map", "geo_flow_map", "c-map"], ["sankey", "sankey", "c-flow"], ["trend", "line", "c-trend"]];
 // verbatim from test_plan_edit_runtime.mjs: a full artifact root with verified claims, a computation, charts and editorial files
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {} } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `planedit-${label}-`)), "run");
+  const art = join(makeTestTmp(`planedit-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));

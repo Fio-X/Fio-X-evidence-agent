@@ -6,6 +6,7 @@
 //   2. decimals is not a field of newsroom_viz_plan or newsroom_viz_chain (the chain tool is registered here, with its two
 //      switches on), and a decimals value that reaches the handler anyway is not recorded in the plan (29.6 and 30.4 would both
 //      print as 30 at 0 decimals).
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,14 +26,14 @@ function stub(dir, name, source) {
 }
 
 async function harness() {
-  const tmp = mkdtempSync(join(tmpdir(), "viz-forms-plan-"));
+  const tmp = makeTestTmp("viz-forms-plan-");
   execFileSync("cp", ["-R", join(ROOT, "runtime"), join(tmp, "runtime")]);
   execFileSync("cp", ["-R", join(ROOT, "config"), join(tmp, "config")]);
   stub(tmp, "typebox", "const builder = () => ({});\n// Object keeps its properties and Optional passes its schema through, so a test can read the tool's parameter names.\nexport const Type = new Proxy({}, { get: (_, key) => (key === \"Object\" ? (properties) => ({ properties }) : key === \"Optional\" ? (schema) => schema : builder) });\n");
   stub(tmp, "@earendil-works/pi-ai", "export const StringEnum = () => ({});\n");
   const pi = join(tmp, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
-  const art = mkdtempSync(join(tmpdir(), "viz-forms-plan-artifact-"));
+  const art = makeTestTmp("viz-forms-plan-artifact-");
   for (const dir of ["visualizations/plans", "visualizations/lints", "computations"]) mkdirSync(join(art, dir), { recursive: true });
   execFileSync("cp", ["-R", join(ROOT, "config"), join(art, "config")]);
   process.env.NEWSROOM_ARTIFACT_DIR = art;

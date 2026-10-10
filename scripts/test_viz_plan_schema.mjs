@@ -1,5 +1,6 @@
 // newsroom_viz_plan must register the full measure_semantics schema (a duplicate key once let a weaker one win),
 // and newsroom.ts must not hold duplicate property names in any object literal.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -24,7 +25,7 @@ const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 }
 
 // ---- 2. the registered viz_plan schema ---------------------------------------
-const tree = mkdtempSync(join(tmpdir(), "viz-plan-schema-"));
+const tree = makeTestTmp("viz-plan-schema-");
 cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(tree, "config"), { recursive: true });
 const stub = (name, source) => {

@@ -3,6 +3,7 @@
 recipe, picked from the table shape only, with or without the data profile. Offline: dry-run and the mock."""
 import hashlib, json, os, subprocess, sys, tempfile
 from pathlib import Path
+from tmp_helper import make_test_tmp
 
 ROOT = Path(__file__).resolve().parents[1]
 BIN = os.environ.get("NEWS_BIN") or (sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "target/release/news"))
@@ -15,7 +16,7 @@ LINE = "Entity,Code,Year,Rate\n" + "".join(f"China,CHN,{y},{y - 1900}.5\n" for y
 EDGES = "source,target,value\nA,B,3\nA,C,2\nB,D,3\nC,D,2\n"
 PLAIN = "name,score\nx,1.5\ny,2.5\n"
 TOPIC = "chart this data"
-tmp = Path(tempfile.mkdtemp())
+tmp = Path(make_test_tmp('recipes-prompt-'))
 files = {}
 for name, text in (("line", LINE), ("edges", EDGES), ("plain", PLAIN)):
     files[name] = tmp / f"{name}.csv"

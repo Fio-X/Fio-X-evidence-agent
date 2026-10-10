@@ -2,6 +2,7 @@
 // Observation layers follow the reference-layer rule: every point is read from
 // a recorded, sha256-pinned file; a coordinate typed into the spec is blocked.
 // Synthetic offline data.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -13,7 +14,7 @@ import { validateMapSpec as validateVisual } from '../runtime/visual/map_spec.mj
 import { compileScientificMap as compileWeb } from '../runtime/web/scientific_map.mjs';
 import { resolveReferenceLayers } from '../runtime/pi/map_reference_layers.mjs';
 
-const root = mkdtempSync(join(tmpdir(), 'obs-gate-'));
+const root = makeTestTmp('obs-gate-');
 mkdirSync(join(root, 'data'), { recursive: true });
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const io = { readBytes: async (p) => readFileSync(join(root, p)), readJson: async (p) => JSON.parse(readFileSync(join(root, p), 'utf8')) };

@@ -5,6 +5,7 @@
 //
 // Loads runtime/pi/newsroom.ts from a type-stripped temporary copy (same
 // approach as test_viz_plan_inset_param.mjs). Needs the duckdb binary.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { link, unlink, writeFile } from "node:fs/promises";
@@ -15,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const tmp = mkdtempSync(join(tmpdir(), "atomic-artifact-"));
+const tmp = makeTestTmp("atomic-artifact-");
 const stub = (name, source) => {
   mkdirSync(join(tmp, "node_modules", name), { recursive: true });
   writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -34,7 +35,7 @@ const SWITCH = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
 const setSwitch = (on) => { if (on) process.env[SWITCH] = "1"; else delete process.env[SWITCH]; };
 
 function freshRoot(label) {
-  const outer = mkdtempSync(join(tmpdir(), `atomic-${label}-`));
+  const outer = makeTestTmp(`atomic-${label}-`);
   const art = join(outer, "run");
   mkdirSync(join(art, "computations"), { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = art;

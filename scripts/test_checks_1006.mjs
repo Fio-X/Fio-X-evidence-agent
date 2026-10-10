@@ -3,6 +3,7 @@
 //   NEWSROOM_CHANNEL_AXES: visual_channels may name position_x / position_y.
 //   NEWSROOM_PAGE_QA_NESTED_CLIP: text inside a nested chart svg is also tested against that svg's own box.
 //   NEWSROOM_PAGE_MODULE_ORDER_CHECK: printed module numbers must increase in reading order.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -44,7 +45,7 @@ const OPT = "__optional";
 const mk = (base) => (opts = {}) => ({ ...base, ...(opts && typeof opts === "object" && !Array.isArray(opts) ? opts : {}) });
 export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number" }), Integer: mk({ type: "integer" }), Boolean: mk({ type: "boolean" }), Any: () => ({}), Null: () => ({ type: "null" }), Unknown: () => ({}), Literal: (v) => ({ const: v }), Optional: (s) => ({ ...s, [OPT]: true }), Array: (items, opts = {}) => ({ type: "array", items, ...opts }), Union: (anyOf) => ({ anyOf }), Record: () => ({ type: "object" }), Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }) };
 `;
-const treeDir = mkdtempSync(join(tmpdir(), "checks-1006-tree-"));
+const treeDir = makeTestTmp("checks-1006-tree-");
 cpSync(join(ROOT, "runtime"), join(treeDir, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(treeDir, "config"), { recursive: true });
 stub(treeDir, "typebox", TYPEBOX);

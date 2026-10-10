@@ -2,6 +2,7 @@
 // not a relaxation: an omitted field is filled from the registry entry of the
 // chosen basemap; a value the caller wrote is never replaced and is still
 // checked by validateVizSpec against the registry.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -10,7 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const tmp = mkdtempSync(join(tmpdir(), "basemap-defaults-"));
+const tmp = makeTestTmp("basemap-defaults-");
 const stub = (name, source) => {
   mkdirSync(join(tmp, "node_modules", name), { recursive: true });
   writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -25,7 +26,7 @@ writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileS
 const mod = await import(join(pi, "newsroom.test-copy.mjs"));
 const { getBasemap } = await import(join(ROOT, "runtime/pi/basemap_registry.mjs"));
 
-const art = join(mkdtempSync(join(tmpdir(), "basemap-run-")), "run");
+const art = join(makeTestTmp("basemap-run-"), "run");
 for (const d of ["visualizations/plans", "computations", "data", "sources"]) mkdirSync(join(art, d), { recursive: true });
 writeFileSync(join(art, "claims.jsonl"), `${JSON.stringify({
   claim_id: "claim-fixture", status: "verified", source_refs: ["data/africa.csv"],

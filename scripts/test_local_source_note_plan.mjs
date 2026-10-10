@@ -2,6 +2,7 @@
 // (chart plan, chart manifest, rendered SVG), the page footer and the reader-text entries use one function, and two noted origins
 // for one data file never pick by file-name order. Loads runtime/pi/newsroom.ts from a type-stripped copy (as
 // test_viz_chain_runtime.mjs does). Needs the duckdb binary; skips the real-chart part without it. Offline, no provider.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -32,7 +33,7 @@ export const Type = {
   Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
-const tree = mkdtempSync(join(tmpdir(), "local-note-tree-"));
+const tree = makeTestTmp("local-note-tree-");
 cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(tree, "config"), { recursive: true });
 stub(tree, "typebox", TYPEBOX);
@@ -63,7 +64,7 @@ const verification = { authority: "system", rule_id: "verification.source+extrac
 const dataSha = sha256(CSV);
 
 function freshRun(label) {
-  const art = join(mkdtempSync(join(tmpdir(), `local-note-${label}-`)), "run");
+  const art = join(makeTestTmp(`local-note-${label}-`), "run");
   for (const d of ["visualizations/plans", "visualizations/lints", "computations", "data/origins", "sources"]) mkdirSync(join(art, d), { recursive: true });
   writeFileSync(join(art, "data", "africa.csv"), CSV);
   writeFileSync(join(art, "data", "africa.meta.json"), JSON.stringify({ file: "africa.csv", sha256: dataSha }));

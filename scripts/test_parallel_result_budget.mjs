@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runTaskDag } from '../runtime/pi/parallel_scheduler.mjs';
-const root = await mkdtemp(join(tmpdir(), 'newsroom-r5-parallel-'));
+const root = makeTestTmp('newsroom-r5-parallel-');
 const tasks = Array.from({ length: 12 }, (_, i) => ({ id: `task-${i}`, kind: 'local_text' }));
 const runner = async (task) => ({ path: task.id, text: 'local evidence '.repeat(2400), rows: Array.from({ length: 180 }, (_, i) => ({ id: i })) });
 const baseline = await runTaskDag(tasks, runner, { artifactRoot: root, maxConcurrency: 8 });
