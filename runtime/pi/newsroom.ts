@@ -46,6 +46,7 @@ import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from ".
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { numberWordIn } from "./number_words.mjs";
+import { composeDataNote, drawnFlagCells, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -2452,6 +2453,34 @@ export async function acceptedLocalSourceNote(sourceRefs: string[], language?: s
   return lines.join(language === "zh" ? "；" : "; ");
 }
 
+/** NEWSROOM_DATA_NOTES=1 (exact "1", default off): the one-line Chinese note for the status flags (estimated, provisional, break, ...) the data
+ *  files a chart's verified claim reads carry on the cells the chart draws. Read and worded by the program (data_notes.mjs) from the file's own
+ *  flag column or `status`, never from model text; null when the switch is off, the page is not Chinese, or no drawn cell carries a known flag.
+ *  `diagnostics` (unknown codes, number-word refusals) go to the manifest only. */
+export async function dataNoteForChart(spec: any, rows: Record<string, unknown>[], sourceRefs: string[]) {
+  if (process.env.NEWSROOM_DATA_NOTES !== "1") return null;
+  if (spec?.language !== "zh") return null;
+  const root = artifactRoot();
+  const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/") && !ref.includes("..") && /\.(?:json|csv|tsv|txt)$/i.test(ref)))].sort();
+  if (!root || !dataRefs.length) return null;
+  const cells: any[] = [];
+  const diagnostics: any[] = [];
+  for (const ref of dataRefs) {
+    let text: string;
+    try {
+      if ((await stat(join(root, ref))).size > 8_000_000) continue;
+      text = await readFile(join(root, ref), "utf8");
+    } catch { continue; }
+    const read = flagCellsFromFile(ref, text);
+    cells.push(...read.cells);
+    diagnostics.push(...read.diagnostics.map((item: any) => ({ ...item, file: ref })));
+  }
+  const note = composeDataNote(drawnFlagCells(cells, rows));
+  diagnostics.push(...(note?.diagnostics ?? []));
+  if (!note?.text) return diagnostics.length ? { text: null, full: null, truncated: false, diagnostics } : null;
+  return { text: note.text as string, full: note.full as string, truncated: Boolean(note.truncated), diagnostics };
+}
+
 /** The plan's value columns, which the claim's max and min may rank. */
 function inlineClaimMeasures(params: any) {
   const fields = [params.value_field, params.start_field, params.end_field, params.size_field, ...(params.chart_type === "scatter" ? [params.x_field, params.y_field] : []), ...(Array.isArray(params.measure_semantics) ? params.measure_semantics.map((measure: any) => measure?.field) : [])];
@@ -4568,7 +4597,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
-      const bundle = renderVizBundle(spec, rows, { mobilePages, compact: !mobilePages });
+      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, (await verifiedClaimRecords()).get(String(spec.claim_id))?.source_refs ?? []) : null;
+      const bundle = renderVizBundle(dataNote?.text ? { ...spec, data_note: dataNote.text } : spec, rows, { mobilePages, compact: !mobilePages });
       // The same plan_ref+data_hash must not collide across a mobile-pages
       // toggle if the same artifact directory is reused between runs (the
       // manifest's variants/hashes shape differs); omitted rather than
@@ -4655,6 +4685,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         sql: spec.sql,
         source_note: spec.source_note,
         ...(spec.source_note_program === true ? { source_note_program: true } : {}),
+        ...(dataNote?.text ? { data_note: dataNote.text, ...(dataNote.truncated ? { data_note_full: dataNote.full } : {}) } : {}),
+        ...(dataNote?.diagnostics?.length ? { data_note_diagnostics: dataNote.diagnostics } : {}),
         alt: spec.alt,
       });
       // NEWSROOM_SANKEY_OTHER_NOTE=1: say which nodes the merged "other" node holds (names only).

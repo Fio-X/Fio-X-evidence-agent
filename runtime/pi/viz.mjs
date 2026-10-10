@@ -2822,12 +2822,16 @@ let LAYOUT_W = DESKTOP_VIEW_W;
 // Characters per wrapped line, scaled to the plot's text width (932 at desktop).
 const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16, Math.floor((chars * (LAYOUT_W - 108)) / 932)));
 
+function dataNoteLines(spec) {
+  return typeof spec.data_note === "string" && spec.data_note !== "" ? wrapText(`${VIZ_STRINGS[vizLang(spec)].note}${spec.data_note}`, wrapChars(120)).length : 0;
+}
+
 function frame(spec, bodyHeight, minHeight = 420) {
   const width = LAYOUT_W;
   const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
+  const footer = 70 + dataNoteLines(spec) * 16 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
@@ -2854,6 +2858,8 @@ function addFooter(parts, spec, footerTop) {
   const t = VIZ_STRINGS[vizLang(spec)];
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
+  // NEWSROOM_DATA_NOTES: the program-written source-flag line, its own line before the model's note (spec.data_note is set only by the render tool).
+  if (dataNoteLines(spec)) y += svgTextLines(parts, `${t.note}${spec.data_note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
   if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
   svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
 }

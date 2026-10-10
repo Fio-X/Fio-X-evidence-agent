@@ -2182,11 +2182,20 @@ function sourceList(spec, assets) {
   return kept;
 }
 
+// NEWSROOM_DATA_NOTES: a chart whose one-line source-flag note was too long for its line said only 「详见数据说明」; the program-written full
+// sentence (manifest.data_note_full) is printed once here, under the sources. Empty when no chart carries one, so the page is unchanged.
+function dataNoteText(spec, assets) {
+  const full = uniq((spec.modules ?? []).filter((m) => m.type === "visual").map((m) => assets[m.manifest_ref]?.manifest?.data_note_full).filter((x) => typeof x === "string" && x !== ""));
+  return full.length ? `数据说明：${full.join("；")}` : "";
+}
+
 function composeOne(spec, assets, mobile) {
   applyInfographicStyle(spec);
   const header = headerMetrics(spec, mobile);
   const layout = mobile ? layoutMobile(spec, assets) : layoutDesktop(spec, assets);
-  const footerH = mobile ? 150 : 128;
+  const dataNoteBlock = dataNoteText(spec, assets);
+  const dataNoteMaxChars = mobile ? 92 : 172;
+  const footerH = (mobile ? 150 : 128) + (dataNoteBlock ? lines(dataNoteBlock, dataNoteMaxChars, 3).length * (mobile ? 16 : 17) + 6 : 0);
   const startY = header.height;
   const pageHeight = startY + layout.contentHeight + footerH + (mobile ? 34 : 42);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${layout.width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="${mobile ? "mobile" : "desktop"}" data-layout-strategy="${esc(layout.strategy ?? (mobile ? "single_column" : "balanced"))}">`];
@@ -2211,7 +2220,8 @@ function composeOne(spec, assets, mobile) {
   parts.push(`<line x1="${layout.margin}" y1="${footerY}" x2="${layout.width - layout.margin}" y2="${footerY}" stroke="${INK}" stroke-width="2"/>`);
   parts.push(`<text x="${layout.margin}" y="${footerY + 30}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
   const sources = sourceList(spec, assets);
-  textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
+  const sourcesHeight = textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
+  if (dataNoteBlock) textBlock(parts, dataNoteBlock, layout.margin, footerY + 57 + sourcesHeight + 6, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: dataNoteMaxChars, maxLines: 3 });
   parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>`);
   for (const box of shiftedBoxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
   parts.push("</svg>");
