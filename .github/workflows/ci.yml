@@ -222,6 +222,7 @@ jobs:
           node scripts/test_decision_handoff.mjs
           node scripts/test_run_as_writer_users.mjs
           node scripts/test_group_coverage.mjs
+          node scripts/test_runtime_embed_guard.mjs
           node scripts/test_review_from_records.mjs
           python3 scripts/test_review_from_records.py
           python3 scripts/test_group_commands.py
