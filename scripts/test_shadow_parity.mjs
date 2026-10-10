@@ -18,6 +18,7 @@
 // infographic lint) is replayed three times against the real tool handlers and
 // real DuckDB; the artifacts are compared file by file.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
@@ -50,6 +51,20 @@ function pageLints(files) {
 function withMaskedLints(run, { added }) {
   const lints = pageLints(run.files);
   const files = new Map([...run.files].filter(([path]) => !PAGE_LINT_PATH.test(path)));
+  // The head ends the first footer note with a full stop (c6914ec: one "Note: " per block, every entry ends with one);
+  // the baseline's chart SVGs are held to exactly that one change, so any other byte difference still fails. The files that
+  // record an SVG's sha256 (render QA reports) follow the SVG.
+  let movedHashes = new Map();
+  if (!added) {
+    const moved = new Map();
+    for (const [path, bytes] of files) {
+      if (!path.endsWith(".svg")) continue;
+      const next = Buffer.from(bytes.toString("utf8").replace(/(>(?:Note: |\u6CE8\uFF1A)[^<]*[^<.\u3002!\uFF01?\uFF1F\s])<\/text>/g, (_m, body) => `${body}${body.startsWith(">Note: ") ? "." : "\u3002"}</text>`), "utf8");
+      moved.set(createHash("sha256").update(bytes).digest("hex"), createHash("sha256").update(next).digest("hex"));
+      files.set(path, next);
+    }
+    movedHashes = moved;
+  }
   let text = JSON.stringify(run.calls);
   for (const [planRef, { path, record }] of lints) {
     for (const key of ADDED_LINT_FIELDS) assert.equal(key in record, added, `${added ? "head" : "baseline"} page lint for ${planRef}: ${key} ${added ? "missing" : "present"}`);
@@ -62,6 +77,13 @@ function withMaskedLints(run, { added }) {
     files.set(`infographics/lints/<${planRef}>.json`, Buffer.from(JSON.stringify(bare)));
     text = text.split(path).join(`infographics/lints/<${planRef}>.json`);
   }
+  for (const [path, bytes] of files) {
+    if (path.endsWith(".svg")) continue;
+    let t = bytes.toString("utf8"), changed = false;
+    for (const [from, to] of movedHashes) if (t.includes(from)) { t = t.split(from).join(to); changed = true; }
+    if (changed) files.set(path, Buffer.from(t, "utf8"));
+  }
+  text = movedHashes.size ? [...movedHashes].reduce((acc, [from, to]) => acc.split(from).join(to), text) : text;
   return { calls: JSON.parse(text), files, plans: [...lints.keys()].sort() };
 }
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
