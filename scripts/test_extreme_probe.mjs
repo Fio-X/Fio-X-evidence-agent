@@ -2,7 +2,8 @@
 // K117 stage 1: the report-only extreme-value probe (NEWSROOM_EXTREME_PROBE=1, default off).
 //  1. the D values quoted in the plan (v295 r2) are reproduced on copies of the real drawn sets;
 //  2. the edge cases: remaining span 0, fewer than 6 objects, a tie at one end, both ends far, a log axis, invalid values;
-//  3. off state: every non-"1" value gives byte-identical output; on: only shadow/extreme_probe-*.json is added.
+//  3. off state: every non-"1" value gives byte-identical output; on: only runtime/extreme-probe/extreme_probe-*.json is added.
+//  4. NEWSROOM_GROUP_BOUNDARY=1: the diagnosis file is one ok write by the agent group's writer (requested_by the render tool); no new cross-group or 待查.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -128,12 +129,13 @@ for (const [value, expected] of [[undefined, false], ["0", false], ["", false], 
   assert.equal(extremeProbeEnabled({ NEWSROOM_EXTREME_PROBE: value }), expected, JSON.stringify(value));
 }
 
+const results = [];
 const walk = (dir, base = dir) => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
   return statSync(path).isDirectory() ? walk(path, base) : [path.slice(base.length + 1)];
 });
-async function build(value) {
-  const h = await loadNewsroom({ prefix: "extreme-probe-", env: { NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_EXTREME_PROBE: value } });
+async function build(value, boundary = false) {
+  const h = await loadNewsroom({ prefix: "extreme-probe-", env: { NEWSROOM_MOBILE_PAGES: undefined, NEWSROOM_EXTREME_PROBE: value, NEWSROOM_GROUP_BOUNDARY: boundary ? "1" : undefined } });
   const values = [10, 12, 14, 15, 17, 19, 21, 500];
   const csv = ["k,v", ...values.map((v, i) => `o${i + 1},${v}`)].join("\n") + "\n";
   const file = h.addData("A", csv);
@@ -151,15 +153,17 @@ async function build(value) {
   const strip = (text) => text.split(h.art).join("<ART>");
   const files = Object.fromEntries(walk(h.art).filter((p) => !p.startsWith("config/") && p !== "claims.jsonl" /* written before the render, carries a timestamp */).sort().map((p) => [p, sha256(strip(readFileSync(join(h.art, p), "latin1")))]));
   const out = { text: strip(JSON.stringify(render.content ?? render)), details: strip(JSON.stringify(render.details)), files };
-  const probePaths = Object.keys(files).filter((p) => /^shadow\/extreme_probe-.*\.json$/.test(p));
+  const probePaths = Object.keys(files).filter((p) => /^runtime\/extreme-probe\/extreme_probe-.*\.json$/.test(p));
   const probe = probePaths.length ? JSON.parse(readFileSync(join(h.art, probePaths[0]), "utf8")) : null;
+  const reportPath = "runtime/group-boundary-report.json";
+  const report = files[reportPath] ? JSON.parse(readFileSync(join(h.art, reportPath), "utf8")) : null;
   rmSync(h.tmp, { recursive: true, force: true });
-  return { out, probePaths, probe };
+  return { out, probePaths, probe, report };
 }
 try {
   const off = await build(undefined);
   assert.equal(off.probePaths.length, 0);
-  assert.ok(!Object.keys(off.out.files).some((p) => p.startsWith("shadow/")), "off: no shadow/ at all, no empty list, no new field");
+  assert.ok(!Object.keys(off.out.files).some((p) => p.startsWith("runtime/extreme-probe/") || p.startsWith("shadow/extreme")), "off: no diagnosis folder at all, no empty list, no new field");
   for (const value of ["0", "", "yes", " 1", "on", "true", "11"]) {
     const other = await build(value);
     assert.deepEqual(other.out, off.out, `NEWSROOM_EXTREME_PROBE=${JSON.stringify(value)} must be byte-identical to unset`);
@@ -177,7 +181,31 @@ try {
   assert.deepEqual([high.object, high.n, high.status, high.candidate_trigger], ["o8", 8, "ok", true]);
   near(high.d, (500 - 21) / (21 - 10), "end-to-end D");
   assert.ok(typeof on.probe.probe_ms === "number");
+
+  // ---- 4. group-boundary report (NEWSROOM_GROUP_BOUNDARY=1): the diagnosis file is the agent group's own write ----
+  const bOff = await build(undefined, true);
+  const bOn = await build("1", true);
+  assert.ok(bOff.report && bOn.report, "boundary report exists with the switch on");
+  assert.equal(bOn.probePaths.length, 1);
+  assert.equal(bOff.probePaths.length, 0);
+  const rows = bOn.report.records.filter((r) => r.examples.includes(bOn.probePaths[0]));
+  assert.equal(rows.length, 1, "the diagnosis file is recorded exactly once");
+  assert.deepEqual(
+    [rows[0].tool, rows[0].requested_by, rows[0].tool_group, rows[0].kind, rows[0].owner, rows[0].status, rows[0].count],
+    ["extreme_probe_writer", "newsroom_viz_render", "agent", "project_state", "agent", "ok", 1],
+    "listed as ok: written by the agent group's writer, the asking tool kept as requested_by",
+  );
+  assert.equal(bOn.report.totals.cross_group, bOff.report.totals.cross_group, "no new cross-group write");
+  assert.equal(bOn.report.totals.to_check, bOff.report.totals.to_check, "no new 待查");
+  assert.equal(bOn.report.totals.ok, bOff.report.totals.ok + 1, "exactly one more write, and it is ok");
+  assert.equal(bOn.report.totals.writes, bOff.report.totals.writes + 1);
+  const { [bOn.probePaths[0]]: _a, "runtime/group-boundary-report.json": _r1, ...restOn } = bOn.out.files;
+  const { "runtime/group-boundary-report.json": _r2, ...restOff } = bOff.out.files;
+  assert.deepEqual(restOn, restOff, "boundary on + probe on: every other file is byte-identical to probe off");
+  assert.equal(bOn.out.text, bOff.out.text);
+  results.push(bOn.report.totals);
 } finally {
   // the harness folders are removed inside build()
 }
+console.log("boundary totals (probe on):", JSON.stringify(results[0]));
 console.log("extreme probe: PASS");

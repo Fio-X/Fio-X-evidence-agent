@@ -3,7 +3,8 @@
 // What it does: after a chart has been rendered, it looks at the rows the renderer drew and, for every value set it can
 // identify, computes for the high end and the low end separately
 //     D = (distance from the end value to the nearest other value) / (span of the other values)
-// and writes the result, with a drafted candidate note, to shadow/extreme_probe-<key>.json. Nothing else changes: no tool
+// and writes the result, with a drafted candidate note, to runtime/extreme-probe/extreme_probe-<key>.json (an agent-group folder,
+// written by extreme_probe_writer.mjs so the group-boundary report counts it as the owning group's write, not 待查 or cross-group). Nothing else changes: no tool
 // result, no manifest, no page, no hash, no rejection. The threshold D >= 1 is only a CANDIDATE (EXTREME_PROBE_CANDIDATE_D);
 // it was fixed after looking at the first topics and is to be calibrated on topics that were not used for it.
 //
@@ -27,7 +28,10 @@
 // `both_ends_far`, a known limitation (they inflate each other).
 import { performance } from "node:perf_hooks";
 import { fmtSpec } from "./viz.mjs";
-import { writeShadowRecord } from "./shadow.mjs";
+import { shadowKey } from "./shadow.mjs";
+import { EXTREME_PROBE_FOLDER, writeExtremeProbeRecord } from "./extreme_probe_writer.mjs";
+
+const SCHEMA_VERSION = "0.1.0";
 
 export const EXTREME_PROBE_MIN_OBJECTS = 6;
 export const EXTREME_PROBE_CANDIDATE_D = 1;
@@ -220,12 +224,16 @@ export function probeExtremes(spec, rows) {
   return { chart_type: chart, records: sets.flatMap((set) => probeValueSet(spec, set)) };
 }
 
-/** Run the probe and write shadow/extreme_probe-<key>.json (once; an existing file is left alone). Returns { path }. */
+/** Run the probe and write runtime/extreme-probe/extreme_probe-<key>.json (once; an existing file is left alone). Returns { path }. */
 export async function writeExtremeProbe({ root, spec, rows, planRef, dataHash }) {
   const started = performance.now();
   const probe = probeExtremes(spec, rows);
   const probeMs = Number((performance.now() - started).toFixed(3));
-  const path = await writeShadowRecord(root, "extreme_probe", { plan_ref: planRef, data_hash: dataHash }, {
+  const key = shadowKey({ kind: "extreme_probe", plan_ref: planRef, data_hash: dataHash });
+  const path = await writeExtremeProbeRecord(root, `${EXTREME_PROBE_FOLDER}extreme_probe-${key}.json`, {
+    schema_version: SCHEMA_VERSION,
+    kind: "extreme_probe",
+    key,
     chart: { plan_ref: planRef, chart_type: probe.chart_type, title: spec?.title ?? null },
     threshold_candidate: EXTREME_PROBE_CANDIDATE_D,
     min_objects: EXTREME_PROBE_MIN_OBJECTS,

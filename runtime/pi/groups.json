@@ -673,6 +673,14 @@
    "group": "agent",
    "note": "Writes the expert-preference record, the award-mode status and the competition preflight on behalf of the visual-side tools (hand-off switch)."
   },
+  "runtime/pi/extreme_probe.mjs": {
+   "group": "visual",
+   "note": "Report-only extreme-value probe of a drawn chart (NEWSROOM_EXTREME_PROBE=1); hands its diagnosis record to the agent-group writer."
+  },
+  "runtime/pi/extreme_probe_writer.mjs": {
+   "group": "agent",
+   "note": "Writes the K117 diagnosis record under runtime/extreme-probe/ on behalf of the chart render tool."
+  },
   "runtime/pi/groups.mjs": {
    "group": "system",
    "note": "Loader, boundary report and tool-order helpers for the group list."
