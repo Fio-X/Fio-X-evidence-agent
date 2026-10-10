@@ -650,6 +650,12 @@
   "runtime/pi/flow_layout.mjs": {
    "group": "visual"
   },
+  "runtime/pi/flow_map_labels.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/flow_styles.mjs": {
+   "group": "visual"
+  },
   "runtime/pi/movement_track.mjs": {
    "group": "visual"
   },
