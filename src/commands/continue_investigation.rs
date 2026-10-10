@@ -112,24 +112,119 @@ fn record_round_status(
     .context("failed to write verification.json")
 }
 
+/// What a text-only follow-up may carry over: the previous round's chart chain, when the program's own records say
+/// it passed and nothing under the chain's directories has changed since.
+struct ChainReuse {
+    round_file: String,
+    fingerprint: String,
+    files: usize,
+}
+
+/// The directories the chart chain writes into (the infographic and publication tools, the chart tools, and the
+/// delivered HTML/PNG that live under `publications/`).
+const CHAIN_DIRS: [&str; 3] = ["infographics", "publications", "visualizations"];
+
+/// A sorted "relative path + sha256" list over every file under `CHAIN_DIRS`, hashed once more into one digest, and
+/// the number of files. Computed in-process; nothing is written.
+fn chain_fingerprint(artifact: &Path) -> Result<(String, usize)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                walk(root, &path, out)?;
+            } else if path.is_file() {
+                let relative = path.strip_prefix(root).unwrap_or(&path).display().to_string();
+                out.push(format!("{relative}\t{}", crate::hash::sha256_file(&path)?));
+            }
+        }
+        Ok(())
+    }
+    let mut lines = Vec::new();
+    for dir in CHAIN_DIRS {
+        walk(artifact, &artifact.join(dir), &mut lines)?;
+    }
+    lines.sort();
+    let digest = crate::hash::sha256_bytes(lines.join("\n").as_bytes());
+    Ok((digest, lines.len()))
+}
+
+/// True only for a record the program wrote as a finished, passing round: `passed` is true and it is not one of the
+/// `not_verified` / `in_progress` markers. The model's text is never read.
+fn previous_round_passed(artifact: &Path, round_file: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(artifact.join(round_file)) else {
+        return false;
+    };
+    let Ok(record) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    record.get("passed").and_then(serde_json::Value::as_bool) == Some(true)
+        && record.get("round_status").is_none()
+}
+
+fn is_chart_chain_tool(tool: &str) -> bool {
+    ["newsroom_viz_", "newsroom_infographic_", "newsroom_publication_"]
+        .iter()
+        .any(|prefix| tool.starts_with(prefix))
+}
+
 /// The completion gaps of this round only: calls made in earlier rounds do
-/// not count as this round's work.
+/// not count as this round's work, unless the previous round's verified chart
+/// chain carries over untouched (`reuse`), in which case the required tools and
+/// requested visual modes are judged over every round's calls.
+/// The flag says whether the chain was carried over.
 fn followup_completion_gaps(
     bundle: &InvestigationBundle,
     goal: &str,
     audit: &audit::AuditSummary,
     calls_before: usize,
     profile: Option<&str>,
-) -> Result<Vec<String>> {
-    let mut this_round = audit.clone();
-    this_round.calls = audit.calls.iter().skip(calls_before).cloned().collect();
-    crate::commands::investigate::visual_completion_gaps_for_profile(
+    reuse: Option<&ChainReuse>,
+) -> Result<(Vec<String>, bool)> {
+    let mut judged = audit.clone();
+    let reused = match reuse {
+        Some(base) => {
+            !audit
+                .calls
+                .iter()
+                .skip(calls_before)
+                .any(|call| is_chart_chain_tool(&call.tool))
+                && chain_fingerprint(&bundle.dir)?.0 == base.fingerprint
+        }
+        None => false,
+    };
+    if !reused {
+        judged.calls = audit.calls.iter().skip(calls_before).cloned().collect();
+    }
+    let gaps = crate::commands::investigate::visual_completion_gaps_for_profile(
         bundle,
         goal,
-        &this_round,
+        &judged,
         crate::commands::investigate::complex_visual_routing_ab_enabled(),
         profile,
+    )?;
+    Ok((gaps, reused))
+}
+
+/// Next to the round archive, in the program's own record: which round's chain this follow-up carried over and the
+/// digest of the files it carried. Not model-editable text.
+fn record_chain_reuse(artifact: &Path, reuse: &ChainReuse) -> Result<()> {
+    let name = reuse.round_file.replace("round-", "chain-reuse-of-round-");
+    let record = serde_json::json!({
+        "schema_version": "0.1.0",
+        "recorded_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "reused_round_file": reuse.round_file,
+        "chain_fingerprint_sha256": reuse.fingerprint,
+        "fingerprint_files": reuse.files,
+        "fingerprint_dirs": CHAIN_DIRS,
+    });
+    std::fs::write(
+        artifact.join(&name),
+        format!("{}\n", serde_json::to_string_pretty(&record)?),
     )
+    .with_context(|| format!("failed to write {name}"))
 }
 
 /// The text the first question sends when the completion check finds gaps
@@ -259,7 +354,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
 
     let completion_gate = followup_completion_gate_on();
     let goal = format!("{topic} {message}");
-    let (calls_before, archived) = if completion_gate {
+    let (calls_before, archived, chain_reuse) = if completion_gate {
         let before = if bundle.events_path.is_file() {
             audit::build(&bundle.events_path, &bundle.tools_path)
                 .map(|value| value.calls.len())
@@ -268,12 +363,23 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             0
         };
         let archived = archive_previous_verification(&bundle.dir)?;
+        let reuse = match archived.as_deref() {
+            Some(round_file) if previous_round_passed(&bundle.dir, round_file) => {
+                let (fingerprint, files) = chain_fingerprint(&bundle.dir)?;
+                Some(ChainReuse {
+                    round_file: round_file.to_string(),
+                    fingerprint,
+                    files,
+                })
+            }
+            _ => None,
+        };
         if archived.is_some() {
             record_round_in_progress(&bundle.dir, archived.as_deref())?;
         }
-        (before, archived)
+        (before, archived, reuse)
     } else {
-        (0, None)
+        (0, None, None)
     };
     audit::append_user_goal_event(&bundle.events_path, "follow_up")?;
     match run_prompt(&config, &follow_up, Some(&bundle.events_path)).await {
@@ -289,12 +395,14 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             if completion_gate {
                 let split = crate::commands::investigate::complex_visual_routing_ab_enabled();
                 let profile = bundle.recorded_tool_profile();
-                completion_gaps = followup_completion_gaps(
+                let mut reused;
+                (completion_gaps, reused) = followup_completion_gaps(
                     &bundle,
                     &goal,
                     &audit,
                     calls_before,
                     profile.as_deref(),
+                    chain_reuse.as_ref(),
                 )?;
                 if crate::commands::investigate::completion_chain_required(
                     &goal,
@@ -341,14 +449,18 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                             bundle.write_session_stats(stats)?;
                         }
                         audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-                        completion_gaps = followup_completion_gaps(
+                        (completion_gaps, reused) = followup_completion_gaps(
                             &bundle,
                             &goal,
                             &audit,
                             calls_before,
                             profile.as_deref(),
+                            chain_reuse.as_ref(),
                         )?;
                     }
+                }
+                if let (true, Some(base)) = (reused, chain_reuse.as_ref()) {
+                    record_chain_reuse(&bundle.dir, base)?;
                 }
             }
             let status = if !completion_gaps.is_empty() {
