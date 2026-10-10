@@ -82,6 +82,11 @@ const on = render({ NEWSROOM_MAP_WORLD_LIST: "1" });
   assert.deepEqual(pyFailures(on), [], "the Python verifier reads every country back exactly once");
 }
 
+{ // no dots: a small country is listed, not also drawn as a dot (off state keeps its dots)
+  assert.ok(/data-role="choropleth-data-dot"/.test(off), "the off state draws dots for small countries");
+  assert.ok(!/data-role="choropleth-data-dot"/.test(on), "list mode draws no dots");
+}
+
 { // multi-part countries: one choropleth-data path per country (Australia is drawn in three pieces on the basemap)
   const paths = [...on.matchAll(/<path data-role="choropleth-data" data-iso3="([A-Z]{3})"/g)].map((m) => m[1]);
   assert.equal(new Set(paths).size, paths.length, "no country has two choropleth-data paths");
