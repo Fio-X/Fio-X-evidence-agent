@@ -130,6 +130,14 @@ function onOffNear(name, run) {
   assert.deepEqual(JSON.parse(py(wanSvg).stdout), [], "plain label with a 万 unit reads back");
   const wanBad = py(wanSvg.replace(">11500.5 万人<", ">11500.6 万人<"));
   assert.ok(JSON.parse(wanBad.stdout).some((m) => m.includes("does not match")), wanBad.stdout);
+  // a value that sits exactly on a half (1.25 is exact in binary): the label rounds half up (1.3, not the even 1.2) and the verifier agrees
+  const halfRows = rows.map((r) => (r.country === "Liberia" ? { ...r, pop: 1.25 } : r));
+  const halfSvg = withSwitch("NEWSROOM_TYPESET_CHOROPLETH_ZH", "1", () => renderVizBundle(wanSpec, halfRows, { mobilePages: false }).desktop);
+  const halfTexts = valueTexts(halfSvg);
+  assert.ok(halfTexts.includes("1.3 万人") && !halfTexts.includes("1.2 万人"), halfTexts.join("|"));
+  assert.deepEqual(JSON.parse(py(halfSvg).stdout), [], "the verifier reads 1.25 as 1.3 under a 万 unit");
+  const halfBad = py(halfSvg.replace(">1.3 万人<", ">1.2 万人<"));
+  assert.ok(JSON.parse(halfBad.stdout).some((m) => m.includes("does not match")), halfBad.stdout);
 }
 
 // ---- K84: one notation per axis ------------------------------------------------------------------------------------
