@@ -1039,6 +1039,290 @@ def verify_heatmap_labels_from_svg(svg_text: str) -> list[str]:
     return sorted(set(failures))
 
 
+# --- NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back (K198, K200, K202) ---
+# Independently re-derives, from one rendered SVG plus the data rows it was drawn from, that (T1) every axis tick's
+# text read through its suffix or the unit line's data-scale equals its data-tick-value to half a displayed digit,
+# (T2) every tick sits where that value falls on the scale fitted from the bars, (V1/V2) every value label reads as
+# its data-value and names a bar carrying the same value, and (anchor) every bar's data-value equals its data row.
+# Written fresh - it shares nothing with runtime/pi/render_qa_ticks.mjs or Rust's verify_tick_readback_from_svg.
+TICK_READBACK_COVERED = ("horizontal_bar", "mirrored_bar")
+_TICK_POSITION_TOLERANCE = 1.0  # SVG units: ~50x the coordinate rounding, 1/80 of the narrowest grid step
+_TICK_LABEL_SLIDE_MAX = 40.0
+_TICK_REL = 1e-9
+_TICK_ATTR_RE = re.compile(r"""([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+_TICK_NUMBER_RE = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
+_TICK_SHOWN_RE = re.compile(r"^([-−]?)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?")
+
+
+def _tick_attrs(tag: str) -> dict:
+    return {m.group(1): (m.group(2) if m.group(2) is not None else m.group(3)) for m in _TICK_ATTR_RE.finditer(tag)}
+
+
+def _tick_body(body: str) -> str:
+    text = re.sub(r"<[^>]*>", "", body)
+    for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&#39;", "'"), ("&amp;", "&")):
+        text = text.replace(entity, char)
+    return text.strip()
+
+
+def _tick_num(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if math.isfinite(value) else None
+    if not isinstance(value, str) or not _TICK_NUMBER_RE.match(value.strip()):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _tick_read_shown(text: str):
+    text = text.strip()
+    m = _TICK_SHOWN_RE.match(text)
+    if not m:
+        return None
+    mantissa = float(("-" if m.group(1) else "") + m.group(2).replace(",", "") + ("." + m.group(3) if m.group(3) else ""))
+    rest = text[m.end():]
+    suffix = None
+    if rest.startswith("万亿"):
+        suffix = 1e12
+    elif rest.startswith("亿"):
+        suffix = 1e8
+    elif rest.startswith("万"):
+        suffix = 1e4
+    else:
+        en = re.match(r"(bn|m|k)(?![A-Za-z])", rest)
+        if en:
+            suffix = {"bn": 1e9, "m": 1e6, "k": 1e3}[en.group(1)]
+        # a label that names its own unit (1683%, 9541.8 元) is read as written, the unit line's scale is not applied to it
+        elif rest.strip() != "":
+            suffix = 1.0
+    return mantissa, len(m.group(3) or ""), suffix
+
+
+def _tick_unit_word_scale(text: str) -> float:
+    if "万亿" in text:
+        return 1e12
+    if "亿" in text:
+        return 1e8
+    if "万" in text:
+        return 1e4
+    en = re.search(r"\b(thousand|million|billion|trillion)s?\b", text, re.I)
+    if en:
+        return {"thousand": 1e3, "million": 1e6, "billion": 1e9, "trillion": 1e12}[en.group(1).lower()]
+    return 1.0
+
+
+def _tick_close(a: float, b: float) -> bool:
+    return abs(a - b) <= _TICK_REL * max(1.0, abs(a), abs(b))
+
+
+def _tick_shown_value(text: str, unit_scale: float):
+    shown = _tick_read_shown(text)
+    if shown is None:
+        return None
+    mantissa, decimals, suffix = shown
+    mult = suffix if suffix is not None else unit_scale
+    return mantissa * mult, 0.5 * 10 ** -decimals * mult
+
+
+def _tick_key(category, series, period) -> str:
+    return json.dumps([str(category if category is not None else ""), str(series if series is not None else ""), str(period if period is not None else "")], ensure_ascii=False, separators=(",", ":"))
+
+
+def verify_tick_readback_from_svg(svg_text: str, ctx: dict) -> tuple[str, list[tuple[str, str]]]:
+    """Returns (status, [(rule, message)]); status is "covered" or "uncovered". Uncovered is never a pass."""
+    chart_type = ctx.get("chart_type")
+    # zh pages write $B as 亿美元 (x10): the text no longer equals the data unit, the read-back does not cover it yet
+    if chart_type not in TICK_READBACK_COVERED or (ctx.get("language") == "zh" and ctx.get("unit") == "$B"):
+        return "uncovered", []
+    failures: list[tuple[str, str]] = []
+
+    def fail(rule: str, message: str):
+        failures.append((rule, message))
+
+    mirrored = chart_type == "mirrored_bar"
+    ticks, units, labels, bars = [], [], [], []
+    for m in re.finditer(r"<text\b([^>]*)>([\s\S]*?)</text>", svg_text):
+        attrs = _tick_attrs(m.group(1))
+        role = attrs.get("data-role")
+        item = (attrs, _tick_body(m.group(2)))
+        if role == "axis-tick-label":
+            ticks.append(item)
+        elif role == "axis-unit-line":
+            units.append(item)
+        elif role == "value-label":
+            labels.append(item)
+    for m in re.finditer(r"<rect\b([^>]*?)/?>", svg_text):
+        attrs = _tick_attrs(m.group(1))
+        if attrs.get("data-role") == "data-bar":
+            bars.append(attrs)
+
+    unit_scale = 1.0
+    if len(units) > 1:
+        fail("unit_line", f"{len(units)} axis unit lines (expected at most 1)")
+    for attrs, text in units[:1]:
+        scale = _tick_num(attrs.get("data-scale"))
+        if scale is None or scale <= 0:
+            fail("unit_line", f"axis unit line '{text}' has no readable positive data-scale")
+        elif scale != 1 and not _tick_close(scale, _tick_unit_word_scale(text)):
+            fail("unit_line", f"axis unit line '{text}' says scale {_tick_unit_word_scale(text)} but data-scale is {scale}")
+        else:
+            unit_scale = scale
+
+    bar_value: dict[str, float] = {}
+    geo = []
+    if not bars:
+        fail("bar_attrs", "the chart has no data-bar to read back against")
+    for attrs in bars:
+        if attrs.get("data-category") is None:
+            fail("bar_attrs", "a data-bar has no data-category")
+            continue
+        key = _tick_key(attrs.get("data-category"), attrs.get("data-series"), attrs.get("data-period"))
+        value, x, width = _tick_num(attrs.get("data-value")), _tick_num(attrs.get("x")), _tick_num(attrs.get("width"))
+        if value is None:
+            fail("bar_attrs", f"bar {key} has no readable data-value")
+            continue
+        if x is None or width is None:
+            fail("bar_attrs", f"bar {key} has no numeric x/width")
+            continue
+        side = attrs.get("data-side")
+        if mirrored and side not in ("left", "right"):
+            fail("bar_attrs", f"bar {key} has no data-side left/right")
+            continue
+        if key in bar_value:
+            fail("bar_attrs", f"bar {key} appears twice")
+            continue
+        bar_value[key] = value
+        geo.append((key, value, x, width, side))
+
+    rows = ctx.get("rows")
+    category_field, value_field = ctx.get("category_field"), ctx.get("value_field")
+    if not isinstance(rows, list) or not category_field or not value_field:
+        fail("data_anchor", "no data rows or field names to anchor the bars to")
+    else:
+        row_value: dict[str, float] = {}
+        for row in rows:
+            row = row if isinstance(row, dict) else {}
+            key = _tick_key(row.get(category_field), row.get(ctx["series_field"]) if ctx.get("series_field") else "", row.get(ctx["period_field"]) if ctx.get("period_field") else "")
+            value = _tick_num(row.get(value_field))
+            if value is None:
+                fail("data_anchor", f"data row {key} has no numeric {value_field}")
+            elif key in row_value:
+                fail("data_anchor", f"data row key {key} is not unique")
+            else:
+                row_value[key] = value
+        for key, value in bar_value.items():
+            if key not in row_value:
+                fail("data_anchor", f"bar {key} has no data row")
+            elif not _tick_close(value, row_value[key]):
+                fail("data_anchor", f"bar {key} data-value {value} differs from its data row {row_value[key]}")
+        # a chart draws the current period only (the other may be an outline or absent): rows of a period no bar carries are not drawn
+        drawn = {json.loads(key)[2] for key in bar_value}
+        for key in row_value:
+            if key not in bar_value and not (ctx.get("period_field") and drawn and json.loads(key)[2] not in drawn):
+                fail("data_anchor", f"data row {key} has no bar")
+
+    k = None
+    origin: dict[str, float] = {}
+    usable = [g for g in geo if g[1] != 0]
+    if not usable:
+        fail("tick_position", "no non-zero bar to fit the scale from")
+    else:
+        ref = max(usable, key=lambda g: abs(g[1]))
+        k = ref[3] / abs(ref[1])
+        for key, value, x, width, side in geo:
+            if abs(width - k * abs(value)) > _TICK_POSITION_TOLERANCE:
+                fail("tick_position", f"bar {key} is {width} wide but its data-value {value} implies {k * abs(value):.2f}")
+            if value == 0 and not mirrored:
+                continue
+            if mirrored:
+                zero, slot = (x + width if side == "left" else x), side
+            else:
+                zero, slot = (x + width if value < 0 else x), "bar"
+            if slot not in origin:
+                origin[slot] = zero
+            elif abs(origin[slot] - zero) > _TICK_POSITION_TOLERANCE:
+                fail("tick_position", f"bar {key} starts at {zero}, the others at {origin[slot]}")
+
+    if not ticks:
+        fail("tick_attrs", "the chart has no axis-tick-label to read back")
+    for attrs, text in ticks:
+        tv = _tick_num(attrs.get("data-tick-value"))
+        if tv is None:
+            fail("tick_attrs", f"tick '{text}' has no readable data-tick-value")
+            continue
+        shown = _tick_shown_value(text, unit_scale)
+        if shown is None:
+            fail("tick_text", f"tick '{text}' has no readable number")
+            continue
+        if abs(shown[0] - tv) > shown[1] * (1 + _TICK_REL) + _TICK_REL * abs(tv):
+            fail("tick_text", f"tick '{text}' reads {shown[0]} but data-tick-value is {tv}")
+        x = _tick_num(attrs.get("x"))
+        tick_x = x if attrs.get("data-tick-x") is None else _tick_num(attrs.get("data-tick-x"))
+        if x is None or tick_x is None:
+            fail("tick_position", f"tick '{text}' has no numeric position")
+            continue
+        if abs(x - tick_x) > _TICK_LABEL_SLIDE_MAX:
+            fail("tick_position", f"tick '{text}' text sits {abs(x - tick_x):.1f} from its tick")
+        side = attrs.get("data-side")
+        if mirrored and side not in ("left", "right"):
+            fail("tick_attrs", f"tick '{text}' has no data-side left/right")
+            continue
+        zero = origin.get(side if mirrored else "bar")
+        if k is None or zero is None:
+            fail("tick_position", f"tick '{text}' position cannot be computed (no bar scale)")
+            continue
+        expected = zero - k * tv if (mirrored and side == "left") else zero + k * tv
+        if abs(tick_x - expected) > _TICK_POSITION_TOLERANCE:
+            fail("tick_position", f"tick '{text}' is at {tick_x} but its data-tick-value {tv} belongs at {expected:.2f}")
+
+    for attrs, text in labels:
+        if attrs.get("data-category") is None:
+            fail("value_label_attrs", f"value label '{text}' has no data-category")
+            continue
+        key = _tick_key(attrs.get("data-category"), attrs.get("data-series"), attrs.get("data-period"))
+        value = _tick_num(attrs.get("data-value"))
+        if value is None:
+            fail("value_label_attrs", f"value label '{text}' has no readable data-value")
+            continue
+        shown = _tick_shown_value(text, unit_scale)
+        if shown is None:
+            fail("value_label_text", f"value label '{text}' has no readable number")
+        elif abs(shown[0] - value) > shown[1] * (1 + _TICK_REL) + _TICK_REL * abs(value):
+            fail("value_label_text", f"value label '{text}' reads {shown[0]} but data-value is {value}")
+        if key not in bar_value:
+            fail("value_label_key", f"value label '{text}' names {key}, which is not a bar")
+        elif not _tick_close(value, bar_value[key]):
+            fail("value_label_key", f"value label '{text}' carries {value} but its bar {key} is {bar_value[key]}")
+    return "covered", failures
+
+
+def verify_tick_readback_for_manifest(root: Path, manifest: dict, manifest_ref: str, computation_map: dict, report: "Report") -> None:
+    # NEWSROOM_QA_TICK_READBACK=1 only. Data anchor: the rows come from the computation record the manifest names
+    # (its result_hash is bound to the lint and to the manifest.data_hash, and re-hashed against the rows by the
+    # computation checks), the field names from the plan the manifest names (content-addressed spec).
+    chart_type = manifest.get("chart_type")
+    if chart_type not in TICK_READBACK_COVERED:
+        report.warnings.append(f"visualization {manifest_ref}: tick read-back not covered for chart type {chart_type}")
+        return
+    try:
+        comp_ref, plan_ref = manifest.get("computation_ref"), manifest.get("plan_ref")
+        comp = computation_map.get(comp_ref) or load_json(safe_ref(root, comp_ref))
+        plan = load_json(safe_ref(root, plan_ref))
+        report.check(comp.get("result_hash") == manifest.get("data_hash"), f"visualization {manifest_ref} tick read-back: computation rows are not the manifest's data")
+        ctx = {"chart_type": chart_type, "rows": comp.get("rows"), "category_field": plan.get("category_field"), "value_field": plan.get("value_field"), "series_field": plan.get("series_field"), "period_field": plan.get("period_field"), "unit": plan.get("unit"), "language": plan.get("language")}
+        for viewport, ref in (manifest.get("variants") or {}).items():
+            svg_path = safe_ref(root, ref)
+            if not svg_path.is_file():
+                continue
+            _status, failures = verify_tick_readback_from_svg(svg_path.read_text(encoding="utf-8"), ctx)
+            for rule, message in failures:
+                report.check(False, f"visualization {manifest_ref} {viewport} tick read-back {rule}: {message}")
+    except Exception as exc:
+        report.check(False, f"visualization {manifest_ref} tick read-back could not run: {exc}")
+
+
 def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infographic_plan_ref: str, infographic_critics: list, infographic_vision_critics: list, report: "Report") -> None:
     # The gate this worktree adds: a top-level publication's
     # infographic_plan_ref (already confirmed by the caller to resolve to an
@@ -1464,6 +1748,8 @@ def verify(root: Path) -> Report:
                                     report.check(False, f"heatmap visualization {manifest_ref} {viewport} independent value-labels re-derivation failed: {failure}")
                     except Exception as exc:
                         report.check(False, f"heatmap visualization {manifest_ref} value-labels re-derivation failed: {exc}")
+            if os.environ.get("NEWSROOM_QA_TICK_READBACK") == "1":
+                verify_tick_readback_for_manifest(root, manifest, manifest_ref, computation_map, report)
             if isinstance(lint_ref, str):
                 try:
                     lint_path = safe_ref(root, lint_ref)

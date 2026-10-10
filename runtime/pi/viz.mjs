@@ -3821,6 +3821,10 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
+// NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick, unit-line and value-label text carry the data they were written
+// from (data-tick-value, data-scale, data-value, data-category ...), so render QA can read each number back. Off, nothing is added.
+const tickReadbackOn = () => process.env.NEWSROOM_QA_TICK_READBACK === "1";
+const trAttr = (name, value) => ` ${name}="${esc(String(value))}"`;
 function horizontalAxisTicks(domain, frameW = null) {
   let ticks = tickValues(domain, 4);
   // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
@@ -3860,8 +3864,9 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
   const notationB = unitY === null ? null : axisNotationB(spec, ticks, unit);
   const tickTexts = notationB ? notationB.texts : axisTickTexts(spec, ticks, unit, labelDecimals);
   if (notationB?.unitLine) {
-    if (unitAtLeft && unitLineLeft(spec)) parts.push(`<text x="${left}" y="${unitY + 4}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}" data-role="axis-unit">${esc(notationB.unitLine)}</text>`);
-    else parts.push(`<text x="${right}" y="${unitY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}" data-role="axis-unit">${esc(notationB.unitLine)}</text>`);
+    const unitRole = tickReadbackOn() ? ` data-role="axis-unit-line"${trAttr("data-scale", 10 ** notationB.scale.power)}` : ` data-role="axis-unit"`;
+    if (unitAtLeft && unitLineLeft(spec)) parts.push(`<text x="${left}" y="${unitY + 4}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}"${unitRole}>${esc(notationB.unitLine)}</text>`);
+    else parts.push(`<text x="${right}" y="${unitY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}"${unitRole}>${esc(notationB.unitLine)}</text>`);
   }
   ticks.forEach((tick, i) => {
     const x = scaleX(tick);
@@ -3876,7 +3881,8 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
       const half = (textUnits(label) * 12 * 0.56) / 2 + 2;
       labelX = Math.min(Math.max(x, 8 + half), frameW - 8 - half);
     }
-    parts.push(`<text x="${labelX}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(label)}</text>`);
+    const tickRole = tickReadbackOn() ? ` data-role="axis-tick-label"${trAttr("data-tick-value", tick)}${labelX !== x ? trAttr("data-tick-x", x) : ""}` : "";
+    parts.push(`<text${tickRole} x="${labelX}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(label)}</text>`);
   });
 }
 
@@ -4077,7 +4083,8 @@ function renderHorizontal(spec, rows, mode) {
     const rowUnit = HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit;
     if (mode === "bar") {
       const rx = Math.min(x, zero), width = Math.max(1, Math.abs(x - zero));
-      f.parts.push(`<rect data-role="data-bar" x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
+      const barKey = tickReadbackOn() ? `${trAttr("data-category", row[spec.category_field])}${trAttr("data-value", value)}` : "";
+      f.parts.push(`<rect data-role="data-bar"${barKey} x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
     } else {
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
@@ -4090,7 +4097,8 @@ function renderHorizontal(spec, rows, mode) {
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(labelText(value, rowUnit))}</text>`);
+      const labelKey = tickReadbackOn() && mode === "bar" ? ` data-role="value-label"${trAttr("data-category", row[spec.category_field])}${trAttr("data-value", value)}` : "";
+      f.parts.push(`<text${labelKey} x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(labelText(value, rowUnit))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout }));
   });
@@ -4339,6 +4347,7 @@ function renderMirroredBar(spec, rows) {
   // K202: the labels are written in the axis's scale. The first estimate (for the label room) uses the unthinned ticks; the
   // drawn labels use the final axis (below), whose top tick can differ only at a 万/亿 boundary.
   const labelPlan0 = axisLabelPlan(spec, printed, mirroredAxis(m.maxValue, Infinity, () => []).ticks, spec.unit);
+  const mirrorKey = (category, series, period, value, sk) => (tickReadbackOn() ? `${trAttr("data-category", category)}${trAttr("data-series", series)}${period !== "" ? trAttr("data-period", period) : ""}${trAttr("data-value", value)}${trAttr("data-side", sk === 0 ? "left" : "right")}` : "");
   const mirrorLabel = (plan, value, pk, sk, i, bare = false) => (plan ? plan.text(value) : fmtSpec(spec, value, bare ? "" : labelUnit(pk, sk, i), decimals));
   panelPeriods.forEach((period, pk) => {
     m.categories.forEach((category, i) => {
@@ -4398,8 +4407,9 @@ function renderMirroredBar(spec, rows) {
   const unitLine = axisNotationB(spec, axis.ticks, spec.unit)?.unitLine;
   const labelPlan = axisLabelPlan(spec, printed, axis.ticks, spec.unit);
   if (unitLine) {
-    if (unitLineLeft(spec)) heads.push(`<text data-role="axis-unit" x="54" y="${px(f.bodyTop + 12)}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
-    else heads.push(`<text data-role="axis-unit" x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+    const mUnitRole = tickReadbackOn() ? ` data-role="axis-unit-line"${trAttr("data-scale", 10 ** axisNotationB(spec, axis.ticks, spec.unit).scale.power)}` : ` data-role="axis-unit"`;
+    if (unitLineLeft(spec)) heads.push(`<text${mUnitRole} x="54" y="${px(f.bodyTop + 12)}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+    else heads.push(`<text${mUnitRole} x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
   }
   panelPeriods.forEach((period, pk) => {
     const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
@@ -4414,7 +4424,7 @@ function renderMirroredBar(spec, rows) {
       for (const sk of [0, 1]) {
         const x = sk === 0 ? gl - tick * k : gr + tick * k;
         grid.push(`<line data-role="grid-line" x1="${px(x)}" y1="${px(plotTop)}" x2="${px(x)}" y2="${px(plotBottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(axisTickLabelTexts[ti])}</text>`);
+        tickLabels.push(`<text data-role="axis-tick-label"${tickReadbackOn() ? `${trAttr("data-tick-value", tick)}${trAttr("data-side", sk === 0 ? "left" : "right")}` : ""} x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(axisTickLabelTexts[ti])}</text>`);
       }
     });
     m.categories.forEach((category, i) => {
@@ -4431,7 +4441,7 @@ function renderMirroredBar(spec, rows) {
         const fill = highlighted ? PALETTE.accent : sk === 0 ? PALETTE.accent2 : PALETTE.series3;
         if (length > 0) {
           const w = Math.max(1, length);
-          bars.push(`<rect data-role="data-bar" x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
+          bars.push(`<rect data-role="data-bar"${mirrorKey(category, series, period, value, sk)} x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
         }
         // The other period: a stroke with no fill, inset so its outer edge
         // lands on the value and neighbouring rows' strokes keep a gap.
@@ -4440,7 +4450,7 @@ function renderMirroredBar(spec, rows) {
         }
         if (value !== null && labelled(category)) {
           const reach = Math.max(length, otherLength);
-          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(mirrorLabel(labelPlan, value, pk, sk, i))}</text>`);
+          valueTexts.push(`<text${tickReadbackOn() ? ` data-role="value-label"${mirrorKey(category, series, period, value, sk)}` : ` data-role="bar-value-label"`} x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(mirrorLabel(labelPlan, value, pk, sk, i))}</text>`);
         }
       });
     });

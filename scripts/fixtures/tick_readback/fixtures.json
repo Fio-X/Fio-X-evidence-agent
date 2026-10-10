@@ -1,0 +1,525 @@
+{
+ "hb_A": {
+  "file": "hb_A.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 24870003
+   },
+   {
+    "city": "北京",
+    "pop": 21890003
+   },
+   {
+    "city": "深圳",
+    "pop": 17680003
+   },
+   {
+    "city": "广州",
+    "pop": 18730003
+   },
+   {
+    "city": "拉萨",
+    "pop": 705803
+   }
+  ]
+ },
+ "hb_B": {
+  "file": "hb_B.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 24870003
+   },
+   {
+    "city": "北京",
+    "pop": 21890003
+   },
+   {
+    "city": "深圳",
+    "pop": 17680003
+   },
+   {
+    "city": "广州",
+    "pop": 18730003
+   },
+   {
+    "city": "拉萨",
+    "pop": 705803
+   }
+  ]
+ },
+ "hb_K202": {
+  "file": "hb_K202.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 24870003
+   },
+   {
+    "city": "北京",
+    "pop": 21890003
+   },
+   {
+    "city": "深圳",
+    "pop": 17680003
+   },
+   {
+    "city": "广州",
+    "pop": 18730003
+   },
+   {
+    "city": "拉萨",
+    "pop": 705803
+   }
+  ]
+ },
+ "hb_OFF": {
+  "file": "hb_OFF.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 188700003
+   },
+   {
+    "city": "北京",
+    "pop": 121890003
+   },
+   {
+    "city": "深圳",
+    "pop": 97680003
+   },
+   {
+    "city": "广州",
+    "pop": 138730003
+   },
+   {
+    "city": "成都",
+    "pop": 60940003
+   }
+  ]
+ },
+ "mb_A": {
+  "file": "mb_A.svg",
+  "chart_type": "mirrored_bar",
+  "category_field": "band",
+  "value_field": "pop",
+  "series_field": "side",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "band": "0-14",
+    "side": "男",
+    "pop": 12000005
+   },
+   {
+    "band": "0-14",
+    "side": "女",
+    "pop": 11000007
+   },
+   {
+    "band": "15-39",
+    "side": "男",
+    "pop": 15100005
+   },
+   {
+    "band": "15-39",
+    "side": "女",
+    "pop": 13800007
+   },
+   {
+    "band": "40-64",
+    "side": "男",
+    "pop": 18200005
+   },
+   {
+    "band": "40-64",
+    "side": "女",
+    "pop": 16600007
+   },
+   {
+    "band": "65+",
+    "side": "男",
+    "pop": 21300005
+   },
+   {
+    "band": "65+",
+    "side": "女",
+    "pop": 19400007
+   }
+  ]
+ },
+ "mb_B": {
+  "file": "mb_B.svg",
+  "chart_type": "mirrored_bar",
+  "category_field": "band",
+  "value_field": "pop",
+  "series_field": "side",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "band": "0-14",
+    "side": "男",
+    "pop": 12000005
+   },
+   {
+    "band": "0-14",
+    "side": "女",
+    "pop": 11000007
+   },
+   {
+    "band": "15-39",
+    "side": "男",
+    "pop": 15100005
+   },
+   {
+    "band": "15-39",
+    "side": "女",
+    "pop": 13800007
+   },
+   {
+    "band": "40-64",
+    "side": "男",
+    "pop": 18200005
+   },
+   {
+    "band": "40-64",
+    "side": "女",
+    "pop": 16600007
+   },
+   {
+    "band": "65+",
+    "side": "男",
+    "pop": 21300005
+   },
+   {
+    "band": "65+",
+    "side": "女",
+    "pop": 19400007
+   }
+  ]
+ },
+ "rw_hb_off": {
+  "file": "rw_hb_off.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 24870003
+   },
+   {
+    "city": "北京",
+    "pop": 21890003
+   },
+   {
+    "city": "深圳",
+    "pop": 17680003
+   },
+   {
+    "city": "广州",
+    "pop": 18730003
+   },
+   {
+    "city": "拉萨",
+    "pop": 705803
+   }
+  ]
+ },
+ "rw_hb_B": {
+  "file": "rw_hb_B.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 24870003
+   },
+   {
+    "city": "北京",
+    "pop": 21890003
+   },
+   {
+    "city": "深圳",
+    "pop": 17680003
+   },
+   {
+    "city": "广州",
+    "pop": 18730003
+   },
+   {
+    "city": "拉萨",
+    "pop": 705803
+   }
+  ]
+ },
+ "rw_hb_K": {
+  "file": "rw_hb_K.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "上海",
+    "pop": 24870003
+   },
+   {
+    "city": "北京",
+    "pop": 21890003
+   },
+   {
+    "city": "深圳",
+    "pop": 17680003
+   },
+   {
+    "city": "广州",
+    "pop": 18730003
+   },
+   {
+    "city": "拉萨",
+    "pop": 705803
+   }
+  ]
+ },
+ "rw_hb_unitword": {
+  "file": "rw_hb_unitword.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "百万吨",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "中国",
+    "pop": 11472.5
+   },
+   {
+    "city": "美国",
+    "pop": 4853.1
+   },
+   {
+    "city": "印度",
+    "pop": 2693.4
+   },
+   {
+    "city": "俄罗斯",
+    "pop": 1652.9
+   }
+  ]
+ },
+ "rw_mb_period": {
+  "file": "rw_mb_period.svg",
+  "chart_type": "mirrored_bar",
+  "category_field": "band",
+  "value_field": "pop",
+  "series_field": "side",
+  "period_field": "year",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "band": "0-14",
+    "side": "男",
+    "year": "2014",
+    "pop": 11100005
+   },
+   {
+    "band": "0-14",
+    "side": "女",
+    "year": "2014",
+    "pop": 10200007
+   },
+   {
+    "band": "15-39",
+    "side": "男",
+    "year": "2014",
+    "pop": 14200005
+   },
+   {
+    "band": "15-39",
+    "side": "女",
+    "year": "2014",
+    "pop": 13000007
+   },
+   {
+    "band": "40-64",
+    "side": "男",
+    "year": "2014",
+    "pop": 17300005
+   },
+   {
+    "band": "40-64",
+    "side": "女",
+    "year": "2014",
+    "pop": 15800007
+   },
+   {
+    "band": "65+",
+    "side": "男",
+    "year": "2014",
+    "pop": 20400005
+   },
+   {
+    "band": "65+",
+    "side": "女",
+    "year": "2014",
+    "pop": 18600007
+   },
+   {
+    "band": "0-14",
+    "side": "男",
+    "year": "2024",
+    "pop": 12000005
+   },
+   {
+    "band": "0-14",
+    "side": "女",
+    "year": "2024",
+    "pop": 11000007
+   },
+   {
+    "band": "15-39",
+    "side": "男",
+    "year": "2024",
+    "pop": 15100005
+   },
+   {
+    "band": "15-39",
+    "side": "女",
+    "year": "2024",
+    "pop": 13800007
+   },
+   {
+    "band": "40-64",
+    "side": "男",
+    "year": "2024",
+    "pop": 18200005
+   },
+   {
+    "band": "40-64",
+    "side": "女",
+    "year": "2024",
+    "pop": 16600007
+   },
+   {
+    "band": "65+",
+    "side": "男",
+    "year": "2024",
+    "pop": 21300005
+   },
+   {
+    "band": "65+",
+    "side": "女",
+    "year": "2024",
+    "pop": 19400007
+   }
+  ]
+ },
+ "rw_hb_usd_zh": {
+  "file": "rw_hb_usd_zh.svg",
+  "chart_type": "horizontal_bar",
+  "category_field": "city",
+  "value_field": "pop",
+  "unit": "$B",
+  "language": "zh",
+  "rows": [
+   {
+    "city": "中国",
+    "pop": 9.4
+   },
+   {
+    "city": "美国",
+    "pop": 6.1
+   },
+   {
+    "city": "日本",
+    "pop": 2.2
+   },
+   {
+    "city": "德国",
+    "pop": 1.9
+   }
+  ]
+ },
+ "rw_mb_K": {
+  "file": "rw_mb_K.svg",
+  "chart_type": "mirrored_bar",
+  "category_field": "band",
+  "value_field": "pop",
+  "series_field": "side",
+  "unit": "人",
+  "language": "zh",
+  "rows": [
+   {
+    "band": "0-14",
+    "side": "男",
+    "pop": 12000005
+   },
+   {
+    "band": "0-14",
+    "side": "女",
+    "pop": 11000007
+   },
+   {
+    "band": "15-39",
+    "side": "男",
+    "pop": 15100005
+   },
+   {
+    "band": "15-39",
+    "side": "女",
+    "pop": 13800007
+   },
+   {
+    "band": "40-64",
+    "side": "男",
+    "pop": 18200005
+   },
+   {
+    "band": "40-64",
+    "side": "女",
+    "pop": 16600007
+   },
+   {
+    "band": "65+",
+    "side": "男",
+    "pop": 21300005
+   },
+   {
+    "band": "65+",
+    "side": "女",
+    "pop": 19400007
+   }
+  ]
+ }
+}

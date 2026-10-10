@@ -29,6 +29,7 @@ import { checkChoroplethValueLabels, checkHeatmapValueLabels, checkHeatmapFillMo
 import { joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
 import { choroplethValueText, heatmapCellText, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
+import { checkTickReadback } from "./render_qa_ticks.mjs";
 
 export const RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0";
 
@@ -180,9 +181,12 @@ function checkViewport(svgText, options) {
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
   if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true, areaShapes: drawnAreaShapes(svgText), untaggedCells: options?.heatmapChart === true ? drawnUntaggedCells(svgText) : 0 });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
+  // NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back, only when the
+  // caller passes options.tick_readback (chart_type, rows, field names). Adds a rule; off, the report is unchanged.
+  const tickReadback = process.env.NEWSROOM_QA_TICK_READBACK === "1" && options?.tick_readback ? checkTickReadback(svgText, options.tick_readback) : null;
   return {
     svg_sha256: sha256Hex(svgText),
-    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true) && (extraChecks ? extraChecks.passed : true),
+    passed: geometry.passed && contrast.passed && (valueLabels && !proofOnly ? valueLabels.passed : true) && (extraChecks ? extraChecks.passed : true) && (tickReadback && tickReadback.status === "covered" ? tickReadback.passed : true),
     geometry: {
       passed: geometry.passed,
       failures: geometry.failures,
@@ -196,6 +200,7 @@ function checkViewport(svgText, options) {
     },
     ...(valueLabels ? { value_labels: valueLabels } : {}),
     ...(extraChecks ? { extra_checks: extra } : {}),
+    ...(tickReadback ? { tick_readback: tickReadback } : {}),
   };
 }
 
@@ -235,8 +240,9 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
     throw new Error("runRenderQa: compact SVG text must be a string when present");
   }
   const viewports = { desktop: checkViewport(desktop, options) };
-  // the heatmap label proof is desktop-only; other viewports keep the plain report (and so never prove it)
-  const { heatmap: _heatmap, ...otherOptions } = options ?? {};
+  // the heatmap label proof and the tick read-back are desktop-only (the phone and compact pictures are drawn by other renderers
+  // that do not write the read-back attributes); other viewports keep the plain report (and so never prove them)
+  const { heatmap: _heatmap, tick_readback: _tickReadback, ...otherOptions } = options ?? {};
   if (mobile !== undefined) viewports.mobile = checkViewport(mobile, otherOptions);
   // The 8-column chart variant is checked exactly like the others, in full.
   if (compact !== undefined) viewports.compact = checkViewport(compact, otherOptions);
@@ -247,7 +253,8 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
       viewports[viewport].geometry.failures.length +
       viewports[viewport].contrast.failures.length +
       (viewports[viewport].value_labels?.failures.length ?? 0) * (options?.heatmap ? 0 : 1) +
-      (viewports[viewport].extra_checks ? Object.values(viewports[viewport].extra_checks).reduce((n, c) => n + c.failures.length, 0) : 0),
+      (viewports[viewport].extra_checks ? Object.values(viewports[viewport].extra_checks).reduce((n, c) => n + c.failures.length, 0) : 0) +
+      (viewports[viewport].tick_readback?.failures.length ?? 0),
     0,
   );
   return {

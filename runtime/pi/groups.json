@@ -571,6 +571,9 @@
   "runtime/pi/render_qa_labels.mjs": {
    "group": "visual"
   },
+  "runtime/pi/render_qa_ticks.mjs": {
+   "group": "visual"
+  },
   "runtime/pi/render_qa_svg.mjs": {
    "group": "visual"
   },

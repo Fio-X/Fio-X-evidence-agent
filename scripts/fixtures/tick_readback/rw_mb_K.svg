@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 420" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">各年龄段人口</title>
+<desc id="viz-desc">图。</desc>
+<rect width="1040" height="420" fill="#FFFFFF"/>
+<text x="54" y="38" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1A1A1A">各年龄段人口</text>
+<text x="54" y="74" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666">万人</text>
+<text data-role="axis-unit-line" data-scale="10000" x="54" y="119" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" fill="#666666">单位：万人</text>
+<text data-role="series-name" x="281" y="141" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">男</text>
+<text data-role="series-name" x="759" y="141" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1A1A1A">女</text>
+<line data-role="grid-line" x1="488" y1="153" x2="488" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="552" y1="153" x2="552" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="405.2" y1="153" x2="405.2" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="634.8" y1="153" x2="634.8" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="322.4" y1="153" x2="322.4" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="717.6" y1="153" x2="717.6" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="239.6" y1="153" x2="239.6" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="800.4" y1="153" x2="800.4" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="156.8" y1="153" x2="156.8" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="883.2" y1="153" x2="883.2" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="74" y1="153" x2="74" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<line data-role="grid-line" x1="966" y1="153" x2="966" y2="281" stroke="#E5E5E5" stroke-width="1"/>
+<rect data-role="data-bar" data-category="0-14" data-series="男" data-value="12000005" data-side="left" x="289.28" y="250" width="198.72" height="30" fill="#757575"/>
+<rect data-role="data-bar" data-category="0-14" data-series="女" data-value="11000007" data-side="right" x="552" y="250" width="182.16" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" data-category="15-39" data-series="男" data-value="15100005" data-side="left" x="237.94" y="218" width="250.06" height="30" fill="#757575"/>
+<rect data-role="data-bar" data-category="15-39" data-series="女" data-value="13800007" data-side="right" x="552" y="218" width="228.53" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" data-category="40-64" data-series="男" data-value="18200005" data-side="left" x="186.61" y="186" width="301.39" height="30" fill="#757575"/>
+<rect data-role="data-bar" data-category="40-64" data-series="女" data-value="16600007" data-side="right" x="552" y="186" width="274.9" height="30" fill="#BDBDBD"/>
+<rect data-role="data-bar" data-category="65+" data-series="男" data-value="21300005" data-side="left" x="135.27" y="154" width="352.73" height="30" fill="#757575"/>
+<rect data-role="data-bar" data-category="65+" data-series="女" data-value="19400007" data-side="right" x="552" y="154" width="321.26" height="30" fill="#BDBDBD"/>
+<text data-role="category-label" x="520" y="269" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">0-14</text>
+<text data-role="category-label" x="520" y="237" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">15-39</text>
+<text data-role="category-label" x="520" y="205" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">40-64</text>
+<text data-role="category-label" x="520" y="173" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#1A1A1A">65+</text>
+<text data-role="axis-tick-label" data-tick-value="0" data-side="left" x="488" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" data-tick-value="0" data-side="right" x="552" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" data-tick-value="5000000" data-side="left" x="405.2" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">500</text>
+<text data-role="axis-tick-label" data-tick-value="5000000" data-side="right" x="634.8" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">500</text>
+<text data-role="axis-tick-label" data-tick-value="10000000" data-side="left" x="322.4" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1000</text>
+<text data-role="axis-tick-label" data-tick-value="10000000" data-side="right" x="717.6" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1000</text>
+<text data-role="axis-tick-label" data-tick-value="15000000" data-side="left" x="239.6" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1500</text>
+<text data-role="axis-tick-label" data-tick-value="15000000" data-side="right" x="800.4" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">1500</text>
+<text data-role="axis-tick-label" data-tick-value="20000000" data-side="left" x="156.8" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2000</text>
+<text data-role="axis-tick-label" data-tick-value="20000000" data-side="right" x="883.2" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2000</text>
+<text data-role="axis-tick-label" data-tick-value="25000000" data-side="left" x="74" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2500</text>
+<text data-role="axis-tick-label" data-tick-value="25000000" data-side="right" x="966" y="299" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">2500</text>
+<line x1="54" y1="349" x2="986" y2="349" stroke="#E5E5E5" stroke-width="1"/>
+<text x="54" y="368" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">数据来源：fixture</text>
+</svg>
