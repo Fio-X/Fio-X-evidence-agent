@@ -327,3 +327,4 @@ jobs:
           node scripts/test_scene_duplicate_wording.mjs
           node scripts/test_refused_options_fix.mjs
           node scripts/test_extreme_probe.mjs
+          node scripts/test_extreme_note.mjs

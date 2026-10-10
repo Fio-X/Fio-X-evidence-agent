@@ -3011,7 +3011,8 @@ function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
   const lang = vizLang(spec), noteBlock = spec.note ? footerUrlBlock(`${VIZ_STRINGS[lang].note}${spec.note}`) : null, srcBlock = footerUrlBlock(sourceAttribution(spec.source_note, lang));
-  const footer = 70 + (noteBlock ? noteBlock.length * 16 : spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16;
+  const footer = 70 + (noteBlock ? noteBlock.length * 16 : spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16
+    + (spec.extreme_note ? wrapText(spec.extreme_note, wrapChars(120)).length * 16 : 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
@@ -3042,6 +3043,7 @@ function addFooter(parts, spec, footerTop, extraBlock = []) {
   // The flow map's route_provenance_note: under the chart beside the note, never inside the map panel.
   extraBlock.forEach((l, i) => parts.push(`<text data-role="cartographic-provenance-note" x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
   y += extraBlock.length * 16;
+  if (spec.extreme_note) y += svgTextLines(parts, `${t.note}${spec.extreme_note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) }); // K117: its own line, set by the runtime, after the data-source notes
   const attr = sourceAttribution(spec.source_note, vizLang(spec)), sb = footerUrlBlock(attr);
   if (sb) emitFooterBlock(parts, sb, y + 3);
   else svgTextLines(parts, attr, 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
@@ -5928,7 +5930,8 @@ function mobileFrame(spec, bodyHeight) {
   const titleLines = headlineWrap(spec.title, 38, true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, 58).length : 0;
   const header = 26 + titleLines * 31 + dekLines * 20 + 20;
-  const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0);
+  const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0)
+    + (spec.extreme_note ? wrapText(spec.extreme_note, 70).length * 16 : 0);
   const height = Math.max(440, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title-mobile">${esc(spec.title)}</title>`);
@@ -5957,6 +5960,7 @@ function addMobileFooter(parts, spec, footerTop) {
   parts.push(`<line x1="32" y1="${footerTop - 16}" x2="608" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
   if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
+  if (spec.extreme_note) y += svgTextLines(parts, `${t.note}${spec.extreme_note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
   svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 32, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
 }
 
