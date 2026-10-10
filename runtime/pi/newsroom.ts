@@ -50,6 +50,7 @@ import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, s
 import { extremeNoteEnabled, extremeNoteText, extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { numberWordIn } from "./number_words.mjs";
+import { composeDataNote, flagCellsFromFile } from "./data_notes.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
 
 const MAX_FETCH_CHARS = 80_000;
@@ -2519,6 +2520,37 @@ export async function acceptedLocalSourceNote(sourceRefs: string[], language?: s
   return lines.join(language === "zh" ? "；" : "; ");
 }
 
+/** NEWSROOM_DATA_NOTES=1 (exact "1", default off): the one-line Chinese note for the status flags (estimated, provisional, break, ...) the data
+ *  files a chart's verified claim reads carry on the cells the chart draws. Read and worded by the program (data_notes.mjs) from the file's own
+ *  flag column or `status`, never from model text; null when the switch is off, the page is not Chinese, or no drawn cell carries a known flag.
+ *  `diagnostics` (unknown codes, number-word refusals) go to the manifest only. */
+export async function dataNoteForChart(spec: any, rows: Record<string, unknown>[], sourceRefs: string[]) {
+  if (process.env.NEWSROOM_DATA_NOTES !== "1") return null;
+  if (spec?.language !== "zh") return null;
+  const root = artifactRoot();
+  const dataRefs = [...new Set((sourceRefs ?? []).filter((ref) => typeof ref === "string" && ref.startsWith("data/") && !ref.includes("..") && /\.(?:json|csv|tsv|txt)$/i.test(ref)))].sort();
+  if (!root || !dataRefs.length) return null;
+  const read: { cells: any[]; dimensions: any[] } = { cells: [], dimensions: [] };
+  const diagnostics: any[] = [];
+  for (const ref of dataRefs) {
+    let text: string;
+    try {
+      if ((await stat(join(root, ref))).size > 8_000_000) continue;
+      text = await readFile(join(root, ref), "utf8");
+    } catch { continue; }
+    const file = flagCellsFromFile(ref, text);
+    read.cells.push(...file.cells);
+    read.dimensions.push(...file.dimensions);
+    diagnostics.push(...file.diagnostics.map((item: any) => ({ ...item, file: ref })));
+  }
+  // The chart's own name mapping (chartNameDisplay) gives the Chinese names a partly flagged chart's sentence uses for its rows.
+  const names = chartNameDisplay(spec, rows);
+  const note = composeDataNote(read, rows, { sql: spec?.sql, categoryField: spec?.category_field, display: names ? (column: string, value: string) => names.display(column, value) : undefined });
+  diagnostics.push(...(note?.diagnostics ?? []));
+  if (!note?.text) return diagnostics.length ? { text: null, full: null, truncated: false, diagnostics } : null;
+  return { text: note.text as string, full: note.full as string, truncated: Boolean(note.truncated), diagnostics };
+}
+
 /** The plan's value columns, which the claim's max and min may rank. */
 function inlineClaimMeasures(params: any) {
   const fields = [params.value_field, params.start_field, params.end_field, params.size_field, ...(params.chart_type === "scatter" ? [params.x_field, params.y_field] : []), ...(Array.isArray(params.measure_semantics) ? params.measure_semantics.map((measure: any) => measure?.field) : [])];
@@ -4659,10 +4691,12 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
+      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, (await verifiedClaimRecords()).get(String(spec.claim_id))?.source_refs ?? []) : null;
       // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
       // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
       const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;
-      const bundle = renderVizBundle(extremeNote ? { ...spec, extreme_note: extremeNote } : spec, rows, { mobilePages, compact: !mobilePages });
+      const bundleSpec = { ...spec, ...(dataNote?.text ? { data_note: dataNote.text } : {}), ...(extremeNote ? { extreme_note: extremeNote } : {}) };
+      const bundle = renderVizBundle(bundleSpec, rows, { mobilePages, compact: !mobilePages });
       // The same plan_ref+data_hash must not collide across a mobile-pages
       // toggle if the same artifact directory is reused between runs (the
       // manifest's variants/hashes shape differs); omitted rather than
@@ -4755,6 +4789,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         source_note: spec.source_note,
         ...(spec.source_note_program === true ? { source_note_program: true } : {}),
         ...(extremeNote ? { extreme_note: extremeNote, extreme_note_program: true } : {}),
+        ...(dataNote?.text ? { data_note: dataNote.text, ...(dataNote.truncated ? { data_note_full: dataNote.full } : {}) } : {}),
+        ...(dataNote?.diagnostics?.length ? { data_note_diagnostics: dataNote.diagnostics } : {}),
         alt: spec.alt,
       });
       // NEWSROOM_EXTREME_PROBE=1 (default off): record-only diagnosis of a value far from the rest, into runtime/extreme-probe/. Nothing is

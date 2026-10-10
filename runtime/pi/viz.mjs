@@ -3005,13 +3005,17 @@ function emitFooterBlock(parts, block, y) {
   return block.length * 16;
 }
 
+function dataNoteLines(spec) {
+  return typeof spec.data_note === "string" && spec.data_note !== "" ? wrapText(`${VIZ_STRINGS[vizLang(spec)].note}${spec.data_note}`, wrapChars(120)).length : 0;
+}
+
 function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
   const width = LAYOUT_W;
   const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
   const lang = vizLang(spec), noteBlock = spec.note ? footerUrlBlock(`${VIZ_STRINGS[lang].note}${spec.note}`) : null, srcBlock = footerUrlBlock(sourceAttribution(spec.source_note, lang));
-  const footer = 70 + (noteBlock ? noteBlock.length * 16 : spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16
+  const footer = 70 + (noteBlock ? noteBlock.length * 16 : spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16 + dataNoteLines(spec) * 16
     + (spec.extreme_note ? wrapText(spec.extreme_note, wrapChars(120)).length * 16 : 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}"${tabularRootAttrs()}>`];
@@ -3039,6 +3043,8 @@ function addFooter(parts, spec, footerTop, extraBlock = []) {
   const t = VIZ_STRINGS[vizLang(spec)];
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
+  // NEWSROOM_DATA_NOTES: the program-written source-flag line, its own line before the model's note (spec.data_note is set only by the render tool).
+  if (dataNoteLines(spec)) y += svgTextLines(parts, `${t.note}${spec.data_note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
   if (spec.note) { const nb = footerUrlBlock(`${t.note}${spec.note}`); y += nb ? emitFooterBlock(parts, nb, y) : svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) }); }
   // The flow map's route_provenance_note: under the chart beside the note, never inside the map panel.
   extraBlock.forEach((l, i) => parts.push(`<text data-role="cartographic-provenance-note" x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
