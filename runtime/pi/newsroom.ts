@@ -4572,7 +4572,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
       // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
       const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;
-      const bundle = renderVizBundle(extremeNote ? { ...spec, note: [spec.note, extremeNote].filter(Boolean).join(" ") } : spec, rows, { mobilePages, compact: !mobilePages });
+      const bundle = renderVizBundle(extremeNote ? { ...spec, extreme_note: extremeNote } : spec, rows, { mobilePages, compact: !mobilePages });
       // The same plan_ref+data_hash must not collide across a mobile-pages
       // toggle if the same artifact directory is reused between runs (the
       // manifest's variants/hashes shape differs); omitted rather than

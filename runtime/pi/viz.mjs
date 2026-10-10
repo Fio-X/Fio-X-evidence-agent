@@ -2827,7 +2827,8 @@ function frame(spec, bodyHeight, minHeight = 420) {
   const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
+  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0)
+    + (spec.extreme_note ? wrapText(spec.extreme_note, wrapChars(120)).length * 16 : 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
@@ -2855,6 +2856,7 @@ function addFooter(parts, spec, footerTop) {
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
   if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
+  if (spec.extreme_note) y += svgTextLines(parts, `${t.note}${spec.extreme_note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) }); // K117: its own line, set by the runtime
   svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
 }
 
@@ -5602,7 +5604,8 @@ function mobileFrame(spec, bodyHeight) {
   const titleLines = headlineWrap(spec.title, 38, true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, 58).length : 0;
   const header = 26 + titleLines * 31 + dekLines * 20 + 20;
-  const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0);
+  const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0)
+    + (spec.extreme_note ? wrapText(spec.extreme_note, 70).length * 16 : 0);
   const height = Math.max(440, header + bodyHeight + footer);
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">`];
   parts.push(`<title id="viz-title-mobile">${esc(spec.title)}</title>`);
@@ -5631,6 +5634,7 @@ function addMobileFooter(parts, spec, footerTop) {
   parts.push(`<line x1="32" y1="${footerTop - 16}" x2="608" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
   if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
+  if (spec.extreme_note) y += svgTextLines(parts, `${t.note}${spec.extreme_note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
   svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 32, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
 }
 
