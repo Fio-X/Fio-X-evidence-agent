@@ -243,7 +243,10 @@ const RULE_HINT_CATEGORY_FIELD = "Must be present and nonempty for the chart typ
 const RULE_HINT_PLAN_CLAIM_ID = "Lint needs both: shared compatible evidence (this chart's SQL and one of the claim's computations read a common data/ or sources/ file, and no file they both read has a different hash) plus a permitted computation relation: the chart is rooted in the claim's stored computation (one plain SELECT directly FROM read_json('computations/<hash>.json') using its columns or simple COUNT/SUM/AVG/MIN/MAX of them; no CTE, JOIN, UNION, subquery, window, HAVING, DISTINCT, literal or arithmetic, and no other file read), or uses the same SQL, or shows only values contained in the claim's rows. Prefer the rooted form; never reword the claim to pass.";
 const VIZ_PLAN_READER_TASKS = ["ranking", "comparison", "change", "distribution", "correlation", "part_to_whole", "spatial", "flow", "relationship", "hierarchy", "sequence", "process"] as const;
 // With RULE_HINTS on, claim_spec.reader_task names the enum values instead of the example that listed a value outside the enum.
-const claimSpecReaderTaskOptions = (base: any): any => (ruleHintsEnabled() ? { ...base, description: `Use the same controlled value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence.` } : base);
+// NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX=1 (default off) gives that one sentence without the other rule hints; with RULE_HINTS on the
+// result is the same single sentence, and where NEWSROOM_SPEED_FIRST_TRY_ALL already replaced the example it changes nothing.
+const readerTaskExampleFixEnabled = () => process.env.NEWSROOM_SPEED_READER_TASK_EXAMPLE_FIX === "1";
+const claimSpecReaderTaskOptions = (base: any): any => (ruleHintsEnabled() || (readerTaskExampleFixEnabled() && !firstTryAllEnabled()) ? { ...base, description: `Use the same controlled value as the top-level reader_task (one of ${VIZ_PLAN_READER_TASKS.join(", ")}), not a prose sentence.` } : base);
 const RULE_HINT_QUESTIONS = "Send at least 3 questions, and fill at least one of surprises, mechanisms or spatial_dimensions; otherwise the decision is REVISE.";
 const RULE_HINT_CHANNELS = "Each channel may be owned by one field only.";
 // NEWSROOM_SPEED_CONTRACT_TEXT=1: wording only, same shape as the rule hints above. The statements come from
