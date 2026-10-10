@@ -113,15 +113,17 @@ export function drawnUntaggedCells(svgText) {
   const text = String(svgText ?? "");
   const box = (attrsOf((/<svg\b[^>]*>/.exec(text) ?? [""])[0]).viewBox ?? "").trim().split(/[\s,]+/).map(Number);
   const [vw, vh] = box.length === 4 && box.every(Number.isFinite) ? [box[2], box[3]] : [Infinity, Infinity];
-  let n = 0;
+  let n = 0, thin = 0;
   for (const m of text.replace(/<defs\b[\s\S]*?<\/defs>/g, "").matchAll(/<rect\b[^>]*>/g)) {
     const a = attrsOf(m[0]);
     const w = Number(a.width), h = Number(a.height);
     if (a["data-role"] !== undefined || !Number.isFinite(w) || !Number.isFinite(h) || (a.fill ?? "").toLowerCase() === "none") continue;
-    if (Math.min(w, h) <= 8 || (w >= 0.9 * vw && h >= 0.9 * vh)) continue;
+    if (w >= 0.9 * vw && h >= 0.9 * vh) continue;
+    if (Math.min(w, h) <= 8) { thin += 1; continue; }
     n += 1;
   }
-  return n;
+  // a heatmap with 76+ columns has cells under 8 px: more thin rects than furniture could be (same cap as viewportHasNoChartShapes) count as cells
+  return thin > MAX_THIN_FURNITURE_RECTS ? n + thin : n;
 }
 export function checkEmptyPasses(geometry, contrast, { heatmap = false, noChartShapes = false, allZero = false, areaShapes = 0, untaggedCells = 0 } = {}) {
   const s = geometry?.summary ?? {};
