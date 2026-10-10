@@ -120,6 +120,19 @@ export function isWorldExtent(spec) {
   return mapWorldEnabled() && spec?.map_extent === "world";
 }
 
+/**
+ * World list mode (NEWSROOM_MAP_WORLD_LIST, off by default; only the exact string "1" turns it on, and only with
+ * world mode): the countries the map does not label are each printed once in a grouped list under the map. The
+ * switch is the program's own - no chart spec can turn it on.
+ */
+export function mapWorldListEnabled() {
+  return process.env.NEWSROOM_MAP_WORLD_LIST === "1";
+}
+
+export function isWorldListMode(spec) {
+  return mapWorldListEnabled() && isWorldExtent(spec);
+}
+
 /** World mode draws at most this many text labels on the map. */
 export const WORLD_LABEL_MAX = 8;
 
@@ -148,6 +161,20 @@ export function worldLabelIso3s(items, spec) {
   out.add(byValue.find((item) => val(item) === top).iso3);
   const highlights = new Set((spec?.highlight_values ?? []).map(String));
   for (const item of list) if (highlights.has(String(item.row[spec.category_field]))) out.add(item.iso3);
+  return out;
+}
+
+/**
+ * World list mode: the iso3 codes that are printed in the list under the map - every plotted country that
+ * worldLabelIso3s does not label on the map. `items` are joined, plottable rows; the renderer and render QA both
+ * call this, QA with items it re-derived from the rows.
+ */
+export function worldListIso3s(items, spec) {
+  const labelled = worldLabelIso3s(items, spec);
+  const out = new Set();
+  for (const item of items ?? []) {
+    if (item?.iso3 && Number.isFinite(Number(item.row?.[spec?.value_field])) && !labelled.has(item.iso3)) out.add(item.iso3);
+  }
   return out;
 }
 
