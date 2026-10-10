@@ -2,6 +2,7 @@ import { runProcess } from "./process.mjs";
 import { decisionWriter } from "./decision_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
 import { boundaryReportEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
+import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -3693,6 +3694,8 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       let bodyPhase = false;
       // Once the headers arrive, success, failure and reset all belong to the host that answered (a redirect target).
       let answeredHost = requestHost;
+      // NEWSROOM_FETCH_SPLIT_PROBE=1 only writes a diagnostic after the request; it never changes the request or its result.
+      let probeOutcome = "ok";
       const controller = new AbortController();
       const timeout = setTimeout(() => { timedOut = !signal?.aborted; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
       const abortForwarder = () => controller.abort();
@@ -3769,11 +3772,32 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         // counted against the host inside safeFetch; a timeout while the body is read is counted here.
         // Any other failure after the headers arrived leaves the host's count as it always was: the route answered.
         if (bodyPhase && !timedOut) sourceAccessCircuit.recordSuccess(answeredHost);
+        if (fetchSplitProbeEnabled()) {
+          const message = String(error?.message ?? "");
+          probeOutcome = failureTypeOf({
+            timedOut,
+            cancelled: !timedOut && Boolean(signal?.aborted),
+            blocked: message.startsWith("SOURCE_ACCESS_BLOCKED"),
+            httpStatus: message.match(/\bHTTP\s+(\d{3})\b/i)?.[1] ?? null,
+            bodyPhase,
+            tooLarge: message.startsWith("Dataset exceeds"),
+          });
+        }
         const counted = timedOut && bodyPhase ? sourceAccessCircuit.recordFailure("download_data body read", error, answeredHost) : error;
         throw timedOut ? downloadTimeoutGuard.recordTimeout(request, Date.now() - startedAt, counted) : error;
       } finally {
         clearTimeout(timeout);
         signal?.removeEventListener("abort", abortForwarder);
+        if (fetchSplitProbeEnabled()) {
+          try {
+            const plan = planSplit(params.url);
+            if (plan.splittable) {
+              const seconds = Math.round((Date.now() - startedAt) / 10) / 100;
+              const record = diagnosticRecord({ plan, mode: probeOutcome === "timeout" ? "after_timeout" : "observed", parentSeconds: seconds, parentOutcome: probeOutcome });
+              await writeArtifactIfAbsent(`runtime/fetch-split-probe/${sha256Hex(JSON.stringify(record))}.json`, record);
+            }
+          } catch {}
+        }
       }
     },
   });
