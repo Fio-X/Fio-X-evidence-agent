@@ -8,7 +8,7 @@ assert.equal((source.match(/result_budget: Type\.Optional/g) || []).length, 3);
 assert.match(source, /model_visible_result_bytes/);
 assert.match(source, /artifact_bytes/);
 assert.match(source, /truncated_for_model/);
-assert.doesNotMatch(source, /NEWSROOM_DUCKDB_COMPACT_ENVELOPE|compact_envelope|compact_results/);
+assert.doesNotMatch(source, /compact_envelope|compact_results/i);
 
 const budget = 12 * 1024;
 const baseline = [

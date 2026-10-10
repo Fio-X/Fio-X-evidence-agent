@@ -494,9 +494,6 @@
    ],
    "note": "Name tables used by claims and by maps."
   },
-  "runtime/pi/domain_layers.mjs": {
-   "group": "knowledge"
-  },
   "runtime/pi/model_spec.mjs": {
    "group": "knowledge",
    "also_used_by": [
@@ -506,10 +503,6 @@
   },
   "runtime/pi/networkx_analyze.py": {
    "group": "knowledge"
-  },
-  "runtime/pi/quality.mjs": {
-   "group": "agent",
-   "note": "Placed in agent: its only logic is assertNoAutonomousAwardPass, a guard on pass state, which only the agent group may own. No caller found."
   },
   "runtime/pi/competition.mjs": {
    "group": "visual"
@@ -563,9 +556,6 @@
   "runtime/pi/backend_policy.mjs": {
    "group": "visual"
   },
-  "runtime/pi/render_router.mjs": {
-   "group": "visual"
-  },
   "runtime/pi/render_qa.mjs": {
    "group": "visual"
   },
@@ -605,19 +595,10 @@
   "runtime/pi/adapters/geometric_cover.mjs": {
    "group": "visual"
   },
-  "runtime/pi/scene.mjs": {
-   "group": "visual"
-  },
-  "runtime/pi/scene_solver.mjs": {
-   "group": "visual"
-  },
   "runtime/pi/label_layout.mjs": {
    "group": "visual"
   },
   "runtime/pi/style_mapping.mjs": {
-   "group": "visual"
-  },
-  "runtime/pi/pro_export.mjs": {
    "group": "visual"
   },
   "runtime/pi/d3_editorial.mjs": {
@@ -652,9 +633,6 @@
    "note": "Resolves data-backed layers (knowledge inputs)."
   },
   "runtime/pi/geo_flow_layers.mjs": {
-   "group": "visual"
-  },
-  "runtime/pi/flow_aggregation.mjs": {
    "group": "visual"
   },
   "runtime/pi/flow_layout.mjs": {

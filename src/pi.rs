@@ -92,8 +92,9 @@ pub const LIEFLAT_TOOLS: [&str; 2] = ["newsroom_lieflat_catalog", "newsroom_lief
 #[cfg(test)]
 pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+// The runtime only accepts exactly "1" for these switches, so the prompt side must not accept more.
 fn env_switch(name: &str) -> bool {
-    matches!(std::env::var(name).ok().as_deref(), Some("1" | "true"))
+    std::env::var(name).ok().as_deref() == Some("1")
 }
 
 // The runtime only accepts exactly "1" for this switch.
@@ -137,11 +138,9 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
     }
 }
 
+// The runtime only accepts exactly "1" for this switch.
 pub fn hide_lieflat_switch_enabled() -> bool {
-    matches!(
-        std::env::var(HIDE_LIEFLAT_ENV).ok().as_deref(),
-        Some("1" | "true")
-    )
+    std::env::var(HIDE_LIEFLAT_ENV).ok().as_deref() == Some("1")
 }
 
 #[derive(Debug)]
@@ -1974,6 +1973,51 @@ mod tests {
             visual_story_config(false, "visual-story").tools_arg(),
             crate::tool_registry::tools_for_profile("visual-story").unwrap()
         );
+    }
+
+    #[test]
+    fn seven_switches_set_to_true_are_off_on_the_prompt_side_like_the_runtime() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let names = [
+            PARALLEL_HINTS_ENV,
+            COMPUTE_BATCH_ENV,
+            ATOMIC_ARTIFACT_ENV,
+            CHAIN_VIZ_ENV,
+            CHAIN_INFOGRAPHIC_ENV,
+            PREFLIGHT_ENV,
+            PLAN_EDIT_ENV,
+            HIDE_LIEFLAT_ENV,
+        ];
+        for name in names {
+            std::env::remove_var(name);
+        }
+        for not_one in ["true", "TRUE", "yes", "0", "", " 1", "1 "] {
+            for name in names {
+                std::env::set_var(name, not_one);
+            }
+            assert_eq!(
+                speed_switches_from_env(),
+                crate::prompt::PromptSpeed::default(),
+                "{not_one:?}"
+            );
+            assert!(!hide_lieflat_switch_enabled(), "{not_one:?}");
+        }
+        for name in names {
+            std::env::set_var(name, "1");
+        }
+        let on = speed_switches_from_env();
+        assert!(
+            on.parallel_hints
+                && on.compute_batch
+                && on.chain_viz
+                && on.chain_infographic
+                && on.preflight
+                && on.plan_edit
+        );
+        assert!(hide_lieflat_switch_enabled());
+        for name in names {
+            std::env::remove_var(name);
+        }
     }
 
     #[test]
