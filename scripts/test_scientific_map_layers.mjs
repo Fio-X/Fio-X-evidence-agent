@@ -2,6 +2,7 @@
 // Reference layers on the scientific map: coordinates come only from recorded
 // data bound by sha256 (never from the spec), every feature has a visible
 // name, and status styling yields a complete legend. Synthetic offline data.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -11,7 +12,7 @@ import { compileScientificMap, qaReferenceNames, splitAntimeridian } from '../ru
 import { validateMapSpec } from '../runtime/pi/map_spec.mjs';
 import { resolveReferenceLayers } from '../runtime/pi/map_reference_layers.mjs';
 
-const root = mkdtempSync(join(tmpdir(), 'ref-layers-'));
+const root = makeTestTmp('ref-layers-');
 mkdirSync(join(root, 'data'), { recursive: true });
 mkdirSync(join(root, 'computations'), { recursive: true });
 const sha = (b) => createHash('sha256').update(b).digest('hex');

@@ -1,6 +1,7 @@
 // Proves the compact-setup schema check runs inside Pi's own extension loader (jiti aliases for typebox/compile), not only in the
 // stub-based tests: the materialized runtime files are loaded by the installed Pi, and a shared value the full form refuses is
 // refused there. No model, no provider: only the loader and the tool handler. Skips (exit 0, says so) when Pi is not installed.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
@@ -14,7 +15,7 @@ const loaderPath = join(piDir, "dist/core/extensions/loader.js");
 if (!existsSync(loaderPath)) { console.log("SKIP pi loader test: Pi is not installed"); process.exit(0); }
 const { loadExtensions, createExtensionRuntime } = await import(pathToFileURL(loaderPath).href);
 
-const dir = mkdtempSync(join(tmpdir(), "compact-pi-loader-"));
+const dir = makeTestTmp("compact-pi-loader-");
 cpSync(join(ROOT, "runtime", "pi"), join(dir, "runtime", "pi"), { recursive: true }); // what the Rust materializer writes next to newsroom.ts
 cpSync(join(ROOT, "config"), join(dir, "config"), { recursive: true });
 const art = join(dir, "run"); for (const d of ["editorial/discovery", "runtime"]) mkdirSync(join(art, d), { recursive: true });

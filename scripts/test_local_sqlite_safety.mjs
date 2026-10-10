@@ -2,6 +2,7 @@
 // sqlite_query must not read or write files outside the database: -readonly only
 // protects the database, so the shell's file functions are blocked twice
 // (deny-list regex, then sqlite3 -safe). Uses a fake secret in a temp dir only.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -15,7 +16,7 @@ if (process.platform !== 'darwin' || !existsSync(SQLITE)) {
   console.log(JSON.stringify({ status: 'SKIP', reason: 'macOS sqlite3 not available' }));
   process.exit(0);
 }
-const root = await mkdtemp(join(tmpdir(), 'newsroom-sqlite-safety-'));
+const root = makeTestTmp('newsroom-sqlite-safety-');
 process.env.NEWSROOM_ARTIFACT_DIR = root;
 const FAKE_SECRET = 'FAKE-SECRET-NOT-A-REAL-KEY';
 const secretPath = join(root, 'secret.txt');

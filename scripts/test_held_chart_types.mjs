@@ -2,6 +2,7 @@
 // Four chart types are held back from the model while their renders are fixed: hierarchy_tree, geo_flow_map,
 // cartographic_flow_map and trajectory_profile. Their renderers stay; only the model's list (the plan and chain
 // chart_type enum), the plan's wording and the three tools' input change. This test pins that.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -20,7 +21,7 @@ assert.equal(ALL.length, 28);
 assert.equal(KEPT.length, 24);
 
 // ---- tool registration with stand-ins for the two packages, as test_viz_plan_schema.mjs does --------------------------
-const tree = mkdtempSync(join(tmpdir(), "held-types-"));
+const tree = makeTestTmp("held-types-");
 cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(tree, "config"), { recursive: true });
 const stub = (name, source) => {
@@ -50,7 +51,7 @@ async function tools(env = {}) {
   return out;
 }
 
-const artifacts = mkdtempSync(join(tmpdir(), "held-types-artifacts-"));
+const artifacts = makeTestTmp("held-types-artifacts-");
 const listing = () => readdirSync(artifacts, { recursive: true }).sort().join("\n");
 const withChain = { NEWSROOM_ARTIFACT_DIR: artifacts, NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" };
 const on = await tools({ ...withChain, NEWSROOM_SPEED_RULE_HINTS: "1" });

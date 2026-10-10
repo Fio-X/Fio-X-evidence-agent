@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { appendFileSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +9,7 @@ import { toolEnabled } from "../runtime/pi/tool_phase_policy.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const extension = join(root, "runtime/pi/newsroom.ts");
-const metricsDir = mkdtempSync(join(tmpdir(), "news-phase-surface-"));
+const metricsDir = makeTestTmp("news-phase-surface-");
 const rows = [];
 const cases = [
   ["visual-story-all", "visual-story", undefined, "all"],

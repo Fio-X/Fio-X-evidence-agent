@@ -6,6 +6,7 @@
 //
 // Run: node scripts/test_tool_defs_unchanged.mjs
 // Regenerate (only from an export of the base): node scripts/test_tool_defs_unchanged.mjs --root=<export> --write
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -46,7 +47,7 @@ export const Type = {
   Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
-const TREE = mkdtempSync(join(tmpdir(), "tool-defs-tree-"));
+const TREE = makeTestTmp("tool-defs-tree-");
 cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
 stub(TREE, "typebox", TYPEBOX);

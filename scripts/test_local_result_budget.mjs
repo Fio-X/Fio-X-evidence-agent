@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { localText } from '../runtime/pi/local_backend.mjs';
-const root = await mkdtemp(join(tmpdir(), 'newsroom-r5-local-'));
+const root = makeTestTmp('newsroom-r5-local-');
 process.env.NEWSROOM_ARTIFACT_DIR = root;
 const source = 'row,body\n' + Array.from({ length: 180_000 }, (_, i) => `${i},${'x'.repeat(12)}`).join('\n');
 await writeFile(join(root, 'large.csv'), source);
