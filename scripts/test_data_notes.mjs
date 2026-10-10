@@ -188,9 +188,12 @@ export const Type = {
     return { art, manifest, manifestText, svg, compact, planText: readFileSync(join(art, plan.details.planRef), "utf8") };
   }
   const texts = (svg) => [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  // DATA_NOTES_EXPORT=<dir>: also write the rendered charts there (local review only; not used by the assertions)
+  const exportSvg = (name, svg) => { if (process.env.DATA_NOTES_EXPORT) { mkdirSync(process.env.DATA_NOTES_EXPORT, { recursive: true }); writeFileSync(join(process.env.DATA_NOTES_EXPORT, name), svg); } };
   const keysOf = (manifest) => Object.keys(manifest).filter((key) => key.startsWith("data_note"));
 
   const base = await run({}, CSV_EP);
+  exportSvg("off-ep.svg", base.svg);
   { // off: nothing about notes anywhere, whatever the flags say
     assert.deepEqual(keysOf(base.manifest), []);
     assert.ok(!base.svg.includes("初步数") && !base.svg.includes("估计值"), "no flag sentence when the switch is off");
@@ -205,6 +208,7 @@ export const Type = {
   }
   {
     const on = await run({ NEWSROOM_DATA_NOTES: "1" }, CSV_EP);
+    exportSvg("on-ep.svg", on.svg);
     assert.equal(on.manifest.data_note, "2024 年为估计值、初步数");
     assert.deepEqual(keysOf(on.manifest), ["data_note"]);
     assert.ok(on.svg.includes("注：2024 年为估计值、初步数"), "the note is printed under the chart");
@@ -223,6 +227,7 @@ export const Type = {
   }
   {
     const long = await run({ NEWSROOM_DATA_NOTES: "1" }, CSV_LONG);
+    exportSvg("on-long.svg", long.svg);
     assert.equal(long.manifest.data_note, "详见数据说明");
     assert.ok(long.manifest.data_note_full.includes("统计口径改变"), "the full sentence is in the manifest");
     assert.ok(long.svg.includes("注：详见数据说明") && !long.svg.includes("统计口径改变"), "the chart carries only the pointer");
