@@ -7,14 +7,14 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { axisTickTexts, fmt, halfUpFixed, renderVizBundle, tickLabel } from "../runtime/pi/viz.mjs";
+import { axisNotationB, axisTickTexts, fmt, halfUpFixed, niceAxisDomain, renderVizBundle, tickLabel } from "../runtime/pi/viz.mjs";
 import { composeInfographicBundle } from "../runtime/pi/infographic.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID } from "../runtime/pi/choropleth.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SWITCHES = ["HALF_UP", "TREEMAP_ZH", "CHOROPLETH_ZH", "AXIS_NOTATION", "TABULAR_DIGITS", "FOOTER"].map((s) => `NEWSROOM_TYPESET_${s}`);
+const SWITCHES = [...["HALF_UP", "TREEMAP_ZH", "CHOROPLETH_ZH", "AXIS_NOTATION", "TABULAR_DIGITS", "FOOTER", "VALUE_LABEL_AXIS"].map((s) => `NEWSROOM_TYPESET_${s}`), "NEWSROOM_AXIS_NICE_MAX"];
 function withSwitch(name, value, fn) {
   const saved = Object.fromEntries(SWITCHES.map((k) => [k, process.env[k]]));
   for (const k of SWITCHES) delete process.env[k];
@@ -226,6 +226,107 @@ function onOffNear(name, run) {
   // English pages are not touched by B
   const enSpec = { ...barSpec("Count", ""), language: "en", unit: "people" };
   assert.deepEqual(withSwitch("NEWSROOM_TYPESET_AXIS_NOTATION", "1", () => unitOf(draw(enSpec, spans(30000000)))), [], "en: no unit line");
+}
+
+// ---- K202 / K203: value labels follow the axis scale; the axis ends on a whole tick ----------------------------------
+{
+  const base = { schema_version: "0.9.0", reader_task: "ranking", language: "zh", takeaway: "甲最多。", alt: "条形图。", source_note: "S", claim_id: "claim-axis-b", sql: "SELECT 1" };
+  const barSpec = (unit, extra = {}) => ({ ...base, title: "T", unit, chart_type: "horizontal_bar", category_field: "k", value_field: "v", highlight_values: ["甲"], sort: "desc", ...extra });
+  const rowsOf = (pairs) => pairs.map(([k, v]) => ({ k, v }));
+  const draw = (spec, rows) => renderVizBundle(spec, rows, { mobilePages: false }).desktop;
+  const ENV_ALL = ["NEWSROOM_TYPESET_AXIS_NOTATION", "NEWSROOM_TYPESET_VALUE_LABEL_AXIS", "NEWSROOM_AXIS_NICE_MAX"];
+  const withEnv = (env, fn) => {
+    const saved = Object.fromEntries(ENV_ALL.map((k) => [k, process.env[k]]));
+    for (const k of ENV_ALL) delete process.env[k];
+    Object.assign(process.env, env);
+    try { return fn(); } finally { for (const k of ENV_ALL) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } }
+  };
+  const B = { NEWSROOM_TYPESET_AXIS_NOTATION: "1" }, L = { NEWSROOM_TYPESET_VALUE_LABEL_AXIS: "1" }, N = { NEWSROOM_AXIS_NICE_MAX: "1" };
+  const all = { ...B, ...L, ...N };
+  // the text of every bar-side value label, in drawing order, whatever the chart type
+  const labelsOf = (svg) => [...svg.matchAll(/<text[^>]*(?:data-role="(?:bar|dot)-value-label"|font-weight="600")[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const ticksOf = (svg) => [...svg.matchAll(/y="[\d.]+" text-anchor="middle"[^>]*fill="[^"]*">([^<]*)<\/text>/g)].map((m) => m[1]);
+  const unitOf = (svg) => [...svg.matchAll(/data-role="axis-unit"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+  const refugees = rowsOf([["乌克兰", 1097503], ["叙利亚", 705812], ["阿富汗", 255077], ["伊拉克", 146481], ["厄立特里亚", 67087], ["伊朗", 48224], ["土耳其", 44263], ["索马里", 36252], ["俄罗斯", 17437], ["尼日利亚", 13083], ["巴基斯坦", 9416], ["埃塞俄比亚", 7433]]);
+  const people = rowsOf([["俄罗斯", 145440502], ["墨西哥", 129739761], ["埃塞俄比亚", 128691695], ["日本", 124370947], ["菲律宾", 114891199], ["埃及", 114535772], ["刚果（金）", 105789733], ["越南", 100352189], ["伊朗", 90608708], ["土耳其", 87270502]]);
+
+  // axisNotationB hands back the scale it chose (the K202 labels read it from here)
+  const scaleOf = (ticks, unit = "人") => withEnv(B, () => axisNotationB(barSpec(unit), ticks, unit)?.scale);
+  assert.deepEqual(scaleOf([0, 5000, 10000]), { power: 4, suffix: "万" }, "top tick 1万: 万");
+  assert.deepEqual(scaleOf([0, 2000, 9000]), { power: 0, suffix: "" }, "top tick under 1万: none");
+  assert.deepEqual(scaleOf([0, 5e7, 1e8]), { power: 8, suffix: "亿" }, "top tick 1亿: 亿");
+  assert.deepEqual(scaleOf([0, 5e7, 9.9e7]), { power: 4, suffix: "万" }, "just under 1亿: 万");
+  assert.deepEqual(scaleOf([0, 20000, 40000], "万吨"), { power: 0, suffix: "" }, "a unit that carries 万: no second scale");
+  assert.deepEqual(scaleOf([-30000, 0, 20000]), { power: 4, suffix: "万" }, "the largest tick by size, either sign, decides");
+  assert.equal(withEnv({}, () => axisNotationB(barSpec("人"), [0, 5000, 10000], "人")), null, "switch off: no notation, no scale");
+
+  // K202: the labels are numbers in the axis's own scale; no unit on any of them
+  for (const [name, spec, rows, suffix] of [["refugees", barSpec("人"), refugees, "万"], ["population", barSpec("人"), people, "亿"]]) {
+    const off = withEnv(B, () => draw(spec, rows));
+    const on = withEnv({ ...B, ...L }, () => draw(spec, rows));
+    const unitLine = unitOf(on);
+    assert.deepEqual(unitLine, [`单位：${suffix}人`], name);
+    assert.ok(labelsOf(off).some((t) => /[万亿人]/.test(t)), `${name} defect: labels carry 万/亿/人 of their own (${labelsOf(off).slice(0, 3)})`);
+    assert.ok(labelsOf(on).length === rows.length && labelsOf(on).every((t) => /^-?\d+(\.\d+)?$/.test(t)), `${name}: bare numbers, ${labelsOf(on)}`);
+    assert.deepEqual(ticksOf(on), ticksOf(off), `${name}: the ticks are those of notation B alone`);
+    assert.equal(new Set(labelsOf(on)).size, rows.length, `${name}: two different values never print the same (${labelsOf(on)})`);
+    // every label reads back to its row in the axis scale
+    const div = suffix === "万" ? 1e4 : 1e8;
+    labelsOf(on).forEach((t, i) => assert.ok(Math.abs(Number(t) - rows[i].v / div) <= 0.5 * 10 ** -(t.split(".")[1]?.length ?? 0) + 1e-9, `${name}: ${t} reads ${rows[i].v}`));
+    // off-state near-misses
+    for (const v of ["true", "0", "", "yes", " 1", "on"]) assert.equal(withEnv({ ...B, NEWSROOM_TYPESET_VALUE_LABEL_AXIS: v }, () => draw(spec, rows)), off, `LABEL_AXIS=${JSON.stringify(v)} is off`);
+  }
+  assert.equal(withEnv(L, () => draw(barSpec("人"), refugees)), withEnv({}, () => draw(barSpec("人"), refugees)), "without notation B the label switch does nothing");
+  assert.deepEqual(labelsOf(withEnv({ ...B, ...L }, () => draw(barSpec("人", { decimals: 1 }), refugees))).slice(0, 2), ["109.8", "70.6"], "spec.decimals wins");
+  // the axis scale and the label scale cannot part: a chart whose largest value is 9000万 (axis 万) stays 万
+  const w9 = withEnv({ ...B, ...L }, () => draw(barSpec("人"), rowsOf([["甲", 90000000], ["乙", 45000000]])));
+  assert.deepEqual(unitOf(w9), ["单位：万人"]);
+  assert.deepEqual(labelsOf(w9), ["9000", "4500"]);
+  // unit already carries 万: labels are plain numbers beside the plain ticks
+  assert.deepEqual(labelsOf(withEnv({ ...B, ...L }, () => draw(barSpec("万吨"), rowsOf([["甲", 30000], ["乙", 12500]])))), ["30000", "12500"]);
+  // other horizontal forms
+  const dots = { ...base, title: "T", unit: "人", chart_type: "dot", category_field: "k", value_field: "v", series_field: "s" };
+  const dotRows = [["甲", "2020", 1200000], ["甲", "2023", 1500000], ["乙", "2020", 400000], ["乙", "2023", 800000]].map(([k, s, v]) => ({ k, s, v }));
+  assert.deepEqual(labelsOf(withEnv({ ...B, ...L }, () => draw(dots, dotRows))), ["120", "150", "40", "80"], "grouped dots");
+  assert.ok(labelsOf(withEnv(B, () => draw(dots, dotRows))).every((t) => /万/.test(t)), "grouped dots defect");
+  const diverging = { ...base, title: "T", unit: "人", chart_type: "diverging_bar", category_field: "k", value_field: "v", sort: "none" };
+  const divRows = rowsOf([["甲", 1500000], ["乙", -800000], ["丙", 300000]]);
+  assert.deepEqual(labelsOf(withEnv({ ...B, ...L }, () => draw(diverging, divRows))), ["150", "-80", "30"], "diverging");
+  const dumb = { ...base, title: "T", unit: "人", chart_type: "dumbbell", category_field: "k", start_field: "a", end_field: "b", start_label: "2020", end_label: "2023" };
+  const dumbRows = [{ k: "甲", a: 1200000, b: 1500000 }, { k: "乙", a: 400000, b: 800000 }];
+  const dumbSvg = withEnv({ ...B, ...L }, () => draw(dumb, dumbRows));
+  assert.ok([...dumbSvg.matchAll(/y="[\d.]+" text-anchor="(?:start|end|middle)" font-family="[^"]*" font-size="12" fill="[^"]*">(\d+)<\/text>/g)].map((m) => m[1]).filter((t) => ["120", "150", "40", "80"].includes(t)).length >= 4, "dumbbell labels are 120 150 40 80");
+  // mirrored bar
+  const mirror = { ...base, title: "T", unit: "万人", chart_type: "mirrored_bar", category_field: "k", series_field: "s", value_field: "v", left_series: "男性", direct_labels: true };
+  const mirrorRows = [["美国", 2562, 2675], ["德国", 838, 838], ["英国", 610, 574]].flatMap(([k, m, f]) => [{ k, s: "男性", v: m }, { k, s: "女性", v: f }]);
+  const mOn = withEnv({ ...B, ...L }, () => draw(mirror, mirrorRows));
+  assert.ok(labelsOf(mOn).every((t) => /^\d+$/.test(t)) && labelsOf(mOn).length === 6, `mirrored: no unit on any label: ${labelsOf(mOn)}`);
+  assert.ok(labelsOf(withEnv(B, () => draw(mirror, mirrorRows))).some((t) => /万人/.test(t)), "mirrored defect: the last label still carried the unit");
+
+  // K203: the axis ends on a whole tick
+  assert.deepEqual(withEnv(N, () => niceAxisDomain([0, 1097503])), [0, 1200000], "refugees: 109.75万 -> axis to 120万");
+  assert.deepEqual(withEnv(N, () => niceAxisDomain([0, 145440502])), [0, 150000000]);
+  assert.deepEqual(withEnv(N, () => niceAxisDomain([-800000, 1500000])), [-1000000, 1500000], "a negative bottom moves down too");
+  assert.deepEqual(withEnv(N, () => niceAxisDomain([0, 100])), [0, 100], "already on a tick: unchanged");
+  assert.deepEqual(withEnv({}, () => niceAxisDomain([0, 1097503])), [0, 1097503], "off: untouched");
+  for (const v of ["true", "0", "", "yes", " 1", "on", "11"]) assert.deepEqual(withEnv({ NEWSROOM_AXIS_NICE_MAX: v }, () => niceAxisDomain([0, 1097503])), [0, 1097503], `NICE_MAX=${JSON.stringify(v)} is off`);
+  {
+    const off = withEnv(B, () => ticksOf(draw(barSpec("人"), refugees)));
+    const on = withEnv({ ...B, ...N }, () => ticksOf(draw(barSpec("人"), refugees)));
+    assert.deepEqual(off, ["0", "20", "40", "60", "80", "100"]);
+    assert.deepEqual(on, ["0", "20", "40", "60", "80", "100", "120"], "defect: the top bar passed the last tick; on: the axis reaches 120");
+    const pop = withEnv({ ...B, ...N }, () => ticksOf(draw(barSpec("人"), people)));
+    assert.deepEqual(pop, ["0", "0.5", "1", "1.5"], "population: 1.454亿 now sits under a 1.5亿 tick");
+    for (const v of ["true", "0", "", "yes", " 1", "on"]) assert.equal(withEnv({ ...B, NEWSROOM_AXIS_NICE_MAX: v }, () => draw(barSpec("人"), refugees)), withEnv(B, () => draw(barSpec("人"), refugees)), `NICE_MAX=${JSON.stringify(v)} byte-identical to off`);
+  }
+  // the three charts of cd, everything on: render QA finds nothing
+  {
+    const run = (spec, rows) => { const svg = withEnv(all, () => draw(spec, rows)); return runRenderQa({ desktop: svg, mobile: svg }); };
+    for (const [name, spec, rows] of [["refugees", barSpec("人"), refugees], ["population", barSpec("人"), people], ["mirrored", mirror, mirrorRows]]) {
+      const qa = run(spec, rows);
+      assert.equal(qa.failure_count, 0, `${name}: render QA ${JSON.stringify(qa.failures ?? qa).slice(0, 300)}`);
+    }
+  }
 }
 
 // ---- K85: equal-width digits ---------------------------------------------------------------------------------------
