@@ -4,9 +4,9 @@
   "created_at_epoch": 1791314877,
   "source_commit": "4f9643696df8e960f1fa32aa8fd4ab0381fc31e4",
   "source_tree": {
-    "file_count": 1054,
-    "bytes": 69285913,
-    "sha256": "5928ef0c293f3cd7cdabe0edef153c2e3549a21bb2bdb50062c69227f4468fc2",
+    "file_count": 1056,
+    "bytes": 69288599,
+    "sha256": "e3ec8145d37205e6d19017d81503448ae909923828f0c3a2bbb3c9ae0f37cf76",
     "files": [
       {
         "path": ".env.example",
@@ -1537,6 +1537,11 @@
         "path": "runtime/pi/infographic.mjs",
         "sha256": "2887767500ad5d7ab1aa76d2156f2413f935a9c0d4d6b76742521337457839ff",
         "bytes": 166033
+      },
+      {
+        "path": "runtime/pi/label_layout.mjs",
+        "sha256": "cd7a28eadc9e815c1b52379641eb0aad62d9d359e1d863f8e1b31b1923d55cbb",
+        "bytes": 2034
       },
       {
         "path": "runtime/pi/lieflat.mjs",
@@ -3489,6 +3494,11 @@
         "bytes": 11744
       },
       {
+        "path": "scripts/test_label_layout_v112.mjs",
+        "sha256": "adf9f5a700551d180656a4611cfbdf4c822ac6a54497c4aaa779abbe56b51951",
+        "bytes": 652
+      },
+      {
         "path": "scripts/test_latest_artifact_dir.py",
         "sha256": "7e032c9173a8f26f6cb4957acab7f02eab77925953ed6699a872b2c2ad2efb12",
         "bytes": 1092
@@ -5363,5 +5373,5 @@
     "browser_gpu": null,
     "final_dossier": "outputs/v113-final-qualification.json"
   },
-  "manifest_sha256": "20a8316979b209821e1419e0f79e2ee22909d21c0e9df06f8751486d749a0e28"
+  "manifest_sha256": "87653dcbddbda2c0230fed70954ba37c29851ec8f137f9312f324fc3ef9bb102"
 }
