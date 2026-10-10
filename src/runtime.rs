@@ -85,6 +85,7 @@ const GROUPS_RUNTIME: &str = include_str!("../runtime/pi/groups.mjs");
 const KNOWLEDGE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/knowledge_writer.mjs");
 const DECISION_WRITER_RUNTIME: &str = include_str!("../runtime/pi/decision_writer.mjs");
 const GROUPS_LIST: &str = include_str!("../runtime/pi/groups.json");
+const RENDER_QA_TICKS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_ticks.mjs");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
 const EDITORIAL_GRAMMAR_REGISTRY_CONFIG: &str =
@@ -205,6 +206,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let render_qa_contrast_path = runtime_dir.join("render_qa_contrast.mjs");
     let render_qa_svg_path = runtime_dir.join("render_qa_svg.mjs");
     let render_qa_labels_path = runtime_dir.join("render_qa_labels.mjs");
+    let render_qa_ticks_path = runtime_dir.join("render_qa_ticks.mjs");
     let config_dir = artifact_dir.join("config");
     fs::create_dir_all(&config_dir).with_context(|| {
         format!(
@@ -301,6 +303,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&runtime_dir.join("knowledge_writer.mjs"), KNOWLEDGE_WRITER_RUNTIME)?;
     write_if_changed(&runtime_dir.join("decision_writer.mjs"), DECISION_WRITER_RUNTIME)?;
     write_if_changed(&runtime_dir.join("groups.json"), GROUPS_LIST)?;
+    write_if_changed(&render_qa_ticks_path, RENDER_QA_TICKS_RUNTIME)?;
     write_if_changed(&style_mapping_config_path, EDITORIAL_STYLE_MAPPING_CONFIG)?;
     write_if_changed(
         &editorial_grammar_registry_path,
