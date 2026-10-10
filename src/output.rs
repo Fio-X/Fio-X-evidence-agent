@@ -64,23 +64,6 @@ pub fn create_run_dir(root: &Path, label: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Runtime tools use this location when they are called by the ephemeral
-/// `investigate-v2` command. A command may set `NEWSROOM_OUTPUT_DIR` to keep
-/// every generated HTML/SVG below the same user-visible run directory.
-pub fn runtime_output_dir() -> Result<PathBuf> {
-    let requested = env::var_os("NEWSROOM_OUTPUT_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".newsroom/output"));
-    let root = resolve_output_dir(&requested)?;
-    fs::create_dir_all(&root).with_context(|| {
-        format!(
-            "failed to create runtime output directory: {}",
-            root.display()
-        )
-    })?;
-    Ok(root)
-}
-
 fn slugify(value: &str) -> String {
     let mut slug = String::new();
     for character in value.chars() {

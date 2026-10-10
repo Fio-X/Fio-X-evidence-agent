@@ -4,9 +4,9 @@
   "created_at_epoch": 1791314877,
   "source_commit": "4f9643696df8e960f1fa32aa8fd4ab0381fc31e4",
   "source_tree": {
-    "file_count": 1056,
-    "bytes": 69288599,
-    "sha256": "e3ec8145d37205e6d19017d81503448ae909923828f0c3a2bbb3c9ae0f37cf76",
+    "file_count": 1049,
+    "bytes": 69198932,
+    "sha256": "b54896dc15b6f6b8485f91cfa19fd3c08c41cd72ee460bb15baafd15cdf30379",
     "files": [
       {
         "path": ".env.example",
@@ -30,8 +30,8 @@
       },
       {
         "path": ".github/workflows/ci.yml",
-        "sha256": "c268e84a4a1954f7d8187bd959b247ef5488cc6b5b5052e1284908ae694ae126",
-        "bytes": 13507
+        "sha256": "a66cda5e756fdc7292b8d143161b0450d5f98bb13293e0b38ceeb4ed1337c5fe",
+        "bytes": 16110
       },
       {
         "path": ".github/workflows/dependency-lock-bootstrap.yml",
@@ -2894,11 +2894,6 @@
         "bytes": 18940
       },
       {
-        "path": "scripts/test_anthropic_wire_mock.py",
-        "sha256": "bcba4ff227eecb225f4aa6e4b02202ee1be21edbc7ce78bcfbc0963dd03cd20d",
-        "bytes": 9653
-      },
-      {
         "path": "scripts/test_art_direction_replay_render_v134.mjs",
         "sha256": "a776e6da331248bbecef580a3d97795faf7603cd83316e6312bac39d9506124e",
         "bytes": 3070
@@ -2917,11 +2912,6 @@
         "path": "scripts/test_art_direction_v14.mjs",
         "sha256": "cb211dd28ed9d8fe15f1ff012daa69a4926f39c9950eaae128664a34fb43ad83",
         "bytes": 5622
-      },
-      {
-        "path": "scripts/test_artifact_completion.py",
-        "sha256": "2d8a17f8cbedff6154db2c0cbdf26423bf67372e852da4d151d2cac7f85eb0e7",
-        "bytes": 12503
       },
       {
         "path": "scripts/test_artifact_schema.py",
@@ -3694,11 +3684,6 @@
         "bytes": 5179
       },
       {
-        "path": "scripts/test_openai_wire_mock.py",
-        "sha256": "3fc5f6902fd71ff95ee23c2bd72075b955f0d80633e530ea9c60c283ca88c526",
-        "bytes": 7321
-      },
-      {
         "path": "scripts/test_output_location.py",
         "sha256": "568ad77af4934d971235650f3152320fd77e4431fed0c9ba7bb2e9b9b4d8e5a2",
         "bytes": 2447
@@ -4200,13 +4185,13 @@
       },
       {
         "path": "scripts/test_visual_story_completion.mjs",
-        "sha256": "0d044f5abc28009644d6524d1c3e01a8d012213487e9f97a1493fc6b63f71fc7",
-        "bytes": 3126
+        "sha256": "2e444090bf0c58768b1f569409bd2f349284beb36f9e2447ac3abed0c412e802",
+        "bytes": 2483
       },
       {
         "path": "scripts/test_visual_story_routing.mjs",
-        "sha256": "8afbdabf011834d23178fc31af68a4ff3e68ead19a76e80bc98d16129eea8d05",
-        "bytes": 3454
+        "sha256": "d8cb8723ac37b2c511992a4a5ee6c279a1a8e774588f40a17d803a032ba6ff92",
+        "bytes": 3508
       },
       {
         "path": "scripts/test_visual_synthesis_v18.mjs",
@@ -5119,44 +5104,14 @@
         "bytes": 1943
       },
       {
-        "path": "src/agent/core.rs",
-        "sha256": "4d59a7e03f47cdc0e5c531475a890d6085d3a4cddd84b5a2102a807569ef5089",
-        "bytes": 25985
-      },
-      {
         "path": "src/agent/mod.rs",
-        "sha256": "fb91158b93fb39dccefb57cc033957ef0dec30dcb6f141da188d5657787d46dc",
-        "bytes": 432
+        "sha256": "fb63bf92cc60dac64fe1250491f84fcaccc883b5778eb9cf7f8993ab29b89ec6",
+        "bytes": 163
       },
       {
-        "path": "src/agent/tools/calculate.rs",
-        "sha256": "7a5f5286a7b25f24e29c63ee8d0239c3669aef3e2175578fe318d517f4d5459f",
-        "bytes": 2537
-      },
-      {
-        "path": "src/agent/tools/create_chart.rs",
-        "sha256": "31381059942eaa4744e0314130622d28ae71813c5153c47a744541709ae6b0c1",
-        "bytes": 10012
-      },
-      {
-        "path": "src/agent/tools/mod.rs",
-        "sha256": "cb10432987fcac6d3b83bd3ff6e7bdc82912dd1dca9acf7b632b8799faa65a4d",
-        "bytes": 11097
-      },
-      {
-        "path": "src/agent/tools/modern_chart.rs",
-        "sha256": "dc4463ed3bbeaa7364b39034806b044d8e17d03c8db0645a0a60331385b09da6",
-        "bytes": 29501
-      },
-      {
-        "path": "src/agent/tools/pi_visualization.rs",
-        "sha256": "fe79072bb1efd04390d36884c85d8f5f1cfa90861c0750306b139f97aa82ca9a",
-        "bytes": 13363
-      },
-      {
-        "path": "src/agent/tools/web_search.rs",
-        "sha256": "cf378dac5096185f6d96a6bd1600d2cc992d23fd587871eb375c3b1e89414ad7",
-        "bytes": 3004
+        "path": "src/agent/intent.rs",
+        "sha256": "1283b3c04cbe2dcda3bc810e63e0c13072ea13c514e7f818046ac54708f03fe3",
+        "bytes": 5304
       },
       {
         "path": "src/artifact.rs",
@@ -5205,8 +5160,8 @@
       },
       {
         "path": "src/commands/investigate_v2.rs",
-        "sha256": "b50d7ffeef1ed24634200c41f7cd71ad9098cdcc153dc93166ce07aaa749cb49",
-        "bytes": 22473
+        "sha256": "2581372172d5fc478bccd87746f6396162c5cef851af47795eefabae58110e0b",
+        "bytes": 21405
       },
       {
         "path": "src/commands/mod.rs",
@@ -5250,8 +5205,8 @@
       },
       {
         "path": "src/output.rs",
-        "sha256": "20a984a226ce15e2bca09999f586e30d18265726f38188dd6410bbaca67244fa",
-        "bytes": 4269
+        "sha256": "ad56040e57f9be812b26b1c481711ff3b903f18165b1fd140d7d7b610332b46b",
+        "bytes": 3614
       },
       {
         "path": "src/pi.rs",
@@ -5287,6 +5242,16 @@
         "path": "versions.json",
         "sha256": "0ee10a4248c856121ef2f63d9616cf56e636aca3d1552bc02272714daf24aef6",
         "bytes": 792
+      },
+      {
+        "path": "runtime/pi/groups.json",
+        "sha256": "7e03127d3382891fb2dd2bb9a6144269f38b8f1132514a31b2eecd86b68cf169",
+        "bytes": 16764
+      },
+      {
+        "path": "runtime/pi/groups.mjs",
+        "sha256": "45eb1d4d77c0ba250359ca1e54a8466eb501e00d96f81d3675809fbed53d06e1",
+        "bytes": 13219
       }
     ]
   },
@@ -5373,5 +5338,5 @@
     "browser_gpu": null,
     "final_dossier": "outputs/v113-final-qualification.json"
   },
-  "manifest_sha256": "87653dcbddbda2c0230fed70954ba37c29851ec8f137f9312f324fc3ef9bb102"
+  "manifest_sha256": "13a0852a5a760295fe7c6f2642236223396c5a2b062d100ecd1617b5d2ffd187"
 }
