@@ -3,9 +3,251 @@ use crate::audit;
 use crate::cli::ContinueArgs;
 use crate::commands::verify;
 use crate::pi::{run_prompt, PiConfig};
+use crate::prompt::PromptSpeed;
 use crate::{prompt, runtime};
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+use std::path::Path;
 use std::time::Instant;
+
+/// Opt-in (exactly `1`): a follow-up hands Pi the settings the first question
+/// would get under the same environment (speed and merge switches as set, the
+/// Lieflat fallback tools hidden as the hide switch says) instead of turning
+/// them off. Only the speed/merge settings follow; the tool profile logic is
+/// unchanged.
+pub const FOLLOWUP_SAME_SETTINGS_ENV: &str = "NEWSROOM_FOLLOWUP_SAME_SETTINGS";
+
+fn followup_same_settings_on() -> bool {
+    std::env::var(FOLLOWUP_SAME_SETTINGS_ENV).ok().as_deref() == Some("1")
+}
+
+/// Opt-in (exactly `1`): a follow-up runs the completion check the first
+/// question runs (the model is sent back at most twice when the requested
+/// visual work is not done), and each round's verification is recorded apart:
+/// the verification file a round replaces is first kept under
+/// `verification-rounds/`, and a round that fails before verification writes
+/// a record saying so instead of leaving the previous round's pass in place.
+pub const FOLLOWUP_COMPLETION_ENV: &str = "NEWSROOM_FOLLOWUP_COMPLETION_GATE";
+
+fn followup_completion_gate_on() -> bool {
+    std::env::var(FOLLOWUP_COMPLETION_ENV).ok().as_deref() == Some("1")
+}
+
+const ROUNDS_DIR: &str = "verification-rounds";
+
+/// Copies the current `verification.json` to the next free
+/// `verification-rounds/round-N.json` (never overwriting one) and returns that
+/// relative path; `None` when there is no verification file yet.
+fn archive_previous_verification(artifact: &Path) -> Result<Option<String>> {
+    let current = artifact.join("verification.json");
+    if !current.is_file() {
+        return Ok(None);
+    }
+    let dir = artifact.join(ROUNDS_DIR);
+    std::fs::create_dir_all(&dir)?;
+    let mut n = 1;
+    loop {
+        let target = dir.join(format!("round-{n}.json"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(&std::fs::read(&current)?)?;
+                return Ok(Some(format!("{ROUNDS_DIR}/round-{n}.json")));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+            Err(error) => return Err(error).context("failed to archive verification.json"),
+        }
+    }
+}
+
+/// A round that ended before verification ran: the current result is "not
+/// verified" for this round, and the file names where the previous round's
+/// verification was kept.
+fn record_round_not_verified(
+    artifact: &Path,
+    previous: Option<&str>,
+    stage: &str,
+    reason: &str,
+) -> Result<()> {
+    record_round_status(artifact, previous, "not_verified", stage, reason)
+}
+
+/// Written as soon as a follow-up has archived the previous verification, so a
+/// round killed midway never leaves the previous pass reading as current; a
+/// normal end overwrites it.
+fn record_round_in_progress(artifact: &Path, previous: Option<&str>) -> Result<()> {
+    record_round_status(
+        artifact,
+        previous,
+        "in_progress",
+        "started",
+        "this round has not finished and is not verified",
+    )
+}
+
+fn record_round_status(
+    artifact: &Path,
+    previous: Option<&str>,
+    round_status: &str,
+    stage: &str,
+    reason: &str,
+) -> Result<()> {
+    let record = serde_json::json!({
+        "schema_version": "0.7.0",
+        "verified_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "passed": false,
+        "checks": 0,
+        "round_status": round_status,
+        "stage": stage,
+        "reason": reason,
+        "previous_round_file": previous,
+    });
+    std::fs::write(
+        artifact.join("verification.json"),
+        format!("{}\n", serde_json::to_string_pretty(&record)?),
+    )
+    .context("failed to write verification.json")
+}
+
+/// What a text-only follow-up may carry over: the previous round's chart chain, when the program's own records say
+/// it passed and nothing under the chain's directories has changed since.
+struct ChainReuse {
+    round_file: String,
+    fingerprint: String,
+    files: usize,
+}
+
+/// The directories the chart chain writes into (the infographic and publication tools, the chart tools, and the
+/// delivered HTML/PNG that live under `publications/`).
+const CHAIN_DIRS: [&str; 3] = ["infographics", "publications", "visualizations"];
+
+/// A sorted "relative path + sha256" list over every file under `CHAIN_DIRS`, hashed once more into one digest, and
+/// the number of files. Computed in-process; nothing is written.
+fn chain_fingerprint(artifact: &Path) -> Result<(String, usize)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                walk(root, &path, out)?;
+            } else if path.is_file() {
+                let relative = path.strip_prefix(root).unwrap_or(&path).display().to_string();
+                out.push(format!("{relative}\t{}", crate::hash::sha256_file(&path)?));
+            }
+        }
+        Ok(())
+    }
+    let mut lines = Vec::new();
+    for dir in CHAIN_DIRS {
+        walk(artifact, &artifact.join(dir), &mut lines)?;
+    }
+    lines.sort();
+    let digest = crate::hash::sha256_bytes(lines.join("\n").as_bytes());
+    Ok((digest, lines.len()))
+}
+
+/// True only for a record the program wrote as a finished, passing round: `passed` is true and it is not one of the
+/// `not_verified` / `in_progress` markers. The model's text is never read.
+fn previous_round_passed(artifact: &Path, round_file: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(artifact.join(round_file)) else {
+        return false;
+    };
+    let Ok(record) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    record.get("passed").and_then(serde_json::Value::as_bool) == Some(true)
+        && record.get("round_status").is_none()
+}
+
+fn is_chart_chain_tool(tool: &str) -> bool {
+    ["newsroom_viz_", "newsroom_infographic_", "newsroom_publication_"]
+        .iter()
+        .any(|prefix| tool.starts_with(prefix))
+}
+
+/// The completion gaps of this round only: calls made in earlier rounds do
+/// not count as this round's work, unless the previous round's verified chart
+/// chain carries over untouched (`reuse`), in which case the required tools and
+/// requested visual modes are judged over every round's calls.
+/// The flag says whether the chain was carried over.
+fn followup_completion_gaps(
+    bundle: &InvestigationBundle,
+    goal: &str,
+    audit: &audit::AuditSummary,
+    calls_before: usize,
+    profile: Option<&str>,
+    reuse: Option<&ChainReuse>,
+) -> Result<(Vec<String>, bool)> {
+    let mut judged = audit.clone();
+    let reused = match reuse {
+        Some(base) => {
+            !audit
+                .calls
+                .iter()
+                .skip(calls_before)
+                .any(|call| is_chart_chain_tool(&call.tool))
+                && chain_fingerprint(&bundle.dir)?.0 == base.fingerprint
+        }
+        None => false,
+    };
+    if !reused {
+        judged.calls = audit.calls.iter().skip(calls_before).cloned().collect();
+    }
+    let gaps = crate::commands::investigate::visual_completion_gaps_for_profile(
+        bundle,
+        goal,
+        &judged,
+        crate::commands::investigate::complex_visual_routing_ab_enabled(),
+        profile,
+    )?;
+    Ok((gaps, reused))
+}
+
+/// Next to the round archive, in the program's own record: which round's chain this follow-up carried over and the
+/// digest of the files it carried. Not model-editable text.
+fn record_chain_reuse(artifact: &Path, reuse: &ChainReuse) -> Result<()> {
+    let name = reuse.round_file.replace("round-", "chain-reuse-of-round-");
+    let record = serde_json::json!({
+        "schema_version": "0.1.0",
+        "recorded_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "reused_round_file": reuse.round_file,
+        "chain_fingerprint_sha256": reuse.fingerprint,
+        "fingerprint_files": reuse.files,
+        "fingerprint_dirs": CHAIN_DIRS,
+    });
+    std::fs::write(
+        artifact.join(&name),
+        format!("{}\n", serde_json::to_string_pretty(&record)?),
+    )
+    .with_context(|| format!("failed to write {name}"))
+}
+
+/// The text the first question sends when the completion check finds gaps
+/// (kept equal to commands/investigate.rs by a test).
+fn completion_retry_message(attempt: usize, gaps: &[String], mode_contract: &str) -> String {
+    format!(
+        "System completion gate attempt {attempt}/2 found unfinished required work:\n- {}\n{}Continue the same session and repair only these gaps using the real visual-story tools. Do not weaken, remove, relabel, or replace requested visuals with prose or illustrations. Complete every required infographic and publication gate, then write the self-contained HTML and requested desktop/mobile PNG files under NEWSROOM_ARTIFACT_DIR. Do not invent evidence or quantitative claims.",
+        gaps.join("\n- "),
+        mode_contract,
+    )
+}
+
+/// `(hide_lieflat, speed)` for the follow-up's `PiConfig`.
+fn followup_settings(same_settings: bool) -> (bool, PromptSpeed) {
+    if same_settings {
+        (
+            crate::pi::hide_lieflat_switch_enabled(),
+            crate::pi::speed_switches_from_env(),
+        )
+    } else {
+        (false, Default::default())
+    }
+}
 
 /// Text-based routing used when nothing better is known.
 fn inferred_tool_profile(text: &str) -> &'static str {
@@ -80,6 +322,7 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         );
     }
 
+    let (hide_lieflat, speed) = followup_settings(followup_same_settings_on());
     let config = PiConfig {
         binary: args.pi.pi_bin,
         provider: args.pi.provider,
@@ -93,8 +336,8 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         session_dir: Some(bundle.session_dir.clone()),
         continue_session: true,
         tool_profile,
-        hide_lieflat: false,
-        speed: Default::default(),
+        hide_lieflat,
+        speed,
         compose: None,
     };
     let reported_provider = config.effective_provider();
@@ -109,6 +352,35 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         prompt::language_instruction(&message)
     );
 
+    let completion_gate = followup_completion_gate_on();
+    let goal = format!("{topic} {message}");
+    let (calls_before, archived, chain_reuse) = if completion_gate {
+        let before = if bundle.events_path.is_file() {
+            audit::build(&bundle.events_path, &bundle.tools_path)
+                .map(|value| value.calls.len())
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        let archived = archive_previous_verification(&bundle.dir)?;
+        let reuse = match archived.as_deref() {
+            Some(round_file) if previous_round_passed(&bundle.dir, round_file) => {
+                let (fingerprint, files) = chain_fingerprint(&bundle.dir)?;
+                Some(ChainReuse {
+                    round_file: round_file.to_string(),
+                    fingerprint,
+                    files,
+                })
+            }
+            _ => None,
+        };
+        if archived.is_some() {
+            record_round_in_progress(&bundle.dir, archived.as_deref())?;
+        }
+        (before, archived, reuse)
+    } else {
+        (0, None, None)
+    };
     audit::append_user_goal_event(&bundle.events_path, "follow_up")?;
     match run_prompt(&config, &follow_up, Some(&bundle.events_path)).await {
         Ok(result) => {
@@ -118,8 +390,82 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             if let Some(stats) = &result.session_stats {
                 bundle.write_session_stats(stats)?;
             }
-            let audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
-            let status = if audit.has_agent_loop_evidence() {
+            let mut audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
+            let mut completion_gaps = Vec::new();
+            if completion_gate {
+                let split = crate::commands::investigate::complex_visual_routing_ab_enabled();
+                let profile = bundle.recorded_tool_profile();
+                let mut reused;
+                (completion_gaps, reused) = followup_completion_gaps(
+                    &bundle,
+                    &goal,
+                    &audit,
+                    calls_before,
+                    profile.as_deref(),
+                    chain_reuse.as_ref(),
+                )?;
+                if crate::commands::investigate::completion_chain_required(
+                    &goal,
+                    split,
+                    profile.as_deref(),
+                ) {
+                    for attempt in 1..=2 {
+                        if completion_gaps.is_empty() {
+                            break;
+                        }
+                        audit::append_completion_retry_event(
+                            &bundle.events_path,
+                            attempt,
+                            &completion_gaps,
+                        )?;
+                        let correction = completion_retry_message(
+                            attempt,
+                            &completion_gaps,
+                            &prompt::visual_mode_contract(&goal),
+                        );
+                        let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
+                        let retry =
+                            match crate::commands::investigate::run_prompt_with_empty_recovery(
+                                &config,
+                                &correction,
+                                recovery,
+                                &bundle.events_path,
+                            )
+                            .await
+                            {
+                                Ok(retry) => retry,
+                                Err(error) => {
+                                    record_round_not_verified(
+                                        &bundle.dir,
+                                        archived.as_deref(),
+                                        "completion_gate_retry_failed",
+                                        &format!("{error:#}"),
+                                    )?;
+                                    return Err(verify::exit_on_error(&error));
+                                }
+                            };
+                        bundle.write_answer(&retry.text)?;
+                        if let Some(stats) = &retry.session_stats {
+                            bundle.write_session_stats(stats)?;
+                        }
+                        audit = audit::build(&bundle.events_path, &bundle.tools_path)?;
+                        (completion_gaps, reused) = followup_completion_gaps(
+                            &bundle,
+                            &goal,
+                            &audit,
+                            calls_before,
+                            profile.as_deref(),
+                            chain_reuse.as_ref(),
+                        )?;
+                    }
+                }
+                if let (true, Some(base)) = (reused, chain_reuse.as_ref()) {
+                    record_chain_reuse(&bundle.dir, base)?;
+                }
+            }
+            let status = if !completion_gaps.is_empty() {
+                "failed"
+            } else if audit.has_agent_loop_evidence() {
                 "draft"
             } else {
                 "incomplete"
@@ -139,6 +485,15 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                 status,
                 Some(&audit),
             )?;
+            if !completion_gaps.is_empty() {
+                record_round_not_verified(
+                    &bundle.dir,
+                    archived.as_deref(),
+                    "completion_gate",
+                    &completion_gaps.join("; "),
+                )?;
+                bail!("visual delivery incomplete: {}", completion_gaps.join("; "));
+            }
             // Step lines on: the verdict is computed here so the closing line sits right above primary_artifact.
             let early_verdict = if crate::step_lines::enabled() {
                 let verdict = verify::post_run_verdict(&bundle.dir).await;
@@ -170,6 +525,14 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
             Ok(())
         }
         Err(error) => {
+            if completion_gate {
+                record_round_not_verified(
+                    &bundle.dir,
+                    archived.as_deref(),
+                    "run_failed",
+                    &format!("{error:#}"),
+                )?;
+            }
             let audit = if bundle.events_path.is_file() {
                 audit::build(&bundle.events_path, &bundle.tools_path).ok()
             } else {
@@ -197,8 +560,12 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::effective_tool_profile;
+    use super::{
+        effective_tool_profile, followup_same_settings_on, followup_settings,
+        FOLLOWUP_SAME_SETTINGS_ENV,
+    };
     use crate::artifact::InvestigationBundle;
+    use crate::pi::{PiConfig, ENV_LOCK};
     use std::fs;
 
     #[test]
@@ -288,6 +655,292 @@ mod tests {
                 fresh.recorded_tool_profile().as_deref()
             ),
             ("investigate".to_string(), false)
+        );
+    }
+
+    const SPEED_ENVS: [&str; 16] = [
+        "NEWSROOM_SPEED_PARALLEL_HINTS",
+        "NEWSROOM_SPEED_COMPUTE_BATCH",
+        "NEWSROOM_SPEED_ATOMIC_ARTIFACT",
+        "NEWSROOM_SPEED_CHAIN_VIZ",
+        "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC",
+        "NEWSROOM_SPEED_PREFLIGHT",
+        "NEWSROOM_SPEED_PLAN_EDIT",
+        "NEWSROOM_SPEED_INLINE_CLAIM",
+        "NEWSROOM_SPEED_PLAN_PATCH",
+        "NEWSROOM_SPEED_CHAIN_PATCH",
+        "NEWSROOM_SPEED_REPORT_ALL",
+        "NEWSROOM_SPEED_FILL_COPIED_REFS",
+        "NEWSROOM_SPEED_FIRST_TRY_TEXT",
+        "NEWSROOM_SPEED_DATA_PROFILE",
+        "NEWSROOM_SPEED_PLAN_PROGRESS",
+        "NEWSROOM_HIDE_LIEFLAT",
+    ];
+
+    fn clear_env() {
+        for name in SPEED_ENVS {
+            std::env::remove_var(name);
+        }
+        std::env::remove_var(FOLLOWUP_SAME_SETTINGS_ENV);
+    }
+
+    fn set_all_speed_switches() {
+        for name in SPEED_ENVS {
+            std::env::set_var(name, "1");
+        }
+    }
+
+    fn config(
+        profile: &str,
+        continue_session: bool,
+        hide: bool,
+        speed: crate::prompt::PromptSpeed,
+    ) -> PiConfig {
+        PiConfig {
+            binary: "pi".into(),
+            provider: None,
+            model: None,
+            api_key: None,
+            base_url: None,
+            thinking: None,
+            approve_project: false,
+            extension: Some("ext.ts".into()),
+            artifact_dir: Some("/tmp/artifact".into()),
+            session_dir: Some("/tmp/artifact/session".into()),
+            continue_session,
+            tool_profile: profile.to_string(),
+            hide_lieflat: hide,
+            speed,
+            compose: None,
+        }
+    }
+
+    /// The environment Pi gets for the run: every NEWSROOM_* name with its
+    /// value, or None where the command removes it.
+    fn pi_env(config: &PiConfig) -> Vec<(String, Option<String>)> {
+        let command = config.command();
+        let mut out: Vec<(String, Option<String>)> = command
+            .as_std()
+            .get_envs()
+            .filter(|(name, _)| name.to_string_lossy().starts_with("NEWSROOM_"))
+            .map(|(name, value)| {
+                (
+                    name.to_string_lossy().into_owned(),
+                    value.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// What `investigate` hands Pi for the first question under the same env.
+    fn first_question(profile: &str) -> PiConfig {
+        config(
+            profile,
+            false,
+            crate::pi::hide_lieflat_switch_enabled(),
+            crate::pi::speed_switches_from_env(),
+        )
+    }
+
+    fn follow_up(profile: &str, same: bool) -> PiConfig {
+        let (hide, speed) = followup_settings(same);
+        config(profile, true, hide, speed)
+    }
+
+    #[test]
+    fn switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        assert!(!followup_same_settings_on());
+        for not_one in ["0", "true", "yes", "", " 1", "01"] {
+            std::env::set_var(FOLLOWUP_SAME_SETTINGS_ENV, not_one);
+            assert!(!followup_same_settings_on(), "{not_one:?}");
+        }
+        std::env::set_var(FOLLOWUP_SAME_SETTINGS_ENV, "1");
+        assert!(followup_same_settings_on());
+        clear_env();
+    }
+
+    #[test]
+    fn switch_on_follow_up_settings_and_tools_equal_the_first_questions() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        set_all_speed_switches();
+        for profile in [
+            "investigate",
+            "visual",
+            "visual-story",
+            "publication",
+            "competition",
+        ] {
+            let first = first_question(profile);
+            let second = follow_up(profile, true);
+            assert!(first.speed.chain_viz && first.speed.parallel_hints);
+            assert_eq!(second.speed, first.speed, "{profile}: speed settings");
+            assert_eq!(
+                second.tools_arg(),
+                first.tools_arg(),
+                "{profile}: tool list"
+            );
+            assert_eq!(
+                pi_env(&second),
+                pi_env(&first),
+                "{profile}: env handed to Pi"
+            );
+        }
+        // The merge settings and the fallback-tool hiding are the ones the old follow-up dropped.
+        let second = follow_up("visual-story", true);
+        assert!(second.speed.compute_batch && second.speed.chain_infographic);
+        assert!(!second.tools_arg().contains("newsroom_lieflat_render"));
+        clear_env();
+    }
+
+    #[test]
+    fn switch_on_with_nothing_set_equals_the_first_question_too() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        for profile in ["investigate", "visual-story"] {
+            let first = first_question(profile);
+            let second = follow_up(profile, true);
+            assert_eq!(second.tools_arg(), first.tools_arg());
+            assert_eq!(pi_env(&second), pi_env(&first));
+        }
+    }
+
+    #[test]
+    fn switch_off_follow_up_ignores_the_speed_environment_as_before() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
+        set_all_speed_switches();
+        for profile in ["investigate", "visual", "visual-story"] {
+            let legacy = config(profile, true, false, Default::default());
+            let second = follow_up(profile, false);
+            assert_eq!(second.speed, Default::default());
+            assert_eq!(
+                second.tools_arg(),
+                legacy.tools_arg(),
+                "{profile}: tool list"
+            );
+            assert_eq!(
+                pi_env(&second),
+                pi_env(&legacy),
+                "{profile}: env handed to Pi"
+            );
+            // Every speed name is removed from the child's environment, as in f2aec34.
+            let env = pi_env(&second);
+            for name in SPEED_ENVS {
+                if let Some((_, value)) = env.iter().find(|(n, _)| n == name) {
+                    assert_eq!(value, &None, "{name} must be removed");
+                }
+            }
+        }
+        // The fallback tools stay in the visual-story list.
+        assert!(follow_up("visual-story", false)
+            .tools_arg()
+            .contains("newsroom_lieflat_render"));
+        clear_env();
+    }
+    #[test]
+    fn completion_switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for (value, on) in [
+            ("1", true),
+            ("0", false),
+            ("true", false),
+            ("yes", false),
+            ("", false),
+            (" 1", false),
+            ("01", false),
+        ] {
+            std::env::set_var(super::FOLLOWUP_COMPLETION_ENV, value);
+            assert_eq!(super::followup_completion_gate_on(), on, "{value:?}");
+        }
+        std::env::remove_var(super::FOLLOWUP_COMPLETION_ENV);
+        assert!(!super::followup_completion_gate_on());
+    }
+
+    #[test]
+    fn retry_message_is_the_one_the_first_question_sends() {
+        let gaps = vec!["gap one".to_string(), "gap two".to_string()];
+        let message = super::completion_retry_message(2, &gaps, "CONTRACT ");
+        assert!(message.starts_with(
+            "System completion gate attempt 2/2 found unfinished required work:\n- gap one\n- gap two\nCONTRACT Continue the same session"
+        ));
+        // The sentence after the gaps is the same literal text as in commands/investigate.rs.
+        let tail = message.split("CONTRACT ").nth(1).unwrap();
+        let investigate = include_str!("investigate.rs");
+        assert!(
+            investigate.contains(tail),
+            "retry wording drifted from investigate.rs"
+        );
+        assert!(investigate.contains(
+            "System completion gate attempt {attempt}/2 found unfinished required work:"
+        ));
+    }
+
+    #[test]
+    fn previous_verification_is_kept_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            super::archive_previous_verification(dir.path()).unwrap(),
+            None
+        );
+        assert!(!dir.path().join("verification-rounds").exists());
+        let first = "{\"passed\": true, \"round\": \"first\"}\n";
+        fs::write(dir.path().join("verification.json"), first).unwrap();
+        assert_eq!(
+            super::archive_previous_verification(dir.path())
+                .unwrap()
+                .as_deref(),
+            Some("verification-rounds/round-1.json")
+        );
+        // A later verification.json is archived next to it, not over it.
+        fs::write(
+            dir.path().join("verification.json"),
+            "{\"passed\": false}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            super::archive_previous_verification(dir.path())
+                .unwrap()
+                .as_deref(),
+            Some("verification-rounds/round-2.json")
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verification-rounds/round-1.json")).unwrap(),
+            first
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verification-rounds/round-2.json")).unwrap(),
+            "{\"passed\": false}\n"
+        );
+    }
+
+    #[test]
+    fn a_round_that_does_not_verify_is_not_read_as_the_previous_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let pass = "{\"passed\": true}\n";
+        fs::write(dir.path().join("verification.json"), pass).unwrap();
+        let kept = super::archive_previous_verification(dir.path()).unwrap();
+        super::record_round_not_verified(dir.path(), kept.as_deref(), "run_failed", "boom")
+            .unwrap();
+        let now: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join("verification.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(now["passed"], false);
+        assert_eq!(now["round_status"], "not_verified");
+        assert_eq!(now["stage"], "run_failed");
+        assert_eq!(
+            now["previous_round_file"],
+            "verification-rounds/round-1.json"
+        );
+        // The earlier pass is still on disk, byte for byte.
+        assert_eq!(
+            fs::read_to_string(dir.path().join("verification-rounds/round-1.json")).unwrap(),
+            pass
         );
     }
 }
