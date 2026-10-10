@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 assert.equal(process.env.NEWSROOM_MAP_WORLD, "1", "run test_map_world_list.mjs with NEWSROOM_MAP_WORLD=1");
 delete process.env.NEWSROOM_MAP_WORLD_LIST;
 import { renderVizBundle } from "../runtime/pi/viz.mjs";
+import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID, joinChoroplethRows, neAttributesAsset, worldLabelIso3s, worldListIso3s } from "../runtime/pi/choropleth.mjs";
 
@@ -49,6 +50,16 @@ const pyFailures = (svg) => {
   const r = spawnSync("python3", ["-I", "-c", PY, root], { input: svg, encoding: "utf8", env: { PATH: process.env.PATH, NEWSROOM_VERIFY_MAP_FOOTNOTES: "1" } });
   assert.equal(r.status, 0, `python verifier ran: ${r.stderr}`);
   return r.stdout.split("\n").filter(Boolean);
+};
+
+const qaOf = (svg, env = { NEWSROOM_MAP_WORLD_LIST: "1" }) => {
+  const saved = process.env.NEWSROOM_MAP_WORLD_LIST;
+  delete process.env.NEWSROOM_MAP_WORLD_LIST;
+  for (const [k, v] of Object.entries(env)) process.env[k] = v;
+  try {
+    const qa = runRenderQa({ desktop: svg }, { choropleth: { rows, category_field: "iso3", value_field: "v", category_names: "iso3", unit: "%", map_extent: "world", highlight_values: [] } });
+    return Object.values(qa.viewports).flatMap((v) => v.value_labels?.failures ?? []);
+  } finally { if (saved === undefined) delete process.env.NEWSROOM_MAP_WORLD_LIST; else process.env.NEWSROOM_MAP_WORLD_LIST = saved; }
 };
 
 const off = render();
@@ -110,6 +121,28 @@ const on = render({ NEWSROOM_MAP_WORLD_LIST: "1" });
   rejects("a list value is wrong", on.replace(valueRe, (m, t) => m.replace(t, "99.9%")), new RegExp(`${target}'s rendered value label`));
   const ghost = `<text data-role="choropleth-footnote-name" data-iso3="ZZZ" x="1" y="1">Nowhere</text><text data-role="choropleth-footnote-value" data-iso3="ZZZ" x="1" y="1">1.0%</text>`;
   rejects("a country with no data is listed", on.replace("</svg>", `${ghost}</svg>`), /ZZZ has a rendered label but no matching choropleth-data region/);
+}
+
+{ // render QA in list mode: every country with data has exactly one name and one value, on the map or in the list
+  assert.deepEqual(qaOf(on), [], "render QA passes the list");
+  const iso3List = [...worldListIso3s(joinedAll, spec)];
+  const target = iso3List[5];
+  const nameRe = new RegExp(`<text data-role="choropleth-footnote-name" data-iso3="${target}"[^>]*>[^<]*</text>`);
+  const valueRe = new RegExp(`<text data-role="choropleth-footnote-value" data-iso3="${target}"[^>]*>([^<]*)</text>`);
+  const rules = (svg, env) => qaOf(svg, env).map((f) => `${f.rule}:${f.message}`);
+  const rejects = (label, svg, re) => { const f = rules(svg); assert.ok(f.some((m) => re.test(m)), `${label}: render QA rejects (${f.slice(0, 2).join(" | ")})`); };
+  rejects("a list row is deleted", on.replace(nameRe, "").replace(valueRe, ""), new RegExp(`value_label_missing:${target} has no visible name label`));
+  const minIso3 = [...worldLabelIso3s(joinedAll, spec)][0];
+  const dup = `<text data-role="choropleth-footnote-name" data-iso3="${minIso3}" x="1" y="1">x</text><text data-role="choropleth-footnote-value" data-iso3="${minIso3}" x="1" y="1">1.0%</text>`;
+  rejects("a map-labelled country is listed again", on.replace("</svg>", `${dup}</svg>`), new RegExp(`value_label_duplicate:${minIso3} has 2 name labels`));
+  rejects("a list value is wrong", on.replace(valueRe, (m, t) => m.replace(t, "99.9%")), new RegExp(`value_label_mismatch:${target} shows`));
+  const ghost = `<text data-role="choropleth-footnote-name" data-iso3="ZZZ" x="1" y="1">Nowhere</text><text data-role="choropleth-footnote-value" data-iso3="ZZZ" x="1" y="1">1.0%</text>`;
+  rejects("a country with no data is listed", on.replace("</svg>", `${ghost}</svg>`), /value_label_unexpected:ZZZ is labelled although it has no data row/);
+  // the list rule is the program's switch, not the chart's: with the switch off the same markup is still rejected
+  const offRules = rules(on, {});
+  assert.ok(offRules.some((m) => /value_label_unexpected:.*world mode labels only/.test(m)), "with the switch off the old rule still rejects listed countries");
+  // the off-state render passes exactly as before
+  assert.deepEqual(qaOf(off, {}), [], "off-state render still passes render QA");
 }
 
 { // pinned: the off-state output of this fixture is the pre-switch output (hash taken at 559f6ba, before this switch existed)

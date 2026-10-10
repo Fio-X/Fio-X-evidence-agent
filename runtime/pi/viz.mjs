@@ -5,7 +5,7 @@ import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -7749,7 +7749,7 @@ const INSET_LADDER = [
 // could not run (never treated as "no failures").
 function insetRenderQaRules(svg, spec, rows) {
   try {
-    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled });
     return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
   } catch {
     return null;
