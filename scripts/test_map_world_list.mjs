@@ -12,7 +12,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 assert.equal(process.env.NEWSROOM_MAP_WORLD, "1", "run test_map_world_list.mjs with NEWSROOM_MAP_WORLD=1");
 delete process.env.NEWSROOM_MAP_WORLD_LIST;
-import { renderVizBundle } from "../runtime/pi/viz.mjs";
+import { renderVizBundle, worldListBreaksFor, worldListValueText } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
 import { CHOROPLETH_BASEMAP_ID, joinChoroplethRows, neAttributesAsset, worldLabelIso3s, worldListIso3s } from "../runtime/pi/choropleth.mjs";
@@ -143,6 +143,38 @@ const on = render({ NEWSROOM_MAP_WORLD_LIST: "1" });
   assert.ok(offRules.some((m) => /value_label_unexpected:.*world mode labels only/.test(m)), "with the switch off the old rule still rejects listed countries");
   // the off-state render passes exactly as before
   assert.deepEqual(qaOf(off, {}), [], "off-state render still passes render QA");
+}
+
+{ // K195: a list value just below a class boundary whose one-decimal text equals the boundary's text gets a second decimal
+  const B = [0.056, 2, 5, 10, 20, 40.128];
+  const t = (v) => worldListValueText(v, "t", { unit: "t" }, B);
+  assert.equal(t(1.952), "1.95 t", "below the 2 boundary and reading 2.0: two decimals");
+  assert.equal(t(4.97), "4.97 t", "below the 5 boundary and reading 5.0: two decimals");
+  for (const v of [2.011, 2.021, 5.012, 2, 5]) assert.equal(t(v), `${v.toFixed(1)} t`, `${v} is on or above the boundary: unchanged`);
+  assert.equal(t(1.94), "1.9 t", "1.94 does not read as the boundary: unchanged");
+  assert.equal(t(0.066), "0.1 t", "values far from a boundary keep one decimal");
+  // end to end: one listed row sits just below an edge; the list prints two decimals, both verifiers and render QA read it
+  const edges = worldListBreaksFor(rows.map((r) => r.v), spec).slice(1, -1);
+  const labelled = worldLabelIso3s(joinedAll, spec);
+  const pick = rows.find((r) => !labelled.has(joinChoroplethRows([r], spec)[0].iso3) && r.v >= edges[1] && r.v < edges[2]);
+  const edge = edges[1];
+  const near = Math.round((edge - 0.02) * 1000) / 1000;
+  const rows2 = rows.map((r) => (r === pick ? { ...r, v: near } : r));
+  assert.deepEqual(worldListBreaksFor(rows2.map((r) => r.v), spec).slice(1, -1), edges, "the edit keeps the class breaks");
+  const saved = process.env.NEWSROOM_MAP_WORLD_LIST;
+  process.env.NEWSROOM_MAP_WORLD_LIST = "1";
+  try {
+    const svg = renderVizBundle(spec, rows2).desktop;
+    const m = svg.match(new RegExp(`data-role="choropleth-footnote-value" data-iso3="${pick.iso3}"[^>]*>([^<]*)</text>`));
+    assert.equal(m?.[1], `${near.toFixed(2)}%`, "the near-edge row prints two decimals");
+    assert.deepEqual(pyFailures(svg), [], "Python verifier reads the two-decimal row");
+    const qa = (x) => Object.values(runRenderQa({ desktop: x }, { choropleth: { rows: rows2, category_field: "iso3", value_field: "v", category_names: "iso3", unit: "%", map_extent: "world", highlight_values: [] } }).viewports).flatMap((v) => v.value_labels?.failures ?? []);
+    assert.deepEqual(qa(svg), [], "render QA accepts the two-decimal row");
+    const one = svg.replace(`>${near.toFixed(2)}%</text>`, `>${near.toFixed(1)}%</text>`);
+    assert.notEqual(one, svg);
+    assert.ok(qa(one).some((f) => f.rule === "value_label_mismatch"), "render QA rejects the old one-decimal text for that row (exact text)");
+  } finally { if (saved === undefined) delete process.env.NEWSROOM_MAP_WORLD_LIST; else process.env.NEWSROOM_MAP_WORLD_LIST = saved; }
+  assert.equal(render(), off, "off state unchanged");
 }
 
 { // pinned: the off-state output of this fixture is the pre-switch output (hash taken at 559f6ba, before this switch existed)
