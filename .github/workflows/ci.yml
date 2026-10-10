@@ -302,3 +302,4 @@ jobs:
           node scripts/test_reader_task_example_fix.mjs
           node scripts/test_scene_duplicate_wording.mjs
           node scripts/test_refused_options_fix.mjs
+          node scripts/test_extreme_probe.mjs

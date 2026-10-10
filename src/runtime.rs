@@ -68,6 +68,8 @@ const NUMBER_WORDS_RUNTIME: &str = include_str!("../runtime/pi/number_words.mjs"
 const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
 const PATCH_RETRY_RUNTIME: &str = include_str!("../runtime/pi/patch_retry.mjs");
 const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
+const EXTREME_PROBE_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe.mjs");
+const EXTREME_PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe_writer.mjs");
 const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
@@ -190,6 +192,8 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let preflight_path = runtime_dir.join("preflight.mjs");
     let patch_retry_path = runtime_dir.join("patch_retry.mjs");
     let shadow_path = runtime_dir.join("shadow.mjs");
+    let extreme_probe_path = runtime_dir.join("extreme_probe.mjs");
+    let extreme_probe_writer_path = runtime_dir.join("extreme_probe_writer.mjs");
     let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
@@ -280,6 +284,8 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&preflight_path, PREFLIGHT_RUNTIME)?;
     write_if_changed(&patch_retry_path, PATCH_RETRY_RUNTIME)?;
     write_if_changed(&shadow_path, SHADOW_RUNTIME)?;
+    write_if_changed(&extreme_probe_path, EXTREME_PROBE_RUNTIME)?;
+    write_if_changed(&extreme_probe_writer_path, EXTREME_PROBE_WRITER_RUNTIME)?;
     write_if_changed(&tool_chain_path, TOOL_CHAIN_RUNTIME)?;
     write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
     write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
@@ -339,6 +345,8 @@ mod tests {
             "asof_probe.mjs",
             "claim_binding.mjs",
             "compact_setup.mjs",
+            "extreme_probe.mjs",
+            "extreme_probe_writer.mjs",
             "number_shadow.mjs",
             "number_words.mjs",
             "patch_retry.mjs",

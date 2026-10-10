@@ -1,0 +1,53 @@
+{
+"note": "topic 13 currency change over 3 years, 12 currencies",
+"rows": [
+{
+"currency": "TRY",
+"pct_change": 89.97466757621153
+},
+{
+"currency": "INR",
+"pct_change": 23.712343739326446
+},
+{
+"currency": "JPY",
+"pct_change": 13.132660189242396
+},
+{
+"currency": "CAD",
+"pct_change": 10.805961910019303
+},
+{
+"currency": "USD",
+"pct_change": 6.683707280128748
+},
+{
+"currency": "KRW",
+"pct_change": 6.0181443820580105
+},
+{
+"currency": "MXN",
+"pct_change": 4.758278420158302
+},
+{
+"currency": "BRL",
+"pct_change": 2.4838012958963374
+},
+{
+"currency": "GBP",
+"pct_change": -1.884175239856667
+},
+{
+"currency": "CNY",
+"pct_change": -2.0839273217386767
+},
+{
+"currency": "CHF",
+"pct_change": -2.80402949423616
+},
+{
+"currency": "AUD",
+"pct_change": -2.841319528052
+}
+]
+}
