@@ -3,6 +3,7 @@
 // in the data file (what the profile shows) and in no recorded query row must stay unverified or be
 // refused, with the switch on or off. Loads runtime/pi/newsroom.ts from a type-stripped copy; DuckDB
 // runs the SQL; no network, no provider.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -13,7 +14,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const tmp = mkdtempSync(join(tmpdir(), "claim-integrity-"));
+const tmp = makeTestTmp("claim-integrity-");
 const stub = (name, source) => {
   mkdirSync(join(tmp, "node_modules", name), { recursive: true });
   writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -54,7 +55,7 @@ let runs = 0;
 // A fresh artifact root with one data file and a computation recorded for `sql`.
 async function story(sql = (ref) => `SELECT country, year, share FROM '${ref}' ORDER BY country`) {
   runs += 1;
-  const art = join(mkdtempSync(join(tmpdir(), `claim-integrity-run${runs}-`)), "run");
+  const art = join(makeTestTmp(`claim-integrity-run${runs}-`), "run");
   mkdirSync(join(art, "computations"), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = art;

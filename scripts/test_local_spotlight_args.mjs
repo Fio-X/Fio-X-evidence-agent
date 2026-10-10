@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // A model-supplied search query must never reach mdfind as an option.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { localSpotlight } from '../runtime/pi/local_backend.mjs';
 
-const root = await mkdtemp(join(tmpdir(), 'newsroom-spotlight-args-'));
+const root = makeTestTmp('newsroom-spotlight-args-');
 process.env.NEWSROOM_ARTIFACT_DIR = root;
 await writeFile(join(root, 'alpha-report.txt'), 'x');
 for (const query of ['-live', '-count', '-attr kMDItemPath', '-0']) {

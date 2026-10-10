@@ -2,6 +2,7 @@
 // Unit cases for the RFC 6902 applier, then the real plan and chain tools on a temp artifact root (fixtures from
 // test_hero_value_tool_path.mjs). Offline. `typebox/compile` is a test-only stub built on checkSchema: the strictness of the real
 // Compile cannot be checked here (see the report); the wiring, the order of the checks and the fail-closed path are.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -35,7 +36,7 @@ export const Type = {
 };`;
 // One type-stripped copy of the runtime per tree. withCompile=false leaves typebox/compile out (it can only be missing there).
 function makeTree(withCompile) {
-  const TREE = mkdtempSync(join(tmpdir(), "patch-tree-"));
+  const TREE = makeTestTmp("patch-tree-");
   cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
   stub(TREE, "typebox", TYPEBOX);
@@ -71,7 +72,7 @@ const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect 
 const VIZ = [["map", "geo_flow_map", "c-map"], ["sankey", "sankey", "c-flow"], ["trend", "line", "c-trend"]];
 // verbatim from test_plan_edit_runtime.mjs: a full artifact root with verified claims, a computation, charts and editorial files
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, verifiedOnly = null } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `planedit-${label}-`)), "run");
+  const art = join(makeTestTmp(`planedit-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -326,7 +327,7 @@ await ok("plan patch fails closed when typebox/compile cannot be loaded (PATCH_S
 });
 
 // ---- chain ----
-const stubDir = mkdtempSync(join(tmpdir(), "patch-raster-"));
+const stubDir = makeTestTmp("patch-raster-");
 writeFileSync(join(stubDir, "fixed.png"), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(256, 7)]));
 writeFileSync(join(stubDir, "python-stub.sh"), `#!/bin/sh\ncp "${join(stubDir, "fixed.png")}" "$3"\necho '{"engine":"test-stub"}'\n`);
 chmodSync(join(stubDir, "python-stub.sh"), 0o755);

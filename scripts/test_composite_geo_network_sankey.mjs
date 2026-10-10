@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { renderPublication, validatePublicationSpec } from '../runtime/pi/publication.mjs';
 
-const OUT = path.join(os.tmpdir(), 'japanese-composite-demo');
+const OUT = makeTestTmp('japanese-composite-demo-');
 fs.mkdirSync(OUT, { recursive: true });
 
 // Capability fixture: values are drawn from the verified OWID energy run, while
