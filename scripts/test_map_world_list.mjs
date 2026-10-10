@@ -89,6 +89,13 @@ const on = render({ NEWSROOM_MAP_WORLD_LIST: "1" });
   for (const iso3 of listed) { assert.equal(names.filter((x) => x === iso3).length, 1, `${iso3} has one list name`); assert.equal(values.filter((x) => x === iso3).length, 1, `${iso3} has one list value`); }
   assert.ok(/data-role="choropleth-world-list-group"/.test(on), "group headers");
   const groups = [...on.matchAll(/data-role="choropleth-world-list-group" data-class="(\d)"/g)].map((m) => Number(m[1]));
+  { // K195 note 8: the group titles write class edges with the legend's own formatter (fmtSpec), so a legend change carries over
+    const legend = on.match(/<g data-role="choropleth-legend">[\s\S]*?<\/g>/)[0];
+    const ticks = [...legend.matchAll(/y="[\d.]+" text-anchor[^>]*>([^<]*)<\/text>/g)].map((m) => m[1].replace(/\s*%$/, ""));
+    const edgeNumbers = [...on.matchAll(/data-role="choropleth-world-list-group"[^>]*>([^<]*)<\/text>/g)].flatMap((m) => m[1].replace(/[^0-9.\u2013<\u2265]/g, "").split(/[\u2013<\u2265]/).filter(Boolean));
+    assert.ok(edgeNumbers.length >= 3 && ticks.length >= 3, `group edges and legend ticks were found (${edgeNumbers}; ${ticks})`);
+    for (const e of edgeNumbers) assert.ok(ticks.includes(e), `group-title edge ${e} reads as a legend tick (${ticks.join(", ")})`);
+  }
   assert.deepEqual(groups, [...groups].sort((a, b) => a - b), "groups follow the legend order");
   assert.deepEqual(pyFailures(on), [], "the Python verifier reads every country back exactly once");
 }
@@ -175,6 +182,38 @@ const on = render({ NEWSROOM_MAP_WORLD_LIST: "1" });
     assert.ok(qa(one).some((f) => f.rule === "value_label_mismatch"), "render QA rejects the old one-decimal text for that row (exact text)");
   } finally { if (saved === undefined) delete process.env.NEWSROOM_MAP_WORLD_LIST; else process.env.NEWSROOM_MAP_WORLD_LIST = saved; }
   assert.equal(render(), off, "off state unchanged");
+}
+
+{ // K195 (review M4): the map's own labels keep the shared one-decimal text; only the list rows get the extra digit
+  const edges = worldListBreaksFor(rows.map((r) => r.v), spec).slice(1, -1);
+  const labelled = worldLabelIso3s(joinedAll, spec);
+  const nearOf = (edge) => Math.round((edge - 0.02) * 1000) / 1000;
+  // a large country, so the map has room for its label; the values are replaced below, so its own value does not matter
+  const onMap = rows.find((r) => ["BRA", "CHN", "IND", "RUS", "ARG", "KAZ"].includes(r.iso3) && !labelled.has(r.iso3));
+  assert.ok(onMap, "fixture row for the map label");
+  const spec3 = { ...spec, highlight_values: [onMap.iso3] }; // a named country is labelled on the map, so it is not a list row
+  const saved = process.env.NEWSROOM_MAP_WORLD_LIST;
+  process.env.NEWSROOM_MAP_WORLD_LIST = "1";
+  try {
+    // some countries are numbered footnotes instead of list rows (they keep the shared text there): try candidates until one is a list row
+    let hit = null;
+    for (const inList of rows.filter((r) => r !== onMap && !labelled.has(r.iso3)).slice(0, 60)) {
+      const rows3 = rows.map((r) => (r === onMap ? { ...r, v: nearOf(edges[0]) } : r === inList ? { ...r, v: nearOf(edges[1]) } : r));
+      if (JSON.stringify(worldListBreaksFor(rows3.map((r) => r.v), spec).slice(1, -1)) !== JSON.stringify(edges)) continue;
+      const svg = renderVizBundle(spec3, rows3).desktop;
+      if (new RegExp(`choropleth-footnote-marker" data-iso3="${inList.iso3}"`).test(svg)) continue;
+      if (new RegExp(`choropleth-footnote-value" data-iso3="${inList.iso3}"`).test(svg)) { hit = { inList, svg }; break; }
+    }
+    assert.ok(hit, "a list-only row just under a class edge exists in the fixture");
+    const { inList, svg } = hit;
+    const mapLabel = svg.match(new RegExp(`<text data-role="choropleth-label-value" data-iso3="${onMap.iso3}"[^>]*>([^<]*)</text>`));
+    assert.ok(mapLabel, "the highlighted country is labelled on the map");
+    assert.equal(mapLabel[1], `${nearOf(edges[0]).toFixed(1)}%`, "the map label just under a class edge keeps one decimal");
+    assert.ok(!new RegExp(`choropleth-footnote-value" data-iso3="${onMap.iso3}"`).test(svg), "the map-labelled country is not repeated in the list");
+    const row = svg.match(new RegExp(`data-role="choropleth-footnote-value" data-iso3="${inList.iso3}"[^>]*>([^<]*)</text>`));
+    assert.equal(row?.[1], `${nearOf(edges[1]).toFixed(2)}%`, "the list row just under a class edge gets the extra digit");
+    assert.deepEqual(pyFailures(svg), [], "Python verifier reads both");
+  } finally { if (saved === undefined) delete process.env.NEWSROOM_MAP_WORLD_LIST; else process.env.NEWSROOM_MAP_WORLD_LIST = saved; }
 }
 
 { // pinned: the off-state output of this fixture is the pre-switch output (hash taken at 559f6ba, before this switch existed)
