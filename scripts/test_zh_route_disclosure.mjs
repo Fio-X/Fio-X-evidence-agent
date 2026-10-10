@@ -18,7 +18,7 @@ const warns = (note, mod = { critiqueViz }) => mod.critiqueViz({ ...spec, note }
 const withSwitch = (value, fn) => { const saved = process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE; if (value === undefined) delete process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE; else process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE = value; try { return fn(); } finally { if (saved === undefined) delete process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE; else process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE = saved; } };
 
 const PASS = ["弧线表示估算的双边侨汇关系，不是实际资金路线。", "弧线并非实际运输路线。", "箭头不代表真实航运路径，只表示来源与去向。", "这些线不是实际路线。", "Arcs show a relationship, not shipping routes."];
-const WARN = ["弧线表示估算的双边侨汇关系。", "弧线是实际运输路线。", "这是实际的运输路线，不是估算。", "弧线表示双边关系", "", "不是。路线很长。", "弧线表示数据。不是很多。路径是实际的。"];
+const WARN = ["弧线表示估算的双边侨汇关系。", "弧线是实际运输路线。", "这是实际的运输路线，不是估算。", "弧线表示双边关系", "", "不是。路线很长。", "弧线表示数据。不是很多。路径是实际的。", "弧线不是示意而是实际路线。", "弧线不是估算而是真实运输路径。", "不是每条线都是实际路线。", "不等于零的路线很多。"];
 withSwitch("1", () => {
   for (const n of PASS) assert.equal(warns(n), false, `on: ${n} counts as the disclosure`);
   for (const n of WARN) assert.equal(warns(n), true, `on: ${JSON.stringify(n)} still warns`);
