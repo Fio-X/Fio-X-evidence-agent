@@ -26,6 +26,11 @@ for line in sys.stdin:
             time.sleep(600)
         emit(type="response", command="prompt", success=True)
         for i, (tool, args, ok) in enumerate(plan):
+            if tool == "__write":  # a file change the model did not make through a tool call
+                target = Path(os.environ["NEWSROOM_ARTIFACT_DIR"]) / args["path"]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(args["text"])
+                continue
             emit(type="tool_execution_start", toolName=tool, toolCallId=f"c{n}-{i}", args=args)
             emit(type="tool_execution_end", toolName=tool, toolCallId=f"c{n}-{i}", isError=not ok)
         emit(type="message_update", assistantMessageEvent={"type": "text_delta", "delta": "mock answer"})
@@ -52,7 +57,7 @@ def run_news(args, env_extra, state):
     p = subprocess.run([binary] + args, env=env, capture_output=True, timeout=60)
     return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')
 
-def scenario(message, plans, switch, first=(), first_args=(), kill=False):
+def scenario(message, plans, switch, first=(), first_args=(), kill=False, plant=None, planted=PLANTED):
     """First question (simple, one prompt), a planted passing verification, then one follow-up."""
     with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as state:
         state = Path(state)
@@ -61,7 +66,8 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False):
         m = re.search(r'artifact: (\S+)', text)
         assert m, text[-600:]
         artifact = Path(m.group(1))
-        (artifact / 'verification.json').write_text(PLANTED)
+        (artifact / 'verification.json').write_text(planted)
+        if plant: plant(artifact)
         extra = dict(env)
         if switch is not None: extra['NEWSROOM_FOLLOWUP_COMPLETION_GATE'] = switch
         if kill:
@@ -85,7 +91,9 @@ def scenario(message, plans, switch, first=(), first_args=(), kill=False):
         ver = json.loads((artifact / 'verification.json').read_text())
         rounds = sorted(p.name for p in (artifact / 'verification-rounds').glob('*.json')) if (artifact / 'verification-rounds').exists() else []
         kept = (artifact / 'verification-rounds' / 'round-1.json').read_text() if 'round-1.json' in rounds else None
-        return dict(code=code, text=text, prompts=texts, ver=ver, rounds=rounds, kept=kept)
+        reuse = sorted(p.name for p in (artifact / 'verification-rounds').glob('chain-reuse-*.json')) if (artifact / 'verification-rounds').exists() else []
+        reuse_rec = json.loads((artifact / 'verification-rounds' / reuse[0]).read_text()) if reuse else None
+        return dict(code=code, text=text, prompts=texts, ver=ver, rounds=[r for r in rounds if r.startswith('round-')], kept=kept, reuse=reuse, reuse_rec=reuse_rec)
 
 # A. on, complex follow-up that stops after one chart: sent back twice, then the run fails and says so.
 r = scenario(COMPLEX, [chart, chart, chart], '1')
@@ -141,4 +149,46 @@ assert r['ver'].get('marker') == 'planted-pass', r['ver']
 r = scenario(SIMPLE, ['hang'], '1', kill=True)
 assert r['ver']['passed'] is False and r['ver']['round_status'] == 'in_progress' and 'marker' not in r['ver'], r['ver']
 assert r['ver']['previous_round_file'] == 'verification-rounds/round-1.json' and r['rounds'] == ['round-1.json'], (r['ver'], r['rounds'])
+
+# G. text-only follow-ups carry over the previous round's verified chart chain (switch on). The first question is a visual-story
+# run that called all 7 tools; the program's own records are planted: a PASS browser QA bound to the page, a plan, a chart file.
+import hashlib
+HTML = '<html>page</html>'
+CHAIN2 = [[t, ({'plan_ref': 'infographics/plans/p.json'} if t == 'newsroom_infographic_render' else {}), True] for t, _, _ in CHAIN]
+def plant(artifact):
+    for rel, text in [('infographics/plans/p.json', json.dumps({'modules': [{'visual_grammar': 'trend'}]})), ('infographics/a.svg', '<svg id="a"/>'),
+                      ('publications/p1/index.html', HTML), ('publications/p1/manifest.json', json.dumps({'html_ref': 'publications/p1/index.html'})),
+                      ('publications/qa/p1/browser-qa.json', json.dumps({'status': 'PASS', 'html_sha256': hashlib.sha256(HTML.encode()).hexdigest()}))]:
+        (artifact / rel).parent.mkdir(parents=True, exist_ok=True)
+        (artifact / rel).write_text(text)
+def reuse_run(message, plans, planted=PLANTED, switch='1'):
+    return scenario(message, plans, switch, first=CHAIN2, first_args=VS, plant=plant, planted=planted)
+# (a) a follow-up that only explains: no tool call, no retry, no gap; the record names the round and the file digest.
+r = reuse_run('explain the first chart once more', [[]])
+assert len(r['prompts']) == 1 and 'System completion gate' not in r['prompts'][0], [p[:120] for p in r['prompts']]
+assert 'visual delivery incomplete' not in r['text'], r['text'][-500:]
+assert r['reuse'] == ['chain-reuse-of-round-1.json'] and r['reuse_rec']['reused_round_file'] == 'verification-rounds/round-1.json', r['reuse']
+assert re.fullmatch(r'[0-9a-f]{64}', r['reuse_rec']['chain_fingerprint_sha256']) and r['reuse_rec']['fingerprint_files'] == 5, r['reuse_rec']
+# off: the same follow-up is not judged against earlier rounds (one prompt, nothing recorded); the gap is computed only with the switch
+r = reuse_run('explain the first chart once more', [[]], switch=None)
+assert r['reuse'] == [] and len(r['prompts']) == 1, (r['reuse'], r['prompts'])
+# (b) one byte of a chain file changes during the round (not through a tool call): the whole chain is required again.
+r = reuse_run('explain the first chart once more', [[['__write', {'path': 'infographics/a.svg', 'text': '<svg id="b"/>'}, True]], [], []])
+assert len(r['prompts']) == 3 and 'required complex-visual gate did not pass: newsroom_infographic_plan' in r['prompts'][1], [p[:120] for p in r['prompts']]
+assert r['reuse'] == [], r['reuse']
+# a file added or removed counts as well
+r = reuse_run('explain the first chart once more', [[['__write', {'path': 'publications/p1/extra.png', 'text': 'x'}, True]], [], []])
+assert len(r['prompts']) == 3 and r['reuse'] == [], [p[:120] for p in r['prompts']]
+# (c) the previous round is not a finished pass: a plain failed record, or a not_verified marker even with passed true.
+for label, record in [('passed false', '{"passed": false}\n'), ('not_verified marker', '{"passed": true, "round_status": "not_verified"}\n'),
+                      ('in_progress marker', '{"passed": true, "round_status": "in_progress"}\n'), ('unreadable', 'not json\n')]:
+    r = reuse_run('explain the first chart once more', [[], [], []], planted=record)
+    assert len(r['prompts']) == 3 and r['reuse'] == [], (label, [p[:120] for p in r['prompts']])
+# (d) the follow-up calls a chart-chain tool: the chain is required in full again, whatever the files look like.
+for tool in ['newsroom_infographic_render', 'newsroom_viz_critic', 'newsroom_publication_qa']:
+    r = reuse_run('explain the first chart once more', [[[tool, {}, True]], [], []])
+    assert len(r['prompts']) == 3 and r['reuse'] == [], (tool, [p[:120] for p in r['prompts']])
+# (e) the follow-up asks for a form the rendered plan does not have: a gap, and the retry loop runs.
+r = reuse_run('now add a world map of the same numbers', [[], [], []])
+assert len(r['prompts']) == 3 and 'spatial' in r['prompts'][1] and 'required complex-visual gate did not pass' not in r['prompts'][1], [p[:200] for p in r['prompts']]
 print('test_followup_completion_gate: ok')
