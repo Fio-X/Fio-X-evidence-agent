@@ -1,4 +1,4 @@
-// Only the three writer modules may use runAsWriter (groups.mjs defines it).
+// Only the writer modules listed below may use runAsWriter (groups.mjs defines it).
 // A tool that could call it would pick its own writer identity.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -15,6 +15,9 @@ const ALLOWED = new Set([
   // Flow group (agent): writes the extreme-probe diagnosis record, once, as the agent writer. It is a writer module
   // like the two above: it calls runAsWriter("agent", ...) itself and no tool picks its own identity.
   "runtime/pi/extreme_probe_writer.mjs",
+  // Added for the fetch-split probe (K99): the flow group's writer for the diagnostic files download_data asks for. Same pattern as the two above;
+  // listed here so a tool still cannot pick its own writer identity, and the check below makes sure it really uses runAsWriter.
+  "runtime/pi/probe_writer.mjs",
 ]);
 const NAME = /\brunAsWriter\b/;
 const GROUPS_SPEC = /["'`][^"'`]*\bgroups\.mjs["'`]/;
@@ -71,12 +74,12 @@ for (const f of files) {
   const uses = findUses(readFileSync(f, "utf8"));
   if (uses.length) bad.push(`${rel}: ${uses.join("; ")}`);
 }
-assert.deepEqual(bad, [], `runAsWriter used outside the three writer modules:\n${bad.join("\n")}`);
+assert.deepEqual(bad, [], `runAsWriter used outside the writer modules:\n${bad.join("\n")}`);
 
 // 3. The allowed modules exist, and the three writers really use it.
 for (const f of ALLOWED) assert.ok(statSync(join(root, f)).isFile(), `${f} missing`);
-for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.mjs", "runtime/pi/extreme_probe_writer.mjs"]) {
+for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.mjs", "runtime/pi/extreme_probe_writer.mjs", "runtime/pi/probe_writer.mjs"]) {
   assert.ok(NAME.test(readFileSync(join(root, f), "utf8")), `${f} no longer uses runAsWriter`);
 }
 assert.ok(GROUPS_SPEC.test(readFileSync(join(root, "runtime/pi/knowledge_writer.mjs"), "utf8")));
-console.log("ok: runAsWriter is used only by the three writer modules (" + files.length + " files scanned)");
+console.log("ok: runAsWriter is used only by the writer modules (" + files.length + " files scanned)");
