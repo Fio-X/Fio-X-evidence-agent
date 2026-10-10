@@ -5442,6 +5442,20 @@ mod tests {
     }
 
     #[test]
+    fn zh_plain_choropleth_labels_round_a_half_up_not_to_even() {
+        // exact binary halves, so the tie is a real tie: half-up and round-half-even differ on every line below
+        // a unit that already says 万: one decimal (1.25 万 reads 1.3, 12.25 万 reads 12.3)
+        assert_eq!(zh_plain_label_matches("1.3 万人", 1.25, true), Some(true));
+        assert_eq!(zh_plain_label_matches("1.2 万人", 1.25, true), Some(false));
+        assert_eq!(zh_plain_label_matches("12.3 万人", 12.25, true), Some(true));
+        assert_eq!(zh_plain_label_matches("12.2 万人", 12.25, true), Some(false));
+        assert_eq!(zh_plain_label_matches("-12.3 万人", -12.25, true), Some(true));
+        // below 1万 on a map with a 万 value: the half-up integer (8764.5 reads 8765, not the even 8764)
+        assert_eq!(zh_plain_label_matches("8765 人", 8764.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("8764 人", 8764.5, true), Some(false));
+    }
+
+    #[test]
     fn zh_scaled_choropleth_labels_are_read_back_exactly() {
         // the renderer's own text for these values: suffix by raw magnitude, one decimal, half up on the decimal value
         for (value, text) in [
