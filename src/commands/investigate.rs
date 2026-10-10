@@ -63,7 +63,7 @@ fn lieflat_hidden_for(requested: &str, topic: &str, split_classifier: bool) -> b
 /// Whether completion must go through the measured infographic, publication
 /// and browser-QA chain. The goal text can only add this requirement; an
 /// explicit visual-story tool profile adds it regardless of the wording.
-fn completion_chain_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
+pub(crate) fn completion_chain_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
     is_complex_visual_request(topic, split_classifier) || profile == Some("visual-story")
 }
 

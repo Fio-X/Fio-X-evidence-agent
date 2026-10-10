@@ -21,6 +21,9 @@ for line in sys.stdin:
         with open(state / "prompts.jsonl", "a") as f: f.write(json.dumps(cmd) + "\n")
         plan = plans[n] if n < len(plans) else []
         if plan == "die": sys.exit(3)
+        if plan == "hang":
+            import time
+            time.sleep(600)
         emit(type="response", command="prompt", success=True)
         for i, (tool, args, ok) in enumerate(plan):
             emit(type="tool_execution_start", toolName=tool, toolCallId=f"c{n}-{i}", args=args)
@@ -49,18 +52,33 @@ def run_news(args, env_extra, state):
     p = subprocess.run([binary] + args, env=env, capture_output=True, timeout=60)
     return p.returncode, (p.stdout + p.stderr).decode('utf-8', 'replace')
 
-def scenario(message, plans, switch, first=()):
+def scenario(message, plans, switch, first=(), first_args=(), kill=False):
     """First question (simple, one prompt), a planted passing verification, then one follow-up."""
     with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as state:
         state = Path(state)
         env = {'MOCK_PLANS': json.dumps([list(first)] + plans)}
-        code, text = run_news(['investigate', '--pi-bin', str(mock_path), '--out', out, 'fixed question'], env, state)
+        code, text = run_news(['investigate', '--pi-bin', str(mock_path), '--out', out, *first_args, 'fixed question'], env, state)
         m = re.search(r'artifact: (\S+)', text)
         assert m, text[-600:]
         artifact = Path(m.group(1))
         (artifact / 'verification.json').write_text(PLANTED)
         extra = dict(env)
         if switch is not None: extra['NEWSROOM_FOLLOWUP_COMPLETION_GATE'] = switch
+        if kill:
+            # Kill the follow-up while the model is still working on it.
+            env2 = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_')}
+            env2.update({'MOCK_STATE': str(state), 'NEWSROOM_RPC_TOTAL_MS': '60000', 'NEWSROOM_RPC_IDLE_MS': '60000', 'NEWSROOM_RPC_FINISH_MS': '3000'})
+            env2.update(extra)
+            proc = subprocess.Popen([binary, 'continue', str(artifact), '--pi-bin', str(mock_path), message], env=env2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            import time
+            for _ in range(200):
+                if (state / 'count').exists() and (state / 'count').read_text().strip() == '2': break
+                time.sleep(0.05)
+            time.sleep(0.3)
+            proc.kill(); proc.wait()
+            subprocess.run(['pkill', '-f', str(mock_path)])
+            return dict(ver=json.loads((artifact / 'verification.json').read_text()),
+                        rounds=sorted(p.name for p in (artifact / 'verification-rounds').glob('*.json')) if (artifact / 'verification-rounds').exists() else [])
         code, text = run_news(['continue', str(artifact), '--pi-bin', str(mock_path), message], extra, state)
         prompts = [json.loads(l) for l in (state / 'prompts.jsonl').read_text().splitlines()]
         texts = [json.dumps(p) for p in prompts[1:]]
@@ -103,4 +121,24 @@ assert off['code'] != 0 and off['ver'].get('marker') == 'planted-pass', off['ver
 on = scenario(SIMPLE, ['die'], '1')
 assert on['code'] != 0 and on['ver']['passed'] is False and on['ver']['stage'] == 'run_failed' and 'marker' not in on['ver'], on['ver']
 assert on['kept'] == PLANTED and on['ver']['previous_round_file'] == 'verification-rounds/round-1.json', on['rounds']
+# E. a visual-story first question, then a short follow-up. The gap calculation counts the recorded profile, so the retry
+# loop must too: the model is sent back, with the first question's correction text. Off: one prompt as before.
+VS = ['--tool-profile', 'visual-story']
+r = scenario(SIMPLE, [chart, chart, chart], '1', first_args=VS)
+assert len(r['prompts']) == 3, [p[:80] for p in r['prompts']]
+assert 'System completion gate attempt 1/2 found unfinished required work' in r['prompts'][1], r['prompts'][1][:300]
+assert 'System completion gate attempt 2/2 found unfinished required work' in r['prompts'][2]
+assert r['code'] != 0 and 'visual delivery incomplete' in r['text'], (r['code'], r['text'][-500:])
+r = scenario(SIMPLE, [chart, chart, chart], None, first_args=VS)
+assert len(r['prompts']) == 1, r['prompts']
+r = scenario(SIMPLE, [chart], '1')  # no visual-story profile recorded: still no correction (C again)
+assert len(r['prompts']) == 1
+
+# F. the follow-up is killed while the model works: verification.json must not still show the previous round's pass.
+# Off: it does (the old behaviour). On: it says this round is in progress, unverified, and the pass is kept apart.
+r = scenario(SIMPLE, ['hang'], None, kill=True)
+assert r['ver'].get('marker') == 'planted-pass', r['ver']
+r = scenario(SIMPLE, ['hang'], '1', kill=True)
+assert r['ver']['passed'] is False and r['ver']['round_status'] == 'in_progress' and 'marker' not in r['ver'], r['ver']
+assert r['ver']['previous_round_file'] == 'verification-rounds/round-1.json' and r['rounds'] == ['round-1.json'], (r['ver'], r['rounds'])
 print('test_followup_completion_gate: ok')
