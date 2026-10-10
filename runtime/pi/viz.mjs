@@ -3442,6 +3442,24 @@ function attachAxisUnit(text, unit) {
   if (unit === "%") return `${text}%`;
   return /^[£$€¥]$/.test(unit) ? `${unit}${text}` : `${text} ${unit}`;
 }
+// NEWSROOM_TYPESET_AXIS_NOTATION=1, option B (zh only): the ticks are bare numbers and the unit is written once above the axis
+// ("单位：万人"). The whole axis takes one scale, chosen by its largest tick: below 1万 none, 1万 up to 1亿 万, 1亿 and above 亿.
+// A unit that already carries a scale (万吨, 亿元) is not given a second one. Returns null when B does not apply.
+// Room for the unit line above a bar chart whose axis takes notation B (one row, only when the switch is on and the page is zh).
+function axisUnitRowH(spec) {
+  return process.env.NEWSROOM_TYPESET_AXIS_NOTATION === "1" && spec && vizLang(spec) === "zh" ? 18 : 0;
+}
+export function axisNotationB(spec, ticks, unit) {
+  if (process.env.NEWSROOM_TYPESET_AXIS_NOTATION !== "1" || !spec || !ticks.length) return null;
+  if (vizLang(spec) !== "zh" || !ticks.every((t) => Number.isFinite(t)) || specValueKind(spec) || zhBillionsActive(spec, unit)) return null;
+  const top = Math.max(...ticks.map((t) => Math.abs(t)));
+  const unitHasScale = Boolean(unit) && SCALE_UNIT_RE.test(unit);
+  const [power, suffix] = unitHasScale || top < 1e4 ? [0, ""] : top < 1e8 ? [4, "万"] : [8, "亿"];
+  const texts = ticks.map((t) => (t === 0 || power === 0 ? String(Number(t.toFixed(6))) : halfUpFixed(t, power, 3, true).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")));
+  const unitName = unit === "%" ? "%" : (unit ?? "");
+  const line = `${suffix}${unitName}`;
+  return { texts, unitLine: line ? `单位：${line}` : null };
+}
 export function axisTickTexts(spec, ticks, unit, labelDecimals = null, { unitOnEvery = false, spelled = null } = {}) {
   const unitAt = (i) => (unitOnEvery ? unit : axisTickUnit(unit, i, ticks.length));
   const plain = ticks.map((tick, i) => (spelled ? spelled(tick, i) : tickLabelSpec(spec, tick, unitAt(i))));
@@ -3640,7 +3658,7 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null) {
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null, unitY = null) {
   let ticks = tickValues(domain, 4);
   // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
   // zero-straddling axis that holds at least a quarter of the span gets at
@@ -3667,7 +3685,9 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
     ticks = [...ticks].sort((a, b) => a - b);
   }
   const scaleX = horizontalScale(domain, left, right);
-  const tickTexts = axisTickTexts(spec, ticks, unit, labelDecimals);
+  const notationB = unitY === null ? null : axisNotationB(spec, ticks, unit);
+  const tickTexts = notationB ? notationB.texts : axisTickTexts(spec, ticks, unit, labelDecimals);
+  if (notationB?.unitLine) parts.push(`<text x="${right}" y="${unitY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}" data-role="axis-unit">${esc(notationB.unitLine)}</text>`);
   ticks.forEach((tick, i) => {
     const x = scaleX(tick);
     if (!LAYERING_FIX) {
@@ -3723,7 +3743,7 @@ function renderGroupedDots(spec, rows) {
     f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(68, String(name).length * 12 + 30);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, null, null, base - 6);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -3800,9 +3820,10 @@ function renderHorizontal(spec, rows, mode) {
   // diverging_bar takes the same label column sized from the drawn names (house style); its
   // value-label room stays with divergingLabelMargins below, so negW/posW are not added for it.
   const tightColumn = tight || (HOUSE_STYLE_ACTIVE && spec.chart_type === "diverging_bar");
-  const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin;
+  const unitRow = axisUnitRowH(spec);
+  const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin + unitRow;
   const f = frame(spec, bodyHeight, tight ? 300 : 420);
-  const base = f.bodyTop + 4;
+  const base = f.bodyTop + 4 + unitRow;
   let left = 250, right = 955 - bracketMargin, catX = 235;
   const top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.map((r) => n(r[valueField])).filter((v) => v !== null);
@@ -3843,7 +3864,7 @@ function renderHorizontal(spec, rows, mode) {
   const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals, base - 6);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -3928,7 +3949,7 @@ function renderDumbbell(spec, rows) {
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
   const domain = extent(values, false);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, null, base - 6);
   {
     // Key: which dot is which period (start colour first, then end colour).
     const keyY = f.bodyTop + 4 + 12, KEY_PX = 6.4;
@@ -4115,9 +4136,10 @@ function renderMirroredBar(spec, rows) {
   // Vertical layout: [panel titles | period key] row, series names, rows, ticks.
   const pitch = Math.max(17, Math.min(32, Math.round(440 / Math.max(total, 1))));
   const headRow = overlay || sideBySide;
-  const headerH = (headRow ? 24 : 0) + 28;
+  const unitRow = axisUnitRowH(spec);
+  const headerH = (headRow ? 24 : 0) + 28 + unitRow;
   const f = frame(spec, headerH + total * pitch + 32);
-  const rowY = f.bodyTop + 16;
+  const rowY = f.bodyTop + 16 + unitRow;
   const namesY = rowY + (headRow ? 24 : 0);
   const plotTop = namesY + 12;
   const plotBottom = plotTop + total * pitch;
@@ -4146,18 +4168,20 @@ function renderMirroredBar(spec, rows) {
       });
     });
   });
-  const tickLabelWidths = (ticks) => ticks.map((tick, ti) => textPx(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, ticks.length))));
+  // Tick spellings of one candidate list: under notation B (zh) bare numbers on one scale, else as always.
+  const mirrorTickTexts = (ticks, unit) => axisNotationB(spec, ticks, spec.unit)?.texts ?? ticks.map((tick, ti) => tickLabelSpec(spec, tick, axisTickUnit(unit, ti, ticks.length)));
+  const tickLabelWidths = (ticks) => mirrorTickTexts(ticks, spec.unit).map(textPx);
   const fullTicks = mirroredAxis(m.maxValue, Infinity, () => []).ticks; // before any thinning
   // Room a half needs past its axis end: the widest tick label is centred on it.
   const tickRoom = Math.ceil((Math.max(...tickLabelWidths(fullTicks)) + 8) / 2);
   // The gutter may take whatever leaves each half 80px plus that room. The room
   // is measured without the unit, so a long unit shortens bars (below), never
   // the category labels.
-  const tickRoomBare = Math.ceil((Math.max(...fullTicks.map((tick) => textPx(tickLabelSpec(spec, tick, "")))) + 8) / 2);
+  const tickRoomBare = Math.ceil((Math.max(...mirrorTickTexts(fullTicks, "").map(textPx)) + 8) / 2);
   const labelRoomBare = labelBars.length ? Math.max(...labelBars.map(([, , bare]) => bare)) + 9 : 0;
   // The two "0" labels sit on the gutter's two edges; where the style puts the
   // unit on every tick (legacy) the gutter must hold both side by side.
-  const zeroLabelPx = textPx(tickLabelSpec(spec, 0, axisTickUnit(spec.unit, 0, fullTicks.length)));
+  const zeroLabelPx = textPx(mirrorTickTexts(fullTicks, spec.unit)[0]);
   let gutterW = Math.max(56, widestCategory + 24, zeroLabelPx + 8);
   let gutterText = categoryText;
   const gutterCap = Math.max(56, panelW - 2 * (80 + Math.max(labelRoomBare, tickRoomBare)));
@@ -4187,6 +4211,9 @@ function renderMirroredBar(spec, rows) {
   // Layers are collected, then painted: gridlines under bars, outlines over
   // bars, text last (text never sits on a bar: labels go beyond the bar ends).
   const heads = [], grid = [], bars = [], outlines = [], valueTexts = [], gutterLabels = [], tickLabels = [];
+  const axisTickLabelTexts = mirrorTickTexts(axis.ticks, spec.unit);
+  const unitLine = axisNotationB(spec, axis.ticks, spec.unit)?.unitLine;
+  if (unitLine) heads.push(`<text data-role="axis-unit" x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
   panelPeriods.forEach((period, pk) => {
     const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
     const gl = cx - gutterW / 2, gr = cx + gutterW / 2;
@@ -4200,7 +4227,7 @@ function renderMirroredBar(spec, rows) {
       for (const sk of [0, 1]) {
         const x = sk === 0 ? gl - tick * k : gr + tick * k;
         grid.push(`<line data-role="grid-line" x1="${px(x)}" y1="${px(plotTop)}" x2="${px(x)}" y2="${px(plotBottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, axis.ticks.length)))}</text>`);
+        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(axisTickLabelTexts[ti])}</text>`);
       }
     });
     m.categories.forEach((category, i) => {
