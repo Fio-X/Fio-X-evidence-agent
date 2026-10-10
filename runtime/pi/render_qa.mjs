@@ -27,7 +27,7 @@ import { checkSvgContrast, RENDER_QA_CONTRAST_VERSION } from "./render_qa_contra
 import { parseXml } from "./render_qa_svg.mjs";
 import { checkChoroplethValueLabels, checkHeatmapValueLabels, RENDER_QA_LABELS_VERSION } from "./render_qa_labels.mjs";
 import { joinChoroplethRows, mapWorldListEnabled, worldLabelIso3s } from "./choropleth.mjs";
-import { choroplethValueText, heatmapCellText, PALETTE } from "./viz.mjs";
+import { choroplethValueText, heatmapCellText, PALETTE, worldListBreaksFor, worldListValueText } from "./viz.mjs";
 import { sha256Hex } from "./provenance.mjs";
 
 export const RENDER_QA_REPORT_SCHEMA_VERSION = "render-qa/1.0.0";
@@ -43,7 +43,7 @@ function checkViewport(svgText, options) {
   let valueLabels = null;
   let proofOnly = false;
   if (options?.choropleth) {
-    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled });
+    valueLabels = checkChoroplethValueLabels(svgText, options.choropleth, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled, worldListText: (value, unit, kindSpec, values) => worldListValueText(value, unit, kindSpec, worldListBreaksFor(values, kindSpec)) });
   }
   if (options?.heatmap) {
     // proof only: a heatmap whose cells cannot all be labelled still renders as before; the report just does not prove the labels

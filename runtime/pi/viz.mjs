@@ -1252,6 +1252,25 @@ export function choroplethValueText(value, unit = "", spec = null) {
   return unit ? `${text} ${unit}` : text;
 }
 
+// World list rows (NEWSROOM_MAP_WORLD_LIST=1 only; the map's own labels keep choroplethValueText untouched): a value
+// just below a class boundary whose one-decimal text equals the boundary's text (1.952 -> "2.0" beside a 2 boundary)
+// would read as the next class, so that row alone gets a second decimal. Values on or above the boundary are unchanged.
+export function worldListValueText(value, unit = "", spec = null, breaks = []) {
+  const base = choroplethValueText(value, unit, spec);
+  if (!Number.isFinite(value) || Number.isInteger(value) || Math.abs(value) >= 1000 || !base) return base;
+  const text1 = value.toFixed(1);
+  for (const edge of (breaks ?? []).slice(1, -1)) {
+    if (value < edge && choroplethValueText(edge, unit, spec) === base) return base.replace(text1, value.toFixed(2));
+  }
+  return base;
+}
+
+// The same class breaks the renderer draws with, derived from the values alone (render QA calls this).
+export function worldListBreaksFor(values, spec = null) {
+  const nums = (values ?? []).map(Number).filter(Number.isFinite);
+  return classBreaks(nums, 5, { integer: Boolean(spec && specValueKind(spec)) && nums.every(Number.isInteger) }).breaks;
+}
+
 // Follow-up fix (4): a zh-language page must never print the raw English
 // unit code "Mt" (million tonnes) - it must use the data's own unit family,
 // converted exactly (never approximated) into 万吨 (ten-thousand tonnes),
@@ -7749,7 +7768,7 @@ const INSET_LADDER = [
 // could not run (never treated as "no failures").
 function insetRenderQaRules(svg, spec, rows) {
   try {
-    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled });
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled, worldListText: (value, unit, kindSpec, values) => worldListValueText(value, unit, kindSpec, worldListBreaksFor(values, kindSpec)) });
     return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
   } catch {
     return null;
@@ -9480,7 +9499,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     const listIso3 = worldListIso3s(joined, spec);
     const entries = joined.filter((item) => listIso3.has(item.iso3)).map((item) => {
       const value = n(item.row[spec.value_field]) ?? 0;
-      return { item, value, cls: classifyValue(value, breaks), name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec) };
+      return { item, value, cls: classifyValue(value, breaks), name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: worldListValueText(value, spec.unit, spec, breaks) };
     });
     if (entries.length) {
       const swatchW = 10, listNameW = Math.max(...entries.map((e) => choroplethLabelWidth(e.name, font))), listValueW = Math.max(...entries.map((e) => choroplethLabelWidth(e.valueText, font)));

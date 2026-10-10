@@ -183,7 +183,7 @@ function glyphWidth(text, size) {
  *   PALETTE.grid through.
  */
 export function checkChoroplethValueLabels(svgText, options, deps) {
-  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s, worldListEnabled } = deps;
+  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s, worldListEnabled, worldListText } = deps;
   const expectedNoDataFill = String(noDataFill ?? "").toLowerCase();
   const rows = Array.isArray(options?.rows) ? options.rows : [];
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
@@ -266,10 +266,11 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     }
   }
 
+  const joinedValues = joined.map((item) => Number(item.row[value_field]));
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
-    const expectedValueText = fmt(value, unit, kindSpec);
+    const expectedValueText = worldList && typeof worldListText === "function" && !worldLabelled.has(iso3) ? worldListText(value, unit, kindSpec, joinedValues) : fmt(value, unit, kindSpec);
     if (!dataIso3ByRegion.has(iso3)) {
       failures.push({ rule: "value_label_missing_region", message: `${iso3} has a data row but no rendered choropleth-data region` });
       continue;
