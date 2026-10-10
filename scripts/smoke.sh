@@ -6,13 +6,7 @@ node --check runtime/pi/cartography.mjs
 node --check runtime/pi/basemap_registry.mjs
 node --check runtime/pi/flow_layout.mjs
 node --check runtime/pi/movement_track.mjs
-node --check runtime/pi/quality.mjs
-node --check runtime/pi/flow_aggregation.mjs
-node --check runtime/pi/domain_layers.mjs
-node --check runtime/pi/scene.mjs
-node --check runtime/pi/scene_solver.mjs
 node --check runtime/pi/label_layout.mjs
-node --check runtime/pi/render_router.mjs
 node --check runtime/gis/backend_registry.mjs
 node --check runtime/gis/ai_visual_compiler.mjs
 node --check runtime/visual/runtime_registry.mjs
@@ -34,7 +28,6 @@ node --check runtime/web/render_request.mjs
 node --check runtime/pi/backend_policy.mjs
 node --check runtime/pi/visual_backends.mjs
 node --check runtime/pi/visual_skill_bundle.mjs
-node --check runtime/pi/pro_export.mjs
 node --check runtime/pi/net.mjs
 node --check runtime/pi/provenance.mjs
 node --check runtime/pi/infographic.mjs
@@ -87,13 +80,8 @@ node scripts/test_trajectory_magazine_v16.mjs
 node scripts/test_ais_local_cartography_v16.mjs
 node scripts/test_ais_local_cartography_v17.mjs
 node scripts/test_movement_track_v18.mjs
-node scripts/test_quality_v161.mjs
 node scripts/test_basemap_registry_v17.mjs
-node scripts/test_flow_aggregation_v19.mjs
-node scripts/test_domain_layers_v110.mjs
-node scripts/test_visual_scene_v111.mjs
 node scripts/test_label_layout_v112.mjs
-node scripts/test_renderer_router_v113.mjs
 node scripts/test_gis_backend_v115.mjs
 node scripts/test_ai_visual_compiler_v115.mjs
 python3 scripts/runtime_health.py --output outputs/runtime-health.json >/dev/null
@@ -133,7 +121,6 @@ node scripts/test_backend_router_v123.mjs
 node scripts/test_render_cache_v124.mjs
 node scripts/generate_backend_qualification_plan.mjs >/dev/null
 python3 scripts/test_python_gis_backend_v115.py
-node scripts/test_pro_finish_v114.mjs
 python3 scripts/test_cartographic_raster_v15.py
 python3 scripts/test_trajectory_raster_v16.py
 node scripts/test_explanatory.mjs

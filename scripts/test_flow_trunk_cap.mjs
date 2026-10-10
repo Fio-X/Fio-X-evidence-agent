@@ -3,11 +3,11 @@
 //  - the 15-source fixture and a 15-branch cluster whose minimum widths alone used to give an 18 px trunk both stay at <= 12 px;
 //  - the one width scale (trunk width = sum of its branch widths) still holds;
 //  - render QA fails a trunk path wider than 12 px (red test with an 18 px SVG) and leaves every SVG without trunks untouched;
-//  - the old picture knob NEWSROOM_FLOW_TRUNK_MAX_W is gone (any value renders the same);
+//  - the trunk cap is fixed: no environment variable sets a trunk width or maximum;
 //  - D off (default, C only, labels off): byte-identical to 1296164.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,9 +36,8 @@ assert.ok(wCluster <= 12.01 && wCluster > 11, `cluster of 15: the widest trunk i
 // the one scale: the trunk is the sum of its branches' widths (to the 1-decimal rounding of each printed width)
 const sum = branchWidths(cluster).reduce((t, w) => t + w, 0);
 assert.ok(Math.abs(sum - wCluster) <= 0.05 * branchWidths(cluster).length + 0.1, `trunk ${wCluster} is the sum of its branches ${sum.toFixed(2)}`);
-// the old knob does nothing
-for (const v of ["12", "14", "0", "true"]) { process.env.NEWSROOM_FLOW_TRUNK_MAX_W = v; assert.equal(render(), render.call(null), "knob"); assert.equal(Math.max(...trunkWidths(render())), wFixture, `NEWSROOM_FLOW_TRUNK_MAX_W=${v} no longer changes anything`); }
-delete process.env.NEWSROOM_FLOW_TRUNK_MAX_W;
+// the cap is not tunable: the renderer reads no env var that names a trunk maximum or width
+assert.doesNotMatch(readFileSync(join(ROOT, "runtime/pi/viz.mjs"), "utf8"), /process\.env\.\w*TRUNK\w*(?:MAX|WIDTH|_W)\b/);
 
 // render QA: a trunk wider than 12 px is reported; 12 passes; an SVG with no trunk is not touched
 const qa = (svg) => runRenderQa({ desktop: svg });

@@ -53,12 +53,11 @@ const SWITCHES = [
   { name: "PAGE_QA_NESTED_CLIP", env: "NEWSROOM_PAGE_QA_NESTED_CLIP" }, // page check: refuses only (text clipped by a nested svg)
   { name: "PAGE_MODULE_ORDER_CHECK", env: "NEWSROOM_PAGE_MODULE_ORDER_CHECK" }, // page check: refuses only (module numbers out of reading order)
   { name: "SCATTER_PAIRED", env: "NEWSROOM_SCATTER_PAIRED_MEASURES" }, // refuses only; scatter calls are checked per axis, every forged case must still be refused with it on
-  { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
 const PROPOSED_16 = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
 const CONFIGS = [
   { name: "off", env: {} },
-  ...SWITCHES.map((s) => ({ name: s.name + (s.pending ? "(pending)" : ""), env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
+  ...SWITCHES.map((s) => ({ name: s.name, env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
   { name: "all-on", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])) },
   { name: "all-on@visual-story", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])), profile: "visual-story" },
   // The proposed sets for the in-session simulation (14 from the 2b allow list + contract text + precheck-all, then + the three checks).
@@ -695,7 +694,7 @@ for (const c of CASES) {
 const cell = (r) => (!r ? "." : r.status === "PASS" ? (r.subskips ? "p" :"P") : r.status === "SKIP" ? "s" : "F");
 const names = CONFIGS.map((c) => c.name);
 console.log(`\nspeed-switch gate matrix (P pass, p pass with a skipped sub-case, F fail, s skip, . not run); configurations in column order:`);
-names.forEach((n, i) => console.log(`  ${String(i + 1).padStart(2)}  ${n}${SWITCHES.find((s) => n.startsWith(s.name))?.pending ? "  [switch not implemented: ignored today]" : ""}`));
+names.forEach((n, i) => console.log(`  ${String(i + 1).padStart(2)}  ${n}`));
 console.log(`\n  case  ${names.map((_, i) => String(i + 1).padStart(2)).join(" ")}   title`);
 let failures = 0;
 for (const c of CASES) {
