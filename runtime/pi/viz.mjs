@@ -3458,7 +3458,44 @@ export function axisNotationB(spec, ticks, unit) {
   const texts = ticks.map((t) => (t === 0 || power === 0 ? String(Number(t.toFixed(6))) : halfUpFixed(t, power, 3, true).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")));
   const unitName = unit === "%" ? "%" : (unit ?? "");
   const line = `${suffix}${unitName}`;
-  return { texts, unitLine: line ? `单位：${line}` : null };
+  return { texts, unitLine: line ? `单位：${line}` : null, scale: { power, suffix } };
+}
+// NEWSROOM_AXIS_NICE_MAX=1 (exact): the value axis ends on a whole tick. The domain's top moves up to the next multiple of the
+// tick step (a negative bottom moves down likewise), so the last gridline sits at the end of the axis and the longest bar no
+// longer stops between two ticks. Off, the domain is returned untouched.
+export function niceAxisDomain(domain) {
+  if (process.env.NEWSROOM_AXIS_NICE_MAX !== "1" || !domain.every((d) => Number.isFinite(d))) return domain;
+  let [lo, hi] = domain;
+  const clean = (x) => Number(x.toPrecision(12));
+  for (let pass = 0; pass < 3; pass++) {
+    const ticks = tickValues([lo, hi], 4);
+    if (ticks.length < 2) break;
+    const step = ticks[1] - ticks[0];
+    if (!(step > 0)) break;
+    const nhi = clean(Math.ceil(hi / step - 1e-9) * step);
+    const nlo = lo < 0 ? clean(Math.floor(lo / step + 1e-9) * step) : lo;
+    if (nhi === hi && nlo === lo) break;
+    hi = nhi; lo = nlo;
+  }
+  return [lo, hi];
+}
+// NEWSROOM_TYPESET_VALUE_LABEL_AXIS=1 (exact, with notation B, zh only): the bar-side value labels are written in the axis's
+// own scale (axis 万 -> labels in 万), without a unit: the unit line above the axis says it once. One shared decimal count
+// from the labelled values (spec.decimals wins), never lower than what keeps two different values apart (raiseSharedDecimals).
+// Returns null when it does not apply; callers then draw the label they always drew.
+export function axisLabelPlan(spec, values, ticks, unit) {
+  if (process.env.NEWSROOM_TYPESET_VALUE_LABEL_AXIS !== "1") return null;
+  const b = axisNotationB(spec, ticks, unit);
+  if (!b) return null;
+  const { power } = b.scale;
+  const div = 10 ** power;
+  const finite = values.filter((v) => Number.isFinite(v));
+  const explicit = spec?.decimals;
+  const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+  const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+  const start = Number.isInteger(explicit) && explicit >= 0 && explicit <= 3 ? explicit : auto;
+  const decimals = raiseSharedDecimals(finite, start, div);
+  return { scale: b.scale, decimals, text: (v) => halfUpFixed(v, power, decimals, true) };
 }
 export function axisTickTexts(spec, ticks, unit, labelDecimals = null, { unitOnEvery = false, spelled = null } = {}) {
   const unitAt = (i) => (unitOnEvery ? unit : axisTickUnit(unit, i, ticks.length));
@@ -3658,7 +3695,7 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null, unitY = null) {
+function horizontalAxisTicks(domain, frameW = null) {
   let ticks = tickValues(domain, 4);
   // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
   // zero-straddling axis that holds at least a quarter of the span gets at
@@ -3684,6 +3721,10 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
     }
     ticks = [...ticks].sort((a, b) => a - b);
   }
+  return ticks;
+}
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null, unitY = null) {
+  const ticks = horizontalAxisTicks(domain, frameW);
   const scaleX = horizontalScale(domain, left, right);
   const notationB = unitY === null ? null : axisNotationB(spec, ticks, unit);
   const tickTexts = notationB ? notationB.texts : axisTickTexts(spec, ticks, unit, labelDecimals);
@@ -3726,7 +3767,8 @@ function renderGroupedDots(spec, rows) {
   const base = f.bodyTop + 34;
   const left = 250, right = 955, top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = rows.map((row) => n(row[valueField])).filter((value) => value !== null);
-  const domain = extent(values, true);
+  const domain = niceAxisDomain(extent(values, true));
+  const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, null), spec.unit);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
   const renderedAnnotations = new Set();
@@ -3762,7 +3804,7 @@ function renderGroupedDots(spec, rows) {
       const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5.5" fill="${color}"/>`);
-      const label = fmtSpec(spec, value, spec.label_unit ?? "");
+      const label = labelPlan ? labelPlan.text(value) : fmtSpec(spec, value, spec.label_unit ?? "");
       const labelWidth = Math.max(24, textUnits(label) * 6.8);
       const canPlaceRight = x + 9 + labelWidth <= right;
       const canPlaceLeft = x - 9 - labelWidth >= left;
@@ -3793,11 +3835,11 @@ function renderGroupedDots(spec, rows) {
 // (negative bars) and right (positive bars) edge for the widest such label plus
 // its `gap` from the bar, measured on the label texts as they are drawn, so a
 // label never has to move inside a bar that reaches the plot edge.
-function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap) {
+function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap, labelPlan = null) {
   const PX = 7.5; // per text unit; bold 12px digits and "%" run wider than the 6.4 the label column uses
   const widest = (pred) => Math.ceil(Math.max(0, ...sorted.map((row, i) => {
     const v = n(row[valueField]);
-    return v === null || !pred(v) ? 0 : textUnits(fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
+    return v === null || !pred(v) ? 0 : textUnits(labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
   })));
   const neg = widest((v) => v < 0), pos = widest((v) => v >= 0);
   return { neg: neg ? neg + gap : 0, pos: pos ? pos + gap : 0 };
@@ -3831,6 +3873,9 @@ function renderHorizontal(spec, rows, mode) {
   // count (see resolveChartDecimals) - resolved once, up front, from every
   // value the chart will actually display, not per-label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  const domain = niceAxisDomain(extent(values, true));
+  const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
+  const labelText = (v, unit) => (labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, unit, labelDecimals));
   let categoryLabels = null;
   if (tightColumn) {
     const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
@@ -3847,7 +3892,7 @@ function renderHorizontal(spec, rows, mode) {
       const cut = space > head.length * 0.4 ? space : head.length;
       return [name.slice(0, cut).trimEnd(), name.slice(cut).trimStart()];
     });
-    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: fmtSpec(spec, v, i > 0 ? "" : spec.unit, labelDecimals) }; });
+    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: labelText(v, i > 0 ? "" : spec.unit) }; });
     const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
     const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
     catX = 54 + catW;
@@ -3858,10 +3903,9 @@ function renderHorizontal(spec, rows, mode) {
     } else left = catX + 15;
   }
   if (spec.chart_type === "diverging_bar") {
-    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9);
+    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9, labelPlan);
     left += margins.neg; right -= margins.pos;
   }
-  const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
   addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals, base - 6);
@@ -3908,11 +3952,11 @@ function renderHorizontal(spec, rows, mode) {
       // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${anyHighlight && highlighted ? 700 : 600}" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${anyHighlight && highlighted ? 700 : 600}" fill="${PALETTE.ink}">${esc(labelText(value, rowUnit))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(labelText(value, rowUnit))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout }));
   });
@@ -3947,7 +3991,8 @@ function renderDumbbell(spec, rows) {
   const base = f.bodyTop + 4 + DUMBBELL_KEY_H;
   const left = 250, right = 945, top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
-  const domain = extent(values, false);
+  const domain = niceAxisDomain(extent(values, false));
+  const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
   const scale = horizontalScale(domain, left, right);
   addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, null, base - 6);
   {
@@ -3971,7 +4016,7 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
+    dumbbellValueLabels(x1, x2, a, b, labelPlan ? labelPlan.text(a) : fmtSpec(spec, a, spec.unit), labelPlan ? labelPlan.text(b) : fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -4157,6 +4202,10 @@ function renderMirroredBar(spec, rows) {
   const widestCategory = Math.max(0, ...categoryText.map((text, i) => (gutterShown(i) ? textPx(text) : 0)));
   // [value the label sits beyond, its width, its width without the unit]
   const labelBars = [];
+  // K202: the labels are written in the axis's scale. The first estimate (for the label room) uses the unthinned ticks; the
+  // drawn labels use the final axis (below), whose top tick can differ only at a 万/亿 boundary.
+  const labelPlan0 = axisLabelPlan(spec, printed, mirroredAxis(m.maxValue, Infinity, () => []).ticks, spec.unit);
+  const mirrorLabel = (plan, value, pk, sk, i, bare = false) => (plan ? plan.text(value) : fmtSpec(spec, value, bare ? "" : labelUnit(pk, sk, i), decimals));
   panelPeriods.forEach((period, pk) => {
     m.categories.forEach((category, i) => {
       if (!labelled(category)) return;
@@ -4164,7 +4213,7 @@ function renderMirroredBar(spec, rows) {
         const value = m.valueAt(category, series, period);
         if (value === null) return;
         const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
-        labelBars.push([Math.max(value, otherValue ?? 0), textPx(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals)), textPx(fmtSpec(spec, value, "", decimals))]);
+        labelBars.push([Math.max(value, otherValue ?? 0), textPx(mirrorLabel(labelPlan0, value, pk, sk, i)), textPx(mirrorLabel(labelPlan0, value, pk, sk, i, true))]);
       });
     });
   });
@@ -4213,6 +4262,7 @@ function renderMirroredBar(spec, rows) {
   const heads = [], grid = [], bars = [], outlines = [], valueTexts = [], gutterLabels = [], tickLabels = [];
   const axisTickLabelTexts = mirrorTickTexts(axis.ticks, spec.unit);
   const unitLine = axisNotationB(spec, axis.ticks, spec.unit)?.unitLine;
+  const labelPlan = axisLabelPlan(spec, printed, axis.ticks, spec.unit);
   if (unitLine) heads.push(`<text data-role="axis-unit" x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
   panelPeriods.forEach((period, pk) => {
     const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
@@ -4253,7 +4303,7 @@ function renderMirroredBar(spec, rows) {
         }
         if (value !== null && labelled(category)) {
           const reach = Math.max(length, otherLength);
-          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals))}</text>`);
+          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(mirrorLabel(labelPlan, value, pk, sk, i))}</text>`);
         }
       });
     });
