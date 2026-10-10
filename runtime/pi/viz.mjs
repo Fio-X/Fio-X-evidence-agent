@@ -1857,7 +1857,7 @@ function emphasisHint(spec, named) {
 
 // NEWSROOM_ZH_ROUTE_DISCLOSURE=1 (exact "1", default off): a negated route statement in Chinese counts as the abstract-OD disclosure
 // ("不是实际资金路线", "并非……路线", "不代表……路线"; 路径 too). A bare 关系 does not count, and an affirmative statement still warns.
-const ZH_ROUTE_DISCLOSURE = /(?:不是|并不是|并非|不代表|不等于)[^，。；、！？,.;!?\s]{0,8}?(?:路线|路径)/;
+const ZH_ROUTE_DISCLOSURE = /(?:不是|并不是|并非|不代表|不等于)[^，。；、！？,.;!?\s而但却是]{0,8}?(?:路线|路径)(?=[，。；、！？,.;!?\s]|$)/;
 function zhRouteDisclosure(note) { return process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE === "1" && ZH_ROUTE_DISCLOSURE.test(String(note ?? "")); }
 export function lintVizSpec(spec, rows, context = {}) {
   const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
