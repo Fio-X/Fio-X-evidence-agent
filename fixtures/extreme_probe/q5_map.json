@@ -1,0 +1,701 @@
+{
+"note": "topic 5 inflation 2024, 174 countries",
+"rows": [
+{
+"iso3": "ARG",
+"infl": 219.88
+},
+{
+"iso3": "SSD",
+"infl": 91.44
+},
+{
+"iso3": "TUR",
+"infl": 58.51
+},
+{
+"iso3": "PSE",
+"infl": 53.67
+},
+{
+"iso3": "LBN",
+"infl": 45.24
+},
+{
+"iso3": "NGA",
+"infl": 33.24
+},
+{
+"iso3": "IRN",
+"infl": 32.46
+},
+{
+"iso3": "MWI",
+"infl": 32.18
+},
+{
+"iso3": "SLE",
+"infl": 28.63
+},
+{
+"iso3": "EGY",
+"infl": 28.27
+},
+{
+"iso3": "AGO",
+"infl": 28.24
+},
+{
+"iso3": "HTI",
+"infl": 26.95
+},
+{
+"iso3": "LAO",
+"infl": 23.13
+},
+{
+"iso3": "GHA",
+"infl": 22.85
+},
+{
+"iso3": "ETH",
+"infl": 21.04
+},
+{
+"iso3": "BDI",
+"infl": 20.21
+},
+{
+"iso3": "SUR",
+"infl": 16.23
+},
+{
+"iso3": "ZMB",
+"infl": 14.99
+},
+{
+"iso3": "STP",
+"infl": 14.35
+},
+{
+"iso3": "PAK",
+"infl": 12.63
+},
+{
+"iso3": "GMB",
+"infl": 11.56
+},
+{
+"iso3": "BGD",
+"infl": 10.47
+},
+{
+"iso3": "UZB",
+"infl": 9.63
+},
+{
+"iso3": "NER",
+"infl": 9.07
+},
+{
+"iso3": "TCD",
+"infl": 8.9
+},
+{
+"iso3": "KAZ",
+"infl": 8.69
+},
+{
+"iso3": "RUS",
+"infl": 8.43
+},
+{
+"iso3": "LBR",
+"infl": 8.21
+},
+{
+"iso3": "GIN",
+"infl": 8.12
+},
+{
+"iso3": "MDG",
+"infl": 7.61
+},
+{
+"iso3": "TUN",
+"infl": 7.21
+},
+{
+"iso3": "COL",
+"infl": 6.61
+},
+{
+"iso3": "UKR",
+"infl": 6.5
+},
+{
+"iso3": "ATG",
+"infl": 6.2
+},
+{
+"iso3": "MNG",
+"infl": 6.2
+},
+{
+"iso3": "LSO",
+"infl": 6.11
+},
+{
+"iso3": "ISL",
+"infl": 5.86
+},
+{
+"iso3": "BLR",
+"infl": 5.79
+},
+{
+"iso3": "ROU",
+"infl": 5.72
+},
+{
+"iso3": "JAM",
+"infl": 5.41
+},
+{
+"iso3": "BOL",
+"infl": 5.1
+},
+{
+"iso3": "COM",
+"infl": 5.05
+},
+{
+"iso3": "KGZ",
+"infl": 5
+},
+{
+"iso3": "IND",
+"infl": 4.95
+},
+{
+"iso3": "URY",
+"infl": 4.85
+},
+{
+"iso3": "MEX",
+"infl": 4.72
+},
+{
+"iso3": "NPL",
+"infl": 4.69
+},
+{
+"iso3": "MDA",
+"infl": 4.68
+},
+{
+"iso3": "SRB",
+"infl": 4.67
+},
+{
+"iso3": "NIC",
+"infl": 4.62
+},
+{
+"iso3": "HND",
+"infl": 4.61
+},
+{
+"iso3": "CMR",
+"infl": 4.53
+},
+{
+"iso3": "KEN",
+"infl": 4.49
+},
+{
+"iso3": "BRA",
+"infl": 4.37
+},
+{
+"iso3": "ZAF",
+"infl": 4.36
+},
+{
+"iso3": "SLB",
+"infl": 4.32
+},
+{
+"iso3": "CHL",
+"infl": 4.3
+},
+{
+"iso3": "NAM",
+"infl": 4.24
+},
+{
+"iso3": "BFA",
+"infl": 4.19
+},
+{
+"iso3": "MOZ",
+"infl": 4.08
+},
+{
+"iso3": "DZA",
+"infl": 4.05
+},
+{
+"iso3": "FJI",
+"infl": 3.89
+},
+{
+"iso3": "PRY",
+"infl": 3.84
+},
+{
+"iso3": "POL",
+"infl": 3.79
+},
+{
+"iso3": "GNB",
+"infl": 3.77
+},
+{
+"iso3": "HUN",
+"infl": 3.7
+},
+{
+"iso3": "VCT",
+"infl": 3.63
+},
+{
+"iso3": "VNM",
+"infl": 3.62
+},
+{
+"iso3": "MUS",
+"infl": 3.6
+},
+{
+"iso3": "EST",
+"infl": 3.52
+},
+{
+"iso3": "MKD",
+"infl": 3.49
+},
+{
+"iso3": "CIV",
+"infl": 3.45
+},
+{
+"iso3": "NLD",
+"infl": 3.35
+},
+{
+"iso3": "MNE",
+"infl": 3.34
+},
+{
+"iso3": "UGA",
+"infl": 3.32
+},
+{
+"iso3": "DOM",
+"infl": 3.3
+},
+{
+"iso3": "BLZ",
+"infl": 3.29
+},
+{
+"iso3": "GBR",
+"infl": 3.27
+},
+{
+"iso3": "MLI",
+"infl": 3.21
+},
+{
+"iso3": "PHL",
+"infl": 3.21
+},
+{
+"iso3": "TON",
+"infl": 3.18
+},
+{
+"iso3": "AUS",
+"infl": 3.17
+},
+{
+"iso3": "NOR",
+"infl": 3.15
+},
+{
+"iso3": "BEL",
+"infl": 3.14
+},
+{
+"iso3": "COG",
+"infl": 3.09
+},
+{
+"iso3": "ISR",
+"infl": 3.07
+},
+{
+"iso3": "TZA",
+"infl": 3.06
+},
+{
+"iso3": "HRV",
+"infl": 2.97
+},
+{
+"iso3": "USA",
+"infl": 2.95
+},
+{
+"iso3": "AUT",
+"infl": 2.94
+},
+{
+"iso3": "GNQ",
+"infl": 2.92
+},
+{
+"iso3": "NZL",
+"infl": 2.92
+},
+{
+"iso3": "GUY",
+"infl": 2.9
+},
+{
+"iso3": "KWT",
+"infl": 2.9
+},
+{
+"iso3": "GTM",
+"infl": 2.87
+},
+{
+"iso3": "TGO",
+"infl": 2.86
+},
+{
+"iso3": "SWE",
+"infl": 2.84
+},
+{
+"iso3": "BWA",
+"infl": 2.82
+},
+{
+"iso3": "BTN",
+"infl": 2.76
+},
+{
+"iso3": "SVK",
+"infl": 2.76
+},
+{
+"iso3": "ESP",
+"infl": 2.75
+},
+{
+"iso3": "DMA",
+"infl": 2.74
+},
+{
+"iso3": "GRC",
+"infl": 2.74
+},
+{
+"iso3": "JPN",
+"infl": 2.74
+},
+{
+"iso3": "IRQ",
+"infl": 2.61
+},
+{
+"iso3": "MRT",
+"infl": 2.49
+},
+{
+"iso3": "KIR",
+"infl": 2.46
+},
+{
+"iso3": "BGR",
+"infl": 2.45
+},
+{
+"iso3": "CZE",
+"infl": 2.44
+},
+{
+"iso3": "PRT",
+"infl": 2.42
+},
+{
+"iso3": "SGP",
+"infl": 2.39
+},
+{
+"iso3": "CAN",
+"infl": 2.38
+},
+{
+"iso3": "KOR",
+"infl": 2.32
+},
+{
+"iso3": "DEU",
+"infl": 2.26
+},
+{
+"iso3": "PLW",
+"infl": 2.23
+},
+{
+"iso3": "ALB",
+"infl": 2.22
+},
+{
+"iso3": "AZE",
+"infl": 2.21
+},
+{
+"iso3": "IDN",
+"infl": 2.18
+},
+{
+"iso3": "WSM",
+"infl": 2.17
+},
+{
+"iso3": "LBY",
+"infl": 2.13
+},
+{
+"iso3": "DJI",
+"infl": 2.11
+},
+{
+"iso3": "IRL",
+"infl": 2.11
+},
+{
+"iso3": "TLS",
+"infl": 2.06
+},
+{
+"iso3": "LUX",
+"infl": 2.05
+},
+{
+"iso3": "PER",
+"infl": 2.01
+},
+{
+"iso3": "FRA",
+"infl": 2
+},
+{
+"iso3": "SVN",
+"infl": 1.97
+},
+{
+"iso3": "MYS",
+"infl": 1.83
+},
+{
+"iso3": "CYP",
+"infl": 1.8
+},
+{
+"iso3": "RWA",
+"infl": 1.77
+},
+{
+"iso3": "HKG",
+"infl": 1.73
+},
+{
+"iso3": "SAU",
+"infl": 1.69
+},
+{
+"iso3": "ARE",
+"infl": 1.66
+},
+{
+"iso3": "MLT",
+"infl": 1.65
+},
+{
+"iso3": "XKX",
+"infl": 1.62
+},
+{
+"iso3": "FIN",
+"infl": 1.57
+},
+{
+"iso3": "JOR",
+"infl": 1.56
+},
+{
+"iso3": "ECU",
+"infl": 1.55
+},
+{
+"iso3": "CAF",
+"infl": 1.48
+},
+{
+"iso3": "BRB",
+"infl": 1.45
+},
+{
+"iso3": "MDV",
+"infl": 1.41
+},
+{
+"iso3": "DNK",
+"infl": 1.37
+},
+{
+"iso3": "LVA",
+"infl": 1.27
+},
+{
+"iso3": "QAT",
+"infl": 1.27
+},
+{
+"iso3": "SMR",
+"infl": 1.24
+},
+{
+"iso3": "GAB",
+"infl": 1.17
+},
+{
+"iso3": "BEN",
+"infl": 1.16
+},
+{
+"iso3": "VUT",
+"infl": 1.14
+},
+{
+"iso3": "GEO",
+"infl": 1.11
+},
+{
+"iso3": "GRD",
+"infl": 1.09
+},
+{
+"iso3": "CHE",
+"infl": 1.06
+},
+{
+"iso3": "CPV",
+"infl": 1.05
+},
+{
+"iso3": "MAR",
+"infl": 0.99
+},
+{
+"iso3": "ITA",
+"infl": 0.98
+},
+{
+"iso3": "BHR",
+"infl": 0.92
+},
+{
+"iso3": "SLV",
+"infl": 0.85
+},
+{
+"iso3": "KHM",
+"infl": 0.81
+},
+{
+"iso3": "SEN",
+"infl": 0.8
+},
+{
+"iso3": "LTU",
+"infl": 0.72
+},
+{
+"iso3": "PAN",
+"infl": 0.69
+},
+{
+"iso3": "MAC",
+"infl": 0.67
+},
+{
+"iso3": "PNG",
+"infl": 0.6
+},
+{
+"iso3": "OMN",
+"infl": 0.59
+},
+{
+"iso3": "TTO",
+"infl": 0.53
+},
+{
+"iso3": "BHS",
+"infl": 0.41
+},
+{
+"iso3": "THA",
+"infl": 0.4
+},
+{
+"iso3": "SYC",
+"infl": 0.31
+},
+{
+"iso3": "ARM",
+"infl": 0.27
+},
+{
+"iso3": "CHN",
+"infl": 0.22
+},
+{
+"iso3": "BRN",
+"infl": -0.39
+},
+{
+"iso3": "CRI",
+"infl": -0.41
+},
+{
+"iso3": "LKA",
+"infl": -0.43
+},
+{
+"iso3": "LCA",
+"infl": -0.67
+},
+{
+"iso3": "AFG",
+"infl": -6.6
+}
+]
+}

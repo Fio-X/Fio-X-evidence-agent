@@ -44,6 +44,7 @@ import { catalogLieflat, lieflatSkillMetadata, renderLieflatPublication, writeLi
 import { resolveReferenceLayers } from "./map_reference_layers.mjs";
 import { bindClaimsToChart, computationInputState, numericFieldsOfSpec } from "./claim_binding.mjs";
 import { runShadow, shadowAsOf, shadowChecksEnabled, shadowInfographicNumbers, shadowVizNumbers } from "./shadow.mjs";
+import { extremeProbeEnabled, writeExtremeProbe } from "./extreme_probe.mjs";
 import { REGISTRY_DATE_FIELDS } from "./asof_probe.mjs";
 import { numberWordIn } from "./number_words.mjs";
 import { DERIVED_ROWS_PATH, deriveComputationInputs, materializeComputationRowTables, recordedInputState, safeDuckDbDiagnostic } from "./computation_rows.mjs";
@@ -4657,6 +4658,9 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         ...(spec.source_note_program === true ? { source_note_program: true } : {}),
         alt: spec.alt,
       });
+      // NEWSROOM_EXTREME_PROBE=1 (default off): record-only diagnosis of a value far from the rest, into shadow/. Nothing is
+      // returned to the model, written to the manifest, or hashed; a failure here never touches the result.
+      if (extremeProbeEnabled()) await runShadow(() => writeExtremeProbe({ root: artifactRoot(), spec, rows, planRef: params.plan_ref, dataHash: currentHash }));
       // NEWSROOM_SANKEY_OTHER_NOTE=1: say which nodes the merged "other" node holds (names only).
       const mergedNote = sankeyOtherNoteEnabled() && (spec.chart_type === "sankey" || spec.chart_type === "alluvial")
         ? sankeyMergeSummary(spec, rows).map((m: { label: string; column: string; members: string[] }) => `\nMerged nodes: ${m.label} (${m.column}) holds ${m.members.join(", ")}`).join("")
