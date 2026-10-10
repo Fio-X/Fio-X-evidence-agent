@@ -133,6 +133,12 @@ assert line == ('index.html', 'html'), (line, text[-400:])
 # (off, the declared first-turn chart still wins, exactly as today)
 line, _ = scenario(A, chart('chart-b') + page(), None)
 assert line == OLD, line
+# F4. on, an earlier round left a publication page and this round made only a new passing chart (newer than the page): the line names the new chart, not the old page.
+line, text = scenario(A + page(), B, '1')
+assert line == NEW, (line, text[-400:])
+# (off, the same two rounds keep today's line: the first turn's page-or-chart choice, never the new chart)
+line, _ = scenario(A + page(), B, None)
+assert line != NEW, line
 # G. on, nothing new this round: a passing chart from the first turn is never taken as this round's, even when it is the newer file
 # (chart-z was written after chart-a; today's line is the first candidate in path order, chart-a).
 line, _ = scenario(chart('chart-a') + chart('chart-z'), [], '1')
