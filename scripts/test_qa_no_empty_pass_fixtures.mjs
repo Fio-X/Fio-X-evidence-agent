@@ -14,7 +14,7 @@ const TABLE = [
   ["treemap", "2 treemap tiles", true], ["waffle_chart", "2 waffle cells", true], ["viz_snapshots", "2 waffle/treemap", true], ["viz_stacked_bar_100", "2 stacked segments", true],
   // red for their own reasons, not the two ordered kinds:
   ["render_qa", "other: a rotated label is unmeasured, so no text was proven", false],
-  ["viz_mirrored_bar", "other: an all-zero chart draws no bars (gridlines and legend only), a real empty finding", false],
+  ["viz_mirrored_bar", "all zero: the all-zero chart is asserted to be rejected, with both ways out in the message", true],
   ["shadow_parity", "other: byte comparison with the baseline differs by design, the switch adds extra_checks", false],
 ];
 const run = (name, on) => {

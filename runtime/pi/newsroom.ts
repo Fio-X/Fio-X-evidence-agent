@@ -31,7 +31,7 @@ import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, rea
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
 import { computationRelativePath, datasetRelativePath, sha256Hex, sourceContentHash } from "./provenance.mjs";
-import { runRenderQa } from "./render_qa.mjs";
+import { ALL_ZERO_MESSAGE, runRenderQa, valuesAllZero } from "./render_qa.mjs";
 import { assertDatasetPayload, assertEvidenceBackedStatus, assertComputationBoundToSources, assertInlineRowsHaveEvidence, assertUsableSourceRecord, createDownloadTimeoutGuard, createSourceAccessCircuit, deriveClaimVerification, evaluateClaimSupport, isSystemVerifiedClaim, requireVerifiedClaim } from "./evidence_gate.mjs";
 import { detectVisualRuntimeHealth, detectGraphExtractionRuntimeHealth, planVisualBackend, visualSkill, visualSkillForBackend, VISUAL_BACKEND_PROFILES } from "./visual_backends.mjs";
 import { evaluateVisualSemantics } from "./editorial_semantics.mjs";
@@ -925,15 +925,18 @@ function renderQaFailureText(renderQa: any, refs: { desktopSvgRef: string; mobil
     const report = renderQa.viewports[viewport];
     for (const failure of report.geometry.failures) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
     for (const failure of report.contrast.failures) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
+    // NEWSROOM_QA_NO_EMPTY_PASS=1 only: these findings used to count toward the failure total without ever being named
+    if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") for (const check of Object.values(report.extra_checks ?? {}) as any[]) for (const failure of check.failures ?? []) messages.push(`${viewport} ${failure.rule}: ${failure.message}`);
   }
   const shown = messages.slice(0, 5);
   const remainder = messages.length - shown.length;
   const more = remainder > 0 ? `\n(+${remainder} more failure(s); see ${refs.renderQaRef})` : "";
+  const allZero = process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && Object.values(renderQa.viewports).some((v: any) => v.extra_checks?.no_empty_pass?.failures?.some((f: any) => f.rule === "qa_all_values_zero"));
   const rejectedSvgs = [refs.desktopSvgRef, refs.mobileSvgRef, refs.compactSvgRef].filter((ref): ref is string => ref !== undefined).join(", ");
   return `REVISE: render QA failed (${renderQa.failure_count} failure${renderQa.failure_count === 1 ? "" : "s"})
 ${shown.map((message) => `- ${message}`).join("\n")}${more}
 No manifest was written: this render cannot be critiqued or published.
-Revise at the spec level - shorter labels, fewer categories, or another chart type - then lint and render again.
+${allZero ? ALL_ZERO_MESSAGE : "Revise at the spec level - shorter labels, fewer categories, or another chart type - then lint and render again."}
 Rejected SVGs: ${rejectedSvgs}
 Render QA report: ${refs.renderQaRef}`;
 }
@@ -4531,7 +4534,7 @@ export default function newsroomExtension(pi: ExtensionAPI) {
           : spec.chart_type === "heatmap" && process.env.NEWSROOM_HEATMAP_VALUE_LABELS === "1"
             ? { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.y_field, value_field: spec.value_field } }
             : {};
-      const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}), ...(bundle.compact !== undefined ? { compact: bundle.compact } : {}) }, renderQaOptions);
+      const renderQa = runRenderQa({ desktop: bundle.desktop, ...(mobilePages ? { mobile: bundle.mobile } : {}), ...(bundle.compact !== undefined ? { compact: bundle.compact } : {}) }, process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1" && valuesAllZero(spec, rows) ? { ...renderQaOptions, allZero: true } : renderQaOptions);
       if (!renderQa.passed) {
         const rejected = await writeRejectedRender("visualizations", key, bundle.desktop, mobilePages ? bundle.mobile : undefined, renderQa, bundle.compact);
         return textResult(renderQaFailureText(renderQa, rejected), {

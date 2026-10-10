@@ -80,12 +80,29 @@ export function viewportHasNoChartShapes(svgText) {
   }
   return true;
 }
-export function checkEmptyPasses(geometry, contrast, { heatmap = false, noChartShapes = false } = {}) {
+// Every numeric value a chart would draw is 0: nothing can be drawn, whatever the kind. The spec/rows come from the render call (the same ones the
+// renderer got); a spec with no numeric value at all is not "all zero". Only value, start and end fields count: coordinates and labels may be 0.
+export const ALL_ZERO_MESSAGE = "All the values to draw are 0, so this chart has nothing to draw. Either change the data or the metric so that it has non-zero values, or do not draw this chart and state in the text that these values are all 0.";
+export function valuesAllZero(spec, rows) {
+  const fields = ["value_field", "start_field", "end_field"].map((k) => spec?.[k]).filter((f) => typeof f === "string" && f);
+  if (!fields.length || !Array.isArray(rows)) return false;
+  let seen = 0;
+  for (const row of rows) for (const f of fields) {
+    const v = row?.[f];
+    if (v === null || v === undefined || v === "") continue;
+    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+    if (!Number.isFinite(n) || n !== 0) return false;
+    seen += 1;
+  }
+  return seen > 0;
+}
+export function checkEmptyPasses(geometry, contrast, { heatmap = false, noChartShapes = false, allZero = false } = {}) {
   const s = geometry?.summary ?? {};
   const texts = (s.texts_checked ?? 0) - (s.texts_unmeasured ?? 0);
   const population = { texts, marks: s.marks_checked ?? 0, contrast_texts: (s.texts_checked ?? 0) - (contrast?.unmeasured?.length ?? 0) };
   const failures = [];
   const notApplicable = [];
+  if (allZero) failures.push({ rule: "qa_all_values_zero", message: ALL_ZERO_MESSAGE, checked_rule: "all_values_zero" });
   for (const [rule, kind] of EMPTY_PASS_RULES) {
     // a heatmap without cell attributes (the value-label proof is off) has no taggable marks: not applicable, never a pass
     if (population[kind] <= 0 && kind === "marks" && heatmap) { notApplicable.push({ checked_rule: rule, reason: "heatmap cells carry no data-role without NEWSROOM_HEATMAP_VALUE_LABELS=1" }); continue; }
@@ -117,7 +134,7 @@ function checkViewport(svgText, options) {
   // Default-off extra checks (exact "1"): findings only; with every switch unset the report is byte-identical
   const extra = {};
   if (options?.heatmap && process.env.NEWSROOM_QA_HEATMAP_MONOTONE === "1") extra.heatmap_monotone = checkHeatmapFillMonotone(svgText, options.heatmap, { parseXml });
-  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText) });
+  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") extra.no_empty_pass = checkEmptyPasses(geometry, contrast, { heatmap: !!options?.heatmap, noChartShapes: viewportHasNoChartShapes(svgText), allZero: options?.allZero === true });
   const extraChecks = Object.keys(extra).length ? { passed: Object.values(extra).every((c) => c.passed), checks: extra } : null;
   return {
     svg_sha256: sha256Hex(svgText),
