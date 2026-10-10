@@ -452,6 +452,10 @@
   "runtime/pi/evidence_gate.mjs": {
    "group": "knowledge"
   },
+  "runtime/pi/fetch_split_probe.mjs": {
+   "group": "knowledge",
+   "note": "Report-only planner for splitting slow downloads (NEWSROOM_FETCH_SPLIT_PROBE); its diagnostic is written under runtime/, which the boundary report counts as agent-owned (cross_group)."
+  },
   "runtime/pi/claim_binding.mjs": {
    "group": "knowledge",
    "also_used_by": [
@@ -681,6 +685,10 @@
   "runtime/pi/knowledge_writer.mjs": {
    "group": "knowledge",
    "note": "Writes the claim record, computation records and query-row tables on behalf of visual tools (hand-off switch)."
+  },
+  "runtime/pi/probe_writer.mjs": {
+   "group": "agent",
+   "note": "Writes the fetch-split diagnostic files under runtime/fetch-split-probe/ on behalf of download_data (probe switch)."
   },
   "runtime/pi/decision_writer.mjs": {
    "group": "agent",
