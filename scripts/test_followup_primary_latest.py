@@ -127,11 +127,12 @@ assert line == ('chart-d.svg', 'svg'), line
 # F3. on, the new chart's manifest is older than the round's start (a file this round did not write): not taken as this round's.
 line, _ = scenario(A, chart('chart-b') + [at('visualizations/chart-b.json', -3600)], '1')
 assert line == OLD, line
-# H. on, the round produced a qualified publication page as well as a passing chart: the page comes first, as primary_artifact has it today.
+# H. on, the round produced a qualified publication page as well as a passing chart: the page comes first, as the delivery order has it when nothing is declared.
 line, text = scenario(A, chart('chart-b') + page(), '1')
 assert line == ('index.html', 'html'), (line, text[-400:])
+# (off, the declared first-turn chart still wins, exactly as today)
 line, _ = scenario(A, chart('chart-b') + page(), None)
-assert line == ('index.html', 'html'), line
+assert line == OLD, line
 # G. on, nothing new this round: a passing chart from the first turn is never taken as this round's, even when it is the newer file
 # (chart-z was written after chart-a; today's line is the first candidate in path order, chart-a).
 line, _ = scenario(chart('chart-a') + chart('chart-z'), [], '1')
