@@ -72,12 +72,35 @@ fn record_round_not_verified(
     stage: &str,
     reason: &str,
 ) -> Result<()> {
+    record_round_status(artifact, previous, "not_verified", stage, reason)
+}
+
+/// Written as soon as a follow-up has archived the previous verification, so a
+/// round killed midway never leaves the previous pass reading as current; a
+/// normal end overwrites it.
+fn record_round_in_progress(artifact: &Path, previous: Option<&str>) -> Result<()> {
+    record_round_status(
+        artifact,
+        previous,
+        "in_progress",
+        "started",
+        "this round has not finished and is not verified",
+    )
+}
+
+fn record_round_status(
+    artifact: &Path,
+    previous: Option<&str>,
+    round_status: &str,
+    stage: &str,
+    reason: &str,
+) -> Result<()> {
     let record = serde_json::json!({
         "schema_version": "0.7.0",
         "verified_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "passed": false,
         "checks": 0,
-        "round_status": "not_verified",
+        "round_status": round_status,
         "stage": stage,
         "reason": reason,
         "previous_round_file": previous,
@@ -244,7 +267,11 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
         } else {
             0
         };
-        (before, archive_previous_verification(&bundle.dir)?)
+        let archived = archive_previous_verification(&bundle.dir)?;
+        if archived.is_some() {
+            record_round_in_progress(&bundle.dir, archived.as_deref())?;
+        }
+        (before, archived)
     } else {
         (0, None)
     };
@@ -269,7 +296,11 @@ pub async fn run(args: ContinueArgs) -> Result<()> {
                     calls_before,
                     profile.as_deref(),
                 )?;
-                if crate::commands::investigate::is_complex_visual_request(&goal, split) {
+                if crate::commands::investigate::completion_chain_required(
+                    &goal,
+                    split,
+                    profile.as_deref(),
+                ) {
                     for attempt in 1..=2 {
                         if completion_gaps.is_empty() {
                             break;
