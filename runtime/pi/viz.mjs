@@ -1855,6 +1855,10 @@ function emphasisHint(spec, named) {
   return `The title names ${names} but highlight_values is empty; suggest ${values}`;
 }
 
+// NEWSROOM_ZH_ROUTE_DISCLOSURE=1 (exact "1", default off): a negated route statement in Chinese counts as the abstract-OD disclosure
+// ("不是实际资金路线", "并非……路线", "不代表……路线"; 路径 too). A bare 关系 does not count, and an affirmative statement still warns.
+const ZH_ROUTE_DISCLOSURE = /(?:不是|并不是|并非|不代表|不等于)[^，。；、！？,.;!?\s]{0,8}?(?:路线|路径)/;
+function zhRouteDisclosure(note) { return process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE === "1" && ZH_ROUTE_DISCLOSURE.test(String(note ?? "")); }
 export function lintVizSpec(spec, rows, context = {}) {
   const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
   const unsignaledWarning = autoCategoryNames ? null : unsignaledEconomyWarning(spec, rows);
@@ -2517,7 +2521,7 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (spec.chart_type === "cartographic_flow_map") {
     const selected=selectRoutes(rows,spec);
     if (selected.length > 35) add("warning","cartographic_route_density",`${selected.length} routes compete on the same cartographic frame.`,8,"Aggregate to top routes, facet by category, or separate overview from detail.");
-    if (spec.geometry_semantics === "abstract_od" && !/(physical|tanker|pipeline|relationship|not\s+(?:actual\s+)?(?:ship\s+)?routes?)/i.test(String(spec.note ?? ""))) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
+    if (spec.geometry_semantics === "abstract_od" && !(/(physical|tanker|pipeline|relationship|not\s+(?:actual\s+)?(?:ship\s+)?routes?)/i.test(String(spec.note ?? "")) || zhRouteDisclosure(spec.note)) ) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
     if (["verified_route","observed_trajectory","network_constrained"].includes(spec.geometry_semantics) && !String(spec.route_provenance_note ?? "").trim()) add("blocker","route_provenance_missing","Physical or observed route geometry has no route provenance note.",100,"Bind route geometry to an explicit source and measurement description.");
     if(effectiveExtentMode(spec,selected)==="data"){const ex=cartographicDataExtent(spec,selected);if(ex){const adequacy=basemapAdequacy(spec.basemap_id,ex,spec.map_task??null);if(!adequacy.adequate)add("warning","basemap_detail_mismatch",`Basemap ${spec.basemap_id} is not qualified for ${adequacy.task}-scale interpretation (${adequacy.reason}).`,14,"Use a provenance-bound basemap whose registered detail class and extent cover this geographic task.");}}
   }
