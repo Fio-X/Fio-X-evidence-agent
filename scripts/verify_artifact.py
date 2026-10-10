@@ -840,6 +840,53 @@ def _choropleth_leading_number_with_scale(text: str) -> float | None:
     return number * scale
 
 
+_ZH_SCALE_SUFFIXES = (("万亿", 12), ("亿", 8), ("万", 4))
+_ZH_PLAIN_UNIT_LABEL_RE = re.compile(r"^(-?\d+\.\d) (.+)$")
+_ZH_UNIT_SCALE_RE = re.compile(r"[万亿千]|百万")
+_ZH_INTEGER_LABEL_RE = re.compile(r"^[£$€¥]?(-?\d+)(?![\d.])")
+_ZH_LABEL_RE = re.compile(r"^(-?\d+\.\d)(万亿|亿|万)(?![\u4e00-\u9fff])")
+
+
+def _choropleth_zh_scaled_label_failure(text: str, expected: float, wan_context: bool = False) -> str | None:
+    # Exact check of a Chinese 万 / 亿 / 万亿 label (runtime/pi/viz.mjs choroplethValueText with the typeset switch on).
+    # The renderer picks the suffix by the raw magnitude of the value and prints value / 10^power to one decimal, rounded
+    # half up on the shortest decimal spelling of the value. This re-derives that exact text from data-value with
+    # decimal arithmetic and requires the number and suffix to equal it - no tolerance. Returns None when the label
+    # carries no 万 / 亿 suffix (the ordinary reader applies), "" when it matches, else a mismatch description.
+    from decimal import Decimal, ROUND_HALF_UP
+    # A unit that already says 万 / 亿 / 千 / 百万 gets no second scale: the label is the plain one-decimal number, then the unit.
+    plain = _ZH_PLAIN_UNIT_LABEL_RE.match(text)
+    if plain and _ZH_UNIT_SCALE_RE.search(plain.group(2)):
+        want = format(Decimal(repr(abs(expected))).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP), "f")
+        want = ("-" if expected < 0 else "") + want
+        return "" if plain.group(1) == want else f"expected '{want}'"
+    # An integer-form label: on a map that has a value of 1万 or more, a value under 1万 is its half-up integer; otherwise the
+    # integer must be the (integer) value itself.
+    whole = _ZH_INTEGER_LABEL_RE.match(text)
+    if whole:
+        magnitude = Decimal(repr(abs(expected)))
+        if not math.isfinite(expected):
+            return f"expected a finite value, got {expected}"
+        if expected != int(expected):
+            if not (wan_context and abs(expected) < 10_000):
+                return f"expected a one-decimal label for {expected}"
+            magnitude = magnitude.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        want = ("-" if expected < 0 and magnitude != 0 else "") + format(magnitude, "f").split(".")[0]
+        return "" if whole.group(1) == want else f"expected '{want}'"
+    m = _ZH_LABEL_RE.match(text)
+    if not m:
+        return None
+    magnitude = abs(expected)
+    suffix, power = next(((sfx, pw) for sfx, pw in _ZH_SCALE_SUFFIXES if magnitude >= 10 ** pw), (None, 0))
+    if suffix is None:
+        return f"label '{text}' scales a value that is under 1万"
+    scaled = (Decimal(repr(magnitude)) / (Decimal(10) ** power)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    want = ("-" if expected < 0 else "") + format(scaled, "f")
+    if m.group(1) != want or m.group(2) != suffix:
+        return f"expected '{want}{suffix}'"
+    return ""
+
+
 def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     # Independently re-derives the choropleth value-labels proof straight
     # from one rendered viewport's SVG markup - every choropleth-data
@@ -886,6 +933,7 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
         if iso3:
             values.setdefault(iso3, []).append(_choropleth_label_body_text(body))
 
+    wan_context = any(abs(vals[0]) >= 10_000 for vals in data_values.values() if len(vals) == 1)
     for iso3, vals in data_values.items():
         if len(vals) != 1:
             failures.append(f"{iso3} has {len(vals)} choropleth-data regions with conflicting data-value attributes")
@@ -899,6 +947,11 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
             failures.append(f"{iso3} has {len(value_texts)} rendered value labels in the SVG (expected exactly 1)")
             continue
         text = value_texts[0]
+        zh_failure = _choropleth_zh_scaled_label_failure(text, expected, wan_context)
+        if zh_failure is not None:
+            if zh_failure:
+                failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
+            continue
         shown = _choropleth_leading_number_with_scale(text)
         if shown is None:
             failures.append(f"{iso3}'s rendered value label '{text}' has no readable number (missing, truncated, or malformed)")
