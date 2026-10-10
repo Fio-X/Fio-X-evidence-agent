@@ -1497,6 +1497,10 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
             }
         }
 
+        if std::env::var("NEWSROOM_QA_TICK_READBACK").as_deref() == Ok("1") {
+            verify_tick_readback_for_manifest(root, name, &manifest, report);
+        }
+
         if !lint_ref.is_empty() {
             if let Ok(lint_path) = safe_ref(root, lint_ref) {
                 if lint_path.is_file() {
@@ -2000,6 +2004,553 @@ fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
         1.0
     };
     Some(number * scale)
+}
+
+// --- NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back (K198, K200, K202) ---
+//
+// Independently re-derives, from one rendered SVG plus the data rows it was drawn from, that (T1) every axis tick's
+// text read through its suffix or the unit line's data-scale equals its data-tick-value to half a displayed digit,
+// (T2) every tick sits where that value falls on the scale fitted from the bars, (V1/V2) every value label reads as
+// its data-value and names a bar carrying the same value, and (anchor) every bar's data-value equals its data row.
+// Written fresh: it shares nothing with runtime/pi/render_qa_ticks.mjs or the Python verify_tick_readback_from_svg.
+
+const TICK_READBACK_COVERED: [&str; 2] = ["horizontal_bar", "mirrored_bar"];
+/// SVG units: about 50x the coordinate rounding, 1/80 of the narrowest grid step.
+const TICK_POSITION_TOLERANCE: f64 = 1.0;
+const TICK_LABEL_SLIDE_MAX: f64 = 40.0;
+const TICK_REL: f64 = 1e-9;
+
+#[derive(Clone, Debug, Default)]
+struct TickReadbackContext {
+    chart_type: String,
+    rows: Option<Vec<Value>>,
+    category_field: Option<String>,
+    value_field: Option<String>,
+    series_field: Option<String>,
+    period_field: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+enum TickReadbackStatus {
+    Covered,
+    Uncovered,
+}
+
+type TickAttrs = std::collections::BTreeMap<String, String>;
+
+fn tick_attrs(tag: &str) -> TickAttrs {
+    let bytes = tag.as_bytes();
+    let is_name = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b':';
+    let mut out = TickAttrs::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !is_name(bytes[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && is_name(bytes[i]) {
+            i += 1;
+        }
+        let name = &tag[start..i];
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'=' {
+            j += 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                let quote = bytes[j];
+                j += 1;
+                let value_start = j;
+                while j < bytes.len() && bytes[j] != quote {
+                    j += 1;
+                }
+                out.insert(name.to_string(), tag[value_start..j.min(bytes.len())].to_string());
+                i = (j + 1).min(bytes.len());
+            }
+        }
+    }
+    out
+}
+
+fn tick_body_text(body: &str) -> String {
+    let mut stripped = String::new();
+    let mut in_tag = false;
+    for c in body.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => stripped.push(c),
+            _ => {}
+        }
+    }
+    stripped
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+        .trim()
+        .to_string()
+}
+
+/// A plain decimal number only: [+-] digits [. digits] [e[+-]digits]; never "inf", "nan", hex or empty.
+fn tick_num(value: Option<&str>) -> Option<f64> {
+    let s = value?.trim();
+    let b = s.as_bytes();
+    let mut i = 0;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        i += 1;
+    }
+    let int_start = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    let int_digits = i - int_start;
+    let mut frac_digits = 0;
+    if i < b.len() && b[i] == b'.' {
+        i += 1;
+        let frac_start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        frac_digits = i - frac_start;
+    }
+    if int_digits == 0 && frac_digits == 0 {
+        return None;
+    }
+    if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+        i += 1;
+        if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+            i += 1;
+        }
+        let exp_start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == exp_start {
+            return None;
+        }
+    }
+    if i != b.len() {
+        return None;
+    }
+    s.parse::<f64>().ok().filter(|n| n.is_finite())
+}
+
+/// What the text shows: (mantissa, displayed decimals, attached suffix multiplier).
+fn tick_read_shown(text: &str) -> Option<(f64, usize, Option<f64>)> {
+    let t = text.trim();
+    let b = t.as_bytes();
+    let mut i = 0;
+    let mut negative = false;
+    if t.starts_with('-') {
+        negative = true;
+        i = 1;
+    } else if t.starts_with('\u{2212}') {
+        negative = true;
+        i = '\u{2212}'.len_utf8();
+    }
+    let digits_start = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == digits_start {
+        return None;
+    }
+    let mut int_text = t[digits_start..i].to_string();
+    // thousands grouping: 1-3 digits then one or more ,ddd groups
+    if i - digits_start <= 3 {
+        let mut k = i;
+        let mut grouped = String::new();
+        while k + 3 < b.len() + 0 && b[k] == b',' && b[k + 1..k + 4].iter().all(|c| c.is_ascii_digit()) {
+            grouped.push_str(&t[k + 1..k + 4]);
+            k += 4;
+        }
+        if k > i {
+            int_text.push_str(&grouped);
+            i = k;
+        }
+    }
+    let mut frac = String::new();
+    if i + 1 < b.len() && b[i] == b'.' && b[i + 1].is_ascii_digit() {
+        let start = i + 1;
+        let mut j = start;
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        frac = t[start..j].to_string();
+        i = j;
+    }
+    let mantissa_text = format!("{}{}{}", if negative { "-" } else { "" }, int_text, if frac.is_empty() { String::new() } else { format!(".{frac}") });
+    let mantissa: f64 = mantissa_text.parse().ok()?;
+    let rest = &t[i..];
+    let suffix = if rest.starts_with("\u{4e07}\u{4ebf}") {
+        Some(1e12)
+    } else if rest.starts_with('\u{4ebf}') {
+        Some(1e8)
+    } else if rest.starts_with('\u{4e07}') {
+        Some(1e4)
+    } else {
+        let after = |n: usize| rest[n..].chars().next().map_or(true, |c| !c.is_ascii_alphabetic());
+        if rest.starts_with("bn") && after(2) {
+            Some(1e9)
+        } else if rest.starts_with('m') && after(1) {
+            Some(1e6)
+        } else if rest.starts_with('k') && after(1) {
+            Some(1e3)
+        } else {
+            None
+        }
+    };
+    Some((mantissa, frac.len(), suffix))
+}
+
+fn tick_unit_word_scale(text: &str) -> f64 {
+    if text.contains("\u{4e07}\u{4ebf}") {
+        return 1e12;
+    }
+    if text.contains('\u{4ebf}') {
+        return 1e8;
+    }
+    if text.contains('\u{4e07}') {
+        return 1e4;
+    }
+    let lower = text.to_ascii_lowercase();
+    for token in lower.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        match token.trim_end_matches('s') {
+            "thousand" if token.len() >= 8 => return 1e3,
+            "million" if token.len() >= 7 => return 1e6,
+            "billion" if token.len() >= 7 => return 1e9,
+            "trillion" if token.len() >= 8 => return 1e12,
+            _ => {}
+        }
+    }
+    1.0
+}
+
+fn tick_close(a: f64, b: f64) -> bool {
+    (a - b).abs() <= TICK_REL * 1f64.max(a.abs()).max(b.abs())
+}
+
+/// (value the text shows, half a unit of its last displayed digit), both in data units.
+fn tick_shown_value(text: &str, unit_scale: f64) -> Option<(f64, f64)> {
+    let (mantissa, decimals, suffix) = tick_read_shown(text)?;
+    let mult = suffix.unwrap_or(unit_scale);
+    Some((mantissa * mult, 0.5 * 10f64.powi(-(decimals as i32)) * mult))
+}
+
+fn tick_value_text(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    }
+}
+
+fn tick_key(category: &str, series: &str, period: &str) -> String {
+    serde_json::to_string(&serde_json::json!([category, series, period])).unwrap_or_default()
+}
+
+fn tick_attr_key(attrs: &TickAttrs) -> Option<String> {
+    let category = attrs.get("data-category")?;
+    Some(tick_key(category, attrs.get("data-series").map_or("", String::as_str), attrs.get("data-period").map_or("", String::as_str)))
+}
+
+/// Every `<tag ...>` opening string (and, for text, its body) in document order.
+fn tick_elements<'a>(svg: &'a str, tag: &str, with_body: bool) -> Vec<(&'a str, &'a str)> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while let Some(rel) = svg[idx..].find(&open) {
+        let start = idx + rel;
+        let after = start + open.len();
+        idx = after;
+        if !svg[after..].starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/') {
+            continue;
+        }
+        let Some(gt) = svg[after..].find('>') else { break };
+        let tag_end = after + gt + 1;
+        if with_body {
+            let Some(close_rel) = svg[tag_end..].find(&close) else { break };
+            out.push((&svg[start..tag_end], &svg[tag_end..tag_end + close_rel]));
+            idx = tag_end + close_rel + close.len();
+        } else {
+            out.push((&svg[start..tag_end], ""));
+            idx = tag_end;
+        }
+    }
+    out
+}
+
+/// Returns the status and the (rule, message) failures. An uncovered chart type is never a pass.
+fn verify_tick_readback_from_svg(svg: &str, ctx: &TickReadbackContext) -> (TickReadbackStatus, Vec<(String, String)>) {
+    if !TICK_READBACK_COVERED.contains(&ctx.chart_type.as_str()) {
+        return (TickReadbackStatus::Uncovered, Vec::new());
+    }
+    let mut failures: Vec<(String, String)> = Vec::new();
+    let mut fail = |rule: &str, message: String| failures.push((rule.to_string(), message));
+    let mirrored = ctx.chart_type == "mirrored_bar";
+
+    let mut ticks: Vec<(TickAttrs, String)> = Vec::new();
+    let mut units: Vec<(TickAttrs, String)> = Vec::new();
+    let mut labels: Vec<(TickAttrs, String)> = Vec::new();
+    for (open_tag, body) in tick_elements(svg, "text", true) {
+        let attrs = tick_attrs(open_tag);
+        let item = (attrs.clone(), tick_body_text(body));
+        match attrs.get("data-role").map(String::as_str) {
+            Some("axis-tick-label") => ticks.push(item),
+            Some("axis-unit-line") => units.push(item),
+            Some("value-label") => labels.push(item),
+            _ => {}
+        }
+    }
+    let bars: Vec<TickAttrs> = tick_elements(svg, "rect", false)
+        .into_iter()
+        .map(|(open_tag, _)| tick_attrs(open_tag))
+        .filter(|a| a.get("data-role").map(String::as_str) == Some("data-bar"))
+        .collect();
+
+    let mut unit_scale = 1.0;
+    if units.len() > 1 {
+        fail("unit_line", format!("{} axis unit lines (expected at most 1)", units.len()));
+    }
+    if let Some((attrs, text)) = units.first() {
+        match tick_num(attrs.get("data-scale").map(String::as_str)) {
+            Some(scale) if scale > 0.0 => {
+                let words = tick_unit_word_scale(text);
+                if tick_close(scale, words) {
+                    unit_scale = scale;
+                } else {
+                    fail("unit_line", format!("axis unit line '{text}' says scale {words} but data-scale is {scale}"));
+                }
+            }
+            _ => fail("unit_line", format!("axis unit line '{text}' has no readable positive data-scale")),
+        }
+    }
+
+    let mut bar_value: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    // (key, value, x, width, side)
+    let mut geo: Vec<(String, f64, f64, f64, String)> = Vec::new();
+    if bars.is_empty() {
+        fail("bar_attrs", "the chart has no data-bar to read back against".to_string());
+    }
+    for attrs in &bars {
+        let Some(key) = tick_attr_key(attrs) else {
+            fail("bar_attrs", "a data-bar has no data-category".to_string());
+            continue;
+        };
+        let Some(value) = tick_num(attrs.get("data-value").map(String::as_str)) else {
+            fail("bar_attrs", format!("bar {key} has no readable data-value"));
+            continue;
+        };
+        let (Some(x), Some(width)) = (tick_num(attrs.get("x").map(String::as_str)), tick_num(attrs.get("width").map(String::as_str))) else {
+            fail("bar_attrs", format!("bar {key} has no numeric x/width"));
+            continue;
+        };
+        let side = attrs.get("data-side").cloned().unwrap_or_default();
+        if mirrored && side != "left" && side != "right" {
+            fail("bar_attrs", format!("bar {key} has no data-side left/right"));
+            continue;
+        }
+        if bar_value.contains_key(&key) {
+            fail("bar_attrs", format!("bar {key} appears twice"));
+            continue;
+        }
+        bar_value.insert(key.clone(), value);
+        geo.push((key, value, x, width, side));
+    }
+
+    match (&ctx.rows, &ctx.category_field, &ctx.value_field) {
+        (Some(rows), Some(category_field), Some(value_field)) => {
+            let mut row_value: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+            for row in rows {
+                let series = ctx.series_field.as_ref().map(|f| tick_value_text(row.get(f))).unwrap_or_default();
+                let period = ctx.period_field.as_ref().map(|f| tick_value_text(row.get(f))).unwrap_or_default();
+                let key = tick_key(&tick_value_text(row.get(category_field)), &series, &period);
+                let value = match row.get(value_field) {
+                    Some(Value::Number(n)) => n.as_f64().filter(|v| v.is_finite()),
+                    Some(Value::String(s)) => tick_num(Some(s)),
+                    _ => None,
+                };
+                match value {
+                    None => fail("data_anchor", format!("data row {key} has no numeric {value_field}")),
+                    Some(_) if row_value.contains_key(&key) => fail("data_anchor", format!("data row key {key} is not unique")),
+                    Some(v) => {
+                        row_value.insert(key, v);
+                    }
+                }
+            }
+            for (key, value) in &bar_value {
+                match row_value.get(key) {
+                    None => fail("data_anchor", format!("bar {key} has no data row")),
+                    Some(expected) if !tick_close(*value, *expected) => fail("data_anchor", format!("bar {key} data-value {value} differs from its data row {expected}")),
+                    _ => {}
+                }
+            }
+            for key in row_value.keys() {
+                if !bar_value.contains_key(key) {
+                    fail("data_anchor", format!("data row {key} has no bar"));
+                }
+            }
+        }
+        _ => fail("data_anchor", "no data rows or field names to anchor the bars to".to_string()),
+    }
+
+    let mut k: Option<f64> = None;
+    let mut origin: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    let reference = geo
+        .iter()
+        .filter(|g| g.1 != 0.0)
+        .fold(None::<&(String, f64, f64, f64, String)>, |best, g| match best {
+            Some(b) if b.1.abs() >= g.1.abs() => Some(b),
+            _ => Some(g),
+        });
+    match reference {
+        None => fail("tick_position", "no non-zero bar to fit the scale from".to_string()),
+        Some(reference) => {
+            let scale = reference.3 / reference.1.abs();
+            k = Some(scale);
+            for (key, value, x, width, side) in &geo {
+                if (width - scale * value.abs()).abs() > TICK_POSITION_TOLERANCE {
+                    fail("tick_position", format!("bar {key} is {width} wide but its data-value {value} implies {:.2}", scale * value.abs()));
+                }
+                if *value == 0.0 && !mirrored {
+                    continue;
+                }
+                let (zero, slot) = if mirrored {
+                    (if side == "left" { x + width } else { *x }, side.clone())
+                } else {
+                    (if *value < 0.0 { x + width } else { *x }, "bar".to_string())
+                };
+                match origin.get(&slot) {
+                    None => {
+                        origin.insert(slot, zero);
+                    }
+                    Some(existing) if (existing - zero).abs() > TICK_POSITION_TOLERANCE => fail("tick_position", format!("bar {key} starts at {zero}, the others at {existing}")),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if ticks.is_empty() {
+        fail("tick_attrs", "the chart has no axis-tick-label to read back".to_string());
+    }
+    for (attrs, text) in &ticks {
+        let Some(tv) = tick_num(attrs.get("data-tick-value").map(String::as_str)) else {
+            fail("tick_attrs", format!("tick '{text}' has no readable data-tick-value"));
+            continue;
+        };
+        let Some((shown, half)) = tick_shown_value(text, unit_scale) else {
+            fail("tick_text", format!("tick '{text}' has no readable number"));
+            continue;
+        };
+        if (shown - tv).abs() > half * (1.0 + TICK_REL) + TICK_REL * tv.abs() {
+            fail("tick_text", format!("tick '{text}' reads {shown} but data-tick-value is {tv}"));
+        }
+        let x = tick_num(attrs.get("x").map(String::as_str));
+        let tick_x = match attrs.get("data-tick-x") {
+            None => x,
+            Some(raw) => tick_num(Some(raw)),
+        };
+        let (Some(x), Some(tick_x)) = (x, tick_x) else {
+            fail("tick_position", format!("tick '{text}' has no numeric position"));
+            continue;
+        };
+        if (x - tick_x).abs() > TICK_LABEL_SLIDE_MAX {
+            fail("tick_position", format!("tick '{text}' text sits {:.1} from its tick", (x - tick_x).abs()));
+        }
+        let side = attrs.get("data-side").cloned().unwrap_or_default();
+        if mirrored && side != "left" && side != "right" {
+            fail("tick_attrs", format!("tick '{text}' has no data-side left/right"));
+            continue;
+        }
+        let slot = if mirrored { side.clone() } else { "bar".to_string() };
+        let (Some(scale), Some(zero)) = (k, origin.get(&slot).copied()) else {
+            fail("tick_position", format!("tick '{text}' position cannot be computed (no bar scale)"));
+            continue;
+        };
+        let expected = if mirrored && side == "left" { zero - scale * tv } else { zero + scale * tv };
+        if (tick_x - expected).abs() > TICK_POSITION_TOLERANCE {
+            fail("tick_position", format!("tick '{text}' is at {tick_x} but its data-tick-value {tv} belongs at {expected:.2}"));
+        }
+    }
+
+    for (attrs, text) in &labels {
+        let Some(key) = tick_attr_key(attrs) else {
+            fail("value_label_attrs", format!("value label '{text}' has no data-category"));
+            continue;
+        };
+        let Some(value) = tick_num(attrs.get("data-value").map(String::as_str)) else {
+            fail("value_label_attrs", format!("value label '{text}' has no readable data-value"));
+            continue;
+        };
+        match tick_shown_value(text, unit_scale) {
+            None => fail("value_label_text", format!("value label '{text}' has no readable number")),
+            Some((shown, half)) if (shown - value).abs() > half * (1.0 + TICK_REL) + TICK_REL * value.abs() => fail("value_label_text", format!("value label '{text}' reads {shown} but data-value is {value}")),
+            _ => {}
+        }
+        match bar_value.get(&key) {
+            None => fail("value_label_key", format!("value label '{text}' names {key}, which is not a bar")),
+            Some(bar) if !tick_close(value, *bar) => fail("value_label_key", format!("value label '{text}' carries {value} but its bar {key} is {bar}")),
+            _ => {}
+        }
+    }
+    (TickReadbackStatus::Covered, failures)
+}
+
+/// NEWSROOM_QA_TICK_READBACK=1 only. Data anchor: the rows come from the computation record the manifest names (its
+/// result_hash is bound to the lint and to manifest.data_hash, and re-hashed against the rows by the computation
+/// checks), the field names from the plan the manifest names (a content-addressed spec).
+fn verify_tick_readback_for_manifest(root: &Path, name: &str, manifest: &Value, report: &mut VerificationReport) {
+    let chart_type = manifest.get("chart_type").and_then(Value::as_str).unwrap_or("");
+    if !TICK_READBACK_COVERED.contains(&chart_type) {
+        report.warnings.push(format!("visualization {name}: tick read-back not covered for chart type {chart_type}"));
+        return;
+    }
+    let text_of = |key: &str| manifest.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+    let loaded = (|| -> Result<(Value, Value)> {
+        let comp = read_json(&safe_ref(root, &text_of("computation_ref"))?)?;
+        let plan = read_json(&safe_ref(root, &text_of("plan_ref"))?)?;
+        Ok((comp, plan))
+    })();
+    let (comp, plan) = match loaded {
+        Ok(pair) => pair,
+        Err(error) => {
+            report.error(format!("visualization {name} tick read-back could not run: {error}"));
+            return;
+        }
+    };
+    report.check(
+        comp.get("result_hash").and_then(Value::as_str) == manifest.get("data_hash").and_then(Value::as_str) && comp.get("result_hash").is_some(),
+        format!("visualization {name} tick read-back: computation rows are not the manifest's data"),
+    );
+    let field = |key: &str| plan.get(key).and_then(Value::as_str).map(str::to_string);
+    let ctx = TickReadbackContext {
+        chart_type: chart_type.to_string(),
+        rows: comp.get("rows").and_then(Value::as_array).cloned(),
+        category_field: field("category_field"),
+        value_field: field("value_field"),
+        series_field: field("series_field"),
+        period_field: field("period_field"),
+    };
+    if let Some(variants) = manifest.get("variants").and_then(Value::as_object) {
+        for (viewport, reference) in variants {
+            let Some(reference) = reference.as_str() else { continue };
+            let Ok(path) = safe_ref(root, reference) else { continue };
+            let Ok(svg) = fs::read_to_string(&path) else { continue };
+            for (rule, message) in verify_tick_readback_from_svg(&svg, &ctx).1 {
+                report.error(format!("visualization {name} {viewport} tick read-back {rule}: {message}"));
+            }
+        }
+    }
 }
 
 /// NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one rendered
@@ -8027,5 +8578,178 @@ mod tests {
         assert!(report.errors[0].contains(
             "failed its provenance chain: no download record binds this table to the PDF"
         ));
+    }
+
+    // --- NEWSROOM_QA_TICK_READBACK (K198, K200, K202): shared cases + manifest wiring ---
+
+    static TICK_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn tick_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/tick_readback")
+    }
+
+    fn tick_json(name: &str) -> Value {
+        serde_json::from_str(&fs::read_to_string(tick_dir().join(name)).unwrap()).unwrap()
+    }
+
+    fn tick_build(case: &Value, fixtures: &Value) -> (String, TickReadbackContext) {
+        let f = &fixtures[case["fixture"].as_str().unwrap()];
+        let mut svg = fs::read_to_string(tick_dir().join(f["file"].as_str().unwrap())).unwrap();
+        for edit in case.get("edits").and_then(Value::as_array).cloned().unwrap_or_default() {
+            let find = edit["find"].as_str().unwrap();
+            assert!(svg.contains(find), "edit target not found: {find}");
+            svg = svg.replacen(find, edit["replace"].as_str().unwrap(), 1);
+        }
+        let mut rows = f["rows"].as_array().unwrap().clone();
+        if let Some(extra) = case.get("rows_extra") {
+            rows.push(extra.clone());
+        }
+        let text = |v: &Value| v.as_str().map(str::to_string);
+        let mut ctx = TickReadbackContext {
+            chart_type: f["chart_type"].as_str().unwrap().to_string(),
+            rows: Some(rows),
+            category_field: text(&f["category_field"]),
+            value_field: text(&f["value_field"]),
+            series_field: text(&f["series_field"]),
+            period_field: None,
+        };
+        if let Some(over) = case.get("ctx").and_then(Value::as_object) {
+            if let Some(t) = over.get("chart_type").and_then(Value::as_str) {
+                ctx.chart_type = t.to_string();
+            }
+        }
+        for key in case.get("ctx_drop").and_then(Value::as_array).cloned().unwrap_or_default() {
+            if key.as_str() == Some("rows") {
+                ctx.rows = None;
+            }
+        }
+        (svg, ctx)
+    }
+
+    #[test]
+    fn tick_readback_shared_cases_match_expectation() {
+        let fixtures = tick_json("fixtures.json");
+        let cases = tick_json("cases.json");
+        let cases = cases.as_array().unwrap();
+        assert_eq!(cases.len(), 29);
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let (svg, ctx) = tick_build(case, &fixtures);
+            let (status, failures) = verify_tick_readback_from_svg(&svg, &ctx);
+            match case["expect"].as_str().unwrap() {
+                "green" => {
+                    assert_eq!(status, TickReadbackStatus::Covered, "{name}");
+                    assert!(failures.is_empty(), "{name}: {failures:?}");
+                }
+                "uncovered" => {
+                    assert_eq!(status, TickReadbackStatus::Uncovered, "{name}");
+                    assert!(failures.is_empty(), "{name}");
+                }
+                "red" => {
+                    let rule = case["rule"].as_str().unwrap();
+                    assert!(failures.iter().any(|(r, _)| r == rule), "{name}: wanted {rule}, got {failures:?}");
+                }
+                other => panic!("{name}: unknown expectation {other}"),
+            }
+        }
+    }
+
+    /// Writes plan/computation/svg + a manifest into a temp root and returns it.
+    fn tick_tree(fixture_key: &str, edits: &[(&str, &str)]) -> tempfile::TempDir {
+        let fixtures = tick_json("fixtures.json");
+        let f = &fixtures[fixture_key];
+        let mut svg = fs::read_to_string(tick_dir().join(f["file"].as_str().unwrap())).unwrap();
+        for (find, replace) in edits {
+            assert!(svg.contains(find));
+            svg = svg.replacen(find, replace, 1);
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for dir in ["visualizations/plans", "computations"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let mut plan = serde_json::json!({"category_field": f["category_field"], "value_field": f["value_field"]});
+        if f.get("series_field").is_some() {
+            plan["series_field"] = f["series_field"].clone();
+        }
+        fs::write(root.join("visualizations/plans/x.json"), plan.to_string()).unwrap();
+        fs::write(root.join("computations/x.json"), serde_json::json!({"rows": f["rows"], "result_hash": "h1"}).to_string()).unwrap();
+        fs::write(root.join("visualizations/x.svg"), svg).unwrap();
+        fs::write(
+            root.join("visualizations/x.json"),
+            serde_json::json!({
+                "plan_ref": "visualizations/plans/x.json",
+                "computation_ref": "computations/x.json",
+                "data_hash": "h1",
+                "chart_type": f["chart_type"],
+                "variants": {"desktop": "visualizations/x.svg"},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        temp
+    }
+
+    fn tick_manifest(root: &Path) -> Value {
+        read_json(&root.join("visualizations/x.json")).unwrap()
+    }
+
+    #[test]
+    fn tick_readback_manifest_green_and_tampered() {
+        let green = tick_tree("hb_B", &[]);
+        let mut report = VerificationReport::default();
+        verify_tick_readback_from_svg_manifest_for_test(green.path(), &mut report);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let red = tick_tree("hb_B", &[(">71万<", ">7.1万<")]);
+        let mut report = VerificationReport::default();
+        verify_tick_readback_from_svg_manifest_for_test(red.path(), &mut report);
+        assert!(!report.errors.is_empty());
+        assert!(report.errors.iter().any(|e| e.contains("tick read-back")), "{:?}", report.errors);
+    }
+
+    fn verify_tick_readback_from_svg_manifest_for_test(root: &Path, report: &mut VerificationReport) {
+        verify_tick_readback_for_manifest(root, "x.json", &tick_manifest(root), report);
+    }
+
+    #[test]
+    fn tick_readback_manifest_uncovered_type_warns_and_hash_mismatch_errors() {
+        let tree = tick_tree("hb_A", &[]);
+        let mut manifest = tick_manifest(tree.path());
+        manifest["chart_type"] = Value::String("line".into());
+        let mut report = VerificationReport::default();
+        verify_tick_readback_for_manifest(tree.path(), "x.json", &manifest, &mut report);
+        assert!(report.errors.is_empty());
+        assert!(report.warnings.iter().any(|w| w.contains("not covered")));
+
+        let mut manifest = tick_manifest(tree.path());
+        manifest["data_hash"] = Value::String("other".into());
+        let mut report = VerificationReport::default();
+        verify_tick_readback_for_manifest(tree.path(), "x.json", &manifest, &mut report);
+        assert!(report.errors.iter().any(|e| e.contains("not the manifest's data")), "{:?}", report.errors);
+    }
+
+    #[test]
+    fn tick_readback_switch_gates_the_check_in_verify_visualizations() {
+        let _guard = TICK_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let run = |value: Option<&str>| {
+            match value {
+                Some(v) => std::env::set_var("NEWSROOM_QA_TICK_READBACK", v),
+                None => std::env::remove_var("NEWSROOM_QA_TICK_READBACK"),
+            }
+            let temp = build_viz_fixture(true, true);
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            std::env::remove_var("NEWSROOM_QA_TICK_READBACK");
+            (report.errors, report.warnings, report.checks)
+        };
+        let off = run(None);
+        for v in ["0", "", "yes", " 1", "on"] {
+            assert_eq!(run(Some(v)), off, "switch value {v:?} must equal unset");
+        }
+        let on = run(Some("1"));
+        assert_eq!(on.0, off.0);
+        assert!(on.1.iter().any(|w| w.contains("tick read-back not covered")), "{:?}", on.1);
+        assert!(!off.1.iter().any(|w| w.contains("tick read-back")));
     }
 }
