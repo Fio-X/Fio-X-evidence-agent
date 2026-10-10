@@ -372,27 +372,8 @@
   "src/agent/mod.rs": {
    "group": "agent"
   },
-  "src/agent/core.rs": {
+  "src/agent/intent.rs": {
    "group": "agent"
-  },
-  "src/agent/tools/mod.rs": {
-   "group": "agent"
-  },
-  "src/agent/tools/calculate.rs": {
-   "group": "knowledge",
-   "note": "A calculator that writes no artifact."
-  },
-  "src/agent/tools/web_search.rs": {
-   "group": "knowledge"
-  },
-  "src/agent/tools/create_chart.rs": {
-   "group": "visual"
-  },
-  "src/agent/tools/modern_chart.rs": {
-   "group": "visual"
-  },
-  "src/agent/tools/pi_visualization.rs": {
-   "group": "visual"
   },
   "runtime/pi/newsroom.ts": {
    "group": "agent",

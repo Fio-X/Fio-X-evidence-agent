@@ -118,11 +118,8 @@ jobs:
           node scripts/test_composite_geo_network_sankey.mjs
           node scripts/test_offline_geo_fallback.mjs
           node scripts/test_publication_breakpoints_mobile_pages.mjs
-          python3 scripts/test_openai_wire_mock.py
-          python3 scripts/test_anthropic_wire_mock.py
           python3 scripts/test_pi_prompt_retry.py
           python3 scripts/test_browser_qa_bootstrap.py
-          python3 scripts/test_artifact_completion.py
       - name: Qualification contract regressions
         run: |
           python3 scripts/test_source_integrity_contract.py
