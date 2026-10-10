@@ -6,6 +6,25 @@ from pathlib import Path
 QA_SCHEMA='0.2.0'
 def sha_file(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
+# The program's page-size and ready-time limits: newsroom_publication_plan's own
+# defaults (8 MB archive, 1.5 MB production, 8 s). With NEWSROOM_QA_LIMITS_PROGRAM
+# exactly "1" these are the ceilings and a value in the spec (the model's) can only
+# make a limit stricter; off, the spec's values are used as before.
+QA_DEFAULT_INITIAL_BYTES={'archive':8_000_000,'production':1_500_000}
+QA_DEFAULT_READY_MS=8_000
+def qa_limits(delivery, env=None):
+    """(max_initial_bytes, max_ready_ms, record): record says where each limit came from, None when off."""
+    env = os.environ if env is None else env
+    if env.get('NEWSROOM_QA_LIMITS_PROGRAM')!='1':
+        return int(delivery.get('max_initial_bytes',20000000)),int(delivery.get('max_ready_ms',8000)),None
+    def pick(key, default):
+        asked=delivery.get(key); asked=None if asked is None else int(asked)
+        value=default if asked is None else min(asked,default)
+        return value,{'value':value,'source':'model_stricter' if value<default else 'default','requested':asked,'default':default}
+    max_bytes,bytes_from=pick('max_initial_bytes',QA_DEFAULT_INITIAL_BYTES.get(delivery.get('packaging'),QA_DEFAULT_INITIAL_BYTES['archive']))
+    max_ready,ready_from=pick('max_ready_ms',QA_DEFAULT_READY_MS)
+    return max_bytes,max_ready,{'max_initial_bytes':bytes_from,'max_ready_ms':ready_from}
+
 def resolve_chromium_executable(env=None):
     """Resolve an installed Chrome/Chromium binary without importing Playwright."""
     env = os.environ if env is None else env
@@ -97,6 +116,7 @@ def main():
         return '<script>'+asset.read_text()+'</script>'
     html_for_qa=re.sub(r'<script src="([^"]+)"></script>',_inline_local_script,html_text)
     widths=sorted(set(int(x) for x in spec['delivery']['breakpoints']));errors=[];accessibility_errors=[];external=[];shots=[];viewport_reports=[];replay=[]
+    max_bytes,max_ready,limits=qa_limits(spec.get('delivery',{}))
     launch_args=[]
     if args.profile=='cpu': launch_args.append('--disable-gpu')
     if not security['sandbox']: launch_args.append('--no-sandbox')
@@ -127,7 +147,6 @@ def main():
                 webgl2=page.evaluate("() => {const c=document.createElement('canvas');return !!c.getContext('webgl2');}")
                 if not webgl2: errors.append(f'webgl2_unavailable:{width}')
             shot=out/f'publication-{width}.png';page.screenshot(path=str(shot),full_page=True);shots.append({'width':width,'path':shot.name,'sha256':sha_file(shot)})
-            max_ready=int(spec.get('delivery',{}).get('max_ready_ms',8000));
             if ready_ms>max_ready: errors.append(f'ready_time:{width}:{ready_ms}>{max_ready}')
             viewport_reports.append({'width':width,'ready_ms':ready_ms,'max_ready_ms':max_ready,'style_profile':dims.get('style_profile'),'scroll_width':dims['sw'],'client_width':dims['cw'],'module_count':len(dims['modules']),'blocked_modules':[x for x in dims['blocked'] if x],'plotly_boxes':dims.get('plotly',[]),'font_status':dims.get('font_status')})
             page.close()
@@ -154,8 +173,8 @@ def main():
     max_shot=max(shots,key=lambda x:x['width']) if shots else None;archive=None
     if max_shot:
         archive_path=out/'archive.png';shutil.copyfile(out/max_shot['path'],archive_path);archive={'path':'archive.png','sha256':sha_file(archive_path),'source_width':max_shot['width']}
-    max_bytes=int(spec.get('delivery',{}).get('max_initial_bytes',20000000));html_bytes=html.stat().st_size
+    html_bytes=html.stat().st_size
     if html_bytes>max_bytes: errors.append(f'initial_bytes:{html_bytes}>{max_bytes}')
-    report={'schema_version':QA_SCHEMA,'profile':args.profile,'security':security,'status':'PASS' if not errors else 'FAIL','html_sha256':sha_file(html),'viewports':viewport_reports,'screenshots':shots,'archive_fallback':archive,'initial_bytes':html_bytes,'max_initial_bytes':max_bytes,'interaction_replay':{'status':'PASS' if not any(e.startswith('interaction_') for e in errors) else 'FAIL','steps':replay},'external_requests':external,'accessibility_errors':accessibility_errors,'errors':errors}
+    report={'schema_version':QA_SCHEMA,'profile':args.profile,'security':security,'status':'PASS' if not errors else 'FAIL','html_sha256':sha_file(html),'viewports':viewport_reports,'screenshots':shots,'archive_fallback':archive,'initial_bytes':html_bytes,'max_initial_bytes':max_bytes,**({'limits':limits} if limits else {}),'interaction_replay':{'status':'PASS' if not any(e.startswith('interaction_') for e in errors) else 'FAIL','steps':replay},'external_requests':external,'accessibility_errors':accessibility_errors,'errors':errors}
     (out/'browser-qa.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report));raise SystemExit(0 if report['status']=='PASS' else 2)
 if __name__=='__main__': main()
