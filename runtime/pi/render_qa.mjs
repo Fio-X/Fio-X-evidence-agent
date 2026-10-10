@@ -112,8 +112,9 @@ export function runRenderQa({ desktop, mobile, compact } = {}, options = {}) {
     throw new Error("runRenderQa: compact SVG text must be a string when present");
   }
   const viewports = { desktop: checkViewport(desktop, options) };
-  // the heatmap label proof is desktop-only; other viewports keep the plain report (and so never prove it)
-  const { heatmap: _heatmap, ...otherOptions } = options ?? {};
+  // the heatmap label proof and the tick read-back are desktop-only (the phone and compact pictures are drawn by other renderers
+  // that do not write the read-back attributes); other viewports keep the plain report (and so never prove them)
+  const { heatmap: _heatmap, tick_readback: _tickReadback, ...otherOptions } = options ?? {};
   if (mobile !== undefined) viewports.mobile = checkViewport(mobile, otherOptions);
   // The 8-column chart variant is checked exactly like the others, in full.
   if (compact !== undefined) viewports.compact = checkViewport(compact, otherOptions);

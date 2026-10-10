@@ -27,7 +27,7 @@ def build(case: dict):
         assert edit["find"] in svg, f"{case['name']}: edit target not found: {edit['find']}"
         svg = svg.replace(edit["find"], edit["replace"], 1)
     rows = list(f["rows"]) + ([case["rows_extra"]] if case.get("rows_extra") else [])
-    ctx = {"chart_type": f["chart_type"], "rows": rows, "category_field": f["category_field"], "value_field": f["value_field"], "series_field": f.get("series_field")}
+    ctx = {"chart_type": f["chart_type"], "rows": rows, "category_field": f["category_field"], "value_field": f["value_field"], "series_field": f.get("series_field"), "period_field": f.get("period_field"), "unit": f.get("unit"), "language": f.get("language")}
     ctx.update(case.get("ctx", {}))
     for key in case.get("ctx_drop", []):
         ctx.pop(key, None)
@@ -56,7 +56,7 @@ def add_bar_chart(root: Path, svg_text: str, f: dict):
     write_json(root / comp_ref, comp)
     plan_ref, lint_ref, manifest_ref = "visualizations/plans/bar.json", "visualizations/lints/bar.json", "visualizations/bar.json"
     desktop_ref = "visualizations/bar.svg"
-    write_json(root / plan_ref, {"claim_id": "claim-valid", "chart_type": f["chart_type"], "category_field": f["category_field"], "value_field": f["value_field"], **({"series_field": f["series_field"]} if f.get("series_field") else {}), "sql": "select 1"})
+    write_json(root / plan_ref, {"claim_id": "claim-valid", "chart_type": f["chart_type"], "category_field": f["category_field"], "value_field": f["value_field"], **({"series_field": f["series_field"]} if f.get("series_field") else {}), **({"period_field": f["period_field"]} if f.get("period_field") else {}), "sql": "select 1"})
     write_json(root / lint_ref, {"passed": True, "plan_ref": plan_ref, "computation_ref": comp_ref, "data_hash": base["data_hash"], "blockers": []})
     write_text(root / desktop_ref, svg_text)
     write_json(root / manifest_ref, {"schema_version": "0.10.0", "plan_ref": plan_ref, "lint_ref": lint_ref, "computation_ref": comp_ref, "claim_id": "claim-valid", "data_hash": base["data_hash"], "chart_type": f["chart_type"], "variants": {"desktop": desktop_ref}})

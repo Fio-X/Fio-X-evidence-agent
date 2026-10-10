@@ -309,5 +309,100 @@
   "ctx": {
    "chart_type": "line"
   }
+ },
+ {
+  "name": "ok rw_hb_off (renderer output, switch on)",
+  "fixture": "rw_hb_off",
+  "expect": "green"
+ },
+ {
+  "name": "ok rw_hb_B (renderer output, switch on)",
+  "fixture": "rw_hb_B",
+  "expect": "green"
+ },
+ {
+  "name": "ok rw_hb_K (renderer output, switch on)",
+  "fixture": "rw_hb_K",
+  "expect": "green"
+ },
+ {
+  "name": "ok rw_hb_unitword (renderer output, switch on)",
+  "fixture": "rw_hb_unitword",
+  "expect": "green"
+ },
+ {
+  "name": "ok rw_mb_period (renderer output, switch on)",
+  "fixture": "rw_mb_period",
+  "expect": "green"
+ },
+ {
+  "name": "ok rw_mb_K (renderer output, switch on)",
+  "fixture": "rw_mb_K",
+  "expect": "green"
+ },
+ {
+  "name": "unit name holds a scale word (百万吨, data-scale 1), a tick read 2000 -> 20000",
+  "fixture": "rw_hb_unitword",
+  "edits": [
+   {
+    "find": ">2000</text>",
+    "replace": ">20000</text>"
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "unit name 百万吨 relabelled as scale 1e4 (data-scale 10000): ticks no longer read back",
+  "fixture": "rw_hb_unitword",
+  "edits": [
+   {
+    "find": "data-scale=\"1\"",
+    "replace": "data-scale=\"10000\""
+   }
+  ],
+  "expect": "red",
+  "rule": "tick_text"
+ },
+ {
+  "name": "drawn period: a data row of the drawn period without a bar",
+  "fixture": "rw_mb_period",
+  "edits": [],
+  "expect": "red",
+  "rule": "data_anchor",
+  "rows_extra": {
+   "band": "100+",
+   "side": "男",
+   "year": "2024",
+   "pop": 1
+  }
+ },
+ {
+  "name": "zh $B is written as 亿美元 (x10): reported uncovered, not passed",
+  "fixture": "rw_hb_usd_zh",
+  "expect": "uncovered"
+ },
+ {
+  "name": "label names its own unit and is written as is (705803 人 under a 万 unit line): read as written",
+  "fixture": "hb_B",
+  "edits": [
+   {
+    "find": ">71万</text>",
+    "replace": ">705803 人</text>"
+   }
+  ],
+  "expect": "green"
+ },
+ {
+  "name": "label names its own unit but the number is wrong (70580 人 under a 万 unit line)",
+  "fixture": "hb_B",
+  "edits": [
+   {
+    "find": ">71万</text>",
+    "replace": ">70580 人</text>"
+   }
+  ],
+  "expect": "red",
+  "rule": "value_label_text"
  }
 ]

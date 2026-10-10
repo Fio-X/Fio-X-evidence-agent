@@ -20,7 +20,7 @@ function build(c) {
     svg = svg.replace(e.find, () => e.replace);
   }
   const rows = [...f.rows, ...(c.rows_extra ? [c.rows_extra] : [])];
-  const ctx = { chart_type: f.chart_type, rows, category_field: f.category_field, value_field: f.value_field, ...(f.series_field ? { series_field: f.series_field } : {}), ...(c.ctx ?? {}) };
+  const ctx = { chart_type: f.chart_type, rows, category_field: f.category_field, value_field: f.value_field, ...(f.series_field ? { series_field: f.series_field } : {}), ...(f.period_field ? { period_field: f.period_field } : {}), ...(f.unit !== undefined ? { unit: f.unit } : {}), ...(f.language ? { language: f.language } : {}), ...(c.ctx ?? {}) };
   for (const key of c.ctx_drop ?? []) delete ctx[key];
   return { svg, ctx };
 }

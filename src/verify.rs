@@ -2028,6 +2028,8 @@ struct TickReadbackContext {
     value_field: Option<String>,
     series_field: Option<String>,
     period_field: Option<String>,
+    unit: Option<String>,
+    language: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -2204,6 +2206,9 @@ fn tick_read_shown(text: &str) -> Option<(f64, usize, Option<f64>)> {
             Some(1e6)
         } else if rest.starts_with('k') && after(1) {
             Some(1e3)
+        } else if !rest.trim().is_empty() {
+            // a label that names its own unit (1683%, 9541.8 元) is read as written, the unit line's scale is not applied to it
+            Some(1.0)
         } else {
             None
         }
@@ -2291,7 +2296,8 @@ fn tick_elements<'a>(svg: &'a str, tag: &str, with_body: bool) -> Vec<(&'a str, 
 
 /// Returns the status and the (rule, message) failures. An uncovered chart type is never a pass.
 fn verify_tick_readback_from_svg(svg: &str, ctx: &TickReadbackContext) -> (TickReadbackStatus, Vec<(String, String)>) {
-    if !TICK_READBACK_COVERED.contains(&ctx.chart_type.as_str()) {
+    // zh pages write $B as 亿美元 (x10): the text no longer equals the data unit, the read-back does not cover it yet
+    if !TICK_READBACK_COVERED.contains(&ctx.chart_type.as_str()) || (ctx.language.as_deref() == Some("zh") && ctx.unit.as_deref() == Some("$B")) {
         return (TickReadbackStatus::Uncovered, Vec::new());
     }
     let mut failures: Vec<(String, String)> = Vec::new();
@@ -2325,7 +2331,7 @@ fn verify_tick_readback_from_svg(svg: &str, ctx: &TickReadbackContext) -> (TickR
         match tick_num(attrs.get("data-scale").map(String::as_str)) {
             Some(scale) if scale > 0.0 => {
                 let words = tick_unit_word_scale(text);
-                if tick_close(scale, words) {
+                if scale == 1.0 || tick_close(scale, words) {
                     unit_scale = scale;
                 } else {
                     fail("unit_line", format!("axis unit line '{text}' says scale {words} but data-scale is {scale}"));
@@ -2394,8 +2400,11 @@ fn verify_tick_readback_from_svg(svg: &str, ctx: &TickReadbackContext) -> (TickR
                     _ => {}
                 }
             }
+            // a chart draws the current period only (the other may be an outline or absent): rows of a period no bar carries are not drawn
+            let period_of = |key: &str| serde_json::from_str::<Vec<String>>(key).ok().and_then(|parts| parts.get(2).cloned()).unwrap_or_default();
+            let drawn: std::collections::BTreeSet<String> = bar_value.keys().map(|key| period_of(key)).collect();
             for key in row_value.keys() {
-                if !bar_value.contains_key(key) {
+                if !bar_value.contains_key(key) && !(ctx.period_field.is_some() && !drawn.is_empty() && !drawn.contains(&period_of(key))) {
                     fail("data_anchor", format!("data row {key} has no bar"));
                 }
             }
@@ -2540,6 +2549,8 @@ fn verify_tick_readback_for_manifest(root: &Path, name: &str, manifest: &Value, 
         value_field: field("value_field"),
         series_field: field("series_field"),
         period_field: field("period_field"),
+        unit: field("unit"),
+        language: field("language"),
     };
     if let Some(variants) = manifest.get("variants").and_then(Value::as_object) {
         for (viewport, reference) in variants {
@@ -8611,7 +8622,9 @@ mod tests {
             category_field: text(&f["category_field"]),
             value_field: text(&f["value_field"]),
             series_field: text(&f["series_field"]),
-            period_field: None,
+            period_field: text(&f["period_field"]),
+            unit: text(&f["unit"]),
+            language: text(&f["language"]),
         };
         if let Some(over) = case.get("ctx").and_then(Value::as_object) {
             if let Some(t) = over.get("chart_type").and_then(Value::as_str) {
@@ -8631,7 +8644,7 @@ mod tests {
         let fixtures = tick_json("fixtures.json");
         let cases = tick_json("cases.json");
         let cases = cases.as_array().unwrap();
-        assert_eq!(cases.len(), 29);
+        assert_eq!(cases.len(), 41);
         for case in cases {
             let name = case["name"].as_str().unwrap();
             let (svg, ctx) = tick_build(case, &fixtures);
@@ -8671,6 +8684,9 @@ mod tests {
         let mut plan = serde_json::json!({"category_field": f["category_field"], "value_field": f["value_field"]});
         if f.get("series_field").is_some() {
             plan["series_field"] = f["series_field"].clone();
+        }
+        if f.get("period_field").is_some() {
+            plan["period_field"] = f["period_field"].clone();
         }
         fs::write(root.join("visualizations/plans/x.json"), plan.to_string()).unwrap();
         fs::write(root.join("computations/x.json"), serde_json::json!({"rows": f["rows"], "result_hash": "h1"}).to_string()).unwrap();

@@ -73,6 +73,8 @@ function readShown(text) {
   else {
     const en = /^(bn|m|k)(?![A-Za-z])/.exec(rest);
     if (en) suffix = { bn: 1e9, m: 1e6, k: 1e3 }[en[1]];
+    // a label that names its own unit (1683%, 9541.8 元) is read as written, the unit line's scale is not applied to it
+    else if (rest.trim() !== "") suffix = 1;
   }
   return { mantissa, decimals: m[3] ? m[3].length : 0, suffix };
 }
@@ -111,12 +113,13 @@ function keyFromAttrs(attrs) {
 /**
  * @param {string} svgText
  * @param {{chart_type: string, rows?: object[], category_field?: string, value_field?: string,
- *          series_field?: string, period_field?: string}} ctx
+ *          series_field?: string, period_field?: string, unit?: string, language?: string}} ctx
  * @returns {{status: "covered"|"uncovered", passed: boolean, failures: {rule: string, message: string}[]}}
  */
 export function checkTickReadback(svgText, ctx) {
   const chartType = ctx?.chart_type;
-  if (!TICK_READBACK_COVERED.includes(chartType)) {
+  // zh pages write $B as 亿美元 (x10): the text no longer equals the data unit, the read-back does not cover it yet
+  if (!TICK_READBACK_COVERED.includes(chartType) || (ctx?.language === "zh" && ctx?.unit === "$B")) {
     return { version: RENDER_QA_TICKS_VERSION, status: "uncovered", chart_type: chartType ?? null, passed: false, failures: [] };
   }
   const failures = [];
@@ -124,13 +127,13 @@ export function checkTickReadback(svgText, ctx) {
   const mirrored = chartType === "mirrored_bar";
   const { ticks, units, bars, labels } = collect(svgText);
 
-  // unit line: its data-scale must equal what its own words say
+  // unit line: its data-scale must equal what its own words say; data-scale 1 means the words are part of the unit name (百万吨, 万吨), nothing was scaled
   let unitScale = 1;
   if (units.length > 1) fail("unit_line", `${units.length} axis unit lines (expected at most 1)`);
   for (const unit of units.slice(0, 1)) {
     const scale = num(unit.attrs["data-scale"]);
     if (scale === null || scale <= 0) fail("unit_line", `axis unit line '${unit.text}' has no readable positive data-scale`);
-    else if (!close(scale, unitLineWordScale(unit.text))) fail("unit_line", `axis unit line '${unit.text}' says scale ${unitLineWordScale(unit.text)} but data-scale is ${scale}`);
+    else if (scale !== 1 && !close(scale, unitLineWordScale(unit.text))) fail("unit_line", `axis unit line '${unit.text}' says scale ${unitLineWordScale(unit.text)} but data-scale is ${scale}`);
     else unitScale = scale;
   }
 
@@ -171,7 +174,9 @@ export function checkTickReadback(svgText, ctx) {
       if (!rowByKey.has(key)) fail("data_anchor", `bar ${key} has no data row`);
       else if (!close(value, rowByKey.get(key))) fail("data_anchor", `bar ${key} data-value ${value} differs from its data row ${rowByKey.get(key)}`);
     }
-    for (const key of rowByKey.keys()) if (!barByKey.has(key)) fail("data_anchor", `data row ${key} has no bar`);
+    // a chart draws the current period only (the other one may be an outline or absent): rows of a period no bar carries are not drawn
+    const drawn = new Set([...barByKey.keys()].map((key) => JSON.parse(key)[2]));
+    for (const key of rowByKey.keys()) if (!barByKey.has(key) && !(ctx.period_field && drawn.size > 0 && !drawn.has(JSON.parse(key)[2]))) fail("data_anchor", `data row ${key} has no bar`);
   }
 
   // bar length fit: width = k * |value|, one k for the whole chart; origins agree per side
