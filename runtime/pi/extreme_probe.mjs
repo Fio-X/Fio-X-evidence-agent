@@ -37,7 +37,7 @@
 //      ("far above / below the rest of the data"), from the rows the chart is drawn from. See extremeNoteText.
 import { performance } from "node:perf_hooks";
 import { numberWordIn } from "./number_words.mjs";
-import { fmtSpec } from "./viz.mjs";
+import { chartNameDisplay, fmtSpec } from "./viz.mjs";
 import { shadowKey } from "./shadow.mjs";
 import { EXTREME_PROBE_FOLDER, writeExtremeProbeRecord } from "./extreme_probe_writer.mjs";
 
@@ -290,6 +290,19 @@ export function extremeNoteText(spec, rows) {
   const shown = (v) => fmtSpec(spec, v);
   let rounded = false;
   const show = (v) => { const t = shown(v); if (t !== rawText(spec, v)) rounded = true; return t; };
+  // The reader sees the chart's own names (small-multiple titles, bar labels), never the data keys: the same table the renderer uses.
+  // A zh chart whose name cannot be shown in CJK gets no sentence; a composite label (series · facet) is not mapped, so no sentence.
+  let disp = null;
+  try { disp = zh ? chartNameDisplay(spec, rows) : null; } catch { disp = null; }
+  const nameOf = (label) => {
+    if (!zh) return label;
+    if (String(label).includes(" · ")) return null;
+    let name = null;
+    for (const field of disp?.fields ?? []) { name = disp.display(field, String(label)); if (name) break; }
+    name = name ?? String(label);
+    return /[\u3400-\u9fff]/.test(name) ? name : null;
+  };
+  let period = null;
   const sentences = [];
   for (const rec of records) {
     if (rec.end !== "high" && rec.end !== "low") continue;
@@ -301,14 +314,19 @@ export function extremeNoteText(spec, rows) {
     const values = singleFires ? [rec.value] : rec.pair_values;
     const bound = singleFires ? (high ? rec.rest_max : rec.rest_min) : (high ? rec.pair_rest_max : rec.pair_rest_min);
     if (names.some((n) => !n) || values.some((v) => !Number.isFinite(Number(v))) || !Number.isFinite(Number(bound))) continue;
-    const items = names.map((n, i) => `${n} ${show(values[i])}`);
+    const shownNames = names.map(nameOf);
+    if (shownNames.some((n) => !n)) continue;
+    if (rec.period !== null && rec.period !== undefined) period = String(rec.period);
+    const items = shownNames.map((n, i) => `${n} ${show(values[i])}`);
     sentences.push(zh
       ? `${items.join("、")}，${high ? "远高于" : "远低于"}其余数据（其余都${high ? "不超过" : "不低于"} ${show(bound)}）`
       : `${items.join(" and ")}, far ${high ? "above" : "below"} the rest of the data (all others ${high ? "no higher than" : "no lower than"} ${show(bound)})`);
   }
   if (!sentences.length) return null;
   const computed = computedSql(spec?.sql);
-  let text = zh ? `${sentences.join("；")}。` : `${sentences.join("; ")}.`;
+  // A chart drawn over several time points: the sentence is about the last one, and says so.
+  const when = period === null ? "" : zh ? (/^\d{4}$/.test(period) ? `${period} 年，` : `${period}，`) : `${period}: `;
+  let text = zh ? `${when}${sentences.join("；")}。` : `${when}${sentences.join("; ")}.`;
   if (computed) text = zh ? `按所给数据计算：${text}` : `Calculated from the data: ${text}`;
   else if (rounded) text += zh ? "数值按图上取整显示。" : " Values are rounded as on the chart.";
   return numberWordIn(text) ? null : text;
