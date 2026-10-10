@@ -79,6 +79,7 @@ const RENDER_QA_GEOMETRY_RUNTIME: &str = include_str!("../runtime/pi/render_qa_g
 const RENDER_QA_CONTRAST_RUNTIME: &str = include_str!("../runtime/pi/render_qa_contrast.mjs");
 const RENDER_QA_SVG_RUNTIME: &str = include_str!("../runtime/pi/render_qa_svg.mjs");
 const RENDER_QA_LABELS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_labels.mjs");
+const RENDER_QA_TICKS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_ticks.mjs");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
 const EDITORIAL_GRAMMAR_REGISTRY_CONFIG: &str =
@@ -197,6 +198,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let render_qa_contrast_path = runtime_dir.join("render_qa_contrast.mjs");
     let render_qa_svg_path = runtime_dir.join("render_qa_svg.mjs");
     let render_qa_labels_path = runtime_dir.join("render_qa_labels.mjs");
+    let render_qa_ticks_path = runtime_dir.join("render_qa_ticks.mjs");
     let config_dir = artifact_dir.join("config");
     fs::create_dir_all(&config_dir).with_context(|| {
         format!(
@@ -287,6 +289,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&render_qa_contrast_path, RENDER_QA_CONTRAST_RUNTIME)?;
     write_if_changed(&render_qa_svg_path, RENDER_QA_SVG_RUNTIME)?;
     write_if_changed(&render_qa_labels_path, RENDER_QA_LABELS_RUNTIME)?;
+    write_if_changed(&render_qa_ticks_path, RENDER_QA_TICKS_RUNTIME)?;
     write_if_changed(&style_mapping_config_path, EDITORIAL_STYLE_MAPPING_CONFIG)?;
     write_if_changed(
         &editorial_grammar_registry_path,
