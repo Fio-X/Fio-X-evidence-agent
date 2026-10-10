@@ -12,7 +12,7 @@ import { extremeNoteEnabled, extremeNoteText, pairDistance, probeExtremes } from
 import { loadNewsroom, sha256 } from "./precision_harness.mjs";
 
 const bar = (extra = {}) => ({ chart_type: "horizontal_bar", category_field: "k", value_field: "v", unit: "", language: "zh", source_note: "公开统计", sql: "SELECT k, v FROM read_csv_auto('/x/a.csv')", ...extra });
-const rowsOf = (values) => values.map((v, i) => ({ k: `o${i + 1}`, v }));
+const rowsOf = (values) => values.map((v, i) => ({ k: `国${i + 1}`, v }));
 const pick = (probe, end) => probe.records.find((r) => r.end === end);
 const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} vs ${b}`);
 
@@ -27,7 +27,7 @@ const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} 
   assert.equal(high.pair_status, "ok");
   near(high.pair_d, (60 - 8) / (8 - 1), "pair D");
   assert.equal(high.pair_candidate_trigger, true);
-  assert.deepEqual(high.pair_members, ["o10", "o9"]);
+  assert.deepEqual(high.pair_members, ["国10", "国9"]);
   assert.deepEqual(high.pair_values, [62, 60]);
   assert.equal(high.pair_rest_max, 8);
   assert.equal(pick(probe, "low").pair_candidate_trigger, false);
@@ -50,21 +50,21 @@ const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} 
 {
   const far = rowsOf([10, 12, 14, 15, 17, 19, 21, 500]);
   const zhNote = extremeNoteText(bar(), far);
-  assert.equal(zhNote, "o8 500，远高于其余数据（其余都不超过 21）。");
-  assert.equal(extremeNoteText(bar({ language: "en", unit: "units" }), far), "o8 500 units, far above the rest of the data (all others no higher than 21 units).");
+  assert.equal(zhNote, "国8 500，远高于其余数据（其余都不超过 21）。");
+  assert.equal(extremeNoteText(bar({ language: "en", unit: "units" }), far), "国8 500 units, far above the rest of the data (all others no higher than 21 units).");
   // low end, zh
-  assert.equal(extremeNoteText(bar(), rowsOf([-400, 10, 12, 14, 15, 17, 19, 21])), "o1 -400，远低于其余数据（其余都不低于 10）。");
+  assert.equal(extremeNoteText(bar(), rowsOf([-400, 10, 12, 14, 15, 17, 19, 21])), "国1 -400，远低于其余数据（其余都不低于 10）。");
   // pair
-  assert.equal(extremeNoteText(bar(), rowsOf([1, 2, 3, 4, 5, 6, 7, 8, 60, 62])), "o10 62、o9 60，远高于其余数据（其余都不超过 8）。");
+  assert.equal(extremeNoteText(bar(), rowsOf([1, 2, 3, 4, 5, 6, 7, 8, 60, 62])), "国10 62、国9 60，远高于其余数据（其余都不超过 8）。");
   // wordings: source (as printed), rounded for display, computed from the query
   const dec = rowsOf([1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 40.123456]);
   const rounded = extremeNoteText(bar(), dec);
   assert.match(rounded, /数值按图上取整显示。$/, rounded);
-  assert.equal(rounded, "o8 40.1，远高于其余数据（其余都不超过 1.7）。数值按图上取整显示。", "the numbers are the chart's own rounding, not the raw 40.123456");
-  assert.equal(extremeNoteText(bar(), rowsOf([1100.4, 1200.4, 1300.4, 1400.4, 1500.4, 1600.4, 1700.4, 90000.4])), "o8 9.0万，远高于其余数据（其余都不超过 1700）。数值按图上取整显示。");
+  assert.equal(rounded, "国8 40.1，远高于其余数据（其余都不超过 1.7）。数值按图上取整显示。", "the numbers are the chart's own rounding, not the raw 40.123456");
+  assert.equal(extremeNoteText(bar(), rowsOf([1100.4, 1200.4, 1300.4, 1400.4, 1500.4, 1600.4, 1700.4, 90000.4])), "国8 9.0万，远高于其余数据（其余都不超过 1700）。数值按图上取整显示。");
   assert.ok(!/^按所给数据计算/.test(rounded));
   const computed = extremeNoteText(bar({ sql: "SELECT k, SUM(v) AS v FROM t GROUP BY k" }), far);
-  assert.equal(computed, "按所给数据计算：o8 500，远高于其余数据（其余都不超过 21）。");
+  assert.equal(computed, "按所给数据计算：国8 500，远高于其余数据（其余都不超过 21）。");
   assert.match(extremeNoteText(bar({ language: "en", sql: "SELECT k, a / b AS v FROM t" }), far), /^Calculated from the data: /);
   assert.ok(!/^按所给数据计算/.test(extremeNoteText(bar({ sql: "SELECT * FROM t" }), far)), "SELECT * is not arithmetic");
   assert.ok(!/^按所给数据计算/.test(extremeNoteText(bar({ sql: "SELECT k, v FROM read_csv_auto('/x/y.csv')" }), far)), "a path is not arithmetic");
@@ -78,16 +78,39 @@ const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} 
   assert.equal(extremeNoteText(bar({ source_note: "  " }), far), null);
   assert.equal(extremeNoteText({ chart_type: "sankey" }, far), null, "unsupported chart");
   // ambiguous: the same object registered twice with different values
-  assert.equal(extremeNoteText(bar(), [...far, { k: "o3", v: 99 }]), null, "ambiguous_object: no note");
-  assert.equal(pick(probeExtremes(bar(), [...far, { k: "o3", v: 99 }]), "high").status, "ambiguous_object");
-  assert.equal(extremeNoteText(bar(), [...far, { k: "o3", v: 14 }]), zhNote, "the same value twice is one object");
+  assert.equal(extremeNoteText(bar(), [...far, { k: "国3", v: 99 }]), null, "ambiguous_object: no note");
+  assert.equal(pick(probeExtremes(bar(), [...far, { k: "国3", v: 99 }]), "high").status, "ambiguous_object");
+  assert.equal(extremeNoteText(bar(), [...far, { k: "国3", v: 14 }]), zhNote, "the same value twice is one object");
   // several value sets (series / facets) and scatter: not written
   assert.equal(extremeNoteText(bar({ series_field: "s" }), [...far.map((r) => ({ ...r, s: "A" })), ...rowsOf([1, 2, 3, 4, 5, 6, 7, 8]).map((r) => ({ ...r, s: "B" }))]), null);
   assert.equal(extremeNoteText({ chart_type: "scatter", label_field: "k", x_field: "v", y_field: "w", unit: "", language: "zh", source_note: "公开统计" }, far.map((r, i) => ({ ...r, w: i }))), null);
   // a number word in the text (here in an object name) keeps the note out: the number-word check is not bypassed
-  const worded = far.map((r) => (r.k === "o8" ? { ...r, k: "第三大国" } : r));
+  const worded = far.map((r) => (r.k === "国8" ? { ...r, k: "第三大国" } : r));
   assert.equal(extremeNoteText(bar(), worded), null, "number word: no note");
-  assert.ok(extremeNoteText(bar(), far.map((r) => (r.k === "o8" ? { ...r, k: "Chad" } : r))));
+  assert.ok(extremeNoteText(bar(), far.map((r) => (r.k === "国8" ? { ...r, k: "乍得" } : r))));
+}
+
+// ---- 2b. the chart's own names, and the time point ----------------------------------------------------------------------
+{
+  // fe 1010: the sentence prints the names the chart prints (the renderer's own name table), never the data keys
+  const codes = ["KOR", "CHN", "JPN", "USA", "FRA", "DEU", "SOM"];
+  const vals = [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 6.1];
+  const rows = codes.map((k, i) => ({ k, v: vals[i] }));
+  const named = extremeNoteText(bar({ category_names: "iso3" }), rows);
+  assert.equal(named, "索马里 6.1，远高于其余数据（其余都不超过 1.6）。");
+  assert.ok(!/SOM/.test(named), "the data key is not printed");
+  // a zh chart whose names cannot be shown in Chinese gets no sentence: it never falls back to the code
+  assert.equal(extremeNoteText(bar(), rows), null, "no name table: no sentence");
+  assert.equal(extremeNoteText(bar({ category_names: "iso3" }), rows.map((r) => (r.k === "SOM" ? { ...r, k: "ZZZ" } : r))), null, "unmapped code: no sentence");
+  // an English chart prints the value as the chart does
+  assert.equal(extremeNoteText(bar({ language: "en" }), rows), "SOM 6.1, far above the rest of the data (all others no higher than 1.6).");
+  // several time points: the sentence says which one it is about
+  const series = [];
+  for (const year of [2000, 2023]) codes.forEach((k, i) => series.push({ k, year, v: year === 2023 ? vals[i] : (k === "KOR" ? 9 : 1) }));
+  const sm = { chart_type: "small_multiples", x_field: "year", value_field: "v", facet_field: "k", category_names: "iso3", unit: "", language: "zh", source_note: "公开统计", sql: "SELECT k, year, v FROM read_csv_auto('/x/y.csv')" };
+  assert.equal(extremeNoteText(sm, series), "2023 年，索马里 6.1，远高于其余数据（其余都不超过 1.6）。");
+  assert.equal(extremeNoteText({ ...sm, language: "en" }, series), "2023: SOM 6.1, far above the rest of the data (all others no higher than 1.6).");
+  assert.ok(!/^\d{4}/.test(extremeNoteText(bar({ category_names: "iso3" }), rows)), "a single-period chart has no time prefix");
 }
 
 // ---- 3. the switch -------------------------------------------------------------------------------------------------
