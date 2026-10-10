@@ -5382,8 +5382,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
       const result = reviewFromRecordsEnabled()
-        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref) })
-        : summarizeAwardMode(params);
+        ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: conceptMinCount() })
+        : summarizeAwardMode(params, { minConcepts: conceptMinCount() });
       const rel = `editorial/award-runs/${result.content_hash}.json`;
       await saveDecision(rel, result);
       return textResult(`${result.status_display && result.status !== "BLOCKED" ? `${result.status} (${result.status_display})` : result.status}: slow award mode\nArtifact: ${rel}\nConcepts: ${result.metrics.concepts_generated}, killed: ${result.metrics.concepts_killed}\nHuman reviews: ${result.metrics.human_review_count}`, { awardModeRef: rel, status: result.status, blockers: result.blockers });
