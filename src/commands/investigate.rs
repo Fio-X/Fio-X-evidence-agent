@@ -220,13 +220,29 @@ fn gap_supplier(gap: &str) -> Option<&str> {
     }
 }
 
-/// The text of one completion-gate retry. `hints` is `Some(audit)` only with the switch on; `None` is
-/// byte-identical to the message that was always sent.
+/// Whether the program's own critic record says a chart passed: any
+/// `visualizations/critics/*.json` with `passed: true`. A REVISE result is a normal result, not an error,
+/// so a successful call alone does not show a pass; model text is never read.
+fn chart_critic_record_passed(artifact: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(artifact.join("visualizations").join("critics")) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        std::fs::read_to_string(entry.path())
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|record| record.get("passed").and_then(Value::as_bool))
+            == Some(true)
+    })
+}
+
+/// The text of one completion-gate retry. `hints` is `Some((audit, critic_record_passed))` only with the
+/// switch on; `None` is byte-identical to the message that was always sent.
 fn completion_correction(
     attempt: usize,
     gaps: &[String],
     mode_contract: &str,
-    hints: Option<&audit::AuditSummary>,
+    hints: Option<(&audit::AuditSummary, bool)>,
 ) -> String {
     let listed = match hints {
         None => gaps.join("\n- "),
@@ -240,11 +256,12 @@ fn completion_correction(
             .join("\n- "),
     };
     let next = hints
-        .and_then(|audit| {
-            let chart_passed = audit
-                .calls
-                .iter()
-                .any(|call| call.tool == "newsroom_viz_critic" && call.is_error != Some(true));
+        .and_then(|(audit, record_passed)| {
+            let chart_passed = record_passed
+                && audit
+                    .calls
+                    .iter()
+                    .any(|call| call.tool == "newsroom_viz_critic" && call.is_error != Some(true));
             let first = gaps.iter().find_map(|gap| gap_supplier(gap))?;
             chart_passed.then(|| {
                 format!("A chart already passed its checks; do not redo it. Next call {first}.\n")
@@ -477,7 +494,8 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                         attempt,
                         &completion_gaps,
                         &mode_contract,
-                        completion_gap_hints_on().then_some(&audit),
+                        completion_gap_hints_on()
+                            .then(|| (&audit, chart_critic_record_passed(&bundle.dir))),
                     );
                     config.continue_session = true;
                     let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
@@ -617,7 +635,7 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 #[cfg(test)]
 mod completion_tests {
     use super::{
-        completion_chain_required, completion_correction, completion_gap_hints_on, compose_allowed,
+        chart_critic_record_passed, completion_chain_required, completion_correction, completion_gap_hints_on, compose_allowed,
         is_transient_completion_provider_error, lieflat_hidden_for, missing_visual_modes,
         visual_completion_gaps_for_profile, COMPLETION_GAP_HINTS_ENV,
     };
@@ -925,7 +943,7 @@ mod completion_tests {
         .unwrap();
         let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
         let plain = completion_correction(1, &gaps, &contract, None);
-        let hinted = completion_correction(1, &gaps, &contract, Some(&audit));
+        let hinted = completion_correction(1, &gaps, &contract, Some((&audit, true)));
         // The wording and the attempt counter stay.
         assert!(
             hinted.contains("System completion gate attempt 1/2 found unfinished required work:")
@@ -963,9 +981,52 @@ mod completion_tests {
         // Gaps that name no tool of their own stay as they were.
         let odd = vec!["some gap nobody maps".to_string()];
         assert_eq!(
-            completion_correction(2, &odd, &contract, Some(&audit)),
+            completion_correction(2, &odd, &contract, Some((&audit, true))),
             legacy_correction(2, &odd, &contract)
         );
+    }
+
+    #[test]
+    fn a_revise_result_is_not_a_pass_even_though_the_call_succeeded() {
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = one_chart_run(root.path());
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
+        // The critic call succeeded (is_error false) but its record says REVISE.
+        let critics = bundle.dir.join("visualizations").join("critics");
+        fs::create_dir_all(&critics).unwrap();
+        fs::write(critics.join("a.json"), "{\"passed\": false, \"score\": 61}").unwrap();
+        assert!(!chart_critic_record_passed(&bundle.dir));
+        let revise = completion_correction(
+            1,
+            &gaps,
+            &contract,
+            Some((&audit, chart_critic_record_passed(&bundle.dir))),
+        );
+        assert!(!revise.contains("A chart already passed"), "{revise}");
+        assert!(revise.contains("(supplied by"));
+        // A record with passed:true says so; a text-only claim or a missing field does not.
+        fs::write(critics.join("b.json"), "{\"passed\": \"true\"}").unwrap();
+        fs::write(critics.join("c.json"), "not json").unwrap();
+        assert!(!chart_critic_record_passed(&bundle.dir));
+        fs::write(critics.join("d.json"), "{\"passed\": true}").unwrap();
+        assert!(chart_critic_record_passed(&bundle.dir));
+        let pass = completion_correction(
+            1,
+            &gaps,
+            &contract,
+            Some((&audit, chart_critic_record_passed(&bundle.dir))),
+        );
+        assert!(pass.contains("A chart already passed its checks"), "{pass}");
+        // No critics folder at all: not passed.
+        assert!(!chart_critic_record_passed(root.path()));
     }
 
     #[test]
@@ -981,7 +1042,7 @@ mod completion_tests {
         )
         .unwrap();
         let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
-        let hinted = completion_correction(1, &gaps, &contract, Some(&audit));
+        let hinted = completion_correction(1, &gaps, &contract, Some((&audit, true)));
         assert!(hinted.contains("(supplied by"));
         assert!(!hinted.contains("A chart already passed"), "{hinted}");
     }
