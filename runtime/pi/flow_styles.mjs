@@ -6,8 +6,8 @@
 export const flowStyleCirclesOn = () => process.env.NEWSROOM_FLOW_STYLE_CIRCLES === "1";
 export const flowStyleTrunkOn = () => process.env.NEWSROOM_FLOW_STYLE_TRUNK === "1";
 export const CIRCLE_MAX_R = 15;
-// NEWSROOM_FLOW_TRUNK_MAX_W=12 (default unset = 14): picture-only knob for V568's open question (V528's cap is 12 px). Only the exact value 12 changes anything.
-export const TRUNK_MAX_W = 14, TRUNK_MIN_W = 1.2, TRUNK_CLUSTER_DEG = 28, TRUNK_JUNCTION_FRAC = 0.3, TRUNK_MIN_JUNCTION = 24;
+// V568: the widest trunk is 12 px (V528's cap); render QA reports any trunk wider than TRUNK_MAX_W. Only reachable with the D switch on.
+export const TRUNK_MAX_W = 12, TRUNK_MIN_W = 1.2, TRUNK_CLUSTER_DEG = 28, TRUNK_JUNCTION_FRAC = 0.3, TRUNK_MIN_JUNCTION = 24;
 
 export const circleRadius = (value, max) => CIRCLE_MAX_R * Math.sqrt(Math.max(0, value) / Math.max(max, 1e-9));
 // Circle-size legend: the largest, the middle and the smallest value actually present in the drawn rows (never rounded values).
@@ -43,9 +43,12 @@ export function planTrunk(items) {
     if (dJ < TRUNK_MIN_JUNCTION) return { members: c, J: null };
     return { members: c, J: { x: B.x + u.x * dJ, y: B.y + u.y * dJ }, u };
   });
-  const wOf = (s) => (v) => Math.max(TRUNK_MIN_W, v * s);
+  // The minimum branch width shrinks when a trunk has so many branches that their minimums alone would pass the cap, so the
+  // widest trunk is TRUNK_MAX_W in every case and the one scale (trunk = sum of its branches) still holds.
+  const minW = Math.min(TRUNK_MIN_W, TRUNK_MAX_W / Math.max(...groups.map((g) => (g.J ? g.members.length : 1))));
+  const wOf = (s) => (v) => Math.max(minW, v * s);
   const widest = (s) => { const w = wOf(s); return Math.max(...groups.map((g) => (g.J ? g.members.reduce((t, m) => t + w(m.value), 0) : Math.max(...g.members.map((m) => w(m.value)))))); };
-  const cap = process.env.NEWSROOM_FLOW_TRUNK_MAX_W === "12" ? 12 : TRUNK_MAX_W;
+  const cap = TRUNK_MAX_W;
   let lo = 0, hi = cap / Math.min(...items.map((it) => it.value)) + 1;
   for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (widest(mid) <= cap) lo = mid; else hi = mid; }
   const scale = lo, widthOf = wOf(scale), byIndex = new Map(), trunks = [];
