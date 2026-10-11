@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -16,7 +17,7 @@ function csv(text){const [head,...lines]=text.trim().split(/\r?\n/);const keys=h
 const annual=csv(await readFile(join(ROOT,'fixtures','realdata','nasa-gistemp-1980-2025.csv'),'utf8'));
 const monthly=csv(await readFile(join(ROOT,'fixtures','realdata','nasa-gistemp-monthly-2023-2025.csv'),'utf8'));
 const claim='claim-nasa-gistemp-2025';
-const context={verified_claim_ids:[claim]};
+const context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]};
 const source='NASA GISS Surface Temperature Analysis v4 (GISTEMP); global land-ocean temperature index';
 
 const lineSpec={schema_version:'0.9.0',reader_task:'change',chart_type:'line',takeaway:'Global temperature anomalies moved from +0.26°C in 1980 to +1.19°C in 2025, with the highest annual value in this series in 2024.',title:'The warming signal is now measured in whole degrees',subtitle:'Global land-ocean temperature anomaly relative to the 1951–1980 mean, 1980–2025',alt:'Line chart showing NASA global temperature anomaly rising from 0.26 degrees Celsius in 1980 to 1.19 degrees in 2025, peaking at 1.29 degrees in 2024.',source_note:source,note:'Annual GISTEMP values. NASA table values divided by 100 to convert hundredths of a degree Celsius to °C.',claim_id:claim,sql:'fixture:nasa-gistemp-1980-2025',unit:'°C',x_field:'year',value_field:'anomaly_c',highlight_values:['2024','2025'],annotations:[{type:'point',text:'2024: +1.29°C, highest annual value in the series',claim_id:claim,match_field:'year',match_value:2024},{type:'point',text:'2025: +1.19°C',claim_id:claim,match_field:'year',match_value:2025}]};

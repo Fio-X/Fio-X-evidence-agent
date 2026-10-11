@@ -22,8 +22,6 @@ const SWITCHES = {
 };
 const ALL_SWITCHES = Object.keys(SWITCHES);
 const PROFILES = ["investigate", "visual", "visual-story", "publication", "competition", "full"];
-// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with bc1ccfd, which has the old typed-hero path.
-process.env.NEWSROOM_HERO_VALUE_GATE = "0";
 // The approved differences from the baseline (the page top, the fast-fail vocabulary, the three chart forms, zh names, measure_semantics) are the
 // entries of scripts/fixtures/pin_patches/speed_prompt_hints_runtime.json, each with the commit that made it. This suite's Type stand-in keeps every
 // option and its StringEnum keeps only the values, so the lists carry what is visible here. Each entry is asserted exactly, the list is reversed

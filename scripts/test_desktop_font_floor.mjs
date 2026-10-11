@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 import { measurePage, embeddedChart, nativeInk, mapToPage } from './lib_page_geometry.mjs';
 
 const claim='claim-floor';
-const context={verified_claim_ids:[claim],mobile_pages:false};
+const context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim],mobile_pages:false};
 
 function barFixture(n,id){
   const rows=Array.from({length:n},(_,i)=>({category:`Category ${String(i+1).padStart(2,'0')}`,value:200-i*(150/n)}));

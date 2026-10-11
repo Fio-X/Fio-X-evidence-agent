@@ -132,7 +132,6 @@ const INLINE_CLAIM_RECORD_GUIDELINE = "A claim that belongs to one chart is not 
 // subject, measure and period. With the hero value gate on (the default) typed digits in a label are refused, so the
 // period is a placeholder of the hero's claim; the gate-off text keeps the plain example. A relative window is written in
 // the SQL, so its sentence sits on duckdb_query; the page-top sentence is exported by infographic.mjs beside its lint.
-const HERO_LABEL_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「2024年阿根廷年通胀率」, not 「通胀率」.";
 const HERO_LABEL_GATED_GUIDELINE = "A hero_stat label names the subject, the measure and the period, for example 「{max.rate.year}年阿根廷年通胀率」, not 「通胀率」; the year comes from a placeholder of the hero's claim (typed digits are refused), so that claim must state the period.";
 const RELATIVE_WINDOW_GUIDELINE = "A relative window such as 近三年 means the 36 months up to the latest data point; state its start and end dates on the page.";
 
@@ -2850,21 +2849,19 @@ function registerVizChain(pi: ExtensionAPI) {
   });
 }
 
-// ---- Hero value gate (on by default; NEWSROOM_HERO_VALUE_GATE=0 turns it off) -----------------------------------
+// ---- Hero value gate (always on; no switch turns it off) -----------------------------------
 // A hero_stat does not type its number: it names one placeholder of its claim (value_from) and the runtime copies the
 // text the claim itself shows. Only a claim the system bound can fill a hero: a claim recorded inline carries its bindings
 // (claim_bindings), and a claim recorded with record_claim has none, so it is refused (HERO_CLAIM_UNBOUND); there is no
 // fallback that matches a row's value against the claim text, because two rows can show the same text.
 // label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
 // writes a number of its own and never changes a claim's status.
-// Only the exact string "0" switches the gate off; unset, "1", empty or any other value leaves it on, so a typo can never
-// quietly open the gate. The pure lint in infographic.mjs stays opt-in through context.hero_value_gate: this runtime
-// is the only caller that passes it, and it passes it whenever this switch is on.
-const heroGateOn = () => process.env.NEWSROOM_HERO_VALUE_GATE !== "0";
+// There is no way to switch the gate off, from the environment or from a call: the pure lint in infographic.mjs takes no
+// parameter for it and always applies it to every hero_stat.
 // A stored page lint is only as good as the rules it ran under. Bump this when a page-lint rule changes what passes; the lint
 // record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
 const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
-const currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: heroGateOn() });
+const currentLintPolicy = () => ({ lint_policy_version: INFOGRAPHIC_LINT_POLICY_VERSION, hero_value_gate: true });
 const HERO_LITERAL_STOP = /^[^\s,.;:!?()\[\]{}"'<>、。，！（）：；？]*/u;
 
 type HeroClaimContext = { claimId: string; bindings: ClaimBinding[] | null; claimText: string; template: string | null; computationRefs: string[] };
@@ -2989,9 +2986,9 @@ function heroLiteralsAfter(context: HeroClaimContext, placeholder: string, value
   return out.filter(Boolean);
 }
 
-/** Gate on (the default): every hero_stat is filled from its claim before validation and storage. NEWSROOM_HERO_VALUE_GATE=0: the modules pass untouched. */
+/** Every hero_stat is filled from its claim before validation and storage. */
 async function fillHeroModules(modules: any[], collectAll = false): Promise<any[]> {
-  if (!heroGateOn() || !modules.some((module) => module?.type === "hero_stat")) return modules;
+  if (!modules.some((module) => module?.type === "hero_stat")) return modules;
   const records = await verifiedClaimRecords();
   const out: any[] = [];
   const problems: string[] = [];
@@ -3109,7 +3106,7 @@ function lintIsCurrent(lint: any) {
   return lint?.lint_policy_version === now.lint_policy_version && lint?.hero_value_gate === now.hero_value_gate;
 }
 function assertLintCurrent(lint: any) {
-  if (!lintIsCurrent(lint)) throw new Error(`LINT_STALE: the stored infographic lint was made under another lint policy (version ${String(lint?.lint_policy_version ?? "none")}, hero gate ${String(lint?.hero_value_gate ?? "unknown")}) than the current one (version ${INFOGRAPHIC_LINT_POLICY_VERSION}, hero gate ${heroGateOn()}); run newsroom_infographic_lint again on this plan, then render with the new lint_ref`);
+  if (!lintIsCurrent(lint)) throw new Error(`LINT_STALE: the stored infographic lint was made under another lint policy (version ${String(lint?.lint_policy_version ?? "none")}, hero gate ${String(lint?.hero_value_gate ?? "unknown")}) than the current one (version ${INFOGRAPHIC_LINT_POLICY_VERSION}, hero gate true); run newsroom_infographic_lint again on this plan, then render with the new lint_ref`);
 }
 
 /**
@@ -3198,9 +3195,9 @@ async function lintInfographicPlan(spec: any) {
     }
     visualClaimBindings[String(module.id)] = await bindClaimsToChart(chartState, claimIds, verifiedRecords, claimBindingDeps());
   }
-  // Gate on (the default; NEWSROOM_HERO_VALUE_GATE=0 turns it off): each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
+  // Each hero_stat is re-filled from its claim; lint (synchronous) gets the refusals.
   const heroGate: Record<string, any> = {};
-  if (heroGateOn()) {
+  {
     const heroChecks: Record<string, string[]> = {};
     for (const module of spec.modules ?? []) {
       if (module?.type !== "hero_stat") continue;
@@ -3215,8 +3212,6 @@ async function lintInfographicPlan(spec: any) {
     }
     heroGate.hero_checks = heroChecks;
   }
-  // The gate state is passed explicitly in both states (the pure lint reads only an exact true).
-  heroGate.hero_value_gate = heroGateOn();
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
   return { lint, assets, mobilePages, verifiedRecords };
@@ -5565,10 +5560,10 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     span: Type.Optional(StringEnum(["full", "two_thirds", "half", "third"] as const, withRefusedOption(undefined, refusedOption("span", !mobilePagesEnabled())))),
     label: Type.Optional(Type.String()),
     tone: Type.Optional(StringEnum(["accent", "dark", "light"] as const)),
-    value: Type.Optional(Type.Union([Type.String(), Type.Number()], withRefusedOption(undefined, refusedOption("heroValue", heroGateOn())))),
-    unit: Type.Optional(Type.String(heroGateOn() ? contractHint("heroUnit") : undefined)),
+    value: Type.Optional(Type.Union([Type.String(), Type.Number()], withRefusedOption(undefined, refusedOption("heroValue")))),
+    unit: Type.Optional(Type.String(contractHint("heroUnit"))),
     detail: Type.Optional(Type.String()),
-    ...(heroGateOn() ? { value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." + firstTry(FIRST_TRY.heroRequired + FIRST_TRY.heroYears) })) } : {}),
+    value_from: Type.Optional(Type.String({ description: "hero_stat only. Names the one placeholder of the hero's claim whose number is the big number, for example {max.value}; the runtime writes value from it, so do not type value. label and detail carry no typed digits either: write a claim placeholder where a number belongs. unit is empty or the literal the claim shows after the number." + firstTry(FIRST_TRY.heroRequired + FIRST_TRY.heroYears) })),
     claim_id: Type.Optional(Type.String()),
     claim_ids: Type.Optional(Type.Array(Type.String(), contractHint("moduleClaimIds", { maxItems: 12 }))),
     manifest_ref: Type.Optional(Type.String()),
@@ -5642,7 +5637,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       "Prefer 4-9 modules. A magazine page should have a reading sequence, not a dashboard grid. The composer will generate and rank balanced, anchor, and rhythm layout candidates.",
       "For award-target pages, include a hook, evidence, at least one priority-1 module, and a resolution or explanation. Originality must not reduce clarity or provenance.",
       "Every quantitative hero statistic or explanatory text module must cite verified claim IDs. Visual modules must reference their visualization manifest and critic artifacts.",
-      heroGateOn() ? HERO_LABEL_GATED_GUIDELINE : HERO_LABEL_GUIDELINE,
+      HERO_LABEL_GATED_GUIDELINE,
     ],
     parameters: Type.Object({
       kicker: Type.Optional(Type.String()),
