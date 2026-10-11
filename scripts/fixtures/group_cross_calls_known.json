@@ -1,0 +1,1598 @@
+{
+  "schema_version": "0.1.0",
+  "note": "Test fixture only: nothing at run time reads this file. It may only get shorter. Every entry is a cross-group reference as of the day it was pinned.",
+  "functions": {
+    "agentRecordSide": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "appendArtifact": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "artifactRoot": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "artifactTmpDir": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "assertDataBytesMatchRecord": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "assertHeroBindingHolds": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "assertInfographicLintHolds": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "assertLintCurrent": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "assertPublicUrl": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "atomicArtifactWritesEnabled": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "buildComputationRecord": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claimBindingDeps": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claimIdFor": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claimSqlLintEnabled": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claimTemplateError": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claimTemplateNumber": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claimTemplateProblems": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "clampInt": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "computationSql": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "createViaLink": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "currentLintPolicy": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "deriveInputsForSql": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "ensureParent": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidenceSnapshot": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "fetchText": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "fillClaimTemplate": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "fillCopiedEnabled": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "fillHeroModule": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "fillStoryGraphRef": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "firstTry": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "firstTryAllEnabled": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "firstTryTextEnabled": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "formatClaimValue": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroClaimContext": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroLiteralsAfter": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroMagnitudeStart": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroPlanUnits": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroTextRefusal": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroTokenOffsets": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroUnbound": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "heroUnitStartsWith": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "inlineAltText": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "inlineClaimAborted": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "inlineClaimEnabled": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "inlineClaimMeasures": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "inlineNoteText": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "inlineSourceNote": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "knowledgeSide": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "latestClaimRecords": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "lintClaimSql": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "lintClaimWording": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "lintInfographicPlan": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "lintIsCurrent": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "literalNumberIn": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "loadEditorialGrammarRegistry": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "loadInfographicAssets": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "loadSourceQuoteText": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "mobilePagesEnabled": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "modelResultBudget": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "normalizeArtifactRefs": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "normalizeHtml": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "normalizedNewsroomPhase": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "numeric": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "onlyArtifactRef": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "precheckAllEnabled": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "prepareInlineClaim": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "queryDuckDb": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "readArtifactJson": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "readArtifactText": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "readManifestOrRejected": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "recordClaimArtifact": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "refusedOption": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "refusedOptionsFixOn": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "registryDateFor": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "replayComputationEvidence": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "resolveClaimPlaceholder": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "resolveHeroPlaceholder": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "resolveSubjectSets": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "resolveSubjectSetsCore": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "safeFetch": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "saveChainEvent": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "saveQueryRows": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "serializeSqlAst": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "stableId": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "textResult": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "validateReadOnlySql": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "validateSourceEvidence": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "verifiedClaimIds": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "verifiedClaimRecords": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "vizClaimBindings": {
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "withRefusedOption": {
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "writeArtifact": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "writeArtifactIfAbsent": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "zhSourceLineEnabled": {
+      "groups": [
+        "agent",
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    }
+  },
+  "imported": {
+    "agent_record_writer.mjs::agentRecordWriter": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "asof_probe.mjs::REGISTRY_DATE_FIELDS": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claim_binding.mjs::bindClaimsToChart": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claim_binding.mjs::computationInputState": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claim_binding.mjs::numericFieldsOfSpec": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claim_lint.mjs::lintClaimSqlAst": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "claim_lint.mjs::lintClaimTemplate": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "compact_setup.mjs::checkExpandedConcepts": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "compact_setup.mjs::expandSharedConcepts": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "compact_setup.mjs::fillSetupRefs": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "compact_setup.mjs::setupRefError": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "computation_rows.mjs::DERIVED_ROWS_PATH": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "computation_rows.mjs::deriveComputationInputs": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "computation_rows.mjs::materializeComputationRowTables": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "computation_rows.mjs::recordedInputState": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "computation_rows.mjs::safeDuckDbDiagnostic": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "contract_text.mjs::allowedValueHints": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "contract_text.mjs::contractStatements": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "contract_text.mjs::loadGrammarRegistrySync": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "data_notes.mjs::composeDataNote": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "data_notes.mjs::flagCellsFromFile": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "decision_writer.mjs::decisionWriter": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "evidence_gate.mjs::assertComputationBoundToSources": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::assertDatasetPayload": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::assertEvidenceBackedStatus": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::assertInlineRowsHaveEvidence": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::assertUsableSourceRecord": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "evidence_gate.mjs::createSourceAccessCircuit": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::deriveClaimVerification": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::evaluateClaimSupport": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::isSystemVerifiedClaim": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "evidence_gate.mjs::requireVerifiedClaim": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "groups.mjs::groupToolsEnabled": {
+      "owner": "system",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "groups.mjs::recordBoundaryWrite": {
+      "owner": "system",
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "groups.mjs::runDeclared": {
+      "owner": "system",
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "infographic.mjs::INFOGRAPHIC_VISUAL_GRAMMARS": {
+      "owner": "visual",
+      "groups": [
+        "agent"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "infographic.mjs::VISUAL_GRAMMAR_FORMS": {
+      "owner": "visual",
+      "groups": [
+        "agent"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "infographic.mjs::annotateSubjectSets": {
+      "owner": "visual",
+      "groups": [
+        "agent"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "infographic.mjs::distinctSubjects": {
+      "owner": "visual",
+      "groups": [
+        "agent"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "infographic.mjs::lintInfographicSpec": {
+      "owner": "visual",
+      "groups": [
+        "agent"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "knowledge_writer.mjs::handoffEnabled": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "knowledge_writer.mjs::knowledgeWriter": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "local_backend.mjs::localHash": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "local_backend.mjs::localImageInfo": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "local_backend.mjs::localMetadata": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "local_backend.mjs::localSpotlight": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "local_backend.mjs::localSqliteQuery": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "local_backend.mjs::localText": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "model_spec.mjs::validateModelSpec": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "net.mjs::assertResolvedAddressesSafe": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "net.mjs::decodeBoundedText": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "net.mjs::isPrivateIpAddress": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "net.mjs::readBodyBytes": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "number_words.mjs::numberWordIn": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "parallel_scheduler.mjs::runTaskDag": {
+      "owner": "agent",
+      "groups": [
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "patch_retry.mjs::combinedError": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "pdf_extract.mjs::extractDownloadedPdf": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "pdf_extract.mjs::extractPdfText": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "pdf_extract.mjs::looksLikePdf": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::candidates": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::fillPlanRefs": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::fillStageRefs": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::inSchemaOrder": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::planPrerequisiteIssues": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::preflightError": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "preflight.mjs::renderPrerequisiteIssues": {
+      "owner": "agent",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "probe_writer.mjs::probeWriter": {
+      "owner": "agent",
+      "groups": [
+        "knowledge"
+      ],
+      "write": true,
+      "why": "10-11 现状，待拆（写）"
+    },
+    "process.mjs::runProcess": {
+      "owner": "system",
+      "groups": [
+        "agent",
+        "knowledge",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "provenance.mjs::computationRelativePath": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "provenance.mjs::sha256Hex": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "provenance.mjs::sourceContentHash": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "shadow.mjs::runShadow": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "shadow.mjs::shadowAsOf": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "shadow.mjs::shadowChecksEnabled": {
+      "owner": "knowledge",
+      "groups": [
+        "agent",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "shadow.mjs::shadowInfographicNumbers": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "shadow.mjs::shadowVizNumbers": {
+      "owner": "knowledge",
+      "groups": [
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "tool_phase_policy.mjs::VALID_TOOL_PHASES": {
+      "owner": "agent",
+      "groups": [
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "tool_phase_policy.mjs::toolEnabled": {
+      "owner": "agent",
+      "groups": [
+        "knowledge",
+        "system",
+        "visual"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "visual_backends.mjs::VISUAL_BACKEND_PROFILES": {
+      "owner": "visual",
+      "groups": [
+        "system"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "visual_backends.mjs::detectGraphExtractionRuntimeHealth": {
+      "owner": "visual",
+      "groups": [
+        "system"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "visual_backends.mjs::detectVisualRuntimeHealth": {
+      "owner": "visual",
+      "groups": [
+        "system"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "visual_backends.mjs::visualSkill": {
+      "owner": "visual",
+      "groups": [
+        "system"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "viz.mjs::chartNameDisplay": {
+      "owner": "visual",
+      "groups": [
+        "agent",
+        "knowledge",
+        "system"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    },
+    "viz.mjs::hashRows": {
+      "owner": "visual",
+      "groups": [
+        "agent",
+        "knowledge",
+        "system"
+      ],
+      "write": false,
+      "why": "10-11 现状，待拆"
+    }
+  }
+}
