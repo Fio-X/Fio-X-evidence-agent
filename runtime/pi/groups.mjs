@@ -185,7 +185,7 @@ export function recordBoundaryWrite(root, target, op = "write") {
     let tag = null;
     const requester = writer ? requestedBy : tool;
     if ((status === "cross_group" || status === "ok") && classified?.kind === "pass_decision" && loadGroups().tools?.[requester]?.model_supplied_pass) {
-      tag = process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === "1" ? "status_computed_by_program" : "model_supplied_pass";
+      tag = (process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === "1" || process.env.NEWSROOM_MODEL_PASS_SELFREPORT === "1") ? "status_computed_by_program" : "model_supplied_pass";
       if (status === "ok" && tag === "model_supplied_pass") { status = "model_supplied_pass"; reason = "The status in this record is supplied by the model; writing the file through the owning group does not make it fine."; }
     }
     const record = { tool: tool ?? null, ...(writer ? { requested_by: requestedBy } : {}), tool_group: group, op, kind: classified?.kind ?? null, owner: classified?.owner ?? null, status, ...(reason ? { reason } : {}), count: 0, examples: [] };
