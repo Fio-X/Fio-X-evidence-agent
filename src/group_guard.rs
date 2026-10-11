@@ -3,7 +3,7 @@
 //!
 //! The judge: the write's path gives its kind and owning group (first matching rule, exact or prefix); the writing group is the group of the current
 //! command in `cli::COMMAND_GROUPS`, or the group of a hand-off writer (`as_writer`) the call site runs inside, with the asking command kept as
-//! `requested_by`. Owner equals writing group: allowed. Anything else is refused before the file is touched: a path in another group's kind, a path
+//! `requested_by` (recorded only, never checked against the content or the writer, K214; the fix is not decided). Owner equals writing group: allowed. Anything else is refused before the file is touched: a path in another group's kind, a path
 //! no rule matches (待查), no command and no writer (no context is never a default allow), a path outside the run folder, a table that cannot be
 //! read. Nothing here has a "let it through on error" branch.
 //!
@@ -12,7 +12,8 @@
 //!
 //! The only writes not judged (E1, fixed and pinned by a test): the program's own scratch folders for the recompute step
 //! (`std::env::temp_dir()/newsroom-recompute-*`, outside the run folder). Reads are not judged (E2). Files a child process keeps inside
-//! itself are not visible here (E3); the Rust commands start no child process that writes into the run folder.
+//! itself are not visible here (E3). The Rust commands do start one such child: `pi.rs` runs Pi with `--session-dir` pointing at `<run>/session/` (pi.rs:896-897; set at artifact.rs:202,
+//! investigate.rs:453, continue_investigation.rs:345, investigate_v2.rs:346). The session files Pi writes there are E3 and are not judged here; Pi's own tools go through the Pi-side checks.
 
 use serde_json::Value;
 use std::cell::RefCell;
