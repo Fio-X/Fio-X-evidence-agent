@@ -251,12 +251,17 @@ check("a refused write leaves no file on the disk (immutable write, bytes write,
 {
   const dir = artifactDir({ NEWSROOM_GROUP_ENFORCE: "1", NEWSROOM_GROUP_HANDOFF: "1", NEWSROOM_GROUP_BOUNDARY: "1" });
   await groups.runInTool("newsroom_viz_lint", () => mod.__writeArtifactIfAbsentForTest("computations/x.json", { a: 1 })).then(() => assert.fail("a direct write must be refused"), (e) => assert.equal(e.code, "BOUNDARY_REFUSED"));
+  // K214 part B: the knowledge writer takes a query-rows table only when the computation record of the same name has those rows
+  const { hashRows } = await import(urlOf(join(ROOT, "runtime/pi/viz.mjs")));
+  mkdirSync(join(dir, "computations"), { recursive: true });
+  writeFileSync(join(dir, "computations/abc.json"), JSON.stringify({ rows: [{ a: 1 }], result_hash: hashRows([{ a: 1 }]) }));
   await groups.runInTool("newsroom_viz_render", () => mod.__saveQueryRowsForTest("runtime/query-rows/abc.json", [{ a: 1 }]));
   await groups.runInTool("newsroom_infographic_vision_critic", () => mod.__saveDecisionForTest("infographics/vision-critics/k.json", { passed: false, score: 12 }));
-  await groups.runInTool("newsroom_infographic_plan", () => mod.__saveRejectionForTest("infographics/plan-rejections/x.json", { kind: "rejected_call" }));
+  const rejectionRef = `infographics/plan-rejections/${"a".repeat(64)}.json`;
+  await groups.runInTool("newsroom_infographic_plan", () => mod.__saveRejectionForTest(rejectionRef, { schema_version: "0.1.0", kind: "rejected_call", tool: "newsroom_infographic_plan", params: {} }));
   await groups.runInTool("newsroom_visual_concepts", () => mod.__saveChainEventForTest({ type: "setup_input_form" }));
   await groups.runInTool("newsroom_infographic_chain", () => mod.__saveChainEventForTest({ type: "tool_execution_start" }));
-  for (const f of ["runtime/query-rows/abc.json", "infographics/vision-critics/k.json", "infographics/plan-rejections/x.json"]) assert.ok(existsSync(join(dir, f)), `${f} was written through its group's writer`);
+  for (const f of ["runtime/query-rows/abc.json", "infographics/vision-critics/k.json", rejectionRef]) assert.ok(existsSync(join(dir, f)), `${f} was written through its group's writer`);
   assert.equal(readFileSync(join(dir, "runtime/tool-chain-events.jsonl"), "utf8").trim().split("\n").length, 2);
   const report = JSON.parse(readFileSync(join(dir, groups.BOUNDARY_REPORT_PATH), "utf8"));
   const by = (requested) => report.records.find((r) => r.requested_by === requested);
