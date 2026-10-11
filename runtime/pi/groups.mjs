@@ -16,7 +16,8 @@
 // NEWSROOM_GROUP_TOOLS=1 (exact value, default off; needs NEWSROOM_GROUP_ENFORCE=1, newsroom.ts stops at start-up without it): every tool goes through one
 // wrapper at the single registration point (withGroupTools). A tool that groups.json does not list with a group and a group.action name stops the start-up.
 // A tool that starts a child process declares its output files first (runDeclared): each declared file is judged like an in-process write before the process
-// starts, and after it ends any NEW file in the watched folders that was not declared is deleted again and the call is refused. That second part is a check
+// starts, and after it ends any NEW file in the watched folders that was not declared is deleted again and the call is refused; a file that already existed
+// and was rewritten or removed is refused too, but cannot be restored (reported as such). A file a tool call running at the same time wrote through a judged write is that call's. That second part is a check
 // AFTER writing with a rollback, not a refusal before writing: a child process can write what it likes in between.
 // The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
 // fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
@@ -24,7 +25,8 @@
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -98,7 +100,7 @@ function knownTag(path, kind) {
 export const NOT_TRACED = [
   "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
   "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
-  "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) only for NEW files, so a child process that rewrites or deletes an existing file is not seen; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
+  "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) for new, rewritten and removed files (other than the program's own bookkeeping files), but a rewrite that keeps size and modification time is only seen for evidence files (by content hash), and a file a call running at the same time wrote without a judged write is refused but not deleted; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
   "hand-off writers (runAsWriter here, as_writer in src/group_guard.rs): the write is recorded under the writer's group with the asking tool or command kept as requested_by, but the requester and the content are not checked (K214, fix not yet decided)",
   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
@@ -246,6 +248,7 @@ function enforceBoundary(root, target, op) {
  */
 export function recordBoundaryWrite(root, target, op = "write") {
   enforceBoundary(root, target, op);
+  noteCallWrite(root, target);
   if (!boundaryReportEnabled() || !root) return;
   try {
     const evaluated = evaluateWrite(root, target);
@@ -291,6 +294,43 @@ const checkedTools = new WeakSet();
 export const isGroupChecked = (tool) => checkedTools.has(tool);
 let inFlight = 0, overlaps = 0;
 
+// Which call wrote which file. Every tool call (and every runDeclared outside a tool) is one "call"; a judged write (recordBoundaryWrite, which runs before the
+// file is written) is noted under the call it was made in, and when that call ends the noted files are hashed (the content the call left behind). Calls that
+// were in flight at the same time know each other's notes, so runDeclared can tell a file a sibling call wrote from one its own child process wrote: a file
+// counts as the sibling's only while its content is still what the sibling left (an ended sibling's hash must match; if somebody changed it afterwards the
+// change is this call's). A sibling that has not ended yet cannot be checked: its notes are accepted as they are (the gap is listed in the report).
+// Nothing here lets a write through: a file nobody noted is still refused.
+const callStore = new AsyncLocalStorage();
+const activeCalls = new Set();
+let callSeq = 0;
+function startCall() {
+  const call = { id: ++callSeq, root: null, notes: new Map(), done: false, overlap: new Map() };
+  for (const other of activeCalls) { other.overlap.set(call.id, call); call.overlap.set(other.id, other); }
+  activeCalls.add(call);
+  return call;
+}
+function finishCall(call) {
+  for (const [path, note] of call.notes) note.hash = hashOf(join(call.root, path));
+  call.done = true;
+  activeCalls.delete(call);
+}
+// A wrapped tool call always starts a new call, even when another tool's execute runs inside it (a chain, a parallel task): a write made there is that
+// call's own, not the caller's child process's. runDeclared joins the call it is in, or starts one when it runs outside any tool.
+const runInCall = async (fn, { join: joinExisting = false } = {}) => {
+  if (joinExisting && callStore.getStore()) return fn();
+  const call = startCall();
+  try { return await callStore.run(call, fn); } finally { finishCall(call); }
+};
+function noteCallWrite(root, target) {
+  if (!groupToolsEnabled() || !root) return;
+  const call = callStore.getStore();
+  if (!call) return;
+  const text = String(target ?? "");
+  call.root = root;
+  const path = (isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/");
+  call.notes.set(path, { hash: null });
+}
+
 /** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
 export function assertGroupToolsSwitches() {
   if (groupToolsEnabled() && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
@@ -315,7 +355,7 @@ export function withGroupTools(tool) {
     execute: async (...args) => {
       if (inFlight > 0) overlaps += 1;
       inFlight += 1;
-      try { return await inner.execute(...args); } finally { inFlight -= 1; }
+      try { return await runInCall(() => inner.execute(...args)); } finally { inFlight -= 1; }
     },
   };
   checkedTools.add(wrapped);
@@ -327,57 +367,121 @@ export function assertAllGroupChecked(tools) {
   for (const tool of tools) if (!isGroupChecked(tool)) throw new Error(`GROUP_TOOLS_UNWRAPPED: ${JSON.stringify(String(tool?.name ?? ""))} reached Pi without going through the group check`);
 }
 
-/** Every file under dir, recursively, as paths relative to dir ("a/b.svg"); null when dir cannot be read. The watched folders are small. */
-const listFiles = (dir, prefix = "") => {
+/**
+ * Every file under dir, recursively, as Map(path relative to dir -> { size, mtimeMs, hash }); null when dir cannot be read. The watched folders are
+ * small. `hash` (sha256) is only taken for files the classifier calls evidence (their content is what the run is proven on); every other file is judged
+ * by size and modification time. `base` is dir's own path relative to the run folder, so the classifier sees run-relative names.
+ */
+const listFiles = (root, base, prefix = "") => {
+  const dir = join(root, base === "." ? "" : base, prefix);
   let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return prefix ? new Set() : null; }
-  const out = new Set();
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return prefix ? new Map() : null; }
+  const out = new Map();
   for (const entry of entries) {
     const name = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) { for (const inner of listFiles(join(dir, entry.name), name) ?? []) out.add(inner); } else out.add(name);
+    if (entry.isDirectory()) { for (const [inner, info] of listFiles(root, base, name) ?? []) out.set(inner, info); continue; }
+    let stat;
+    try { stat = lstatSync(join(dir, entry.name)); } catch { out.set(name, { size: -1, mtimeMs: -1, hash: null }); continue; }
+    out.set(name, { size: stat.size, mtimeMs: stat.mtimeMs, hash: isEvidencePath(base === "." ? name : `${base}/${name}`) ? hashOf(join(dir, entry.name)) : null });
   }
   return out;
 };
+const hashOf = (path) => { try { return createHash("sha256").update(readFileSync(path)).digest("hex"); } catch { return null; } };
+const isEvidencePath = (rel) => { try { return classifyArtifact(rel)?.kind === "evidence"; } catch { return false; } };
 const isE1Temp = (rel) => E1_TEMP_SUFFIXES.some((suffix) => rel.endsWith(suffix)) || E1_TEMP_FOLDERS.some((folder) => rel.startsWith(folder));
+
+/** The program's own bookkeeping: files it appends to or rewrites while a tool runs. A child process's change to one of these is not judged (pinned by test_group_tools;
+ *  every entry was found in groups.json or in the writer's source, an entry missing here would be a false refusal, an entry too many a hole). Only changes and
+ *  removals are exempt, a NEW file of this name is still judged. */
+export const BOOKKEEPING_FILES = Object.freeze([
+  "events.jsonl", "run-metrics.jsonl", "conversation.md", "plan-progress.json",
+  "runtime/group-boundary-report.json", "runtime/boundary-refusals.jsonl", "runtime/tool-chain-events.jsonl",
+]);
+export const BOOKKEEPING_FOLDERS = Object.freeze(["session/"]);
+const isBookkeeping = (rel) => BOOKKEEPING_FILES.includes(rel) || BOOKKEEPING_FOLDERS.some((folder) => rel.startsWith(folder));
 
 /**
  * Run a child process that writes files, for a tool. `outputs` (artifact-relative paths) are declared before it starts: each is judged now like an
  * in-process write (a refusal here means the process never starts). `watch` (default: the folders of the outputs, or the run folder itself when nothing
- * is declared) is compared before and after, recursively (a file written into a sub-folder is seen); a new file that was not declared is deleted and the call is refused. If another tool call
- * ran at the same time the new file cannot be told from that call's own, so it is reported and refused but not deleted. Off: fn() unchanged.
+ * is declared) is compared before and after, recursively: a new file that was not declared is deleted and the call is refused; a file that already existed
+ * and was rewritten (size or time changed; evidence files by content hash) or removed is refused and reported as not restored (nothing can bring the old
+ * content back). The program's bookkeeping files (BOOKKEEPING_FILES) may change. A file another tool call that ran at the same time wrote (its judged write
+ * was noted under that call) is that call's, not this child process's. A file nobody noted is still this call's: if another call ran at the same time the
+ * file cannot be told from its unjudged writes, so it is reported and refused but not deleted. Off: fn() unchanged.
  */
 export async function runDeclared(root, outputs, fn, { watch } = {}) {
   if (!groupToolsEnabled()) return fn();
+  return runInCall(() => runDeclaredInCall(root, outputs, fn, { watch }), { join: true });
+}
+
+async function runDeclaredInCall(root, outputs, fn, { watch }) {
   if (!root) throw new BoundaryRefusal(refusalText({ tool: currentTool(), path: "(no artifact root)" }), { status: "check_failed" });
   const rel = (p) => (isAbsolute(String(p)) ? relative(root, String(p)) : String(p)).replace(/\\/g, "/");
   const declared = new Set(outputs.map(rel));
   for (const path of declared) if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
   const dirs = new Set((watch ?? (declared.size ? [...declared].map((p) => dirname(p)) : ["."])).map((d) => rel(d) || "."));
-  const before = new Map([...dirs].map((d) => [d, listFiles(join(root, d))]));
+  const before = new Map([...dirs].map((d) => [d, listFiles(root, d)]));
   const overlapsBefore = overlaps;
+  const me = callStore.getStore();
   let failure = null, value;
   try { value = await fn(); } catch (error) { failure = error; }
   const overlapped = inFlight > 1 || overlaps !== overlapsBefore;
-  const extra = [];
+  // a file a call that ran at the same time noted as its own write belongs to that call
+  const siblingWrote = (path) => {
+    for (const other of me?.overlap.values() ?? []) {
+      const note = other.notes.get(path);
+      if (!note || other.root !== root) continue;
+      // the sibling has not ended: what it left cannot be compared yet. Ended: the file must still be what it left.
+      if (!other.done || (note.hash !== null && hashOf(join(root, path)) === note.hash)) return true;
+    }
+    return false;
+  };
+  const exempt = (path) => declared.has(path) || isE1Temp(path) || siblingWrote(path);
+  const extra = [], changed = [], deleted = [];
   const seen = new Set();
+  const priorTo = (dir, name, path) => before.get(dir)?.get(name) ?? [...dirs].map((d) => {
+    // the same file can be reached from two watched folders ("." and "data"): a file already present before under any watched folder is not new
+    const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null;
+    return rest === null ? undefined : before.get(d)?.get(rest);
+  }).find((x) => x !== undefined);
   for (const dir of dirs) {
-    const now = listFiles(join(root, dir));
+    const now = listFiles(root, dir);
     if (!now) continue;
-    for (const name of now) {
+    for (const [name, info] of now) {
       const path = dir === "." ? name : `${dir}/${name}`;
-      if (before.get(dir)?.has(name) || declared.has(path) || isE1Temp(path) || seen.has(path)) continue;
-      // the same file can be reached from two watched folders ("." and "data"): a file already present before under any watched folder is not new
-      if ([...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && before.get(d)?.has(rest); })) continue;
-      seen.add(path);
-      extra.push(path);
+      if (seen.has(path)) continue;
+      const prior = priorTo(dir, name, path);
+      if (!prior) { if (exempt(path)) continue; seen.add(path); extra.push(path); continue; }
+      if (isBookkeeping(path) || exempt(path)) continue;
+      const moved = prior.size !== info.size || prior.mtimeMs !== info.mtimeMs;
+      // evidence: judged by content, so a rewrite with the same bytes is not a change; every other file: any size or time change is a rewrite
+      const differs = prior.hash !== null ? prior.hash !== info.hash : moved;
+      if (differs) { seen.add(path); changed.push(path); }
+    }
+    for (const [name] of before.get(dir) ?? []) {
+      const path = dir === "." ? name : `${dir}/${name}`;
+      if (seen.has(path) || now.has(name) || isBookkeeping(path) || exempt(path)) continue;
+      // moved into another watched folder's listing does not count as removed
+      if ([...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && listFiles(root, d)?.has(rest); })) continue;
+      seen.add(path); deleted.push(path);
     }
   }
-  if (extra.length) {
+  if (extra.length || changed.length || deleted.length) {
     const rolledBack = [];
     if (!overlapped) for (const path of extra) { try { rmSync(join(root, path), { force: true }); rolledBack.push(path); } catch {} }
-    const info = { tool: currentTool(), group: toolGroup(currentTool()), path: extra[0], kind: null, owner: null, writer: null, status: "undeclared_output", extra, rolled_back: rolledBack, overlapped };
+    const first = extra[0] ?? changed[0] ?? deleted[0];
+    const info = {
+      tool: currentTool(), group: toolGroup(currentTool()), path: first, kind: null, owner: null, writer: null,
+      status: extra.length ? "undeclared_output" : "undeclared_change", extra, rolled_back: rolledBack, overlapped,
+      ...(changed.length || deleted.length ? { changed, deleted, restored: false } : {}),
+    };
     noteRefusal(root, { op: "subprocess_output", ...info });
-    const error = new BoundaryRefusal(`boundary: ${info.tool || "unknown tool"}（${info.group || "unknown group"}）child process wrote ${extra.length} file(s) it did not declare (first: ${extra[0]})${overlapped ? "; not deleted because another tool call ran at the same time" : "; deleted again"}.`, info);
+    const parts = [];
+    if (extra.length) parts.push(`wrote ${extra.length} file(s) it did not declare (first: ${extra[0]})`);
+    if (changed.length) parts.push(`rewrote ${changed.length} existing file(s) (first: ${changed[0]}; not restored)`);
+    if (deleted.length) parts.push(`removed ${deleted.length} existing file(s) (first: ${deleted[0]}; not restored)`);
+    const tail = extra.length ? (overlapped ? "; not deleted because another tool call ran at the same time" : "; deleted again") : "";
+    const error = new BoundaryRefusal(`boundary: ${info.tool || "unknown tool"}（${info.group || "unknown group"}）child process ${parts.join(" and ")}${tail}.`, info);
     error.code = TOOLS_REFUSAL_CODE;
     throw error;
   }
