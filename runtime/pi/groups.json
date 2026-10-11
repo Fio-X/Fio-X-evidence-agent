@@ -677,7 +677,7 @@
   },
   "runtime/pi/decision_writer.mjs": {
    "group": "agent",
-   "note": "Writes the expert-preference record, the award-mode status and the competition preflight on behalf of the visual-side tools (hand-off switch)."
+   "note": "Writes the expert-preference record, the award-mode status and the competition preflight, plus the vision-critic record (infographics/vision-critics/), on behalf of the visual-side tools (hand-off switch)."
   },
   "runtime/pi/agent_record_writer.mjs": {
    "group": "agent",
