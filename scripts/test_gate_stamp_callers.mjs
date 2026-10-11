@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FORBIDDEN = [/\brequireVerifiedClaim\s*\(/, /\bderiveClaimVerification\s*\(/, /\bverifiedClaimRecords\s*\(/, /\bverifiedClaimIds\s*\(/, /\bisSystemVerifiedClaim\s*\(/, /\bartifact_status\s*:/];
-const REQUIRED = { newsroom_viz_plan: ["verifiedClaimFor(", "chartPlanStamp("] };
+const REQUIRED = { newsroom_viz_plan: ["verifiedClaimFor(", "chartPlanStamp("], newsroom_viz_render: ["chartRenderStatus("] };
 
 export function toolBody(src, tool) {
   const start = src.indexOf(`name: "${tool}"`);
@@ -33,8 +33,11 @@ assert.deepEqual(problems(src), [], "the visual tools take the stamp from the ga
 
 // counter-tests: a visual tool going back to the old call is red
 const plan = toolBody(src, "newsroom_viz_plan");
+const render = toolBody(src, "newsroom_viz_render");
 const planBad = src.replace(plan, plan.replace("await verifiedClaimFor(", "requireVerifiedClaim(await verifiedClaimRecords(), "));
 assert.ok(problems(planBad).some((m) => m.startsWith("newsroom_viz_plan calls")), "viz_plan reading the registry itself is red");
 const stampBad = src.replace(plan, plan.replace("...(await chartPlanStamp(", "artifact_status: \"VERIFIED\", ...(await chartPlanStamp("));
 assert.ok(problems(stampBad).some((m) => /artifact_status/.test(m)), "viz_plan stamping itself is red");
+const renderBad = src.replace(render, render.replace("...renderStamp,", "...renderStamp, verification: deriveClaimVerification({}),"));
+assert.ok(problems(renderBad).some((m) => m.startsWith("newsroom_viz_render calls")), "viz_render building the verification itself is red");
 console.log("gate stamp callers -- PASS");
