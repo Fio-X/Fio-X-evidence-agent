@@ -6,6 +6,7 @@
 //     for charts with several value sets, or when the text holds a number word;
 //  3. end to end through the render tool: off states are byte-identical to unset (also with the probe on), on adds the note and nothing else.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { extremeNoteEnabled, extremeNoteText, pairDistance, probeExtremes } from "../runtime/pi/extreme_probe.mjs";
@@ -116,6 +117,13 @@ const near = (a, b, label) => assert.ok(Math.abs(a - b) < 5e-7, `${label}: ${a} 
 // ---- 3. the switch -------------------------------------------------------------------------------------------------
 for (const [value, expected] of [[undefined, false], ["0", false], ["", false], ["yes", false], [" 1", false], ["on", false], ["true", false], ["11", false], ["1", true]]) {
   assert.equal(extremeNoteEnabled({ NEWSROOM_EXTREME_NOTE: value }), expected, JSON.stringify(value));
+}
+
+// Section 4 runs the real DuckDB through the harness (NEWSROOM_DUCKDB_BIN, default `duckdb`); it is the last section, so without the binary
+// it prints SKIP and stops. NEWSROOM_REQUIRE_NO_SKIP=1 (exact) turns that into a failure so a run that must skip nothing cannot pass silently.
+if (spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT") {
+  console.log("SKIP: duckdb binary not found; the end-to-end render-tool checks (section 4) did not run");
+  process.exit(process.env.NEWSROOM_REQUIRE_NO_SKIP === "1" ? 1 : 0);
 }
 
 // ---- 4. end to end through the render tool -------------------------------------------------------------------------
