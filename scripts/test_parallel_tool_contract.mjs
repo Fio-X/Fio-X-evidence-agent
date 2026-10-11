@@ -41,8 +41,15 @@ assert.deepEqual(generatedJsTask, canonicalTask, 'generated JS metadata must mat
 const runtime = await read('../src/runtime.rs');
 assert.match(runtime, /const PARALLEL_SCHEDULER_RUNTIME[\s\S]*?include_str!\("\.\.\/runtime\/pi\/parallel_scheduler\.mjs"\)/);
 assert.match(runtime, /const LOCAL_BACKEND_RUNTIME[\s\S]*?include_str!\("\.\.\/runtime\/pi\/local_backend\.mjs"\)/);
-assert.match(runtime, /write_if_changed\(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME\)/);
-assert.match(runtime, /write_if_changed\(&local_backend_path, LOCAL_BACKEND_RUNTIME\)/);
+// write_if_changed takes the artifact root first (the group guard judges every Rust write by the current command's group)
+const materializes = (source, pathName, constName) => new RegExp(`write_if_changed\\(artifact_dir, &${pathName}, ${constName}\\)\\?;`).test(source);
+assert.ok(materializes(runtime, 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'), 'the parallel scheduler runtime file must be written into the run folder');
+assert.ok(materializes(runtime, 'local_backend_path', 'LOCAL_BACKEND_RUNTIME'), 'the local backend runtime file must be written into the run folder');
+// mutation: with the write removed the same check must fail (the test cannot pass on a source that no longer writes the file)
+assert.ok(!materializes(runtime.replace(/ *write_if_changed\(artifact_dir, &parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME\)\?;\n/, ''), 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'), 'mutation: removing the scheduler write must fail the check');
+assert.ok(!materializes(runtime.replace(/ *write_if_changed\(artifact_dir, &local_backend_path, LOCAL_BACKEND_RUNTIME\)\?;\n/, ''), 'local_backend_path', 'LOCAL_BACKEND_RUNTIME'), 'mutation: removing the local backend write must fail the check');
+// the old two-argument form is not what the program writes any more
+assert.ok(!materializes(runtime.replace('write_if_changed(artifact_dir, &parallel_scheduler_path', 'write_if_changed(&parallel_scheduler_path'), 'parallel_scheduler_path', 'PARALLEL_SCHEDULER_RUNTIME'));
 
 const extension = await read('../runtime/pi/newsroom.ts');
 assert.match(extension, /import \{ runTaskDag \} from "\.\/parallel_scheduler\.mjs";/);
