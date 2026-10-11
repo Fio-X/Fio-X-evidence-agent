@@ -4275,7 +4275,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const outputName = params.mode === "report" ? "index.html" : params.output_name;
       const outputMode = params.output_mode ?? "auto";
       if (params.mode === "report" && outputMode === "image") throw new Error("report mode requires output_mode=html or auto; use mode=chart for an image delivery");
-      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: mobilePagesEnabled() });
+      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: mobilePagesEnabled(), verified_claims: await verifiedClaimRecords() });
       const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
       const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
