@@ -1409,6 +1409,14 @@ async function chartPlanStamp(mode: "verified" | "draft", record: any) {
   return chartVerificationStamp(mode, record);
 }
 
+// What a lint decides: the claim must be system-verified and its binding to the chart must hold; the lint record carries only the three mode keys.
+async function chartLintStatus(claimId: unknown, claimBindings: Record<string, any>) {
+  assertCrossCall(artifactRoot(), "chartLintStatus");
+  const systemVerified = Boolean(claimId && (await verifiedClaimRecords()).has(String(claimId)) && claimBindings[String(claimId)]?.ok === true);
+  const { verification_mode, artifact_status, publishable } = chartVerificationStamp(systemVerified ? "verified" : "draft", undefined);
+  return { systemVerified, stamp: { verification_mode, artifact_status, publishable } };
+}
+
 // What a render decides: whether the plan's claim is system-verified now, its record, and the stamp that goes with that.
 async function chartRenderStatus(claimId: unknown) {
   assertCrossCall(artifactRoot(), "chartRenderStatus");
@@ -4732,7 +4740,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       assertPlanValuesNotHeld(spec);
       const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
-      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
+      const { systemVerified, stamp: lintStamp } = await chartLintStatus(spec.claim_id, claimBindings);
       const inputSnapshotHash = inputSnapshot.hash;
       // With the atomic switch on, key and record use the same normalized SQL
       // duckdb_query writes, so one computation is one file whichever tool ran first.
@@ -4754,9 +4762,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         schema_version: "0.9.0",
         plan_ref: params.plan_ref,
         computation_ref: computationRef,
-        verification_mode: systemVerified ? "verified" : "draft",
-        artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
-        publishable: systemVerified,
+        ...lintStamp,
       });
       // Shadow check (off unless NEWSROOM_SHADOW_CHECKS=1): runs after every
       // artifact above is written and only adds a side file plus details.shadow.

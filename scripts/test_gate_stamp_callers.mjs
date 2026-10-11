@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FORBIDDEN = [/\brequireVerifiedClaim\s*\(/, /\bderiveClaimVerification\s*\(/, /\bverifiedClaimRecords\s*\(/, /\bverifiedClaimIds\s*\(/, /\bisSystemVerifiedClaim\s*\(/, /\bartifact_status\s*:/];
-const REQUIRED = { newsroom_viz_plan: ["verifiedClaimFor(", "chartPlanStamp("], newsroom_viz_render: ["chartRenderStatus("] };
+const REQUIRED = { newsroom_viz_plan: ["verifiedClaimFor(", "chartPlanStamp("], newsroom_viz_lint: ["chartLintStatus("], newsroom_viz_render: ["chartRenderStatus("] };
 
 export function toolBody(src, tool) {
   const start = src.indexOf(`name: "${tool}"`);
@@ -38,6 +38,11 @@ const planBad = src.replace(plan, plan.replace("await verifiedClaimFor(", "requi
 assert.ok(problems(planBad).some((m) => m.startsWith("newsroom_viz_plan calls")), "viz_plan reading the registry itself is red");
 const stampBad = src.replace(plan, plan.replace("...(await chartPlanStamp(", "artifact_status: \"VERIFIED\", ...(await chartPlanStamp("));
 assert.ok(problems(stampBad).some((m) => /artifact_status/.test(m)), "viz_plan stamping itself is red");
+const lint = toolBody(src, "newsroom_viz_lint");
+const lintBad = src.replace(lint, lint.replace("...lintStamp,", "artifact_status: systemVerified ? \"VERIFIED\" : \"DRAFT\","));
+assert.ok(problems(lintBad).some((m) => /newsroom_viz_lint calls/.test(m)), "viz_lint stamping itself is red");
+const lintBad2 = src.replace(lint, lint.replace("await chartLintStatus(spec.claim_id, claimBindings)", "{ systemVerified: Boolean((await verifiedClaimIds()).length), stamp: {} }"));
+assert.ok(problems(lintBad2).length, "viz_lint reading the registry itself is red");
 const renderBad = src.replace(render, render.replace("...renderStamp,", "...renderStamp, verification: deriveClaimVerification({}),"));
 assert.ok(problems(renderBad).some((m) => m.startsWith("newsroom_viz_render calls")), "viz_render building the verification itself is red");
 // lieflat.mjs does not read the claim registry; the calling tool passes the verified records in
