@@ -791,6 +791,9 @@
   "runtime/pi/groups.mjs": {
    "group": "system",
    "note": "Loader, boundary report and tool-order helpers for the group list."
+  },
+  "src/group_guard.rs": {
+   "group": "system"
   }
  },
  "artifact_kinds": {
@@ -826,6 +829,10 @@
    "verification_record": {
     "owner": "knowledge",
     "what": "the program-computed result of the independent evidence check (verification.json)"
+   },
+   "materialized_runtime": {
+    "owner": "system",
+    "what": "the program's own code and assets copied into the run folder at start (runtime.rs materialize_extension): fixed names only, no Pi tool writes any of them"
    }
   },
   "rules": [
@@ -863,6 +870,476 @@
     "kind": "run_record",
     "exact": "session/",
     "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "sources/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "searches/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/assets/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/vendor/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/process.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/newsroom.ts",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/viz.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/cartography.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/economy_names.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/choropleth.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/net.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/provenance.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/pdf_extract.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/evidence_gate.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/claim_lint.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/infographic.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/explanatory.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illustration.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/vision.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/competition.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/story_graph.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/fact_graph.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_grammar.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_validators.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/art_direction.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/visual_backends.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/backend_policy.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/measure_semantics.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_semantics.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/contract_text.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/visual_skill_bundle.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_design_system_bundle.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/rasterize_svg.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/publication.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/plotly_editorial.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/d3_editorial.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/vendor",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/browser_qa.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/computation_rows.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/networkx_analyze.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/networkx_reduce.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/scientific_basemap_prepare.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/model_spec.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/style_mapping.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/map_spec.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/scientific_map.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/basemap_registry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/flow_layout.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/map_reference_layers.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/publication_binding.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/svg_security.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/asof_probe.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/claim_binding.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/number_shadow.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/compact_setup.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/number_words.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/data_notes.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/preflight.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/patch_retry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/shadow.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/extreme_probe.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/extreme_probe_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_chain.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_phase_policy.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_registry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/parallel_scheduler.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/local_backend.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/lieflat.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_geometry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_contrast.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_svg.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_labels.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_ticks.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/flow_map_labels.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/flow_styles.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/groups.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/knowledge_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/decision_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/shadow_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/agent_record_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/probe_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/fetch_split_probe.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/groups.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin0-110m.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin0-50m.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/gshhs-i-syros-local.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/economy-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/currency-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin0-50m-attributes.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/vendor/plotly-3.3.1.min.js",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
     "kind": "evidence",

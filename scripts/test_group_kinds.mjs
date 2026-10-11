@@ -22,7 +22,12 @@ for (const row of samples) eq(kindOf(row.path), row.kind, `sample ${JSON.stringi
 // 2: the table as it was in groups.mjs before it moved into groups.json
 const OLD = [[/^claims\.jsonl$/, "evidence"], [/^(computations|sources|searches|data)\//, "evidence"], [/^runtime\/query-rows\//, "evidence"], [/^shadow\//, "observation"], [/^visualizations\/graph-analysis\//, "evidence"], [/^editorial\/(preferences|award-runs)\//, "pass_decision"], [/^infographics\/(vision-critics|competition-preflight)\//, "pass_decision"], [/^verification-rounds\//, "pass_decision"], [/^plan\.json$/, "project_state"], [/^runtime\//, "project_state"], [/^infographics\/(plan-rejections|plan-patches|chain-rejections|chain-patches)\//, "project_state"], [/^(visualizations|infographics|editorial|maps|models|publications|lieflat)\//, "visual_spec"], [/^config\//, "rules"]];
 const oldKind = (path) => { for (const [re, kind] of OLD) if (re.test(path)) return kind; return null; };
-const SKELETON = new Set(["data/", "data/origins/", "computations/", "visualizations/", "infographics/"]);
+const SKELETON = new Set(["data/", "data/origins/", "computations/", "visualizations/", "infographics/", "runtime/", "sources/", "searches/", "runtime/assets/", "runtime/vendor/"]);
+// The files runtime.rs copies into the run folder, read from the source so the table cannot drift from what the program writes.
+const runtimeSource = readFileSync(join(ROOT, "src/runtime.rs"), "utf8");
+const MATERIALIZED = new Set();
+for (const [dir, prefix] of [["runtime_dir", "runtime/"], ["assets_dir", "runtime/assets/"], ["vendor_dir", "runtime/vendor/"]]) for (const m of runtimeSource.matchAll(new RegExp(`${dir}\\s*\\.join\\("([^"]+)"\\)`, "g"))) MATERIALIZED.add(prefix + m[1]);
+assert.equal(MATERIALIZED.size, 89, "runtime.rs materializes 89 fixed names under runtime/");
 const dirs = ["", "data", "computations", "sources", "searches", "visualizations", "infographics", "editorial", "maps", "models", "publications", "lieflat", "config", "runtime", "shadow", "verification-rounds", "session", "plan-progress"];
 const leaves = ["", "a.json", "x/y.json", "claims.jsonl", "plan.json", "story.json", "answer.md", "graph-analysis/g.json", "query-rows/q.json", "origins/o.json", "plan-rejections/r.json", "plan-patches/p.json", "chain-rejections/r.json", "chain-patches/p.json", "vision-critics/v.json", "competition-preflight/c.json", "preferences/p.json", "award-runs/a.json"];
 const paths = new Set(samples.map((row) => row.path));
@@ -30,25 +35,27 @@ for (const d of dirs) for (const l of leaves) paths.add(d && l ? `${d}/${l}` : d
 let filledIn = 0;
 for (const path of paths) {
   const before = oldKind(path), after = kindOf(path);
-  if (before !== null && !SKELETON.has(path)) eq(after, before, `old classification kept: ${JSON.stringify(path)}`);
+  if (before !== null && !SKELETON.has(path) && !MATERIALIZED.has(path)) eq(after, before, `old classification kept: ${JSON.stringify(path)}`);
   if (before === null && after !== null) filledIn += 1;
-  if (before !== after && before !== null) assert.ok(SKELETON.has(path), `a classified path changed kind: ${JSON.stringify(path)} ${before} -> ${after}`);
+  if (before !== after && before !== null) assert.ok(SKELETON.has(path) || MATERIALIZED.has(path), `a classified path changed kind: ${JSON.stringify(path)} ${before} -> ${after}`);
 }
 assert.ok(filledIn >= 12, `previously-unclassified paths now classified: ${filledIn}`);
 console.log(`group kinds: ${filledIn} paths in the sample went from 待查 to classified (fixed names only)`);
 
-// 3
+// 3: every rule with a note is a fixed name (exact), nothing added is a prefix; the materialized rows are exactly what runtime.rs writes
 const list = g.loadGroups();
 const rules = list.artifact_kinds.rules;
-const firstAdded = rules.findIndex((r) => r.kind === "project_state" && r.exact === "story.json");
-assert.ok(firstAdded > 0);
-const added = [...rules.filter((r) => r.kind === "run_record" && (r.exact === "" || r.exact?.endsWith("/"))), ...rules.slice(firstAdded)];
+const added = rules.filter((r) => r.note !== undefined);
 for (const rule of added) {
   assert.ok(rule.exact !== undefined && rule.prefix === undefined, `added rule is a fixed name, not a prefix: ${JSON.stringify(rule)}`);
   assert.ok(typeof rule.note === "string" && rule.note.length > 30, `added rule has a note: ${JSON.stringify(rule.exact)}`);
   checks += 2;
 }
-eq(added.length, 19, "added fixed names: 7 skeleton folders + 3 state/verification + 4 transcripts + 5 run files");
+eq(added.filter((r) => r.kind === "materialized_runtime").map((r) => r.exact).sort(), [...MATERIALIZED].sort(), "materialized_runtime rows == the names runtime.rs writes");
+eq(added.filter((r) => r.kind === "run_record" && (r.exact === "" || r.exact.endsWith("/"))).length, 12, "skeleton folders (the run folder + 11 fixed subfolders)");
+eq(added.length, 12 + 89 + 12, "added fixed names: 12 skeleton + 89 materialized + 12 run files / state / verification");
+for (const name of MATERIALIZED) eq(kindOf(name), "materialized_runtime", `${name} is materialized_runtime`);
+for (const name of ["runtime/query-rows/q.json", "runtime/tool-chain-events.jsonl", "runtime/fetch-split-probe/p.json", "runtime/newsroom.ts.bak", "runtime/assets/other.json", "runtime/gis/adnplot.R"]) eq(kindOf(name), name === "runtime/query-rows/q.json" ? "evidence" : "project_state", `${name} stays out of the materialized kind`);
 for (const rule of rules) assert.ok(list.artifact_kinds.ownership[rule.kind]?.owner, `rule kind has an owner: ${rule.kind}`);
 for (const name of ["answer.md", "assistant-answer.md", "conversation.md", "prompt.md"]) eq(g.classifyArtifact(name)?.tag, "transcript", `${name} is tagged transcript`);
 

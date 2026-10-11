@@ -242,5 +242,69 @@
  {
   "path": "data",
   "kind": null
+ },
+ {
+  "path": "runtime/",
+  "kind": "run_record"
+ },
+ {
+  "path": "sources/",
+  "kind": "run_record"
+ },
+ {
+  "path": "searches/",
+  "kind": "run_record"
+ },
+ {
+  "path": "runtime/assets/",
+  "kind": "run_record"
+ },
+ {
+  "path": "runtime/vendor/",
+  "kind": "run_record"
+ },
+ {
+  "path": "runtime/newsroom.ts",
+  "kind": "materialized_runtime"
+ },
+ {
+  "path": "runtime/process.mjs",
+  "kind": "materialized_runtime"
+ },
+ {
+  "path": "runtime/assets/economy-names.json",
+  "kind": "materialized_runtime"
+ },
+ {
+  "path": "runtime/vendor/plotly-3.3.1.min.js",
+  "kind": "materialized_runtime"
+ },
+ {
+  "path": "runtime/browser_qa.py",
+  "kind": "materialized_runtime"
+ },
+ {
+  "path": "runtime/tool-chain-events.jsonl",
+  "kind": "project_state"
+ },
+ {
+  "path": "runtime/fetch-split-probe/p.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "runtime/newsroom.ts.bak",
+  "kind": "project_state"
+ },
+ {
+  "path": "runtime/assets/other.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "config/editorial-grammar-registry.json",
+  "kind": "rules"
+ },
+ {
+  "path": "sources/s.json",
+  "kind": "evidence"
  }
 ]
