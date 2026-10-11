@@ -1517,5 +1517,338 @@
     "note": "Written by the program under investigate-v2: measured timings of a visual story run."
    }
   ]
+ },
+ "handoffs": {
+  "note": "Who may ask a hand-off writer to write, listed by tool or command name, no wildcards. A write by a writer is refused when its path is not in a row of that writer or the current tool is not in that row's requesters. 'not_measured' lists requesters derived from the code but not seen in any test run (10-11 census of 45 tests): a row there is a static inference, and the test for it only proves the table lets it in and lets no other tool in.",
+  "writers": {
+   "knowledge_writer": {
+    "group": "knowledge",
+    "kinds": [
+     "evidence"
+    ]
+   },
+   "shadow_writer": {
+    "group": "knowledge",
+    "kinds": [
+     "observation"
+    ]
+   },
+   "decision_writer": {
+    "group": "agent",
+    "kinds": [
+     "pass_decision"
+    ]
+   },
+   "agent_record_writer": {
+    "group": "agent",
+    "kinds": [
+     "project_state"
+    ]
+   },
+   "probe_writer": {
+    "group": "agent",
+    "kinds": [
+     "project_state"
+    ]
+   },
+   "extreme_probe_writer": {
+    "group": "agent",
+    "kinds": [
+     "project_state"
+    ]
+   }
+  },
+  "rows": [
+   {
+    "writer": "knowledge_writer",
+    "paths": [
+     "computations/"
+    ],
+    "requesters": [
+     "newsroom_viz_lint",
+     "newsroom_viz_plan"
+    ],
+    "not_measured": [],
+    "why": "inline-claim computation records saved for the plan and lint tools",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "knowledge_writer",
+    "paths": [
+     "claims.jsonl"
+    ],
+    "requesters": [
+     "newsroom_viz_plan"
+    ],
+    "not_measured": [],
+    "why": "the inline claim ledger line saved for the plan tool",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "knowledge_writer",
+    "paths": [
+     "runtime/query-rows/"
+    ],
+    "requesters": [
+     "newsroom_viz_lint",
+     "newsroom_viz_render",
+     "newsroom_viz_chain",
+     "duckdb_query",
+     "record_claim",
+     "newsroom_viz_plan",
+     "newsroom_chart",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "not_measured": [
+     "newsroom_viz_plan",
+     "newsroom_chart",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "why": "query-row tables written when a SQL text names a computation record; every tool that reaches queryDuckDb can trigger it (the shadow-check ones only with NEWSROOM_SHADOW_CHECKS=1)",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "shadow_writer",
+    "paths": [
+     "shadow/"
+    ],
+    "requesters": [
+     "newsroom_viz_lint",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "not_measured": [
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "why": "shadow-check side files saved for the visual tools that run the checks",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "editorial/preferences/"
+    ],
+    "requesters": [
+     "newsroom_expert_preference_record"
+    ],
+    "not_measured": [],
+    "why": "expert-preference decision record",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "editorial/award-runs/"
+    ],
+    "requesters": [
+     "newsroom_award_mode_status"
+    ],
+    "not_measured": [],
+    "why": "award-mode status decision record",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "infographics/competition-preflight/"
+    ],
+    "requesters": [
+     "newsroom_competition_preflight"
+    ],
+    "not_measured": [],
+    "why": "competition preflight decision record",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "infographics/vision-critics/"
+    ],
+    "requesters": [
+     "newsroom_infographic_vision_critic"
+    ],
+    "not_measured": [
+     "newsroom_infographic_vision_critic"
+    ],
+    "why": "vision critic decision record (a model quality verdict, never a pass)",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "agent_record_writer",
+    "paths": [
+     "runtime/tool-chain-events.jsonl"
+    ],
+    "requesters": [
+     "newsroom_viz_chain",
+     "newsroom_infographic_chain",
+     "newsroom_visual_concepts"
+    ],
+    "not_measured": [],
+    "why": "the event log of the chain tools; newsroom_visual_concepts is a visual tool that logs through it",
+    "remove_when": "when the visual-concepts tool stops using the chain log"
+   },
+   {
+    "writer": "agent_record_writer",
+    "paths": [
+     "infographics/plan-rejections/"
+    ],
+    "requesters": [
+     "newsroom_infographic_plan"
+    ],
+    "not_measured": [
+     "newsroom_infographic_plan"
+    ],
+    "why": "refused-call store of the plan tool (needs NEWSROOM_SPEED_PLAN_PATCH and the atomic write)",
+    "remove_when": "when the plan tool's refused-call store moves into the agent group"
+   },
+   {
+    "writer": "agent_record_writer",
+    "paths": [
+     "infographics/chain-rejections/"
+    ],
+    "requesters": [
+     "newsroom_infographic_chain"
+    ],
+    "not_measured": [
+     "newsroom_infographic_chain"
+    ],
+    "why": "refused-call store of the infographic chain (needs NEWSROOM_SPEED_CHAIN_PATCH)",
+    "remove_when": "none: the chain is an agent-group tool writing its own folder through the writer"
+   },
+   {
+    "writer": "probe_writer",
+    "paths": [
+     "runtime/fetch-split-probe/"
+    ],
+    "requesters": [
+     "download_data"
+    ],
+    "not_measured": [],
+    "why": "fetch-split diagnostics: download_data (knowledge) leaves a record in a run folder the agent group owns",
+    "remove_when": "when the diagnostic moves out of runtime/ or is dropped"
+   },
+   {
+    "writer": "extreme_probe_writer",
+    "paths": [
+     "runtime/extreme-probe/"
+    ],
+    "requesters": [
+     "newsroom_viz_render"
+    ],
+    "not_measured": [],
+    "why": "extreme-value diagnosis record written when a chart renders",
+    "remove_when": "when the diagnostic moves out of runtime/ or is dropped"
+   }
+  ],
+  "rust": [
+   {
+    "as": "as_data_import",
+    "writer": "knowledge_writer",
+    "group": "knowledge",
+    "commands": [
+     "investigate",
+     "interactive"
+    ],
+    "not_measured": [
+     "investigate",
+     "interactive"
+    ],
+    "why": "data files copied into the run folder with their origin notes (artifact.rs import_data; investigate.rs:390, interactive.rs:165)",
+    "remove_when": "when importing data is a command of the knowledge group"
+   },
+   {
+    "as": "as_verification_record",
+    "writer": "verification_writer",
+    "group": "knowledge",
+    "commands": [
+     "continue"
+    ],
+    "not_measured": [
+     "continue"
+    ],
+    "why": "continue writes only the program-computed not-passed record (continue_investigation.rs:114); verify is a knowledge command and writes it itself",
+    "remove_when": "when continue asks verify for the record"
+   },
+   {
+    "as": "as_materialize",
+    "writer": "materialize_writer",
+    "group": "system",
+    "commands": [
+     "investigate",
+     "continue",
+     "investigate-v2"
+    ],
+    "not_measured": [
+     "investigate",
+     "continue",
+     "investigate-v2"
+    ],
+    "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316, investigate_v2.rs:367)",
+    "remove_when": "when the run folder is prepared by a system command"
+   },
+   {
+    "as": "as_run_bundle",
+    "writer": "run_bundle_writer",
+    "group": "system",
+    "commands": [
+     "investigate",
+     "continue",
+     "investigate-v2",
+     "inspect",
+     "ask",
+     "chat",
+     "interactive"
+    ],
+    "not_measured": [
+     "investigate",
+     "continue",
+     "investigate-v2",
+     "inspect",
+     "ask",
+     "chat",
+     "interactive"
+    ],
+    "why": "run bookkeeping (prompt, answer, stats, event and metric logs, tools.json, the folder skeleton) written by the agent commands and by inspect (audit.rs:517)",
+    "remove_when": "when run bookkeeping is a system service the commands call through a command"
+   }
+  ]
  }
 }

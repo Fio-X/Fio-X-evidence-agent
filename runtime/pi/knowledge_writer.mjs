@@ -3,12 +3,12 @@
 // the file itself. The writer runs the very same store calls on the same arguments in the same order, so paths, bytes and the number of writes do
 // not change; only who the boundary report names as the writer does (the asking tool stays listed as requested_by). A record the store rejects fails
 // here exactly as it does today. Nothing here repairs, adds or fills in a record.
-import { runAsWriter } from "./groups.mjs";
+import { asHandoffWriter } from "./groups.mjs";
 
 export const handoffEnabled = () => process.env.NEWSROOM_GROUP_HANDOFF === "1";
 export const KNOWLEDGE_WRITER = "knowledge_writer";
 
-const inKnowledge = (fn) => runAsWriter("knowledge", KNOWLEDGE_WRITER, fn);
+const inKnowledge = (fn) => asHandoffWriter(KNOWLEDGE_WRITER, fn);
 
 function assertRef(ref, prefix, what) {
   if (typeof ref !== "string" || !ref.startsWith(prefix) || ref.includes("..")) throw new Error(`KNOWLEDGE_WRITER_REF: ${what} must be saved under ${prefix}`);

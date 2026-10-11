@@ -4,7 +4,7 @@
 // as shadow/: an existing file was produced by identical inputs and is left alone. Nothing reads this folder back.
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { recordBoundaryWrite, runAsWriter } from "./groups.mjs";
+import { recordBoundaryWrite, asHandoffWriter } from "./groups.mjs";
 
 export const EXTREME_PROBE_WRITER = "extreme_probe_writer";
 export const EXTREME_PROBE_FOLDER = "runtime/extreme-probe/";
@@ -14,7 +14,7 @@ export function writeExtremeProbeRecord(root, relativePath, body) {
   if (typeof relativePath !== "string" || relativePath.includes("..") || !relativePath.startsWith(EXTREME_PROBE_FOLDER)) {
     throw new Error(`EXTREME_PROBE_WRITER_REF: a diagnosis record must be saved under ${EXTREME_PROBE_FOLDER}`);
   }
-  return runAsWriter("agent", EXTREME_PROBE_WRITER, async () => {
+  return asHandoffWriter(EXTREME_PROBE_WRITER, async () => {
     const absolute = join(root, relativePath);
     await mkdir(dirname(absolute), { recursive: true });
     recordBoundaryWrite(root, relativePath, "write_if_absent");
