@@ -1385,6 +1385,30 @@ export async function verifiedClaimRecords() {
   return out;
 }
 
+// 1011w: a chart plan or manifest carries the claim's verification stamp (verification_mode, artifact_status, publishable, verification).
+// The stamp is made here, in the knowledge group, from the record the system verified, and the visual tools only embed what these return.
+// The key order is the order the plan and manifest always had, so a plan's content hash does not change.
+function chartVerificationStamp(mode: "verified" | "draft", record: any) {
+  return {
+    verification_mode: mode,
+    artifact_status: mode === "verified" ? "VERIFIED" : "DRAFT",
+    publishable: mode === "verified",
+    verification: record?.verification ?? deriveClaimVerification({}),
+  };
+}
+
+// The verified record of one claim id (it throws the same refusal requireVerifiedClaim does when the claim is not system-verified).
+async function verifiedClaimFor(claimId: string, computationRef: string | null = null) {
+  assertCrossCall(artifactRoot(), "verifiedClaimFor");
+  return requireVerifiedClaim(await verifiedClaimRecords(), claimId, computationRef);
+}
+
+// The stamp a plan gets: mode is what the plan was asked for; the record is the verified claim it cites (or the inline one just recorded).
+async function chartPlanStamp(mode: "verified" | "draft", record: any) {
+  assertCrossCall(artifactRoot(), "chartPlanStamp");
+  return chartVerificationStamp(mode, record);
+}
+
 // Loads and hash-verifies a sources/<hash>.json record referenced by a text
 // module's source_quote, exactly like validateSourceEvidence's per-ref check
 // (assertUsableSourceRecord over the recomputed content_hash), so a plan
@@ -4638,18 +4662,17 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       // NEWSROOM_SPEED_FIRST_TRY_ALL: the existing record check for a claim_id passed in the call runs before the refusal is thrown, so its
       // refusal joins the others; it only reads the claim records, writes nothing, and the same check runs again below when nothing was refused.
       if (firstTryAllEnabled() && !inline && params.claim_id) {
-        await attemptAsync(async () => { requireVerifiedClaim(await verifiedClaimRecords(), params.claim_id); });
+        await attemptAsync(async () => { await verifiedClaimFor(params.claim_id); });
       }
       throwCollected();
       let verifiedClaim: any = null;
       let claimText = "";
       if (inline) {
         const recorded = await recordInlineClaim(inline.claim, signal);
-        verifiedClaim = requireVerifiedClaim(await verifiedClaimRecords(), inline.claim.claimId);
+        verifiedClaim = await verifiedClaimFor(inline.claim.claimId);
         claimText = `Claim recorded: VERIFIED by system replay${recorded.reused ? " (this identical claim was already recorded and verified; no new claim line)" : ""}\nclaim_id: ${inline.claim.claimId}\nClaim: ${inline.claim.text}\nChart text: takeaway and alt were written from this claim.\n`;
       } else {
-        const claimRecords = await verifiedClaimRecords();
-        verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
+        verifiedClaim = params.claim_id ? await verifiedClaimFor(params.claim_id) : null;
       }
       // NEWSROOM_LOCAL_SOURCE_NOTE=1: an accepted note beside a user's data file decides the source line; a model-written source_note loses.
       const programSourceNote = await acceptedLocalSourceNote(verifiedClaim?.source_refs ?? [], params.language ?? "en");
@@ -4658,10 +4681,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
         data_topology: params.data_topology ?? ({ sankey: "flow_edges", alluvial: "flow_edges", parallel_sets: "categorical_flow", node_link: "graph_edges", adjacency_matrix: "graph_edges", chord: "graph_edges", hierarchy_tree: "hierarchy", timeline: "events", geo_flow_map: "geo_edges", cartographic_flow_map: "geo_edges", trajectory_profile: "tabular", process_schematic: "process_graph" } as Record<string, string>)[params.chart_type] ?? "tabular",
         complexity_budget: params.complexity_budget ?? "medium",
-        verification_mode: verificationMode,
-        artifact_status: verificationMode === "verified" ? "VERIFIED" : "DRAFT",
-        publishable: verificationMode === "verified",
-        verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
+        ...(await chartPlanStamp(verificationMode as "verified" | "draft", verifiedClaim)),
         ...normalizedParams,
         ...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : process.env.NEWSROOM_LOCAL_SOURCE_NOTE === "1" ? { source_note_program: undefined } : {}),
         ...(scatterAxisUnits ?? {}),
