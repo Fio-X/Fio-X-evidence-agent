@@ -1845,7 +1845,8 @@
    "knowledgeSide",
    "verifiedClaimFor",
    "chartPlanStamp",
-   "chartRenderStatus"
+   "chartRenderStatus",
+   "chartLintStatus"
   ],
   "functions": {
    "agentRecordSide": {
@@ -1932,6 +1933,13 @@
     ],
     "write": false,
     "why": "设计上共用"
+   },
+   "chartLintStatus": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
    },
    "chartPlanStamp": {
     "groups": [
