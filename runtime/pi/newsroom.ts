@@ -3,7 +3,7 @@ import { decisionWriter } from "./decision_writer.mjs";
 import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
-import { assertAllGroupChecked, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, recordBoundaryWrite, runDeclared, withBoundaryContext, withGroupTools } from "./groups.mjs";
+import { assertAllGroupChecked, assertCrossCall, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, recordBoundaryWrite, runDeclared, withBoundaryContext, withGroupTools } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -1524,9 +1524,9 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
 // Test-only entry points to the two immutable writers (not used by tools).
 // NEWSROOM_GROUP_HANDOFF=1 (exact value, default off): the claim record, computation records and query-row tables a visual tool needs are saved
 // by the knowledge group's writer (knowledge_writer.mjs). Same store calls, same arguments, same order: the files are byte-identical.
-const knowledgeSide = () => knowledgeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), recordClaimArtifact: (input: any, signal?: AbortSignal) => recordClaimArtifact(input, signal), verifyComputation: verifyComputationForWrite, verifyQueryRows: verifyQueryRowsForWrite });
+const knowledgeSide = () => (assertCrossCall(artifactRoot(), "knowledgeSide"), knowledgeWriter)({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), recordClaimArtifact: (input: any, signal?: AbortSignal) => recordClaimArtifact(input, signal), verifyComputation: verifyComputationForWrite, verifyQueryRows: verifyQueryRowsForWrite });
 const saveComputation = (ref: string, record: unknown, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().writeComputation(ref, record, signal) : writeArtifactIfAbsent(ref, record));
-const saveQueryRows = (ref: string, rows: unknown[]) => (handoffEnabled() ? knowledgeSide().writeQueryRows(ref, rows) : writeArtifactIfAbsent(ref, rows));
+const saveQueryRows = (ref: string, rows: unknown[]) => (assertCrossCall(artifactRoot(), "saveQueryRows"), handoffEnabled() ? knowledgeSide().writeQueryRows(ref, rows) : writeArtifactIfAbsent(ref, rows));
 export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQueryRows(ref, rows);
 export const __saveComputationForTest = (ref: string, record: unknown) => saveComputation(ref, record);
 // The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
@@ -1544,17 +1544,14 @@ const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? know
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
 export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
 
-// NEWSROOM_GROUP_ENFORCE=1: what the knowledge writer checks before it saves (K214 part B). The same helpers the claim replay uses, no new rule.
+// NEWSROOM_GROUP_ENFORCE=1: what the knowledge writer checks before it saves (K214 part B). The same function the claim replay calls (replayRecordedComputation), no second copy.
 async function verifyComputationForWrite(ref: string, record: any, signal?: AbortSignal) {
-  const fail = (why: string): never => { throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: ${why}`); };
-  if (!record || typeof record !== "object" || Array.isArray(record)) fail("the computation record is not an object");
-  const sql = validateReadOnlySql(String(record.sql ?? ""));
-  const snapshotHash = String(record.input_snapshot_hash ?? "");
-  const resultHash = String(record.result_hash ?? "");
-  if (!snapshotHash || !/^[0-9a-f]{64}$/i.test(resultHash) || !Array.isArray(record.rows)) fail("incomplete record (input snapshot hash, result hash or rows missing)");
-  if (hashRows(record.rows) !== resultHash) fail("the rows do not match result_hash");
-  if (computationRelativePath(sql, snapshotHash, resultHash) !== ref) fail("the path is not the content address of the record");
-  if (hashRows(await queryDuckDb(sql, signal)) !== resultHash) fail("the SQL run again on the recorded inputs gives another result hash");
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: the computation record is not an object`);
+  try {
+    await replayRecordedComputation(ref, record, signal);
+  } catch (error: any) {
+    throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: ${error?.message ?? error}`);
+  }
 }
 async function verifyQueryRowsForWrite(ref: string, rows: unknown) {
   const fail = (why: string): never => { throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: ${why}`); };
@@ -1828,6 +1825,7 @@ function computationSql(sql: string) {
 }
 
 async function queryDuckDb(sql: string, signal?: AbortSignal) {
+  assertCrossCall(artifactRoot(), "queryDuckDb");
   const safeSql = validateReadOnlySql(sql);
   const bin = process.env.NEWSROOM_DUCKDB_BIN || "duckdb";
   const root = artifactRoot();
@@ -2001,6 +1999,7 @@ async function normalizeArtifactRefs(refs: string[], kind: string) {
 }
 
 async function validateSourceEvidence(refs: string[]) {
+  assertCrossCall(artifactRoot(), "validateSourceEvidence");
   const root = artifactRoot();
   if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required for evidence validation");
   for (const ref of refs) {
@@ -2092,40 +2091,51 @@ function lintClaimWording(template: string) {
   if (violations.length) throw new Error(`CLAIM_TEMPLATE_DIRECTION: ${violations.slice(0, 3).join("; ")}`);
 }
 
+// The one replay of a recorded computation: SQL check, record complete, rows hash, content address, read inputs re-derived and equal to the record,
+// the SQL run again with the same result hash. The claim path (replayComputationEvidence) and the knowledge writer (verifyComputationForWrite) both call
+// this; the claim path adds two steps through the hooks: afterSql (the claim SQL lint) and afterInputs (binding to the claim's sources).
+async function replayRecordedComputation(ref: string, computation: any, signal?: AbortSignal, hooks: { afterSql?: (sql: string) => Promise<void>; afterInputs?: (recorded: any) => void } = {}) {
+  const sql = validateReadOnlySql(String(computation?.sql ?? ""));
+  if (hooks.afterSql) await hooks.afterSql(sql);
+  const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
+  const recordedResultHash = String(computation?.result_hash ?? "");
+  if (!inputSnapshotHash || !/^[0-9a-f]{64}$/i.test(recordedResultHash) || !Array.isArray(computation?.rows)) {
+    throw new Error(`INVALID_COMPUTATION_EVIDENCE: incomplete deterministic computation record: ${ref}`);
+  }
+  if (hashRows(computation.rows) !== recordedResultHash) {
+    throw new Error(`INVALID_COMPUTATION_EVIDENCE: stored rows do not match result_hash: ${ref}`);
+  }
+  if (computationRelativePath(sql, inputSnapshotHash, recordedResultHash) !== ref) {
+    throw new Error(`INVALID_COMPUTATION_EVIDENCE: content-addressed path does not match computation: ${ref}`);
+  }
+  // Bind on what the SQL really reads, re-derived now and required to match
+  // what was recorded at query time. Legacy records (no read_inputs) and
+  // literal-only or unresolved computations can never support a claim.
+  const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"), 0, new Set(), { root: artifactRoot() });
+  if (recorded.binding === "legacy") {
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} has no recorded read inputs (legacy record); rerun the query`);
+  }
+  const derived = await deriveInputsForSql(sql, signal);
+  if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
+    throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
+  }
+  if (hooks.afterInputs) hooks.afterInputs(recorded);
+  const replayed = await queryDuckDb(sql, signal);
+  if (hashRows(replayed) !== recordedResultHash) {
+    const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
+    const reordered = JSON.stringify(sameRows(replayed)) === JSON.stringify(sameRows(computation.rows));
+    throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}${reordered ? "; the same rows came back in another order: add a top-level ORDER BY over every key column so the order is total" : ""}`);
+  }
+}
+
 async function replayComputationEvidence(refs: string[], sourceRefs: string[], signal?: AbortSignal) {
+  assertCrossCall(artifactRoot(), "replayComputationEvidence");
   for (const ref of refs) {
     const computation = await readArtifactJson(ref, "computations/");
-    const sql = validateReadOnlySql(String(computation?.sql ?? ""));
-    await lintClaimSql(sql, signal);
-    const inputSnapshotHash = String(computation?.input_snapshot_hash ?? "");
-    const recordedResultHash = String(computation?.result_hash ?? "");
-    if (!inputSnapshotHash || !/^[0-9a-f]{64}$/i.test(recordedResultHash) || !Array.isArray(computation?.rows)) {
-      throw new Error(`INVALID_COMPUTATION_EVIDENCE: incomplete deterministic computation record: ${ref}`);
-    }
-    if (hashRows(computation.rows) !== recordedResultHash) {
-      throw new Error(`INVALID_COMPUTATION_EVIDENCE: stored rows do not match result_hash: ${ref}`);
-    }
-    if (computationRelativePath(sql, inputSnapshotHash, recordedResultHash) !== ref) {
-      throw new Error(`INVALID_COMPUTATION_EVIDENCE: content-addressed path does not match computation: ${ref}`);
-    }
-    // Bind on what the SQL really reads, re-derived now and required to match
-    // what was recorded at query time. Legacy records (no read_inputs) and
-    // literal-only or unresolved computations can never support a claim.
-    const recorded = await recordedInputState(computation, (dependency: string) => readArtifactJson(dependency, "computations/"), 0, new Set(), { root: artifactRoot() });
-    if (recorded.binding === "legacy") {
-      throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: ${ref} has no recorded read inputs (legacy record); rerun the query`);
-    }
-    const derived = await deriveInputsForSql(sql, signal);
-    if (JSON.stringify(derived.read_inputs) !== JSON.stringify(computation.read_inputs) || derived.input_binding !== computation.input_binding) {
-      throw new Error(`COMPUTATION_PROVENANCE_REQUIRED: recorded read inputs do not match the SQL of ${ref}`);
-    }
-    assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs);
-    const replayed = await queryDuckDb(sql, signal);
-    if (hashRows(replayed) !== recordedResultHash) {
-      const sameRows = (rows: any[]) => rows.map((row) => JSON.stringify(row)).sort();
-      const reordered = JSON.stringify(sameRows(replayed)) === JSON.stringify(sameRows(computation.rows));
-      throw new Error(`COMPUTATION_REPLAY_FAILED: deterministic result changed: ${ref}${reordered ? "; the same rows came back in another order: add a top-level ORDER BY over every key column so the order is total" : ""}`);
-    }
+    await replayRecordedComputation(ref, computation, signal, {
+      afterSql: (sql) => lintClaimSql(sql, signal),
+      afterInputs: (recorded) => assertComputationBoundToSources(ref, recorded.binding, recorded.effective, sourceRefs),
+    });
   }
 }
 
@@ -2261,6 +2271,7 @@ function claimIdFor(claim: string, sourceRefs: string[], computationRefs: string
 }
 
 async function recordClaimArtifact(input: ClaimInput, signal?: AbortSignal) {
+  assertCrossCall(artifactRoot(), "recordClaimArtifact");
   assertEvidenceBackedStatus(input.status, input.source_refs, input.computation_refs);
   const sourceRefs = await normalizeArtifactRefs(input.source_refs, "source");
   await validateSourceEvidence(sourceRefs);
