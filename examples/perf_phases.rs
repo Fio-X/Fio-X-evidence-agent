@@ -7,6 +7,20 @@ mod group_guard;
 mod runtime;
 #[path = "../src/tool_registry.rs"]
 mod tool_registry;
+// group_guard.rs names the verify credential in a signature; this example never writes a verification record, so it carries a stand-in
+// with the same path instead of pulling in the whole commands tree.
+mod commands {
+    pub mod verify {
+        pub struct VerifiedOutcome {
+            passed: bool,
+        }
+        impl VerifiedOutcome {
+            pub fn passed(&self) -> bool {
+                self.passed
+            }
+        }
+    }
+}
 use std::{fs, time::Instant};
 fn main() -> anyhow::Result<()> {
     let root = std::env::temp_dir().join(format!("news-perf-phases-{}", std::process::id()));
