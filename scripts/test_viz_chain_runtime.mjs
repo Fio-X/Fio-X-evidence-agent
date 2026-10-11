@@ -4,6 +4,7 @@
 // Part 1 drives runToolChain with fake tools for the stop rules that are hard to
 // reach with real data. Part 2 loads runtime/pi/newsroom.ts from a type-stripped
 // copy (as test_atomic_artifact_runtime.mjs does) and runs real charts.
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -280,9 +281,8 @@ async function bindClaim(tools, art, sql, claimId, { boundTo } = {}) {
   return rel;
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-// Only the chain's own timestamped event log differs between a chain run and a manual run.
-const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f)).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
+// Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
 
 const { mod, dir: treeDir } = await loadTree("main");
 void treeDir;

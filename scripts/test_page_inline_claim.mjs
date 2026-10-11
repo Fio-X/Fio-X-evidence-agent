@@ -528,8 +528,8 @@ const inlineParams = (shape, dataRef, extra = {}) => planOf(shape, dataRef, { cl
 const specOf = (dir, planRef) => JSON.parse(readFileSync(join(dir, planRef), "utf8"));
 const runChain = (tools, params, id = "chain") => tools.get("newsroom_viz_chain").execute(id, params);
 // Everything the chain wrote except what is timestamped; the claim ledger is compared separately.
-// Run traces, not artifacts: the chain's event log, and the write report NEWSROOM_GROUP_BOUNDARY=1 or NEWSROOM_GROUP_ENFORCE=1 keeps (it names the tool
-// that wrote, so a chain and the classic calls differ there by design). Where the tree must stay as it was, the report may list only the event log.
+// Run traces, not artifacts: the chain's event log, and the write report that only NEWSROOM_GROUP_BOUNDARY=1 leaves (ENFORCE=1 alone leaves none; the report
+// names the tool that wrote, so a chain and the classic calls differ there by design). Where the tree must stay as it was, the report may list only the event log.
 function assertBoundaryReportOnlyTraces(dir, label) {
   const path = join(dir, "runtime/group-boundary-report.json");
   if (!existsSync(path)) return;
