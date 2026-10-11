@@ -3,13 +3,14 @@
 // short text module (4/8 columns) or is drawn as a full-width bar. Synthetic
 // data only; every page also passes page lint and page render QA.
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 import { measurePage, assertBoxesMatchSvg, assertBoxesInOrder, assertInkInsideBoxes, assertNumeralVisible, visualInk, moduleInk } from './lib_page_geometry.mjs';
 
 const claim = 'claim-stat-row';
-const context = { verified_claim_ids: [claim], mobile_pages: false };
+const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim], mobile_pages: false };
 const rows = [{ category: 'A', value: 42 }, { category: 'B', value: 31 }, { category: 'C', value: 18 }, { category: 'D', value: 9 }];
 const vizSpec = { schema_version: '0.9.0', reader_task: 'ranking', takeaway: 'A leads the selected categories.', chart_type: 'horizontal_bar', title: 'A leads this selected comparison', subtitle: 'Synthetic fixture', alt: 'Horizontal bars rank four synthetic categories from A at 42 to D at 9.', source_note: 'Synthetic fixture', claim_id: claim, sql: 'SELECT * FROM synthetic_bar', unit: 'units', category_field: 'category', value_field: 'value' };
 const lint = lintVizSpec(vizSpec, rows, context);

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {BASEMAP_CONTENT_HASH,BASEMAP_ID,BASEMAP_LICENSE,BASEMAP_SOURCE_URL} from '../runtime/pi/cartography.mjs';
 import {lintVizSpec,renderVizBundle,critiqueViz} from '../runtime/pi/viz.mjs';
@@ -7,7 +8,7 @@ import {lintInfographicSpec,composeInfographicBundle,critiqueInfographic} from '
 function csv(text){const [h,...ls]=text.trim().split(/\r?\n/),ks=h.split(',');return ls.map(l=>{const vs=l.split(',');return Object.fromEntries(ks.map((k,i)=>[k,/^-?\d+(?:\.\d+)?$/.test(vs[i])?Number(vs[i]):vs[i]]));});}
 const flowRows=csv(await readFile(new URL('../fixtures/realdata/eia-us-energy-flow-2024.csv',import.meta.url),'utf8'));
 const importRows=csv(await readFile(new URL('../fixtures/v09-realdata/eia-us-crude-imports-2024.csv',import.meta.url),'utf8')).map(r=>({...r,source:r.country,value:r.thousand_bpd}));
-const claim='claim-eia-carto-v15',context={verified_claim_ids:[claim]};
+const claim='claim-eia-carto-v15',context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]};
 const total=flowRows.filter(r=>r.target==='U.S. primary energy').reduce((s,r)=>s+r.quadrillion_btu,0),losses=flowRows.find(r=>r.target==='Electrical system energy losses')?.quadrillion_btu,canada=importRows.find(r=>r.source==='Canada')?.value;
 assert.ok(Math.abs(total-94.2)<1e-9&&Math.abs(losses-19.3)<1e-9&&Math.abs(canada-4061.8)<1e-9);
 function asset(spec,rows){const lint=lintVizSpec(spec,rows,context);assert.equal(lint.passed,true,lint.blockers.join(' | '));const bundle=renderVizBundle(spec,rows);const d=critiqueViz(spec,rows,lint,bundle.desktop),m=critiqueViz(spec,rows,lint,bundle.mobile);assert.equal(d.passed,true,JSON.stringify(d));assert.equal(m.passed,true,JSON.stringify(m));return{desktopSvg:bundle.desktop,mobileSvg:bundle.mobile,manifest:{claim_id:claim,source_note:spec.source_note,chart_type:spec.chart_type,alt:spec.alt,data_hash:lint.data_hash},critic:{passed:true,score:Math.min(d.score,m.score)},spec,lint};}

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
@@ -7,7 +8,7 @@ import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle,
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim='claim-infographic';
-const context={verified_claim_ids:[claim]};
+const context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]};
 
 const barRows=[
   {category:'A',value:42},{category:'B',value:31},{category:'C',value:18},{category:'D',value:9}

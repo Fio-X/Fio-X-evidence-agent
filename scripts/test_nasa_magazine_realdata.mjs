@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
@@ -24,7 +25,7 @@ function csv(text) {
 const annual = csv(await readFile(join(ROOT, 'fixtures', 'realdata', 'nasa-gistemp-1980-2025.csv'), 'utf8'));
 const monthly = csv(await readFile(join(ROOT, 'fixtures', 'realdata', 'nasa-gistemp-monthly-2023-2025.csv'), 'utf8'));
 const claim = 'claim-nasa-gistemp-2025';
-const context = { verified_claim_ids: [claim] };
+const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim] };
 const source = 'NASA GISS Surface Temperature Analysis v4 (GISTEMP); global land-ocean temperature index';
 
 const lineSpec = {

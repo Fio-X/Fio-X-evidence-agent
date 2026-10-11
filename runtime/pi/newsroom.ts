@@ -2808,8 +2808,8 @@ function registerVizChain(pi: ExtensionAPI) {
 // fallback that matches a row's value against the claim text, because two rows can show the same text.
 // label and detail may carry placeholders under the same rule and no typed digits. The runtime copies text; it never
 // writes a number of its own and never changes a claim's status.
-// There is no way to switch the gate off, from the environment or from a call. The pure lint in infographic.mjs stays
-// opt-in through context.hero_value_gate: this runtime is the only caller that passes it, and it always passes true.
+// There is no way to switch the gate off, from the environment or from a call: the pure lint in infographic.mjs takes no
+// parameter for it and always applies it to every hero_stat.
 // A stored page lint is only as good as the rules it ran under. Bump this when a page-lint rule changes what passes; the lint
 // record, its key and the render's check all carry it, together with the hero gate state, so a lint made under other rules is stale.
 const INFOGRAPHIC_LINT_POLICY_VERSION = "2";
@@ -3164,8 +3164,6 @@ async function lintInfographicPlan(spec: any) {
     }
     heroGate.hero_checks = heroChecks;
   }
-  // The pure lint reads only an exact true.
-  heroGate.hero_value_gate = true;
   const lint = lintInfographicSpec(spec, assets, { ...heroGate, verified_claim_ids: verified, verified_claim_records: [...verifiedRecords.values()], story_graph: storyGraph, editorial_grammar_registry: editorialGrammarRegistry, mobile_pages: mobilePages, source_texts: sourceTexts, visual_claim_bindings: visualClaimBindings });
   if (sourceQuoteErrors.length) { lint.blockers.push(...sourceQuoteErrors); lint.passed = false; }
   return { lint, assets, mobilePages, verifiedRecords };
