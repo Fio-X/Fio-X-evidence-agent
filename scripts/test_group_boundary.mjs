@@ -1,4 +1,4 @@
-// NEWSROOM_GROUP_BOUNDARY=1 (exact value, report-only; there is no blocking mode): every artifact write made through newsroom.ts is recorded as (initiating tool, its group, artifact
+// NEWSROOM_GROUP_BOUNDARY=1 (exact value; this switch only reports, NEWSROOM_GROUP_ENFORCE does the refusing): every artifact write made through newsroom.ts is recorded as (initiating tool, its group, artifact
 // kind, owning group) in runtime/group-boundary-report.json. It only reports: nothing is refused and nothing else changes.
 //
 //  1. Switch off (or any value but "report"): no report file, and a write does exactly what it did.

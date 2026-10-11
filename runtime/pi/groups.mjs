@@ -1,8 +1,9 @@
 // The four-group list (agent, knowledge, visual, system) and the two opt-in helpers built on it. The list itself is groups.json
-// (commands, Pi tools and source files, each in exactly one group). Nothing here runs unless a switch is set, and nothing here
-// refuses a call or changes any other output.
+// (commands, Pi tools and source files, each in exactly one group). Nothing here runs unless a switch is set. NEWSROOM_GROUP_BOUNDARY
+// only reports. NEWSROOM_GROUP_ENFORCE=1 (with HANDOFF) refuses a write by a tool outside the owning group, and NEWSROOM_GROUP_TOOLS=1
+// adds the single registration wrapper and the child-process output check; each refusal is also appended to runtime/boundary-refusals.jsonl.
 //
-// NEWSROOM_GROUP_BOUNDARY=1 (exact value, default off; report-only, there is no blocking mode): every artifact write made through newsroom.ts is recorded as
+// NEWSROOM_GROUP_BOUNDARY=1 (exact value, default off; this switch only reports, the refusing is done by NEWSROOM_GROUP_ENFORCE below): every artifact write made through newsroom.ts is recorded as
 // (initiating tool, its group, artifact kind, owning group) in one report file, runtime/group-boundary-report.json. It only reports.
 // A write whose tool or path cannot be classified is counted as 待查, never as fine. Write sites this file cannot see are listed in
 // the report under not_traced, so the report never claims zero violations.
@@ -95,9 +96,10 @@ function knownTag(path, kind) {
 
 // What this report cannot see. Listed in every report so a zero is never read as proof.
 export const NOT_TRACED = [
-  "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs)",
+  "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
   "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
-  "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process",
+  "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) only for NEW files, so a child process that rewrites or deletes an existing file is not seen; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
+  "hand-off writers (runAsWriter here, as_writer in src/group_guard.rs): the write is recorded under the writer's group with the asking tool or command kept as requested_by, but the requester and the content are not checked (K214, fix not yet decided)",
   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
   "reads of any kind",
@@ -154,7 +156,7 @@ function writeReport(root) {
     summary: `${totals.writes} writes seen: ${totals.ok} in the owning group, ${totals.cross_group} cross-group, ${totals.to_check} 待查 (could not be classified)${verdicts ? `, ${verdicts} model quality verdict (listed apart, not counted as fixed)` : ""}${modelPasses ? `, ${modelPasses} with a model-supplied pass (listed apart, not counted as fine)` : ""}. Report only; not_traced lists what this report cannot see.`,
     totals,
     complete: false,
-    note: "Report only: nothing was refused. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
+    note: "This report only reports and refuses nothing; a refusal under NEWSROOM_GROUP_ENFORCE=1 is made at write time and logged in runtime/boundary-refusals.jsonl, not here. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
     ownership: OWNERSHIP,
     records,
     not_traced: NOT_TRACED,
