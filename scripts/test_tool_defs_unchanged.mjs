@@ -4,6 +4,8 @@
 // Compared as canonical JSON (sorted keys) of name, label, description, promptSnippet,
 // promptGuidelines and parameters; the golden file holds one sha256 per tool per case.
 //
+// The hero value gate is always on (no switch turns it off), so there is no gate-off case any more.
+//
 // Run: node scripts/test_tool_defs_unchanged.mjs
 // Regenerate (only from an export of the base): node scripts/test_tool_defs_unchanged.mjs --root=<export> --write
 import { makeTestTmp } from "./tmp_helper.mjs";
@@ -27,7 +29,6 @@ const NEWER = ["NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSR
 const MODES = {
   "older-off": {},
   "older-on": Object.fromEntries(OLDER.map((k) => [k, "1"])),
-  "older-on-hero-off": { ...Object.fromEntries(OLDER.map((k) => [k, "1"])), NEWSROOM_HERO_VALUE_GATE: "0" },
 };
 const KEYS = ["name", "label", "description", "promptSnippet", "promptGuidelines", "parameters"];
 
@@ -62,7 +63,7 @@ let n = 0;
 const cases = {};
 for (const profile of PROFILES) {
   for (const [mode, env] of Object.entries(MODES)) {
-    for (const k of [...OLDER, ...NEWER, "NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_PHASE"]) delete process.env[k];
+    for (const k of [...OLDER, ...NEWER, "NEWSROOM_PHASE"]) delete process.env[k];
     process.env.NEWSROOM_TOOL_PROFILE = profile;
     Object.assign(process.env, env);
     const tools = {};

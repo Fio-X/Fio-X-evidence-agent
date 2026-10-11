@@ -6,8 +6,7 @@
 // environment. The shadow use (shadow.mjs) is observational data for a side
 // file and never produces a lint warning or blocker: the false positive rate
 // is unknown until it has been measured on real runs. The one exception is the
-// hero value gate: on by default in the runtime (NEWSROOM_HERO_VALUE_GATE=0 turns
-// it off), infographic.mjs reuses these pure matchers to block a hero_stat whose
+// hero value gate: always on in the runtime (no switch turns it off), infographic.mjs reuses these pure matchers to block a hero_stat whose
 // number is not in its own claim's rows. The pure lint itself stays opt-in.
 //
 // Rules fixed by the design:

@@ -31,7 +31,7 @@ const pins = loadPinPatches("shadow_parity", { baseline: BASELINE });
 // fix/page-top-1003 also puts the lint policy version and the hero gate state into the page lint's record and key, so the page lint ref
 // differs from the older commit's. Only that is masked, and only after it is checked: the page lints of the two runs are paired one to
 // one by plan_ref (a different count or a repeated plan_ref fails); every older record must lack both added fields and every newer one must
-// carry lint_policy_version "2" and hero_value_gate false (this test turns the gate off); then the two fields are deleted and the records
+// carry lint_policy_version "2" and hero_value_gate true (the gate is always on); then the two fields are deleted and the records
 // are compared byte for byte. In the calls' text, only the page lint's own ref is replaced; every other byte is compared.
 const PAGE_LINT_PATH = /^infographics\/lints\/[0-9a-f]{64}\.json$/;
 const ADDED_LINT_FIELDS = ["lint_policy_version", "hero_value_gate"];
@@ -70,7 +70,7 @@ function withMaskedLints(run, { added }) {
     for (const key of ADDED_LINT_FIELDS) assert.equal(key in record, added, `${added ? "head" : "baseline"} page lint for ${planRef}: ${key} ${added ? "missing" : "present"}`);
     if (added) {
       assert.equal(record.lint_policy_version, POLICY_VERSION, `head page lint for ${planRef}: lint_policy_version`);
-      assert.equal(record.hero_value_gate, false, `head page lint for ${planRef}: hero_value_gate (this test turns the gate off)`);
+      assert.equal(record.hero_value_gate, true, `head page lint for ${planRef}: hero_value_gate (the gate is always on)`);
     }
     const bare = { ...record };
     for (const key of ADDED_LINT_FIELDS) delete bare[key];
@@ -98,7 +98,7 @@ function walk(dir, root = dir, out = new Map()) {
 }
 
 async function scenario({ baselineRev, shadow }) {
-  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_HERO_VALUE_GATE: "0" } });
+  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
   try {
     const tools = new Map([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
     const defs = JSON.stringify([...tools.values()].map((tool) => ({ ...tool, execute: undefined })));
@@ -125,10 +125,10 @@ async function scenario({ baselineRev, shadow }) {
     const render = await call("newsroom_viz_render", { plan_ref: planA, lint_ref: lintA.details.lintRef });
     const igRef = "infographics/plans/plan-1.json";
     writeFileSync(join(h.art, igRef), JSON.stringify({
-      schema_version: "1.0.0", title: "Four steps", dek: "A minimal fixture: 4 steps, 99 percent.", alt: "A header, a statistic and a chart.",
+      schema_version: "1.0.0", title: "Four steps", dek: "A minimal fixture: 4 steps, 99 percent.", alt: "A header and a chart.",
       modules: [
         { id: "m1", type: "section_header", span: "full", heading: "Overview" },
-        { id: "m2", type: "hero_stat", span: "full", value: "25", unit: "%", label: "In the first phase", claim_id: claim.claim_id },
+        // no hero_stat here: the hero value gate is always on and refuses a typed hero number on a claim without bindings
         { id: "m3", type: "visual", span: "full", manifest_ref: render.details.manifestRef },
       ],
     }));
