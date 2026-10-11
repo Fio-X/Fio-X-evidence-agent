@@ -23,6 +23,7 @@ import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync 
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
 import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 
 const BASELINE = "327de35";
 // This harness stubs the schema builders (every schema is {}), so the lists carry only what is visible here: tool names, descriptions, prompt
@@ -133,7 +134,10 @@ async function scenario({ baselineRev, shadow }) {
       ],
     }));
     await call("newsroom_infographic_lint", { plan_ref: igRef });
-    const files = walk(h.art);
+    // Run traces (the boundary report, the chain event log) are not artifacts; lib_run_traces.mjs says which and checks them.
+    const all = walk(h.art);
+    const keep = new Set(withoutRunTraces(h.art, [...all.keys()], { chain: true, label: "artifact tree" }));
+    const files = new Map([...all].filter(([path]) => keep.has(path)));
     return { defs, tools, calls, files, claimId: claim.claim_id };
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });

@@ -1,6 +1,7 @@
 // NEWSROOM_SPEED_COMPACT_SETUP=1: `shared` concept defaults expand to exactly the artifact the full form stores, and
 // discovery_ref / concept_ref are inferred only from a single bound artifact. Switch off: every tool definition and every
 // artifact is what the integration head produced (BASELINE_NEWSROOM_TS, set by default from git).
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -99,7 +100,7 @@ function register(mod, env) {
   return tools;
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => f !== "runtime/tool-chain-events.jsonl").sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
 const freshArt = (label) => { const art = join(makeTestTmp(`compact-${label}-`), "run"); mkdirSync(join(art, "editorial"), { recursive: true }); mkdirSync(join(art, "runtime"), { recursive: true }); process.env.NEWSROOM_ARTIFACT_DIR = art; return art; };
 const attempt = async (tool, params) => { try { return await tool.execute("t", params); } catch (error) { return { error: String(error?.message ?? error) }; } };
 const ref = (result) => String(result.text ?? result.content?.[0]?.text ?? "").match(/Artifact: (\S+)/)?.[1];
