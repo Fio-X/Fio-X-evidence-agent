@@ -1237,6 +1237,35 @@ async function hasPassingLinkedCritic(criticsDir: string, manifestRef: string): 
   return false;
 }
 
+// NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): the image-aware critic's verdict is the model's own, so it may only veto. Every
+// vision critic linked to manifestRef counts: one that failed, scored below 80 or reports a blocker issue blocks the page even when another linked
+// critic passed. A passing one is still required (the gate is unchanged otherwise), but it releases nothing alone - the program gates around it do.
+// Same thresholds as verify_infographic_artifact in src/verify.rs and its Python mirror.
+const visionCriticVetoes = (critic: any) => critic?.passed !== true
+  || !(typeof critic?.score === "number" && critic.score >= 80)
+  || (Array.isArray(critic?.issues) && critic.issues.some((issue: any) => issue?.severity === "blocker"));
+async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
+  const root = artifactRoot();
+  if (!root) return null;
+  const dir = join(root, "infographics/vision-critics");
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+    let critic: any;
+    try {
+      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+    } catch {
+      continue;
+    }
+    if (critic?.manifest_ref === manifestRef && visionCriticVetoes(critic)) return `infographics/vision-critics/${entry.name}`;
+  }
+  return null;
+}
+
 // The gate this file adds: newsroom_publication_plan may bind an
 // infographic_plan_ref only when that plan's rendered page is still a
 // top-level, non-rejected infographic manifest with both a passing
@@ -1272,6 +1301,14 @@ async function assertApprovedInfographicLineage(infographicPlanRef: string): Pro
       throw new Error(
         `Publication blocked: infographic '${found.ref}' has no passing image-aware vision critic (missing or failed) - run newsroom_infographic_preview then newsroom_infographic_vision_critic until it passes`,
       );
+    }
+    if (modelPassSelfReportEnabled()) {
+      const veto = await linkedVisionVeto(found.ref);
+      if (veto) {
+        throw new Error(
+          `Publication blocked: infographic '${found.ref}' was vetoed by image-aware vision critic ${veto} (failed, scored below 80 or reported a blocker); a later passing critique is the model's own report and cannot override it - revise the plan and render again`,
+        );
+      }
     }
   }
 }
@@ -1493,6 +1530,7 @@ export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQuer
 // The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
 const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
 const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
+export const __linkedVisionVetoForTest = (manifestRef: string) => linkedVisionVeto(manifestRef);
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
 const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().recordClaim(input, signal) : recordClaimArtifact(input, signal));
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
@@ -6670,7 +6708,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await writeArtifactIfAbsent(criticRef, {
         ...normalized,
         kind: "image_aware_model",
-        // NEWSROOM_MODEL_PASS_SELFREPORT=1: this verdict, score and confidence are the model's own. Marked so; the page gates are not changed here.
+        // NEWSROOM_MODEL_PASS_SELFREPORT=1: this verdict, score and confidence are the model's own. Marked so; it can only veto (assertApprovedInfographicLineage).
         ...(modelPassSelfReportEnabled() ? { self_reported: true, passed_source: "model" } : {}),
         manifest_ref: params.manifest_ref,
         preview_ref: params.preview_ref,
