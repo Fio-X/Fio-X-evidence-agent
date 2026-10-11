@@ -63,7 +63,11 @@ fn lieflat_hidden_for(requested: &str, topic: &str, split_classifier: bool) -> b
 /// Whether completion must go through the measured infographic, publication
 /// and browser-QA chain. The goal text can only add this requirement; an
 /// explicit visual-story tool profile adds it regardless of the wording.
-pub(crate) fn completion_chain_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
+pub(crate) fn completion_chain_required(
+    topic: &str,
+    split_classifier: bool,
+    profile: Option<&str>,
+) -> bool {
     is_complex_visual_request(topic, split_classifier) || profile == Some("visual-story")
 }
 
@@ -635,9 +639,10 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 #[cfg(test)]
 mod completion_tests {
     use super::{
-        chart_critic_record_passed, completion_chain_required, completion_correction, completion_gap_hints_on, compose_allowed,
-        is_transient_completion_provider_error, lieflat_hidden_for, missing_visual_modes,
-        visual_completion_gaps_for_profile, COMPLETION_GAP_HINTS_ENV,
+        chart_critic_record_passed, completion_chain_required, completion_correction,
+        completion_gap_hints_on, compose_allowed, is_transient_completion_provider_error,
+        lieflat_hidden_for, missing_visual_modes, visual_completion_gaps_for_profile,
+        COMPLETION_GAP_HINTS_ENV,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;

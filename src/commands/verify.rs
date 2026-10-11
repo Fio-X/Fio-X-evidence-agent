@@ -83,8 +83,13 @@ pub async fn verify_and_record(
         })),
     });
     let path = artifact.join("verification.json");
-    crate::group_guard::write_verification_record(artifact, &path, &output, &VerifiedOutcome { passed })
-        .with_context(|| format!("failed to write {}", path.display()))?;
+    crate::group_guard::write_verification_record(
+        artifact,
+        &path,
+        &output,
+        &VerifiedOutcome { passed },
+    )
+    .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(Verification {
         report,
         replay,

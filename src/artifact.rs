@@ -179,12 +179,13 @@ impl InvestigationBundle {
             "visualizations",
             "infographics",
         ] {
-            group_guard::as_run_bundle(|| group_guard::create_dir_all(&dir, &dir.join(child))).with_context(|| {
-                format!(
-                    "failed to create artifact subdirectory: {}",
-                    dir.join(child).display()
-                )
-            })?;
+            group_guard::as_run_bundle(|| group_guard::create_dir_all(&dir, &dir.join(child)))
+                .with_context(|| {
+                    format!(
+                        "failed to create artifact subdirectory: {}",
+                        dir.join(child).display()
+                    )
+                })?;
         }
 
         Ok(Self {
@@ -271,17 +272,20 @@ impl InvestigationBundle {
                 );
             }
         } else {
-            group_guard::as_data_import(|| group_guard::copy(&self.dir, source, &destination)).with_context(|| {
-                format!(
-                    "failed to copy local data {} to {}",
-                    source.display(),
-                    destination.display()
-                )
-            })?;
+            group_guard::as_data_import(|| group_guard::copy(&self.dir, source, &destination))
+                .with_context(|| {
+                    format!(
+                        "failed to copy local data {} to {}",
+                        source.display(),
+                        destination.display()
+                    )
+                })?;
         }
         // K214 part B (only with NEWSROOM_GROUP_TOOLS=1): the stored file must hash to the address it is stored under before its metadata and origin are written
         if group_guard::enabled() {
-            let stored = sha256_file(&destination).with_context(|| format!("failed to hash stored dataset {}", destination.display()))?;
+            let stored = sha256_file(&destination).with_context(|| {
+                format!("failed to hash stored dataset {}", destination.display())
+            })?;
             group_guard::check_imported_data(&self.dir, &relative_file, &sha256, &stored)?;
         }
         let metadata = serde_json::json!({
@@ -305,8 +309,10 @@ impl InvestigationBundle {
                 );
             }
         } else {
-            group_guard::as_data_import(|| group_guard::write(&self.dir, &metadata_path, &metadata_text))
-                .with_context(|| format!("failed to write {}", metadata_path.display()))?;
+            group_guard::as_data_import(|| {
+                group_guard::write(&self.dir, &metadata_path, &metadata_text)
+            })
+            .with_context(|| format!("failed to write {}", metadata_path.display()))?;
         }
 
         let mut origin = serde_json::json!({
@@ -341,8 +347,10 @@ impl InvestigationBundle {
                 );
             }
         } else {
-            group_guard::as_data_import(|| group_guard::write(&self.dir, &origin_path, origin_text))
-                .with_context(|| format!("failed to write {}", origin_path.display()))?;
+            group_guard::as_data_import(|| {
+                group_guard::write(&self.dir, &origin_path, origin_text)
+            })
+            .with_context(|| format!("failed to write {}", origin_path.display()))?;
         }
         Ok(format!("data/{stored_name}"))
     }
@@ -359,8 +367,10 @@ impl InvestigationBundle {
 
     pub fn write_session_stats(&self, stats: &Value) -> Result<()> {
         let json = serde_json::to_string_pretty(stats)?;
-        group_guard::as_run_bundle(|| group_guard::write(&self.dir, &self.session_stats_path, format!("{json}\n")))
-            .with_context(|| format!("failed to write {}", self.session_stats_path.display()))
+        group_guard::as_run_bundle(|| {
+            group_guard::write(&self.dir, &self.session_stats_path, format!("{json}\n"))
+        })
+        .with_context(|| format!("failed to write {}", self.session_stats_path.display()))
     }
 
     pub fn append_run_metric(
@@ -372,8 +382,10 @@ impl InvestigationBundle {
         duration_ms: u128,
         audit: Option<&AuditSummary>,
     ) -> Result<()> {
-        let mut file = group_guard::as_run_bundle(|| group_guard::open_append(&self.dir, &self.run_metrics_path))
-            .with_context(|| format!("failed to open {}", self.run_metrics_path.display()))?;
+        let mut file = group_guard::as_run_bundle(|| {
+            group_guard::open_append(&self.dir, &self.run_metrics_path)
+        })
+        .with_context(|| format!("failed to open {}", self.run_metrics_path.display()))?;
         let claims = read_claims(&self.claims_path).unwrap_or_default();
         let verified_claims = claims
             .iter()
@@ -431,8 +443,10 @@ impl InvestigationBundle {
     }
 
     pub fn append_conversation(&self, user: &str, assistant: &str) -> Result<()> {
-        let mut file = group_guard::as_run_bundle(|| group_guard::open_append(&self.dir, &self.conversation_path))
-            .with_context(|| format!("failed to open {}", self.conversation_path.display()))?;
+        let mut file = group_guard::as_run_bundle(|| {
+            group_guard::open_append(&self.dir, &self.conversation_path)
+        })
+        .with_context(|| format!("failed to open {}", self.conversation_path.display()))?;
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         writeln!(file, "\n## Turn {now}\n")?;
         writeln!(file, "### User\n\n{user}\n")?;
@@ -638,7 +652,10 @@ impl InvestigationBundle {
     /// `render_qa.passed` is true and `artifact_status` is `VERIFIED`, with a passing critic record
     /// under `visualizations/critics/` bound to that manifest. Nothing here reads the model's text.
     /// `None` when the round made no such chart.
-    pub fn latest_passing_chart_since(&self, since: SystemTime) -> Result<Option<(String, String)>> {
+    pub fn latest_passing_chart_since(
+        &self,
+        since: SystemTime,
+    ) -> Result<Option<(String, String)>> {
         latest_passing_chart(&self.dir, since)
     }
 
@@ -911,13 +928,17 @@ const SOURCE_NOTE_FILE_MAX_BYTES: u64 = 16 * 1024;
 /// Characters a note field may not carry: C0/C1 controls, zero-width and bidirectional controls, and the byte-order mark.
 /// The same set is refused in `acceptedLocalSourceNote` (runtime/pi/newsroom.ts).
 fn is_refused_note_char(c: char) -> bool {
-    c.is_control() || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+    c.is_control()
+        || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
 }
 
 /// The note beside `source`, or None when there is no such file. Err carries only the reason it is refused.
 /// Accepted only when it parses, publisher/dataset/license/sha256 are present, non-empty strings of at most 120 chars,
 /// url (if present) is https, retrieved (if present) is YYYY-MM-DD, and sha256 equals the data file's sha256.
-fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Result<Option<Value>, &'static str> {
+fn read_local_source_note(
+    source: &Path,
+    data_sha256: &str,
+) -> std::result::Result<Option<Value>, &'static str> {
     let mut note_path = source.as_os_str().to_owned();
     note_path.push(".source.json");
     let note_path = PathBuf::from(note_path);
@@ -943,43 +964,67 @@ fn read_local_source_note(source: &Path, data_sha256: &str) -> std::result::Resu
     let field = |name: &str| object.get(name).and_then(Value::as_str).map(str::trim);
     let mut accepted = serde_json::Map::new();
     for required in ["publisher", "dataset", "license"] {
-        let value = field(required).filter(|v| !v.is_empty()).ok_or(match required {
-            "publisher" => "publisher is missing or empty",
-            "dataset" => "dataset is missing or empty",
-            _ => "license is missing or empty",
-        })?;
-        if value.chars().count() > SOURCE_NOTE_FIELD_MAX || value.chars().any(is_refused_note_char) {
+        let value = field(required)
+            .filter(|v| !v.is_empty())
+            .ok_or(match required {
+                "publisher" => "publisher is missing or empty",
+                "dataset" => "dataset is missing or empty",
+                _ => "license is missing or empty",
+            })?;
+        if value.chars().count() > SOURCE_NOTE_FIELD_MAX || value.chars().any(is_refused_note_char)
+        {
             return Err("a field is longer than 120 characters or has control characters");
         }
         accepted.insert(required.to_owned(), Value::String(value.to_owned()));
     }
     if let Some(url) = object.get("url") {
         let url = url.as_str().ok_or("url is not a string")?.trim();
-        if !url.starts_with("https://") || url.len() <= "https://".len() || url.chars().count() > SOURCE_NOTE_FIELD_MAX * 2 || url.chars().any(|c| is_refused_note_char(c) || c.is_whitespace()) {
+        if !url.starts_with("https://")
+            || url.len() <= "https://".len()
+            || url.chars().count() > SOURCE_NOTE_FIELD_MAX * 2
+            || url
+                .chars()
+                .any(|c| is_refused_note_char(c) || c.is_whitespace())
+        {
             return Err("url is not an https address");
         }
         accepted.insert("url".to_owned(), Value::String(url.to_owned()));
     }
     if let Some(retrieved) = object.get("retrieved") {
-        let retrieved = retrieved.as_str().ok_or("retrieved is not a string")?.trim();
-        if chrono::NaiveDate::parse_from_str(retrieved, "%Y-%m-%d").is_err() || retrieved.len() != 10 {
+        let retrieved = retrieved
+            .as_str()
+            .ok_or("retrieved is not a string")?
+            .trim();
+        if chrono::NaiveDate::parse_from_str(retrieved, "%Y-%m-%d").is_err()
+            || retrieved.len() != 10
+        {
             return Err("retrieved is not a YYYY-MM-DD date");
         }
         accepted.insert("retrieved".to_owned(), Value::String(retrieved.to_owned()));
     }
-    let claimed = field("sha256").filter(|v| !v.is_empty()).ok_or("sha256 is missing or empty")?;
+    let claimed = field("sha256")
+        .filter(|v| !v.is_empty())
+        .ok_or("sha256 is missing or empty")?;
     if !claimed.eq_ignore_ascii_case(data_sha256) {
         return Err("sha256 does not match the data file");
     }
     accepted.insert("sha256".to_owned(), Value::String(data_sha256.to_owned()));
-    accepted.insert("note_sha256".to_owned(), Value::String(sha256_bytes(&bytes)));
+    accepted.insert(
+        "note_sha256".to_owned(),
+        Value::String(sha256_bytes(&bytes)),
+    );
     Ok(Some(Value::Object(accepted)))
 }
 
 fn string_array(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_owned)).collect())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -987,7 +1032,10 @@ fn existing_recipe(path: &Path) -> Option<(String, String)> {
     let text = fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
     let recipe = value.get("recipe")?;
-    Some((recipe.get("name")?.as_str()?.to_owned(), recipe.get("sha256")?.as_str()?.to_owned()))
+    Some((
+        recipe.get("name")?.as_str()?.to_owned(),
+        recipe.get("sha256")?.as_str()?.to_owned(),
+    ))
 }
 
 fn relative_files(root: &Path, child: &str) -> Result<Vec<String>> {
@@ -1136,7 +1184,10 @@ fn is_publication_html(candidate: &DeliveryCandidate) -> bool {
 
 /// The publication entries of `delivery_candidates`. With `since`, only a manifest written at or after that
 /// time counts (the page this round made, not one an earlier round left).
-fn publication_candidates(root: &Path, since: Option<SystemTime>) -> Result<Vec<DeliveryCandidate>> {
+fn publication_candidates(
+    root: &Path,
+    since: Option<SystemTime>,
+) -> Result<Vec<DeliveryCandidate>> {
     let mut candidates = Vec::new();
     let publications_dir = root.join("publications");
     if publications_dir.is_dir() {
@@ -1261,7 +1312,10 @@ fn latest_passing_chart(root: &Path, since: SystemTime) -> Result<Option<(String
             continue;
         };
         let manifest_ref = format!("visualizations/{}", entry.file_name().to_string_lossy());
-        let passed = manifest.pointer("/render_qa/passed").and_then(Value::as_bool) == Some(true)
+        let passed = manifest
+            .pointer("/render_qa/passed")
+            .and_then(Value::as_bool)
+            == Some(true)
             && manifest.get("artifact_status").and_then(Value::as_str) == Some("VERIFIED")
             && passing_critics.contains(&manifest_ref);
         if !passed {
@@ -2054,7 +2108,10 @@ mod tests {
     }
 
     /// Imports `X.csv` (with an optional note built from the data's sha256) and returns the origin record and the warnings.
-    fn import_with_note(switch: Option<&str>, note: Option<&dyn Fn(&str) -> String>) -> (serde_json::Value, Vec<String>) {
+    fn import_with_note(
+        switch: Option<&str>,
+        note: Option<&dyn Fn(&str) -> String>,
+    ) -> (serde_json::Value, Vec<String>) {
         with_note_switch(switch, || {
             let src = tempdir().unwrap();
             let data = src.path().join("X.csv");
@@ -2066,15 +2123,22 @@ mod tests {
             let out = tempdir().unwrap();
             let mut bundle = super::InvestigationBundle::create(out.path(), "note").unwrap();
             bundle.import_data(&data).unwrap();
-            let origins: Vec<_> = fs::read_dir(bundle.dir.join("data/origins")).unwrap().collect();
+            let origins: Vec<_> = fs::read_dir(bundle.dir.join("data/origins"))
+                .unwrap()
+                .collect();
             assert_eq!(origins.len(), 1);
-            let origin: serde_json::Value = serde_json::from_str(&fs::read_to_string(origins[0].as_ref().unwrap().path()).unwrap()).unwrap();
+            let origin: serde_json::Value = serde_json::from_str(
+                &fs::read_to_string(origins[0].as_ref().unwrap().path()).unwrap(),
+            )
+            .unwrap();
             (origin, bundle.source_note_warnings.clone())
         })
     }
 
     fn good_note(sha: &str) -> String {
-        format!(r#"{{"publisher":"Our World in Data","dataset":"Energy mix","license":"CC BY 4.0","url":"https://ourworldindata.org/energy","retrieved":"2026-10-01","sha256":"{sha}"}}"#)
+        format!(
+            r#"{{"publisher":"Our World in Data","dataset":"Energy mix","license":"CC BY 4.0","url":"https://ourworldindata.org/energy","retrieved":"2026-10-01","sha256":"{sha}"}}"#
+        )
     }
 
     #[test]
@@ -2092,7 +2156,8 @@ mod tests {
     #[test]
     fn bad_notes_are_ignored_with_a_reason_and_never_their_content() {
         let wrong_sha = |_: &str| good_note(&"0".repeat(64));
-        let no_license = |sha: &str| format!(r#"{{"publisher":"P","dataset":"D","sha256":"{sha}"}}"#);
+        let no_license =
+            |sha: &str| format!(r#"{{"publisher":"P","dataset":"D","sha256":"{sha}"}}"#);
         let http = |sha: &str| good_note(sha).replace("https://", "http://");
         let not_json = |_: &str| "publisher: secret-name".to_owned();
         let long = |sha: &str| good_note(sha).replace("Energy mix", &"x".repeat(121));
@@ -2108,7 +2173,10 @@ mod tests {
             assert!(origin.get("source_note_file").is_none(), "{reason}");
             assert_eq!(warnings.len(), 1, "{reason} {warnings:?}");
             assert!(warnings[0].contains(reason), "{warnings:?}");
-            assert!(!warnings[0].contains("secret-name") && !warnings[0].contains("Our World"), "{warnings:?}");
+            assert!(
+                !warnings[0].contains("secret-name") && !warnings[0].contains("Our World"),
+                "{warnings:?}"
+            );
         }
     }
 
@@ -2147,32 +2215,50 @@ mod tests {
             #[cfg(unix)]
             {
                 std::os::unix::fs::symlink(&real, src.path().join("X.csv.source.json")).unwrap();
-                assert_eq!(super::read_local_source_note(&data, &sha), Err("the note is a link"));
+                assert_eq!(
+                    super::read_local_source_note(&data, &sha),
+                    Err("the note is a link")
+                );
                 fs::remove_file(src.path().join("X.csv.source.json")).unwrap();
             }
             // 17 KiB: refused before it is parsed
             let mut big = good_note(&sha).into_bytes();
             big.extend(std::iter::repeat(b' ').take(17 * 1024));
             fs::write(src.path().join("X.csv.source.json"), &big).unwrap();
-            assert_eq!(super::read_local_source_note(&data, &sha), Err("the note is too large"));
+            assert_eq!(
+                super::read_local_source_note(&data, &sha),
+                Err("the note is too large")
+            );
             // exactly at the cap is still read
             let mut edge = good_note(&sha).into_bytes();
             edge.resize(16 * 1024, b' ');
             fs::write(src.path().join("X.csv.source.json"), &edge).unwrap();
-            assert!(matches!(super::read_local_source_note(&data, &sha), Ok(Some(_))));
+            assert!(matches!(
+                super::read_local_source_note(&data, &sha),
+                Ok(Some(_))
+            ));
         });
     }
 
     #[test]
     fn hidden_and_bidirectional_characters_are_refused_in_every_field() {
         with_note_switch(Some("1"), || {
-            for (label, c) in [("C1", "\u{85}"), ("zwsp", "\u{200B}"), ("lrm", "\u{200E}"), ("rlo", "\u{202E}"), ("isolate", "\u{2066}"), ("bom", "\u{FEFF}"), ("c0", "\u{7}")] {
+            for (label, c) in [
+                ("C1", "\u{85}"),
+                ("zwsp", "\u{200B}"),
+                ("lrm", "\u{200E}"),
+                ("rlo", "\u{202E}"),
+                ("isolate", "\u{2066}"),
+                ("bom", "\u{FEFF}"),
+                ("c0", "\u{7}"),
+            ] {
                 for field in ["publisher", "dataset", "license"] {
                     let src = tempdir().unwrap();
                     let data = src.path().join("X.csv");
                     fs::write(&data, "a,b\n1,2\n").unwrap();
                     let sha = crate::hash::sha256_file(&data).unwrap();
-                    let mut note: serde_json::Value = serde_json::from_str(&good_note(&sha)).unwrap();
+                    let mut note: serde_json::Value =
+                        serde_json::from_str(&good_note(&sha)).unwrap();
                     note[field] = serde_json::Value::String(format!("Our{c}World"));
                     fs::write(src.path().join("X.csv.source.json"), note.to_string()).unwrap();
                     assert_eq!(
@@ -2189,12 +2275,19 @@ mod tests {
     }
 
     fn write_a_manifest(bundle: &super::InvestigationBundle) {
-        bundle.write_manifest("topic", None, None, "running", None).unwrap();
+        bundle
+            .write_manifest("topic", None, None, "running", None)
+            .unwrap();
     }
 
     fn manifest_warnings(dir: &std::path::Path) -> Vec<String> {
-        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join("story.json")).unwrap()).unwrap();
-        value.get("source_note_warnings").and_then(|w| w.as_array()).map(|w| w.iter().map(|x| x.as_str().unwrap().to_owned()).collect()).unwrap_or_default()
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("story.json")).unwrap()).unwrap();
+        value
+            .get("source_note_warnings")
+            .and_then(|w| w.as_array())
+            .map(|w| w.iter().map(|x| x.as_str().unwrap().to_owned()).collect())
+            .unwrap_or_default()
     }
 
     fn data_with_bad_note(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -2274,14 +2367,27 @@ mod tests {
                 let bundle = super::InvestigationBundle::create(out.path(), "topic").unwrap();
                 fs::create_dir_all(bundle.dir.join("infographics/plans")).unwrap();
                 let page = r#"{"source_note_warnings":["page source_note replaced by an accepted local note"]}"#;
-                fs::write(bundle.dir.join("infographics").join(format!("{}.json", "b".repeat(64))), page).unwrap();
+                fs::write(
+                    bundle
+                        .dir
+                        .join("infographics")
+                        .join(format!("{}.json", "b".repeat(64))),
+                    page,
+                )
+                .unwrap();
                 // only page manifests directly under infographics/ count, not plans
-                fs::write(bundle.dir.join("infographics/plans").join(format!("{}.json", "c".repeat(64))), page).unwrap();
+                fs::write(
+                    bundle
+                        .dir
+                        .join("infographics/plans")
+                        .join(format!("{}.json", "c".repeat(64))),
+                    page,
+                )
+                .unwrap();
                 write_a_manifest(&bundle);
                 write_a_manifest(&bundle);
                 assert_eq!(manifest_warnings(&bundle.dir).len(), expected, "{switch:?}");
             });
         }
     }
-
 }

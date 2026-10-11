@@ -88,7 +88,13 @@ pub struct TableShape {
 
 /// Shape of one CSV file, or `None` when it is not a plain CSV, is too large to profile, or has no header.
 pub fn shape_csv(path: &Path) -> Option<TableShape> {
-    if path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() != Some("csv") {
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+        != Some("csv")
+    {
         return None;
     }
     if std::fs::metadata(path).ok()?.len() > MAX_FILE_BYTES {
@@ -105,9 +111,15 @@ pub fn shape_csv(path: &Path) -> Option<TableShape> {
                 .map(|v| v.trim())
                 .filter(|v| !v.is_empty())
                 .collect();
-            let numbers: Vec<f64> = values.iter().filter_map(|v| v.parse::<f64>().ok()).collect();
+            let numbers: Vec<f64> = values
+                .iter()
+                .filter_map(|v| v.parse::<f64>().ok())
+                .collect();
             let numeric = !values.is_empty() && numbers.len() == values.len();
-            let integer = numeric && values.iter().all(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()));
+            let integer = numeric
+                && values
+                    .iter()
+                    .all(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()));
             let mut distinct: Vec<&str> = values.clone();
             distinct.sort_unstable();
             distinct.dedup();
@@ -121,7 +133,10 @@ pub fn shape_csv(path: &Path) -> Option<TableShape> {
             }
         })
         .collect();
-    Some(TableShape { rows: rows.len(), columns })
+    Some(TableShape {
+        rows: rows.len(),
+        columns,
+    })
 }
 
 /// Profile text for one CSV file, or `None` when it cannot be read as a plain CSV.
