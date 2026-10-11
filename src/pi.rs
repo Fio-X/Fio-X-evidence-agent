@@ -82,6 +82,10 @@ pub const RECIPES_ENV: &str = "NEWSROOM_SPEED_RECIPES";
 pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
 pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
 /// Prompt-only: tells the model where number words and digits are refused; no check changes.
+/// 1011y: off by default, only exactly "1" turns it on. On: the Pi child gets PI_OFFLINE=1, so Pi's own background model-catalog
+/// refresh (its only self-started connection in rpc mode, built-in providers with credentials only) does not run. Off: nothing
+/// is set or removed. Exit condition: merge into the default after an install-time check.
+pub const PI_OFFLINE_ENV: &str = "NEWSROOM_PI_OFFLINE";
 pub const NUMWORD_PROMPT_ENV: &str = "NEWSROOM_NUMWORD_PROMPT";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
@@ -1042,6 +1046,9 @@ impl PiConfig {
         // Model-provider and explicitly invoked newsroom network tools remain available.
         cmd.env("PI_SKIP_VERSION_CHECK", "1");
         cmd.env("PI_TELEMETRY", "0");
+        if exact_one(PI_OFFLINE_ENV) {
+            cmd.env("PI_OFFLINE", "1");
+        }
 
         let inherited_https_proxy = std::env::var("HTTPS_PROXY")
             .ok()
@@ -2169,6 +2176,37 @@ mod tests {
             crate::prompt::PromptSpeed::default()
         );
         std::env::remove_var(NUMWORD_PROMPT_ENV);
+    }
+
+    #[test]
+    fn pi_offline_is_set_only_when_the_switch_is_exactly_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let saved = std::env::var(PI_OFFLINE_ENV).ok();
+        let offline = || {
+            let command = visual_story_config(false, "investigate").command();
+            let found = command
+                .as_std()
+                .get_envs()
+                .find(|(key, _)| *key == "PI_OFFLINE")
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+            found
+        };
+        std::env::remove_var(PI_OFFLINE_ENV);
+        assert_eq!(offline(), None);
+        for off in ["", "true", "0", " 1", "yes"] {
+            std::env::set_var(PI_OFFLINE_ENV, off);
+            assert_eq!(
+                offline(),
+                None,
+                "switch value {off:?} must not set PI_OFFLINE"
+            );
+        }
+        std::env::set_var(PI_OFFLINE_ENV, "1");
+        assert_eq!(offline(), Some(Some("1".to_string())));
+        match saved {
+            Some(value) => std::env::set_var(PI_OFFLINE_ENV, value),
+            None => std::env::remove_var(PI_OFFLINE_ENV),
+        }
     }
 
     #[test]

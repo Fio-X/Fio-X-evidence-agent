@@ -121,6 +121,14 @@ if not has_materializer_call('lieflat_path', 'LIEFLAT_RUNTIME'):
 if './lieflat.mjs' not in extension:
     raise SystemExit('newsroom.ts does not import required runtime module lieflat.mjs')
 
+# tool_api.ts is the only file that imports the Pi packages; newsroom.ts reaches them through it.
+if 'include_str!("../runtime/pi/tool_api.ts")' not in runtime:
+    raise SystemExit('tool_api.ts is not embedded in the Rust runtime materializer')
+if '"tool_api.ts"' not in runtime:
+    raise SystemExit('tool_api.ts is embedded but not materialized beside newsroom.ts')
+if './tool_api.ts' not in extension:
+    raise SystemExit('newsroom.ts does not import tool_api.ts')
+
 for module, const, path_var in [
     ('parallel_scheduler.mjs', 'PARALLEL_SCHEDULER_RUNTIME', 'parallel_scheduler_path'),
     ('local_backend.mjs', 'LOCAL_BACKEND_RUNTIME', 'local_backend_path'),
