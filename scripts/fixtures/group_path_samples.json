@@ -1,0 +1,246 @@
+[
+ {
+  "path": "claims.jsonl",
+  "kind": "evidence"
+ },
+ {
+  "path": "claims.jsonl.bak",
+  "kind": null
+ },
+ {
+  "path": "computations/c1.json",
+  "kind": "evidence"
+ },
+ {
+  "path": "sources/a.json",
+  "kind": "evidence"
+ },
+ {
+  "path": "searches/s.json",
+  "kind": "evidence"
+ },
+ {
+  "path": "data/a.csv",
+  "kind": "evidence"
+ },
+ {
+  "path": "data/origins/abc.json",
+  "kind": "evidence"
+ },
+ {
+  "path": "runtime/query-rows/q.json",
+  "kind": "evidence"
+ },
+ {
+  "path": "shadow/obs.json",
+  "kind": "observation"
+ },
+ {
+  "path": "visualizations/graph-analysis/x.json",
+  "kind": "evidence"
+ },
+ {
+  "path": "visualizations/x.svg",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "visualizations/plans/p.json",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "infographics/page.svg",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "infographics/vision-critics/v.json",
+  "kind": "pass_decision"
+ },
+ {
+  "path": "infographics/competition-preflight/c.json",
+  "kind": "pass_decision"
+ },
+ {
+  "path": "editorial/preferences/p.json",
+  "kind": "pass_decision"
+ },
+ {
+  "path": "editorial/award-runs/a.json",
+  "kind": "pass_decision"
+ },
+ {
+  "path": "editorial/other.json",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "verification-rounds/round-1.json",
+  "kind": "pass_decision"
+ },
+ {
+  "path": "plan.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "plan.json.old",
+  "kind": null
+ },
+ {
+  "path": "runtime/pi/newsroom.ts",
+  "kind": "project_state"
+ },
+ {
+  "path": "runtime/boundary-refusals.jsonl",
+  "kind": "project_state"
+ },
+ {
+  "path": "infographics/plan-rejections/r.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "infographics/plan-patches/p.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "infographics/chain-rejections/r.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "infographics/chain-patches/p.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "maps/m.json",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "models/m.json",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "publications/p/index.html",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "lieflat/x.svg",
+  "kind": "visual_spec"
+ },
+ {
+  "path": "config/a.json",
+  "kind": "rules"
+ },
+ {
+  "path": "./claims.jsonl",
+  "kind": "evidence"
+ },
+ {
+  "path": "data\\a.csv",
+  "kind": "evidence"
+ },
+ {
+  "path": "story.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "plan-progress.json",
+  "kind": "project_state"
+ },
+ {
+  "path": "verification.json",
+  "kind": "verification_record"
+ },
+ {
+  "path": "verification.json.tmp",
+  "kind": null
+ },
+ {
+  "path": "prompt.md",
+  "kind": "run_record"
+ },
+ {
+  "path": "answer.md",
+  "kind": "run_record"
+ },
+ {
+  "path": "assistant-answer.md",
+  "kind": "run_record"
+ },
+ {
+  "path": "conversation.md",
+  "kind": "run_record"
+ },
+ {
+  "path": "events.jsonl",
+  "kind": "run_record"
+ },
+ {
+  "path": "tools.json",
+  "kind": "run_record"
+ },
+ {
+  "path": "session-stats.json",
+  "kind": "run_record"
+ },
+ {
+  "path": "run-metrics.jsonl",
+  "kind": "run_record"
+ },
+ {
+  "path": "visual-metrics.json",
+  "kind": "run_record"
+ },
+ {
+  "path": "",
+  "kind": "run_record"
+ },
+ {
+  "path": "data/",
+  "kind": "run_record"
+ },
+ {
+  "path": "data/origins/",
+  "kind": "run_record"
+ },
+ {
+  "path": "computations/",
+  "kind": "run_record"
+ },
+ {
+  "path": "visualizations/",
+  "kind": "run_record"
+ },
+ {
+  "path": "infographics/",
+  "kind": "run_record"
+ },
+ {
+  "path": "session/",
+  "kind": "run_record"
+ },
+ {
+  "path": "session/s1.jsonl",
+  "kind": null
+ },
+ {
+  "path": "answer.md.bak",
+  "kind": null
+ },
+ {
+  "path": "notes.md",
+  "kind": null
+ },
+ {
+  "path": "random/file.txt",
+  "kind": null
+ },
+ {
+  "path": "Claims.jsonl",
+  "kind": null
+ },
+ {
+  "path": "../claims.jsonl",
+  "kind": null
+ },
+ {
+  "path": "data",
+  "kind": null
+ }
+]

@@ -56,36 +56,22 @@ export function orderToolsByGroup(tools) {
 }
 
 // ---- the boundary report ---------------------------------------------------------------------------------------------------
-// Who may write which kind of artifact. The pass/publication decision belongs to the agent group alone;
-// the other three groups have no right to write it (not merely read-only).
-export const OWNERSHIP = {
-  evidence: { owner: "knowledge", what: "claims, computation records, sources, searches, data files and origins, query-row tables" },
-  project_state: { owner: "agent", what: "plan, run telemetry, rejected-call and patch stores" },
-  visual_spec: { owner: "visual", what: "chart, page, illustration, map, model-spec and publication specs, renders, critics, QA" },
-  observation: { owner: "knowledge", what: "shadow-check side files: observations of the evidence that never become evidence themselves" },
-  pass_decision: { owner: "agent", what: "review and award records, vision verdicts, competition preflight" },
-  rules: { owner: "system", what: "config and the registry" },
-};
+// Who may write which kind of artifact, and which path is which kind. Both tables live in groups.json (artifact_kinds), so the Rust side
+// reads the same file and nothing is copied. The pass/publication decision belongs to the agent group alone; the other three groups
+// have no right to write it (not merely read-only).
+const kindTable = () => loadGroups().artifact_kinds ?? { ownership: {}, rules: [] };
+export const OWNERSHIP = (() => { try { return loadGroups().artifact_kinds?.ownership ?? {}; } catch { return {}; } })();
 
-// First match wins. Anything that matches no rule is 待查.
-const KIND_RULES = [
-  [/^claims\.jsonl$/, "evidence"],
-  [/^(computations|sources|searches|data)\//, "evidence"],
-  [/^runtime\/query-rows\//, "evidence"],
-  [/^shadow\//, "observation"],
-  [/^visualizations\/graph-analysis\//, "evidence"],
-  [/^editorial\/(preferences|award-runs)\//, "pass_decision"],
-  [/^infographics\/(vision-critics|competition-preflight)\//, "pass_decision"],
-  [/^verification-rounds\//, "pass_decision"],  // chain-reuse records (K131): the program decides whether a text-only follow-up may reuse the last verified chain
-  [/^plan\.json$/, "project_state"],
-  [/^runtime\//, "project_state"],
-  [/^infographics\/(plan-rejections|plan-patches|chain-rejections|chain-patches)\//, "project_state"],
-  [/^(visualizations|infographics|editorial|maps|models|publications|lieflat)\//, "visual_spec"],
-  [/^config\//, "rules"],
-];
+/** First rule that matches wins; a rule is an exact path or a path prefix. Anything that matches no rule is 待查. A table that cannot be read matches nothing. */
 export function classifyArtifact(relPath) {
   const path = String(relPath ?? "").replace(/\\/g, "/").replace(/^\.\//, "");
-  for (const [pattern, kind] of KIND_RULES) if (pattern.test(path)) return { kind, owner: OWNERSHIP[kind].owner };
+  let table;
+  try { table = kindTable(); } catch { return null; }
+  for (const rule of table.rules ?? []) {
+    const hit = rule.exact !== undefined ? path === rule.exact : typeof rule.prefix === "string" && rule.prefix !== "" && path.startsWith(rule.prefix);
+    const owner = table.ownership?.[rule.kind]?.owner;
+    if (hit && owner) return { kind: rule.kind, owner, ...(rule.tag ? { tag: rule.tag } : {}) };
+  }
   return null;
 }
 

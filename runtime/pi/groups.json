@@ -44,199 +44,315 @@
  "tools": {
   "artifact_inventory": {
    "group": "agent",
+   "registered_as": "agent.artifact_inventory",
+   "cli_entry": null,
    "note": "Reads artifacts of every group but only to help the model navigate; writes nothing."
   },
   "newsroom_update_plan": {
-   "group": "agent"
+   "group": "agent",
+   "registered_as": "agent.update_plan",
+   "cli_entry": null
   },
   "news_search": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.news_search",
+   "cli_entry": null
   },
   "fetch_url": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.fetch_url",
+   "cli_entry": null
   },
   "download_data": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.download_data",
+   "cli_entry": null
   },
   "duckdb_query": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.duckdb_query",
+   "cli_entry": null
   },
   "newsroom_parallel_tasks": {
-   "group": "agent"
+   "group": "agent",
+   "registered_as": "agent.parallel_tasks",
+   "cli_entry": null
   },
   "newsroom_visual_backend_status": {
-   "group": "system"
+   "group": "system",
+   "registered_as": "system.visual_backend_status",
+   "cli_entry": null
   },
   "newsroom_graph_extraction_status": {
-   "group": "system"
+   "group": "system",
+   "registered_as": "system.graph_extraction_status",
+   "cli_entry": null
   },
   "newsroom_visual_skill": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.visual_skill",
+   "cli_entry": null
   },
   "newsroom_lieflat_catalog": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.lieflat_catalog",
+   "cli_entry": null
   },
   "newsroom_lieflat_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.lieflat_render",
+   "cli_entry": null
   },
   "newsroom_visual_backend_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.visual_backend_plan",
+   "cli_entry": null
   },
   "newsroom_viz_plan": {
    "group": "visual",
+   "registered_as": "visual.viz_plan",
+   "cli_entry": null,
    "note": "Cross-group write: records the chart claim and its computation record."
   },
   "newsroom_viz_lint": {
    "group": "visual",
+   "registered_as": "visual.viz_lint",
+   "cli_entry": null,
    "note": "Cross-group write: writes a computation record."
   },
   "newsroom_viz_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.viz_render",
+   "cli_entry": null
   },
   "newsroom_viz_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.viz_critic",
+   "cli_entry": null
   },
   "newsroom_explainer_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_plan",
+   "cli_entry": null
   },
   "newsroom_explainer_lint": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_lint",
+   "cli_entry": null
   },
   "newsroom_explainer_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_render",
+   "cli_entry": null
   },
   "newsroom_explainer_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_critic",
+   "cli_entry": null
   },
   "newsroom_illustration_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_plan",
+   "cli_entry": null
   },
   "newsroom_illustration_lint": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_lint",
+   "cli_entry": null
   },
   "newsroom_illustration_generate": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_generate",
+   "cli_entry": null
   },
   "newsroom_illustration_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_critic",
+   "cli_entry": null
   },
   "newsroom_editorial_discovery": {
    "group": "visual",
+   "registered_as": "visual.editorial_discovery",
+   "cli_entry": null,
    "note": "Editorial research could be knowledge; kept with the page it feeds."
   },
   "newsroom_story_graph": {
    "group": "visual",
+   "registered_as": "visual.story_graph",
+   "cli_entry": null,
    "note": "Story nodes cite claims, but the graph is a page-design record."
   },
   "newsroom_visual_concepts": {
    "group": "visual",
+   "registered_as": "visual.visual_concepts",
+   "cli_entry": null,
    "note": "Also appends a tool-chain telemetry line (an agent artifact) from a visual tool."
   },
   "newsroom_semantic_novelty": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.semantic_novelty",
+   "cli_entry": null
   },
   "newsroom_asset_requirements": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.asset_requirements",
+   "cli_entry": null
   },
   "newsroom_reference_patterns": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.reference_patterns",
+   "cli_entry": null
   },
   "newsroom_expert_preference_record": {
    "group": "visual",
+   "registered_as": "visual.expert_preference_record",
+   "cli_entry": null,
    "note": "Write site where the model supplies a pass status. A review outcome, not drawing; stays visual for now, so the boundary check reports its pass record as cross-group.",
    "model_supplied_pass": true
   },
   "newsroom_award_mode_status": {
    "group": "visual",
+   "registered_as": "visual.award_mode_status",
+   "cli_entry": null,
    "note": "Write site where the model supplies a pass status. Same call as newsroom_expert_preference_record.",
    "model_supplied_pass": true
   },
   "newsroom_infographic_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_plan",
+   "cli_entry": null
   },
   "newsroom_infographic_lint": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_lint",
+   "cli_entry": null
   },
   "newsroom_infographic_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_render",
+   "cli_entry": null
   },
   "newsroom_infographic_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_critic",
+   "cli_entry": null
   },
   "newsroom_model_validate": {
    "group": "visual",
+   "registered_as": "visual.model_validate",
+   "cli_entry": null,
    "note": "Could be knowledge; decided visual because the record it gates is the spec the page draws."
   },
   "newsroom_basemap_prepare": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.basemap_prepare",
+   "cli_entry": null
   },
   "newsroom_map_validate": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.map_validate",
+   "cli_entry": null
   },
   "newsroom_style_map": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.style_map",
+   "cli_entry": null
   },
   "newsroom_publication_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.publication_plan",
+   "cli_entry": null
   },
   "newsroom_portable_publication": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.portable_publication",
+   "cli_entry": null
   },
   "newsroom_publication_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.publication_render",
+   "cli_entry": null
   },
   "newsroom_publication_qa": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.publication_qa",
+   "cli_entry": null
   },
   "newsroom_network_analyze": {
    "group": "knowledge",
+   "registered_as": "knowledge.network_analyze",
+   "cli_entry": null,
    "note": "A computation (knowledge) that only serves drawing; the output path is under visualizations/."
   },
   "newsroom_network_reduce": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.network_reduce",
+   "cli_entry": null
   },
   "newsroom_infographic_preview": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_preview",
+   "cli_entry": null
   },
   "newsroom_infographic_vision_critic": {
    "group": "visual",
+   "registered_as": "visual.infographic_vision_critic",
+   "cli_entry": null,
    "note": "The model supplies passed and score: its own quality judgment of the rendered page, which is the product's design.",
    "model_quality_verdict": true,
    "verdict_reason": "The publication decision is computed by the program from this verdict, so the critic itself writes a QA record and not the decision."
   },
   "newsroom_infographic_revise": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_revise",
+   "cli_entry": null
   },
   "newsroom_competition_preflight": {
    "group": "visual",
+   "registered_as": "visual.competition_preflight",
+   "cli_entry": null,
    "note": "Machine preflight over the critics; the program computes machine_passed from the critics (the model passes only references), so no model-supplied pass is stored; it reads the model-supplied vision verdict as an input and writes a pass record."
   },
   "newsroom_chart": {
    "group": "visual",
+   "registered_as": "visual.chart",
+   "cli_entry": null,
    "hidden": true,
    "note": "In the registry but never registered; not model-visible."
   },
   "record_claim": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.record_claim",
+   "cli_entry": null
   },
   "newsroom_viz_chain": {
    "group": "agent",
+   "registered_as": "agent.viz_chain",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_chain": {
    "group": "agent",
+   "registered_as": "agent.infographic_chain",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_chain_patch": {
    "group": "agent",
+   "registered_as": "agent.infographic_chain_patch",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_plan_patch": {
    "group": "agent",
+   "registered_as": "agent.infographic_plan_patch",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_edit": {
    "group": "visual",
+   "registered_as": "visual.infographic_edit",
+   "cli_entry": null,
    "conditional": true,
    "note": "Edits a visual plan though it is an agent-speed tool; decided visual because it writes a visual plan revision."
   }
@@ -676,5 +792,250 @@
    "group": "system",
    "note": "Loader, boundary report and tool-order helpers for the group list."
   }
+ },
+ "artifact_kinds": {
+  "ownership": {
+   "evidence": {
+    "owner": "knowledge",
+    "what": "claims, computation records, sources, searches, data files and origins, query-row tables"
+   },
+   "project_state": {
+    "owner": "agent",
+    "what": "plan, run telemetry, rejected-call and patch stores, the run manifest (story.json)"
+   },
+   "visual_spec": {
+    "owner": "visual",
+    "what": "chart, page, illustration, map, model-spec and publication specs, renders, critics, QA"
+   },
+   "observation": {
+    "owner": "knowledge",
+    "what": "shadow-check side files: observations of the evidence that never become evidence themselves"
+   },
+   "pass_decision": {
+    "owner": "agent",
+    "what": "review and award records, vision verdicts, competition preflight, chain-reuse records"
+   },
+   "rules": {
+    "owner": "system",
+    "what": "config and the registry"
+   },
+   "run_record": {
+    "owner": "system",
+    "what": "run bundle bookkeeping the program writes: transcripts, event and metric logs, progress and the folder skeleton"
+   },
+   "verification_record": {
+    "owner": "knowledge",
+    "what": "the program-computed result of the independent evidence check (verification.json)"
+   }
+  },
+  "rules": [
+   {
+    "kind": "run_record",
+    "exact": "",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "data/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "data/origins/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "computations/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "visualizations/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "infographics/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "session/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "evidence",
+    "exact": "claims.jsonl"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "computations/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "sources/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "searches/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "data/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "runtime/query-rows/"
+   },
+   {
+    "kind": "observation",
+    "prefix": "shadow/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "visualizations/graph-analysis/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "editorial/preferences/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "editorial/award-runs/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "infographics/vision-critics/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "infographics/competition-preflight/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "verification-rounds/"
+   },
+   {
+    "kind": "project_state",
+    "exact": "plan.json"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "runtime/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/plan-rejections/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/plan-patches/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/chain-rejections/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/chain-patches/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "visualizations/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "infographics/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "editorial/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "maps/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "models/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "publications/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "lieflat/"
+   },
+   {
+    "kind": "rules",
+    "prefix": "config/"
+   },
+   {
+    "kind": "project_state",
+    "exact": "story.json",
+    "note": "Written by the program (artifact.rs write_manifest) under an agent command: the run manifest. It lists the files and carries the delivery.primary_artifact the program found on disk, so it is run state of the agent group, not bookkeeping."
+   },
+   {
+    "kind": "project_state",
+    "exact": "plan-progress.json",
+    "note": "Written by the program (pi.rs) under an agent command, one line per finished tool call taken from the Pi tool_execution_end event: progress of the agent's plan."
+   },
+   {
+    "kind": "verification_record",
+    "exact": "verification.json",
+    "note": "Written by the program under verify (knowledge); continue (agent) also writes round status into it, but only a value the program computed with the verify calculation, never one the model supplies."
+   },
+   {
+    "kind": "run_record",
+    "exact": "prompt.md",
+    "tag": "transcript",
+    "note": "Written by the program (artifact.rs) under an agent command: the user's prompt copied as it was typed. System because the program copies it; nothing verifies against it."
+   },
+   {
+    "kind": "run_record",
+    "exact": "answer.md",
+    "tag": "transcript",
+    "note": "Written by the program under an agent command: the model's final text copied to disk. A transcript the program stores (system); no check treats it as evidence."
+   },
+   {
+    "kind": "run_record",
+    "exact": "assistant-answer.md",
+    "tag": "transcript",
+    "note": "Written by the program under investigate-v2: the model's final text copied to disk. A transcript (system), never evidence."
+   },
+   {
+    "kind": "run_record",
+    "exact": "conversation.md",
+    "tag": "transcript",
+    "note": "Written by the program under chat and continue: the turns copied to disk. A transcript (system), never evidence."
+   },
+   {
+    "kind": "run_record",
+    "exact": "events.jsonl",
+    "note": "Written by the program (pi.rs) under an agent command: the Pi event log. The program records it, it grants nothing."
+   },
+   {
+    "kind": "run_record",
+    "exact": "tools.json",
+    "note": "Written by the program (audit.rs) under an agent command: the tool-call audit the program counts from the event log."
+   },
+   {
+    "kind": "run_record",
+    "exact": "session-stats.json",
+    "note": "Written by the program under an agent command: token and message counts from Pi."
+   },
+   {
+    "kind": "run_record",
+    "exact": "run-metrics.jsonl",
+    "note": "Written by the program under an agent command: timing and token lines."
+   },
+   {
+    "kind": "run_record",
+    "exact": "visual-metrics.json",
+    "note": "Written by the program under investigate-v2: measured timings of a visual story run."
+   }
+  ]
  }
 }
