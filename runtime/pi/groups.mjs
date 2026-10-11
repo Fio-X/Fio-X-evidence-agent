@@ -295,30 +295,40 @@ export const isGroupChecked = (tool) => checkedTools.has(tool);
 let inFlight = 0, overlaps = 0;
 
 // Which call wrote which file. Every tool call (and every runDeclared outside a tool) is one "call"; a judged write (recordBoundaryWrite, which runs before the
-// file is written) is noted under the call it was made in. Calls that were in flight at the same time know each other's notes, so runDeclared can tell a
-// file a sibling call wrote from one its own child process wrote. Nothing here lets a write through: an unnoted new file is still refused.
+// file is written) is noted under the call it was made in, and when that call ends the noted files are hashed (the content the call left behind). Calls that
+// were in flight at the same time know each other's notes, so runDeclared can tell a file a sibling call wrote from one its own child process wrote: a file
+// counts as the sibling's only while its content is still what the sibling left (an ended sibling's hash must match; if somebody changed it afterwards the
+// change is this call's). A sibling that has not ended yet cannot be checked: its notes are accepted as they are (the gap is listed in the report).
+// Nothing here lets a write through: a file nobody noted is still refused.
 const callStore = new AsyncLocalStorage();
 const activeCalls = new Set();
 let callSeq = 0;
 function startCall() {
-  const call = { id: ++callSeq, wrote: new Set(), overlap: new Map() };
-  for (const other of activeCalls) { other.overlap.set(call.id, call.wrote); call.overlap.set(other.id, other.wrote); }
+  const call = { id: ++callSeq, root: null, notes: new Map(), done: false, overlap: new Map() };
+  for (const other of activeCalls) { other.overlap.set(call.id, call); call.overlap.set(other.id, other); }
   activeCalls.add(call);
   return call;
 }
+function finishCall(call) {
+  for (const [path, note] of call.notes) note.hash = hashOf(join(call.root, path));
+  call.done = true;
+  activeCalls.delete(call);
+}
 // A wrapped tool call always starts a new call, even when another tool's execute runs inside it (a chain, a parallel task): a write made there is that
 // call's own, not the caller's child process's. runDeclared joins the call it is in, or starts one when it runs outside any tool.
-const runInCall = async (fn, { join = false } = {}) => {
-  if (join && callStore.getStore()) return fn();
+const runInCall = async (fn, { join: joinExisting = false } = {}) => {
+  if (joinExisting && callStore.getStore()) return fn();
   const call = startCall();
-  try { return await callStore.run(call, fn); } finally { activeCalls.delete(call); }
+  try { return await callStore.run(call, fn); } finally { finishCall(call); }
 };
 function noteCallWrite(root, target) {
   if (!groupToolsEnabled() || !root) return;
   const call = callStore.getStore();
   if (!call) return;
   const text = String(target ?? "");
-  call.wrote.add((isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/"));
+  call.root = root;
+  const path = (isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/");
+  call.notes.set(path, { hash: null });
 }
 
 /** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
@@ -417,7 +427,15 @@ async function runDeclaredInCall(root, outputs, fn, { watch }) {
   try { value = await fn(); } catch (error) { failure = error; }
   const overlapped = inFlight > 1 || overlaps !== overlapsBefore;
   // a file a call that ran at the same time noted as its own write belongs to that call
-  const siblingWrote = (path) => { for (const wrote of me?.overlap.values() ?? []) if (wrote.has(path)) return true; return false; };
+  const siblingWrote = (path) => {
+    for (const other of me?.overlap.values() ?? []) {
+      const note = other.notes.get(path);
+      if (!note || other.root !== root) continue;
+      // the sibling has not ended: what it left cannot be compared yet. Ended: the file must still be what it left.
+      if (!other.done || (note.hash !== null && hashOf(join(root, path)) === note.hash)) return true;
+    }
+    return false;
+  };
   const exempt = (path) => declared.has(path) || isE1Temp(path) || siblingWrote(path);
   const extra = [], changed = [], deleted = [];
   const seen = new Set();

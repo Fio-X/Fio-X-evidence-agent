@@ -248,6 +248,24 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   rmSync(join(dirE, `${GR}/early.json`));
   const lateFile = await tool(dirE, async () => { writeFileSync(join(dirE, `${GR}/early.json`), "x"); }).execute().catch((e) => e);
   assert.equal(lateFile.code, "GROUP_TOOLS_REFUSED"); assert.deepEqual(lateFile.detail.rolled_back, [`${GR}/early.json`]);
+  // the sibling's note only counts while the file still holds what the sibling left: when it has ended and the child process then rewrites that file, the
+  // rewrite is this call's (refused; the overlap means nothing is deleted)
+  const dirR = dirFor(); const rel = `${GR}/sibling.json`;
+  const sibR = siblingWith(dirR, rel);
+  const rewritten = await tool(dirR, async () => { await sibR.execute(); writeFileSync(join(dirR, rel), '{"by":"child"}'); }).execute().catch((e) => e);
+  assert.equal(rewritten.code, "GROUP_TOOLS_REFUSED", "a sibling's file the child process rewrote afterwards is refused");
+  assert.deepEqual(rewritten.detail.extra, [rel]);
+  // an existing file: the sibling updates it, then the child process rewrites it again
+  const dirR2 = dirFor(); writeFileSync(join(dirR2, rel), "before");
+  const sibR2 = g.withGroupTools({ name: T, execute: async () => { g.recordBoundaryWrite(dirR2, rel, "write"); writeFileSync(join(dirR2, rel), "sibling"); } });
+  const rewritten2 = await tool(dirR2, async () => { await sibR2.execute(); await sleep(15); writeFileSync(join(dirR2, rel), "child!!"); }).execute().catch((e) => e);
+  assert.deepEqual(rewritten2.detail.changed, [rel], "an existing file the sibling updated and the child process rewrote again is the child's change");
+  // known gap, pinned: a sibling that has not ended yet cannot be compared, its note is accepted as it is
+  const dirG = dirFor(); const sibG = g.withGroupTools({ name: T, execute: async () => { await sleep(5); g.recordBoundaryWrite(dirG, rel, "write"); writeFileSync(join(dirG, rel), "{}"); await sleep(80); } });
+  let sibGDone;
+  const open = await tool(dirG, async () => { sibGDone = sibG.execute(); await sleep(40); }).execute().catch((e) => e);
+  await sibGDone;
+  assert.equal(open, undefined, "a sibling still running at the end: its note is accepted (gap)");
   check("child process: a file a call running at the same time wrote (judged before it was written) is that call's, 20 runs without a refusal; unjudged, other-path and own extra files are still refused");
 
   // 7b. an existing file rewritten or removed by a child process: refused, reported as not restored, never rolled back
