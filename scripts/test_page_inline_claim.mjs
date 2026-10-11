@@ -34,6 +34,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -530,14 +531,13 @@ const runChain = (tools, params, id = "chain") => tools.get("newsroom_viz_chain"
 // Everything the chain wrote except what is timestamped; the claim ledger is compared separately.
 // Run traces, not artifacts: the chain's event log, and the write report NEWSROOM_GROUP_BOUNDARY=1 or NEWSROOM_GROUP_ENFORCE=1 keeps (it names the tool
 // that wrote, so a chain and the classic calls differ there by design). Where the tree must stay as it was, the report may list only the event log.
-const RUN_TRACES = ["runtime/tool-chain-events.jsonl", "runtime/group-boundary-report.json"];
 function assertBoundaryReportOnlyTraces(dir, label) {
   const path = join(dir, "runtime/group-boundary-report.json");
   if (!existsSync(path)) return;
   const examples = JSON.parse(readFileSync(path, "utf8")).records.flatMap((record) => record.examples ?? []);
   assert.deepEqual([...new Set(examples)].filter((file) => !RUN_TRACES.includes(file)), [], `${label}: the write report lists no write but the event log`);
 }
-const snapshot = (dir) => Object.fromEntries(walk(dir).map((f) => relative(dir, f)).filter((f) => !RUN_TRACES.includes(f) && f !== "claims.jsonl").sort().map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+const snapshot = (dir) => Object.fromEntries(withoutRunTraces(dir, walk(dir).map((f) => relative(dir, f)), { chain: true, label: "snapshot" }).filter((f) => f !== "claims.jsonl").sort().map((f) => [f, readFileSync(join(dir, f), "utf8")]));
 const withoutTime = ({ recorded_at, ...record }) => record;
 
 // The numbers each shape's claim must show, from the CSV with no runtime code in between.
@@ -791,7 +791,7 @@ if (!missingDependency) {
       refusals += 1;
       const story = seed(`refused-${refusals}`, shape);
       // the chain's own event log notes the refusal; every other file must be untouched
-      const tree = () => listing(story.dir).filter(([file]) => !RUN_TRACES.includes(file));
+      const tree = () => { const all = listing(story.dir); const keep = new Set(withoutRunTraces(story.dir, all.map(([file]) => file), { chain: true, label: "tree" })); return all.filter(([file]) => keep.has(file)); };
       const before = tree();
       const tools = register(mod, ON_ENV);
       await assert.rejects(() => callWith(tools, "newsroom_viz_chain", inline({ claim })(story, shape)), words(near), label);

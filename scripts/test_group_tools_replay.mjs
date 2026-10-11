@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 
 const { getBasemap } = await import(join(REPO, "runtime/pi/basemap_registry.mjs"));
 const { CHOROPLETH_BASEMAP_ID } = await import(join(REPO, "runtime/pi/choropleth.mjs"));
@@ -72,7 +73,9 @@ const off = await replay("off", OFF);
 const on = await replay("on", ON);
 
 // The only normalization: record_claim stamps the wall clock into claims.jsonl (`recorded_at`); that field is dropped, every other byte is compared.
-const byRel = (r) => new Map([...r.files].map(([path, bytes]) => {
+// The write report NEWSROOM_GROUP_BOUNDARY=1 keeps names the tool that wrote, so it differs between the plain and the wrapped run by design; it is left out
+// (after its shape is checked) and every other file is still compared byte for byte. boundary-refusals.jsonl is never left out.
+const byRel = (r) => new Map([...r.files].filter(([path]) => withoutRunTraces(r.art, [path], { chain: false, label: "replay" }).length).map(([path, bytes]) => {
   const name = relative(r.art, path);
   return [name, name === "claims.jsonl" ? Buffer.from(bytes.toString().replace(/"recorded_at":"[^"]*",?/g, "")) : bytes];
 }));
