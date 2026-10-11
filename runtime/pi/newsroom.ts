@@ -5,9 +5,8 @@ import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
 import { assertAllGroupChecked, assertCrossCall, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, recordBoundaryWrite, runDeclared, withBoundaryContext, withGroupTools } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
+import type { ExtensionAPI } from "./tool_api.ts";
+import { StringEnum, Type, importTypeboxCompile } from "./tool_api.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { mkdir, readFile, writeFile, appendFile, stat, readdir, unlink, rename, link } from "node:fs/promises";
@@ -610,7 +609,7 @@ function registerPatchTool(pi: ExtensionAPI, kind: PatchKind) {
       try { stored = await readArtifactJson(`${kind.rejections}${sha}.json`, kind.rejections); } catch { throw new PatchError("PATCH_BASE_NOT_FOUND", `no refused ${kind.tool} call is kept at ${kind.rejections}${sha}.json; send the full call`); }
       const patched = applyJsonPatch(stored.params, params.patch);
       let Compile: any;
-      try { Compile = (await import("typebox/compile")).Compile; } catch { Compile = undefined; }
+      try { Compile = (await importTypeboxCompile()).Compile; } catch { Compile = undefined; }
       const issues = strictSchemaIssues(Compile, registeredTools.get(kind.tool)?.parameters ?? target.parameters, patched);
       if (issues.length) throw new PatchError("PATCH_SCHEMA_REJECTED", `the patched call fails the ${kind.tool} parameter check: ${issues.join("; ")}`);
       const patchRef = `${kind.patches}${sha256Of({ patch_of: sha, patch: params.patch })}.json`;
@@ -5491,7 +5490,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       if (compactSetupEnabled()) {
         params = await compactSetupRefs("newsroom_visual_concepts", rawParams);
         const concepts = expandSharedConcepts(params.shared, params.concepts);
-        await checkExpandedConcepts(concepts, buildConceptParameters(false), (await import("typebox/compile")).Compile);
+        await checkExpandedConcepts(concepts, buildConceptParameters(false), (await importTypeboxCompile()).Compile);
         params = { discovery_ref: params.discovery_ref, concepts };
         await saveChainEvent({ type: "setup_input_form", toolName: "newsroom_visual_concepts", input_form: rawParams.shared === undefined ? "full" : "shared_defaults", _newsroom_recorded_at: new Date().toISOString() });
       }

@@ -534,6 +534,10 @@
   "runtime/pi/process.mjs": {
    "group": "system"
   },
+  "runtime/pi/tool_api.ts": {
+   "group": "agent",
+   "note": "1011y: the one seam through which tool code reaches the Pi packages (pure re-export). It belongs to the agent loop that would replace Pi."
+  },
   "runtime/pi/net.mjs": {
    "group": "knowledge"
   },
@@ -902,6 +906,11 @@
    {
     "kind": "materialized_runtime",
     "exact": "runtime/process.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_api.ts",
     "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
    },
    {
@@ -3152,6 +3161,33 @@
     ],
     "write": false,
     "why": "设计上共用"
+   },
+   "tool_api.ts::StringEnum": {
+    "owner": "agent",
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011y: re-export of a Pi package name (schema constructor / dynamic import); a pure forwarder shared by design"
+   },
+   "tool_api.ts::Type": {
+    "owner": "agent",
+    "groups": [
+     "knowledge",
+     "system",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011y: re-export of a Pi package name (schema constructor / dynamic import); a pure forwarder shared by design"
+   },
+   "tool_api.ts::importTypeboxCompile": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011y: re-export of a Pi package name (schema constructor / dynamic import); a pure forwarder shared by design"
    }
   }
  }

@@ -229,6 +229,7 @@ jobs:
           node scripts/test_group_cross_calls.mjs
           node scripts/test_group_cross_call_gate.mjs
           node scripts/test_gate_stamp_callers.mjs
+          node scripts/test_tool_api_seam.mjs
           node scripts/test_runtime_embed_guard.mjs
           node scripts/test_switch_exact_one.mjs
           node scripts/test_data_notes.mjs
