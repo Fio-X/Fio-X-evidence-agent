@@ -32,7 +32,7 @@ import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
-import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, reviewFromRecordsEnabled, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
+import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
@@ -5466,7 +5466,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Record qualified human art-director preference evidence",
     parameters: Type.Object({ baseline_ref: Type.String(), candidate_ref: Type.String(), minimum_reviewers: Type.Optional(Type.Integer({ minimum: 3, maximum: 30 })), candidate_threshold: Type.Optional(Type.Number({ minimum: 0.5, maximum: 1 })), reviews: Type.Array(preferenceReview, { maxItems: 30 }) }),
     async execute(_id, params) {
-      const result = reviewFromRecordsEnabled()
+      const result = programRecordsMode()
         ? evaluateExpertPreference(params, { programReviews: await loadProgramReviews(params.baseline_ref, params.candidate_ref) })
         : evaluateExpertPreference(params);
       const rel = `editorial/preferences/${result.content_hash}.json`;
@@ -5493,7 +5493,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       for (const [ref, prefix] of [[params.discovery_ref, "editorial/discovery/"], [params.concepts_ref, "editorial/concepts/"], [params.asset_plan_ref, "editorial/assets/"], [params.novelty_ref, "editorial/novelty/"]] as const) await readArtifactJson(ref, prefix);
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
-      const result = reviewFromRecordsEnabled()
+      const result = programRecordsMode()
         ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: conceptMinCount() })
         : summarizeAwardMode(params, { minConcepts: conceptMinCount() });
       const rel = `editorial/award-runs/${result.content_hash}.json`;
@@ -6670,6 +6670,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await writeArtifactIfAbsent(criticRef, {
         ...normalized,
         kind: "image_aware_model",
+        // NEWSROOM_MODEL_PASS_SELFREPORT=1: this verdict, score and confidence are the model's own. Marked so; the page gates are not changed here.
+        ...(modelPassSelfReportEnabled() ? { self_reported: true, passed_source: "model" } : {}),
         manifest_ref: params.manifest_ref,
         preview_ref: params.preview_ref,
         deterministic_critic_ref: params.deterministic_critic_ref,
