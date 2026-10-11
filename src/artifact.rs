@@ -1,10 +1,11 @@
 use crate::audit::AuditSummary;
+use crate::group_guard;
 use crate::hash::{sha256_bytes, sha256_file};
 use anyhow::{bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::Value;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
@@ -140,7 +141,7 @@ impl InvestigationBundle {
         let slug = slugify(topic);
         let id = format!("{timestamp}-{slug}");
         let dir = root.join(&id);
-        fs::create_dir_all(&dir)
+        group_guard::as_run_bundle(|| group_guard::create_dir_all(&dir, &dir))
             .with_context(|| format!("failed to create artifact directory: {}", dir.display()))?;
         Self::from_dir(dir, id)
     }
@@ -178,7 +179,7 @@ impl InvestigationBundle {
             "visualizations",
             "infographics",
         ] {
-            fs::create_dir_all(dir.join(child)).with_context(|| {
+            group_guard::as_run_bundle(|| group_guard::create_dir_all(&dir, &dir.join(child))).with_context(|| {
                 format!(
                     "failed to create artifact subdirectory: {}",
                     dir.join(child).display()
@@ -270,7 +271,7 @@ impl InvestigationBundle {
                 );
             }
         } else {
-            fs::copy(source, &destination).with_context(|| {
+            group_guard::as_data_import(|| group_guard::copy(&self.dir, source, &destination)).with_context(|| {
                 format!(
                     "failed to copy local data {} to {}",
                     source.display(),
@@ -299,7 +300,7 @@ impl InvestigationBundle {
                 );
             }
         } else {
-            fs::write(&metadata_path, &metadata_text)
+            group_guard::as_data_import(|| group_guard::write(&self.dir, &metadata_path, &metadata_text))
                 .with_context(|| format!("failed to write {}", metadata_path.display()))?;
         }
 
@@ -322,7 +323,7 @@ impl InvestigationBundle {
         let origin_bytes = serde_json::to_vec(&origin)?;
         let origin_hash = sha256_bytes(&origin_bytes);
         let origin_dir = self.dir.join("data").join("origins");
-        fs::create_dir_all(&origin_dir)?;
+        group_guard::as_run_bundle(|| group_guard::create_dir_all(&self.dir, &origin_dir))?;
         let origin_path = origin_dir.join(format!("{origin_hash}.json"));
         let origin_text = format!("{}\n", serde_json::to_string_pretty(&origin)?);
         if origin_path.exists() {
@@ -335,25 +336,25 @@ impl InvestigationBundle {
                 );
             }
         } else {
-            fs::write(&origin_path, origin_text)
+            group_guard::as_data_import(|| group_guard::write(&self.dir, &origin_path, origin_text))
                 .with_context(|| format!("failed to write {}", origin_path.display()))?;
         }
         Ok(format!("data/{stored_name}"))
     }
 
     pub fn write_prompt(&self, prompt: &str) -> Result<()> {
-        fs::write(&self.prompt_path, prompt)
+        group_guard::as_run_bundle(|| group_guard::write(&self.dir, &self.prompt_path, prompt))
             .with_context(|| format!("failed to write {}", self.prompt_path.display()))
     }
 
     pub fn write_answer(&self, answer: &str) -> Result<()> {
-        fs::write(&self.answer_path, answer)
+        group_guard::as_run_bundle(|| group_guard::write(&self.dir, &self.answer_path, answer))
             .with_context(|| format!("failed to write {}", self.answer_path.display()))
     }
 
     pub fn write_session_stats(&self, stats: &Value) -> Result<()> {
         let json = serde_json::to_string_pretty(stats)?;
-        fs::write(&self.session_stats_path, format!("{json}\n"))
+        group_guard::as_run_bundle(|| group_guard::write(&self.dir, &self.session_stats_path, format!("{json}\n")))
             .with_context(|| format!("failed to write {}", self.session_stats_path.display()))
     }
 
@@ -366,10 +367,7 @@ impl InvestigationBundle {
         duration_ms: u128,
         audit: Option<&AuditSummary>,
     ) -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.run_metrics_path)
+        let mut file = group_guard::as_run_bundle(|| group_guard::open_append(&self.dir, &self.run_metrics_path))
             .with_context(|| format!("failed to open {}", self.run_metrics_path.display()))?;
         let claims = read_claims(&self.claims_path).unwrap_or_default();
         let verified_claims = claims
@@ -428,10 +426,7 @@ impl InvestigationBundle {
     }
 
     pub fn append_conversation(&self, user: &str, assistant: &str) -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.conversation_path)
+        let mut file = group_guard::as_run_bundle(|| group_guard::open_append(&self.dir, &self.conversation_path))
             .with_context(|| format!("failed to open {}", self.conversation_path.display()))?;
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
         writeln!(file, "\n## Turn {now}\n")?;
@@ -491,7 +486,7 @@ impl InvestigationBundle {
         }
         value["source_note_warnings"] = serde_json::json!(warnings);
         let json = serde_json::to_string_pretty(&value)?;
-        fs::write(&self.manifest_path, format!("{json}\n"))
+        group_guard::write(&self.dir, &self.manifest_path, format!("{json}\n"))
             .with_context(|| format!("failed to write {}", self.manifest_path.display()))
     }
 
@@ -611,7 +606,7 @@ impl InvestigationBundle {
         };
 
         let json = serde_json::to_string_pretty(&manifest)?;
-        fs::write(&self.manifest_path, format!("{json}\n"))
+        group_guard::write(&self.dir, &self.manifest_path, format!("{json}\n"))
             .with_context(|| format!("failed to write {}", self.manifest_path.display()))
     }
 

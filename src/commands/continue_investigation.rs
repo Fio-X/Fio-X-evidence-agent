@@ -52,15 +52,11 @@ fn archive_previous_verification(artifact: &Path) -> Result<Option<String>> {
         return Ok(None);
     }
     let dir = artifact.join(ROUNDS_DIR);
-    std::fs::create_dir_all(&dir)?;
+    crate::group_guard::create_dir_all(artifact, &dir)?;
     let mut n = 1;
     loop {
         let target = dir.join(format!("round-{n}.json"));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&target)
-        {
+        match crate::group_guard::create_new(artifact, &target) {
             Ok(mut file) => {
                 use std::io::Write;
                 file.write_all(&std::fs::read(&current)?)?;
@@ -114,9 +110,12 @@ fn record_round_status(
         "reason": reason,
         "previous_round_file": previous,
     });
-    std::fs::write(
-        artifact.join("verification.json"),
-        format!("{}\n", serde_json::to_string_pretty(&record)?),
+    // The pass value is the one the program computed here (never verified); the record goes in through the knowledge hand-off.
+    crate::group_guard::write_verification_record(
+        artifact,
+        &artifact.join("verification.json"),
+        &record,
+        false,
     )
     .context("failed to write verification.json")
 }
@@ -229,8 +228,9 @@ fn record_chain_reuse(artifact: &Path, reuse: &ChainReuse) -> Result<()> {
         "fingerprint_files": reuse.files,
         "fingerprint_dirs": CHAIN_DIRS,
     });
-    std::fs::write(
-        artifact.join(&name),
+    crate::group_guard::write(
+        artifact,
+        &artifact.join(&name),
         format!("{}\n", serde_json::to_string_pretty(&record)?),
     )
     .with_context(|| format!("failed to write {name}"))

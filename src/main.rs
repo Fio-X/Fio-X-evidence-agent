@@ -6,6 +6,7 @@ mod commands;
 mod compose_answer;
 mod config;
 mod data_profile;
+mod group_guard;
 mod hash;
 mod interactive;
 mod llm;
@@ -31,6 +32,19 @@ async fn main() -> Result<()> {
         cli::Launch::Done(code) => std::process::exit(code),
     };
     let cli = Cli::parse_from(args);
+    group_guard::startup_check()?;
+    let command_name: &'static str = match &cli.command {
+        Some(Commands::Doctor(_)) => "doctor",
+        Some(Commands::Ask(_)) => "ask",
+        Some(Commands::Chat(_)) => "chat",
+        Some(Commands::Investigate(_)) => "investigate",
+        Some(Commands::InvestigateV2(_)) => "investigate-v2",
+        Some(Commands::Continue(_)) => "continue",
+        Some(Commands::Inspect(_)) => "inspect",
+        Some(Commands::Verify(_)) => "verify",
+        None => "",
+    };
+    group_guard::enter_command(command_name, cli::group_of(command_name));
 
     match cli.command {
         Some(Commands::Doctor(args)) => commands::doctor::run(args).await,

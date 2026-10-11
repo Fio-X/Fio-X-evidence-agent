@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #[path = "../src/audit.rs"]
 mod audit;
+#[path = "../src/group_guard.rs"]
+mod group_guard;
 #[path = "../src/runtime.rs"]
 mod runtime;
 #[path = "../src/tool_registry.rs"]

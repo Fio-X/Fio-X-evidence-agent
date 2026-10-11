@@ -2,7 +2,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::fs::OpenOptions;
 use std::io::Write as StdWrite;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -1199,10 +1198,9 @@ pub async fn run_prompt(
         let mut reader = BufReader::new(stdout);
         let mut log = match event_log {
             Some(path) => Some(
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
+                crate::group_guard::as_run_bundle(|| {
+                    crate::group_guard::open_append(path.parent().unwrap_or(Path::new("")), path)
+                })
                     .with_context(|| format!("failed to open event log: {}", path.display()))?,
             ),
             None => None,
@@ -1350,10 +1348,8 @@ pub async fn run_prompt(
                     plan_progress_entry(&event, plan_progress_seq + 1),
                 ) {
                     plan_progress_seq += 1;
-                    if let Ok(mut file) = OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(root.join(PLAN_PROGRESS_FILE))
+                    if let Ok(mut file) =
+                        crate::group_guard::open_append(root, &root.join(PLAN_PROGRESS_FILE))
                     {
                         let _ = writeln!(file, "{entry}");
                     }
@@ -1798,7 +1794,9 @@ fn record_rpc_failure(
         "continue_session": config.continue_session,
         "_newsroom_recorded_at": Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
     });
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut file) = crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::open_append(path.parent().unwrap_or(Path::new("")), path)
+    }) {
         let _ = writeln!(file, "{event}");
     }
     let number = |value: Option<u128>| value.map_or("N/A".to_string(), |v| v.to_string());

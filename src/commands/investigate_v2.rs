@@ -302,10 +302,13 @@ fn write_visual_metrics(
     if path.exists() {
         anyhow::bail!("visual metrics path already exists: {}", path.display());
     }
-    fs::write(
-        &path,
-        format!("{}\n", serde_json::to_string_pretty(&metrics)?),
-    )
+    crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::write(
+            &canonical_root,
+            &path,
+            format!("{}\n", serde_json::to_string_pretty(&metrics)?),
+        )
+    })
     .with_context(|| format!("failed to write visual metrics: {}", path.display()))?;
     let canonical_path = fs::canonicalize(&path)?;
     if !canonical_path.starts_with(&canonical_root)
@@ -358,7 +361,9 @@ async fn run_visual_story(
     goal: String,
     preferred_method: &'static str,
 ) -> Result<()> {
-    fs::create_dir_all(run_dir.join("session"))?;
+    crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::create_dir_all(&run_dir, &run_dir.join("session"))
+    })?;
     let extension = runtime::materialize_extension(&run_dir)?;
     let provider_text = provider_name(&provider).to_string();
     let binary = std::env::var_os("NEWSROOM_PI_BIN")
@@ -410,10 +415,13 @@ async fn run_visual_story(
         pi_runs,
         &events,
     )?;
-    fs::write(
-        run_dir.join("assistant-answer.md"),
-        format!("{final_text}\n"),
-    )?;
+    crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::write(
+            &run_dir,
+            &run_dir.join("assistant-answer.md"),
+            format!("{final_text}\n"),
+        )
+    })?;
 
     println!("\n{}", "=".repeat(80));
     println!("{final_text}");
