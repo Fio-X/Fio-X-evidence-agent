@@ -117,6 +117,11 @@ export const PROGRAM_REVIEW_KIND = 'program_saved_review';
 export const REVIEW_RECORD_DIR = 'editorial/human-reviews/';
 export const PROGRAM_STATUS_SOURCE = 'program_review_records';
 export const reviewFromRecordsEnabled = () => process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === '1';
+// NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): what the model reports about a pass, a score or a reviewer's qualification is recorded as
+// self_reported and never counts. It implies the program-records mode above (the counted reviews and the preference status come only from records the
+// program saved); with no such record the preference stays PENDING and the award status shows 缺程序证明. Only stricter than off: nothing is relaxed.
+export const modelPassSelfReportEnabled = () => process.env.NEWSROOM_MODEL_PASS_SELFREPORT === '1';
+export const programRecordsMode = () => reviewFromRecordsEnabled() || modelPassSelfReportEnabled();
 export const reviewStatusDisplay = (status) => ({ PENDING: '待评审', PASS: '通过', FAIL: '未通过' })[status] ?? status;
 const REVIEW_FIELDS = ['story_specificity', 'hierarchy', 'space_intent', 'visual_voice', 'information_gain', 'delayed_memory', 'jury_survival', 'comment'];
 
@@ -183,7 +188,7 @@ export function evaluateExpertPreference(input, options = {}) {
     candidate_decisive_share: Number(candidateShare.toFixed(4)),
     status,
     human_evidence_required: true,
-    ...(programMode ? { status_source: PROGRAM_STATUS_SOURCE, review_record_refs: options.programReviews.map((entry) => entry.ref).sort(), model_reported_reviews: { count: normalized.length, counted: false }, status_display: reviewStatusDisplay(status) } : {}),
+    ...(programMode ? { status_source: PROGRAM_STATUS_SOURCE, review_record_refs: options.programReviews.map((entry) => entry.ref).sort(), model_reported_reviews: { count: normalized.length, counted: false, ...(modelPassSelfReportEnabled() ? { self_reported: true, reviews: normalized.map((review) => ({ ...review, self_reported: true })) } : {}) }, status_display: reviewStatusDisplay(status) } : {}),
   };
   artifact.content_hash = artDirectionHash(artifact);
   return artifact;
@@ -243,9 +248,9 @@ export function summarizeAwardMode(input, options = {}) {
     human_evidence_required: true,
     ...(programMode ? {
       status_source: PROGRAM_STATUS_SOURCE,
-      claimed: { preference_status: claimedStatus, human_review_count: Number(input?.metrics?.human_review_count ?? 0) },
+      claimed: { preference_status: claimedStatus, human_review_count: Number(input?.metrics?.human_review_count ?? 0), ...(modelPassSelfReportEnabled() ? { self_reported: true } : {}) },
       claim_mismatch: claimedStatus !== preferenceStatus || Number(input?.metrics?.human_review_count ?? 0) !== metrics.human_review_count,
-      status_display: preferenceStatus === 'PENDING' && status !== 'BLOCKED' ? '待评审' : status,
+      status_display: preferenceStatus === 'PENDING' && status !== 'BLOCKED' ? (modelPassSelfReportEnabled() ? '缺程序证明' : '待评审') : status,
     } : {}),
   };
   artifact.content_hash = artDirectionHash(artifact);
