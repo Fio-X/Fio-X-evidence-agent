@@ -18,9 +18,17 @@ mod commands {
             pub fn passed(&self) -> bool {
                 self.passed
             }
+            #[cfg(test)]
+            pub fn for_test(passed: bool) -> Self {
+                Self { passed }
+            }
         }
     }
 }
+// group_guard.rs's own unit tests are compiled into this example by `cargo test --all-targets` (cargo builds examples in test mode and
+// runs them) and look up command groups in the CLI, so the example carries the real cli.rs (it uses nothing from the rest of the crate).
+#[path = "../src/cli.rs"]
+mod cli;
 use std::{fs, time::Instant};
 fn main() -> anyhow::Result<()> {
     let root = std::env::temp_dir().join(format!("news-perf-phases-{}", std::process::id()));
