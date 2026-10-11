@@ -653,15 +653,227 @@ mod tests {
         }
     }
 
+    /// The raw write calls the scan looks for, written the way the code names them.
+    const RAW_WRITE_PATTERNS: [&str; 16] = [
+        "fs::write(",
+        "fs::create_dir_all(",
+        "fs::create_dir(",
+        "fs::copy(",
+        "fs::rename(",
+        "OpenOptions::new(",
+        "File::create(",
+        "File::create_new(",
+        "fs::remove_file(",
+        "fs::remove_dir_all(",
+        "fs::remove_dir(",
+        "fs::hard_link(",
+        "fs::set_permissions(",
+        "fs::symlink(",
+        "tokio::fs::",
+        ".set_len(",
+    ];
+    /// The std::fs (and tokio::fs, std::os::*::fs) functions that write; a call to one through an imported name is a raw write too.
+    const FS_WRITE_FUNCTIONS: [&str; 11] = [
+        "write",
+        "create_dir_all",
+        "create_dir",
+        "copy",
+        "rename",
+        "remove_file",
+        "remove_dir_all",
+        "remove_dir",
+        "hard_link",
+        "set_permissions",
+        "symlink",
+    ];
+
+    fn tokenize_use(tree: &str) -> Vec<String> {
+        let chars: Vec<char> = tree.chars().collect();
+        let mut tokens = Vec::new();
+        let mut current = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            if c.is_alphanumeric() || c == '_' {
+                current.push(c);
+            } else {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+                if c == ':' && chars.get(i + 1) == Some(&':') {
+                    tokens.push("::".to_string());
+                    i += 1;
+                } else if "{},*".contains(c) {
+                    tokens.push(c.to_string());
+                }
+            }
+            i += 1;
+        }
+        if !current.is_empty() {
+            tokens.push(current);
+        }
+        tokens
+    }
+
+    /// One use tree into its leaves: (full path, the name it binds). `self` binds its parent; `*` is kept as the last segment.
+    fn use_leaves(
+        tokens: &[String],
+        pos: &mut usize,
+        prefix: &[String],
+        out: &mut Vec<(Vec<String>, String)>,
+    ) {
+        let mut path = prefix.to_vec();
+        loop {
+            match tokens.get(*pos).map(String::as_str) {
+                Some("::") => *pos += 1,
+                Some("{") => {
+                    *pos += 1;
+                    while *pos < tokens.len() && tokens[*pos] != "}" {
+                        use_leaves(tokens, pos, &path, out);
+                        if tokens.get(*pos).map(String::as_str) == Some(",") {
+                            *pos += 1;
+                        } else if tokens.get(*pos).map(String::as_str) != Some("}") {
+                            break;
+                        }
+                    }
+                    *pos += 1;
+                    return;
+                }
+                Some("*") => {
+                    *pos += 1;
+                    path.push("*".to_string());
+                    out.push((path, "*".to_string()));
+                    return;
+                }
+                Some(segment) if segment != "," && segment != "}" => {
+                    *pos += 1;
+                    if segment != "self" {
+                        path.push(segment.to_string());
+                    }
+                    if tokens.get(*pos).map(String::as_str) == Some("::") {
+                        *pos += 1;
+                        continue;
+                    }
+                    let mut name = path.last().cloned().unwrap_or_default();
+                    if tokens.get(*pos).map(String::as_str) == Some("as") {
+                        name = tokens.get(*pos + 1).cloned().unwrap_or_default();
+                        *pos += 2;
+                    }
+                    out.push((path, name));
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// True when `pattern` occurs in `code` with no identifier character (and, for a bare call, no `.` or `:`) right before it.
+    fn contains_at_boundary(code: &str, pattern: &str, bare_call: bool) -> bool {
+        code.match_indices(pattern)
+            .any(|(at, _)| match code[..at].chars().next_back() {
+                None => true,
+                Some(c) => {
+                    !(c.is_alphanumeric() || c == '_' || (bare_call && (c == '.' || c == ':')))
+                }
+            })
+    }
+
+    /// Every raw write in `code` (the non-test part of one source file) as (line index, line), including calls through an aliased
+    /// or plain imported name: `use std::fs::write as w; w(..)`, `use std::fs as f; f::write(..)`, `use std::fs::{self, File as F}; F::create(..)`,
+    /// an aliased `OpenOptions`, and any glob import of a fs module (the use line itself is reported).
+    fn raw_write_hits(code: &str) -> Vec<(usize, String)> {
+        let lines: Vec<&str> = code.lines().collect();
+        let is_fs_module = |p: &[&str]| {
+            matches!(
+                p,
+                ["std", "fs"]
+                    | ["tokio", "fs"]
+                    | ["std", "os", "unix", "fs"]
+                    | ["std", "os", "windows", "fs"]
+            )
+        };
+        // (pattern, bare call) found through imports
+        let mut imported: Vec<(String, bool)> = Vec::new();
+        let mut hits: Vec<(usize, String)> = Vec::new();
+        let mut i = 0;
+        while i < lines.len() {
+            let start = i;
+            let mut first = lines[i].trim_start();
+            for visibility in ["pub(crate) ", "pub(super) ", "pub "] {
+                if let Some(rest) = first.strip_prefix(visibility) {
+                    first = rest;
+                }
+            }
+            i += 1;
+            if !first.starts_with("use ") {
+                continue;
+            }
+            let mut statement = first.to_string();
+            while !statement.contains(';') && i < lines.len() {
+                statement.push(' ');
+                statement.push_str(lines[i].trim());
+                i += 1;
+            }
+            let tree = statement["use ".len()..].split(';').next().unwrap_or("");
+            let tokens = tokenize_use(tree);
+            let mut leaves = Vec::new();
+            let mut pos = 0;
+            use_leaves(&tokens, &mut pos, &[], &mut leaves);
+            for (path, name) in leaves {
+                let p: Vec<&str> = path
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|s| *s != "crate")
+                    .collect();
+                let Some((last, parent)) = p.split_last() else {
+                    continue;
+                };
+                if *last == "*" && is_fs_module(parent) {
+                    hits.push((start, lines[start].trim_start().to_string()));
+                } else if is_fs_module(p.as_slice()) {
+                    if name != "fs" {
+                        if p[0] == "tokio" {
+                            imported.push((format!("{name}::"), false));
+                        } else {
+                            imported.extend(
+                                FS_WRITE_FUNCTIONS
+                                    .iter()
+                                    .map(|f| (format!("{name}::{f}("), false)),
+                            );
+                        }
+                    }
+                } else if is_fs_module(parent) && FS_WRITE_FUNCTIONS.contains(last) {
+                    imported.push((format!("{name}("), true));
+                } else if is_fs_module(parent) && *last == "File" && name != "File" {
+                    imported.push((format!("{name}::create("), false));
+                    imported.push((format!("{name}::create_new("), false));
+                } else if is_fs_module(parent) && *last == "OpenOptions" && name != "OpenOptions" {
+                    imported.push((format!("{name}::new("), false));
+                }
+            }
+        }
+        for (index, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            if RAW_WRITE_PATTERNS.iter().any(|p| code.contains(p))
+                || imported
+                    .iter()
+                    .any(|(pattern, bare)| contains_at_boundary(code, pattern, *bare))
+            {
+                hits.push((index, code.to_string()));
+            }
+        }
+        hits.sort();
+        hits.dedup();
+        hits
+    }
+
     #[test]
     fn no_raw_write_calls_outside_this_module() {
         // The mutant "a call site goes back to a plain std::fs call" must turn this red: the only raw writes allowed in non-test code are
-        // in this file (the wrappers, the refusal log, the scratch cleanup).
-        // Known limit: a call through an aliased import (`use std::fs as f; f::write(..)`, `use std::fs::write; write(..)`) is not matched by text.
-        let patterns = [
-            "fs::write(", "fs::create_dir_all(", "fs::create_dir(", "fs::copy(", "fs::rename(", "OpenOptions::new(", "File::create(", "File::create_new(",
-            "fs::remove_file(", "fs::remove_dir_all(", "fs::remove_dir(", "fs::hard_link(", "fs::set_permissions(", "fs::symlink(", "tokio::fs::", ".set_len(",
-        ];
+        // in this file (the wrappers, the refusal log, the scratch cleanup). Calls through an imported or aliased name count too (raw_write_hits).
         let mut found = Vec::new();
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut stack = vec![base.clone()];
@@ -680,17 +892,49 @@ mod tests {
                 let end = (0..lines.len().saturating_sub(1))
                     .find(|&i| lines[i].trim() == "#[cfg(test)]" && lines[i + 1].trim_start().starts_with("mod "))
                     .unwrap_or(lines.len());
-                for (index, line) in lines[..end].iter().enumerate() {
-                    let code = line.trim_start();
-                    if code.starts_with("//") {
-                        continue;
-                    }
-                    if patterns.iter().any(|p| code.contains(p)) {
-                        found.push(format!("{}:{}: {}", path.strip_prefix(&base).unwrap().display(), index + 1, code));
-                    }
+                for (index, code) in raw_write_hits(&lines[..end].join("\n")) {
+                    found.push(format!("{}:{}: {}", path.strip_prefix(&base).unwrap().display(), index + 1, code));
                 }
             }
         }
         assert!(found.is_empty(), "raw file writes outside group_guard: {found:#?}");
+    }
+
+    /// One counterexample per import form: each must be caught. The clean samples (reads, File::open through an alias, io::Write
+    /// methods, a method that shares an imported name) must not be.
+    #[test]
+    fn raw_write_scan_sees_aliased_imports() {
+        let caught = [
+            ("function alias", "use std::fs::write as w;\nfn g() { w(\"a\", \"b\").unwrap(); }"),
+            ("plain function import", "use std::fs::write;\nfn g() { write(\"a\", \"b\").unwrap(); }"),
+            ("module alias", "use std::fs as f;\nfn g() { f::write(\"a\", \"b\").unwrap(); }"),
+            ("module alias, other function", "use std::fs as f;\nfn g() { f::remove_dir_all(\"a\").unwrap(); }"),
+            ("self alias in a group", "use std::{fs::{self as files}, io};\nfn g() { files::create_dir_all(\"a\").unwrap(); }"),
+            ("File alias in a group", "use std::fs::{self, File as F};\nfn g() { F::create(\"a\").unwrap(); }"),
+            ("File alias, create_new", "use std::fs::File as Handle;\nfn g() { Handle::create_new(\"a\").unwrap(); }"),
+            ("OpenOptions alias", "use std::fs::OpenOptions as O;\nfn g() { O::new().write(true).open(\"a\").unwrap(); }"),
+            ("OpenOptions alias in a multi-line group", "use std::fs::{\n    File,\n    OpenOptions as Opts,\n};\nfn g() { Opts::new().append(true); }"),
+            ("glob import", "use std::fs::*;\nfn g() {}"),
+            ("tokio module alias", "use tokio::fs as tfs;\nasync fn g() { tfs::write(\"a\", \"b\").await.unwrap(); }"),
+            ("pub(crate) function alias", "pub(crate) use std::fs::remove_file as rm;\nfn g() { rm(\"a\").unwrap(); }"),
+            ("unix symlink alias", "use std::os::unix::fs::symlink as ln;\nfn g() { ln(\"a\", \"b\").unwrap(); }"),
+        ];
+        for (label, source) in caught {
+            assert!(!raw_write_hits(source).is_empty(), "{label} must be caught");
+        }
+        let clean = [
+            ("reads through fs", "use std::fs;\nfn g() { fs::read_to_string(\"a\").unwrap(); }"),
+            ("File::open through an alias", "use std::fs::File as F;\nfn g() { F::open(\"a\").unwrap(); }"),
+            ("io::Write methods", "use std::io::Write;\nfn g(out: &mut Vec<u8>) { out.write(b\"x\").unwrap(); writeln!(out).unwrap(); }"),
+            ("a method sharing an imported name", "use std::fs::write as w;\nfn g(x: &X) { x.w(1); y::w(2); }"),
+            ("module alias, read", "use std::fs as f;\nfn g() { f::read(\"a\").unwrap(); }"),
+        ];
+        for (label, source) in clean {
+            assert!(
+                raw_write_hits(source).is_empty(),
+                "{label}: {:?}",
+                raw_write_hits(source)
+            );
+        }
     }
 }
