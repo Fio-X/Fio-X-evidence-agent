@@ -32,7 +32,7 @@ pub enum Commands {
     /// stderr line is `VERIFIED` or `NOT VERIFIED: <reason>`.
     Investigate(InvestigateArgs),
 
-    /// New autonomous investigation (Phase 3, bypasses Pi).
+    /// Visual-story investigation through Pi; other goals error and point to `news investigate`.
     InvestigateV2(InvestigateV2Args),
 
     /// Continue an existing investigation with full Pi session context.
