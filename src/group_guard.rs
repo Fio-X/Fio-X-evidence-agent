@@ -72,8 +72,10 @@ struct Rule {
 struct Table {
     rules: Vec<Rule>,
     owners: Vec<(String, String)>,
-    /// `handoffs.rust` rows: (writer, group, commands that may ask for it). Required: a table without them cannot be read.
+    /// `handoffs.rust` rows: (writer, group, commands that may ask for it; the not_measured ones are in `unmeasured`). Required: a table without them cannot be read.
     handoffs: Vec<(String, String, Vec<String>)>,
+    // (writer, command) pairs a row keeps in not_measured: listed from reading the code, never seen in a run, refused until a run measures them
+    unmeasured: Vec<(String, String)>,
 }
 
 fn parse_table(text: &str) -> Option<Table> {
@@ -108,7 +110,14 @@ fn parse_table(text: &str) -> Option<Table> {
             Some((row.get("writer")?.as_str()?.to_string(), row.get("group")?.as_str()?.to_string(), commands))
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(Table { rules, owners, handoffs })
+    let mut unmeasured = Vec::new();
+    for row in value.get("handoffs")?.get("rust")?.as_array()? {
+        let writer = row.get("writer")?.as_str()?.to_string();
+        for command in row.get("not_measured").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+            unmeasured.push((writer.clone(), command.to_string()));
+        }
+    }
+    Some(Table { rules, owners, handoffs, unmeasured })
 }
 
 impl Table {
@@ -319,7 +328,7 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
     let classified = rel.as_deref().and_then(|rel| with_table(|table| table?.classify(rel)));
     let owned = matches!((&group, &classified, &rel), (Some(group), Some((_, owner, _)), Some(_)) if owner == group);
     // a hand-off must also be a row of handoffs.rust (writer, group, asking command); no row, no write
-    let listed = handoff.is_none_or(|h| with_table(|table| table.is_some_and(|t| t.handoffs.iter().any(|(w, g, c)| w == h.writer && g == h.group && c.iter().any(|x| x == h.requested_by)))));
+    let listed = handoff.is_none_or(|h| with_table(|table| table.is_some_and(|t| t.handoffs.iter().any(|(w, g, c)| w == h.writer && g == h.group && c.iter().any(|x| x == h.requested_by)) && !t.unmeasured.iter().any(|(w, c)| w == h.writer && c == h.requested_by))));
     let allowed = owned && listed;
     let verdict = Verdict {
         path: rel.clone().unwrap_or_else(|| path.display().to_string()),
@@ -466,10 +475,23 @@ mod tests {
                 (name, group)
             });
             TEST_COMMAND.with(|c| *c.borrow_mut() = Some(with_group));
-            TEST_TABLE.with(|c| *c.borrow_mut() = table);
+            // None = the real groups.json with every handoffs.rust row treated as measured (as it will be after the compile-time run); Setup::real keeps it as it is
+            TEST_TABLE.with(|c| *c.borrow_mut() = Some(table.unwrap_or_else(measured_groups)));
             let _ = take_log_for_test();
             Setup
         }
+    }
+    impl Setup {
+        fn real(command: Option<&'static str>) -> Self {
+            Self::new(command, Some(GROUPS_JSON.to_string()))
+        }
+    }
+    fn measured_groups() -> String {
+        let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        for row in value["handoffs"]["rust"].as_array_mut().unwrap() {
+            row.as_object_mut().unwrap().remove("not_measured");
+        }
+        value.to_string()
     }
     impl Drop for Setup {
         fn drop(&mut self) {
@@ -686,6 +708,20 @@ mod tests {
         value.as_object_mut().unwrap().remove("handoffs");
         let _setup = Setup::new(Some("investigate"), Some(value.to_string()));
         refused(write(root, &root.join("story.json"), "{}"));
+    }
+
+    /// K214: a command kept in not_measured is listed but refused (and logged) until a run has seen it; the real table has not been measured for Rust yet.
+    #[test]
+    fn a_not_measured_command_is_refused_until_measured() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let _setup = Setup::real(Some("investigate"));
+        let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
+        assert!(text.contains("may not ask knowledge_writer"), "{text}");
+        assert!(!root.join("data/abc.csv").exists());
+        drop(_setup);
+        let _setup = Setup::new(Some("investigate"), None);
+        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
     }
 
     #[test]

@@ -99,7 +99,7 @@ export const NOT_TRACED = [
   "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
   "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
   "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) only for NEW files, so a child process that rewrites or deletes an existing file is not seen; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
-  "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is not checked yet (K214 part B), and a requester listed there as not_measured is a static inference no test run has seen",
+  "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is checked by the writers themselves (knowledge_writer: computation replay and query-rows equality; agent_record_writer and decision_writer: fixed fields), and a requester kept there as not_measured is a static inference no test run has seen, so it is refused until a run measures it",
   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
   "reads of any kind",
@@ -127,6 +127,8 @@ function handoffProblem(list, writer, path, requester) {
   const rows = (list.handoffs.rows ?? []).filter((r) => r.writer === writer.name && pathInRow(path, r));
   if (!rows.length) return `no handoffs row lets ${writer.name} write ${path}`;
   if (!rows.some((r) => r.requesters.includes(requester ?? ""))) return `${requester || "no asking tool"} is not a listed requester of ${writer.name} for ${path}`;
+  // a requester kept in not_measured is a static inference no run has seen: it stays in the table, and is refused until a run measures it
+  if (!rows.some((r) => r.requesters.includes(requester ?? "") && !(r.not_measured ?? []).includes(requester ?? ""))) return `${requester} is listed for ${writer.name} on ${path} but not measured yet (not_measured): refused until a run has seen it`;
   return null;
 }
 const currentWriter = () => store.getStore()?.writer ?? null;
@@ -222,6 +224,29 @@ export function __setEnforceHooksForTest(next) {
   return () => Object.assign(hooks, before);
 }
 
+/** Null when the calling tool's group may reach `name` (a knowledge entry function listed in groups.json cross_calls.gated), else the reason it may not. */
+export function crossCallProblem(list, name, tool) {
+  const table = list.cross_calls;
+  if (!table?.gated?.includes(name)) return null;
+  if (!tool) return null; // no tool is asking: a command or the program itself
+  const group = list.tools?.[tool]?.group ?? null;
+  if (group === "knowledge") return null;
+  if (!group) return `${tool} has no group in groups.json`;
+  if (!(table.functions?.[name]?.groups ?? []).includes(group)) return `${tool} (${group}) is not listed in cross_calls for ${name}`;
+  return null;
+}
+/** NEWSROOM_GROUP_ENFORCE=1: called first thing in a gated knowledge function. Same group passes, a listed group passes, anything else is refused and logged. */
+export function assertCrossCall(root, name) {
+  if (!groupEnforceEnabled()) return;
+  let problem = null;
+  const tool = currentTool();
+  try { problem = crossCallProblem(hooks.groups(), name, tool); } catch { problem = "the group list cannot be read"; }
+  if (!problem) return;
+  const info = { tool: tool ?? null, group: toolGroup(tool), path: name, kind: "cross_call", owner: "knowledge", writer: null, status: "cross_call_not_listed", reason: problem };
+  if (root) noteRefusal(root, { op: "cross_call", ...info });
+  throw new BoundaryRefusal(`boundary: ${tool || "unknown tool"}（${info.group || "unknown group"}）may not call ${name}: ${problem}. Ask a knowledge tool, or have fe list the call in groups.json cross_calls.`, info);
+}
+
 const WRITER_FOR_KIND = { evidence: "knowledge_writer", observation: "shadow_writer", pass_decision: "decision_writer", project_state: "agent_record_writer" };
 /** The refusal text. Fixed shape: tool, its group, the path, its kind and owning group, the writer to hand the record to. Nothing else. */
 export function refusalText({ tool, group, path, kind, owner, writer }) {
@@ -251,7 +276,7 @@ function enforceBoundary(root, target, op) {
     const verdict = hooks.decide ? hooks.decide(root, target, op) : evaluateWrite(root, target, { groups: hooks.groups, classify: hooks.classify });
     if (!(hooks.now() - started <= ENFORCE_LIMIT_MS)) throw new Error("check too slow");
     path = verdict.path ?? path;
-    info = { tool: verdict.tool, group: verdict.group, path, kind: verdict.classified?.kind ?? null, owner: verdict.classified?.owner ?? null, writer: null, status: verdict.status };
+    info = { tool: verdict.tool, group: verdict.group, path, kind: verdict.classified?.kind ?? null, owner: verdict.classified?.owner ?? null, writer: null, status: verdict.status, ...(verdict.reason ? { reason: verdict.reason } : {}) };
     if (verdict.allowed === true) return;
     info.writer = verdict.classified ? WRITER_FOR_KIND[verdict.classified.kind] ?? null : null;
   } catch {

@@ -115,8 +115,8 @@ const goodFile = computations[0];
 const ref = relative(story.dir, goodFile);
 const good = JSON.parse(readFileSync(goodFile, "utf8"));
 await mod.__verifyComputationForTest(ref, good);
-await refused(() => mod.__verifyComputationForTest(ref, { ...good, rows: [...good.rows, good.rows[0]] }), /do not match result_hash/, "rows changed");
-await refused(() => mod.__verifyComputationForTest(ref.replace(/[0-9a-f]\.json$/, (c) => (c[0] === "0" ? "1" : "0") + ".json"), good), /content address/, "wrong path");
+await refused(() => mod.__verifyComputationForTest(ref, { ...good, rows: [...good.rows, good.rows[0]] }), /stored rows do not match result_hash/, "rows changed");
+await refused(() => mod.__verifyComputationForTest(ref.replace(/[0-9a-f]\.json$/, (c) => (c[0] === "0" ? "1" : "0") + ".json"), good), /content-addressed path does not match/, "wrong path");
 await refused(() => mod.__verifyComputationForTest(ref, { ...good, result_hash: "x" }), /incomplete/, "no result hash");
 await refused(() => mod.__verifyComputationForTest(ref, { ...good, rows: undefined }), /incomplete/, "no rows");
 await refused(() => mod.__verifyComputationForTest(ref, null), /not an object/, "not an object");
@@ -128,7 +128,19 @@ await refused(() => mod.__verifyComputationForTest(ref, null), /not an object/, 
   const hash = hashRows(rows);
   const forged = { ...good, rows, result_hash: hash };
   const forgedRef = computationRelativePath(good.sql, good.input_snapshot_hash, hash);
-  await refused(() => mod.__verifyComputationForTest(forgedRef, forged), /another result hash/, "forged rows with a matching hash and address");
+  await refused(() => mod.__verifyComputationForTest(forgedRef, forged), /deterministic result changed/, "forged rows with a matching hash and address");
+}
+// rows, hash and address are right, but the recorded read inputs were changed: the re-derivation from the SQL catches it
+await refused(() => mod.__verifyComputationForTest(ref, { ...good, read_inputs: [...(good.read_inputs ?? []), "sources/nothing.json"] }), /recorded read inputs do not match|PROVENANCE/, "read_inputs altered");
+await refused(() => mod.__verifyComputationForTest(ref, { ...good, input_binding: "other" }), /recorded read inputs do not match|PROVENANCE/, "input_binding altered");
+// one implementation: the claim replay and the writer's check both call replayRecordedComputation, and neither has its own copy of the steps
+{
+  const src = readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8");
+  const body = (name) => src.slice(src.indexOf(`async function ${name}(`), src.indexOf("\n}\n", src.indexOf(`async function ${name}(`)));
+  assert.match(body("replayComputationEvidence"), /replayRecordedComputation\(/, "the claim replay calls the shared function");
+  assert.match(body("verifyComputationForWrite"), /replayRecordedComputation\(/, "the writer's check calls the shared function");
+  for (const name of ["replayComputationEvidence", "verifyComputationForWrite"]) for (const step of ["hashRows(", "computationRelativePath(", "deriveInputsForSql(", "recordedInputState(", "queryDuckDb("]) assert.ok(!body(name).includes(step), `${name} has no copy of ${step}`);
+  assert.equal((src.match(/computationRelativePath\(sql, inputSnapshotHash/g) ?? []).length, 1, "the content-address step exists once");
 }
 check("computation check: changed rows, wrong address, missing hash or rows, not an object, forged rows are refused; the real record passes");
 

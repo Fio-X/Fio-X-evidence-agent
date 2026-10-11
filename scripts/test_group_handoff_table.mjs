@@ -61,10 +61,19 @@ assert.deepEqual(problems, [], problems.join("\n"));
 
 process.env.NEWSROOM_GROUP_HANDOFF = "1";
 process.env.NEWSROOM_GROUP_ENFORCE = "1";
-let allowed = 0, counter = 0;
+let allowed = 0, counter = 0, unmeasured = 0;
 for (const row of table.rows) {
   for (const q of row.requesters) {
     const root = fresh();
+    if ((row.not_measured ?? []).includes(q)) {
+      // listed from reading the code but never seen in a run: refused, and logged, until a run measures it
+      const err = refused(() => as(row.writer, q, root, sample(row.paths[0])));
+      assert.ok(err, `${q} -> ${row.writer} ${row.paths[0]} is not measured yet and must be refused`);
+      assert.match(refusals(root)[0]?.reason ?? "", /not measured yet/, "the log says why");
+      assert.equal(refusals(root).length, 1, "the not-measured refusal is logged once");
+      unmeasured++;
+      continue;
+    }
     assert.doesNotThrow(() => as(row.writer, q, root, sample(row.paths[0])), `${q} -> ${row.writer} ${row.paths[0]} must be let in`);
     assert.deepEqual(refusals(root), []);
     allowed++;
@@ -78,6 +87,12 @@ for (const row of table.rows) {
   assert.match(err.detail.status, /handoff_not_listed|check_failed|cross_group/);
   assert.equal(refusals(root).length, 1, "the refusal is logged once");
   counter++;
+}
+// a write with no asking tool at all (a direct call outside any tool) is refused too
+{
+  const root = fresh();
+  const err = refused(() => g.asHandoffWriter("shadow_writer", () => g.recordBoundaryWrite(root, "shadow/x.json", "write_if_absent")));
+  assert.ok(err, "no asking tool: refused");
 }
 // wrong path: each writer, asked by one of its own requesters, for a path outside its rows (inside its group's kind, so only the table can stop it)
 for (const [name, w] of Object.entries(table.writers)) {
@@ -97,4 +112,4 @@ for (const [name, w] of Object.entries(table.writers)) {
 assert.throws(() => g.asHandoffWriter("tool_made_writer", () => {}), /not listed/);
 // the old entry point is not exported
 assert.equal(g.runAsWriter, undefined, "runAsWriter must not be exported");
-console.log(`ok: handoffs table: ${allowed} (row, requester) pairs let in, ${counter} rows with a refused wrong requester, wrong paths refused, writers fixed by the table, off = no check`);
+console.log(`ok: handoffs table: ${allowed} measured (row, requester) pairs let in, ${unmeasured} not-measured pairs refused, ${counter} rows with a refused wrong requester, wrong paths refused, writers fixed by the table, off = no check`);

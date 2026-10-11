@@ -6,7 +6,7 @@
 // Red when: a group is added to a pinned entry; a new function is reached by two or more groups; a pinned entry no longer holds exactly
 // (so the baseline can only get shorter: delete or edit the line); a registered tool is missing from groups.json or has no group;
 // a tool site cannot be attributed to a tool name (listed as unattributed, never skipped silently).
-// Baseline: scripts/fixtures/group_cross_calls_known.json (a test fixture; nothing at run time reads it).
+// Baseline: the "cross_calls" table in runtime/pi/groups.json (K214 part C): the one table; the run-time gate for the knowledge entry functions reads the same lines.
 //
 // How it reads the code (no TypeScript parser is resolvable from this repository, nothing is installed, so it matches by name):
 //   - comments, string and template-literal text are blanked first, regex literals are blanked by a simple rule;
@@ -20,7 +20,7 @@
 // does any further import from another module of this repository, because that file is judged on its own entry); everything else is "10-11 现状，待拆".
 // A line marked "设计上共用" turns red as soon as the function stops being pure. Imported functions are judged from the text of their own module.
 // The baseline can only get shorter: `--write-baseline` on an existing baseline removes entries and narrows group lists, and refuses (exit 1) to add anything;
-// a new entry has to be written into the fixture by hand and signed off by fe. Without a baseline file it writes the whole thing.
+// a new entry has to be written into groups.json by hand and signed off by fe (with a why). Without a cross_calls table it writes the whole thing.
 // "write" marks an entry whose function (or something it reaches) calls an artifact write primitive; for imported functions it is judged by the name.
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -29,7 +29,8 @@ import { fileURLToPath } from "node:url";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const argAfter = (flag) => { const at = process.argv.indexOf(flag); return at > 0 ? process.argv[at + 1] : null; };
-const BASELINE_PATH = argAfter("--baseline-file") ?? join(REPO, "scripts/fixtures/group_cross_calls_known.json");
+const BASELINE_PATH = argAfter("--baseline-file") ?? join(REPO, "runtime/pi/groups.json"); // a groups.json-shaped file; the table is its "cross_calls"
+const readTable = () => (existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, "utf8")).cross_calls ?? null : null);
 
 // ---- reading the source ------------------------------------------------------------------------------------------------------------------
 // Same length as the input: comments, strings and template text become spaces (newlines stay), so offsets and line numbers still line up.
@@ -403,7 +404,7 @@ export function compare(current, known) {
 const WHY_SHARED = "设计上共用";
 const WHY_TODO = "10-11 现状，待拆";
 const whyOf = (entry) => `${entry.pure && !entry.write ? WHY_SHARED : WHY_TODO + (entry.write ? "（写）" : "")}`;
-const NOTE = "Test fixture only: nothing at run time reads this file. It may only get shorter. Every entry is a cross-group reference as of the day it was pinned.";
+const NOTE = "Cross-group references as of the day they were pinned. The test and the run-time gate read this one table. It may only get shorter; an addition needs fe sign-off and a why.";
 export function baselineFrom(current) {
   const wrap = (section) => Object.fromEntries(Object.keys(section).sort().map((k) => [k, { groups: section[k].groups, ...(section[k].owner ? { owner: section[k].owner } : {}), write: section[k].write, why: whyOf(section[k]) }]));
   return { schema_version: "0.1.0", note: NOTE, functions: wrap(current.functions), imported: wrap(current.imported) };
@@ -460,12 +461,13 @@ if (isMain) {
     process.exit(0);
   }
   if (process.argv.includes("--write-baseline")) {
+    const whole = existsSync(BASELINE_PATH) ? JSON.parse(readFileSync(BASELINE_PATH, "utf8")) : {};
     let next;
-    if (!existsSync(BASELINE_PATH)) next = baselineFrom(current);
+    if (!whole.cross_calls) { const fresh = baselineFrom(current); next = { note: fresh.note, functions: fresh.functions, imported: fresh.imported }; }
     else {
-      try { next = shrinkBaseline(current, JSON.parse(readFileSync(BASELINE_PATH, "utf8"))); } catch (error) { console.error(error.message); process.exit(1); }
+      try { next = shrinkBaseline(current, whole.cross_calls); } catch (error) { console.error(error.message); process.exit(1); }
     }
-    writeFileSync(BASELINE_PATH, JSON.stringify(next, null, 2) + "\n");
+    writeFileSync(BASELINE_PATH, JSON.stringify({ ...whole, cross_calls: next }, null, 1) + "\n");
     console.log("baseline written");
     process.exit(0);
   }
@@ -529,8 +531,8 @@ export default function ext(pi) {
 
   // the real file
   assert.deepEqual(current.problems, [], `every tool is recognised and grouped:\n${current.problems.join("\n")}`);
-  assert.ok(existsSync(BASELINE_PATH), "baseline exists (node scripts/test_group_cross_calls.mjs --write-baseline once)");
-  const known2 = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+  const known2 = readTable();
+  assert.ok(known2, "groups.json has a cross_calls table (node scripts/test_group_cross_calls.mjs --write-baseline once)");
   for (const section of ["functions", "imported"]) for (const [key, entry] of Object.entries(known2[section] ?? {})) assert.ok(typeof entry.why === "string" && entry.why.length > 0, `baseline entry ${section}.${key} says why`);
   const red = compare(current, known2);
   assert.deepEqual(red, [], `cross-group calls changed:\n${red.join("\n")}`);
