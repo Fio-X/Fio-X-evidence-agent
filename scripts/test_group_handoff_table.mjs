@@ -50,6 +50,16 @@ assert.deepEqual(problems, [], problems.join("\n"));
     for (const c of r.not_measured) assert.ok(r.commands.includes(c), `${r.as}: not_measured ${c} is not a listed command`);
     assert.ok(r.why && r.remove_when, `${r.as}: why / remove_when missing`);
   }
+  // a passed verification record needs the VerifiedOutcome only src/commands/verify.rs can make: the field is private, no other file builds the struct
+  const verifySrc = readFileSync(join(root, "src/commands/verify.rs"), "utf8");
+  assert.match(verifySrc, /pub struct VerifiedOutcome \{\s*passed: bool,\s*\}/, "VerifiedOutcome must keep its field private");
+  assert.ok(!/pub fn (new|from|make)\b/.test(verifySrc.slice(verifySrc.indexOf("impl VerifiedOutcome"), verifySrc.indexOf("/// Result of integrity verification"))), "VerifiedOutcome must have no public constructor");
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith(".rs") ? [join(dir, e.name)] : []));
+  for (const f of walk(join(root, "src"))) {
+    if (f.endsWith("src/commands/verify.rs")) continue;
+    assert.ok(!/VerifiedOutcome\s*\{/.test(readFileSync(f, "utf8").replace(/\/\/.*$/gm, "")), `${f}: only commands/verify.rs may build a VerifiedOutcome`);
+  }
+  assert.match(guard, /pub fn write_verification_record\([^)]*outcome: &crate::commands::verify::VerifiedOutcome\)/, "write_verification_record must take the outcome");
 }
 
 // off: no check, no file, even for a requester no row lists
