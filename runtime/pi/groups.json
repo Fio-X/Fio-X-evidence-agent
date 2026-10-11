@@ -1846,7 +1846,9 @@
    "verifiedClaimFor",
    "chartPlanStamp",
    "chartRenderStatus",
-   "chartLintStatus"
+   "chartLintStatus",
+   "verifiedClaimIds",
+   "verifiedClaimRecords"
   ],
   "functions": {
    "agentRecordSide": {
@@ -2469,7 +2471,7 @@
      "visual"
     ],
     "write": false,
-    "why": "10-11 现状，待拆"
+    "why": "视觉只读、经受控入口"
    },
    "verifiedClaimRecords": {
     "groups": [
@@ -2477,7 +2479,7 @@
      "visual"
     ],
     "write": false,
-    "why": "10-11 现状，待拆"
+    "why": "视觉只读、经受控入口"
    },
    "verifyComputationForWrite": {
     "groups": [
@@ -2779,7 +2781,7 @@
      "visual"
     ],
     "write": false,
-    "why": "待核·闸门（视觉组经 verifiedClaimIds 读登记表）"
+    "why": "视觉只读、经受控入口（只经 verifiedClaimIds／verifiedClaimRecords 调用）"
    },
    "evidence_gate.mjs::requireVerifiedClaim": {
     "owner": "knowledge",

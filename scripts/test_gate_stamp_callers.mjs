@@ -82,4 +82,11 @@ for (const name of labelled) {
   assert.deepEqual(outside, [], `${name} is labelled knowledge-only but is called directly by ${outside}`);
 }
 assert.deepEqual(directCallers(`${src}\nfunction vizHelper() { return deriveClaimVerification({}); }`, "deriveClaimVerification").filter((c) => !KNOWLEDGE_SIDE.has(c)), ["vizHelper"], "a visual helper calling a knowledge-only function directly is seen");
+
+// isSystemVerifiedClaim is called only by the two gated read-only entries; a visual tool or helper calling it directly is red.
+const ENTRIES = new Set(["verifiedClaimIds", "verifiedClaimRecords"]);
+for (const name of ENTRIES) assert.ok(groupsList.cross_calls.gated.includes(name), `${name} is a gated entry`);
+assert.deepEqual(directCallers(src, "isSystemVerifiedClaim").filter((c) => !ENTRIES.has(c)), [], "isSystemVerifiedClaim is reached only through the gated entries");
+assert.deepEqual(directCallers(`${src}\nasync function vizHelper(c) { return isSystemVerifiedClaim(c); }`, "isSystemVerifiedClaim").filter((c) => !ENTRIES.has(c)), ["vizHelper"], "bypassing the entries is seen");
+assert.deepEqual(directCallers(src.replace('name: "newsroom_story_graph"', 'name: "newsroom_story_graph"\n    x: isSystemVerifiedClaim(1),'), "isSystemVerifiedClaim").filter((c) => !ENTRIES.has(c)), ["newsroom_story_graph"], "a visual tool calling it directly is seen");
 console.log("gate stamp callers -- PASS");
