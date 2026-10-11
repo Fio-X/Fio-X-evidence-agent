@@ -1524,10 +1524,11 @@ async function writeArtifactBytesIfAbsent(relativePath: string, value: Uint8Arra
 // Test-only entry points to the two immutable writers (not used by tools).
 // NEWSROOM_GROUP_HANDOFF=1 (exact value, default off): the claim record, computation records and query-row tables a visual tool needs are saved
 // by the knowledge group's writer (knowledge_writer.mjs). Same store calls, same arguments, same order: the files are byte-identical.
-const knowledgeSide = () => knowledgeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), recordClaimArtifact: (input: any, signal?: AbortSignal) => recordClaimArtifact(input, signal) });
-const saveComputation = (ref: string, record: unknown) => (handoffEnabled() ? knowledgeSide().writeComputation(ref, record) : writeArtifactIfAbsent(ref, record));
+const knowledgeSide = () => knowledgeWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), recordClaimArtifact: (input: any, signal?: AbortSignal) => recordClaimArtifact(input, signal), verifyComputation: verifyComputationForWrite, verifyQueryRows: verifyQueryRowsForWrite });
+const saveComputation = (ref: string, record: unknown, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().writeComputation(ref, record, signal) : writeArtifactIfAbsent(ref, record));
 const saveQueryRows = (ref: string, rows: unknown[]) => (handoffEnabled() ? knowledgeSide().writeQueryRows(ref, rows) : writeArtifactIfAbsent(ref, rows));
 export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQueryRows(ref, rows);
+export const __saveComputationForTest = (ref: string, record: unknown) => saveComputation(ref, record);
 // The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
 const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
 const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
@@ -1542,6 +1543,28 @@ export const __saveChainEventForTest = (event: unknown) => saveChainEvent(event)
 const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().recordClaim(input, signal) : recordClaimArtifact(input, signal));
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
 export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
+
+// NEWSROOM_GROUP_ENFORCE=1: what the knowledge writer checks before it saves (K214 part B). The same helpers the claim replay uses, no new rule.
+async function verifyComputationForWrite(ref: string, record: any, signal?: AbortSignal) {
+  const fail = (why: string): never => { throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: ${why}`); };
+  if (!record || typeof record !== "object" || Array.isArray(record)) fail("the computation record is not an object");
+  const sql = validateReadOnlySql(String(record.sql ?? ""));
+  const snapshotHash = String(record.input_snapshot_hash ?? "");
+  const resultHash = String(record.result_hash ?? "");
+  if (!snapshotHash || !/^[0-9a-f]{64}$/i.test(resultHash) || !Array.isArray(record.rows)) fail("incomplete record (input snapshot hash, result hash or rows missing)");
+  if (hashRows(record.rows) !== resultHash) fail("the rows do not match result_hash");
+  if (computationRelativePath(sql, snapshotHash, resultHash) !== ref) fail("the path is not the content address of the record");
+  if (hashRows(await queryDuckDb(sql, signal)) !== resultHash) fail("the SQL run again on the recorded inputs gives another result hash");
+}
+async function verifyQueryRowsForWrite(ref: string, rows: unknown) {
+  const fail = (why: string): never => { throw new Error(`KNOWLEDGE_WRITER_CONTENT: ${ref}: ${why}`); };
+  if (!Array.isArray(rows)) fail("the query-rows table is not an array");
+  const computation = await readArtifactJson(`computations/${ref.split("/").pop()}`, "computations/").catch(() => null);
+  if (!Array.isArray(computation?.rows)) fail("no computation record of that name to take the rows from");
+  if (hashRows(rows as unknown[]) !== hashRows(computation.rows) || hashRows(rows as unknown[]) !== String(computation.result_hash ?? "")) fail("the rows are not the rows of the computation record");
+}
+export const __verifyComputationForTest = (ref: string, record: unknown, signal?: AbortSignal) => verifyComputationForWrite(ref, record, signal);
+export const __verifyQueryRowsForTest = (ref: string, rows: unknown) => verifyQueryRowsForWrite(ref, rows);
 
 // One shape for every computation record, so duckdb_query and viz_lint write
 // identical bytes for the same SQL, snapshot and result rows. dataHash is the
