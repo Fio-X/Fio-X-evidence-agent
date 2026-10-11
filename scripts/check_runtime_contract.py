@@ -36,7 +36,7 @@ def effective_profiles(profile, visiting=None):
 effective_profile_map = {profile: effective_profiles(profile) for profile in registry.get('profiles', [])}
 
 def has_materializer_call(path_var, const):
-    pattern = rf'write_if_changed\(\s*&{re.escape(path_var)}\s*,\s*{re.escape(const)}\s*,?\s*\)'
+    pattern = rf'write_if_changed\(\s*(?:artifact_dir\s*,\s*)?&{re.escape(path_var)}\s*,\s*{re.escape(const)}\s*,?\s*\)'
     return re.search(pattern, runtime, re.S) is not None
 
 allow_match = re.search(r'pub const NEWSROOM_TOOLS: &str = "([^"]+)"', generated_rust)
