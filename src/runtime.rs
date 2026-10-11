@@ -130,6 +130,11 @@ fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
         &runtime_dir.join("process.mjs"),
         include_str!("../runtime/pi/process.mjs"),
     )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_api.ts"),
+        include_str!("../runtime/pi/tool_api.ts"),
+    )?;
     let extension_path = runtime_dir.join("newsroom.ts");
     let viz_path = runtime_dir.join("viz.mjs");
     let cartography_path = runtime_dir.join("cartography.mjs");

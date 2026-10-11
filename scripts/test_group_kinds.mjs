@@ -27,7 +27,7 @@ const SKELETON = new Set(["data/", "data/origins/", "computations/", "visualizat
 const runtimeSource = readFileSync(join(ROOT, "src/runtime.rs"), "utf8");
 const MATERIALIZED = new Set();
 for (const [dir, prefix] of [["runtime_dir", "runtime/"], ["assets_dir", "runtime/assets/"], ["vendor_dir", "runtime/vendor/"]]) for (const m of runtimeSource.matchAll(new RegExp(`${dir}\\s*\\.join\\("([^"]+)"\\)`, "g"))) MATERIALIZED.add(prefix + m[1]);
-assert.equal(MATERIALIZED.size, 89, "runtime.rs materializes 89 fixed names under runtime/");
+assert.equal(MATERIALIZED.size, 90, "runtime.rs materializes 90 fixed names under runtime/");
 const dirs = ["", "data", "computations", "sources", "searches", "visualizations", "infographics", "editorial", "maps", "models", "publications", "lieflat", "config", "runtime", "shadow", "verification-rounds", "session", "plan-progress"];
 const leaves = ["", "a.json", "x/y.json", "claims.jsonl", "plan.json", "story.json", "answer.md", "graph-analysis/g.json", "query-rows/q.json", "origins/o.json", "plan-rejections/r.json", "plan-patches/p.json", "chain-rejections/r.json", "chain-patches/p.json", "vision-critics/v.json", "competition-preflight/c.json", "preferences/p.json", "award-runs/a.json"];
 const paths = new Set(samples.map((row) => row.path));
@@ -53,7 +53,7 @@ for (const rule of added) {
 }
 eq(added.filter((r) => r.kind === "materialized_runtime").map((r) => r.exact).sort(), [...MATERIALIZED].sort(), "materialized_runtime rows == the names runtime.rs writes");
 eq(added.filter((r) => r.kind === "run_record" && (r.exact === "" || r.exact.endsWith("/"))).length, 12, "skeleton folders (the run folder + 11 fixed subfolders)");
-eq(added.length, 12 + 89 + 12, "added fixed names: 12 skeleton + 89 materialized + 12 run files / state / verification");
+eq(added.length, 12 + 90 + 12, "added fixed names: 12 skeleton + 90 materialized + 12 run files / state / verification");
 for (const name of MATERIALIZED) eq(kindOf(name), "materialized_runtime", `${name} is materialized_runtime`);
 for (const name of ["runtime/query-rows/q.json", "runtime/tool-chain-events.jsonl", "runtime/fetch-split-probe/p.json", "runtime/newsroom.ts.bak", "runtime/assets/other.json", "runtime/gis/adnplot.R"]) eq(kindOf(name), name === "runtime/query-rows/q.json" ? "evidence" : "project_state", `${name} stays out of the materialized kind`);
 for (const rule of rules) assert.ok(list.artifact_kinds.ownership[rule.kind]?.owner, `rule kind has an owner: ${rule.kind}`);
