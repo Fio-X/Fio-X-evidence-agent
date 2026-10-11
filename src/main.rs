@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
         Some(Commands::Continue(_)) => "continue",
         Some(Commands::Inspect(_)) => "inspect",
         Some(Commands::Verify(_)) => "verify",
-        None => "",
+        None => "interactive",
     };
     group_guard::enter_command(command_name, cli::group_of(command_name));
 

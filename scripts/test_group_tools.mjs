@@ -129,6 +129,11 @@ const dirFor = (() => { let n = 0; return () => { const d = join(scratch, `art-$
   // a process that fails cleanly keeps its own error
   const plain = await g.runInTool("newsroom_network_reduce", () => g.runDeclared(dir, [out], async () => { throw new Error("boom"); }).catch((e) => e));
   assert.equal(plain.message, "boom");
+  // a child process writing into a SUB-folder is seen too (mutant: first-level-only comparison -> this goes red)
+  const deep = await g.runInTool("newsroom_viz_render", () => g.runDeclared(dir, [], async () => { mkdirSync(join(dir, "data/deep/er"), { recursive: true }); writeFileSync(join(dir, "data/deep/er/x.csv"), "x"); }).catch((e) => e));
+  assert.equal(deep.code, "GROUP_TOOLS_REFUSED"); assert.deepEqual(deep.detail.extra, ["data/deep/er/x.csv"]); assert.ok(!existsSync(join(dir, "data/deep/er/x.csv")), "sub-folder file rolled back");
+  const deepDeclared = await g.runInTool("newsroom_network_reduce", () => g.runDeclared(dir, [out], async () => { writeFileSync(join(dir, out), "{}"); mkdirSync(join(dir, "visualizations/graph-reduction/sub"), { recursive: true }); writeFileSync(join(dir, "visualizations/graph-reduction/sub/y.json"), "x"); }).catch((e) => e));
+  assert.equal(deepDeclared.code, "GROUP_TOOLS_REFUSED"); assert.deepEqual(deepDeclared.detail.extra, ["visualizations/graph-reduction/sub/y.json"]);
   // the run folder itself is watched when nothing is declared (duckdb, adapter)
   const stray = await g.runInTool("newsroom_viz_render", () => g.runDeclared(dir, [], async () => { writeFileSync(join(dir, "stray.csv"), "x"); }).catch((e) => e));
   assert.equal(stray.code, "GROUP_TOOLS_REFUSED"); assert.ok(!existsSync(join(dir, "stray.csv")));
