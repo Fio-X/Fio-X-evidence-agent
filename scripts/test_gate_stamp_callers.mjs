@@ -40,4 +40,17 @@ const stampBad = src.replace(plan, plan.replace("...(await chartPlanStamp(", "ar
 assert.ok(problems(stampBad).some((m) => /artifact_status/.test(m)), "viz_plan stamping itself is red");
 const renderBad = src.replace(render, render.replace("...renderStamp,", "...renderStamp, verification: deriveClaimVerification({}),"));
 assert.ok(problems(renderBad).some((m) => m.startsWith("newsroom_viz_render calls")), "viz_render building the verification itself is red");
+// lieflat.mjs does not read the claim registry; the calling tool passes the verified records in
+const lieflat = readFileSync(join(ROOT, "runtime/pi/lieflat.mjs"), "utf8");
+export function lieflatProblems(text) {
+  const out = [];
+  if (/["'`]claims\.jsonl["'`]/.test(text)) out.push("lieflat.mjs reads claims.jsonl itself");
+  if (/\bisSystemVerifiedClaim\b/.test(text)) out.push("lieflat.mjs decides system verification itself");
+  if (!/input\??\.verified_claims/.test(text)) out.push("lieflat.mjs does not take verified_claims from its caller");
+  return out;
+}
+assert.deepEqual(lieflatProblems(lieflat), [], "lieflat takes the verified records from the calling tool");
+assert.ok(lieflatProblems(`${lieflat}\nconst p = join(root, "claims.jsonl");`).length, "lieflat reading claims.jsonl again is red");
+assert.ok(lieflatProblems(`import { isSystemVerifiedClaim } from "./evidence_gate.mjs";\n${lieflat}`).length, "lieflat deciding verification again is red");
+assert.match(src.match(/renderLieflatPublication\(\{[^}]*\}\)/)?.[0] ?? "", /verified_claims: await verifiedClaimRecords\(\)/, "the lieflat tool passes the records");
 console.log("gate stamp callers -- PASS");
