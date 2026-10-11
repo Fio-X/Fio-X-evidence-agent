@@ -59,7 +59,7 @@ assert.deepEqual(problems, [], problems.join("\n"));
     if (f.endsWith("src/commands/verify.rs")) continue;
     assert.ok(!/VerifiedOutcome\s*\{/.test(readFileSync(f, "utf8").replace(/\/\/.*$/gm, "")), `${f}: only commands/verify.rs may build a VerifiedOutcome`);
   }
-  assert.match(guard, /pub fn write_verification_record\([^)]*outcome: &crate::commands::verify::VerifiedOutcome\)/, "write_verification_record must take the outcome");
+  assert.match(guard, /pub fn write_verification_record\([^)]*outcome: &crate::commands::verify::VerifiedOutcome\s*,?\s*\)/, "write_verification_record must take the outcome");
 }
 
 // off: no check, no file, even for a requester no row lists
