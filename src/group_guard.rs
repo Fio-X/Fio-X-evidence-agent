@@ -687,6 +687,7 @@ mod tests {
     fn a_handoff_needs_its_row_and_an_asking_command_in_it() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
+        std::fs::create_dir_all(root.join("data")).unwrap();
         // ask is an agent command, data/ is knowledge evidence, the knowledge writer owns it: only the commands list keeps ask out
         let _setup = Setup::new(Some("ask"), None);
         let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
@@ -715,12 +716,17 @@ mod tests {
     fn a_not_measured_command_is_refused_until_measured() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let _setup = Setup::real(Some("investigate"));
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        // investigate was seen importing data (10-11 census); interactive was not
+        let _setup = Setup::real(Some("interactive"));
         let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
         assert!(text.contains("may not ask knowledge_writer"), "{text}");
         assert!(!root.join("data/abc.csv").exists());
         drop(_setup);
-        let _setup = Setup::new(Some("investigate"), None);
+        let _setup = Setup::real(Some("investigate"));
+        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
+        drop(_setup);
+        let _setup = Setup::new(Some("interactive"), None);
         as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
     }
 

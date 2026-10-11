@@ -1778,7 +1778,6 @@
      "interactive"
     ],
     "not_measured": [
-     "investigate",
      "interactive"
     ],
     "why": "data files copied into the run folder with their origin notes (artifact.rs import_data; investigate.rs:390, interactive.rs:165)",
@@ -1791,9 +1790,7 @@
     "commands": [
      "continue"
     ],
-    "not_measured": [
-     "continue"
-    ],
+    "not_measured": [],
     "why": "continue writes only the program-computed not-passed record (continue_investigation.rs:114); verify is a knowledge command and writes it itself",
     "remove_when": "when continue asks verify for the record"
    },
@@ -1807,8 +1804,6 @@
      "investigate-v2"
     ],
     "not_measured": [
-     "investigate",
-     "continue",
      "investigate-v2"
     ],
     "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316, investigate_v2.rs:367)",
@@ -1828,10 +1823,7 @@
      "interactive"
     ],
     "not_measured": [
-     "investigate",
-     "continue",
      "investigate-v2",
-     "inspect",
      "ask",
      "chat",
      "interactive"
