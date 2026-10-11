@@ -170,8 +170,10 @@ for (const cut of ["before-link", "after-link"]) {
   assert.deepEqual(leftovers(art), []);
   // link not supported on this volume: fall back to exclusive create
   for (const code of ["EPERM", "ENOTSUP", "EXDEV"]) {
-    mod.__setArtifactFsForTest({ async link() { throw Object.assign(new Error(code), { code }); } });
+    let linkCalls = 0;
+    mod.__setArtifactFsForTest({ async link() { linkCalls++; throw Object.assign(new Error(code), { code }); } });
     await writeText(`computations/fallback-${code}.json`, { f: code });
+    assert.ok(linkCalls >= 1, `${code}: the link seam fired, so the fallback really ran`);
     assert.equal(readFileSync(join(art, "computations", `fallback-${code}.json`), "utf8"), JSON.stringify({ f: code }, null, 2) + "\n");
     await assert.rejects(() => writeText(`computations/fallback-${code}.json`, { f: "other" }), /Immutable artifact collision/);
   }
