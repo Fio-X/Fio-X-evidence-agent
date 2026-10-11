@@ -33,7 +33,7 @@ import { resolveEditorialStyle } from "./style_mapping.mjs";
 import { validateMapSpec } from "./map_spec.mjs";
 import { buildEvidenceBoundModule, assertViewSpecHasNoInlineData, assertViewSpecHasNoReservedEvidence } from "./publication_binding.mjs";
 import { assertSafeSvg, sha256Text } from "./svg_security.mjs";
-import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, reviewFromRecordsEnabled, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
+import { DEFAULT_REFERENCE_PATTERNS, PROGRAM_STATUS_SOURCE, REVIEW_RECORD_DIR, artDirectionHash, evaluateExpertPreference, planEditorialAssets, programReviewFromRecord, retrieveReferencePatterns, modelPassSelfReportEnabled, programRecordsMode, reviewStatusDisplay, summarizeAwardMode } from "./art_direction.mjs";
 import { assertResolvedAddressesSafe, decodeBoundedText, isPrivateIpAddress, readBodyBytes } from "./net.mjs";
 import { lintClaimSqlAst, lintClaimTemplate } from "./claim_lint.mjs";
 import { extractDownloadedPdf, extractPdfText, looksLikePdf } from "./pdf_extract.mjs";
@@ -1239,6 +1239,35 @@ async function hasPassingLinkedCritic(criticsDir: string, manifestRef: string): 
   return false;
 }
 
+// NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): the image-aware critic's verdict is the model's own, so it may only veto. Every
+// vision critic linked to manifestRef counts: one that failed, scored below 80 or reports a blocker issue blocks the page even when another linked
+// critic passed. A passing one is still required (the gate is unchanged otherwise), but it releases nothing alone - the program gates around it do.
+// Same thresholds as verify_infographic_artifact in src/verify.rs and its Python mirror.
+const visionCriticVetoes = (critic: any) => critic?.passed !== true
+  || !(typeof critic?.score === "number" && critic.score >= 80)
+  || (Array.isArray(critic?.issues) && critic.issues.some((issue: any) => issue?.severity === "blocker"));
+async function linkedVisionVeto(manifestRef: string): Promise<string | null> {
+  const root = artifactRoot();
+  if (!root) return null;
+  const dir = join(root, "infographics/vision-critics");
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries.filter((e) => e.isFile() && e.name.endsWith(".json")).sort((a, b) => a.name.localeCompare(b.name))) {
+    let critic: any;
+    try {
+      critic = JSON.parse(await readFile(join(dir, entry.name), "utf8"));
+    } catch {
+      continue;
+    }
+    if (critic?.manifest_ref === manifestRef && visionCriticVetoes(critic)) return `infographics/vision-critics/${entry.name}`;
+  }
+  return null;
+}
+
 // The gate this file adds: newsroom_publication_plan may bind an
 // infographic_plan_ref only when that plan's rendered page is still a
 // top-level, non-rejected infographic manifest with both a passing
@@ -1274,6 +1303,14 @@ async function assertApprovedInfographicLineage(infographicPlanRef: string): Pro
       throw new Error(
         `Publication blocked: infographic '${found.ref}' has no passing image-aware vision critic (missing or failed) - run newsroom_infographic_preview then newsroom_infographic_vision_critic until it passes`,
       );
+    }
+    if (modelPassSelfReportEnabled()) {
+      const veto = await linkedVisionVeto(found.ref);
+      if (veto) {
+        throw new Error(
+          `Publication blocked: infographic '${found.ref}' was vetoed by image-aware vision critic ${veto} (failed, scored below 80 or reported a blocker); a later passing critique is the model's own report and cannot override it - revise the plan and render again`,
+        );
+      }
     }
   }
 }
@@ -1495,6 +1532,7 @@ export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQuer
 // The same hand-off for the decision records (expert preference, award status, competition preflight): the agent group's writer saves them.
 const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
 const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
+export const __linkedVisionVetoForTest = (manifestRef: string) => linkedVisionVeto(manifestRef);
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
 // The refused-call store and the tool-chain event log are run records: with the hand-off on, the agent group's writer saves them.
 const agentRecordSide = () => agentRecordWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), appendArtifact: (ref: string, value: unknown) => appendArtifact(ref, value) });
@@ -5484,7 +5522,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
     promptSnippet: "Record qualified human art-director preference evidence",
     parameters: Type.Object({ baseline_ref: Type.String(), candidate_ref: Type.String(), minimum_reviewers: Type.Optional(Type.Integer({ minimum: 3, maximum: 30 })), candidate_threshold: Type.Optional(Type.Number({ minimum: 0.5, maximum: 1 })), reviews: Type.Array(preferenceReview, { maxItems: 30 }) }),
     async execute(_id, params) {
-      const result = reviewFromRecordsEnabled()
+      const result = programRecordsMode()
         ? evaluateExpertPreference(params, { programReviews: await loadProgramReviews(params.baseline_ref, params.candidate_ref) })
         : evaluateExpertPreference(params);
       const rel = `editorial/preferences/${result.content_hash}.json`;
@@ -5511,7 +5549,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       for (const [ref, prefix] of [[params.discovery_ref, "editorial/discovery/"], [params.concepts_ref, "editorial/concepts/"], [params.asset_plan_ref, "editorial/assets/"], [params.novelty_ref, "editorial/novelty/"]] as const) await readArtifactJson(ref, prefix);
       await assertPageLintCurrent(await readManifestOrRejected("infographics", params.page_ref, "infographics/"));
       if (params.preference_ref) await readArtifactJson(params.preference_ref, "editorial/preferences/");
-      const result = reviewFromRecordsEnabled()
+      const result = programRecordsMode()
         ? summarizeAwardMode(params, { programPreference: await loadProgramPreference(params.preference_ref), minConcepts: conceptMinCount() })
         : summarizeAwardMode(params, { minConcepts: conceptMinCount() });
       const rel = `editorial/award-runs/${result.content_hash}.json`;
@@ -6690,6 +6728,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       await saveDecision(criticRef, {
         ...normalized,
         kind: "image_aware_model",
+        // NEWSROOM_MODEL_PASS_SELFREPORT=1: this verdict, score and confidence are the model's own. Marked so; it can only veto (assertApprovedInfographicLineage).
+        ...(modelPassSelfReportEnabled() ? { self_reported: true, passed_source: "model" } : {}),
         manifest_ref: params.manifest_ref,
         preview_ref: params.preview_ref,
         deterministic_critic_ref: params.deterministic_critic_ref,

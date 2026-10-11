@@ -1328,6 +1328,19 @@ def verify_tick_readback_for_manifest(root: Path, manifest: dict, manifest_ref: 
         report.check(False, f"visualization {manifest_ref} tick read-back could not run: {exc}")
 
 
+def model_pass_selfreport_enabled() -> bool:
+    # NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): mirrors src/verify.rs model_pass_selfreport_enabled.
+    return os.environ.get("NEWSROOM_MODEL_PASS_SELFREPORT") == "1"
+
+
+def vision_critic_vetoes(critic: dict) -> bool:
+    # Mirrors src/verify.rs vision_critic_vetoes: failed, score below 80 (or none) or a blocker issue.
+    score = critic.get("score")
+    if critic.get("passed") is not True or isinstance(score, bool) or not isinstance(score, (int, float)) or score < 80:
+        return True
+    return any(isinstance(issue, dict) and issue.get("severity") == "blocker" for issue in (critic.get("issues") or []))
+
+
 def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infographic_plan_ref: str, infographic_critics: list, infographic_vision_critics: list, report: "Report") -> None:
     # The gate this worktree adds: a top-level publication's
     # infographic_plan_ref (already confirmed by the caller to resolve to an
@@ -1369,6 +1382,8 @@ def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infogr
     if infographic_manifest.get("visual_review_required") is True:
         linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == infographic_ref]
         report.check(any(c.get("passed") is True for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic")
+        if model_pass_selfreport_enabled():
+            report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic")
 
 
 def verify(root: Path) -> Report:
@@ -2156,6 +2171,8 @@ def verify(root: Path) -> Report:
                 report.check(bool(linked_vision), f"infographic {manifest_ref} requires image-aware vision critic")
                 passing_vision = [c for c in linked_vision if c.get("passed") is True]
                 report.check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic")
+                if model_pass_selfreport_enabled():
+                    report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"infographic {manifest_ref} vetoed by an image-aware vision critic (failed, score below 80 or blocker)")
                 for vision in passing_vision[:1]:
                     report.check(vision.get("schema_version") in {"0.1.0", "0.2.0"} and vision.get("kind") == "image_aware_model", f"infographic {manifest_ref} vision critic schema/kind mismatch")
                     report.check(float(vision.get("score") or 0) >= 80, f"infographic {manifest_ref} vision critic score below 80")

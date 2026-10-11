@@ -3723,6 +3723,12 @@ fn verify_infographic_critics(
         !passing_vision.is_empty(),
         format!("infographic {name} has no passing image-aware vision critic"),
     );
+    if model_pass_selfreport_enabled() {
+        report.check(
+            !vision_critics.iter().any(vision_critic_vetoes),
+            format!("infographic {name} vetoed by an image-aware vision critic (failed, score below 80 or blocker)"),
+        );
+    }
     let Some(vision) = passing_vision.first() else {
         return Ok(());
     };
@@ -4353,6 +4359,14 @@ fn verify_publication_infographic_lineage(
                 "publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic"
             ),
         );
+        if model_pass_selfreport_enabled() {
+            report.check(
+                !vision_critics.iter().any(vision_critic_vetoes),
+                format!(
+                    "publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic"
+                ),
+            );
+        }
     }
     Ok(())
 }
@@ -4447,6 +4461,44 @@ fn verify_delivered_artifact(
 /// visualizations/critics, infographics/critics, infographics/vision-critics
 /// and visualizations/illustrations/critics - the shape and matching rule
 /// are identical, only the directory and linked manifest kind differ.
+/// NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): an image-aware
+/// critic's verdict is the model's own, so it may only veto. Mirrors
+/// runtime/pi/newsroom.ts visionCriticVetoes and scripts/verify_artifact.py.
+fn model_pass_selfreport_enabled() -> bool {
+    // Tests set the switch per thread so parallel tests never see each other's value.
+    #[cfg(test)]
+    if let Some(value) = TEST_SELFREPORT.with(|cell| cell.borrow().clone()) {
+        return value.as_deref() == Some("1");
+    }
+    std::env::var("NEWSROOM_MODEL_PASS_SELFREPORT").as_deref() == Ok("1")
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SELFREPORT: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A linked vision critic vetoes when it failed, scored below 80 (or gave no
+/// score) or reports a blocker issue - the thresholds the passing critic is
+/// already held to below.
+fn vision_critic_vetoes(critic: &Value) -> bool {
+    critic.get("passed").and_then(Value::as_bool) != Some(true)
+        || critic
+            .get("score")
+            .and_then(Value::as_f64)
+            .map_or(true, |score| score < 80.0)
+        || critic
+            .get("issues")
+            .and_then(Value::as_array)
+            .map(|issues| {
+                issues
+                    .iter()
+                    .any(|issue| issue.get("severity").and_then(Value::as_str) == Some("blocker"))
+            })
+            .unwrap_or(false)
+}
+
 fn find_critics(root: &Path, critics_dir: &str, manifest_ref: &str) -> Result<Vec<Value>> {
     let dir = root.join(critics_dir);
     let mut out = Vec::new();
@@ -7172,6 +7224,70 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
     }
 
+    fn with_selfreport_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        TEST_SELFREPORT.with(|cell| *cell.borrow_mut() = Some(value.map(str::to_string)));
+        let out = f();
+        TEST_SELFREPORT.with(|cell| *cell.borrow_mut() = None);
+        out
+    }
+
+    /// A second vision critic for the same page next to the passing one:
+    /// `passed` false, or passed with a low score or a blocker.
+    fn add_second_vision_critic(root: &Path, manifest_ref: &str, name: &str, critic: Value) {
+        let mut critic = critic;
+        critic["manifest_ref"] = Value::String(manifest_ref.to_string());
+        fs::write(
+            root.join(format!("infographics/vision-critics/{name}.json")),
+            serde_json::to_string(&critic).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn infographic_selfreport_vision_veto_only() {
+        // Off (unset and any value but exact "1"): a passing vision critic
+        // releases the page even next to a failing one, exactly as before.
+        for value in [None, Some("true"), Some("0"), Some(" 1")] {
+            let temp = build_infographic_fixture(true, true);
+            enable_vision_review(temp.path(), 95.0, false);
+            add_second_vision_critic(
+                temp.path(),
+                "infographics/x.json",
+                "y",
+                serde_json::json!({"passed": false, "score": 40}),
+            );
+            let errors = with_selfreport_switch(value, || infographic_errors(temp.path()));
+            assert!(errors.is_empty(), "off ({value:?}): {errors:?}");
+        }
+        // On: every linked vision critic counts; a failing, low-scoring or
+        // blocker one vetoes the page although another one passed.
+        for veto in [
+            serde_json::json!({"passed": false, "score": 95}),
+            serde_json::json!({"passed": true, "score": 60}),
+            serde_json::json!({"passed": true, "score": 95, "issues": [{"severity": "blocker"}]}),
+            serde_json::json!({"passed": true}),
+        ] {
+            let temp = build_infographic_fixture(true, true);
+            enable_vision_review(temp.path(), 95.0, false);
+            add_second_vision_critic(temp.path(), "infographics/x.json", "y", veto.clone());
+            let errors = with_selfreport_switch(Some("1"), || infographic_errors(temp.path()));
+            assert_error(&errors, "vetoed by an image-aware vision critic");
+        }
+        // On: a model pass alone still needs every program gate; the vision
+        // pass is unchanged as a requirement, never a release by itself.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_selfreport_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(errors.is_empty(), "{errors:?}");
+        let temp = build_infographic_fixture(false, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_selfreport_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(
+            !errors.is_empty(),
+            "model pass must not release a page whose program gates fail"
+        );
+    }
+
     /// Attaches a passing visualizations/illustrations/y.json (0.1.0
     /// schematic explainer) to the infographic fixture's
     /// illustration_manifest_refs, mirroring what newsroom_explainer_render
@@ -7609,6 +7725,50 @@ mod tests {
             errors.iter().all(|e| !e.contains("upstream infographic")),
             "{errors:?}"
         );
+    }
+
+    #[test]
+    fn publication_infographic_lineage_selfreport_vision_veto_only() {
+        // Each shape alone must veto: the score and blocker terms must not hide a missing passed term.
+        for veto in [
+            serde_json::json!({"passed": false, "score": 95}),
+            serde_json::json!({"passed": true, "score": 60}),
+            serde_json::json!({"passed": true, "score": 95, "issues": [{"severity": "blocker"}]}),
+            serde_json::json!({"passed": true}),
+        ] {
+            let mut failing = veto.clone();
+            failing["manifest_ref"] = serde_json::json!("infographics/ig1.json");
+            let (temp, _key) = build_publication_fixture(true, true);
+            // The fixture's own critic carries no score; give it a clean pass so only the added critic can veto.
+            fs::write(
+                temp.path().join("infographics/vision-critics/v1.json"),
+                serde_json::to_string(&serde_json::json!({
+                    "manifest_ref": "infographics/ig1.json", "passed": true, "score": 95
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let clean = with_selfreport_switch(Some("1"), || publication_errors(temp.path()));
+            assert!(
+                clean.iter().all(|e| !e.contains("vetoed")),
+                "{veto}: a clean pass alone must not veto: {clean:?}"
+            );
+            fs::write(
+                temp.path().join("infographics/vision-critics/v9.json"),
+                serde_json::to_string(&failing).unwrap(),
+            )
+            .unwrap();
+            let off = with_selfreport_switch(None, || publication_errors(temp.path()));
+            assert!(
+                off.iter().all(|e| !e.contains("upstream infographic")),
+                "{veto}: {off:?}"
+            );
+            let on = with_selfreport_switch(Some("1"), || publication_errors(temp.path()));
+            assert_error(
+                &on,
+                "upstream infographic infographics/ig1.json vetoed by an image-aware vision critic",
+            );
+        }
     }
 
     #[test]
