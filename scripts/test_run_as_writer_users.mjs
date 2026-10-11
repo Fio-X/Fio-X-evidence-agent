@@ -85,4 +85,40 @@ for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.
   assert.ok(NAME.test(readFileSync(join(root, f), "utf8")), `${f} no longer uses runAsWriter`);
 }
 assert.ok(GROUPS_SPEC.test(readFileSync(join(root, "runtime/pi/knowledge_writer.mjs"), "utf8")));
+// 4. Each call's group is the group groups.json registers for the calling file, and only *_writer.mjs files call it.
+// A writer cannot pick another group's identity just by passing a different first argument.
+const registered = JSON.parse(readFileSync(join(root, "runtime/pi/groups.json"), "utf8")).files;
+const CALL = /\brunAsWriter\s*\(\s*([^,)]*)/g;
+export function checkCalls(rel, text, files = registered) {
+  const problems = [];
+  for (const m of text.matchAll(CALL)) {
+    const arg = m[1].trim();
+    const literal = /^["']([a-z]+)["']$/.exec(arg);
+    if (!/(^|\/)[a-z_]+_writer\.mjs$/.test(rel)) problems.push(`${rel}: runAsWriter call outside a *_writer.mjs file`);
+    if (!literal) { problems.push(`${rel}: first argument is not a plain group name (${arg})`); continue; }
+    const entry = files[rel];
+    if (!entry) problems.push(`${rel}: not registered in groups.json`);
+    else if (entry.group !== literal[1]) problems.push(`${rel}: calls runAsWriter("${literal[1]}") but is registered in group ${entry.group}`);
+  }
+  return problems;
+}
+const callBad = [];
+let calls = 0;
+for (const f of walk(join(root, "runtime"))) {
+  const rel = relative(root, f).split("\\").join("/");
+  if (rel === "runtime/pi/groups.mjs") continue; // defines it
+  const text = readFileSync(f, "utf8");
+  calls += [...text.matchAll(CALL)].length;
+  callBad.push(...checkCalls(rel, text));
+}
+assert.deepEqual(callBad, [], `runAsWriter calls out of line with groups.json:\n${callBad.join("\n")}`);
+assert.ok(calls >= 7, "found too few runAsWriter calls");
+// Mutants: each of these must be flagged.
+const visualFile = Object.keys(registered).find((k) => registered[k].group === "visual" && /\.mjs$/.test(k));
+assert.ok(visualFile, "no visual-group file to mutate");
+assert.ok(checkCalls(visualFile, `runAsWriter("knowledge", "x", f);`).length > 0, "a visual-group file calling runAsWriter(\"knowledge\") must be flagged");
+assert.ok(checkCalls("runtime/pi/knowledge_writer.mjs", `runAsWriter("agent", "x", f);`).length > 0, "wrong group for a registered writer must be flagged");
+assert.ok(checkCalls("runtime/pi/new_writer.mjs", `runAsWriter("agent", "x", f);`).length > 0, "unregistered writer must be flagged");
+assert.ok(checkCalls("runtime/pi/knowledge_writer.mjs", `runAsWriter(g, "x", f);`).length > 0, "computed group must be flagged");
+assert.deepEqual(checkCalls("runtime/pi/knowledge_writer.mjs", `runAsWriter("knowledge", "x", f);`), []);
 console.log("ok: runAsWriter is used only by the writer modules (" + files.length + " files scanned)");
