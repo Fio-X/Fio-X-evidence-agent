@@ -1204,7 +1204,7 @@ pub async fn run_prompt(
                 crate::group_guard::as_run_bundle(|| {
                     crate::group_guard::open_append(path.parent().unwrap_or(Path::new("")), path)
                 })
-                    .with_context(|| format!("failed to open event log: {}", path.display()))?,
+                .with_context(|| format!("failed to open event log: {}", path.display()))?,
             ),
             None => None,
         };
@@ -1242,14 +1242,16 @@ pub async fn run_prompt(
         let mut chart_watch =
             (config.speed.inline_claim || config.compose.is_some()).then(ChartReadyWatch::default);
         // NEWSROOM_STEP_LINES=1: one named line per finished tool call (stderr only; changes no state).
-        let mut step_tracker = crate::step_lines::enabled().then(crate::step_lines::StepTracker::default);
+        let mut step_tracker =
+            crate::step_lines::enabled().then(crate::step_lines::StepTracker::default);
         // The closing text composed from the artifacts when the one chart is complete; once
         // set, the next model turn is aborted and no later model text is used or shown.
         let mut composed_answer: Option<String> = None;
         let mut compose_abort_sent = false;
         let mut plan_progress_seq = 0u64;
         // NEWSROOM_REPEAT_FAILURE_STOP=1: the same tool failing 5 times in a row with equal arguments ends the run.
-        let mut repeat_watch = crate::repeat_failure::enabled().then(crate::repeat_failure::RepeatFailureWatch::default);
+        let mut repeat_watch = crate::repeat_failure::enabled()
+            .then(crate::repeat_failure::RepeatFailureWatch::default);
 
         let mut line = Vec::new();
         loop {
@@ -1324,9 +1326,15 @@ pub async fn run_prompt(
             // Step lines come first so the chart-out line sits right above `[agent] chart_ready`.
             if let Some(tracker) = step_tracker.as_mut() {
                 match event.get("type").and_then(Value::as_str) {
-                    Some("tool_execution_start") => tracker.on_start(&event, crate::step_lines::secs_now()),
+                    Some("tool_execution_start") => {
+                        tracker.on_start(&event, crate::step_lines::secs_now())
+                    }
                     Some("tool_execution_end") => {
-                        for line in tracker.on_end(&event, crate::step_lines::secs_now(), crate::step_lines::language_zh()) {
+                        for line in tracker.on_end(
+                            &event,
+                            crate::step_lines::secs_now(),
+                            crate::step_lines::language_zh(),
+                        ) {
                             eprintln!("{line}");
                         }
                     }
@@ -2050,7 +2058,10 @@ mod tests {
     fn recipes_switch_is_exactly_one_and_changes_no_other_switch() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(RECIPES_ENV);
-        assert_eq!(speed_switches_from_env(), crate::prompt::PromptSpeed::default());
+        assert_eq!(
+            speed_switches_from_env(),
+            crate::prompt::PromptSpeed::default()
+        );
         for not_one in ["0", "true", "yes", ""] {
             std::env::set_var(RECIPES_ENV, not_one);
             assert!(!speed_switches_from_env().recipes, "{not_one:?}");
@@ -2059,7 +2070,10 @@ mod tests {
         let on = speed_switches_from_env();
         assert!(on.recipes);
         assert_eq!(
-            crate::prompt::PromptSpeed { recipes: false, ..on },
+            crate::prompt::PromptSpeed {
+                recipes: false,
+                ..on
+            },
             crate::prompt::PromptSpeed::default()
         );
         std::env::remove_var(RECIPES_ENV);

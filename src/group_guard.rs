@@ -96,7 +96,10 @@ fn parse_table(text: &str) -> Option<Table> {
         .map(|row| {
             Some(Rule {
                 exact: row.get("exact").and_then(Value::as_str).map(str::to_string),
-                prefix: row.get("prefix").and_then(Value::as_str).map(str::to_string),
+                prefix: row
+                    .get("prefix")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 kind: row.get("kind")?.as_str()?.to_string(),
                 tag: row.get("tag").and_then(Value::as_str).map(str::to_string),
             })
@@ -108,18 +111,38 @@ fn parse_table(text: &str) -> Option<Table> {
         .as_array()?
         .iter()
         .map(|row| {
-            let commands: Vec<String> = row.get("commands")?.as_array()?.iter().filter_map(|c| c.as_str().map(str::to_string)).collect();
-            Some((row.get("writer")?.as_str()?.to_string(), row.get("group")?.as_str()?.to_string(), commands))
+            let commands: Vec<String> = row
+                .get("commands")?
+                .as_array()?
+                .iter()
+                .filter_map(|c| c.as_str().map(str::to_string))
+                .collect();
+            Some((
+                row.get("writer")?.as_str()?.to_string(),
+                row.get("group")?.as_str()?.to_string(),
+                commands,
+            ))
         })
         .collect::<Option<Vec<_>>>()?;
     let mut unmeasured = Vec::new();
     for row in value.get("handoffs")?.get("rust")?.as_array()? {
         let writer = row.get("writer")?.as_str()?.to_string();
-        for command in row.get("not_measured").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        for command in row
+            .get("not_measured")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
             unmeasured.push((writer.clone(), command.to_string()));
         }
     }
-    Some(Table { rules, owners, handoffs, unmeasured })
+    Some(Table {
+        rules,
+        owners,
+        handoffs,
+        unmeasured,
+    })
 }
 
 impl Table {
@@ -216,8 +239,19 @@ impl Drop for WriterScope {
 /// Run `f` as a group's own writer: the writes inside belong to `group`, reported under `writer`, with `requested_by` kept. The writes are judged
 /// like any other (the path's owner must be `group`), and the writer, group and asking command must be a `handoffs.rust` row. Private: only the
 /// four `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
-fn as_writer<T>(group: &'static str, writer: &'static str, requested_by: &'static str, f: impl FnOnce() -> T) -> T {
-    let previous = WRITER.with(|cell| cell.borrow_mut().replace(Handoff { group, writer, requested_by }));
+fn as_writer<T>(
+    group: &'static str,
+    writer: &'static str,
+    requested_by: &'static str,
+    f: impl FnOnce() -> T,
+) -> T {
+    let previous = WRITER.with(|cell| {
+        cell.borrow_mut().replace(Handoff {
+            group,
+            writer,
+            requested_by,
+        })
+    });
     let _scope = WriterScope(previous);
     f()
 }
@@ -289,14 +323,28 @@ fn writer_for_kind(kind: &str) -> Option<&'static str> {
 }
 
 /// Fixed refusal text: command, its group, the path, its kind and owner, the writer to use. Nothing else (no switch names, no way around it).
-fn refusal_text(command: &str, group: &str, path: &str, kind: Option<&str>, owner: Option<&str>) -> String {
+fn refusal_text(
+    command: &str,
+    group: &str,
+    path: &str,
+    kind: Option<&str>,
+    owner: Option<&str>,
+) -> String {
     let writer = kind
         .and_then(writer_for_kind)
         .unwrap_or("no writer: the path has no owning group yet");
     format!(
         "boundary: {}（{}）may not write {}（{}, owner {}）. Use {}.",
-        if command.is_empty() { "unknown command" } else { command },
-        if group.is_empty() { "unknown group" } else { group },
+        if command.is_empty() {
+            "unknown command"
+        } else {
+            command
+        },
+        if group.is_empty() {
+            "unknown group"
+        } else {
+            group
+        },
         path,
         kind.unwrap_or("unclassified"),
         owner.unwrap_or("none"),
@@ -328,10 +376,23 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
         None => command_group(),
     };
     let rel = relative(root, path, op);
-    let classified = rel.as_deref().and_then(|rel| with_table(|table| table?.classify(rel)));
+    let classified = rel
+        .as_deref()
+        .and_then(|rel| with_table(|table| table?.classify(rel)));
     let owned = matches!((&group, &classified, &rel), (Some(group), Some((_, owner, _)), Some(_)) if owner == group);
     // a hand-off must also be a row of handoffs.rust (writer, group, asking command); no row, no write
-    let listed = handoff.is_none_or(|h| with_table(|table| table.is_some_and(|t| t.handoffs.iter().any(|(w, g, c)| w == h.writer && g == h.group && c.iter().any(|x| x == h.requested_by)) && !t.unmeasured.iter().any(|(w, c)| w == h.writer && c == h.requested_by))));
+    let listed = handoff.is_none_or(|h| {
+        with_table(|table| {
+            table.is_some_and(|t| {
+                t.handoffs.iter().any(|(w, g, c)| {
+                    w == h.writer && g == h.group && c.iter().any(|x| x == h.requested_by)
+                }) && !t
+                    .unmeasured
+                    .iter()
+                    .any(|(w, c)| w == h.writer && c == h.requested_by)
+            })
+        })
+    });
     let allowed = owned && listed;
     let verdict = Verdict {
         path: rel.clone().unwrap_or_else(|| path.display().to_string()),
@@ -349,10 +410,30 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
     }
     let shown = handoff.map(|h| h.writer).or(command).unwrap_or("");
     let text = match handoff {
-        Some(h) if owned && !listed => format!("boundary: {} may not ask {} to write {}.", if h.requested_by.is_empty() { "an unknown command" } else { h.requested_by }, h.writer, verdict.path),
-        _ => refusal_text(shown, group.unwrap_or(""), &verdict.path, verdict.kind.as_deref(), verdict.owner.as_deref()),
+        Some(h) if owned && !listed => format!(
+            "boundary: {} may not ask {} to write {}.",
+            if h.requested_by.is_empty() {
+                "an unknown command"
+            } else {
+                h.requested_by
+            },
+            h.writer,
+            verdict.path
+        ),
+        _ => refusal_text(
+            shown,
+            group.unwrap_or(""),
+            &verdict.path,
+            verdict.kind.as_deref(),
+            verdict.owner.as_deref(),
+        ),
     };
-    note_refusal(root, if op == Op::Dir { "mkdir" } else { "write" }, &text, &verdict.path);
+    note_refusal(
+        root,
+        if op == Op::Dir { "mkdir" } else { "write" },
+        &text,
+        &verdict.path,
+    );
     Err(io::Error::new(io::ErrorKind::PermissionDenied, text))
 }
 
@@ -389,7 +470,9 @@ pub fn create_new(root: &Path, path: &Path) -> io::Result<File> {
 /// E1: is this path inside one of the program's own recompute scratch folders? (Only these are exempt, and only outside the run folder.)
 pub fn is_scratch(path: &Path) -> bool {
     let temp = std::env::temp_dir();
-    let Ok(rest) = path.strip_prefix(&temp) else { return false };
+    let Ok(rest) = path.strip_prefix(&temp) else {
+        return false;
+    };
     let mut parts = rest.components();
     let ok_first = matches!(parts.next(), Some(Component::Normal(name)) if name.to_str().is_some_and(|n| n.starts_with(SCRATCH_PREFIX)));
     ok_first && parts.all(|c| matches!(c, Component::Normal(_)))
@@ -422,7 +505,12 @@ pub fn remove_scratch_dir(path: &Path) {
 /// any other value (for example one a model supplied) is refused and nothing is written. Only the verify module can make a `VerifiedOutcome`,
 /// so a "passed" record exists only where the checks computed it, whoever asked (the verify command or the check at the end of investigate).
 /// The write itself is the knowledge group's (verification_record).
-pub fn write_verification_record(root: &Path, path: &Path, record: &Value, outcome: &crate::commands::verify::VerifiedOutcome) -> io::Result<()> {
+pub fn write_verification_record(
+    root: &Path,
+    path: &Path,
+    record: &Value,
+    outcome: &crate::commands::verify::VerifiedOutcome,
+) -> io::Result<()> {
     // Only with the switch on (K213 fe review): off, the write is the one the program always made.
     if enabled() && record.get("passed").and_then(Value::as_bool) != Some(outcome.passed()) {
         let text = "boundary: the pass value of a verification record must be the one the program computed; this record carries another value and was not written.".to_string();
@@ -443,7 +531,10 @@ pub fn write_not_passed_record(root: &Path, path: &Path, record: &Value) -> io::
 }
 
 fn write_record_text(root: &Path, path: &Path, record: &Value) -> io::Result<()> {
-    let text = format!("{}\n", serde_json::to_string_pretty(record).map_err(io::Error::other)?);
+    let text = format!(
+        "{}\n",
+        serde_json::to_string_pretty(record).map_err(io::Error::other)?
+    );
     if command_group() == Some("knowledge") {
         write(root, path, text)
     } else {
@@ -453,11 +544,19 @@ fn write_record_text(root: &Path, path: &Path, record: &Value) -> io::Result<()>
 
 /// K214 part B: an imported data file must be stored under its own content address. `actual` is the hash of the stored file, `expected` the one
 /// the name was made from. Only with the switch on; off, nothing is checked and nothing changes.
-pub fn check_imported_data(root: &Path, relative_file: &str, expected: &str, actual: &str) -> io::Result<()> {
+pub fn check_imported_data(
+    root: &Path,
+    relative_file: &str,
+    expected: &str,
+    actual: &str,
+) -> io::Result<()> {
     if !enabled() {
         return Ok(());
     }
-    let stem_ok = relative_file.strip_prefix("data/").and_then(|name| name.split('.').next()).is_some_and(|stem| stem == expected);
+    let stem_ok = relative_file
+        .strip_prefix("data/")
+        .and_then(|name| name.split('.').next())
+        .is_some_and(|stem| stem == expected);
     if stem_ok && expected == actual {
         return Ok(());
     }
@@ -484,7 +583,10 @@ mod tests {
         fn new(command: Option<&'static str>, table: Option<String>) -> Self {
             TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(true));
             let with_group = command.map(|name| {
-                let group = crate::cli::COMMAND_GROUPS.iter().find(|(n, _)| *n == name).map(|(_, g)| *g);
+                let group = crate::cli::COMMAND_GROUPS
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map(|(_, g)| *g);
                 assert!(group.is_some(), "{name} must be in COMMAND_GROUPS");
                 (name, group)
             });
@@ -529,7 +631,10 @@ mod tests {
         write(dir.path(), &dir.path().join("anything.bin"), "x").unwrap();
         create_dir_all(dir.path(), &dir.path().join("a/b")).unwrap();
         assert!(dir.path().join("anything.bin").is_file() && dir.path().join("a/b").is_dir());
-        assert!(!dir.path().join("runtime").exists(), "off: no refusal log, nothing extra");
+        assert!(
+            !dir.path().join("runtime").exists(),
+            "off: no refusal log, nothing extra"
+        );
         TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
         TEST_COMMAND.with(|c| *c.borrow_mut() = None);
     }
@@ -544,7 +649,12 @@ mod tests {
         write(root, &root.join("plan.json"), "{}").unwrap();
         // agent command, knowledge-owned path: refused, nothing written, text names no switch
         let text = refused(write(root, &root.join("claims.jsonl"), "x"));
-        assert!(text.contains("claims.jsonl") && text.contains("evidence") && text.contains("knowledge_writer"), "{text}");
+        assert!(
+            text.contains("claims.jsonl")
+                && text.contains("evidence")
+                && text.contains("knowledge_writer"),
+            "{text}"
+        );
         assert!(!text.contains("NEWSROOM_"), "{text}");
         assert!(!root.join("claims.jsonl").exists());
         // run bookkeeping belongs to the system group
@@ -569,8 +679,12 @@ mod tests {
         assert!(text.contains("unknown command"), "{text}");
         assert!(!dir.path().join("story.json").exists());
         // a writer hand-off still needs a path its group owns, and an asking command in its handoffs.rust row (none here: refused)
-        refused(as_run_bundle(|| write(dir.path(), &dir.path().join("story.json"), "{}")));
-        let text = refused(as_run_bundle(|| write(dir.path(), &dir.path().join("answer.md"), "x")));
+        refused(as_run_bundle(|| {
+            write(dir.path(), &dir.path().join("story.json"), "{}")
+        }));
+        let text = refused(as_run_bundle(|| {
+            write(dir.path(), &dir.path().join("answer.md"), "x")
+        }));
         assert!(text.contains("may not ask run_bundle_writer"), "{text}");
     }
 
@@ -580,16 +694,30 @@ mod tests {
         let root = dir.path();
         let _setup = Setup::new(Some("investigate"), None);
         // skeleton folder, system-owned: refused for the knowledge writer
-        refused(as_data_import(|| create_dir_all(root, &root.join("data/origins"))));
+        refused(as_data_import(|| {
+            create_dir_all(root, &root.join("data/origins"))
+        }));
         let log = take_log_for_test();
         assert_eq!(log.len(), 1);
-        assert!(!log[0].allowed, "a knowledge hand-off may not create a system skeleton folder");
+        assert!(
+            !log[0].allowed,
+            "a knowledge hand-off may not create a system skeleton folder"
+        );
         as_run_bundle(|| create_dir_all(root, &root.join("data/origins")).unwrap());
         as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b").unwrap());
         as_data_import(|| write(root, &root.join("data/origins/h.json"), "{}").unwrap());
         let log = take_log_for_test();
-        let data: Vec<_> = log.iter().filter(|v| v.path.starts_with("data/") && v.path != "data/origins/").collect();
-        assert!(data.iter().all(|v| v.allowed && v.writer.as_deref() == Some("knowledge_writer") && v.requested_by.as_deref() == Some("investigate") && v.kind.as_deref() == Some("evidence")), "{data:?}");
+        let data: Vec<_> = log
+            .iter()
+            .filter(|v| v.path.starts_with("data/") && v.path != "data/origins/")
+            .collect();
+        assert!(
+            data.iter().all(|v| v.allowed
+                && v.writer.as_deref() == Some("knowledge_writer")
+                && v.requested_by.as_deref() == Some("investigate")
+                && v.kind.as_deref() == Some("evidence")),
+            "{data:?}"
+        );
         // the system writer may not write evidence
         refused(as_run_bundle(|| write(root, &root.join("data/x.csv"), "x")));
         // materialization: runtime code names only, requested_by is the running command
@@ -597,12 +725,28 @@ mod tests {
         as_materialize(|| create_dir_all(root, &root.join("config"))).unwrap();
         as_materialize(|| write(root, &root.join("runtime/newsroom.ts"), "x")).unwrap();
         as_materialize(|| create_dir_all(root, &root.join("runtime/assets"))).unwrap();
-        as_materialize(|| write(root, &root.join("config/editorial-grammar-registry.json"), "{}")).unwrap();
+        as_materialize(|| {
+            write(
+                root,
+                &root.join("config/editorial-grammar-registry.json"),
+                "{}",
+            )
+        })
+        .unwrap();
         let log = take_log_for_test();
-        assert!(log.iter().filter(|v| v.writer.as_deref() == Some("materialize_writer")).all(|v| v.allowed && v.requested_by.as_deref() == Some("investigate")));
-        refused(as_materialize(|| write(root, &root.join("runtime/query-rows/q.json"), "[]")));
-        refused(as_materialize(|| write(root, &root.join("runtime/anything-else.py"), "x")));
-        refused(as_materialize(|| write(root, &root.join("claims.jsonl"), "x")));
+        assert!(log
+            .iter()
+            .filter(|v| v.writer.as_deref() == Some("materialize_writer"))
+            .all(|v| v.allowed && v.requested_by.as_deref() == Some("investigate")));
+        refused(as_materialize(|| {
+            write(root, &root.join("runtime/query-rows/q.json"), "[]")
+        }));
+        refused(as_materialize(|| {
+            write(root, &root.join("runtime/anything-else.py"), "x")
+        }));
+        refused(as_materialize(|| {
+            write(root, &root.join("claims.jsonl"), "x")
+        }));
         // the same path by the agent command itself is the agent's, not the system's
         refused(write(root, &root.join("runtime/newsroom.ts"), "x"));
         write(root, &root.join("runtime/tool-chain-events.jsonl"), "x").unwrap();
@@ -621,21 +765,48 @@ mod tests {
         fs::remove_file(&path).unwrap();
         // a model-supplied "passed": true against the program's false: refused, nothing written
         let supplied = serde_json::json!({ "passed": true, "checks": 0 });
-        refused(write_verification_record(root, &path, &supplied, &VerifiedOutcome::for_test(false)));
+        refused(write_verification_record(
+            root,
+            &path,
+            &supplied,
+            &VerifiedOutcome::for_test(false),
+        ));
         // and the credential-less door refuses anything that says passed
         refused(write_not_passed_record(root, &path, &supplied));
         assert!(!path.exists());
         // a record without the field is refused too
-        refused(write_verification_record(root, &path, &serde_json::json!({ "checks": 0 }), &VerifiedOutcome::for_test(false)));
+        refused(write_verification_record(
+            root,
+            &path,
+            &serde_json::json!({ "checks": 0 }),
+            &VerifiedOutcome::for_test(false),
+        ));
         // verify itself (knowledge) writes its own record directly
         let _verify = Setup::new(Some("verify"), None);
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(true)).unwrap();
+        write_verification_record(
+            root,
+            &path,
+            &serde_json::json!({ "passed": true }),
+            &VerifiedOutcome::for_test(true),
+        )
+        .unwrap();
         // investigate runs verify at its end: the same call, the same credential, a listed asking command
         let _investigate = Setup::new(Some("investigate"), None);
         fs::remove_file(&path).unwrap();
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(true)).unwrap();
+        write_verification_record(
+            root,
+            &path,
+            &serde_json::json!({ "passed": true }),
+            &VerifiedOutcome::for_test(true),
+        )
+        .unwrap();
         // a pass the checks did not compute is refused for it too
-        refused(write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(false)));
+        refused(write_verification_record(
+            root,
+            &path,
+            &serde_json::json!({ "passed": true }),
+            &VerifiedOutcome::for_test(false),
+        ));
         // and the plain write of verification.json by the agent command is refused: the only door is the hand-off above
         let _agent = Setup::new(Some("continue"), None);
         refused(write(root, &path, "{\"passed\":true}"));
@@ -653,7 +824,12 @@ mod tests {
         // no verification write without the hand-off; the hand-off row lists continue only, so the launcher cannot ask for it
         refused(write(root, &root.join("verification.json"), "{}"));
         let record = serde_json::json!({ "passed": false });
-        refused(write_verification_record(root, &root.join("verification.json"), &record, &VerifiedOutcome::for_test(false)));
+        refused(write_verification_record(
+            root,
+            &root.join("verification.json"),
+            &record,
+            &VerifiedOutcome::for_test(false),
+        ));
     }
 
     #[test]
@@ -662,7 +838,13 @@ mod tests {
         let root = dir.path();
         TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(false));
         let path = root.join("verification.json");
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(false)).unwrap();
+        write_verification_record(
+            root,
+            &path,
+            &serde_json::json!({ "passed": true }),
+            &VerifiedOutcome::for_test(false),
+        )
+        .unwrap();
         TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
         assert!(path.is_file());
     }
@@ -694,13 +876,19 @@ mod tests {
     /// The same path samples the Pi side classifies (scripts/fixtures/group_path_samples.json): the answers must be identical.
     #[test]
     fn classification_matches_the_shared_samples() {
-        let samples: Value = serde_json::from_str(include_str!("../scripts/fixtures/group_path_samples.json")).unwrap();
+        let samples: Value =
+            serde_json::from_str(include_str!("../scripts/fixtures/group_path_samples.json"))
+                .unwrap();
         let rows = samples.as_array().unwrap();
         assert!(rows.len() >= 70, "{} samples", rows.len());
         for row in rows {
             let path = row["path"].as_str().unwrap();
             let expected = row["kind"].as_str();
-            assert_eq!(classify(path).map(|c| c.0).as_deref(), expected, "path {path:?}");
+            assert_eq!(
+                classify(path).map(|c| c.0).as_deref(),
+                expected,
+                "path {path:?}"
+            );
         }
     }
 
@@ -712,7 +900,9 @@ mod tests {
         std::fs::create_dir_all(root.join("data")).unwrap();
         // ask is an agent command, data/ is knowledge evidence, the knowledge writer owns it: only the commands list keeps ask out
         let _setup = Setup::new(Some("ask"), None);
-        let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
+        let text = refused(as_data_import(|| {
+            write(root, &root.join("data/abc.csv"), "a,b")
+        }));
         assert!(text.contains("may not ask knowledge_writer"), "{text}");
         assert!(!root.join("data/abc.csv").exists());
         drop(_setup);
@@ -724,7 +914,9 @@ mod tests {
         let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
         value["handoffs"]["rust"] = Value::Array(Vec::new());
         let _setup = Setup::new(Some("investigate"), Some(value.to_string()));
-        refused(as_data_import(|| write(root, &root.join("data/def.csv"), "x")));
+        refused(as_data_import(|| {
+            write(root, &root.join("data/def.csv"), "x")
+        }));
         refused(as_run_bundle(|| write(root, &root.join("answer.md"), "x")));
         drop(_setup);
         let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
@@ -741,7 +933,9 @@ mod tests {
         std::fs::create_dir_all(root.join("data")).unwrap();
         // investigate was seen importing data (10-11 census); interactive was not
         let _setup = Setup::real(Some("interactive"));
-        let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
+        let text = refused(as_data_import(|| {
+            write(root, &root.join("data/abc.csv"), "a,b")
+        }));
         assert!(text.contains("may not ask knowledge_writer"), "{text}");
         assert!(!root.join("data/abc.csv").exists());
         drop(_setup);
@@ -762,7 +956,11 @@ mod tests {
         refused(check_imported_data(root, "data/zz.csv", "aa", "aa"));
         // continue (agent group): a passed record is refused even when the program computed true; not passed goes through
         let path = root.join("verification.json");
-        refused(write_not_passed_record(root, &path, &serde_json::json!({ "passed": true })));
+        refused(write_not_passed_record(
+            root,
+            &path,
+            &serde_json::json!({ "passed": true }),
+        ));
         assert!(!path.exists());
         write_not_passed_record(root, &path, &serde_json::json!({ "passed": false })).unwrap();
         drop(_setup);
@@ -775,9 +973,13 @@ mod tests {
     fn scratch_is_a_fixed_exception() {
         let temp = std::env::temp_dir();
         assert!(is_scratch(&temp.join("newsroom-recompute-abc")));
-        assert!(is_scratch(&temp.join("newsroom-recompute-abc").join("rows.json")));
+        assert!(is_scratch(
+            &temp.join("newsroom-recompute-abc").join("rows.json")
+        ));
         assert!(!is_scratch(&temp.join("other-abc")));
-        assert!(!is_scratch(&temp.join("newsroom-recompute-abc").join("..").join("x")));
+        assert!(!is_scratch(
+            &temp.join("newsroom-recompute-abc").join("..").join("x")
+        ));
         assert!(!is_scratch(Path::new("/etc/newsroom-recompute-abc")));
         assert!(!is_scratch(&temp));
         let bad = temp.join("not-a-scratch-dir");
@@ -788,7 +990,10 @@ mod tests {
     #[test]
     fn startup_needs_the_refusal_switch() {
         // pure function of two variables; set and restore under a lock-free single test
-        let before = (std::env::var(TOOLS_SWITCH).ok(), std::env::var(ENFORCE_SWITCH).ok());
+        let before = (
+            std::env::var(TOOLS_SWITCH).ok(),
+            std::env::var(ENFORCE_SWITCH).ok(),
+        );
         std::env::set_var(TOOLS_SWITCH, "1");
         std::env::remove_var(ENFORCE_SWITCH);
         assert!(startup_check().is_err());
@@ -1036,20 +1241,33 @@ mod tests {
                     stack.push(path);
                     continue;
                 }
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") || path.ends_with("group_guard.rs") {
+                if path.extension().and_then(|e| e.to_str()) != Some("rs")
+                    || path.ends_with("group_guard.rs")
+                {
                     continue;
                 }
                 let text = fs::read_to_string(&path).unwrap();
                 let lines: Vec<&str> = text.lines().collect();
                 let end = (0..lines.len().saturating_sub(1))
-                    .find(|&i| lines[i].trim() == "#[cfg(test)]" && lines[i + 1].trim_start().starts_with("mod "))
+                    .find(|&i| {
+                        lines[i].trim() == "#[cfg(test)]"
+                            && lines[i + 1].trim_start().starts_with("mod ")
+                    })
                     .unwrap_or(lines.len());
                 for (index, code) in raw_write_hits(&lines[..end].join("\n")) {
-                    found.push(format!("{}:{}: {}", path.strip_prefix(&base).unwrap().display(), index + 1, code));
+                    found.push(format!(
+                        "{}:{}: {}",
+                        path.strip_prefix(&base).unwrap().display(),
+                        index + 1,
+                        code
+                    ));
                 }
             }
         }
-        assert!(found.is_empty(), "raw file writes outside group_guard: {found:#?}");
+        assert!(
+            found.is_empty(),
+            "raw file writes outside group_guard: {found:#?}"
+        );
     }
 
     /// One counterexample per import form: each must be caught. The clean samples (reads, File::open through an alias, io::Write

@@ -250,7 +250,7 @@ pub fn append_user_goal_event(events_path: &Path, mode: &str) -> Result<()> {
     let mut file = group_guard::as_run_bundle(|| {
         group_guard::open_append(events_path.parent().unwrap_or(Path::new("")), events_path)
     })
-        .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
     let event = json!({
         "type": "newsroom_user_goal",
         "mode": mode,
@@ -268,7 +268,7 @@ pub fn append_completion_retry_event(
     let mut file = group_guard::as_run_bundle(|| {
         group_guard::open_append(events_path.parent().unwrap_or(Path::new("")), events_path)
     })
-        .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
     let event = json!({
         "type": "auto_retry_start",
         "reason": "visual_completion_gate",
@@ -515,9 +515,13 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
 
     let json = serde_json::to_string_pretty(&summary)?;
     group_guard::as_run_bundle(|| {
-        group_guard::write(output_path.parent().unwrap_or(Path::new("")), output_path, format!("{json}\n"))
+        group_guard::write(
+            output_path.parent().unwrap_or(Path::new("")),
+            output_path,
+            format!("{json}\n"),
+        )
     })
-        .with_context(|| format!("failed to write audit: {}", output_path.display()))?;
+    .with_context(|| format!("failed to write audit: {}", output_path.display()))?;
     Ok(summary)
 }
 

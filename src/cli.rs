@@ -243,10 +243,19 @@ pub const COMMAND_GROUPS: &[(&str, &str)] = &[
 
 /// Group names in help order. `visual` has no command yet.
 pub const GROUPS: &[(&str, &str)] = &[
-    ("agent", "Run the agent loop: ask, chat, investigate, investigate-v2, continue"),
+    (
+        "agent",
+        "Run the agent loop: ask, chat, investigate, investigate-v2, continue",
+    ),
     ("knowledge", "Check evidence: verify"),
-    ("visual", "Visual tools (they run inside the agent loop; no commands yet)"),
-    ("system", "Check the setup and the audit trail: doctor, inspect"),
+    (
+        "visual",
+        "Visual tools (they run inside the agent loop; no commands yet)",
+    ),
+    (
+        "system",
+        "Check the setup and the audit trail: doctor, inspect",
+    ),
 ];
 
 /// Environment switch for the group commands. Only the exact value "1" turns it on.
@@ -261,11 +270,16 @@ pub enum Launch {
 }
 
 pub fn group_commands_enabled() -> bool {
-    std::env::var(GROUP_COMMANDS_SWITCH).map(|v| v == "1").unwrap_or(false)
+    std::env::var(GROUP_COMMANDS_SWITCH)
+        .map(|v| v == "1")
+        .unwrap_or(false)
 }
 
 pub fn group_of(command: &str) -> Option<&'static str> {
-    COMMAND_GROUPS.iter().find(|(c, _)| *c == command).map(|(_, g)| *g)
+    COMMAND_GROUPS
+        .iter()
+        .find(|(c, _)| *c == command)
+        .map(|(_, g)| *g)
 }
 
 fn is_group(name: &str) -> bool {
@@ -273,7 +287,11 @@ fn is_group(name: &str) -> bool {
 }
 
 fn group_command(group: &str) -> clap::Command {
-    let (name, about) = GROUPS.iter().find(|(g, _)| *g == group).copied().unwrap_or(("", ""));
+    let (name, about) = GROUPS
+        .iter()
+        .find(|(g, _)| *g == group)
+        .copied()
+        .unwrap_or(("", ""));
     let mut cmd = clap::Command::new(name)
         .about(about)
         .bin_name(format!("news {group}"))
@@ -308,10 +326,16 @@ pub fn launch(args: Vec<OsString>) -> Launch {
         return Launch::Parse(args);
     }
     let first = args.get(1).and_then(|a| a.to_str()).map(str::to_string);
-    let Some(first) = first else { return Launch::Parse(args) };
+    let Some(first) = first else {
+        return Launch::Parse(args);
+    };
     if wants_help(&first) || (first == "help" && args.len() == 2) {
         let mut cmd = with_groups();
-        let _ = if first == "-h" { cmd.print_help() } else { cmd.print_long_help() };
+        let _ = if first == "-h" {
+            cmd.print_help()
+        } else {
+            cmd.print_long_help()
+        };
         println!();
         return Launch::Done(0);
     }
@@ -338,7 +362,11 @@ pub fn launch(args: Vec<OsString>) -> Launch {
         }
         Some(s) if wants_help(s) => {
             let mut cmd = group_command(&first);
-            let _ = if s == "-h" { cmd.print_help() } else { cmd.print_long_help() };
+            let _ = if s == "-h" {
+                cmd.print_help()
+            } else {
+                cmd.print_long_help()
+            };
             println!();
             Launch::Done(0)
         }
@@ -348,8 +376,12 @@ pub fn launch(args: Vec<OsString>) -> Launch {
                 rewritten.extend(args[2..].iter().cloned());
                 Launch::Parse(rewritten)
             }
-            Some(g) => usage_error(format!("`{sub}` belongs to the `{g}` group: use `news {g} {sub}`")),
-            None => usage_error(format!("unrecognized command `{sub}` in the `{first}` group; run `news {first} --help`")),
+            Some(g) => usage_error(format!(
+                "`{sub}` belongs to the `{g}` group: use `news {g} {sub}`"
+            )),
+            None => usage_error(format!(
+                "unrecognized command `{sub}` in the `{first}` group; run `news {first} --help`"
+            )),
         },
     }
 }

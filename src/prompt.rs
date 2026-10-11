@@ -624,7 +624,10 @@ mod tests {
             &[],
             false,
             false,
-            PromptSpeed { numword_prompt: true, ..PromptSpeed::default() },
+            PromptSpeed {
+                numword_prompt: true,
+                ..PromptSpeed::default()
+            },
         );
         // off: unchanged, still the old sentence
         assert!(off.contains(NUMBER_REPEAT_GUIDANCE) && off.contains("say it in words"));
@@ -635,14 +638,20 @@ mod tests {
         assert!(!on.contains("say it in words"));
         assert!(on.contains("Right:") && on.contains("Wrong:"));
         // the rest of the prompt is untouched
-        assert_eq!(off.replacen(NUMBER_REPEAT_GUIDANCE, "", 1), on.replacen(NUMWORD_GUIDANCE, "", 1));
+        assert_eq!(
+            off.replacen(NUMBER_REPEAT_GUIDANCE, "", 1),
+            on.replacen(NUMWORD_GUIDANCE, "", 1)
+        );
         // simple requests never get it
         let simple = investigation_with_options(
             "make a chart",
             &[],
             false,
             false,
-            PromptSpeed { numword_prompt: true, ..PromptSpeed::default() },
+            PromptSpeed {
+                numword_prompt: true,
+                ..PromptSpeed::default()
+            },
         );
         assert!(!simple.contains(NUMWORD_GUIDANCE));
     }

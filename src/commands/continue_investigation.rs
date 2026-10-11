@@ -111,7 +111,11 @@ fn record_round_status(
         "previous_round_file": previous,
     });
     // This path can only leave a record that says not passed; a passed one needs verify's own outcome.
-    crate::group_guard::write_not_passed_record(artifact, &artifact.join("verification.json"), &record)
+    crate::group_guard::write_not_passed_record(
+        artifact,
+        &artifact.join("verification.json"),
+        &record,
+    )
     .context("failed to write verification.json")
 }
 
@@ -139,7 +143,11 @@ fn chain_fingerprint(artifact: &Path) -> Result<(String, usize)> {
             if path.is_dir() {
                 walk(root, &path, out)?;
             } else if path.is_file() {
-                let relative = path.strip_prefix(root).unwrap_or(&path).display().to_string();
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string();
                 out.push(format!("{relative}\t{}", crate::hash::sha256_file(&path)?));
             }
         }
@@ -168,9 +176,13 @@ fn previous_round_passed(artifact: &Path, round_file: &str) -> bool {
 }
 
 fn is_chart_chain_tool(tool: &str) -> bool {
-    ["newsroom_viz_", "newsroom_infographic_", "newsroom_publication_"]
-        .iter()
-        .any(|prefix| tool.starts_with(prefix))
+    [
+        "newsroom_viz_",
+        "newsroom_infographic_",
+        "newsroom_publication_",
+    ]
+    .iter()
+    .any(|prefix| tool.starts_with(prefix))
 }
 
 /// The completion gaps of this round only: calls made in earlier rounds do
