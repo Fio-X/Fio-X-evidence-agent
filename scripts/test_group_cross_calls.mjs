@@ -15,6 +15,12 @@
 //   - what this misses: a local variable or parameter that shadows a top-level name (counted as a use: can only add groups, never hide one),
 //     names built at run time (`registeredTools.get(name)` is a tool-to-tool call through the registry, listed apart, not followed),
 //     calls through objects passed as arguments, and uses inside modules other than newsroom.ts.
+// Why classes (every baseline entry says one): "设计上共用" = a pure helper, meant to be shared (it only computes: no file, network, process, environment, clock or
+// random access, no async/await (that is I/O through a callback), no writer object in its text or in anything it reaches, and no artifact write; imports from node:fs, child_process, http, net, os and the like count as access, and so
+// does any further import from another module of this repository, because that file is judged on its own entry); everything else is "10-11 现状，待拆".
+// A line marked "设计上共用" turns red as soon as the function stops being pure. Imported functions are judged from the text of their own module.
+// The baseline can only get shorter: `--write-baseline` on an existing baseline removes entries and narrows group lists, and refuses (exit 1) to add anything;
+// a new entry has to be written into the fixture by hand and signed off by fe. Without a baseline file it writes the whole thing.
 // "write" marks an entry whose function (or something it reaches) calls an artifact write primitive; for imported functions it is judged by the name.
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -22,7 +28,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BASELINE_PATH = join(REPO, "scripts/fixtures/group_cross_calls_known.json");
+const argAfter = (flag) => { const at = process.argv.indexOf(flag); return at > 0 ? process.argv[at + 1] : null; };
+const BASELINE_PATH = argAfter("--baseline-file") ?? join(REPO, "scripts/fixtures/group_cross_calls_known.json");
 
 // ---- reading the source ------------------------------------------------------------------------------------------------------------------
 // Same length as the input: comments, strings and template text become spaces (newlines stay), so offsets and line numbers still line up.
@@ -136,12 +143,13 @@ function statementEnd(clean, from, limit) {
   }
   return limit;
 }
-function localDecls(clean, host) {
+// Only declarations at the registration's own indentation or shallower count: a `const rows` inside another tool's execute() is not a helper of this one.
+function localDecls(clean, host, maxIndent) {
   const out = [];
   let offset = host.start;
   for (const line of clean.slice(host.start, host.end).split("\n")) {
     const m = LOCAL.exec(line);
-    if (m) out.push({ name: m[1], start: offset, end: statementEnd(clean, offset, host.end) });
+    if (m && /^[ \t]*/.exec(line)[0].length <= maxIndent) out.push({ name: m[1], start: offset, end: statementEnd(clean, offset, host.end) });
     offset += line.length + 1;
   }
   return out;
@@ -154,7 +162,8 @@ export function toolSites(src, clean, decls) {
     const host = enclosing(m.index);
     if (host?.name === "registerScopedTool" || host?.name === "newsroomExtension") continue; // forwarding code (the dispatcher, the group-order replay), not a tool
     const argStart = m.index + m[0].length;
-    sites.push({ host, at: m.index, argStart, literal: clean[argStart] === "{" });
+    const lineStart = clean.lastIndexOf("\n", m.index) + 1;
+    sites.push({ host, at: m.index, argStart, literal: clean[argStart] === "{", indent: /^[ \t]*/.exec(clean.slice(lineStart))[0].length });
   }
   const out = [];
   for (const s of sites) {
@@ -172,11 +181,11 @@ export function toolSites(src, clean, decls) {
     } else if (s.host) { // registerTool(variable): the tool is the object that variable is built from
       for (const x of hostText.matchAll(/\bconst\s+name\s*=\s*["']([\w-]+)["']/g)) names.add(x[1]);
       const arg = /^[A-Za-z_$][\w$]*/.exec(clean.slice(s.argStart, s.argStart + 80));
-      const local = s.host && arg ? localDecls(clean, s.host).find((d) => d.name === arg[0]) : null;
+      const local = s.host && arg ? localDecls(clean, s.host, s.indent).find((d) => d.name === arg[0]) : null;
       if (local) spans.push([local.start, local.end]);
     }
     if (s.host) { // local helpers of the registering function that the tool uses, followed to a fixed point
-      const locals = localDecls(clean, s.host);
+      const locals = localDecls(clean, s.host, s.indent);
       const taken = new Set();
       for (let grew = true; grew;) {
         grew = false;
@@ -231,10 +240,12 @@ export function importsOf(clean, original) {
 }
 
 const WRITE_PRIMITIVES = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|mkdirSync|renameSync|copyFileSync|rmSync|unlinkSync|writeArtifact\w*|appendArtifact\w*|saveClaim|saveComputation|saveQueryRows|saveDecision|saveRejection|saveChainEvent|writeTextArtifact|writeBytesArtifact|recordClaimArtifact)\b/;
+const IMPURE = /\b(?:readFileSync|readdirSync|statSync|lstatSync|existsSync|openSync|readSync|readFile|readdir|createReadStream|fetch|spawn|spawnSync|exec|execSync|execFile|execFileSync|process|Date|Math\.random|randomUUID|setTimeout|setInterval|globalThis|require|import|async|await|[A-Za-z]*Writer)\b/;
+const IMPURE_MODULE = /^(?:node:)?(?:fs|fs\/promises|child_process|http|https|net|dns|os|worker_threads|readline|tty|process)$/;
 const WRITE_NAME = /(?:write|save|append|record|store|persist|materialize)/i;
 
 // ---- the analysis -----------------------------------------------------------------------------------------------------------------------------
-export function analyze({ src, groupsJson, file = "runtime/pi/newsroom.ts" }) {
+export function analyze({ src, groupsJson, file = "runtime/pi/newsroom.ts", readModule = () => null }) {
   const clean = blank(src);
   const decls = topLevel(clean);
   const byName = new Map(decls.map((d) => [d.name, d]));
@@ -291,11 +302,66 @@ export function analyze({ src, groupsJson, file = "runtime/pi/newsroom.ts" }) {
     return w;
   };
 
+  // purity (see the header): text of the function and of every top-level function it reaches in this file; imports from the repository are judged from their module
+  const modulePure = (() => {
+    const memo = new Map();
+    return (spec, name) => {
+      const key = `${spec}::${name}`;
+      if (memo.has(key)) return memo.get(key);
+      memo.set(key, false); // cycles and unknowns stay impure
+      const text = readModule(spec);
+      let ok = false;
+      if (text != null) {
+        const mclean = blank(text);
+        const mdecls = topLevel(mclean);
+        const mby = new Map(mdecls.map((x) => [x.name, x]));
+        const mimports = importsOf(mclean, text);
+        const seen = new Set();
+        const pureIn = (n) => {
+          if (seen.has(n)) return true;
+          seen.add(n);
+          const x = mby.get(n);
+          if (!x) return false;
+          const body = mclean.slice(x.start, x.end);
+          if (IMPURE.test(body) || WRITE_PRIMITIVES.test(body)) return false;
+          for (const id of identifiers(mclean, x.start, x.end)) {
+            if (id === n) continue;
+            const imp = mimports.find((i) => i.local === id);
+            if (imp) { if (imp.from.startsWith(".") || IMPURE_MODULE.test(imp.from)) return false; continue; }
+            if (mby.has(id) && !pureIn(id)) return false;
+          }
+          return true;
+        };
+        ok = pureIn(name);
+      }
+      memo.set(key, ok);
+      return ok;
+    };
+  })();
+  const pures = new Map();
+  const pureOf = (node, stack = new Set()) => {
+    if (pures.has(node)) return pures.get(node);
+    if (stack.has(node)) return true;
+    stack.add(node);
+    let p = false;
+    const d = byName.get(node);
+    if (d) {
+      const body = clean.slice(d.start, d.end);
+      p = !IMPURE.test(body) && !WRITE_PRIMITIVES.test(body) && (edges.get(node) ?? []).every((next) => pureOf(next, stack));
+    } else if (importByLocal.has(node)) {
+      const imp = importByLocal.get(node);
+      p = imp.from.startsWith(".") ? modulePure(imp.from, imp.imported) : !IMPURE_MODULE.test(imp.from);
+    }
+    stack.delete(node);
+    pures.set(node, p);
+    return p;
+  };
+
   const functions = {};
   for (const d of decls) {
     if (d.kind !== "function") continue;
     const groups = [...(reach.get(d.name) ?? [])].sort();
-    if (groups.length >= 2) functions[d.name] = { groups, write: writesOf(d.name) };
+    if (groups.length >= 2) functions[d.name] = { groups, write: writesOf(d.name), pure: pureOf(d.name) };
   }
   const moduleGroup = (spec) => {
     const path = join(dirname(file), spec).replace(/\\/g, "/");
@@ -308,10 +374,10 @@ export function analyze({ src, groupsJson, file = "runtime/pi/newsroom.ts" }) {
     const owner = moduleGroup(imp.from);
     if (!owner) continue;
     const others = [...(reach.get(imp.local) ?? [])].filter((g) => g !== owner).sort();
-    if (others.length) imported[`${imp.from.replace(/^\.\//, "")}::${imp.imported}`] = { owner, groups: others, write: writesOf(imp.local) };
+    if (others.length) imported[`${imp.from.replace(/^\.\//, "")}::${imp.imported}`] = { owner, groups: others, write: writesOf(imp.local), pure: pureOf(imp.local) };
   }
   const toolsByFunction = (name) => [...(reachedByTool.get(name) ?? [])].sort();
-  return { problems, functions, imported, stats: { topLevel: decls.length, functions: decls.filter((d) => d.kind === "function").length, sites: sites.length, tools: attributed.size, imports: imports.length }, toolsByFunction, toolSpans, decls, reach };
+  return { edges, nodeNames, problems, functions, imported, stats: { topLevel: decls.length, functions: decls.filter((d) => d.kind === "function").length, sites: sites.length, tools: attributed.size, imports: imports.length }, toolsByFunction, toolSpans, decls, reach };
 }
 
 // ---- ratchet ---------------------------------------------------------------------------------------------------------------------------------
@@ -323,6 +389,7 @@ export function compare(current, known) {
       const base = was[key];
       const tag = entry.write ? " [write]" : "";
       if (!base) { red.push(`NEW ${section === "functions" ? "function reached by two or more groups" : "import used by a group other than the module's owner"}: ${key} -> ${entry.groups.join(", ")}${tag}`); continue; }
+      if (String(base.why ?? "").startsWith(WHY_SHARED) && (!entry.pure || entry.write)) red.push(`${key} is marked "${WHY_SHARED}" but is no longer a pure helper (it now touches a file, the network, the process, the environment, the clock or an artifact write)`);
       const extra = entry.groups.filter((g) => !base.groups.includes(g));
       if (extra.length) red.push(`MORE GROUPS reach ${key}: ${extra.join(", ")} (known: ${base.groups.join(", ")})`);
       else if (entry.write && !base.write) red.push(`${key} now reaches an artifact write that the baseline does not mark`);
@@ -333,9 +400,28 @@ export function compare(current, known) {
   return red;
 }
 
-export function baselineFrom(current, why = "10-11 现状，待拆") {
-  const wrap = (section) => Object.fromEntries(Object.keys(section).sort().map((k) => [k, { ...section[k], why: `${why}${section[k].write ? "（写）" : ""}` }]));
-  return { schema_version: "0.1.0", note: "Test fixture only: nothing at run time reads this file. It may only get shorter. Every entry is a cross-group reference as of the day it was pinned.", functions: wrap(current.functions), imported: wrap(current.imported) };
+const WHY_SHARED = "设计上共用";
+const WHY_TODO = "10-11 现状，待拆";
+const whyOf = (entry) => `${entry.pure && !entry.write ? WHY_SHARED : WHY_TODO + (entry.write ? "（写）" : "")}`;
+const NOTE = "Test fixture only: nothing at run time reads this file. It may only get shorter. Every entry is a cross-group reference as of the day it was pinned.";
+export function baselineFrom(current) {
+  const wrap = (section) => Object.fromEntries(Object.keys(section).sort().map((k) => [k, { groups: section[k].groups, ...(section[k].owner ? { owner: section[k].owner } : {}), write: section[k].write, why: whyOf(section[k]) }]));
+  return { schema_version: "0.1.0", note: NOTE, functions: wrap(current.functions), imported: wrap(current.imported) };
+}
+// Existing baseline: delete entries that no longer hold, narrow group lists, drop write marks that went away, turn "待拆" into "设计上共用" for functions that are
+// pure. Anything that would add a line, a group or a write mark throws: that is a hand edit with fe's sign-off.
+export function shrinkBaseline(current, known) {
+  const additions = compare(current, known).filter((m) => /^(NEW|MORE GROUPS|.* now reaches an artifact write)/.test(m));
+  if (additions.length) throw new Error(`the baseline may only get shorter; this would add:\n${additions.join("\n")}`);
+  const out = { ...known, functions: {}, imported: {} };
+  for (const section of ["functions", "imported"]) for (const [key, base] of Object.entries(known[section] ?? {})) {
+    const now = current[section][key];
+    if (!now) continue;
+    let why = base.why;
+    if (now.pure && !now.write && String(why).startsWith(WHY_TODO)) why = WHY_SHARED;
+    out[section][key] = { ...base, groups: now.groups, write: now.write, why };
+  }
+  return out;
 }
 
 // ---- main ------------------------------------------------------------------------------------------------------------------------------------
@@ -343,13 +429,46 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.arg
 if (isMain) {
   const groupsJson = JSON.parse(readFileSync(join(REPO, "runtime/pi/groups.json"), "utf8"));
   const src = readFileSync(join(REPO, "runtime/pi/newsroom.ts"), "utf8");
-  const current = analyze({ src, groupsJson });
+  const readModule = (spec) => {
+    const base = join(REPO, "runtime/pi", spec);
+    for (const candidate of [base, base.replace(/\.js$/, ".mjs"), base.replace(/\.js$/, ".ts")]) if (existsSync(candidate)) return readFileSync(candidate, "utf8");
+    return null;
+  };
+  const current = analyze({ src, groupsJson, readModule });
 
   if (process.argv.includes("--print")) {
     console.log(JSON.stringify({ stats: current.stats, problems: current.problems, functions: Object.keys(current.functions).length, imported: Object.keys(current.imported).length }, null, 1));
     process.exit(0);
   }
-  if (process.argv.includes("--write-baseline")) { writeFileSync(BASELINE_PATH, JSON.stringify(baselineFrom(current), null, 2) + "\n"); console.log("baseline written"); process.exit(0); }
+  // --paths <name> [group]: for every tool (of that group, if given) that reaches <name>, the chain of top-level names it goes through, shortest first.
+  const pathsAt = process.argv.indexOf("--paths");
+  if (pathsAt > 0) {
+    const [target, onlyGroup] = process.argv.slice(pathsAt + 1);
+    for (const span of current.toolSpans) {
+      const group = groupsJson.tools?.[span.tool]?.group;
+      if (onlyGroup && group !== onlyGroup) continue;
+      const clean = blank(src);
+      const prev = new Map();
+      const queue = [];
+      for (const [from, to] of span.spans) for (const id of identifiers(clean, from, to)) if (current.nodeNames.has(id) && !prev.has(id)) { prev.set(id, null); queue.push(id); }
+      for (let k = 0; k < queue.length; k++) for (const next of current.edges.get(queue[k]) ?? []) if (!prev.has(next)) { prev.set(next, queue[k]); queue.push(next); }
+      if (!prev.has(target)) continue;
+      const chain = [];
+      for (let n = target; n; n = prev.get(n)) chain.unshift(n);
+      console.log(`${span.tool} (${group}): ${chain.join(" -> ")}`);
+    }
+    process.exit(0);
+  }
+  if (process.argv.includes("--write-baseline")) {
+    let next;
+    if (!existsSync(BASELINE_PATH)) next = baselineFrom(current);
+    else {
+      try { next = shrinkBaseline(current, JSON.parse(readFileSync(BASELINE_PATH, "utf8"))); } catch (error) { console.error(error.message); process.exit(1); }
+    }
+    writeFileSync(BASELINE_PATH, JSON.stringify(next, null, 2) + "\n");
+    console.log("baseline written");
+    process.exit(0);
+  }
 
   // self-test on a small fixture: a visual tool calling a knowledge-only function is red; removing the call leaves a stale entry; the real file is green
   const FIX_GROUPS = { tools: { read_a: { group: "knowledge" }, draw_b: { group: "visual" } }, files: { "runtime/pi/k.mjs": { group: "knowledge" } } };
@@ -395,6 +514,17 @@ export default function ext(pi) {
   assert.equal(blank("const re = /['\"]/g; foo();").includes("foo()"), true, "a regex literal with quotes does not swallow the code after it");
   const unnamed = analyze({ src: fixture("", "").replace('name: "draw_b"', "label: 'x'"), groupsJson: FIX_GROUPS });
   assert.ok(unnamed.problems.some((m) => m.startsWith("UNATTRIBUTED")), "a tool site without a name is red, not skipped");
+  // why classes and the shrink-only rule
+  const both = analyze({ src: fixture("shared(2); writeBits();", "writeBits();"), groupsJson: FIX_GROUPS });
+  const pinned = baselineFrom(both);
+  assert.equal(pinned.functions.shared.why, WHY_SHARED, "a pure shared helper is marked designed-shared");
+  assert.equal(pinned.functions.writeBits.why, `${WHY_TODO}（写）`, "a writing function is marked to-split and write");
+  const impureNow = analyze({ src: fixture("shared(2); writeBits();", "writeBits();").replace("function shared(x) { return x; }", "function shared(x) { return readFileSync(x); }"), groupsJson: FIX_GROUPS });
+  assert.ok(compare(impureNow, pinned).some((m) => m.includes("shared") && m.includes(WHY_SHARED) && /no longer a pure helper/.test(m)), "a designed-shared line turns red when the function stops being pure");
+  assert.throws(() => shrinkBaseline(both, { ...pinned, functions: { shared: pinned.functions.shared } }), /only get shorter/, "--write-baseline on an existing baseline refuses to add an entry");
+  const shorter = shrinkBaseline(check("", "writeBits();", pinned).r, pinned);
+  assert.ok(!("shared" in shorter.functions) || shorter.functions.shared.groups.length < 2, "shrinking drops what no longer holds");
+  assert.deepEqual(Object.keys(shrinkBaseline(both, pinned).functions).sort(), Object.keys(pinned.functions).sort(), "an unchanged baseline stays as it is");
   console.log("self-test -- PASS");
 
   // the real file
