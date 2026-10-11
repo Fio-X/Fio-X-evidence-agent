@@ -1,14 +1,4 @@
-pub mod core;
-pub mod tools;
+// Deterministic deliverable-intent routing used by `investigate-v2`.
+mod intent;
 
-#[allow(unused_imports)]
-pub use core::{
-    determine_visual_deliverable_intent, AgentState, NewsroomAgent, VisualDeliverableIntent,
-    VisualStoryState,
-};
-#[allow(unused_imports)]
-pub use tools::{
-    create_default_registry, create_default_registry_with_visual_config, CalculateTool,
-    CreateChartTool, ModernChartTool, PiVisualizationTool, Tool, ToolRegistry, ToolResult,
-    WebSearchTool,
-};
+pub use intent::{determine_visual_deliverable_intent, VisualDeliverableIntent};
