@@ -2445,7 +2445,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
    },
    "validateSourceEvidence": {
     "groups": [
@@ -2717,7 +2717,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
    },
    "evidence_gate.mjs::assertDatasetPayload": {
     "owner": "knowledge",
@@ -2726,7 +2726,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
    },
    "evidence_gate.mjs::assertEvidenceBackedStatus": {
     "owner": "knowledge",
@@ -2735,7 +2735,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
    },
    "evidence_gate.mjs::assertInlineRowsHaveEvidence": {
     "owner": "knowledge",
@@ -2743,7 +2743,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
    },
    "evidence_gate.mjs::assertUsableSourceRecord": {
     "owner": "knowledge",
@@ -2761,7 +2761,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
    },
    "evidence_gate.mjs::evaluateClaimSupport": {
     "owner": "knowledge",
@@ -2770,7 +2770,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
    },
    "evidence_gate.mjs::isSystemVerifiedClaim": {
     "owner": "knowledge",
@@ -2779,7 +2779,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "待核·闸门（视觉组经 verifiedClaimIds 读登记表）"
    },
    "evidence_gate.mjs::requireVerifiedClaim": {
     "owner": "knowledge",
@@ -2787,7 +2787,7 @@
      "visual"
     ],
     "write": false,
-    "why": "设计上共用"
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
    },
    "groups.mjs::assertCrossCall": {
     "groups": [
