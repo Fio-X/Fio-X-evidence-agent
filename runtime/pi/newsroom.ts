@@ -1375,11 +1375,15 @@ async function latestClaimRecords(): Promise<Map<string, any>> {
   return latest;
 }
 
+// The two entry points to the registry's system-verified claims are read-only and gated: visual tools may read them (the answer "is this claim
+// system-verified"), but only through here, never by calling isSystemVerifiedClaim themselves.
 export async function verifiedClaimIds() {
+  assertCrossCall(artifactRoot(), "verifiedClaimIds");
   return [...(await latestClaimRecords())].filter(([, claim]) => isSystemVerifiedClaim(claim)).map(([id]) => id);
 }
 
 export async function verifiedClaimRecords() {
+  assertCrossCall(artifactRoot(), "verifiedClaimRecords");
   const out = new Map<string, any>();
   for (const [id, claim] of await latestClaimRecords()) if (isSystemVerifiedClaim(claim)) out.set(id, claim);
   return out;
