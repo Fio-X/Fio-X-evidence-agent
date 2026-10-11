@@ -3,7 +3,7 @@ import { decisionWriter } from "./decision_writer.mjs";
 import { probeWriter } from "./probe_writer.mjs";
 import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
-import { boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
+import { assertAllGroupChecked, assertGroupToolsSwitches, boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, groupToolsEnabled, orderToolsByGroup, recordBoundaryWrite, runDeclared, withBoundaryContext, withGroupTools } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -1722,7 +1722,8 @@ async function rasterizeArtifactSvg(relativePath: string, width: number, signal?
     // hits a Python environment without Playwright or a discoverable
     // Chrome - reaches the caller instead of being collapsed into a bare
     // "Process exited with code N".
-    const { stdout, stderr, code } = await runProcess(pythonBin, [script, input, temp, "--width", String(width)], signal, root, undefined, MAX_QUERY_BYTES, 30_000, true);
+    // NEWSROOM_GROUP_TOOLS=1: the preview PNG is a program temp file (E1, runtime/preview-tmp/), nothing else may appear next to it.
+    const { stdout, stderr, code } = await runDeclared(root, [temp], () => runProcess(pythonBin, [script, input, temp, "--width", String(width)], signal, root, undefined, MAX_QUERY_BYTES, 30_000, true));
     if (code !== 0) throw new Error(stderr.trim() || stdout.trim() || `Rasterizer exited with code ${code}`);
     const bytes = await readFile(temp);
     if (bytes.length < 100 || bytes.subarray(1, 4).toString("ascii") !== "PNG") throw new Error("Rasterizer output is not a valid PNG");
@@ -1794,7 +1795,8 @@ async function queryDuckDb(sql: string, signal?: AbortSignal) {
     "-cmd", "SET lock_configuration = true",
     "-c", materialized.sql,
   ];
-  const { stdout, stderr, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES, 20_000, true);
+  // NEWSROOM_GROUP_TOOLS=1: DuckDB runs in memory with external access off; it declares no output, and any new file in the run folder is refused.
+  const { stdout, stderr, code } = await runDeclared(root, [], () => runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES, 20_000, true));
   if (code !== 0) throw new Error(`DUCKDB_QUERY_FAILED: ${safeDuckDbDiagnostic(stderr, root)}`);
   const text = stdout.trim();
   if (!text) return [];
@@ -2080,7 +2082,7 @@ async function serializeSqlAst(sql: string, signal?: AbortSignal) {
     "-cmd", "SET lock_configuration = true",
     "-c", `SELECT json_serialize_sql('${literal}', skip_null := true, skip_empty := true)`,
   ];
-  const { stdout, code } = await runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES * 4, 20_000, true);
+  const { stdout, code } = await runDeclared(root, [], () => runProcess(bin, args, signal, root, undefined, MAX_QUERY_BYTES * 4, 20_000, true));
   if (code !== 0) throw new Error("SQL could not be analyzed");
   return JSON.parse(stdout.trim());
 }
@@ -3571,18 +3573,23 @@ function registerInfographicChain(pi: ExtensionAPI) {
 // NEWSROOM_GROUP_ENFORCE=1 (default off) refuses a write outside the writer's own group; it needs NEWSROOM_GROUP_HANDOFF=1, and without it the extension stops here.
 export default function newsroomExtension(pi: ExtensionAPI) {
   if (groupEnforceEnabled() && !handoffEnabled()) throw new Error("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
+  assertGroupToolsSwitches();
   const order = groupToolOrderEnabled();
   const boundary = boundaryContextEnabled();
+  const groupTools = groupToolsEnabled();
   if (!order && !boundary) return registerNewsroomTools(pi);
   const buffered: any[] = [];
+  const handedToPi: any[] = [];
   const proxy = new Proxy(pi as any, {
     get(target, key) {
-      if (key === "registerTool") return (tool: any) => { const next = boundary ? withBoundaryContext(tool) : tool; if (order) buffered.push(next); else target.registerTool(next); };
+      // NEWSROOM_GROUP_TOOLS=1: the one wrapper for every tool (groups.mjs withGroupTools); it already carries the boundary context.
+      if (key === "registerTool") return (tool: any) => { const next = groupTools ? withGroupTools(tool) : boundary ? withBoundaryContext(tool) : tool; handedToPi.push(next); if (order) buffered.push(next); else target.registerTool(next); };
       const value = target[key];
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
   registerNewsroomTools(proxy as ExtensionAPI);
+  if (groupTools) assertAllGroupChecked(handedToPi);
   if (order) for (const tool of orderToolsByGroup(buffered)) (pi as any).registerTool(tool);
 }
 
@@ -5184,7 +5191,8 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         adapterArgs = parsed;
       }
       const request = illustrationAdapterRequest(spec, { evidence_snapshot_hash: snapshot.hash });
-      const { stdout } = await runProcess(adapter, adapterArgs, signal, artifactRoot() ?? undefined, `${JSON.stringify(request)}\n`, 6_000_000, 120_000);
+      // NEWSROOM_GROUP_TOOLS=1: the adapter answers on stdout and declares no file; a new file in the run folder is refused.
+      const { stdout } = await runDeclared(artifactRoot(), [], () => runProcess(adapter, adapterArgs, signal, artifactRoot() ?? undefined, `${JSON.stringify(request)}\n`, 6_000_000, 120_000));
       let response: any;
       try { response = JSON.parse(stdout); } catch (error) { throw new Error(`Illustration adapter returned invalid JSON: ${String(error)}`); }
       const mobilePages = mobilePagesEnabled();
@@ -5966,7 +5974,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const root = artifactRoot(); if (!root) throw new Error("NEWSROOM_ARTIFACT_DIR is required");
       const request = { extent: { west: params.west, east: params.east, south: params.south, north: params.north }, task: params.task ?? "regional", ...(params.resolution ? { resolution: params.resolution } : {}), include_rivers: params.include_rivers ?? true, include_boundaries: params.include_boundaries ?? true };
       const key = sha256Hex(JSON.stringify(request)); const requestRef = `maps/basemaps/requests/${key}.json`; const outputRef = `maps/basemaps/${key}.json`; await writeArtifactIfAbsent(requestRef, request); await ensureParent(join(root, outputRef));
-      await runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [join(root, "runtime", "scientific_basemap_prepare.py"), "--request", join(root, requestRef), "--output", join(root, outputRef)], signal, root, undefined, 2_000_000, 120_000);
+      await runDeclared(root, [outputRef], () => runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [join(root, "runtime", "scientific_basemap_prepare.py"), "--request", join(root, requestRef), "--output", join(root, outputRef)], signal, root, undefined, 2_000_000, 120_000));
       const asset = JSON.parse(await readFile(join(root, outputRef), "utf8"));
       return textResult(`Prepared scientific basemap.\nAsset: ${outputRef}\nID: ${asset.id}\nDetail: ${asset.detail_class}\nFeatures: ${(asset.features ?? []).length}\nHash: ${asset.content_hash}`, { basemapRef: outputRef, id: asset.id, detail: asset.detail_class, featureCount: (asset.features ?? []).length, contentHash: asset.content_hash });
     },
@@ -6406,7 +6414,9 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const outDir = join(root, "publications", "qa", qaKey); await mkdir(outDir, { recursive: true });
       const specPath = join(outDir, "publication-spec.json"); recordBoundaryWrite(artifactRoot(), specPath, "write"); await writeFile(specPath, JSON.stringify(spec, null, 2) + "\n", "utf8");
       const script = join(root, "runtime", "browser_qa.py");
-      const { code } = await runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--html", fullHtml, "--spec", specPath, "--output", outDir, "--profile", params.profile ?? "cpu"], signal, root, undefined, MAX_QUERY_BYTES, Number(process.env.NEWSROOM_BROWSER_QA_TIMEOUT_MS ?? 120_000), true);
+      // NEWSROOM_GROUP_TOOLS=1: browser_qa.py writes the report, one screenshot per breakpoint and the archive image, and nothing else.
+      const qaOutputs = !groupToolsEnabled() ? [] : [`publications/qa/${qaKey}/browser-qa.json`, `publications/qa/${qaKey}/archive.png`, ...[...new Set<number>((spec?.delivery?.breakpoints ?? []).map((x: any) => Number(x)))].map((width) => `publications/qa/${qaKey}/publication-${Number.isFinite(width) ? Math.trunc(width) : width}.png`)];
+      const { code } = await runDeclared(root, qaOutputs, () => runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--html", fullHtml, "--spec", specPath, "--output", outDir, "--profile", params.profile ?? "cpu"], signal, root, undefined, MAX_QUERY_BYTES, Number(process.env.NEWSROOM_BROWSER_QA_TIMEOUT_MS ?? 120_000), true), { watch: [`publications/qa/${qaKey}`] });
       const report = JSON.parse(await readFile(join(outDir, "browser-qa.json"), "utf8"));
       const reportRef = `publications/qa/${qaKey}/browser-qa.json`;
       // write_startup_failure (browser_qa.py) writes status:"FAIL" with no
@@ -6489,7 +6499,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const outputRef = `visualizations/graph-analysis/${requestHash}.json`;
       const outputFull = join(root, outputRef);
       await ensureParent(outputFull);
-      await runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--request", requestFull, "--output", outputFull], signal, root, undefined, 2_000_000, 120_000);
+      await runDeclared(root, [outputRef], () => runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--request", requestFull, "--output", outputFull], signal, root, undefined, 2_000_000, 120_000));
       const result = JSON.parse(await readFile(outputFull, "utf8"));
       return textResult(`NetworkX analysis complete.\nArtifact: ${outputRef}\nNodes: ${result.summary?.node_count}\nEdges: ${result.summary?.edge_count}\nCommunities: ${result.summary?.community_count}\nResult hash: ${result.result_hash}`, { analysisRef: outputRef, summary: result.summary, resultHash: result.result_hash });
     },
@@ -6512,7 +6522,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       const request = { directed: params.directed ?? false, nodes: params.nodes, edges: params.edges, seed: params.seed ?? 42, max_meta_edges: params.max_meta_edges ?? 120 };
       const requestHash = sha256Hex(JSON.stringify(request)); const requestRef = `visualizations/graph-reduction/requests/${requestHash}.json`; await writeArtifactIfAbsent(requestRef, request);
       const script = join(root, "runtime", "networkx_reduce.py"); const outputRef = `visualizations/graph-reduction/${requestHash}.json`; const outputFull = join(root, outputRef); await ensureParent(outputFull);
-      await runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--request", join(root, requestRef), "--output", outputFull], signal, root, undefined, 2_000_000, 180_000);
+      await runDeclared(root, [outputRef], () => runProcess(process.env.NEWSROOM_PYTHON_BIN || "python3", [script, "--request", join(root, requestRef), "--output", outputFull], signal, root, undefined, 2_000_000, 180_000));
       const result = JSON.parse(await readFile(outputFull, "utf8"));
       if (Number(result.summary?.retained_cross_community_weight_fraction ?? 0) < 0.5) throw new Error("NETWORK_OVERVIEW_BLOCKED: reduction retains less than 50% of cross-community weight");
       return textResult(`Network overview reduction complete.\nArtifact: ${outputRef}\nCommunities: ${result.summary?.community_count}\nDisplayed meta-edges: ${result.summary?.displayed_meta_edges}\nRetained cross-community weight: ${result.summary?.retained_cross_community_weight_fraction}\nFull graph: ${result.full_graph_status}`, { reductionRef: outputRef, summary: result.summary, fullGraphStatus: result.full_graph_status, resultHash: result.result_hash });
