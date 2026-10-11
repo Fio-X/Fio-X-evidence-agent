@@ -6,7 +6,7 @@
 //    (text and hero_stat modules legitimately use it); its condition is a sentence.
 //  - sentences: page-top hero number, hand-typed hero value, span, scene slots,
 //    claim kind and causal words in page text. No check changes.
-//  1. Off: tool definitions of every profile are byte-identical to f2aec34.
+//  1. Off: tool definitions of every profile are byte-identical to the commit before the switch.
 //  2. On: the difference is exactly the removal and those sentences (asserted
 //     path by path, and printed).
 //  3. The causal-word and claim-kind sentences agree with the evidence gate.
@@ -19,11 +19,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASELINE = "f2aec34";
+// The commit before the switch was added (7deb682); the hero value gate is already on by default there, as it is now and always.
+const BASELINE = "6a6a69a";
 const scratch = mkdtempSync(join(tmpdir(), "refused-options-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];
-for (const name of ["NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER", "NEWSROOM_HERO_VALUE_GATE"]) delete process.env[name];
+for (const name of ["NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER"]) delete process.env[name];
 for (const name of ["NEWSROOM_PHASE", "NEWSROOM_FAULT_INJECT_TOOL_ONCE", "NEWSROOM_DUCKDB_BIN", "NEWSROOM_HIDE_LIEFLAT"]) delete process.env[name];
 
 const stub = (dir, name, source) => {
@@ -63,7 +64,7 @@ function baselineSource() {
   return spawnSync("tar", ["-xf", join(dir, "baseline.tar"), "-C", dir]).status === 0 ? dir : null;
 }
 // Tools read the environment when they register, so it is set right before.
-const CONTROLLED = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER", "NEWSROOM_HERO_VALUE_GATE"];
+const CONTROLLED = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER"];
 function definitions(mod, env) {
   for (const k of CONTROLLED) delete process.env[k];
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
@@ -93,8 +94,8 @@ const T = {
 const current = await loadTree("current", ROOT);
 
 // The expected change set for one setting: [{key, tail, text}] plus whether the tool goes away.
-function expectedKinds({ mobile, adapter, heroGate }) {
-  return { span: !mobile, scenePattern: !mobile, heroValue: heroGate, heroType: true, claimKind: true, causalWords: true, removed: !adapter };
+function expectedKinds({ mobile, adapter }) {
+  return { span: !mobile, scenePattern: !mobile, heroValue: true, heroType: true, claimKind: true, causalWords: true, removed: !adapter };
 }
 function classify(before, after, kinds) {
   const seen = new Set();
@@ -114,8 +115,8 @@ function classify(before, after, kinds) {
 }
 
 const SETTINGS = [];
-for (const mobile of [false, true]) for (const adapter of [false, true]) for (const heroGate of [true, false]) SETTINGS.push({ mobile, adapter, heroGate });
-const envOf = (profile, s, on) => ({ NEWSROOM_TOOL_PROFILE: profile, ...(s.mobile ? { NEWSROOM_MOBILE_PAGES: "1" } : {}), ...(s.adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "/bin/true" } : {}), ...(s.heroGate ? {} : { NEWSROOM_HERO_VALUE_GATE: "0" }), ...(on ? ON : {}) });
+for (const mobile of [false, true]) for (const adapter of [false, true]) SETTINGS.push({ mobile, adapter });
+const envOf = (profile, s, on) => ({ NEWSROOM_TOOL_PROFILE: profile, ...(s.mobile ? { NEWSROOM_MOBILE_PAGES: "1" } : {}), ...(s.adapter ? { NEWSROOM_ILLUSTRATION_ADAPTER: "/bin/true" } : {}), ...(on ? ON : {}) });
 
 // ---- Literal checks (no history needed) -------------------------------------
 for (const notOne of ["0", "true", "yes", "", " 1", "01"]) {
@@ -143,7 +144,7 @@ for (const kind of ["causal", "mechanistic", "predictive"]) assert.equal(gate.ev
 assert.equal(gate.evaluateClaimSupport({ requested_status: "hypothesis", claim_kind: "descriptive", claim: "x rose" }).passed, false, "hypothesis cannot");
 assert.equal(gate.evaluateClaimSupport({ requested_status: "contested", claim_kind: "descriptive", claim: "x rose" }).passed, false, "contested cannot");
 
-// ---- 1 and 2. Against f2aec34 -----------------------------------------------
+// ---- 1 and 2. Against the commit before the switch -----------------------------------------------
 const baselineDir = baselineSource();
 if (!baselineDir) {
   console.log(`${BASELINE} history unavailable; skipped the byte comparison with it`);
@@ -163,7 +164,7 @@ if (!baselineDir) {
     }
     if (before.record_claim) assert.ok(seen.has("claimKind"), `${profile}: claimKind sentence is added`);
     const delta = JSON.stringify(after).length - JSON.stringify(before).length;
-    if (s.mobile === false && s.adapter === false && s.heroGate) console.log(`${profile}: serialized definitions ${delta >= 0 ? "+" : ""}${delta} bytes${removed ? ` (net: sentences +${delta + JSON.stringify(before.newsroom_illustration_generate).length}, removed tool -${JSON.stringify(before.newsroom_illustration_generate).length})` : ""}; sentences ${[...seen].join(",") || "none"}`);
+    if (s.mobile === false && s.adapter === false) console.log(`${profile}: serialized definitions ${delta >= 0 ? "+" : ""}${delta} bytes${removed ? ` (net: sentences +${delta + JSON.stringify(before.newsroom_illustration_generate).length}, removed tool -${JSON.stringify(before.newsroom_illustration_generate).length})` : ""}; sentences ${[...seen].join(",") || "none"}`);
     maxAdded = Math.max(maxAdded, Buffer.byteLength([...seen].map((k) => T[k][1]).join(" ")));
     compared += 1;
   }

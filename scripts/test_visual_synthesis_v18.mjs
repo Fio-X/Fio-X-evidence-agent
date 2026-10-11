@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { assessStoryGraph } from '../runtime/pi/story_graph.mjs';
 import { evaluateVisualSemantics } from '../runtime/visual/editorial_semantics.mjs';
@@ -113,7 +114,7 @@ const spec={
 };
 
 assert.deepEqual(validateInfographicSpec(spec),[]);
-const context={verified_claim_ids:verified,story_graph:storyGraph};
+const context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:verified,story_graph:storyGraph};
 const lint=lintInfographicSpec(spec,assets,context);
 assert.equal(lint.passed,true,lint.blockers.join(' | '));
 assert.equal(lint.synthesis.metrics.default_chart_equivalent,false);

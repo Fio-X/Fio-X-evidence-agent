@@ -4,11 +4,12 @@
 // note that cites a saved source snapshot verbatim by page, is never a
 // verified claim, and is always visibly labelled 页码/译述 on a zh page.
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle, critiqueInfographic } from '../runtime/pi/infographic.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim = 'claim-source-quote';
-const context = { verified_claim_ids: [claim] };
+const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim] };
 
 // A two-page pdftotext-style extraction (runtime/pi/pdf_extract.mjs's
 // [page N]\n markers), with a hyphenated line-break on page 2 so the

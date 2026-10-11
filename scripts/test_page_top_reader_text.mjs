@@ -6,9 +6,10 @@
 //   B  reader text   process terms, field names, placeholder words and template braces block; broader review words warn;
 //                    ordinary words pass; the fields read are exactly the documented ones
 //   C  wording       an unsupported quantifier or a vague time in running copy warns (copy fields only)
-//   D  hero gate     on unless NEWSROOM_HERO_VALUE_GATE=0, seen through the real tool definitions and the real lint tool
+//   D  hero gate     always on (no switch turns it off), seen through the real tool definitions and the real lint tool
 //   E  guidance      the new one-sentence guidance reaches the model
 import { makeTestTmp } from "./tmp_helper.mjs";
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -26,7 +27,7 @@ const yes = (cond, name) => { assert.ok(cond, name); n += 1; };
 
 // ---- fixtures -----------------------------------------------------------------------------------------------------
 const claim = 'claim-top';
-const context = { verified_claim_ids: [claim] };
+const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim] };
 // a real chart asset, built the way test_infographic.mjs builds it
 const barRows = [{ category: 'A', value: 42 }, { category: 'B', value: 31 }, { category: 'C', value: 18 }, { category: 'D', value: 9 }];
 const barSpec = { schema_version: '0.9.0', reader_task: 'ranking', takeaway: 'A leads the selected categories.', chart_type: 'horizontal_bar', title: 'A leads this selected comparison', subtitle: 'Synthetic regression fixture', alt: 'Horizontal bars rank four synthetic categories from A at 42 to D at 9.', source_note: 'Synthetic fixture', claim_id: claim, sql: 'SELECT * FROM synthetic_bar', unit: 'units', category_field: 'category', value_field: 'value', sort: 'desc', highlight_values: ['A'], annotations: [] };
@@ -342,7 +343,7 @@ const records = [
   { claim_id: claim, claim: '12个国家上升，12个国家下降。' },
   { claim_id: supportClaim, claim: '其中多数国家的通胀率下降。' },
 ];
-const ctxWith = (extra = {}) => ({ verified_claim_ids: [claim, supportClaim], verified_claim_records: records, ...extra });
+const ctxWith = (extra = {}) => ({ hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim, supportClaim], verified_claim_records: records, ...extra });
 const bodyWarnings = (spec, ctx = ctxWith(), a = assets) => lintInfographicSpec(spec, a, ctx).warnings.filter((warning) => warning.startsWith('unsupported_quantifier:'));
 const quantText = { ...M.text, body: '多数国家的通胀率下降。', claim_ids: [claim] };
 eq(bodyWarnings(page(['hero', 'bar', quantText])).length, 1, 'the module cites a claim that does not state 多数: warning');
@@ -414,15 +415,11 @@ async function register(env = {}) {
 const moduleProps = (tools) => tools.get('newsroom_infographic_plan').parameters.properties.modules.items.properties;
 const def = await register({});
 yes('value_from' in moduleProps(def), 'default: the plan tool offers value_from');
-const defKeys = Object.keys(moduleProps(def)).filter((key) => key !== 'value_from');
-// only the exact string "0" turns the gate off; unset, "1", empty and any typo leave it on
-for (const value of ['1', '', 'off', 'false', 'true', 'no', ' 0', '00']) {
+// no value turns the gate off, "0" included
+for (const value of ['0', '1', '', 'off', 'false', 'true', 'no', ' 0', '00']) {
   const tools = await register({ NEWSROOM_HERO_VALUE_GATE: value });
   yes('value_from' in moduleProps(tools), `NEWSROOM_HERO_VALUE_GATE=${JSON.stringify(value)} leaves the gate on`);
 }
-const off = await register({ NEWSROOM_HERO_VALUE_GATE: '0' });
-yes(!('value_from' in moduleProps(off)), 'NEWSROOM_HERO_VALUE_GATE=0: the plan tool no longer offers value_from');
-eq(Object.keys(moduleProps(off)), defKeys, '=0 changes no other module property');
 
 // the real lint tool, on a small artifact root: system-verified claims, three hand-stored plans
 const verification = { authority: 'system', rule_id: 'verification.source+extraction+computation+claim.v1', source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true };
@@ -453,8 +450,7 @@ const plans = {
   proseFirst: [proseOf('t1', '这一页以文字开头。', 'c-a'), typedHero, proseOf('t2', '第二段文字。', 'c-b')],
   note: [typedHero, proseOf('t1', '数值未经闸门行绑定（缺口修复中）', 'c-a'), proseOf('t2', '第二段文字。', 'c-b')],
 };
-// Every call gets its own artifact root: a stored lint record is immutable, and one plan lints differently with the gate on and off.
-const GATE_OFF = { NEWSROOM_HERO_VALUE_GATE: '0' };
+// Every call gets its own artifact root: a stored lint record is immutable, and a lint is made under one set of rules.
 const lintTool = async (env, name) => {
   const root = miniRoot();
   const planRef = storePlan(root, plans[name]);
@@ -466,14 +462,9 @@ const heroBlockers = (details) => (details.blockers ?? []).filter((blocker) => b
 const gateOn = await lintTool({}, 'clean');
 eq(heroBlockers(gateOn).map((blocker) => blocker.split(':')[0]), ['HERO_VALUE_FROM_REQUIRED'], 'default: a typed hero value is blocked by the hero value gate');
 yes(gateOn.passed === false, 'default: the page does not pass');
-for (const value of ['1', '', 'off']) eq(heroBlockers(await lintTool({ NEWSROOM_HERO_VALUE_GATE: value }, 'clean')).map((blocker) => blocker.split(':')[0]), ['HERO_VALUE_FROM_REQUIRED'], `NEWSROOM_HERO_VALUE_GATE=${JSON.stringify(value)}: the gate is still on`);
-// =0: the old path, no hero blocker
-const gateOff = await lintTool(GATE_OFF, 'clean');
-eq(heroBlockers(gateOff), [], '=0: a typed hero value is no longer a hero-gate blocker');
-eq(gateOff.blockers, [], '=0: nothing else blocks the clean plan');
-yes(gateOff.passed === true, '=0: the clean plan passes');
-// the new checks run in the real tool, whichever way the switch is set
-for (const [label, env, details] of [['default', {}, gateOn], ['=0', GATE_OFF, gateOff]]) {
+for (const value of ['0', '1', '', 'off']) eq(heroBlockers(await lintTool({ NEWSROOM_HERO_VALUE_GATE: value }, 'clean')).map((blocker) => blocker.split(':')[0]), ['HERO_VALUE_FROM_REQUIRED'], `NEWSROOM_HERO_VALUE_GATE=${JSON.stringify(value)}: the gate is still on`);
+// the new checks run in the real tool
+for (const [label, env, details] of [['default', {}, gateOn]]) {
   eq(details.warnings.filter((warning) => warning.startsWith('unsupported_quantifier:')).map((warning) => warning.match(/^unsupported_quantifier: (\S+) says "([^"]+)"/).slice(1)), [['module:t1:body', '更多国家']], `${label}: the unsupported quantifier is found in the real tool, and the supported one (c-b states it) is not`);
   eq(details.warnings.filter((warning) => warning.startsWith('vague_time_reference:')).map((warning) => warning.match(/^vague_time_reference: (\S+) says "([^"]+)"/).slice(1)), [['module:t3:body', '目前']], `${label}: the vague time is found in the real tool; the sentence that states 2024年 is not`);
   eq(details.warnings.filter((warning) => warning.startsWith(`${TOP}:`)), [], `${label}: a page that opens with its number has no page-top warning`);
@@ -483,7 +474,6 @@ for (const [label, env, details] of [['default', {}, gateOn], ['=0', GATE_OFF, g
   eq(flaggedNote.blockers.filter((blocker) => blocker.startsWith('reader_text_')).map((blocker) => blocker.match(/shows "([^"]+)"/)[1]), ['未经闸门', '行绑定'], `${label}: the process note is blocked by the real tool`);
   yes(flaggedNote.passed === false, `${label}: the process note fails the real lint`);
 }
-eq((await lintTool(GATE_OFF, 'proseFirst')).passed, true, '=0: a page that opens with prose still passes: the page-top check only warns');
 
 // ---- E. the guidance reaches the model ---------------------------------------------------------------------------
 const guidelines = (tools, name) => tools.get(name).promptGuidelines;
@@ -491,7 +481,7 @@ const count = (list, text) => list.filter((entry) => entry === text).length;
 const HERO_PLAIN = 'A hero_stat label names the subject, the measure and the period, for example 「2024年阿根廷年通胀率」, not 「通胀率」.';
 const HERO_GATED = 'A hero_stat label names the subject, the measure and the period, for example 「{max.rate.year}年阿根廷年通胀率」, not 「通胀率」; the year comes from a placeholder of the hero\'s claim (typed digits are refused), so that claim must state the period.';
 const WINDOW = 'A relative window such as 近三年 means the 36 months up to the latest data point; state its start and end dates on the page.';
-for (const [label, tools, heroLine, otherLine] of [['default', def, HERO_GATED, HERO_PLAIN], ['=0', off, HERO_PLAIN, HERO_GATED]]) {
+for (const [label, tools, heroLine, otherLine] of [['default', def, HERO_GATED, HERO_PLAIN]]) {
   const plan = guidelines(tools, 'newsroom_infographic_plan');
   eq(count(plan, GUIDANCE), 1, `${label}: the plan tool carries the page-top sentence once, as its own guideline`);
   eq(count(plan, heroLine), 1, `${label}: the plan tool carries the hero-label sentence for this mode`);
@@ -499,9 +489,6 @@ for (const [label, tools, heroLine, otherLine] of [['default', def, HERO_GATED, 
   yes(plan.indexOf(GUIDANCE) < plan.findIndex((entry) => entry.startsWith('Prefer 4-9 modules')), `${label}: the page-top sentence comes before the module-count advice`);
   eq(count(guidelines(tools, 'duckdb_query'), WINDOW), 1, `${label}: duckdb_query carries the relative-window sentence once`);
 }
-// only the sentences above and the value_from schema entry differ between the two modes
-const strip = (tools) => JSON.stringify([...tools.values()].map((tool) => [tool.name, tool.description, tool.promptSnippet, (tool.promptGuidelines ?? []).filter((entry) => entry !== HERO_PLAIN && entry !== HERO_GATED), JSON.parse(JSON.stringify(tool.parameters, (key, value) => (key === 'value_from' ? undefined : value)))]));
-yes(strip(def) === strip(off), 'default and =0 differ only in the hero-label sentence and the value_from schema entry');
 yes(![...def.values()].some((tool) => /(NEWSROOM_HERO_VALUE_GATE|=1 enables)/.test(`${tool.description}\n${(tool.promptGuidelines ?? []).join('\n')}`)), 'no tool text tells the model about the switch');
 
 console.log(`page top / reader text / hero gate default: ${n} checks -- PASS`);

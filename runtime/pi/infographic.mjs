@@ -761,9 +761,7 @@ export function evaluateSubjectSets(spec, assets = {}, context = {}) {
   return { blockers, warnings, notes };
 }
 
-// Hero value gate (on by default in the runtime, off with NEWSROOM_HERO_VALUE_GATE=0; the runtime
-// passes it in as context.hero_value_gate, and this pure lint applies it only when the
-// caller does). Each hero_stat is re-filled from its own claim's
+// Hero value gate (always on; the lint takes no parameter that turns it off). Each hero_stat is re-filled from its own claim's
 // bindings by the runtime (newsroom.ts fillHeroModule: value from value_from,
 // label and detail placeholders, unit only as the claim shows it); context.hero_checks
 // ({ module_id: [blocker, ...] }) carries what that re-check refused, so the stored
@@ -1228,7 +1226,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     if (module.type === "hero_stat") {
       claimCount += 1;
       if (!verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
-      if (context.hero_value_gate === true) blockers.push(...heroValueBlockers(module, verified, context.hero_checks));
+      blockers.push(...heroValueBlockers(module, verified, context.hero_checks));
       if (String(module.label ?? "").length > 120) warnings.push(`hero_stat '${module.id}' label is long for magazine display`);
     }
     if (module.type === "text") {
