@@ -3,7 +3,6 @@ use crate::verify::{recompute_artifact, verify_artifact, RecomputeReport, Verifi
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::json;
-use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -65,11 +64,8 @@ pub async fn verify_and_record(
         })),
     });
     let path = artifact.join("verification.json");
-    fs::write(
-        &path,
-        format!("{}\n", serde_json::to_string_pretty(&output)?),
-    )
-    .with_context(|| format!("failed to write {}", path.display()))?;
+    crate::group_guard::write_verification_record(artifact, &path, &output, passed)
+        .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(Verification {
         report,
         replay,

@@ -262,7 +262,7 @@ pub fn group_commands_enabled() -> bool {
     std::env::var(GROUP_COMMANDS_SWITCH).map(|v| v == "1").unwrap_or(false)
 }
 
-fn group_of(command: &str) -> Option<&'static str> {
+pub fn group_of(command: &str) -> Option<&'static str> {
     COMMAND_GROUPS.iter().find(|(c, _)| *c == command).map(|(_, g)| *g)
 }
 

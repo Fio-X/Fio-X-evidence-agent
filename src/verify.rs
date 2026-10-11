@@ -4644,7 +4644,7 @@ impl RecomputeScratch {
     fn new() -> Result<Self> {
         let path =
             std::env::temp_dir().join(format!("newsroom-recompute-{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&path)
+        crate::group_guard::create_scratch_dir(&path)
             .with_context(|| format!("failed to create recompute scratch {}", path.display()))?;
         Ok(Self { path })
     }
@@ -4652,7 +4652,7 @@ impl RecomputeScratch {
 
 impl Drop for RecomputeScratch {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        crate::group_guard::remove_scratch_dir(&self.path);
     }
 }
 
@@ -4717,7 +4717,7 @@ fn materialize_recompute_rows(root: &Path, sql: &str, scratch: &Path) -> Result<
             .context("invalid chained computation filename")?;
         let rows_path = scratch.join(filename);
 
-        fs::write(&rows_path, format!("{}\n", serde_json::to_string(rows)?)).with_context(
+        crate::group_guard::write_scratch(&rows_path, format!("{}\n", serde_json::to_string(rows)?)).with_context(
             || {
                 format!(
                     "failed writing recompute row projection {}",
