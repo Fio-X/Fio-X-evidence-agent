@@ -325,13 +325,23 @@ export function assertAllGroupChecked(tools) {
   for (const tool of tools) if (!isGroupChecked(tool)) throw new Error(`GROUP_TOOLS_UNWRAPPED: ${JSON.stringify(String(tool?.name ?? ""))} reached Pi without going through the group check`);
 }
 
-const listFiles = (dir) => { try { return new Set(readdirSync(dir, { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => e.name)); } catch { return null; } };
+/** Every file under dir, recursively, as paths relative to dir ("a/b.svg"); null when dir cannot be read. The watched folders are small. */
+const listFiles = (dir, prefix = "") => {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return prefix ? new Set() : null; }
+  const out = new Set();
+  for (const entry of entries) {
+    const name = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) { for (const inner of listFiles(join(dir, entry.name), name) ?? []) out.add(inner); } else out.add(name);
+  }
+  return out;
+};
 const isE1Temp = (rel) => E1_TEMP_SUFFIXES.some((suffix) => rel.endsWith(suffix)) || E1_TEMP_FOLDERS.some((folder) => rel.startsWith(folder));
 
 /**
  * Run a child process that writes files, for a tool. `outputs` (artifact-relative paths) are declared before it starts: each is judged now like an
  * in-process write (a refusal here means the process never starts). `watch` (default: the folders of the outputs, or the run folder itself when nothing
- * is declared) is compared before and after, non-recursively; a new file that was not declared is deleted and the call is refused. If another tool call
+ * is declared) is compared before and after, recursively (a file written into a sub-folder is seen); a new file that was not declared is deleted and the call is refused. If another tool call
  * ran at the same time the new file cannot be told from that call's own, so it is reported and refused but not deleted. Off: fn() unchanged.
  */
 export async function runDeclared(root, outputs, fn, { watch } = {}) {
@@ -347,12 +357,16 @@ export async function runDeclared(root, outputs, fn, { watch } = {}) {
   try { value = await fn(); } catch (error) { failure = error; }
   const overlapped = inFlight > 1 || overlaps !== overlapsBefore;
   const extra = [];
+  const seen = new Set();
   for (const dir of dirs) {
     const now = listFiles(join(root, dir));
     if (!now) continue;
     for (const name of now) {
       const path = dir === "." ? name : `${dir}/${name}`;
-      if (before.get(dir)?.has(name) || declared.has(path) || isE1Temp(path)) continue;
+      if (before.get(dir)?.has(name) || declared.has(path) || isE1Temp(path) || seen.has(path)) continue;
+      // the same file can be reached from two watched folders ("." and "data"): a file already present before under any watched folder is not new
+      if ([...dirs].some((d) => { const rest = d === "." ? path : path.startsWith(`${d}/`) ? path.slice(d.length + 1) : null; return rest !== null && before.get(d)?.has(rest); })) continue;
+      seen.add(path);
       extra.push(path);
     }
   }

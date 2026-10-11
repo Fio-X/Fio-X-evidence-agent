@@ -66,7 +66,8 @@ const commandNames = (() => {
   const source = readFileSync(join(ROOT, "src/cli.rs"), "utf8");
   const body = source.slice(source.indexOf("pub enum Commands {"));
   const block = body.slice(0, body.indexOf("\n}\n"));
-  return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase());
+  // Bare `news` (the interactive launcher) has no enum variant; it is registered as a command of the agent group (K213).
+  return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()).concat("interactive");
 })();
 const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
 assert.ok(commandNames.length >= 8 && trackedFiles.length > 100, "found the commands and the tracked files");

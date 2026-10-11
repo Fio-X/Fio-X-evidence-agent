@@ -389,11 +389,10 @@ pub fn remove_scratch_dir(path: &Path) {
 /// The verification result file. `record["passed"]` must be the value the program computed (`program_passed`); a record that carries any other
 /// value (for example one a model supplied) is refused and nothing is written. The write itself is the knowledge group's (verification_record).
 pub fn write_verification_record(root: &Path, path: &Path, record: &Value, program_passed: bool) -> io::Result<()> {
-    if record.get("passed").and_then(Value::as_bool) != Some(program_passed) {
+    // Only with the switch on (K213 fe review): off, the write is the one the program always made.
+    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(program_passed) {
         let text = "boundary: the pass value of a verification record must be the one the program computed; this record carries another value and was not written.".to_string();
-        if enabled() {
-            note_refusal(root, "write", &text, "verification.json");
-        }
+        note_refusal(root, "write", &text, "verification.json");
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, text));
     }
     let text = format!("{}\n", serde_json::to_string_pretty(record).map_err(io::Error::other)?);
@@ -556,6 +555,33 @@ mod tests {
         refused(write(root, &path, "{\"passed\":true}"));
     }
 
+    /// Bare `news` runs as the agent group's launcher (fe, K213): story.json is its own, evidence needs the hand-off like any agent command.
+    #[test]
+    fn the_interactive_launcher_is_registered_as_the_agent_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert_eq!(crate::cli::group_of("interactive"), Some("agent"));
+        let _setup = Setup::new(Some("interactive"), None);
+        write(root, &root.join("story.json"), "{}").unwrap();
+        refused(write(root, &root.join("claims.jsonl"), "x"));
+        let record = serde_json::json!({ "passed": true });
+        // no verification write without the hand-off, and the hand-off still demands the program's value
+        refused(write(root, &root.join("verification.json"), "{}"));
+        write_verification_record(root, &root.join("verification.json"), &record, true).unwrap();
+        refused(write_verification_record(root, &root.join("verification.json"), &record, false));
+    }
+
+    #[test]
+    fn switch_off_writes_the_record_as_the_program_always_did() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(false));
+        let path = root.join("verification.json");
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), false).unwrap();
+        TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
+        assert!(path.is_file());
+    }
+
     #[test]
     fn mutated_table_changes_the_answer_and_a_broken_table_refuses_everything() {
         let dir = tempfile::tempdir().unwrap();
@@ -631,7 +657,11 @@ mod tests {
     fn no_raw_write_calls_outside_this_module() {
         // The mutant "a call site goes back to a plain std::fs call" must turn this red: the only raw writes allowed in non-test code are
         // in this file (the wrappers, the refusal log, the scratch cleanup).
-        let patterns = ["fs::write(", "fs::create_dir_all(", "fs::create_dir(", "fs::copy(", "fs::rename(", "OpenOptions::new(", "File::create(", "fs::remove_file(", "fs::remove_dir_all("];
+        // Known limit: a call through an aliased import (`use std::fs as f; f::write(..)`, `use std::fs::write; write(..)`) is not matched by text.
+        let patterns = [
+            "fs::write(", "fs::create_dir_all(", "fs::create_dir(", "fs::copy(", "fs::rename(", "OpenOptions::new(", "File::create(", "File::create_new(",
+            "fs::remove_file(", "fs::remove_dir_all(", "fs::remove_dir(", "fs::hard_link(", "fs::set_permissions(", "fs::symlink(", "tokio::fs::", ".set_len(",
+        ];
         let mut found = Vec::new();
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut stack = vec![base.clone()];

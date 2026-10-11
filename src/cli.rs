@@ -234,6 +234,8 @@ pub const COMMAND_GROUPS: &[(&str, &str)] = &[
     ("investigate", "agent"),
     ("investigate-v2", "agent"),
     ("continue", "agent"),
+    // Bare `news` (the interactive launcher) is the agent group's starter; it has no subcommand of its own, so it is not listed in help.
+    ("interactive", "agent"),
     ("verify", "knowledge"),
     ("doctor", "system"),
     ("inspect", "system"),

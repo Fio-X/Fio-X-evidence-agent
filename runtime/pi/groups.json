@@ -13,6 +13,9 @@
   "system": "系统"
  },
  "commands": {
+  "interactive": {
+   "group": "agent"
+  },
   "doctor": {
    "group": "system"
   },
