@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repeatedNumberCounts, shadowInfographicNumbers } from '../runtime/pi/shadow.mjs';
+import { runInTool } from '../runtime/pi/groups.mjs';
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim = 'claim-stat-row';
@@ -145,7 +146,7 @@ for (const [name, sidecars, mods] of [
   const spec = { ...page([chart, stat('s1', { value: '24', unit: '个', detail: '其中24个在2017年' }), text('t1', '2017年新增24个，占全部。')]), dek: '其中24个在2017年' };
   const root = mkdtempSync(join(tmpdir(), 'rep-'));
   try {
-    const result = await shadowInfographicNumbers({ root, spec, planRef: 'p', assets: { 'visualizations/bar.json': { desktopSvg: svg, manifest: {} } }, claimRecords: new Map(), deps: {} });
+    const result = await runInTool('newsroom_infographic_lint', () => shadowInfographicNumbers({ root, spec, planRef: 'p', assets: { 'visualizations/bar.json': { desktopSvg: svg, manifest: {} } }, claimRecords: new Map(), deps: {} }));
     assert.equal(result.counts.repeated_numbers, 1);
     const record = JSON.parse(readFileSync(join(root, result.path), 'utf8'));
     const entry = record.repeated_numbers.find((e) => e.value === '24');
@@ -157,7 +158,7 @@ for (const [name, sidecars, mods] of [
   const three = { ...page([stat('s1', { value: '7', unit: '个', detail: 'x' }), text('t1', '共7个。')]), dek: '有7个。' };
   const r2 = mkdtempSync(join(tmpdir(), 'rep-'));
   try {
-    const result = await shadowInfographicNumbers({ root: r2, spec: three, planRef: 'p', assets: {}, claimRecords: new Map(), deps: {} });
+    const result = await runInTool('newsroom_infographic_lint', () => shadowInfographicNumbers({ root: r2, spec: three, planRef: 'p', assets: {}, claimRecords: new Map(), deps: {} }));
     const rec = JSON.parse(readFileSync(join(r2, result.path), 'utf8'));
     assert.deepEqual(rec.repeated_numbers.map((e) => [e.value, e.count]), [['7', 3]]);
   } finally { rmSync(r2, { recursive: true, force: true }); }

@@ -110,13 +110,8 @@ fn record_round_status(
         "reason": reason,
         "previous_round_file": previous,
     });
-    // The pass value is the one the program computed here (never verified); the record goes in through the knowledge hand-off.
-    crate::group_guard::write_verification_record(
-        artifact,
-        &artifact.join("verification.json"),
-        &record,
-        false,
-    )
+    // This path can only leave a record that says not passed; a passed one needs verify's own outcome.
+    crate::group_guard::write_not_passed_record(artifact, &artifact.join("verification.json"), &record)
     .context("failed to write verification.json")
 }
 
