@@ -336,7 +336,7 @@ mod tests {
                 matches: |_| true,
             },
         ];
-        assert!(select_from(&both, &[shape.clone()]).is_none());
+        assert!(select_from(&both, std::slice::from_ref(&shape)).is_none());
         assert_eq!(select_from(&both[..1], &[shape]).unwrap().name, "x");
         // Two tables that each match a different recipe: ambiguous, nothing loads.
         let files = [

@@ -479,7 +479,7 @@ impl InvestigationBundle {
                 }
             }
         }
-        earlier.extend(all.drain(..));
+        earlier.append(&mut all);
         let mut seen = std::collections::HashSet::new();
         earlier.retain(|warning| seen.insert(warning.clone()));
         earlier
@@ -1330,7 +1330,7 @@ fn latest_passing_chart(root: &Path, since: SystemTime) -> Result<Option<(String
         };
         if newest
             .as_ref()
-            .map_or(true, |(time, key)| (modified, &path) > (*time, key))
+            .is_none_or(|(time, key)| (modified, &path) > (*time, key))
         {
             newest = Some((modified, path));
         }
@@ -2153,6 +2153,8 @@ mod tests {
         assert_eq!(note["note_sha256"].as_str().unwrap().len(), 64);
     }
 
+    type NoteMaker = dyn Fn(&str) -> String;
+
     #[test]
     fn bad_notes_are_ignored_with_a_reason_and_never_their_content() {
         let wrong_sha = |_: &str| good_note(&"0".repeat(64));
@@ -2161,7 +2163,7 @@ mod tests {
         let http = |sha: &str| good_note(sha).replace("https://", "http://");
         let not_json = |_: &str| "publisher: secret-name".to_owned();
         let long = |sha: &str| good_note(sha).replace("Energy mix", &"x".repeat(121));
-        let cases: [(&dyn Fn(&str) -> String, &str); 5] = [
+        let cases: [(&NoteMaker, &str); 5] = [
             (&wrong_sha, "sha256 does not match"),
             (&no_license, "license is missing"),
             (&http, "url is not an https"),
@@ -2223,7 +2225,7 @@ mod tests {
             }
             // 17 KiB: refused before it is parsed
             let mut big = good_note(&sha).into_bytes();
-            big.extend(std::iter::repeat(b' ').take(17 * 1024));
+            big.extend(std::iter::repeat_n(b' ', 17 * 1024));
             fs::write(src.path().join("X.csv.source.json"), &big).unwrap();
             assert_eq!(
                 super::read_local_source_note(&data, &sha),
