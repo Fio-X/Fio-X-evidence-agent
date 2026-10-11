@@ -5,20 +5,8 @@ import { tmpdir } from "node:os";
 import { renderLieflatPublication } from "../runtime/pi/lieflat.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const core = await readFile(resolve(root, "src/agent/core.rs"), "utf8");
 const renderer = await readFile(resolve(root, "runtime/pi/lieflat.mjs"), "utf8");
 
-for (const invariant of [
-  "evidence insufficient to support a complex infographic",
-  "editorial discovery has not passed",
-  "Story Graph lint has not passed",
-  "complex report requires two distinct analytical jobs",
-  "complex report requires two verified visual assets",
-  "infographic plan must contain 4–9 ordered modules",
-  "every report module must be source-bound",
-  "single-chart fallback cannot complete a complex report",
-  "publication HTML and QA must both pass",
-]) assert.ok(core.includes(invariant), `missing completion invariant: ${invariant}`);
 for (const marker of [
   "story_graph_ref is not a passing Story Graph",
   "4–9 ordered modules",

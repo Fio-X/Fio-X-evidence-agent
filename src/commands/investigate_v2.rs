@@ -1,10 +1,7 @@
-use crate::agent::{
-    create_default_registry, create_default_registry_with_visual_config,
-    determine_visual_deliverable_intent, NewsroomAgent,
-};
+use crate::agent::determine_visual_deliverable_intent;
 use crate::audit;
 use crate::cli::InvestigateV2Args;
-use crate::llm::{LLMClient, Provider};
+use crate::llm::Provider;
 use crate::output;
 use crate::pi::{run_prompt, PiConfig};
 use crate::runtime;
@@ -445,6 +442,20 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
         ),
     };
 
+    // The Rust-side agent loop was removed: everything that is not a visual
+    // story must go through Pi (`news investigate`), where the evidence,
+    // verification and publication gates live. Refuse before any key lookup
+    // or run directory is created.
+    let goal = args.topic.join(" ");
+    let intent = determine_visual_deliverable_intent(&goal);
+    if !intent.requires_story() {
+        anyhow::bail!(
+            "investigate-v2 only runs visual-story requests (data report, explainer, visual essay, browser publication). \
+             This goal was classified as {}; use `news investigate` instead.",
+            intent.as_str()
+        );
+    }
+
     // 2. 获取 API key
     let api_key = args
         .api_key
@@ -472,8 +483,6 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
     // user-visible destination without adding paths to model prompts.
     std::env::set_var("NEWSROOM_OUTPUT_DIR", &run_dir);
 
-    let goal = args.topic.join(" ");
-    let intent = determine_visual_deliverable_intent(&goal);
     let base_url = args.base_url.clone().or_else(|| match provider {
         Provider::DragonCode => std::env::var("DRAGONCODE_BASE_URL")
             .ok()
@@ -482,66 +491,20 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
         Provider::OpenAI => std::env::var("OPENAI_BASE_URL").ok(),
         Provider::Anthropic => None,
     });
-    if intent.requires_story() {
-        eprintln!("🎯 Goal: {goal}");
-        eprintln!("🧭 Deterministic visual intent: {}", intent.as_str());
-        eprintln!("🚀 Starting direct visual-story runner...\n");
-        let preferred_method = preferred_visual_method(intent, &goal);
-        return run_visual_story(
-            provider,
-            api_key,
-            args.model,
-            base_url,
-            run_dir,
-            goal,
-            preferred_method,
-        )
-        .await;
-    }
-
-    // 3. 创建轻量 LLM 客户端；普通文字和单图路径保持原有回合数。
-    let mut client = LLMClient::new(provider.clone(), api_key.clone(), args.model.clone());
-    if let Some(ref base_url) = base_url {
-        client = client.with_base_url(base_url.clone());
-    }
-
-    // 4. 创建工具注册表
-    let tools = if intent == crate::agent::VisualDeliverableIntent::SingleChart {
-        create_default_registry_with_visual_config(
-            provider_name(&provider).to_string(),
-            args.model.clone(),
-            Some(api_key.clone()),
-            base_url.clone(),
-        )
-    } else {
-        create_default_registry()
-    };
-    eprintln!(
-        "🔧 Loaded {} tools: {}",
-        tools.list_tools().len(),
-        tools.list_tools().join(", ")
-    );
-
-    // 5. 创建 agent
-    eprintln!("🎯 Goal: {}\n", goal);
-
-    let mut agent = NewsroomAgent::new(client, tools, goal).with_run_root(run_dir.clone());
-
-    // 6. 执行调查
-    eprintln!("🚀 Starting investigation...\n");
-    let report = agent.investigate().await?;
-
-    let report_path = run_dir.join("report.md");
-    fs::write(&report_path, format!("{report}\n"))
-        .with_context(|| format!("failed to write {}", report_path.display()))?;
-
-    // 7. 输出报告
-    println!("\n{}", "=".repeat(80));
-    println!("{}", report);
-    println!("{}", "=".repeat(80));
-    eprintln!("report: {}", report_path.display());
-
-    Ok(())
+    eprintln!("🎯 Goal: {goal}");
+    eprintln!("🧭 Deterministic visual intent: {}", intent.as_str());
+    eprintln!("🚀 Starting direct visual-story runner...\n");
+    let preferred_method = preferred_visual_method(intent, &goal);
+    run_visual_story(
+        provider,
+        api_key,
+        args.model,
+        base_url,
+        run_dir,
+        goal,
+        preferred_method,
+    )
+    .await
 }
 
 #[cfg(test)]
