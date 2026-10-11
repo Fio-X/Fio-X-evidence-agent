@@ -7,10 +7,15 @@
 // A write whose tool or path cannot be classified is counted as 待查, never as fine. Write sites this file cannot see are listed in
 // the report under not_traced, so the report never claims zero violations.
 //
+// NEWSROOM_GROUP_ENFORCE=1 (exact value, default off; needs NEWSROOM_GROUP_HANDOFF=1, newsroom.ts stops at start-up without it): the same
+// classification, but a write made by a tool outside the owning group is refused before anything reaches the disk. A write that cannot be
+// classified (待查) is refused too, and so is a check that fails, errors or runs past its hard limit (fail-closed). Reads, mkdir and a group's own
+// writers (runAsWriter) are not refused. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
+//
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,6 +23,9 @@ export const GROUP_ORDER = ["agent", "knowledge", "visual", "system"];
 export const BOUNDARY_REPORT_PATH = "runtime/group-boundary-report.json";
 
 export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY === "1";
+export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
+/** Tools need their initiating-tool context when either the report or the refusal is on. */
+export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled();
 export const groupToolOrderEnabled = () => process.env.NEWSROOM_GROUP_TOOL_ORDER === "1";
 
 let cached = null;
@@ -54,6 +62,7 @@ export const OWNERSHIP = {
   evidence: { owner: "knowledge", what: "claims, computation records, sources, searches, data files and origins, query-row tables" },
   project_state: { owner: "agent", what: "plan, run telemetry, rejected-call and patch stores" },
   visual_spec: { owner: "visual", what: "chart, page, illustration, map, model-spec and publication specs, renders, critics, QA" },
+  observation: { owner: "knowledge", what: "shadow-check side files: observations of the evidence that never become evidence themselves" },
   pass_decision: { owner: "agent", what: "review and award records, vision verdicts, competition preflight" },
   rules: { owner: "system", what: "config and the registry" },
 };
@@ -63,6 +72,7 @@ const KIND_RULES = [
   [/^claims\.jsonl$/, "evidence"],
   [/^(computations|sources|searches|data)\//, "evidence"],
   [/^runtime\/query-rows\//, "evidence"],
+  [/^shadow\//, "observation"],
   [/^visualizations\/graph-analysis\//, "evidence"],
   [/^editorial\/(preferences|award-runs)\//, "pass_decision"],
   [/^infographics\/(vision-critics|competition-preflight)\//, "pass_decision"],
@@ -109,7 +119,7 @@ export const currentTool = () => store.getStore()?.tool ?? null;
 export const runAsWriter = (group, writer, fn) => store.run({ tool: store.getStore()?.tool ?? "", writer: { group, name: writer } }, fn);
 const currentWriter = () => store.getStore()?.writer ?? null;
 
-/** Wraps a tool's execute so its writes know who initiated them. Only called with the switch on. */
+/** Wraps a tool's execute so its writes know who initiated them. Only called with the report or the refusal switch on. */
 export function withBoundaryContext(tool) {
   if (!tool || typeof tool.execute !== "function") return tool;
   const original = tool.execute.bind(tool);
@@ -159,32 +169,101 @@ function writeReport(root) {
   writeFileSync(path, JSON.stringify(report, null, 2) + "\n", "utf8");
 }
 
-/** Records one artifact write call. Never throws and never touches the write itself. */
+// ---- classification shared by the report and the refusal -------------------------------------------------------------------------
+/** Who is writing, which kind of artifact it is and whether the writer's group owns it. `lookup` supplies the group list and the path classifier. */
+function evaluateWrite(root, target, lookup = { groups: loadGroups, classify: classifyArtifact }) {
+  const text = String(target ?? "");
+  const path = (isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/");
+  const writer = currentWriter();
+  const requestedBy = writer ? (currentTool() || null) : null;
+  const tool = writer ? writer.name : currentTool();
+  const list = lookup.groups();
+  const group = writer ? writer.group : tool ? list.tools?.[tool]?.group ?? null : null;
+  const classified = lookup.classify(path);
+  let status, reason = "";
+  if (!tool) { status = "待查"; reason = "no initiating tool"; }
+  else if (!group) { status = "待查"; reason = "tool is not in groups.json"; }
+  else if (!classified) { status = "待查"; reason = "path matches no artifact kind"; }
+  else status = group === classified.owner ? "ok" : "cross_group";
+  const allowed = Boolean(tool && group && classified && group === classified.owner);
+  return { path, writer, requestedBy, tool, group, classified, status, reason, allowed, list };
+}
+
+// ---- refusing (NEWSROOM_GROUP_ENFORCE=1) ---------------------------------------------------------------------------------------
+export class BoundaryRefusal extends Error {
+  constructor(message, detail) { super(message); this.name = "BoundaryRefusal"; this.code = "BOUNDARY_REFUSED"; this.detail = detail; }
+}
+export const ENFORCE_LIMIT_MS = 250;
+export const REFUSAL_LOG_PATH = "runtime/boundary-refusals.jsonl";
+
+// Test-only seams: the group-list read, the classifier, the decision and the clock. Nothing but a test sets them.
+const hooks = { groups: loadGroups, classify: classifyArtifact, decide: null, now: () => performance.now() };
+export function __setEnforceHooksForTest(next) {
+  const before = { ...hooks };
+  Object.assign(hooks, next);
+  return () => Object.assign(hooks, before);
+}
+
+const WRITER_FOR_KIND = { evidence: "knowledge_writer", observation: "shadow_writer", pass_decision: "decision_writer", project_state: "agent_record_writer" };
+/** The refusal text. Fixed shape: tool, its group, the path, its kind and owning group, the writer to hand the record to. Nothing else. */
+export function refusalText({ tool, group, path, kind, owner, writer }) {
+  return `boundary: ${tool || "unknown tool"}（${group || "unknown group"}）may not write ${path}（${kind || "unclassified"}, owner ${owner || "none"}）. Use ${writer || "no writer: the path has no owning group yet"}.`;
+}
+
+function noteRefusal(root, entry) {
+  try {
+    const path = join(root, REFUSAL_LOG_PATH);
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, JSON.stringify(entry) + "\n", "utf8");
+  } catch {}
+}
+
+/**
+ * Called before a write reaches the disk. With the switch off it does nothing. With it on, anything but a clear "this group owns this path" throws
+ * BoundaryRefusal: a cross-group write, a path that cannot be classified, a check that throws, a group list that cannot be read, no root, or a check
+ * that ran past ENFORCE_LIMIT_MS. This function has no catch that lets a write through.
+ */
+function enforceBoundary(root, target, op) {
+  if (!groupEnforceEnabled()) return;
+  let path = String(target ?? "");
+  let info = { tool: null, group: null, path, kind: null, owner: null, writer: null, status: "check_failed" };
+  try {
+    if (!root) throw new Error("no artifact root");
+    const started = hooks.now();
+    const verdict = hooks.decide ? hooks.decide(root, target, op) : evaluateWrite(root, target, { groups: hooks.groups, classify: hooks.classify });
+    if (!(hooks.now() - started <= ENFORCE_LIMIT_MS)) throw new Error("check too slow");
+    path = verdict.path ?? path;
+    info = { tool: verdict.tool, group: verdict.group, path, kind: verdict.classified?.kind ?? null, owner: verdict.classified?.owner ?? null, writer: null, status: verdict.status };
+    if (verdict.allowed === true) return;
+    info.writer = verdict.classified ? WRITER_FOR_KIND[verdict.classified.kind] ?? null : null;
+  } catch {
+    info.status = "check_failed";
+  }
+  if (root) noteRefusal(root, { op, ...info });
+  throw new BoundaryRefusal(refusalText(info), info);
+}
+
+/**
+ * Called at every artifact write site, before the write. With NEWSROOM_GROUP_ENFORCE=1 it may throw BoundaryRefusal (nothing is written);
+ * with NEWSROOM_GROUP_BOUNDARY=1 it records the call in the report. The report part never throws and never touches the write itself.
+ */
 export function recordBoundaryWrite(root, target, op = "write") {
+  enforceBoundary(root, target, op);
   if (!boundaryReportEnabled() || !root) return;
   try {
-    const text = String(target ?? "");
-    const path = (isAbsolute(text) ? relative(root, text) : text).replace(/\\/g, "/");
-    const writer = currentWriter();
-    const requestedBy = writer ? (currentTool() || null) : null;
-    const tool = writer ? writer.name : currentTool();
-    const group = writer ? writer.group : tool ? toolGroup(tool) : null;
-    const classified = classifyArtifact(path);
-    let status, reason = "";
-    if (!tool) { status = "待查"; reason = "no initiating tool"; }
-    else if (!group) { status = "待查"; reason = "tool is not in groups.json"; }
-    else if (!classified) { status = "待查"; reason = "path matches no artifact kind"; }
-    else status = group === classified.owner ? "ok" : "cross_group";
-    // The vision critic's record is the model's own quality verdict: the program computes the publication decision from it. It is listed in its own
-    // category with the reason from groups.json, outside the cross-group count, and is not counted as fixed.
-    const verdictTool = status === "cross_group" && classified.kind === "pass_decision" && loadGroups().tools?.[tool]?.model_quality_verdict ? loadGroups().tools[tool] : null;
+    const evaluated = evaluateWrite(root, target);
+    const { path, writer, requestedBy, tool, group, classified, list } = evaluated;
+    let { status, reason } = evaluated;
+    // A decision record the model's own quality verdict is stored in (the vision critic) is listed in its own category with the reason from groups.json,
+    // outside the ok and cross-group counts, whether the tool wrote it itself or the agent group's writer saved it for the tool (requested_by).
+    const requester = writer ? requestedBy : tool;
+    const verdictTool = (status === "cross_group" || status === "ok") && classified?.kind === "pass_decision" && list.tools?.[requester]?.model_quality_verdict ? list.tools[requester] : null;
     if (verdictTool) { status = "model_quality_verdict"; reason = verdictTool.verdict_reason ?? ""; }
     // A decision record whose status the model supplies is never counted as fine, whoever wrote the file. With NEWSROOM_GROUP_REVIEW_FROM_RECORDS=1 its
     // status is computed by the program from its own records and the record is tagged so; otherwise it is tagged model_supplied_pass, and when a group
     // writer saved it (so it would read ok) it is listed apart as model_supplied_pass, not ok.
     let tag = null;
-    const requester = writer ? requestedBy : tool;
-    if ((status === "cross_group" || status === "ok") && classified?.kind === "pass_decision" && loadGroups().tools?.[requester]?.model_supplied_pass) {
+    if ((status === "cross_group" || status === "ok") && classified?.kind === "pass_decision" && list.tools?.[requester]?.model_supplied_pass) {
       tag = process.env.NEWSROOM_GROUP_REVIEW_FROM_RECORDS === "1" ? "status_computed_by_program" : "model_supplied_pass";
       if (status === "ok" && tag === "model_supplied_pass") { status = "model_supplied_pass"; reason = "The status in this record is supplied by the model; writing the file through the owning group does not make it fine."; }
     }

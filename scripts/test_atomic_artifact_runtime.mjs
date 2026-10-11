@@ -46,8 +46,11 @@ const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
 const leftovers = (art) => (existsSync(tmpDirOf(art)) ? readdirSync(tmpDirOf(art)) : []);
 const gate = () => { let open; const p = new Promise((r) => { open = r; }); return { p, open }; };
 
-const writeText = mod.__writeArtifactIfAbsentForTest;
-const writeBytes = mod.__writeArtifactBytesIfAbsentForTest;
+// A computation record is the knowledge group's: in production only a registered tool's execute reaches these writers, and its context names the tool.
+// The test names a real knowledge-group tool as the initiator, so the writes also pass NEWSROOM_GROUP_ENFORCE=1 without loosening any rule.
+const { runInTool } = await import(join(pi, "groups.mjs"));
+const writeText = (...args) => runInTool("duckdb_query", () => mod.__writeArtifactIfAbsentForTest(...args));
+const writeBytes = (...args) => runInTool("duckdb_query", () => mod.__writeArtifactBytesIfAbsentForTest(...args));
 const TEXT = JSON.stringify({ a: 1 }, null, 2) + "\n";
 
 // --- (a) Defect reproduction, switch off ------------------------------------

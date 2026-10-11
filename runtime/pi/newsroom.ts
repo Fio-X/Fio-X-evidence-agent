@@ -1,8 +1,9 @@
 import { runProcess } from "./process.mjs";
 import { decisionWriter } from "./decision_writer.mjs";
 import { probeWriter } from "./probe_writer.mjs";
+import { agentRecordWriter } from "./agent_record_writer.mjs";
 import { handoffEnabled, knowledgeWriter } from "./knowledge_writer.mjs";
-import { boundaryReportEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
+import { boundaryContextEnabled, groupEnforceEnabled, groupToolOrderEnabled, orderToolsByGroup, recordBoundaryWrite, withBoundaryContext } from "./groups.mjs";
 import { diagnosticRecord, failureTypeOf, fetchSplitProbeEnabled, planSplit } from "./fetch_split_probe.mjs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -531,8 +532,8 @@ function registerScopedTool(pi: ExtensionAPI, tool: any) {
       return originalExecute(...args);
     }};
   }
-  // NEWSROOM_GROUP_BOUNDARY=1: the tool's writes know which tool started them (also when a chain calls this tool).
-  if (boundaryReportEnabled()) tool = withBoundaryContext(tool);
+  // NEWSROOM_GROUP_BOUNDARY=1 or NEWSROOM_GROUP_ENFORCE=1: the tool's writes know which tool started them (also when a chain calls this tool).
+  if (boundaryContextEnabled()) tool = withBoundaryContext(tool);
   registeredTools.set(name, tool);
   if (name === "newsroom_infographic_plan" && planPatchEnabled()) tool = withRejectionStore(tool, PLAN_PATCH);
   wrappedTools.set(name, tool);
@@ -553,7 +554,8 @@ const wrappedTools = new Map<string, any>();
 async function storeRejection(kind: PatchKind, raw: any): Promise<string | null> {
   const ref = `${kind.rejections}${sha256Of(raw)}.json`;
   // Raw params only: stored before any fill, so a retry is filled again from the artifacts it names.
-  return (await writeArtifactIfAbsent(ref, { schema_version: "0.1.0", kind: "rejected_call", tool: kind.tool, params: raw })) ? ref : null;
+  const record = { schema_version: "0.1.0", kind: "rejected_call", tool: kind.tool, params: raw };
+  return (await saveRejection(ref, record)) ? ref : null;
 }
 const patchHint = (kind: PatchKind, ref: string) => `\nSend only the change: ${kind.patchTool} patch_of=${ref}`;
 
@@ -1494,6 +1496,12 @@ export const __saveQueryRowsForTest = (ref: string, rows: unknown[]) => saveQuer
 const decisionSide = () => decisionWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value) });
 const saveDecision = (ref: string, record: unknown) => (handoffEnabled() ? decisionSide().writeDecision(ref, record) : writeArtifactIfAbsent(ref, record));
 export const __saveDecisionForTest = (ref: string, record: unknown) => saveDecision(ref, record);
+// The refused-call store and the tool-chain event log are run records: with the hand-off on, the agent group's writer saves them.
+const agentRecordSide = () => agentRecordWriter({ writeArtifactIfAbsent: (ref: string, value: unknown) => writeArtifactIfAbsent(ref, value), appendArtifact: (ref: string, value: unknown) => appendArtifact(ref, value) });
+const saveRejection = (ref: string, record: unknown) => (handoffEnabled() ? agentRecordSide().writeRejection(ref, record) : writeArtifactIfAbsent(ref, record));
+const saveChainEvent = (event: unknown) => (handoffEnabled() ? agentRecordSide().appendChainEvent(event) : appendArtifact("runtime/tool-chain-events.jsonl", event));
+export const __saveRejectionForTest = (ref: string, record: unknown) => saveRejection(ref, record);
+export const __saveChainEventForTest = (event: unknown) => saveChainEvent(event);
 const saveClaim = (input: any, signal?: AbortSignal) => (handoffEnabled() ? knowledgeSide().recordClaim(input, signal) : recordClaimArtifact(input, signal));
 export const __writeArtifactIfAbsentForTest = (relativePath: string, value: unknown) => writeArtifactIfAbsent(relativePath, value);
 export const __writeArtifactBytesIfAbsentForTest = (relativePath: string, value: Uint8Array) => writeArtifactBytesIfAbsent(relativePath, value);
@@ -2792,7 +2800,7 @@ function registerVizChain(pi: ExtensionAPI) {
         record: async (event: any) => {
           const at = new Date().toISOString();
           const toolCallId = `${id}:${event.tool}`;
-          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+          await saveChainEvent(event.phase === "start"
             ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
             : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
         },
@@ -3535,7 +3543,7 @@ function registerInfographicChain(pi: ExtensionAPI) {
         record: async (event: any) => {
           const at = new Date().toISOString();
           const toolCallId = `${id}:${event.tool}`;
-          await appendArtifact("runtime/tool-chain-events.jsonl", event.phase === "start"
+          await saveChainEvent(event.phase === "start"
             ? { type: "tool_execution_start", chain: name, toolCallId, toolName: event.tool, step: event.step, args: event.params, _newsroom_recorded_at: at }
             : { type: "tool_execution_end", chain: name, toolCallId, toolName: event.tool, step: event.step, isError: event.isError, ...(event.isError ? { error: event.error } : { result: { details: event.details } }), _newsroom_recorded_at: at });
         },
@@ -3560,9 +3568,11 @@ function registerInfographicChain(pi: ExtensionAPI) {
 
 // NEWSROOM_GROUP_TOOL_ORDER=1 (default off): tools are handed to Pi in group order, each description starting with a group label.
 // NEWSROOM_GROUP_BOUNDARY=1 (default off): every tool's writes are attributed to it (see groups.mjs). Off: Pi gets the tools untouched.
+// NEWSROOM_GROUP_ENFORCE=1 (default off) refuses a write outside the writer's own group; it needs NEWSROOM_GROUP_HANDOFF=1, and without it the extension stops here.
 export default function newsroomExtension(pi: ExtensionAPI) {
+  if (groupEnforceEnabled() && !handoffEnabled()) throw new Error("GROUP_ENFORCE_NEEDS_HANDOFF: refusing cross-group writes only works when each group saves its own records; the hand-off to the group writers must be on too");
   const order = groupToolOrderEnabled();
-  const boundary = boundaryReportEnabled();
+  const boundary = boundaryContextEnabled();
   if (!order && !boundary) return registerNewsroomTools(pi);
   const buffered: any[] = [];
   const proxy = new Proxy(pi as any, {
@@ -5373,7 +5383,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
         const concepts = expandSharedConcepts(params.shared, params.concepts);
         await checkExpandedConcepts(concepts, buildConceptParameters(false), (await import("typebox/compile")).Compile);
         params = { discovery_ref: params.discovery_ref, concepts };
-        await appendArtifact("runtime/tool-chain-events.jsonl", { type: "setup_input_form", toolName: "newsroom_visual_concepts", input_form: rawParams.shared === undefined ? "full" : "shared_defaults", _newsroom_recorded_at: new Date().toISOString() });
+        await saveChainEvent({ type: "setup_input_form", toolName: "newsroom_visual_concepts", input_form: rawParams.shared === undefined ? "full" : "shared_defaults", _newsroom_recorded_at: new Date().toISOString() });
       }
       const discovery = await readArtifactJson(params.discovery_ref, "editorial/discovery/");
       if (discovery.decision !== "CONTINUE") throw new Error(`Editorial discovery is '${discovery.decision}', so concept selection cannot proceed`);
@@ -6667,7 +6677,7 @@ ${criticResult.passed ? "Editorial visualization quality gate passed on the desk
       }
       const key = sha256Hex(JSON.stringify({ manifest_ref: params.manifest_ref, preview_ref: params.preview_ref, score: normalized.score, issues: normalized.issues, patches: normalized.patches }));
       const criticRef = `infographics/vision-critics/${key}.json`;
-      await writeArtifactIfAbsent(criticRef, {
+      await saveDecision(criticRef, {
         ...normalized,
         kind: "image_aware_model",
         manifest_ref: params.manifest_ref,

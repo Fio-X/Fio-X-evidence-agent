@@ -667,6 +667,10 @@
    "group": "knowledge",
    "note": "Writes the claim record, computation records and query-row tables on behalf of visual tools (hand-off switch)."
   },
+  "runtime/pi/shadow_writer.mjs": {
+   "group": "knowledge",
+   "note": "Writes the shadow-check side files (shadow/, kind observation) on behalf of the visual-side tools (hand-off switch)."
+  },
   "runtime/pi/probe_writer.mjs": {
    "group": "agent",
    "note": "Writes the fetch-split diagnostic files under runtime/fetch-split-probe/ on behalf of download_data (probe switch)."
@@ -674,6 +678,10 @@
   "runtime/pi/decision_writer.mjs": {
    "group": "agent",
    "note": "Writes the expert-preference record, the award-mode status and the competition preflight on behalf of the visual-side tools (hand-off switch)."
+  },
+  "runtime/pi/agent_record_writer.mjs": {
+   "group": "agent",
+   "note": "Writes the refused-call store of the plan tool and the tool-chain event log on behalf of the visual-side tools (hand-off switch)."
   },
   "runtime/pi/extreme_probe.mjs": {
    "group": "visual",
