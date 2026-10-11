@@ -3,7 +3,7 @@
 // of them to this writer instead of the tool writing the file itself. Same store call, same arguments, same order: paths, bytes and the number of
 // writes do not change; only who the boundary report names as the writer does (the asking tool stays listed as requested_by). Only these folders
 // and this one file are accepted.
-import { runAsWriter } from "./groups.mjs";
+import { asHandoffWriter } from "./groups.mjs";
 
 export const AGENT_RECORD_WRITER = "agent_record_writer";
 export const AGENT_RECORD_FOLDERS = ["infographics/plan-rejections/", "infographics/chain-rejections/"];
@@ -16,10 +16,10 @@ export function agentRecordWriter(deps) {
       if (typeof ref !== "string" || ref.includes("..") || !AGENT_RECORD_FOLDERS.some((folder) => ref.startsWith(folder))) {
         throw new Error(`AGENT_RECORD_WRITER_REF: a refused-call record must be saved under ${AGENT_RECORD_FOLDERS.join(", ")}`);
       }
-      return runAsWriter("agent", AGENT_RECORD_WRITER, () => deps.writeArtifactIfAbsent(ref, record));
+      return asHandoffWriter(AGENT_RECORD_WRITER, () => deps.writeArtifactIfAbsent(ref, record));
     },
     appendChainEvent(event) {
-      return runAsWriter("agent", AGENT_RECORD_WRITER, () => deps.appendArtifact(CHAIN_EVENT_FILE, event));
+      return asHandoffWriter(AGENT_RECORD_WRITER, () => deps.appendArtifact(CHAIN_EVENT_FILE, event));
     },
   };
 }

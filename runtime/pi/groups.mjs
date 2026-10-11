@@ -11,7 +11,7 @@
 // NEWSROOM_GROUP_ENFORCE=1 (exact value, default off; needs NEWSROOM_GROUP_HANDOFF=1, newsroom.ts stops at start-up without it): the same
 // classification, but a write made by a tool outside the owning group is refused before anything reaches the disk. A write that cannot be
 // classified (待查) is refused too, and so is a check that fails, errors or runs past its hard limit (fail-closed). Reads, mkdir and a group's own
-// writers (runAsWriter) are not refused. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
+// writers (asHandoffWriter) are refused unless groups.json "handoffs" lists the path for that writer and the asking tool as a requester. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
 //
 // NEWSROOM_GROUP_TOOLS=1 (exact value, default off; needs NEWSROOM_GROUP_ENFORCE=1, newsroom.ts stops at start-up without it): every tool goes through one
 // wrapper at the single registration point (withGroupTools). A tool that groups.json does not list with a group and a group.action name stops the start-up.
@@ -99,7 +99,7 @@ export const NOT_TRACED = [
   "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
   "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
   "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) only for NEW files, so a child process that rewrites or deletes an existing file is not seen; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
-  "hand-off writers (runAsWriter here, as_writer in src/group_guard.rs): the write is recorded under the writer's group with the asking tool or command kept as requested_by, but the requester and the content are not checked (K214, fix not yet decided)",
+  "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is not checked yet (K214 part B), and a requester listed there as not_measured is a static inference no test run has seen",
   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
   "reads of any kind",
@@ -110,10 +110,25 @@ const store = new AsyncLocalStorage();
 export const runInTool = (tool, fn) => store.run({ tool: String(tool ?? "") }, fn);
 export const currentTool = () => store.getStore()?.tool ?? null;
 /**
- * Run fn as a group's own writer (NEWSROOM_GROUP_HANDOFF=1): the writes inside belong to that group and are reported under the writer's name,
- * with the tool that asked for them kept in `requested_by`, so a hand-off is visible and never hidden.
+ * Run fn as a hand-off writer named in groups.json "handoffs".writers (NEWSROOM_GROUP_HANDOFF=1): the writes inside belong to the writer's group and are
+ * reported under the writer's name, with the tool that asked for them kept in `requested_by`. The group comes from the table, not from the caller, and
+ * with NEWSROOM_GROUP_ENFORCE=1 every write is also checked against the table's rows (path, kind, requester). An unlisted writer name throws.
  */
-export const runAsWriter = (group, writer, fn) => store.run({ tool: store.getStore()?.tool ?? "", writer: { group, name: writer } }, fn);
+export function asHandoffWriter(writer, fn) {
+  const entry = loadGroups().handoffs?.writers?.[writer];
+  if (!entry) throw new Error(`hand-off writer ${writer} is not listed in groups.json handoffs.writers`);
+  return store.run({ tool: store.getStore()?.tool ?? "", writer: { group: entry.group, name: writer } }, fn);
+}
+const pathInRow = (path, row) => row.paths.some((p) => (p.endsWith("/") ? path.startsWith(p) : path === p));
+/** Null when the table lets this writer write this path for this asking tool, else the reason it does not. */
+function handoffProblem(list, writer, path, requester) {
+  const entry = list.handoffs?.writers?.[writer.name];
+  if (!entry || entry.group !== writer.group) return "writer is not in the handoffs table";
+  const rows = (list.handoffs.rows ?? []).filter((r) => r.writer === writer.name && pathInRow(path, r));
+  if (!rows.length) return `no handoffs row lets ${writer.name} write ${path}`;
+  if (!rows.some((r) => r.requesters.includes(requester ?? ""))) return `${requester || "no asking tool"} is not a listed requester of ${writer.name} for ${path}`;
+  return null;
+}
 const currentWriter = () => store.getStore()?.writer ?? null;
 
 /** Wraps a tool's execute so its writes know who initiated them. Only called with the report or the refusal switch on. */
@@ -146,6 +161,8 @@ function writeReport(root) {
   const handedTo = (group) => records.filter((r) => r.requested_by !== undefined && r.tool_group === group).reduce((sum, r) => sum + r.count, 0);
   if (handedTo("knowledge")) totals.handed_to_knowledge = handedTo("knowledge");
   if (handedTo("agent")) totals.handed_to_agent = handedTo("agent");
+  const notListed = count("handoff_not_listed");
+  if (notListed) totals.handoff_not_listed = notListed;
   const verdicts = count("model_quality_verdict");
   if (verdicts) totals.model_quality_verdict = verdicts;
   const modelPasses = count("model_supplied_pass");
@@ -182,7 +199,11 @@ function evaluateWrite(root, target, lookup = { groups: loadGroups, classify: cl
   else if (!group) { status = "待查"; reason = "tool is not in groups.json"; }
   else if (!classified) { status = "待查"; reason = "path matches no artifact kind"; }
   else status = group === classified.owner ? "ok" : "cross_group";
-  const allowed = Boolean(tool && group && classified && group === classified.owner);
+  let allowed = Boolean(tool && group && classified && group === classified.owner);
+  if (allowed && writer) {
+    const problem = handoffProblem(list, writer, path, requestedBy);
+    if (problem) { allowed = false; status = "handoff_not_listed"; reason = problem; }
+  }
   return { path, writer, requestedBy, tool, group, classified, status, reason, allowed, list };
 }
 

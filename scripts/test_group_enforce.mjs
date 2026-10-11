@@ -100,8 +100,8 @@ function probe(g) {
 
   // owner's own write and a group writer's write pass
   allow("owner", () => write("duckdb_query", "computations/x.json"));
-  allow("knowledge writer", () => g.runInTool("newsroom_viz_lint", () => g.runAsWriter("knowledge", "knowledge_writer", () => g.recordBoundaryWrite(dir, "computations/x.json", "write_if_absent"))));
-  allow("decision writer", () => g.runInTool("newsroom_infographic_vision_critic", () => g.runAsWriter("agent", "decision_writer", () => g.recordBoundaryWrite(dir, "infographics/vision-critics/k.json", "write_if_absent"))));
+  allow("knowledge writer", () => g.runInTool("newsroom_viz_lint", () => g.asHandoffWriter("knowledge_writer", () => g.recordBoundaryWrite(dir, "computations/x.json", "write_if_absent"))));
+  allow("decision writer", () => g.runInTool("newsroom_infographic_vision_critic", () => g.asHandoffWriter("decision_writer", () => g.recordBoundaryWrite(dir, "infographics/vision-critics/k.json", "write_if_absent"))));
   allow("visual spec by a visual tool", () => write("newsroom_viz_plan", "visualizations/v.json"));
 
   // 1. a visual tool writing a knowledge path
@@ -148,8 +148,8 @@ function probe(g) {
   process.env.NEWSROOM_GROUP_ENFORCE = "1";
   const rdir = freshDir();
   g.resetBoundaryReport();
-  g.runInTool("newsroom_infographic_vision_critic", () => g.runAsWriter("agent", "decision_writer", () => g.recordBoundaryWrite(rdir, "infographics/vision-critics/k.json", "write_if_absent")));
-  g.runInTool("newsroom_viz_lint", () => g.runAsWriter("knowledge", "knowledge_writer", () => g.recordBoundaryWrite(rdir, "computations/x.json", "write_if_absent")));
+  g.runInTool("newsroom_infographic_vision_critic", () => g.asHandoffWriter("decision_writer", () => g.recordBoundaryWrite(rdir, "infographics/vision-critics/k.json", "write_if_absent")));
+  g.runInTool("newsroom_viz_lint", () => g.asHandoffWriter("knowledge_writer", () => g.recordBoundaryWrite(rdir, "computations/x.json", "write_if_absent")));
   const report = JSON.parse(readFileSync(join(rdir, g.BOUNDARY_REPORT_PATH), "utf8"));
   const verdict = report.records.find((r) => r.requested_by === "newsroom_infographic_vision_critic");
   if (verdict?.status !== "model_quality_verdict" || verdict?.tool !== "decision_writer") bad.push(`the handed-over vision critic record is not listed as model_quality_verdict: ${JSON.stringify(verdict)}`);
