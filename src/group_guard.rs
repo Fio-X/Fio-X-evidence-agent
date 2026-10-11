@@ -3,7 +3,7 @@
 //!
 //! The judge: the write's path gives its kind and owning group (first matching rule, exact or prefix); the writing group is the group of the current
 //! command in `cli::COMMAND_GROUPS`, or the group of a hand-off writer (`as_writer`) the call site runs inside, with the asking command kept as
-//! `requested_by` (recorded only, never checked against the content or the writer, K214; the fix is not decided). Owner equals writing group: allowed. Anything else is refused before the file is touched: a path in another group's kind, a path
+//! `requested_by` (K214: the writer, its group and the asking command must be a row of `handoffs.rust` in groups.json, else the write is refused). Owner equals writing group: allowed. Anything else is refused before the file is touched: a path in another group's kind, a path
 //! no rule matches (待查), no command and no writer (no context is never a default allow), a path outside the run folder, a table that cannot be
 //! read. Nothing here has a "let it through on error" branch.
 //!
@@ -72,6 +72,10 @@ struct Rule {
 struct Table {
     rules: Vec<Rule>,
     owners: Vec<(String, String)>,
+    /// `handoffs.rust` rows: (writer, group, commands that may ask for it; the not_measured ones are in `unmeasured`). Required: a table without them cannot be read.
+    handoffs: Vec<(String, String, Vec<String>)>,
+    // (writer, command) pairs a row keeps in not_measured: listed from reading the code, never seen in a run, refused until a run measures them
+    unmeasured: Vec<(String, String)>,
 }
 
 fn parse_table(text: &str) -> Option<Table> {
@@ -96,7 +100,24 @@ fn parse_table(text: &str) -> Option<Table> {
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(Table { rules, owners })
+    let handoffs = value
+        .get("handoffs")?
+        .get("rust")?
+        .as_array()?
+        .iter()
+        .map(|row| {
+            let commands: Vec<String> = row.get("commands")?.as_array()?.iter().filter_map(|c| c.as_str().map(str::to_string)).collect();
+            Some((row.get("writer")?.as_str()?.to_string(), row.get("group")?.as_str()?.to_string(), commands))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut unmeasured = Vec::new();
+    for row in value.get("handoffs")?.get("rust")?.as_array()? {
+        let writer = row.get("writer")?.as_str()?.to_string();
+        for command in row.get("not_measured").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+            unmeasured.push((writer.clone(), command.to_string()));
+        }
+    }
+    Some(Table { rules, owners, handoffs, unmeasured })
 }
 
 impl Table {
@@ -190,8 +211,9 @@ impl Drop for WriterScope {
 }
 
 /// Run `f` as a group's own writer: the writes inside belong to `group`, reported under `writer`, with `requested_by` kept. The writes are judged
-/// like any other (the path's owner must be `group`), so a hand-off cannot write what the group does not own. No await may happen inside `f`.
-pub fn as_writer<T>(group: &'static str, writer: &'static str, requested_by: &'static str, f: impl FnOnce() -> T) -> T {
+/// like any other (the path's owner must be `group`), and the writer, group and asking command must be a `handoffs.rust` row. Private: only the
+/// four `as_*` doors below exist, so no call site picks its own writer. No await may happen inside `f`.
+fn as_writer<T>(group: &'static str, writer: &'static str, requested_by: &'static str, f: impl FnOnce() -> T) -> T {
     let previous = WRITER.with(|cell| cell.borrow_mut().replace(Handoff { group, writer, requested_by }));
     let _scope = WriterScope(previous);
     f()
@@ -211,7 +233,7 @@ pub fn as_verification_record<T>(f: impl FnOnce() -> T) -> T {
 }
 /// Copying the program's own runtime and config into the run folder (runtime.rs materialization functions only): the system group's writer.
 pub fn as_materialize<T>(f: impl FnOnce() -> T) -> T {
-    as_writer("system", "materialize_writer", "materialize", f)
+    as_writer("system", "materialize_writer", command_name(), f)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -304,7 +326,10 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
     };
     let rel = relative(root, path, op);
     let classified = rel.as_deref().and_then(|rel| with_table(|table| table?.classify(rel)));
-    let allowed = matches!((&group, &classified, &rel), (Some(group), Some((_, owner, _)), Some(_)) if owner == group);
+    let owned = matches!((&group, &classified, &rel), (Some(group), Some((_, owner, _)), Some(_)) if owner == group);
+    // a hand-off must also be a row of handoffs.rust (writer, group, asking command); no row, no write
+    let listed = handoff.is_none_or(|h| with_table(|table| table.is_some_and(|t| t.handoffs.iter().any(|(w, g, c)| w == h.writer && g == h.group && c.iter().any(|x| x == h.requested_by)) && !t.unmeasured.iter().any(|(w, c)| w == h.writer && c == h.requested_by))));
+    let allowed = owned && listed;
     let verdict = Verdict {
         path: rel.clone().unwrap_or_else(|| path.display().to_string()),
         kind: classified.as_ref().map(|c| c.0.clone()),
@@ -320,7 +345,10 @@ fn judge(root: &Path, path: &Path, op: Op) -> io::Result<()> {
         return Ok(());
     }
     let shown = handoff.map(|h| h.writer).or(command).unwrap_or("");
-    let text = refusal_text(shown, group.unwrap_or(""), &verdict.path, verdict.kind.as_deref(), verdict.owner.as_deref());
+    let text = match handoff {
+        Some(h) if owned && !listed => format!("boundary: {} may not ask {} to write {}.", if h.requested_by.is_empty() { "an unknown command" } else { h.requested_by }, h.writer, verdict.path),
+        _ => refusal_text(shown, group.unwrap_or(""), &verdict.path, verdict.kind.as_deref(), verdict.owner.as_deref()),
+    };
     note_refusal(root, if op == Op::Dir { "mkdir" } else { "write" }, &text, &verdict.path);
     Err(io::Error::new(io::ErrorKind::PermissionDenied, text))
 }
@@ -387,21 +415,52 @@ pub fn remove_scratch_dir(path: &Path) {
     }
 }
 
-/// The verification result file. `record["passed"]` must be the value the program computed (`program_passed`); a record that carries any other
-/// value (for example one a model supplied) is refused and nothing is written. The write itself is the knowledge group's (verification_record).
-pub fn write_verification_record(root: &Path, path: &Path, record: &Value, program_passed: bool) -> io::Result<()> {
+/// The verification result file, written with the outcome `verify_and_record` computed. `record["passed"]` must equal it; a record that carries
+/// any other value (for example one a model supplied) is refused and nothing is written. Only the verify module can make a `VerifiedOutcome`,
+/// so a "passed" record exists only where the checks computed it, whoever asked (the verify command or the check at the end of investigate).
+/// The write itself is the knowledge group's (verification_record).
+pub fn write_verification_record(root: &Path, path: &Path, record: &Value, outcome: &crate::commands::verify::VerifiedOutcome) -> io::Result<()> {
     // Only with the switch on (K213 fe review): off, the write is the one the program always made.
-    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(program_passed) {
+    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(outcome.passed()) {
         let text = "boundary: the pass value of a verification record must be the one the program computed; this record carries another value and was not written.".to_string();
         note_refusal(root, "write", &text, "verification.json");
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, text));
     }
+    write_record_text(root, path, record)
+}
+
+/// The record a command outside verify may leave on its own (continue's round status): it must say not passed. A passed one needs an outcome.
+pub fn write_not_passed_record(root: &Path, path: &Path, record: &Value) -> io::Result<()> {
+    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(false) {
+        let text = "boundary: this path may only write a verification record that says not passed; a passed record is written by verify.".to_string();
+        note_refusal(root, "write", &text, "verification.json");
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, text));
+    }
+    write_record_text(root, path, record)
+}
+
+fn write_record_text(root: &Path, path: &Path, record: &Value) -> io::Result<()> {
     let text = format!("{}\n", serde_json::to_string_pretty(record).map_err(io::Error::other)?);
     if command_group() == Some("knowledge") {
         write(root, path, text)
     } else {
         as_verification_record(|| write(root, path, text))
     }
+}
+
+/// K214 part B: an imported data file must be stored under its own content address. `actual` is the hash of the stored file, `expected` the one
+/// the name was made from. Only with the switch on; off, nothing is checked and nothing changes.
+pub fn check_imported_data(root: &Path, relative_file: &str, expected: &str, actual: &str) -> io::Result<()> {
+    if !enabled() {
+        return Ok(());
+    }
+    let stem_ok = relative_file.strip_prefix("data/").and_then(|name| name.split('.').next()).is_some_and(|stem| stem == expected);
+    if stem_ok && expected == actual {
+        return Ok(());
+    }
+    let text = format!("boundary: the imported data file {relative_file} does not hash to the address it is stored under; its metadata and origin were not written.");
+    note_refusal(root, "write", &text, relative_file);
+    Err(io::Error::new(io::ErrorKind::PermissionDenied, text))
 }
 
 /// Test-only access to what was judged on this thread.
@@ -413,6 +472,7 @@ pub fn take_log_for_test() -> Vec<Verdict> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::verify::VerifiedOutcome;
     use std::path::Path;
 
     /// Switch on, a command set, the table as built (None) or replaced (Some(json text)); all undone when the guard drops.
@@ -426,10 +486,23 @@ mod tests {
                 (name, group)
             });
             TEST_COMMAND.with(|c| *c.borrow_mut() = Some(with_group));
-            TEST_TABLE.with(|c| *c.borrow_mut() = table);
+            // None = the real groups.json with every handoffs.rust row treated as measured (as it will be after the compile-time run); Setup::real keeps it as it is
+            TEST_TABLE.with(|c| *c.borrow_mut() = Some(table.unwrap_or_else(measured_groups)));
             let _ = take_log_for_test();
             Setup
         }
+    }
+    impl Setup {
+        fn real(command: Option<&'static str>) -> Self {
+            Self::new(command, Some(GROUPS_JSON.to_string()))
+        }
+    }
+    fn measured_groups() -> String {
+        let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        for row in value["handoffs"]["rust"].as_array_mut().unwrap() {
+            row.as_object_mut().unwrap().remove("not_measured");
+        }
+        value.to_string()
     }
     impl Drop for Setup {
         fn drop(&mut self) {
@@ -492,9 +565,10 @@ mod tests {
         let text = refused(write(dir.path(), &dir.path().join("story.json"), "{}"));
         assert!(text.contains("unknown command"), "{text}");
         assert!(!dir.path().join("story.json").exists());
-        // a writer hand-off still needs a path its group owns
+        // a writer hand-off still needs a path its group owns, and an asking command in its handoffs.rust row (none here: refused)
         refused(as_run_bundle(|| write(dir.path(), &dir.path().join("story.json"), "{}")));
-        as_run_bundle(|| write(dir.path(), &dir.path().join("answer.md"), "x")).unwrap();
+        let text = refused(as_run_bundle(|| write(dir.path(), &dir.path().join("answer.md"), "x")));
+        assert!(text.contains("may not ask run_bundle_writer"), "{text}");
     }
 
     #[test]
@@ -515,14 +589,14 @@ mod tests {
         assert!(data.iter().all(|v| v.allowed && v.writer.as_deref() == Some("knowledge_writer") && v.requested_by.as_deref() == Some("investigate") && v.kind.as_deref() == Some("evidence")), "{data:?}");
         // the system writer may not write evidence
         refused(as_run_bundle(|| write(root, &root.join("data/x.csv"), "x")));
-        // materialization: runtime code names only, requested_by=materialize
+        // materialization: runtime code names only, requested_by is the running command
         as_materialize(|| create_dir_all(root, &root.join("runtime"))).unwrap();
         as_materialize(|| create_dir_all(root, &root.join("config"))).unwrap();
         as_materialize(|| write(root, &root.join("runtime/newsroom.ts"), "x")).unwrap();
         as_materialize(|| create_dir_all(root, &root.join("runtime/assets"))).unwrap();
         as_materialize(|| write(root, &root.join("config/editorial-grammar-registry.json"), "{}")).unwrap();
         let log = take_log_for_test();
-        assert!(log.iter().filter(|v| v.writer.as_deref() == Some("materialize_writer")).all(|v| v.allowed && v.requested_by.as_deref() == Some("materialize")));
+        assert!(log.iter().filter(|v| v.writer.as_deref() == Some("materialize_writer")).all(|v| v.allowed && v.requested_by.as_deref() == Some("investigate")));
         refused(as_materialize(|| write(root, &root.join("runtime/query-rows/q.json"), "[]")));
         refused(as_materialize(|| write(root, &root.join("runtime/anything-else.py"), "x")));
         refused(as_materialize(|| write(root, &root.join("claims.jsonl"), "x")));
@@ -539,18 +613,26 @@ mod tests {
         // continue (agent) writes the record through the knowledge hand-off with the value the program computed
         let _setup = Setup::new(Some("continue"), None);
         let record = serde_json::json!({ "passed": false, "checks": 0 });
-        write_verification_record(root, &path, &record, false).unwrap();
+        write_not_passed_record(root, &path, &record).unwrap();
         assert!(path.is_file());
         fs::remove_file(&path).unwrap();
         // a model-supplied "passed": true against the program's false: refused, nothing written
         let supplied = serde_json::json!({ "passed": true, "checks": 0 });
-        refused(write_verification_record(root, &path, &supplied, false));
+        refused(write_verification_record(root, &path, &supplied, &VerifiedOutcome::for_test(false)));
+        // and the credential-less door refuses anything that says passed
+        refused(write_not_passed_record(root, &path, &supplied));
         assert!(!path.exists());
         // a record without the field is refused too
-        refused(write_verification_record(root, &path, &serde_json::json!({ "checks": 0 }), false));
+        refused(write_verification_record(root, &path, &serde_json::json!({ "checks": 0 }), &VerifiedOutcome::for_test(false)));
         // verify itself (knowledge) writes its own record directly
         let _verify = Setup::new(Some("verify"), None);
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), true).unwrap();
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(true)).unwrap();
+        // investigate runs verify at its end: the same call, the same credential, a listed asking command
+        let _investigate = Setup::new(Some("investigate"), None);
+        fs::remove_file(&path).unwrap();
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(true)).unwrap();
+        // a pass the checks did not compute is refused for it too
+        refused(write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(false)));
         // and the plain write of verification.json by the agent command is refused: the only door is the hand-off above
         let _agent = Setup::new(Some("continue"), None);
         refused(write(root, &path, "{\"passed\":true}"));
@@ -565,11 +647,10 @@ mod tests {
         let _setup = Setup::new(Some("interactive"), None);
         write(root, &root.join("story.json"), "{}").unwrap();
         refused(write(root, &root.join("claims.jsonl"), "x"));
-        let record = serde_json::json!({ "passed": true });
-        // no verification write without the hand-off, and the hand-off still demands the program's value
+        // no verification write without the hand-off; the hand-off row lists continue only, so the launcher cannot ask for it
         refused(write(root, &root.join("verification.json"), "{}"));
-        write_verification_record(root, &root.join("verification.json"), &record, true).unwrap();
-        refused(write_verification_record(root, &root.join("verification.json"), &record, false));
+        let record = serde_json::json!({ "passed": false });
+        refused(write_verification_record(root, &root.join("verification.json"), &record, &VerifiedOutcome::for_test(false)));
     }
 
     #[test]
@@ -578,7 +659,7 @@ mod tests {
         let root = dir.path();
         TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(false));
         let path = root.join("verification.json");
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), false).unwrap();
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(false)).unwrap();
         TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
         assert!(path.is_file());
     }
@@ -618,6 +699,73 @@ mod tests {
             let expected = row["kind"].as_str();
             assert_eq!(classify(path).map(|c| c.0).as_deref(), expected, "path {path:?}");
         }
+    }
+
+    /// K214: a hand-off must be a row of handoffs.rust. The path is the writer's own kind, so only the table can stop it.
+    #[test]
+    fn a_handoff_needs_its_row_and_an_asking_command_in_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        // ask is an agent command, data/ is knowledge evidence, the knowledge writer owns it: only the commands list keeps ask out
+        let _setup = Setup::new(Some("ask"), None);
+        let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
+        assert!(text.contains("may not ask knowledge_writer"), "{text}");
+        assert!(!root.join("data/abc.csv").exists());
+        drop(_setup);
+        // the same call from investigate is a listed pair
+        let _setup = Setup::new(Some("investigate"), None);
+        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
+        drop(_setup);
+        // a table whose handoffs.rust is emptied refuses every hand-off, and one without the key cannot be read at all
+        let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        value["handoffs"]["rust"] = Value::Array(Vec::new());
+        let _setup = Setup::new(Some("investigate"), Some(value.to_string()));
+        refused(as_data_import(|| write(root, &root.join("data/def.csv"), "x")));
+        refused(as_run_bundle(|| write(root, &root.join("answer.md"), "x")));
+        drop(_setup);
+        let mut value: Value = serde_json::from_str(GROUPS_JSON).unwrap();
+        value.as_object_mut().unwrap().remove("handoffs");
+        let _setup = Setup::new(Some("investigate"), Some(value.to_string()));
+        refused(write(root, &root.join("story.json"), "{}"));
+    }
+
+    /// K214: a command kept in not_measured is listed but refused (and logged) until a run has seen it; the real table has not been measured for Rust yet.
+    #[test]
+    fn a_not_measured_command_is_refused_until_measured() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        // investigate was seen importing data (10-11 census); interactive was not
+        let _setup = Setup::real(Some("interactive"));
+        let text = refused(as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")));
+        assert!(text.contains("may not ask knowledge_writer"), "{text}");
+        assert!(!root.join("data/abc.csv").exists());
+        drop(_setup);
+        let _setup = Setup::real(Some("investigate"));
+        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
+        drop(_setup);
+        let _setup = Setup::new(Some("interactive"), None);
+        as_data_import(|| write(root, &root.join("data/abc.csv"), "a,b")).unwrap();
+    }
+
+    #[test]
+    fn imported_data_must_hash_to_its_address_and_continue_writes_only_not_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let _setup = Setup::new(Some("continue"), None);
+        check_imported_data(root, "data/aa.csv", "aa", "aa").unwrap();
+        refused(check_imported_data(root, "data/aa.csv", "aa", "bb"));
+        refused(check_imported_data(root, "data/zz.csv", "aa", "aa"));
+        // continue (agent group): a passed record is refused even when the program computed true; not passed goes through
+        let path = root.join("verification.json");
+        refused(write_not_passed_record(root, &path, &serde_json::json!({ "passed": true })));
+        assert!(!path.exists());
+        write_not_passed_record(root, &path, &serde_json::json!({ "passed": false })).unwrap();
+        drop(_setup);
+        TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(false));
+        check_imported_data(root, "data/zz.csv", "aa", "bb").unwrap();
+        TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
     }
 
     #[test]

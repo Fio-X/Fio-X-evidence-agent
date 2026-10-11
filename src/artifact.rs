@@ -279,6 +279,11 @@ impl InvestigationBundle {
                 )
             })?;
         }
+        // K214 part B (only with NEWSROOM_GROUP_TOOLS=1): the stored file must hash to the address it is stored under before its metadata and origin are written
+        if group_guard::enabled() {
+            let stored = sha256_file(&destination).with_context(|| format!("failed to hash stored dataset {}", destination.display()))?;
+            group_guard::check_imported_data(&self.dir, &relative_file, &sha256, &stored)?;
+        }
         let metadata = serde_json::json!({
             "schema_version": "0.7.0",
             "bytes": bytes,

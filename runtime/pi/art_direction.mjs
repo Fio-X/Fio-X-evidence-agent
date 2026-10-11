@@ -121,7 +121,8 @@ export const reviewFromRecordsEnabled = () => process.env.NEWSROOM_GROUP_REVIEW_
 // self_reported and never counts. It implies the program-records mode above (the counted reviews and the preference status come only from records the
 // program saved); with no such record the preference stays PENDING and the award status shows 缺程序证明. Only stricter than off: nothing is relaxed.
 export const modelPassSelfReportEnabled = () => process.env.NEWSROOM_MODEL_PASS_SELFREPORT === '1';
-export const programRecordsMode = () => reviewFromRecordsEnabled() || modelPassSelfReportEnabled();
+// NEWSROOM_GROUP_ENFORCE=1 (K214 part B) turns it on too: with the refusal on, a pass the model supplies is never written as counted.
+export const programRecordsMode = () => reviewFromRecordsEnabled() || modelPassSelfReportEnabled() || process.env.NEWSROOM_GROUP_ENFORCE === '1';
 export const reviewStatusDisplay = (status) => ({ PENDING: '待评审', PASS: '通过', FAIL: '未通过' })[status] ?? status;
 const REVIEW_FIELDS = ['story_specificity', 'hierarchy', 'space_intent', 'visual_voice', 'information_gain', 'delayed_memory', 'jury_survival', 'comment'];
 

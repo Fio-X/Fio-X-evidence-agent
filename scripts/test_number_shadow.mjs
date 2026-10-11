@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildCandidates, checkField, extractNumbers, summarizeChecks } from "../runtime/pi/number_shadow.mjs";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
+import { runInTool } from "../runtime/pi/groups.mjs";
 import { runShadow, shadowChecksEnabled, shadowKey, writeShadowRecord } from "../runtime/pi/shadow.mjs";
 
 const skipped = (text) => Object.fromEntries(extractNumbers(text).filter((entry) => entry.skipped).map((entry) => [entry.raw, entry.skipped]));
@@ -59,12 +60,12 @@ assert.notEqual(shadowKey({ a: 1 }), shadowKey({ a: 2 }));
 assert.equal(await runShadow(async () => { throw new Error("boom"); }), null, "a failing shadow never throws into the tool");
 const root = mkdtempSync(join(tmpdir(), "shadow-writer-"));
 try {
-  const first = await writeShadowRecord(root, "prose_numbers", { plan_ref: "p" }, { compute_ms: 1 });
+  const first = await runInTool("newsroom_infographic_lint", () => writeShadowRecord(root, "prose_numbers", { plan_ref: "p" }, { compute_ms: 1 }));
   const bytes = readFileSync(join(root, first), "utf8");
-  const second = await writeShadowRecord(root, "prose_numbers", { plan_ref: "p" }, { compute_ms: 999 });
+  const second = await runInTool("newsroom_infographic_lint", () => writeShadowRecord(root, "prose_numbers", { plan_ref: "p" }, { compute_ms: 999 }));
   assert.equal(second, first, "same inputs, same file");
   assert.equal(readFileSync(join(root, second), "utf8"), bytes, "never rewritten (no collision, no churn)");
-  const other = await writeShadowRecord(root, "prose_numbers", { plan_ref: "q" }, {});
+  const other = await runInTool("newsroom_infographic_lint", () => writeShadowRecord(root, "prose_numbers", { plan_ref: "q" }, {}));
   assert.notEqual(other, first);
   assert.deepEqual(readdirSync(root), ["shadow"]);
   assert.match(first, /^shadow\/prose_numbers-[0-9a-f]{64}\.json$/);
