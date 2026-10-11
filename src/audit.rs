@@ -5,7 +5,7 @@ use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
@@ -524,6 +524,7 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);

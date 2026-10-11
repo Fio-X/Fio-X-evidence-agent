@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
-import { catalogLieflat, projectRows, renderLieflatPublication } from "../runtime/pi/lieflat.mjs";
+import { catalogLieflat, projectRows } from "../runtime/pi/lieflat.mjs";
+import { renderLieflatPublication } from "./lieflat_test_claims.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const tempRoots = [];

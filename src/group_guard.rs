@@ -37,9 +37,11 @@ thread_local! {
     static WRITER: RefCell<Option<Handoff>> = const { RefCell::new(None) };
 }
 #[cfg(test)]
+type TestCommand = Option<(&'static str, Option<&'static str>)>;
+#[cfg(test)]
 thread_local! {
     static TEST_ACTIVE: RefCell<Option<bool>> = const { RefCell::new(None) };
-    static TEST_COMMAND: RefCell<Option<Option<(&'static str, Option<&'static str>)>>> = const { RefCell::new(None) };
+    static TEST_COMMAND: RefCell<Option<TestCommand>> = const { RefCell::new(None) };
     static TEST_TABLE: RefCell<Option<String>> = const { RefCell::new(None) };
     static TEST_LOG: RefCell<Vec<Verdict>> = const { RefCell::new(Vec::new()) };
 }
@@ -154,7 +156,8 @@ fn with_table<T>(f: impl FnOnce(Option<&Table>) -> T) -> T {
     f(TABLE.get_or_init(|| parse_table(GROUPS_JSON)).as_ref())
 }
 
-/// The path -> kind answer for a run-folder-relative path (for the cross-language test and the report).
+/// The path -> kind answer for a run-folder-relative path (for the cross-language test).
+#[cfg(test)]
 pub fn classify(rel: &str) -> Option<(String, String)> {
     with_table(|table| table?.classify(rel)).map(|(kind, owner, _)| (kind, owner))
 }

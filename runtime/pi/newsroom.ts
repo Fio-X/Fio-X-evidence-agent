@@ -1375,14 +1375,58 @@ async function latestClaimRecords(): Promise<Map<string, any>> {
   return latest;
 }
 
+// The two entry points to the registry's system-verified claims are read-only and gated: visual tools may read them (the answer "is this claim
+// system-verified"), but only through here, never by calling isSystemVerifiedClaim themselves.
 export async function verifiedClaimIds() {
+  assertCrossCall(artifactRoot(), "verifiedClaimIds");
   return [...(await latestClaimRecords())].filter(([, claim]) => isSystemVerifiedClaim(claim)).map(([id]) => id);
 }
 
 export async function verifiedClaimRecords() {
+  assertCrossCall(artifactRoot(), "verifiedClaimRecords");
   const out = new Map<string, any>();
   for (const [id, claim] of await latestClaimRecords()) if (isSystemVerifiedClaim(claim)) out.set(id, claim);
   return out;
+}
+
+// 1011w: a chart plan or manifest carries the claim's verification stamp (verification_mode, artifact_status, publishable, verification).
+// The stamp is made here, in the knowledge group, from the record the system verified, and the visual tools only embed what these return.
+// The key order is the order the plan and manifest always had, so a plan's content hash does not change.
+function chartVerificationStamp(mode: "verified" | "draft", record: any) {
+  return {
+    verification_mode: mode,
+    artifact_status: mode === "verified" ? "VERIFIED" : "DRAFT",
+    publishable: mode === "verified",
+    verification: record?.verification ?? deriveClaimVerification({}),
+  };
+}
+
+// The verified record of one claim id (it throws the same refusal requireVerifiedClaim does when the claim is not system-verified).
+async function verifiedClaimFor(claimId: string, computationRef: string | null = null) {
+  assertCrossCall(artifactRoot(), "verifiedClaimFor");
+  return requireVerifiedClaim(await verifiedClaimRecords(), claimId, computationRef);
+}
+
+// The stamp a plan gets: mode is what the plan was asked for; the record is the verified claim it cites (or the inline one just recorded).
+async function chartPlanStamp(mode: "verified" | "draft", record: any) {
+  assertCrossCall(artifactRoot(), "chartPlanStamp");
+  return chartVerificationStamp(mode, record);
+}
+
+// What a lint decides: the claim must be system-verified and its binding to the chart must hold; the lint record carries only the three mode keys.
+async function chartLintStatus(claimId: unknown, claimBindings: Record<string, any>) {
+  assertCrossCall(artifactRoot(), "chartLintStatus");
+  const systemVerified = Boolean(claimId && (await verifiedClaimRecords()).has(String(claimId)) && claimBindings[String(claimId)]?.ok === true);
+  const { verification_mode, artifact_status, publishable } = chartVerificationStamp(systemVerified ? "verified" : "draft", undefined);
+  return { systemVerified, stamp: { verification_mode, artifact_status, publishable } };
+}
+
+// What a render decides: whether the plan's claim is system-verified now, its record, and the stamp that goes with that.
+async function chartRenderStatus(claimId: unknown) {
+  assertCrossCall(artifactRoot(), "chartRenderStatus");
+  const record = claimId ? (await verifiedClaimRecords()).get(String(claimId)) : undefined;
+  const systemVerified = Boolean(record);
+  return { systemVerified, record, stamp: chartVerificationStamp(systemVerified ? "verified" : "draft", record) };
 }
 
 // Loads and hash-verifies a sources/<hash>.json record referenced by a text
@@ -4243,7 +4287,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       const outputName = params.mode === "report" ? "index.html" : params.output_name;
       const outputMode = params.output_mode ?? "auto";
       if (params.mode === "report" && outputMode === "image") throw new Error("report mode requires output_mode=html or auto; use mode=chart for an image delivery");
-      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: mobilePagesEnabled() });
+      const result = await renderLieflatPublication({ ...params, output_name: outputName, artifact_root: root, mobile_pages: mobilePagesEnabled(), verified_claims: await verifiedClaimRecords() });
       const reportLine = result.report_path ? `\nreport: ${result.report_path}` : "";
       const fileLine = result.file_path ? `\nfile: ${result.file_path}` : "";
       const primaryPath = params.mode === "chart" && outputMode === "html" ? result.html_path : result.file_path ?? result.html_path;
@@ -4638,18 +4682,17 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       // NEWSROOM_SPEED_FIRST_TRY_ALL: the existing record check for a claim_id passed in the call runs before the refusal is thrown, so its
       // refusal joins the others; it only reads the claim records, writes nothing, and the same check runs again below when nothing was refused.
       if (firstTryAllEnabled() && !inline && params.claim_id) {
-        await attemptAsync(async () => { requireVerifiedClaim(await verifiedClaimRecords(), params.claim_id); });
+        await attemptAsync(async () => { await verifiedClaimFor(params.claim_id); });
       }
       throwCollected();
       let verifiedClaim: any = null;
       let claimText = "";
       if (inline) {
         const recorded = await recordInlineClaim(inline.claim, signal);
-        verifiedClaim = requireVerifiedClaim(await verifiedClaimRecords(), inline.claim.claimId);
+        verifiedClaim = await verifiedClaimFor(inline.claim.claimId);
         claimText = `Claim recorded: VERIFIED by system replay${recorded.reused ? " (this identical claim was already recorded and verified; no new claim line)" : ""}\nclaim_id: ${inline.claim.claimId}\nClaim: ${inline.claim.text}\nChart text: takeaway and alt were written from this claim.\n`;
       } else {
-        const claimRecords = await verifiedClaimRecords();
-        verifiedClaim = params.claim_id ? requireVerifiedClaim(claimRecords, params.claim_id) : null;
+        verifiedClaim = params.claim_id ? await verifiedClaimFor(params.claim_id) : null;
       }
       // NEWSROOM_LOCAL_SOURCE_NOTE=1: an accepted note beside a user's data file decides the source line; a model-written source_note loses.
       const programSourceNote = await acceptedLocalSourceNote(verifiedClaim?.source_refs ?? [], params.language ?? "en");
@@ -4658,10 +4701,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         visual_family: params.visual_family ?? ({ sankey: "flow", alluvial: "flow", parallel_sets: "flow", node_link: "relationship", adjacency_matrix: "relationship", chord: "relationship", hierarchy_tree: "hierarchy", timeline: "temporal", streamgraph: "temporal", geo_flow_map: "spatial", cartographic_flow_map: "spatial", choropleth: "spatial", trajectory_profile: "temporal", process_schematic: "explanatory" } as Record<string, string>)[params.chart_type] ?? "statistical",
         data_topology: params.data_topology ?? ({ sankey: "flow_edges", alluvial: "flow_edges", parallel_sets: "categorical_flow", node_link: "graph_edges", adjacency_matrix: "graph_edges", chord: "graph_edges", hierarchy_tree: "hierarchy", timeline: "events", geo_flow_map: "geo_edges", cartographic_flow_map: "geo_edges", trajectory_profile: "tabular", process_schematic: "process_graph" } as Record<string, string>)[params.chart_type] ?? "tabular",
         complexity_budget: params.complexity_budget ?? "medium",
-        verification_mode: verificationMode,
-        artifact_status: verificationMode === "verified" ? "VERIFIED" : "DRAFT",
-        publishable: verificationMode === "verified",
-        verification: verifiedClaim?.verification ?? deriveClaimVerification({}),
+        ...(await chartPlanStamp(verificationMode as "verified" | "draft", verifiedClaim)),
         ...normalizedParams,
         ...(programSourceNote ? { source_note: programSourceNote, source_note_program: true } : process.env.NEWSROOM_LOCAL_SOURCE_NOTE === "1" ? { source_note_program: undefined } : {}),
         ...(scatterAxisUnits ?? {}),
@@ -4704,7 +4744,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       assertPlanValuesNotHeld(spec);
       const { rows, verified, lintInputs, inputSnapshot, claimBindings, vizClaimIds, vizClaimRecords } = await vizClaimBindings(spec, signal);
       const lint = lintVizSpec(spec, rows, { verified_claim_ids: verified, claim_bindings: claimBindings });
-      const systemVerified = Boolean(spec.claim_id && verified.includes(String(spec.claim_id)) && claimBindings[String(spec.claim_id)]?.ok === true);
+      const { systemVerified, stamp: lintStamp } = await chartLintStatus(spec.claim_id, claimBindings);
       const inputSnapshotHash = inputSnapshot.hash;
       // With the atomic switch on, key and record use the same normalized SQL
       // duckdb_query writes, so one computation is one file whichever tool ran first.
@@ -4726,9 +4766,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         schema_version: "0.9.0",
         plan_ref: params.plan_ref,
         computation_ref: computationRef,
-        verification_mode: systemVerified ? "verified" : "draft",
-        artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
-        publishable: systemVerified,
+        ...lintStamp,
       });
       // Shadow check (off unless NEWSROOM_SHADOW_CHECKS=1): runs after every
       // artifact above is written and only adds a side file plus details.shadow.
@@ -4771,11 +4809,11 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       if (lint.plan_ref !== params.plan_ref) throw new Error("Lint artifact does not belong to the supplied visualization plan");
       if (!lint.passed || (Array.isArray(lint.blockers) && lint.blockers.length > 0)) throw new Error("Visualization lint has blocking failures; revise and lint again before rendering");
       const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
-      const systemVerified = Boolean(spec.claim_id && (await verifiedClaimIds()).includes(String(spec.claim_id)));
+      const { systemVerified, record: renderClaim, stamp: renderStamp } = await chartRenderStatus(spec.claim_id);
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
-      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, (await verifiedClaimRecords()).get(String(spec.claim_id))?.source_refs ?? []) : null;
+      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, renderClaim?.source_refs ?? []) : null;
       // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
       // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
       const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;
@@ -4852,10 +4890,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         lint_ref: params.lint_ref,
         computation_ref: lint.computation_ref,
         claim_id: spec.claim_id ?? null,
-        verification_mode: systemVerified ? "verified" : "draft",
-        artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
-        publishable: systemVerified,
-        verification: systemVerified ? (await verifiedClaimRecords()).get(String(spec.claim_id))?.verification : deriveClaimVerification({}),
+        ...renderStamp,
         chart_type: spec.chart_type,
         language: spec.language ?? "en",
         ...(spec.category_field ? { category_field: spec.category_field } : {}),

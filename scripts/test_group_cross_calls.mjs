@@ -396,7 +396,9 @@ export function compare(current, known) {
       else if (entry.write && !base.write) red.push(`${key} now reaches an artifact write that the baseline does not mark`);
       else if (entry.groups.length < base.groups.length || (!entry.write && base.write)) red.push(`STALE baseline entry ${section}.${key}: it now holds less (${entry.groups.join(", ")}${tag}); please shorten the baseline line`);
     }
-    for (const key of Object.keys(was)) if (!now[key]) red.push(`STALE baseline entry ${section}.${key} no longer holds; please delete it from the baseline`);
+    // a gated function is a table line even when one group alone reaches it (the run-time gate needs the line); it is not stale for that
+    const gatedOnly = (key) => section === "functions" && (known.gated ?? []).includes(key) && was[key].groups.length < 2;
+    for (const key of Object.keys(was)) if (!now[key] && !gatedOnly(key)) red.push(`STALE baseline entry ${section}.${key} no longer holds; please delete it from the baseline`);
   }
   return red;
 }
@@ -507,6 +509,8 @@ export default function ext(pi) {
   assert.deepEqual(check("readOnlyKnowledge(2);", "readOnlyKnowledge(1);", known).red.filter((m) => m.includes("readOnlyKnowledge")), [], "the pinned line is green");
   const gone = check("", "readOnlyKnowledge(1);", known);
   assert.ok(gone.red.some((m) => /STALE baseline entry functions\.readOnlyKnowledge/.test(m) && /delete it from the baseline/.test(m)), `removing the call asks to delete the baseline line: ${gone.red}`);
+  const gatedKnown = { ...known, gated: ["readOnlyKnowledge"], functions: { ...known.functions, readOnlyKnowledge: { ...known.functions.readOnlyKnowledge, groups: ["visual"] } } };
+  assert.deepEqual(compare(gone.r, gatedKnown).filter((m) => m.includes("readOnlyKnowledge")), [], "a gated function's single-group line is not stale");
   const imp = analyze({ src: fixture("fromK();", ""), groupsJson: FIX_GROUPS });
   assert.deepEqual(Object.keys(imp.imported), ["k.mjs::fromK"], "an import from a knowledge module used by a visual tool is pinned");
   assert.deepEqual(imp.imported["k.mjs::fromK"].groups, ["visual"]);
