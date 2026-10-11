@@ -5,6 +5,7 @@
 // Part 1 drives runToolChain with fake tools for every stop rule. Part 2 loads
 // runtime/pi/newsroom.ts from a type-stripped copy and runs the real page tools on
 // a fixture whose editorial artifacts, claims and chart manifests are written by hand.
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -190,9 +191,8 @@ function register(mod, env) {
 }
 const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined };
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-// Only the chain's own timestamped event log differs between a chain run and a manual run.
-const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f) && !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
+// Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).filter((f) => !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
 
 const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
 void registry;
