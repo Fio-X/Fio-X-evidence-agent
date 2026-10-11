@@ -12,10 +12,18 @@
 // classified (待查) is refused too, and so is a check that fails, errors or runs past its hard limit (fail-closed). Reads, mkdir and a group's own
 // writers (runAsWriter) are not refused. Not covered: Rust-side writes and files written by child processes (see NOT_TRACED).
 //
+// NEWSROOM_GROUP_TOOLS=1 (exact value, default off; needs NEWSROOM_GROUP_ENFORCE=1, newsroom.ts stops at start-up without it): every tool goes through one
+// wrapper at the single registration point (withGroupTools). A tool that groups.json does not list with a group and a group.action name stops the start-up.
+// A tool that starts a child process declares its output files first (runDeclared): each declared file is judged like an in-process write before the process
+// starts, and after it ends any NEW file in the watched folders that was not declared is deleted again and the call is refused. That second part is a check
+// AFTER writing with a rollback, not a refusal before writing: a child process can write what it likes in between.
+// The only exceptions (E1-E3, each pinned by a test): E1 program bookkeeping (temp files and atomic intermediates, the phase-metrics file, the fault marker; the
+// fixed lists below), E2 reads, E3 files a child process keeps inside itself (not visible, only the watched folders are compared).
+//
 // NEWSROOM_GROUP_TOOL_ORDER=1 (exact value, default off): the tools are listed to the model in group order, each description
 // starting with a short group label. Tools missing from groups.json keep their place after the groups, unlabeled.
 import { AsyncLocalStorage } from "node:async_hooks";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +34,7 @@ export const boundaryReportEnabled = () => process.env.NEWSROOM_GROUP_BOUNDARY =
 export const groupEnforceEnabled = () => process.env.NEWSROOM_GROUP_ENFORCE === "1";
 /** Tools need their initiating-tool context when either the report or the refusal is on. */
 export const boundaryContextEnabled = () => boundaryReportEnabled() || groupEnforceEnabled();
+export const groupToolsEnabled = () => process.env.NEWSROOM_GROUP_TOOLS === "1";
 export const groupToolOrderEnabled = () => process.env.NEWSROOM_GROUP_TOOL_ORDER === "1";
 
 let cached = null;
@@ -268,4 +277,94 @@ export function recordBoundaryWrite(root, target, op = "write") {
     current.writes += 1;
     writeReport(root);
   } catch {}
+}
+
+// ---- tools under the groups (NEWSROOM_GROUP_TOOLS=1) ---------------------------------------------------------------------------
+/** E1, fixed and pinned by test_group_tools: temp names the program itself makes and removes. Nothing else is skipped by the after-writing check. */
+export const E1_TEMP_SUFFIXES = Object.freeze([".tmp", ".write-tmp"]);
+export const E1_TEMP_FOLDERS = Object.freeze(["runtime/preview-tmp/"]);
+export const TOOLS_REFUSAL_CODE = "GROUP_TOOLS_REFUSED";
+
+const checkedTools = new WeakSet();
+export const isGroupChecked = (tool) => checkedTools.has(tool);
+let inFlight = 0, overlaps = 0;
+
+/** Start-up check: the switch needs the refusal switch (and, through it, the hand-off). */
+export function assertGroupToolsSwitches() {
+  if (groupToolsEnabled() && !groupEnforceEnabled()) throw new Error("GROUP_TOOLS_NEEDS_ENFORCE: checking each tool against its group only works with the refusal of cross-group writes on");
+}
+
+/** The tool's group and group.action name from groups.json, or throws: an unknown tool or a row without registered_as is never registered. */
+export function assertToolRegistered(name) {
+  const row = loadGroups().tools?.[String(name ?? "")];
+  if (!row || !GROUP_ORDER.includes(row.group) || typeof row.registered_as !== "string" || row.registered_as !== `${row.group}.${String(name).replace(/^newsroom_/, "")}`) {
+    throw new Error(`GROUP_TOOLS_UNREGISTERED: ${JSON.stringify(String(name ?? ""))} has no group.action entry in groups.json, so it is not registered`);
+  }
+  return row;
+}
+
+/** The one wrapper at the registration point: the tool must be listed, its writes know who started them (same context as the boundary report and the
+ *  refusal, nothing parallel), and it is marked as checked. Chains calling this tool's execute keep the same context. */
+export function withGroupTools(tool) {
+  assertToolRegistered(tool?.name);
+  const inner = withBoundaryContext(tool);
+  const wrapped = typeof inner.execute !== "function" ? { ...inner } : {
+    ...inner,
+    execute: async (...args) => {
+      if (inFlight > 0) overlaps += 1;
+      inFlight += 1;
+      try { return await inner.execute(...args); } finally { inFlight -= 1; }
+    },
+  };
+  checkedTools.add(wrapped);
+  return wrapped;
+}
+
+/** After registration: every tool handed to Pi must be one the wrapper made. A tool that bypassed it stops the start-up. */
+export function assertAllGroupChecked(tools) {
+  for (const tool of tools) if (!isGroupChecked(tool)) throw new Error(`GROUP_TOOLS_UNWRAPPED: ${JSON.stringify(String(tool?.name ?? ""))} reached Pi without going through the group check`);
+}
+
+const listFiles = (dir) => { try { return new Set(readdirSync(dir, { withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => e.name)); } catch { return null; } };
+const isE1Temp = (rel) => E1_TEMP_SUFFIXES.some((suffix) => rel.endsWith(suffix)) || E1_TEMP_FOLDERS.some((folder) => rel.startsWith(folder));
+
+/**
+ * Run a child process that writes files, for a tool. `outputs` (artifact-relative paths) are declared before it starts: each is judged now like an
+ * in-process write (a refusal here means the process never starts). `watch` (default: the folders of the outputs, or the run folder itself when nothing
+ * is declared) is compared before and after, non-recursively; a new file that was not declared is deleted and the call is refused. If another tool call
+ * ran at the same time the new file cannot be told from that call's own, so it is reported and refused but not deleted. Off: fn() unchanged.
+ */
+export async function runDeclared(root, outputs, fn, { watch } = {}) {
+  if (!groupToolsEnabled()) return fn();
+  if (!root) throw new BoundaryRefusal(refusalText({ tool: currentTool(), path: "(no artifact root)" }), { status: "check_failed" });
+  const rel = (p) => (isAbsolute(String(p)) ? relative(root, String(p)) : String(p)).replace(/\\/g, "/");
+  const declared = new Set(outputs.map(rel));
+  for (const path of declared) if (!E1_TEMP_FOLDERS.some((folder) => path.startsWith(folder))) recordBoundaryWrite(root, path, "subprocess_output");
+  const dirs = new Set((watch ?? (declared.size ? [...declared].map((p) => dirname(p)) : ["."])).map((d) => rel(d) || "."));
+  const before = new Map([...dirs].map((d) => [d, listFiles(join(root, d))]));
+  const overlapsBefore = overlaps;
+  let failure = null, value;
+  try { value = await fn(); } catch (error) { failure = error; }
+  const overlapped = inFlight > 1 || overlaps !== overlapsBefore;
+  const extra = [];
+  for (const dir of dirs) {
+    const now = listFiles(join(root, dir));
+    if (!now) continue;
+    for (const name of now) {
+      const path = dir === "." ? name : `${dir}/${name}`;
+      if (before.get(dir)?.has(name) || declared.has(path) || isE1Temp(path)) continue;
+      extra.push(path);
+    }
+  }
+  if (extra.length) {
+    const rolledBack = [];
+    if (!overlapped) for (const path of extra) { try { rmSync(join(root, path), { force: true }); rolledBack.push(path); } catch {} }
+    const info = { tool: currentTool(), group: toolGroup(currentTool()), path: extra[0], kind: null, owner: null, writer: null, status: "undeclared_output", extra, rolled_back: rolledBack, overlapped };
+    noteRefusal(root, { op: "subprocess_output", ...info });
+    const error = new BoundaryRefusal(`boundary: ${info.tool || "unknown tool"}（${info.group || "unknown group"}）child process wrote ${extra.length} file(s) it did not declare (first: ${extra[0]})${overlapped ? "; not deleted because another tool call ran at the same time" : "; deleted again"}.`, info);
+    error.code = TOOLS_REFUSAL_CODE;
+    throw error;
+  }
+  if (failure) throw failure;
+  return value;
 }
