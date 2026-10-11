@@ -415,21 +415,31 @@ pub fn remove_scratch_dir(path: &Path) {
     }
 }
 
-/// The verification result file. `record["passed"]` must be the value the program computed (`program_passed`); a record that carries any other
-/// value (for example one a model supplied) is refused and nothing is written. The write itself is the knowledge group's (verification_record).
-pub fn write_verification_record(root: &Path, path: &Path, record: &Value, program_passed: bool) -> io::Result<()> {
+/// The verification result file, written with the outcome `verify_and_record` computed. `record["passed"]` must equal it; a record that carries
+/// any other value (for example one a model supplied) is refused and nothing is written. Only the verify module can make a `VerifiedOutcome`,
+/// so a "passed" record exists only where the checks computed it, whoever asked (the verify command or the check at the end of investigate).
+/// The write itself is the knowledge group's (verification_record).
+pub fn write_verification_record(root: &Path, path: &Path, record: &Value, outcome: &crate::commands::verify::VerifiedOutcome) -> io::Result<()> {
     // Only with the switch on (K213 fe review): off, the write is the one the program always made.
-    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(program_passed) {
+    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(outcome.passed()) {
         let text = "boundary: the pass value of a verification record must be the one the program computed; this record carries another value and was not written.".to_string();
         note_refusal(root, "write", &text, "verification.json");
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, text));
     }
-    // K214 part B: a command outside the knowledge group (continue) may only leave the program's "not passed" record, never a "passed" one.
-    if enabled() && command_group() != Some("knowledge") && (program_passed || record.get("passed").and_then(Value::as_bool) != Some(false)) {
-        let text = "boundary: this command may only write a verification record that says not passed; a passed record is written by verify.".to_string();
+    write_record_text(root, path, record)
+}
+
+/// The record a command outside verify may leave on its own (continue's round status): it must say not passed. A passed one needs an outcome.
+pub fn write_not_passed_record(root: &Path, path: &Path, record: &Value) -> io::Result<()> {
+    if enabled() && record.get("passed").and_then(Value::as_bool) != Some(false) {
+        let text = "boundary: this path may only write a verification record that says not passed; a passed record is written by verify.".to_string();
         note_refusal(root, "write", &text, "verification.json");
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, text));
     }
+    write_record_text(root, path, record)
+}
+
+fn write_record_text(root: &Path, path: &Path, record: &Value) -> io::Result<()> {
     let text = format!("{}\n", serde_json::to_string_pretty(record).map_err(io::Error::other)?);
     if command_group() == Some("knowledge") {
         write(root, path, text)
@@ -462,6 +472,7 @@ pub fn take_log_for_test() -> Vec<Verdict> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::verify::VerifiedOutcome;
     use std::path::Path;
 
     /// Switch on, a command set, the table as built (None) or replaced (Some(json text)); all undone when the guard drops.
@@ -602,18 +613,26 @@ mod tests {
         // continue (agent) writes the record through the knowledge hand-off with the value the program computed
         let _setup = Setup::new(Some("continue"), None);
         let record = serde_json::json!({ "passed": false, "checks": 0 });
-        write_verification_record(root, &path, &record, false).unwrap();
+        write_not_passed_record(root, &path, &record).unwrap();
         assert!(path.is_file());
         fs::remove_file(&path).unwrap();
         // a model-supplied "passed": true against the program's false: refused, nothing written
         let supplied = serde_json::json!({ "passed": true, "checks": 0 });
-        refused(write_verification_record(root, &path, &supplied, false));
+        refused(write_verification_record(root, &path, &supplied, &VerifiedOutcome::for_test(false)));
+        // and the credential-less door refuses anything that says passed
+        refused(write_not_passed_record(root, &path, &supplied));
         assert!(!path.exists());
         // a record without the field is refused too
-        refused(write_verification_record(root, &path, &serde_json::json!({ "checks": 0 }), false));
+        refused(write_verification_record(root, &path, &serde_json::json!({ "checks": 0 }), &VerifiedOutcome::for_test(false)));
         // verify itself (knowledge) writes its own record directly
         let _verify = Setup::new(Some("verify"), None);
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), true).unwrap();
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(true)).unwrap();
+        // investigate runs verify at its end: the same call, the same credential, a listed asking command
+        let _investigate = Setup::new(Some("investigate"), None);
+        fs::remove_file(&path).unwrap();
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(true)).unwrap();
+        // a pass the checks did not compute is refused for it too
+        refused(write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(false)));
         // and the plain write of verification.json by the agent command is refused: the only door is the hand-off above
         let _agent = Setup::new(Some("continue"), None);
         refused(write(root, &path, "{\"passed\":true}"));
@@ -631,7 +650,7 @@ mod tests {
         // no verification write without the hand-off; the hand-off row lists continue only, so the launcher cannot ask for it
         refused(write(root, &root.join("verification.json"), "{}"));
         let record = serde_json::json!({ "passed": false });
-        refused(write_verification_record(root, &root.join("verification.json"), &record, false));
+        refused(write_verification_record(root, &root.join("verification.json"), &record, &VerifiedOutcome::for_test(false)));
     }
 
     #[test]
@@ -640,7 +659,7 @@ mod tests {
         let root = dir.path();
         TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(false));
         let path = root.join("verification.json");
-        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), false).unwrap();
+        write_verification_record(root, &path, &serde_json::json!({ "passed": true }), &VerifiedOutcome::for_test(false)).unwrap();
         TEST_ACTIVE.with(|c| *c.borrow_mut() = None);
         assert!(path.is_file());
     }
@@ -740,9 +759,9 @@ mod tests {
         refused(check_imported_data(root, "data/zz.csv", "aa", "aa"));
         // continue (agent group): a passed record is refused even when the program computed true; not passed goes through
         let path = root.join("verification.json");
-        refused(write_verification_record(root, &path, &serde_json::json!({ "passed": true }), true));
+        refused(write_not_passed_record(root, &path, &serde_json::json!({ "passed": true })));
         assert!(!path.exists());
-        write_verification_record(root, &path, &serde_json::json!({ "passed": false }), false).unwrap();
+        write_not_passed_record(root, &path, &serde_json::json!({ "passed": false })).unwrap();
         drop(_setup);
         TEST_ACTIVE.with(|c| *c.borrow_mut() = Some(false));
         check_imported_data(root, "data/zz.csv", "aa", "bb").unwrap();

@@ -1788,11 +1788,12 @@
     "writer": "verification_writer",
     "group": "knowledge",
     "commands": [
-     "continue"
+     "continue",
+     "investigate"
     ],
     "not_measured": [],
-    "why": "continue writes only the program-computed not-passed record (continue_investigation.rs:114); verify is a knowledge command and writes it itself",
-    "remove_when": "when continue asks verify for the record"
+    "why": "continue leaves only the program-computed not-passed record (continue_investigation.rs:114, write_not_passed_record); investigate runs verify at its end (commands/verify.rs verify_and_record), which writes through write_verification_record and only with a VerifiedOutcome that module alone can make (a passed record cannot exist without it); verify itself is a knowledge command and writes directly",
+    "remove_when": "when continue asks verify for the record and investigate calls the verify command"
    },
    {
     "as": "as_materialize",
