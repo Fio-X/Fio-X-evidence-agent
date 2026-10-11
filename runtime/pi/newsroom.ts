@@ -1409,6 +1409,14 @@ async function chartPlanStamp(mode: "verified" | "draft", record: any) {
   return chartVerificationStamp(mode, record);
 }
 
+// What a render decides: whether the plan's claim is system-verified now, its record, and the stamp that goes with that.
+async function chartRenderStatus(claimId: unknown) {
+  assertCrossCall(artifactRoot(), "chartRenderStatus");
+  const record = claimId ? (await verifiedClaimRecords()).get(String(claimId)) : undefined;
+  const systemVerified = Boolean(record);
+  return { systemVerified, record, stamp: chartVerificationStamp(systemVerified ? "verified" : "draft", record) };
+}
+
 // Loads and hash-verifies a sources/<hash>.json record referenced by a text
 // module's source_quote, exactly like validateSourceEvidence's per-ref check
 // (assertUsableSourceRecord over the recomputed content_hash), so a plan
@@ -4791,11 +4799,11 @@ function registerNewsroomTools(pi: ExtensionAPI) {
       if (lint.plan_ref !== params.plan_ref) throw new Error("Lint artifact does not belong to the supplied visualization plan");
       if (!lint.passed || (Array.isArray(lint.blockers) && lint.blockers.length > 0)) throw new Error("Visualization lint has blocking failures; revise and lint again before rendering");
       const rows = await queryDuckDb(spec.sql, signal) as Record<string, unknown>[];
-      const systemVerified = Boolean(spec.claim_id && (await verifiedClaimIds()).includes(String(spec.claim_id)));
+      const { systemVerified, record: renderClaim, stamp: renderStamp } = await chartRenderStatus(spec.claim_id);
       const currentHash = hashRows(rows);
       if (currentHash !== lint.data_hash) throw new Error(`Visualization data changed after lint: expected ${lint.data_hash}, got ${currentHash}`);
       // Desktop-only pages also get the 8-column variant for the chart types that have one.
-      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, (await verifiedClaimRecords()).get(String(spec.claim_id))?.source_refs ?? []) : null;
+      const dataNote = process.env.NEWSROOM_DATA_NOTES === "1" ? await dataNoteForChart(spec, rows, renderClaim?.source_refs ?? []) : null;
       // NEWSROOM_EXTREME_NOTE=1 (default off): when the extreme-value probe fires, the program adds one candidate sentence to the chart's note line
       // ("far above / below the rest of the data"), written from the rows being drawn. Never touches the plan, the rows, the scale or the values.
       const extremeNote = extremeNoteEnabled() ? extremeNoteText(spec, rows) : null;
@@ -4872,10 +4880,7 @@ function registerNewsroomTools(pi: ExtensionAPI) {
         lint_ref: params.lint_ref,
         computation_ref: lint.computation_ref,
         claim_id: spec.claim_id ?? null,
-        verification_mode: systemVerified ? "verified" : "draft",
-        artifact_status: systemVerified ? "VERIFIED" : "DRAFT",
-        publishable: systemVerified,
-        verification: systemVerified ? (await verifiedClaimRecords()).get(String(spec.claim_id))?.verification : deriveClaimVerification({}),
+        ...renderStamp,
         chart_type: spec.chart_type,
         language: spec.language ?? "en",
         ...(spec.category_field ? { category_field: spec.category_field } : {}),
