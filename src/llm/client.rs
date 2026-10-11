@@ -29,14 +29,6 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn system(content: &str) -> Self {
-        Self {
-            role: "system".to_string(),
-            content: content.to_string(),
-            anthropic_blocks: None,
-        }
-    }
-
     pub fn user(content: &str) -> Self {
         Self {
             role: "user".to_string(),
@@ -45,6 +37,7 @@ impl Message {
         }
     }
 
+    #[cfg(test)]
     pub fn assistant(content: &str) -> Self {
         Self {
             role: "assistant".to_string(),
@@ -53,6 +46,7 @@ impl Message {
         }
     }
 
+    #[cfg(test)]
     pub fn assistant_response(content: &str, tool_uses: &[ToolUse]) -> Self {
         if tool_uses.is_empty() {
             return Self::assistant(content);
@@ -203,8 +197,11 @@ impl Message {
 
 #[derive(Debug)]
 pub struct ToolUse {
+    #[cfg(test)]
     pub id: String,
+    #[cfg(test)]
     pub name: String,
+    #[cfg(test)]
     pub input: Value,
 }
 
@@ -243,10 +240,6 @@ impl LLMClient {
     pub fn with_base_url(mut self, url: String) -> Self {
         self.base_url = Some(url);
         self
-    }
-
-    pub fn uses_openai_tools(&self) -> bool {
-        matches!(self.provider, Provider::OpenAI)
     }
 
     /// 发送聊天请求
@@ -593,9 +586,14 @@ impl LLMClient {
                     .ok_or_else(|| {
                         anyhow::anyhow!("Anthropic tool use {name} input must be a JSON object")
                     })?;
+                #[cfg(not(test))]
+                let _ = (id, input);
                 Ok(ToolUse {
+                    #[cfg(test)]
                     id: id.to_string(),
+                    #[cfg(test)]
                     name: name.to_string(),
+                    #[cfg(test)]
                     input,
                 })
             })
@@ -659,9 +657,14 @@ impl LLMClient {
                             "OpenAI tool call {name} arguments must decode to a JSON object"
                         )
                     }
+                    #[cfg(not(test))]
+                    let _ = id;
                     Ok(ToolUse {
+                        #[cfg(test)]
                         id: id.to_string(),
+                        #[cfg(test)]
                         name: name.to_string(),
+                        #[cfg(test)]
                         input,
                     })
                 })

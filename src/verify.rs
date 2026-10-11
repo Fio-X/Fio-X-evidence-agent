@@ -2203,9 +2203,7 @@ fn tick_read_shown(text: &str) -> Option<(f64, usize, Option<f64>)> {
     if i - digits_start <= 3 {
         let mut k = i;
         let mut grouped = String::new();
-        while k + 3 < b.len() + 0
-            && b[k] == b','
-            && b[k + 1..k + 4].iter().all(|c| c.is_ascii_digit())
+        while k + 3 < b.len() && b[k] == b',' && b[k + 1..k + 4].iter().all(|c| c.is_ascii_digit())
         {
             grouped.push_str(&t[k + 1..k + 4]);
             k += 4;
@@ -2248,7 +2246,7 @@ fn tick_read_shown(text: &str) -> Option<(f64, usize, Option<f64>)> {
             rest[n..]
                 .chars()
                 .next()
-                .map_or(true, |c| !c.is_ascii_alphabetic())
+                .is_none_or(|c| !c.is_ascii_alphabetic())
         };
         if rest.starts_with("bn") && after(2) {
             Some(1e9)
@@ -2775,6 +2773,10 @@ fn verify_tick_readback_for_manifest(
     }
 }
 
+type HeatmapCells = BTreeMap<(String, String), Vec<(f64, [Option<f64>; 4])>>;
+type HeatmapLabels =
+    BTreeMap<(String, String), Vec<(String, Option<f64>, Option<f64>, Option<f64>)>>;
+
 /// NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one rendered
 /// viewport's SVG: every `heatmap-cell` rect (data-x, data-y, data-value) has exactly one `heatmap-cell-value` text
 /// for the same (x, y) whose number matches the cell's own data-value, is at least 12px, and sits inside the cell;
@@ -2782,7 +2784,7 @@ fn verify_tick_readback_for_manifest(
 /// verifier's verify_heatmap_labels_from_svg. Returns the failure messages (empty means the proof holds).
 fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
     let mut failures = Vec::new();
-    let mut cells: BTreeMap<(String, String), Vec<(f64, [Option<f64>; 4])>> = BTreeMap::new();
+    let mut cells: HeatmapCells = BTreeMap::new();
     let mut idx = 0;
     while let Some(rel) = svg_text[idx..].find("<rect") {
         let start = idx + rel;
@@ -2814,10 +2816,7 @@ fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
             .or_default()
             .push((value, [num("x"), num("y"), num("width"), num("height")]));
     }
-    let mut labels: BTreeMap<
-        (String, String),
-        Vec<(String, Option<f64>, Option<f64>, Option<f64>)>,
-    > = BTreeMap::new();
+    let mut labels: HeatmapLabels = BTreeMap::new();
     for node in find_text_nodes_with_role(svg_text, &["heatmap-cell-value"]) {
         let key = (
             attr_value(node.tag, "data-x").unwrap_or("").to_owned(),
@@ -4705,7 +4704,7 @@ fn vision_critic_vetoes(critic: &Value) -> bool {
         || critic
             .get("score")
             .and_then(Value::as_f64)
-            .map_or(true, |score| score < 80.0)
+            .is_none_or(|score| score < 80.0)
         || critic
             .get("issues")
             .and_then(Value::as_array)
