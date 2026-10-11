@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const tmp = makeTestTmp("atomic-artifact-");
@@ -130,7 +131,7 @@ for (const cut of ["before-link", "after-link"]) {
   await assert.rejects(() => writeText("computations/x.json", { a: 1 }), /simulated kill/);
   mod.__setArtifactFsForTest(null);
   assert.ok(!existsSync(join(art, "computations", "x.json")), "target never appears");
-  assert.deepEqual(walk(art), [], "nothing at all is left inside the artifact root");
+  assert.deepEqual(withoutRunTraces(art, walk(art), { label: "killed" }), [], "nothing at all is left inside the artifact root");
   assert.equal(leftovers(art).length, 1);
   // Rename the orphan to a pid that cannot be alive, then start-up cleanup removes it; a live pid's file is kept.
   const orphan = leftovers(art)[0];
