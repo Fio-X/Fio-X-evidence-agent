@@ -9,6 +9,7 @@
 //   D  hero gate     always on (no switch turns it off), seen through the real tool definitions and the real lint tool
 //   E  guidance      the new one-sentence guidance reaches the model
 import { makeTestTmp } from "./tmp_helper.mjs";
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -26,7 +27,7 @@ const yes = (cond, name) => { assert.ok(cond, name); n += 1; };
 
 // ---- fixtures -----------------------------------------------------------------------------------------------------
 const claim = 'claim-top';
-const context = { verified_claim_ids: [claim] };
+const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim] };
 // a real chart asset, built the way test_infographic.mjs builds it
 const barRows = [{ category: 'A', value: 42 }, { category: 'B', value: 31 }, { category: 'C', value: 18 }, { category: 'D', value: 9 }];
 const barSpec = { schema_version: '0.9.0', reader_task: 'ranking', takeaway: 'A leads the selected categories.', chart_type: 'horizontal_bar', title: 'A leads this selected comparison', subtitle: 'Synthetic regression fixture', alt: 'Horizontal bars rank four synthetic categories from A at 42 to D at 9.', source_note: 'Synthetic fixture', claim_id: claim, sql: 'SELECT * FROM synthetic_bar', unit: 'units', category_field: 'category', value_field: 'value', sort: 'desc', highlight_values: ['A'], annotations: [] };
@@ -342,7 +343,7 @@ const records = [
   { claim_id: claim, claim: '12个国家上升，12个国家下降。' },
   { claim_id: supportClaim, claim: '其中多数国家的通胀率下降。' },
 ];
-const ctxWith = (extra = {}) => ({ verified_claim_ids: [claim, supportClaim], verified_claim_records: records, ...extra });
+const ctxWith = (extra = {}) => ({ hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim, supportClaim], verified_claim_records: records, ...extra });
 const bodyWarnings = (spec, ctx = ctxWith(), a = assets) => lintInfographicSpec(spec, a, ctx).warnings.filter((warning) => warning.startsWith('unsupported_quantifier:'));
 const quantText = { ...M.text, body: '多数国家的通胀率下降。', claim_ids: [claim] };
 eq(bodyWarnings(page(['hero', 'bar', quantText])).length, 1, 'the module cites a claim that does not state 多数: warning');

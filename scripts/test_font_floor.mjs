@@ -5,6 +5,7 @@
 // asserts every resolved font-size is at least 12px (house rule: no reader-visible
 // text below 12px). Fails with the full list of offending chart type / element.
 import assert from "node:assert/strict";
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { lintVizSpec, renderVizSvg, renderVizMobileSvg } from "../runtime/pi/viz.mjs";
@@ -118,7 +119,7 @@ function check(label, svg) {
 // scripts/test_spatial_explanatory_snapshots.mjs).
 // ---------------------------------------------------------------------------
 const claimId = "claim-font-floor";
-const ctx = { verified_claim_ids: [claimId] };
+const ctx = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claimId] };
 
 const base = {
   schema_version: "0.7.0", reader_task: "comparison", takeaway: "Synthetic font-floor takeaway.",
