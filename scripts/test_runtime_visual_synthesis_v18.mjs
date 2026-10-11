@@ -14,11 +14,12 @@ for(const marker of [
   'editorial_grammar: editorialGrammarParameters',
   'primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const)',
   'schema_version: Type.Literal("0.2.0")',
-  'delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const))',
   'name: "newsroom_portable_publication"',
   'field_mapping_json',
   'portable_fallback'
 ]) assert.ok(newsroom.includes(marker),`missing v1.8 orchestration marker: ${marker}`);
+// delivery_role: same two values and same Optional(StringEnum(... as const)) shape, whatever follows `as const` (e.g. a contractHint argument) and however the call is wrapped
+assert.ok(/delivery_role:\s*Type\.Optional\(\s*StringEnum\(\s*\[\s*"standalone_visual"\s*,\s*"infographic_module"\s*\]\s*as const\s*[,)]/.test(newsroom),'missing v1.8 orchestration marker: delivery_role enum');
 for(const marker of ['default_chart_equivalence','reader_question_closure_missing_answer_coverage','story_node_ids','visual_grammar','evaluateInfographicSynthesis','runEditorialValidators','1.5.0']) assert.ok(infographic.includes(marker),`missing visual synthesis marker: ${marker}`);
 assert.ok(newsroom.includes('role-qualified bipartite node labels'));
 assert.ok(newsroom.includes('ROUTE_SPINE as primary'));
