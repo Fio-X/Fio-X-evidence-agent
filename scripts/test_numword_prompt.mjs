@@ -3,8 +3,11 @@
 // If someone loosens numberWordIn (the mutant), the wrong example stops being refused and this test goes red. The old sentence "say it in words"
 // must not be the guidance any more when the switch is on (the Rust test pins that; here the source text is read back).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { numberWordIn } from "../runtime/pi/number_words.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -16,6 +19,22 @@ const right = text.match(/Right: "([^"]+)"/)?.[1];
 const wrongs = [...text.matchAll(/Wrong: "([^"]+)"(?: or "([^"]+)")?/g)].flatMap((m) => [m[1], m[2]].filter(Boolean));
 assert.ok(right && wrongs.length === 2, "one right and two wrong examples");
 let n = 0;
+// The runtime's own claim-template filler (type-stripped copy of runtime/pi/newsroom.ts): the right example must fill with every placeholder legal,
+// each wrong example must be refused. Mutant: write {share_latest} (not a runtime placeholder) as the right example -> this goes red.
+const scratch = mkdtempSync(join(tmpdir(), "numword-prompt-"));
+process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
+const stub = (name, code) => { mkdirSync(join(scratch, "node_modules", name), { recursive: true }); writeFileSync(join(scratch, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" })); writeFileSync(join(scratch, "node_modules", name, "index.js"), code); };
+cpSync(join(ROOT, "runtime"), join(scratch, "runtime"), { recursive: true });
+cpSync(join(ROOT, "config"), join(scratch, "config"), { recursive: true });
+stub("typebox", "const f = () => ({}); export const Type = new Proxy({}, { get: () => f });");
+stub("@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
+const copy = join(scratch, "runtime/pi/newsroom.test-copy.mjs");
+writeFileSync(copy, stripTypeScriptTypes(readFileSync(join(scratch, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
+const { fillClaimTemplate } = await import(pathToFileURL(copy).href);
+const rows = [{ year: 2019, share: 0.71 }, { year: 2023, share: 0.64 }];
+const filled = fillClaimTemplate(right, rows, ["share"]);
+assert.ok(filled.bindings.length >= 1 && !/[{}]/.test(filled.text), `right example fills with runtime placeholders: ${filled.text}`); n += 1;
+for (const wrong of wrongs) { assert.throws(() => fillClaimTemplate(wrong, rows, ["share"]), /CLAIM_TEMPLATE_ERROR/, `runtime refuses: ${wrong}`); n += 1; }
 assert.equal(numberWordIn(right), null, `right example passes the number-word check: ${right}`); n += 1;
 assert.ok(!/\d/.test(right.replace(/\{[^}]*\}/g, "")), "right example holds no digit outside placeholders"); n += 1;
 for (const wrong of wrongs) {
