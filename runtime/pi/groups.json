@@ -1842,7 +1842,9 @@
    "replayComputationEvidence",
    "recordClaimArtifact",
    "saveQueryRows",
-   "knowledgeSide"
+   "knowledgeSide",
+   "verifiedClaimFor",
+   "chartPlanStamp"
   ],
   "functions": {
    "agentRecordSide": {
@@ -1929,6 +1931,13 @@
     ],
     "write": false,
     "why": "设计上共用"
+   },
+   "chartPlanStamp": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
    },
    "claimBindingDeps": {
     "groups": [
@@ -2430,6 +2439,13 @@
     ],
     "write": true,
     "why": "10-11 现状，待拆（写）"
+   },
+   "verifiedClaimFor": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
    },
    "verifiedClaimIds": {
     "groups": [
