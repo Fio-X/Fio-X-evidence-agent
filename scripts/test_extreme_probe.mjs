@@ -5,6 +5,7 @@
 //  3. off state: every non-"1" value gives byte-identical output; on: only runtime/extreme-probe/extreme_probe-*.json is added.
 //  4. NEWSROOM_GROUP_BOUNDARY=1: the diagnosis file is one ok write by the agent group's writer (requested_by the render tool); no new cross-group or 待查.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EXTREME_PROBE_CANDIDATE_D, extremeProbeEnabled, probeExtremes } from "../runtime/pi/extreme_probe.mjs";
@@ -129,6 +130,13 @@ for (const [value, expected] of [[undefined, false], ["0", false], ["", false], 
   assert.equal(extremeProbeEnabled({ NEWSROOM_EXTREME_PROBE: value }), expected, JSON.stringify(value));
 }
 
+// The end-to-end sections run the real DuckDB through the harness (NEWSROOM_DUCKDB_BIN, default `duckdb`). Without it they print SKIP;
+// NEWSROOM_REQUIRE_NO_SKIP=1 (exact) turns that into a failure so a run that must skip nothing cannot pass silently. The pure sections above and below still run.
+const duckdbMissing = spawnSync(process.env.NEWSROOM_DUCKDB_BIN || "duckdb", ["--version"], { stdio: "ignore" }).error?.code === "ENOENT";
+if (duckdbMissing) {
+  console.log("SKIP: duckdb binary not found; the end-to-end probe checks did not run");
+  if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") process.exit(1);
+}
 const results = [];
 const walk = (dir, base = dir) => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
@@ -160,7 +168,7 @@ async function build(value, boundary = false) {
   rmSync(h.tmp, { recursive: true, force: true });
   return { out, probePaths, probe, report };
 }
-try {
+if (!duckdbMissing) try {
   const off = await build(undefined);
   assert.equal(off.probePaths.length, 0);
   assert.ok(!Object.keys(off.out.files).some((p) => p.startsWith("runtime/extreme-probe/") || p.startsWith("shadow/extreme")), "off: no diagnosis folder at all, no empty list, no new field");
@@ -215,5 +223,5 @@ try {
   assert.equal(edge.candidate_trigger, true);
 }
 
-console.log("boundary totals (probe on):", JSON.stringify(results[0]));
+if (results.length) console.log("boundary totals (probe on):", JSON.stringify(results[0]));
 console.log("extreme probe: PASS");
