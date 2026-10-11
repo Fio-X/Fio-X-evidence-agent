@@ -761,7 +761,7 @@ export function evaluateSubjectSets(spec, assets = {}, context = {}) {
   return { blockers, warnings, notes };
 }
 
-// Hero value gate (on by default in the runtime, off with NEWSROOM_HERO_VALUE_GATE=0; the runtime
+// Hero value gate (always on in the runtime; the runtime
 // passes it in as context.hero_value_gate, and this pure lint applies it only when the
 // caller does). Each hero_stat is re-filled from its own claim's
 // bindings by the runtime (newsroom.ts fillHeroModule: value from value_from,
