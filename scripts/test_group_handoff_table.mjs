@@ -35,6 +35,23 @@ for (const [i, r] of table.rows.entries()) {
 for (const w of Object.keys(table.writers)) if (!table.rows.some((r) => r.writer === w)) problems.push(`writer ${w} has no row`);
 assert.deepEqual(problems, [], problems.join("\n"));
 
+// Rust side (not run here, read as text): the four as_* doors in src/group_guard.rs are exactly the rows of handoffs.rust, as_writer is private,
+// and every asking command is a command of COMMAND_GROUPS
+{
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const guard = readFileSync(join(root, "src/group_guard.rs"), "utf8");
+  const cli = readFileSync(join(root, "src/cli.rs"), "utf8");
+  const doors = [...guard.matchAll(/^pub fn (as_[a-z_]+)</gm)].map((m) => m[1]).sort();
+  assert.deepEqual(doors, table.rust.map((r) => r.as).sort(), "the as_* doors and handoffs.rust must list the same functions");
+  assert.ok(!/^pub fn as_writer\b/m.test(guard), "as_writer must stay private");
+  const commands = new Set([...cli.slice(cli.indexOf("COMMAND_GROUPS")).split("];")[0].matchAll(/\("([a-z0-9-]+)", "[a-z]+"\)/g)].map((m) => m[1]));
+  for (const r of table.rust) {
+    for (const c of r.commands) assert.ok(commands.has(c), `${r.as}: ${c} is not a command in COMMAND_GROUPS`);
+    for (const c of r.not_measured) assert.ok(r.commands.includes(c), `${r.as}: not_measured ${c} is not a listed command`);
+    assert.ok(r.why && r.remove_when, `${r.as}: why / remove_when missing`);
+  }
+}
+
 // off: no check, no file, even for a requester no row lists
 {
   const root = fresh();
