@@ -58,4 +58,28 @@ assert.deepEqual(lieflatProblems(lieflat), [], "lieflat takes the verified recor
 assert.ok(lieflatProblems(`${lieflat}\nconst p = join(root, "claims.jsonl");`).length, "lieflat reading claims.jsonl again is red");
 assert.ok(lieflatProblems(`import { isSystemVerifiedClaim } from "./evidence_gate.mjs";\n${lieflat}`).length, "lieflat deciding verification again is red");
 assert.match(src.match(/renderLieflatPublication\(\{[^}]*\}\)/)?.[0] ?? "", /verified_claims: await verifiedClaimRecords\(\)/, "the lieflat tool passes the records");
+
+// The gate functions labelled "only the knowledge group calls it directly" (groups.json cross_calls.imported, why starts with KNOWLEDGE_ONLY) have
+// no direct caller in newsroom.ts outside the knowledge-side functions listed here; a visual tool or helper calling one directly is red.
+const KNOWLEDGE_ONLY = "只有知识组直接调用";
+const KNOWLEDGE_SIDE = new Set(["chartVerificationStamp", "recordClaimArtifact", "validateSourceEvidence", "replayComputationEvidence"]);
+const groupsList = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
+export function directCallers(text, name) {
+  const lines = text.split("\n");
+  const out = new Set();
+  let current = null;
+  for (const line of lines) {
+    const decl = line.match(/^(?:export )?(?:async )?function (\w+)/) ?? line.match(/^    name: "(\w+)"/);
+    if (decl) current = decl[1];
+    if (new RegExp(`\\b${name}\\b`).test(line) && !/^\s*(\/\/|import)/.test(line) && !new RegExp(`function ${name}\\b`).test(line) && !line.includes('from "./evidence_gate')) out.add(current);
+  }
+  return [...out];
+}
+const labelled = Object.entries(groupsList.cross_calls.imported).filter(([, v]) => String(v.why).startsWith(KNOWLEDGE_ONLY)).map(([k]) => k.split("::")[1]);
+assert.ok(labelled.length >= 4, "the knowledge-only label is on the gate functions");
+for (const name of labelled) {
+  const outside = directCallers(src, name).filter((c) => !KNOWLEDGE_SIDE.has(c));
+  assert.deepEqual(outside, [], `${name} is labelled knowledge-only but is called directly by ${outside}`);
+}
+assert.deepEqual(directCallers(`${src}\nfunction vizHelper() { return deriveClaimVerification({}); }`, "deriveClaimVerification").filter((c) => !KNOWLEDGE_SIDE.has(c)), ["vizHelper"], "a visual helper calling a knowledge-only function directly is seen");
 console.log("gate stamp callers -- PASS");
