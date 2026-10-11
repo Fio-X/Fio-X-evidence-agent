@@ -82,6 +82,8 @@ pub const RECIPES_ENV: &str = "NEWSROOM_SPEED_RECIPES";
 /// Parent-only: the CLI composes a single chart's closing text; the Pi child never reads it.
 pub const COMPOSE_ANSWER_ENV: &str = "NEWSROOM_SPEED_COMPOSE_ANSWER";
 pub const PLAN_PROGRESS_ENV: &str = "NEWSROOM_SPEED_PLAN_PROGRESS";
+/// Prompt-only: tells the model where number words and digits are refused; no check changes.
+pub const NUMWORD_PROMPT_ENV: &str = "NEWSROOM_NUMWORD_PROMPT";
 /// Runtime-only tools that exist when the patch switches are on; not in the registry.
 pub const PLAN_PATCH_TOOL: &str = "newsroom_infographic_plan_patch";
 pub const CHAIN_PATCH_TOOL: &str = "newsroom_infographic_chain_patch";
@@ -135,6 +137,7 @@ pub fn speed_switches_from_env() -> crate::prompt::PromptSpeed {
         recipes: exact_one(RECIPES_ENV),
         compose_answer: exact_one(COMPOSE_ANSWER_ENV),
         plan_progress: exact_one(PLAN_PROGRESS_ENV),
+        numword_prompt: exact_one(NUMWORD_PROMPT_ENV),
     }
 }
 
@@ -2133,6 +2136,27 @@ mod tests {
             crate::prompt::PromptSpeed::default()
         );
         std::env::remove_var(COMPOSE_ANSWER_ENV);
+    }
+
+    #[test]
+    fn numword_prompt_switch_is_exactly_one_and_changes_no_other_switch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(NUMWORD_PROMPT_ENV);
+        for not_one in ["0", "true", "yes", ""] {
+            std::env::set_var(NUMWORD_PROMPT_ENV, not_one);
+            assert!(!speed_switches_from_env().numword_prompt, "{not_one:?}");
+        }
+        std::env::set_var(NUMWORD_PROMPT_ENV, "1");
+        let on = speed_switches_from_env();
+        assert!(on.numword_prompt);
+        assert_eq!(
+            crate::prompt::PromptSpeed {
+                numword_prompt: false,
+                ..on
+            },
+            crate::prompt::PromptSpeed::default()
+        );
+        std::env::remove_var(NUMWORD_PROMPT_ENV);
     }
 
     #[test]
