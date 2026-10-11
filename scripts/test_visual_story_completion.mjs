@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { renderLieflatPublication } from "../runtime/pi/lieflat.mjs";
+import { renderLieflatPublication } from "./lieflat_test_claims.mjs";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
 const renderer = await readFile(resolve(root, "runtime/pi/lieflat.mjs"), "utf8");

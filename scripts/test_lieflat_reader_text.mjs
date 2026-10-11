@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { hashRows } from "../runtime/pi/viz.mjs";
 import { sourceContentHash } from "../runtime/pi/provenance.mjs";
-import { renderLieflatPublication } from "../runtime/pi/lieflat.mjs";
+import { renderLieflatPublication } from "./lieflat_test_claims.mjs";
 import { checkReaderText } from "../runtime/pi/infographic.mjs";
 
 // This test guards Task T1: a Lieflat reader page (chart or report) must
