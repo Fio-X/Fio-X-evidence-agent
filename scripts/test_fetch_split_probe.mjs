@@ -223,6 +223,7 @@ export const Type = {
 const base = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "fetch-split-probe-"));
 const realFetch = globalThis.fetch;
 const realSetTimeout = globalThis.setTimeout;
+const realDateNow = Date.now;
 try {
   const treeDir = join(base, "tree");
   mkdirSync(treeDir);
@@ -243,7 +244,14 @@ try {
     return tools;
   }
   const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-  globalThis.setTimeout = (fn, delay, ...rest) => (delay === 30_000 ? realSetTimeout(fn, 150, ...rest) : realSetTimeout(fn, delay, ...rest));
+  // The 30 s timer is shortened to 150 ms, and the clock the tool measures it with moves in step: time stands still inside one
+  // attempt (frozen at its start) and jumps by exactly 30 s when the shortened timer fires. Without this the two timeouts of the
+  // scenario measured 150 ms plus scheduler jitter, the rounded seconds in the two diagnostic records differed now and then, and
+  // the records (named by their content hash) came out as two files instead of one.
+  let frozenNow = realDateNow();
+  let skew = 0;
+  Date.now = () => frozenNow + skew;
+  globalThis.setTimeout = (fn, delay, ...rest) => (delay === 30_000 ? realSetTimeout(() => { skew += 30_000; fn(...rest); }, 150) : realSetTimeout(fn, delay, ...rest));
   const abortError = () => new DOMException("This operation was aborted", "AbortError");
   const withUrl = (response, url) => { Object.defineProperty(response, "url", { value: url }); return response; };
   const hangs = (signal) => new Promise((_, reject) => { if (signal.aborted) reject(abortError()); else signal.addEventListener("abort", () => reject(abortError()), { once: true }); });
@@ -257,6 +265,7 @@ try {
     mkdirSync(artifact, { recursive: true });
     const tools = await freshTools({ NEWSROOM_ARTIFACT_DIR: artifact, ...env });
     const download = tools.get("download_data");
+    frozenNow = realDateNow(); skew = 0;
     const seen = [];
     const out = [];
     const attempt = async (url, behaviour, signal) => {
@@ -360,6 +369,7 @@ try {
 } finally {
   globalThis.fetch = realFetch;
   globalThis.setTimeout = realSetTimeout;
+  Date.now = realDateNow;
   try { rmSync(base, { recursive: true, force: true }); } catch {}
 }
 
