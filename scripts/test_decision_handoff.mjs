@@ -126,7 +126,7 @@ check("hand-off and review switch on: program-computed status, records ok and ta
 {
   register({ NEWSROOM_GROUP_HANDOFF: "1" });
   investigation();
-  for (const ref of ["claims.jsonl", "computations/x.json", "editorial/discovery/x.json", "editorial/preferences/../x.json", "infographics/vision-critics/x.json"]) {
+  for (const ref of ["claims.jsonl", "computations/x.json", "editorial/discovery/x.json", "editorial/preferences/../x.json", "infographics/plan-rejections/x.json"]) {
     assert.throws(() => mod.__saveDecisionForTest(ref, {}), /DECISION_WRITER_REF/, ref);
   }
 }

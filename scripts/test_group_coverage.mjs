@@ -23,6 +23,7 @@ const check = (name) => results.push(name);
 const writeAll = async () => {
   await groups.runInTool("newsroom_lieflat_render", () => lieflat.writeLieflatArtifact(dir, "lieflat/a.json", { a: 1 }));
   await groups.runInTool("newsroom_update_plan", () => shadow.writeShadowRecord(dir, "prose_numbers", { k: 1 }, { v: 1 }));
+  groups.recordBoundaryWrite(dir, "nowhere/unclassified.json", "write"); // a path no rule covers, with no initiating tool: 待查
   await groups.runInTool("newsroom_parallel_tasks", () => scheduler.runTaskDag([{ id: "big", kind: "local_hash" }], async () => ({ blob: "x".repeat(5000) }), { artifactRoot: dir, resultBudgets: Object.fromEntries(Object.keys(scheduler.DEFAULT_RESULT_BUDGETS).map((k) => [k, 100])) }));
 };
 
@@ -45,8 +46,8 @@ const par = find("newsroom_parallel_tasks");
 assert.ok(par.length >= 1 && par.every((r) => r.examples.every((e) => e.startsWith("runtime/parallel-results/"))), "the parallel result file is recorded");
 const sh = find("newsroom_update_plan");
 assert.equal(sh.length, 1);
-assert.deepEqual([sh[0].status, sh[0].reason], ["待查", "path matches no artifact kind"], "shadow records have no owner yet: shown as 待查, never as fine");
-check("on: lieflat, parallel-result and shadow writes reach the report; the ownerless shadow record is 待查");
+assert.deepEqual([sh[0].status, sh[0].reason], ["cross_group", undefined], "shadow records are the knowledge group's observation kind: an agent-group tool writing one is cross-group, never fine");
+check("on: lieflat, parallel-result and shadow writes reach the report; the shadow record is classified as observation (owner knowledge)");
 
 // the report never claims zero while something is 待查 or untraced
 assert.ok(report.totals.to_check >= 1 && report.complete === false);

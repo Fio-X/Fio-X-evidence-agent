@@ -25,6 +25,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { recordBoundaryWrite } from "./groups.mjs";
+import { asShadowWriter } from "./shadow_writer.mjs";
 import { cutoffCoverage, probeAsOf } from "./asof_probe.mjs";
 import { claimComputationStates, computationInputState, strictResultHashMatches } from "./claim_binding.mjs";
 import { buildCandidates, checkField, summarizeChecks } from "./number_shadow.mjs";
@@ -48,7 +49,12 @@ export const shadowKey = (inputs) => createHash("sha256").update(stable(inputs))
  * Write a shadow record once under shadow/. Returns the relative path. An
  * existing file is left alone (it was produced by identical inputs).
  */
-export async function writeShadowRecord(root, kind, keyInputs, record) {
+export function writeShadowRecord(root, kind, keyInputs, record) {
+  // NEWSROOM_GROUP_HANDOFF=1: the knowledge group's shadow_writer saves the file for the asking tool (kept as requested_by). Same path, same bytes.
+  return asShadowWriter(() => saveShadowRecord(root, kind, keyInputs, record));
+}
+
+async function saveShadowRecord(root, kind, keyInputs, record) {
   const key = shadowKey({ kind, ...keyInputs });
   const relativePath = `${SHADOW_DIR}/${kind}-${key}.json`;
   const absolute = join(root, relativePath);

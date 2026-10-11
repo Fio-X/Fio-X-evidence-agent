@@ -223,6 +223,7 @@ jobs:
           node scripts/test_groups.mjs
           node scripts/test_group_boundary.mjs
           node scripts/test_group_handoff.mjs
+          node scripts/test_group_enforce.mjs
           node scripts/test_decision_handoff.mjs
           node scripts/test_run_as_writer_users.mjs
           node scripts/test_group_coverage.mjs

@@ -87,6 +87,8 @@ const RENDER_QA_LABELS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_lab
 const GROUPS_RUNTIME: &str = include_str!("../runtime/pi/groups.mjs");
 const KNOWLEDGE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/knowledge_writer.mjs");
 const DECISION_WRITER_RUNTIME: &str = include_str!("../runtime/pi/decision_writer.mjs");
+const SHADOW_WRITER_RUNTIME: &str = include_str!("../runtime/pi/shadow_writer.mjs");
+const AGENT_RECORD_WRITER_RUNTIME: &str = include_str!("../runtime/pi/agent_record_writer.mjs");
 const PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/probe_writer.mjs");
 const FETCH_SPLIT_PROBE_RUNTIME: &str = include_str!("../runtime/pi/fetch_split_probe.mjs");
 const GROUPS_LIST: &str = include_str!("../runtime/pi/groups.json");
@@ -311,6 +313,8 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     write_if_changed(&runtime_dir.join("groups.mjs"), GROUPS_RUNTIME)?;
     write_if_changed(&runtime_dir.join("knowledge_writer.mjs"), KNOWLEDGE_WRITER_RUNTIME)?;
     write_if_changed(&runtime_dir.join("decision_writer.mjs"), DECISION_WRITER_RUNTIME)?;
+    write_if_changed(&runtime_dir.join("shadow_writer.mjs"), SHADOW_WRITER_RUNTIME)?;
+    write_if_changed(&runtime_dir.join("agent_record_writer.mjs"), AGENT_RECORD_WRITER_RUNTIME)?;
     write_if_changed(&runtime_dir.join("probe_writer.mjs"), PROBE_WRITER_RUNTIME)?;
     write_if_changed(&runtime_dir.join("fetch_split_probe.mjs"), FETCH_SPLIT_PROBE_RUNTIME)?;
     write_if_changed(&runtime_dir.join("groups.json"), GROUPS_LIST)?;
