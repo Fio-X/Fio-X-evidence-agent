@@ -18,6 +18,7 @@ def env_for(mode: str = "normal") -> dict[str, str]:
     env = os.environ.copy()
     env.update(
         {
+            "NEWSROOM_AGENT": "pi",
             "PERF_MOCK_MODE": mode,
             "NEWSROOM_RPC_STARTUP_MS": "100",
             "NEWSROOM_RPC_IDLE_MS": "120",

@@ -2,6 +2,7 @@
 // every page text is >= 12 px effective at its real display scale. Synthetic data only.
 // passes page lint and page render QA.
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle } from '../runtime/pi/infographic.mjs';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -11,7 +12,7 @@ import { repeatedNumberCounts, shadowInfographicNumbers } from '../runtime/pi/sh
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim = 'claim-stat-row';
-const context = { verified_claim_ids: [claim], mobile_pages: false };
+const context = { hero_checks: CLEAN_HERO_CHECKS, verified_claim_ids: [claim], mobile_pages: false };
 const rows = [{ category: 'A', value: 42 }, { category: 'B', value: 31 }, { category: 'C', value: 18 }, { category: 'D', value: 9 }];
 const vizSpec = { schema_version: '0.9.0', reader_task: 'ranking', takeaway: 'A leads the selected categories.', chart_type: 'horizontal_bar', title: 'A leads this selected comparison', subtitle: 'Synthetic fixture', alt: 'Horizontal bars rank four synthetic categories from A at 42 to D at 9.', source_note: 'Synthetic fixture', claim_id: claim, sql: 'SELECT * FROM synthetic_bar', unit: 'units', category_field: 'category', value_field: 'value' };
 const lint = lintVizSpec(vizSpec, rows, context);
@@ -46,7 +47,9 @@ import { _rhythmDebug as dbg } from '../runtime/pi/infographic.mjs';
 {
   const out = compose([chart, text('t1', SHORT), stat('s1')]);
   const t = box(out, 't1'), s = box(out, 's1');
-  assert.equal(t.y, s.y, 'same row');
+  // NEWSROOM_PAGE_POLISH=1 drops the 4/8 pairing: the number is a full-width bar and the note sits on its own row below it.
+  if (process.env.NEWSROOM_PAGE_POLISH === '1') { assert.equal(s.w, 1248, 'polish: stat bar is the full column'); assert.notEqual(t.y, s.y, 'polish: the note and the stat bar are on separate rows'); }
+  else assert.equal(t.y, s.y, 'same row');
   const svg = out.desktop.svg;
   const red = [...svg.matchAll(/<rect data-role="hero-stat"[^>]* y="([\d.]+)"/g)].map((m) => Number(m[1]));
   assert.ok(red.includes(s.y), `hero_stat rule y ${red} must equal its box y ${s.y}`);

@@ -27,12 +27,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { link as linkFile, writeFile as writeFileAsync } from "node:fs/promises";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { RUN_TRACES, withoutRunTraces } from "./lib_run_traces.mjs";
 import { FORM_FIELDS } from "./lib_viz_form_wiring.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -97,9 +99,8 @@ function register(mod, env) {
   mod.default(new Proxy({}, { get: (_, key) => (key === "registerTool" ? (tool) => tools.set(tool.name, tool) : () => {}) }));
   return tools;
 }
-// NEWSROOM_HERO_VALUE_GATE=0: the hero value gate is on by default now; this test compares with a4d4cb0, which has the old typed-hero path.
 const BASE_ENV = {
-  NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
+  NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_DUCKDB_BIN: undefined,
   NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: undefined, NEWSROOM_CLAIM_SQL_LINT: undefined,
 };
 const ON_ENV = { ...BASE_ENV, NEWSROOM_SPEED_INLINE_CLAIM: "1" };
@@ -527,7 +528,15 @@ const inlineParams = (shape, dataRef, extra = {}) => planOf(shape, dataRef, { cl
 const specOf = (dir, planRef) => JSON.parse(readFileSync(join(dir, planRef), "utf8"));
 const runChain = (tools, params, id = "chain") => tools.get("newsroom_viz_chain").execute(id, params);
 // Everything the chain wrote except what is timestamped; the claim ledger is compared separately.
-const snapshot = (dir) => Object.fromEntries(walk(dir).map((f) => relative(dir, f)).filter((f) => f !== "runtime/tool-chain-events.jsonl" && f !== "claims.jsonl").sort().map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+// Run traces, not artifacts: the chain's event log, and the write report that only NEWSROOM_GROUP_BOUNDARY=1 leaves (ENFORCE=1 alone leaves none; the report
+// names the tool that wrote, so a chain and the classic calls differ there by design). Where the tree must stay as it was, the report may list only the event log.
+function assertBoundaryReportOnlyTraces(dir, label) {
+  const path = join(dir, "runtime/group-boundary-report.json");
+  if (!existsSync(path)) return;
+  const examples = JSON.parse(readFileSync(path, "utf8")).records.flatMap((record) => record.examples ?? []);
+  assert.deepEqual([...new Set(examples)].filter((file) => !RUN_TRACES.includes(file)), [], `${label}: the write report lists no write but the event log`);
+}
+const snapshot = (dir) => Object.fromEntries(withoutRunTraces(dir, walk(dir).map((f) => relative(dir, f)), { chain: true, label: "snapshot" }).filter((f) => f !== "claims.jsonl").sort().map((f) => [f, readFileSync(join(dir, f), "utf8")]));
 const withoutTime = ({ recorded_at, ...record }) => record;
 
 // The numbers each shape's claim must show, from the CSV with no runtime code in between.
@@ -687,6 +696,16 @@ if (!missingDependency) {
       assert.deepEqual(recorded(story.dir), before.files, "nothing new is written");
       assert.equal(readFileSync(join(story.dir, "claims.jsonl"), "utf8"), before.claims);
     }
+    // K260 G (NEWSROOM_SPEED_FIRST_TRY_ALL=1): the same refusal, plus the recorded kind and caveat and the ones this call sent; off has neither.
+    const offMessage = await runChain(tools, inlineParams(shape, story.dataRef, { claim_kind: "descriptive" }), "m3").then(() => "", (error) => String(error.message));
+    assert.match(offMessage, /INLINE_CLAIM_REUSE_MISMATCH/);
+    assert.ok(!/The recorded claim has/.test(offMessage), "off: no recorded values");
+    const onTools = register(mod, { ...ON_ENV, NEWSROOM_SPEED_FIRST_TRY_ALL: "1" });
+    const onMessage = await runChain(onTools, inlineParams(shape, story.dataRef, { claim_kind: "descriptive" }), "m4").then(() => "", (error) => String(error.message));
+    delete process.env.NEWSROOM_SPEED_FIRST_TRY_ALL;
+    assert.ok(onMessage.startsWith(offMessage.replace(/\.$/, "")) || onMessage.startsWith(offMessage), "on: the old text first");
+    assert.match(onMessage, /The recorded claim has claim_kind "[a-z_]+" and claim_caveat (null|".*"); this call sent claim_kind "descriptive" and claim_caveat /);
+    assert.equal(readFileSync(join(story.dir, "claims.jsonl"), "utf8"), before.claims, "still nothing written");
   }
   { // chart text is the runtime's: a takeaway that copies the template and an alt with typed numbers are replaced
     const story = seed("chart-text", shape);
@@ -781,11 +800,12 @@ if (!missingDependency) {
       refusals += 1;
       const story = seed(`refused-${refusals}`, shape);
       // the chain's own event log notes the refusal; every other file must be untouched
-      const tree = () => listing(story.dir).filter(([file]) => file !== "runtime/tool-chain-events.jsonl");
+      const tree = () => { const all = listing(story.dir); const keep = new Set(withoutRunTraces(story.dir, all.map(([file]) => file), { chain: true, label: "tree" })); return all.filter(([file]) => keep.has(file)); };
       const before = tree();
       const tools = register(mod, ON_ENV);
       await assert.rejects(() => callWith(tools, "newsroom_viz_chain", inline({ claim })(story, shape)), words(near), label);
       assert.deepEqual(tree(), before, `${label}: the tree is unchanged`);
+      assertBoundaryReportOnlyTraces(story.dir, label);
       assert.deepEqual(recorded(story.dir), [], `${label}: nothing is recorded`);
     }
     check("refused, nothing recorded, tree unchanged: number words (Chinese count, English count, fraction)");
@@ -1044,15 +1064,22 @@ if (!missingDependency) {
       const story = seed(`cancel-after-${after}`, shape);
       const tools = register(mod, ON_ENV);
       const controller = new AbortController();
-      const target = tools.get(after);
-      const original = target.execute.bind(target);
-      target.execute = async (...args) => { const result = await original(...args); controller.abort(); return result; };
-      const stopped = await callWith(tools, "newsroom_viz_chain", inlineParams(shape, story.dataRef), controller.signal);
+      // Cancel as the step's own artifact lands. The chain calls the step tools it holds, which the group switches (NEWSROOM_GROUP_BOUNDARY,
+      // NEWSROOM_GROUP_ENFORCE, NEWSROOM_GROUP_TOOLS) hand to Pi as wrapped copies, so replacing a copy's execute would not reach the chain;
+      // the artifact write is on the path in every mode, behind every wrapper and group check.
+      const lands = { newsroom_viz_plan: "visualizations/plans/", newsroom_viz_lint: "visualizations/lints/" }[after];
+      const cancelOn = (path) => { if (relative(story.dir, String(path)).startsWith(lands)) controller.abort(); };
+      mod.__setArtifactFsForTest({
+        link: async (from, to) => { await linkFile(from, to); cancelOn(to); },
+        writeFile: async (path, ...rest) => { await writeFileAsync(path, ...rest); cancelOn(path); },
+      });
+      let stopped;
+      try { stopped = await callWith(tools, "newsroom_viz_chain", inlineParams(shape, story.dataRef), controller.signal); } finally { mod.__setArtifactFsForTest(null); }
+      assert.ok(controller.signal.aborted, `${after}: the cancel fired when its artifact landed`);
       assert.deepEqual(stopOf(stopped).slice(0, 3), ["STOPPED", "CANCELLED", after]);
       assert.deepEqual(stopped.details.steps.map((step) => step.tool), steps);
       assert.equal(claimLines(story.dir).length, 1, "the claim is recorded once");
       assert.ok(!recorded(story.dir).some((file) => /^visualizations\/[0-9a-f]{64}\./.test(file)), "no chart was rendered");
-      target.execute = original;
       const retry = await callWith(tools, "newsroom_viz_chain", inlineParams(shape, story.dataRef));
       assert.equal(retry.details.chainStatus, "COMPLETE");
       assert.ok(retry.content[0].text.includes("no new claim line"), "the retry reuses the recorded claim");

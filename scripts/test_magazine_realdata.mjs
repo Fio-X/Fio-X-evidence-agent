@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
 import { lintInfographicSpec, composeInfographicBundle, critiqueInfographic } from '../runtime/pi/infographic.mjs';
@@ -21,7 +22,7 @@ assert.ok(Math.abs(fossilTop-69.5)<1e-9);
 assert.ok(Math.abs(losses-19.3)<1e-9);
 
 const claim='claim-eia-magazine-2024';
-const context={verified_claim_ids:[claim]};
+const context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]};
 function makeAsset(ref,spec,rows){
   const lint=lintVizSpec(spec,rows,context); assert.equal(lint.passed,true,`${ref}: ${lint.blockers.join(' | ')}`);
   const bundle=renderVizBundle(spec,rows);

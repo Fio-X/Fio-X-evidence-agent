@@ -1,6 +1,7 @@
 // V424 (NEWSROOM_SPEED_FIRST_TRY_ALL): a refused plan call names every problem it has, each with its exact fix. No check is added or relaxed.
 // F1-F8: the claim template lists every bad placeholder in one pass (each equal to the single-problem refusal), reader_task is checked in the
 // handler, the claim-id comparison survives a missing declaration, and off is byte-identical. Real plan tool on a temp artifact root. Offline.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -12,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_FIRST_TRY_TEXT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
+const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_FIRST_TRY_TEXT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 const { applyJsonPatch, PatchError, sha256Of } = await import(join(ROOT, "runtime/pi/patch_retry.mjs"));
 const { checkSchema } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
@@ -34,7 +35,7 @@ export const Type = {
 };`;
 // One type-stripped copy of the runtime per tree. withCompile=false leaves typebox/compile out (it can only be missing there).
 function makeTree(withCompile) {
-  const TREE = mkdtempSync(join(tmpdir(), "patch-tree-"));
+  const TREE = makeTestTmp("patch-tree-");
   cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
   stub(TREE, "typebox", TYPEBOX);
@@ -78,7 +79,7 @@ const off = await load(undefined);
 const on = await load("1");
 const mod = await import(`${pathToFileURL(COPY_WITH).href}?v=${++loadN}`);
 const { claimTemplateProblems, fillClaimTemplate } = mod;
-const art = mkdtempSync(join(tmpdir(), "first-try-all-"));
+const art = makeTestTmp("first-try-all-");
 process.env.NEWSROOM_ARTIFACT_DIR = art;
 const refusal = async (tools, args) => { useSwitch(tools); process.env.NEWSROOM_ARTIFACT_DIR = art; try { await tools.get("newsroom_viz_plan").execute("t", JSON.parse(JSON.stringify(args))); return null; } catch (e) { return String(e.message); } };
 const codesOf = (t) => [...new Set([...t.matchAll(/(?:^|\n|\(\d+\) )([A-Z][A-Z_]{3,}):/g)].map((m) => m[1]))];

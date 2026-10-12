@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const core = await readFile(resolve(root, "src/agent/core.rs"), "utf8");
+const core = await readFile(resolve(root, "src/agent/intent.rs"), "utf8");
 const v2 = await readFile(resolve(root, "src/commands/investigate_v2.rs"), "utf8");
 const newsroom = await readFile(resolve(root, "runtime/pi/newsroom.ts"), "utf8");
 const registry = await readFile(resolve(root, "config/tool-registry.json"), "utf8");
@@ -17,12 +17,13 @@ for (const term of ["scrollytelling", "visual essay", "interactive story", "åœ°å
 }
 assert.ok(core.includes("pub fn determine_visual_deliverable_intent"));
 assert.ok(core.includes("pub fn requires_story"));
-assert.ok(core.includes("self.intent.requires_story()"));
-assert.ok(v2.includes("if intent.requires_story()"));
+assert.ok(v2.includes("if !intent.requires_story()"));
 assert.ok(v2.includes("run_visual_story("));
 assert.ok(v2.includes("tool_profile: \"visual-story\".to_string()"));
 assert.equal(v2.includes('Command::new("news")'), false);
 assert.equal(core.includes('Command::new("news")'), false);
+assert.ok(v2.includes("use `news investigate` instead"));
+assert.equal(v2.includes("NewsroomAgent"), false);
 assert.ok(newsroom.includes('"lieflat-charts"'));
 assert.ok(newsroom.includes('"economist-analytical"'));
 assert.ok(newsroom.includes('"scmp-integrated-explainer"'));

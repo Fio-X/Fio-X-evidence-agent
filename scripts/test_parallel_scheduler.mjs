@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -117,7 +118,7 @@ const fairness = await runTaskDag([
 assert.deepEqual(fairnessStarts.slice(0, 2), ['a-long', 'b-ready']);
 assert.deepEqual(fairness.completed, ['a-long', 'a-next', 'b-ready']);
 
-const artifactRoot = await mkdtemp(join(tmpdir(), 'newsroom-parallel-budget-'));
+const artifactRoot = makeTestTmp('newsroom-parallel-budget-');
 const largeText = 'x'.repeat(20_000);
 const perTask = await runTaskDag([
   { id: 'large', kind: 'local_text' },
@@ -139,7 +140,7 @@ const storedTaskPath = join(artifactRoot, perTask.results.large.full_result_ref)
 assert.ok((await stat(storedTaskPath)).isFile());
 assert.equal(JSON.parse(await readFile(storedTaskPath, 'utf8')).text.length, largeText.length);
 
-const batchRoot = await mkdtemp(join(tmpdir(), 'newsroom-parallel-batch-budget-'));
+const batchRoot = makeTestTmp('newsroom-parallel-batch-budget-');
 const aggregate = await runTaskDag(Array.from({ length: 6 }, (_, i) => ({ id: `q${i}`, kind: 'duckdb_query' })), async (task) => ({
   backend: 'test:data',
   rows: Array.from({ length: 80 }, (_, i) => ({ task: task.id, i, text: 'z'.repeat(80) })),

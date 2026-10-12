@@ -5,6 +5,8 @@
 // Part 1 drives runToolChain with fake tools for every stop rule. Part 2 loads
 // runtime/pi/newsroom.ts from a type-stripped copy and runs the real page tools on
 // a fixture whose editorial artifacts, claims and chart manifests are written by hand.
+import { withoutRunTraces } from "./lib_run_traces.mjs";
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -171,7 +173,7 @@ export const Type = {
 };
 `;
 function loadTree(label, patchRegistry) {
-  const dir = mkdtempSync(join(tmpdir(), `ig-chain-tree-${label}-`));
+  const dir = makeTestTmp(`ig-chain-tree-${label}-`);
   cpSync(join(ROOT, "runtime"), join(dir, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(dir, "config"), { recursive: true });
   stub(dir, "typebox", TYPEBOX);
@@ -189,9 +191,8 @@ function register(mod, env) {
 }
 const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_PHASE: undefined, NEWSROOM_HIDE_LIEFLAT: undefined, NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_FAULT_INJECT_TOOL_ONCE: undefined, NEWSROOM_MOBILE_PAGES: undefined };
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-// Only the chain's own timestamped event log differs between a chain run and a manual run.
-const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f) && !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
+// Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).filter((f) => !f.startsWith("config/")).sort().map((f) => [f, readFileSync(join(art, f)).toString("base64")]));
 
 const registry = JSON.parse(readFileSync(join(ROOT, "config/editorial-grammar-registry.json"), "utf8"));
 void registry;
@@ -207,7 +208,7 @@ const VIZ = [
 
 // Writes everything the page plan reads from disk; `mutate` can bend one piece.
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {} } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `ig-chain-${label}-`)), "run");
+  const art = join(makeTestTmp(`ig-chain-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -290,7 +291,7 @@ function pagePlan({ withQuestion = false, moduleClaims = {}, readerQuestionOverr
 // test independent of those, NEWSROOM_PYTHON_BIN points at a stub that writes a fixed PNG; only
 // the rasterizer is replaced, every gate around it runs for real.
 {
-  const stubDir = mkdtempSync(join(tmpdir(), "ig-chain-raster-"));
+  const stubDir = makeTestTmp("ig-chain-raster-");
   writeFileSync(join(stubDir, "fixed.png"), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(256, 7)]));
   const bin = join(stubDir, "python-stub.sh");
   writeFileSync(bin, `#!/bin/sh\ncp "${join(stubDir, "fixed.png")}" "$3"\necho '{"engine":"test-stub"}'\n`);

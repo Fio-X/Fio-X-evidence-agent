@@ -7,7 +7,7 @@ binary = sys.argv[1] if len(sys.argv) > 1 else str(root / 'target/release/news')
 for on in (False, True):
     with tempfile.TemporaryDirectory() as t:
         env = {k: v for k, v in os.environ.items() if not k.startswith('NEWSROOM_SPEED_')}
-        env.update(PERF_MOCK_MODE='compose_chart', PERF_MOCK_AFTER_CHART='0', PERF_MOCK_ABORT_FILE=t + '/a', NEWSROOM_RPC_TOTAL_MS='12000')
+        env.update(NEWSROOM_AGENT='pi', PERF_MOCK_MODE='compose_chart', PERF_MOCK_AFTER_CHART='0', PERF_MOCK_ABORT_FILE=t + '/a', NEWSROOM_RPC_TOTAL_MS='12000')
         if on:
             env['NEWSROOM_SPEED_PLAN_PROGRESS'] = '1'
         subprocess.run([binary, 'investigate', '--pi-bin', str(root / 'scripts/perf_mock_pi.py'), '--out', t + '/o', 'Draw a chart of the rate'], env=env, capture_output=True, timeout=30)

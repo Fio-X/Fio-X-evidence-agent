@@ -1,4 +1,4 @@
-// Only the two writer modules may use runAsWriter (groups.mjs defines it).
+// Only the writer modules listed below may use asHandoffWriter (groups.mjs defines it).
 // A tool that could call it would pick its own writer identity.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -12,8 +12,19 @@ const ALLOWED = new Set([
   "runtime/pi/groups.mjs",
   "runtime/pi/knowledge_writer.mjs",
   "runtime/pi/decision_writer.mjs",
+  // Flow group (agent): writes the extreme-probe diagnosis record, once, as the agent writer. It is a writer module
+  // like the two above: it calls asHandoffWriter(...) itself and no tool picks its own identity.
+  "runtime/pi/extreme_probe_writer.mjs",
+  // Added for the fetch-split probe (K99): the flow group's writer for the diagnostic files download_data asks for. Same pattern as the two above;
+  // listed here so a tool still cannot pick its own writer identity, and the check below makes sure it really uses runAsWriter.
+  "runtime/pi/probe_writer.mjs",
+  // K211: the flow group's writer for the refused-call store and the tool-chain event log; calls asHandoffWriter(...) itself.
+  "runtime/pi/agent_record_writer.mjs",
+  "runtime/pi/shadow_writer.mjs",
+  // K244: the visual group's writer for moving a failed manifest to rejected/ under NEWSROOM_REVIEW_SPLIT=1; calls asHandoffWriter(...) itself.
+  "runtime/pi/review_reject_writer.mjs",
 ]);
-const NAME = /\brunAsWriter\b/;
+const NAME = /\b(?:runAsWriter|asHandoffWriter)\b/;
 const GROUPS_SPEC = /["'`][^"'`]*\bgroups\.mjs["'`]/;
 
 // Reasons a source text uses runAsWriter: any mention (named import, member
@@ -68,12 +79,57 @@ for (const f of files) {
   const uses = findUses(readFileSync(f, "utf8"));
   if (uses.length) bad.push(`${rel}: ${uses.join("; ")}`);
 }
-assert.deepEqual(bad, [], `runAsWriter used outside the two writer modules:\n${bad.join("\n")}`);
+assert.deepEqual(bad, [], `asHandoffWriter used outside the writer modules:\n${bad.join("\n")}`);
 
-// 3. The allowed modules exist, and the two writers really use it.
+// 3. The allowed modules exist, and the three writers really use it.
 for (const f of ALLOWED) assert.ok(statSync(join(root, f)).isFile(), `${f} missing`);
-for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.mjs"]) {
-  assert.ok(NAME.test(readFileSync(join(root, f), "utf8")), `${f} no longer uses runAsWriter`);
+for (const f of ["runtime/pi/knowledge_writer.mjs", "runtime/pi/decision_writer.mjs", "runtime/pi/extreme_probe_writer.mjs", "runtime/pi/probe_writer.mjs", "runtime/pi/agent_record_writer.mjs", "runtime/pi/shadow_writer.mjs", "runtime/pi/review_reject_writer.mjs"]) {
+  assert.ok(NAME.test(readFileSync(join(root, f), "utf8")), `${f} no longer uses asHandoffWriter`);
 }
 assert.ok(GROUPS_SPEC.test(readFileSync(join(root, "runtime/pi/knowledge_writer.mjs"), "utf8")));
-console.log("ok: runAsWriter is used only by the two writer modules (" + files.length + " files scanned)");
+// 4. Each call's group is the group groups.json registers for the calling file, and only *_writer.mjs files call it.
+// A writer cannot pick another group's identity just by passing a different first argument.
+const registered = JSON.parse(readFileSync(join(root, "runtime/pi/groups.json"), "utf8")).files;
+const CALL = /\basHandoffWriter\s*\(\s*([^,)]*)/g;
+const handoffWriters = JSON.parse(readFileSync(join(root, "runtime/pi/groups.json"), "utf8")).handoffs.writers;
+export function checkCalls(rel, text, files = registered, writers = handoffWriters) {
+  const problems = [];
+  for (const m of text.matchAll(CALL)) {
+    const arg = m[1].trim();
+    const literal = /^["']([a-z_]+)["']$/.exec(arg);
+    if (!/(^|\/)[a-z_]+_writer\.mjs$/.test(rel)) problems.push(`${rel}: asHandoffWriter call outside a *_writer.mjs file`);
+    if (!literal && !/^[A-Z_]+_WRITER$/.test(arg)) { problems.push(`${rel}: first argument is not a plain writer name (${arg})`); continue; }
+    const name = literal ? literal[1] : (new RegExp(`const\\s+${arg}\\s*=\\s*["']([a-z_]+)["']`).exec(text) ?? [])[1];
+    const entry = files[rel];
+    if (!name || !writers[name]) { problems.push(`${rel}: writer ${name ?? arg} is not in groups.json handoffs.writers`); continue; }
+    if (!entry) problems.push(`${rel}: not registered in groups.json`);
+    else if (entry.group !== writers[name].group) problems.push(`${rel}: calls asHandoffWriter("${name}") (group ${writers[name].group}) but is registered in group ${entry.group}`);
+  }
+  return problems;
+}
+const callBad = [];
+let calls = 0;
+for (const f of walk(join(root, "runtime"))) {
+  const rel = relative(root, f).split("\\").join("/");
+  if (rel === "runtime/pi/groups.mjs") continue; // defines it
+  const text = readFileSync(f, "utf8");
+  calls += [...text.matchAll(CALL)].length;
+  callBad.push(...checkCalls(rel, text));
+}
+assert.deepEqual(callBad, [], `asHandoffWriter calls out of line with groups.json:\n${callBad.join("\n")}`);
+assert.ok(calls >= 7, "found too few asHandoffWriter calls");
+// Mutants: each of these must be flagged.
+const visualFile = Object.keys(registered).find((k) => registered[k].group === "visual" && /\.mjs$/.test(k));
+assert.ok(visualFile, "no visual-group file to mutate");
+assert.ok(checkCalls(visualFile, `asHandoffWriter("knowledge_writer", f);`).length > 0, "a visual-group file calling asHandoffWriter must be flagged");
+assert.ok(checkCalls("runtime/pi/knowledge_writer.mjs", `asHandoffWriter("decision_writer", f);`).length > 0, "a writer of another group must be flagged");
+assert.ok(checkCalls("runtime/pi/new_writer.mjs", `asHandoffWriter("knowledge_writer", f);`).length > 0, "unregistered file must be flagged");
+assert.ok(checkCalls("runtime/pi/knowledge_writer.mjs", `asHandoffWriter("nobody_writer", f);`).length > 0, "a writer missing from the handoffs table must be flagged");
+assert.ok(checkCalls("runtime/pi/knowledge_writer.mjs", `asHandoffWriter(pick(), f);`).length > 0, "computed writer name must be flagged");
+assert.deepEqual(checkCalls("runtime/pi/knowledge_writer.mjs", `asHandoffWriter("knowledge_writer", f);`), []);
+// the old three-argument entry point is gone: nobody may export or call it
+const old = [];
+for (const f of walk(join(root, "runtime"))) if (/\brunAsWriter\b/.test(readFileSync(f, "utf8").replace(/\/\/.*$/gm, ""))) old.push(relative(root, f));
+assert.deepEqual(old.filter((f) => f !== "runtime/pi/groups.mjs"), [], "runAsWriter is still used");
+assert.ok(!/export\s+(?:const|function)\s+runAsWriter\b/.test(readFileSync(join(root, "runtime/pi/groups.mjs"), "utf8")), "runAsWriter must not be exported");
+console.log("ok: asHandoffWriter is used only by the writer modules (" + files.length + " files scanned)");

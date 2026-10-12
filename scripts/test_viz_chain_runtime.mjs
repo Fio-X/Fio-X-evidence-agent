@@ -4,6 +4,8 @@
 // Part 1 drives runToolChain with fake tools for the stop rules that are hard to
 // reach with real data. Part 2 loads runtime/pi/newsroom.ts from a type-stripped
 // copy (as test_atomic_artifact_runtime.mjs does) and runs real charts.
+import { withoutRunTraces } from "./lib_run_traces.mjs";
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -200,7 +202,7 @@ for (const [label, tool, details, code, expectCalls] of [
 console.log(`orchestration (fake tools): ${results.length} checks -- PASS`);
 
 // ---- Part 2: real tools -----------------------------------------------------
-const tmp = mkdtempSync(join(tmpdir(), "viz-chain-"));
+const tmp = makeTestTmp("viz-chain-");
 const stub = (dir, name, source) => {
   mkdirSync(join(dir, "node_modules", name), { recursive: true });
   writeFileSync(join(dir, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -222,7 +224,7 @@ export const Type = {
 };
 `;
 function loadTree(label, patchRegistry) {
-  const dir = mkdtempSync(join(tmpdir(), `viz-chain-tree-${label}-`));
+  const dir = makeTestTmp(`viz-chain-tree-${label}-`);
   cpSync(join(ROOT, "runtime"), join(dir, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(dir, "config"), { recursive: true });
   stub(dir, "typebox", TYPEBOX);
@@ -255,7 +257,7 @@ const sha = "a".repeat(64);
 const verification = { authority: "system", rule_id: "verification.source+extraction+computation+claim.v1", source_resolved: true, extraction_passed: true, computation_replayed: true, claim_supported: true, publishable: true };
 
 function freshRun(label) {
-  const art = join(mkdtempSync(join(tmpdir(), `viz-chain-${label}-`)), "run");
+  const art = join(makeTestTmp(`viz-chain-${label}-`), "run");
   for (const d of ["visualizations/plans", "visualizations/lints", "computations", "data", "sources"]) mkdirSync(join(art, d), { recursive: true });
   writeFileSync(join(art, "data", "africa.csv"), CSV);
   writeFileSync(join(art, "data", "africa.meta.json"), JSON.stringify({ file: "africa.csv", sha256: sha }));
@@ -279,9 +281,8 @@ async function bindClaim(tools, art, sql, claimId, { boundTo } = {}) {
   return rel;
 }
 const walk = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)])) : []);
-// Only the chain's own timestamped event log differs between a chain run and a manual run.
-const NONDETERMINISTIC = new Set(["runtime/tool-chain-events.jsonl"]);
-const snapshot = (art) => Object.fromEntries(walk(art).map((f) => relative(art, f)).filter((f) => !NONDETERMINISTIC.has(f)).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
+// Run traces (the chain's timestamped event log, the boundary report) differ between a chain run and a manual run; lib_run_traces.mjs says which and checks them.
+const snapshot = (art) => Object.fromEntries(withoutRunTraces(art, walk(art).map((f) => relative(art, f)), { chain: true, label: "snapshot" }).sort().map((f) => [f, readFileSync(join(art, f), "utf8")]));
 
 const { mod, dir: treeDir } = await loadTree("main");
 void treeDir;

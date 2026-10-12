@@ -5,6 +5,7 @@
 //
 // Loads runtime/pi/newsroom.ts from a type-stripped temporary copy (same
 // approach as test_viz_plan_inset_param.mjs). Needs the duckdb binary.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { link, unlink, writeFile } from "node:fs/promises";
@@ -13,9 +14,10 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const tmp = mkdtempSync(join(tmpdir(), "atomic-artifact-"));
+const tmp = makeTestTmp("atomic-artifact-");
 const stub = (name, source) => {
   mkdirSync(join(tmp, "node_modules", name), { recursive: true });
   writeFileSync(join(tmp, "node_modules", name, "package.json"), JSON.stringify({ name, type: "module", main: "index.js" }));
@@ -34,7 +36,7 @@ const SWITCH = "NEWSROOM_SPEED_ATOMIC_ARTIFACT";
 const setSwitch = (on) => { if (on) process.env[SWITCH] = "1"; else delete process.env[SWITCH]; };
 
 function freshRoot(label) {
-  const outer = mkdtempSync(join(tmpdir(), `atomic-${label}-`));
+  const outer = makeTestTmp(`atomic-${label}-`);
   const art = join(outer, "run");
   mkdirSync(join(art, "computations"), { recursive: true });
   process.env.NEWSROOM_ARTIFACT_DIR = art;
@@ -45,8 +47,11 @@ const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
 const leftovers = (art) => (existsSync(tmpDirOf(art)) ? readdirSync(tmpDirOf(art)) : []);
 const gate = () => { let open; const p = new Promise((r) => { open = r; }); return { p, open }; };
 
-const writeText = mod.__writeArtifactIfAbsentForTest;
-const writeBytes = mod.__writeArtifactBytesIfAbsentForTest;
+// A computation record is the knowledge group's: in production only a registered tool's execute reaches these writers, and its context names the tool.
+// The test names a real knowledge-group tool as the initiator, so the writes also pass NEWSROOM_GROUP_ENFORCE=1 without loosening any rule.
+const { runInTool } = await import(join(pi, "groups.mjs"));
+const writeText = (...args) => runInTool("duckdb_query", () => mod.__writeArtifactIfAbsentForTest(...args));
+const writeBytes = (...args) => runInTool("duckdb_query", () => mod.__writeArtifactBytesIfAbsentForTest(...args));
 const TEXT = JSON.stringify({ a: 1 }, null, 2) + "\n";
 
 // --- (a) Defect reproduction, switch off ------------------------------------
@@ -126,7 +131,7 @@ for (const cut of ["before-link", "after-link"]) {
   await assert.rejects(() => writeText("computations/x.json", { a: 1 }), /simulated kill/);
   mod.__setArtifactFsForTest(null);
   assert.ok(!existsSync(join(art, "computations", "x.json")), "target never appears");
-  assert.deepEqual(walk(art), [], "nothing at all is left inside the artifact root");
+  assert.deepEqual(withoutRunTraces(art, walk(art), { label: "killed" }), [], "nothing at all is left inside the artifact root");
   assert.equal(leftovers(art).length, 1);
   // Rename the orphan to a pid that cannot be alive, then start-up cleanup removes it; a live pid's file is kept.
   const orphan = leftovers(art)[0];
@@ -166,8 +171,10 @@ for (const cut of ["before-link", "after-link"]) {
   assert.deepEqual(leftovers(art), []);
   // link not supported on this volume: fall back to exclusive create
   for (const code of ["EPERM", "ENOTSUP", "EXDEV"]) {
-    mod.__setArtifactFsForTest({ async link() { throw Object.assign(new Error(code), { code }); } });
+    let linkCalls = 0;
+    mod.__setArtifactFsForTest({ async link() { linkCalls++; throw Object.assign(new Error(code), { code }); } });
     await writeText(`computations/fallback-${code}.json`, { f: code });
+    assert.ok(linkCalls >= 1, `${code}: the link seam fired, so the fallback really ran`);
     assert.equal(readFileSync(join(art, "computations", `fallback-${code}.json`), "utf8"), JSON.stringify({ f: code }, null, 2) + "\n");
     await assert.rejects(() => writeText(`computations/fallback-${code}.json`, { f: "other" }), /Immutable artifact collision/);
   }

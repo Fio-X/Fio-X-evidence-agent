@@ -18,10 +18,12 @@
 // infographic lint) is replayed three times against the real tool handlers and
 // real DuckDB; the artifacts are compared file by file.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { loadNewsroom, REPO } from "./precision_harness.mjs";
 import { loadPinPatches } from "./lib_pin_patch.mjs";
+import { withoutRunTraces } from "./lib_run_traces.mjs";
 
 const BASELINE = "327de35";
 // This harness stubs the schema builders (every schema is {}), so the lists carry only what is visible here: tool names, descriptions, prompt
@@ -30,7 +32,7 @@ const pins = loadPinPatches("shadow_parity", { baseline: BASELINE });
 // fix/page-top-1003 also puts the lint policy version and the hero gate state into the page lint's record and key, so the page lint ref
 // differs from the older commit's. Only that is masked, and only after it is checked: the page lints of the two runs are paired one to
 // one by plan_ref (a different count or a repeated plan_ref fails); every older record must lack both added fields and every newer one must
-// carry lint_policy_version "2" and hero_value_gate false (this test turns the gate off); then the two fields are deleted and the records
+// carry lint_policy_version "2" and hero_value_gate true (the gate is always on); then the two fields are deleted and the records
 // are compared byte for byte. In the calls' text, only the page lint's own ref is replaced; every other byte is compared.
 const PAGE_LINT_PATH = /^infographics\/lints\/[0-9a-f]{64}\.json$/;
 const ADDED_LINT_FIELDS = ["lint_policy_version", "hero_value_gate"];
@@ -50,18 +52,39 @@ function pageLints(files) {
 function withMaskedLints(run, { added }) {
   const lints = pageLints(run.files);
   const files = new Map([...run.files].filter(([path]) => !PAGE_LINT_PATH.test(path)));
+  // The head ends the first footer note with a full stop (c6914ec: one "Note: " per block, every entry ends with one);
+  // the baseline's chart SVGs are held to exactly that one change, so any other byte difference still fails. The files that
+  // record an SVG's sha256 (render QA reports) follow the SVG.
+  let movedHashes = new Map();
+  if (!added) {
+    const moved = new Map();
+    for (const [path, bytes] of files) {
+      if (!path.endsWith(".svg")) continue;
+      const next = Buffer.from(bytes.toString("utf8").replace(/(>(?:Note: |\u6CE8\uFF1A)[^<]*[^<.\u3002!\uFF01?\uFF1F\s])<\/text>/g, (_m, body) => `${body}${body.startsWith(">Note: ") ? "." : "\u3002"}</text>`), "utf8");
+      moved.set(createHash("sha256").update(bytes).digest("hex"), createHash("sha256").update(next).digest("hex"));
+      files.set(path, next);
+    }
+    movedHashes = moved;
+  }
   let text = JSON.stringify(run.calls);
   for (const [planRef, { path, record }] of lints) {
     for (const key of ADDED_LINT_FIELDS) assert.equal(key in record, added, `${added ? "head" : "baseline"} page lint for ${planRef}: ${key} ${added ? "missing" : "present"}`);
     if (added) {
       assert.equal(record.lint_policy_version, POLICY_VERSION, `head page lint for ${planRef}: lint_policy_version`);
-      assert.equal(record.hero_value_gate, false, `head page lint for ${planRef}: hero_value_gate (this test turns the gate off)`);
+      assert.equal(record.hero_value_gate, true, `head page lint for ${planRef}: hero_value_gate (the gate is always on)`);
     }
     const bare = { ...record };
     for (const key of ADDED_LINT_FIELDS) delete bare[key];
     files.set(`infographics/lints/<${planRef}>.json`, Buffer.from(JSON.stringify(bare)));
     text = text.split(path).join(`infographics/lints/<${planRef}>.json`);
   }
+  for (const [path, bytes] of files) {
+    if (path.endsWith(".svg")) continue;
+    let t = bytes.toString("utf8"), changed = false;
+    for (const [from, to] of movedHashes) if (t.includes(from)) { t = t.split(from).join(to); changed = true; }
+    if (changed) files.set(path, Buffer.from(t, "utf8"));
+  }
+  text = movedHashes.size ? [...movedHashes].reduce((acc, [from, to]) => acc.split(from).join(to), text) : text;
   return { calls: JSON.parse(text), files, plans: [...lints.keys()].sort() };
 }
 const timeline = JSON.parse(readFileSync(join(REPO, "fixtures", "complex", "timeline.json"), "utf8"));
@@ -76,7 +99,7 @@ function walk(dir, root = dir, out = new Map()) {
 }
 
 async function scenario({ baselineRev, shadow }) {
-  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1", NEWSROOM_HERO_VALUE_GATE: "0" } });
+  const h = await loadNewsroom({ prefix: "shadow-parity-", baselineRev, env: { NEWSROOM_SHADOW_CHECKS: shadow ? "1" : undefined, NEWSROOM_MOBILE_PAGES: "1" } });
   try {
     const tools = new Map([...h.tools.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
     const defs = JSON.stringify([...tools.values()].map((tool) => ({ ...tool, execute: undefined })));
@@ -103,15 +126,18 @@ async function scenario({ baselineRev, shadow }) {
     const render = await call("newsroom_viz_render", { plan_ref: planA, lint_ref: lintA.details.lintRef });
     const igRef = "infographics/plans/plan-1.json";
     writeFileSync(join(h.art, igRef), JSON.stringify({
-      schema_version: "1.0.0", title: "Four steps", dek: "A minimal fixture: 4 steps, 99 percent.", alt: "A header, a statistic and a chart.",
+      schema_version: "1.0.0", title: "Four steps", dek: "A minimal fixture: 4 steps, 99 percent.", alt: "A header and a chart.",
       modules: [
         { id: "m1", type: "section_header", span: "full", heading: "Overview" },
-        { id: "m2", type: "hero_stat", span: "full", value: "25", unit: "%", label: "In the first phase", claim_id: claim.claim_id },
+        // no hero_stat here: the hero value gate is always on and refuses a typed hero number on a claim without bindings
         { id: "m3", type: "visual", span: "full", manifest_ref: render.details.manifestRef },
       ],
     }));
     await call("newsroom_infographic_lint", { plan_ref: igRef });
-    const files = walk(h.art);
+    // Run traces (the boundary report, the chain event log) are not artifacts; lib_run_traces.mjs says which and checks them.
+    const all = walk(h.art);
+    const keep = new Set(withoutRunTraces(h.art, [...all.keys()], { chain: true, label: "artifact tree" }));
+    const files = new Map([...all].filter(([path]) => keep.has(path)));
     return { defs, tools, calls, files, claimId: claim.claim_id };
   } finally {
     rmSync(h.tmp, { recursive: true, force: true });

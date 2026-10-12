@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHART_TYPES, HOUSE_FONT_SANS, HOUSE_PALETTES, critiqueViz, lintVizSpec, renderVizBundle, renderVizMobileSvg, renderVizSvg, validateVizSpec } from "../runtime/pi/viz.mjs";
-import { runRenderQa } from "../runtime/pi/render_qa.mjs";
+import { runRenderQa, valuesAllZero } from "../runtime/pi/render_qa.mjs";
 import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 
 // The house style is the default; a legacy switch in the caller's environment
@@ -796,7 +796,20 @@ check("edge: one-sided missing cells, all-zero values and one huge value render 
   assert.equal(g.rightBars.length, 17);
   assert.equal(g.leftBars.length, 18);
   // all zero: no bars and no outlines, but a valid axis
-  const zeroSvg = assertQaClean(withPeriods, buildRows({ bands: ["a", "b", "c"], cellValue: () => 0 }), "all zero");
+  const zeroRows = buildRows({ bands: ["a", "b", "c"], cellValue: () => 0 });
+  let zeroSvg;
+  if (process.env.NEWSROOM_QA_NO_EMPTY_PASS === "1") {
+    // an all-zero chart is a real empty finding: with the switch on the product rejects it and says why (the render itself is unchanged)
+    assert.equal(valuesAllZero(withPeriods, zeroRows), true);
+    const zeroBundle = renderVizBundle(withPeriods, zeroRows, { mobilePages: false });
+    const zeroQa = runRenderQa(zeroBundle, { allZero: true });
+    assert.equal(zeroQa.passed, false, "all zero: rejected with the switch on");
+    const named = zeroQa.viewports.desktop.extra_checks.no_empty_pass.failures.find((f) => f.rule === "qa_all_values_zero");
+    assert.ok(named, "all zero: the rejection names the cause");
+    assert.match(named.message, /change the data or the metric/);
+    assert.match(named.message, /state in the text that these values are all 0/);
+    zeroSvg = zeroBundle.desktop;
+  } else zeroSvg = assertQaClean(withPeriods, zeroRows, "all zero");
   assert.equal(role(zeroSvg, "rect", "data-bar").length, 0);
   assert.equal(role(zeroSvg, "rect", "data-bar-outline").length, 0);
   assert.ok(role(zeroSvg, "line", "grid-line").length >= 4);

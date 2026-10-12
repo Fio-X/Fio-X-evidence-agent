@@ -23,6 +23,7 @@ if not BINARY.is_file():
 def run(args, extra_env=None, cwd=None):
     env = os.environ.copy()
     env.update({
+        "NEWSROOM_AGENT": "pi",
         "NEWSROOM_RPC_STARTUP_MS": "10000",
         "NEWSROOM_RPC_IDLE_MS": "8000",
         "NEWSROOM_RPC_FINISH_MS": "8000",
@@ -59,20 +60,29 @@ with tempfile.TemporaryDirectory(prefix="news-exit-codes-") as tmp:
 
     # (c) artifact failing integrity: exit 1, NOT VERIFIED line. The mock
     # writes a valid artifact at startup, so corrupt one evidence file afterwards
-    # via a wrapper that damages claims.jsonl before the run settles.
+    # via a wrapper that damages claims.jsonl before the mock emits its settled event
+    # (damaging it at process exit raced with news already having verified).
     wrapper = tmp / "corrupting_pi.py"
     wrapper.write_text(
         "#!/usr/bin/env python3\n"
         "import os, runpy, sys\n"
         "from pathlib import Path\n"
-        "import atexit\n"
         f"mock = {str(MOCK)!r}\n"
         "def damage():\n"
         "    root = Path(os.environ['NEWSROOM_ARTIFACT_DIR'])\n"
         "    claims = root / 'claims.jsonl'\n"
         "    if claims.exists():\n"
         "        claims.write_text('{not json\\n', encoding='utf-8')\n"
-        "atexit.register(damage)\n"
+        "class Out:\n"
+        "    def __init__(self, inner):\n"
+        "        self.inner = inner\n"
+        "    def write(self, text):\n"
+        "        if 'agent_settled' in text:\n"
+        "            damage()\n"
+        "        return self.inner.write(text)\n"
+        "    def __getattr__(self, name):\n"
+        "        return getattr(self.inner, name)\n"
+        "sys.stdout = Out(sys.stdout)\n"
         "sys.argv[0] = mock\n"
         "runpy.run_path(mock, run_name='__main__')\n",
         encoding="utf-8")

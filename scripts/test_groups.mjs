@@ -66,7 +66,8 @@ const commandNames = (() => {
   const source = readFileSync(join(ROOT, "src/cli.rs"), "utf8");
   const body = source.slice(source.indexOf("pub enum Commands {"));
   const block = body.slice(0, body.indexOf("\n}\n"));
-  return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase());
+  // Bare `news` (the interactive launcher) has no enum variant; it is registered as a command of the agent group (K213).
+  return [...block.matchAll(/^    ([A-Z][A-Za-z0-9]*)\(/gm)].map((m) => m[1].replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()).concat("interactive");
 })();
 const trackedFiles = spawnSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "src", "runtime/pi"], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
 assert.ok(commandNames.length >= 8 && trackedFiles.length > 100, "found the commands and the tracked files");
@@ -215,6 +216,18 @@ check("order switch: group order, stable inside a group, only the description la
   }
   check("switches are independent: phases keep the same tool set with the order on, and the boundary switch alone changes no definition or order");
 }
+}
+{ // Every Pi tool carries its group.action name in a separate field (no tool is renamed); no CLI entry exists yet, so none is claimed.
+  const table = JSON.parse(readFileSync(join(ROOT, "runtime/pi/groups.json"), "utf8"));
+  const seen = new Set();
+  for (const [name, row] of Object.entries(table.tools)) {
+    assert.equal(row.registered_as, `${row.group}.${name.replace(/^newsroom_/, "")}`, `${name}: registered_as is group.action`);
+    assert.ok(!seen.has(row.registered_as), `${name}: registered_as is unique`);
+    seen.add(row.registered_as);
+    assert.ok(Object.hasOwn(row, "cli_entry"), `${name}: cli_entry is stated`);
+    assert.equal(row.cli_entry, null, `${name}: no CLI entry exists, none is claimed`);
+  }
+  check(`tool table: all ${seen.size} tools carry registered_as (group.action, unique) and an explicit cli_entry`);
 }
 console.log(JSON.stringify({ bytes }));
 for (const name of results) console.log(`  ok  ${name}`);

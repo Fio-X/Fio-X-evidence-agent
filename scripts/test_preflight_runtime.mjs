@@ -4,6 +4,7 @@
 // fake artifact reader; part 2 runs the real page tools on a hand-written fixture.
 // Set BASELINE_NEWSROOM_TS to a pre-change newsroom.ts to also compare switch-off
 // output with it.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -160,7 +161,7 @@ export const Type = {
 };
 `;
 function loadTree(label, patchRegistry, newsroomSource) {
-  const dir = mkdtempSync(join(tmpdir(), `preflight-tree-${label}-`));
+  const dir = makeTestTmp(`preflight-tree-${label}-`);
   cpSync(join(ROOT, "runtime"), join(dir, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(dir, "config"), { recursive: true });
   stub(dir, "typebox", TYPEBOX);
@@ -196,7 +197,7 @@ const VIZ = [
 
 // Writes everything the page plan reads from disk; `mutate` can bend one piece.
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {} } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `preflight-${label}-`)), "run");
+  const art = join(makeTestTmp(`preflight-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -279,7 +280,7 @@ function pagePlan({ withQuestion = false, moduleClaims = {}, readerQuestionOverr
 // test independent of those, NEWSROOM_PYTHON_BIN points at a stub that writes a fixed PNG; only
 // the rasterizer is replaced, every gate around it runs for real.
 {
-  const stubDir = mkdtempSync(join(tmpdir(), "preflight-raster-"));
+  const stubDir = makeTestTmp("preflight-raster-");
   writeFileSync(join(stubDir, "fixed.png"), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(256, 7)]));
   const bin = join(stubDir, "python-stub.sh");
   writeFileSync(bin, `#!/bin/sh\ncp "${join(stubDir, "fixed.png")}" "$3"\necho '{"engine":"test-stub"}'\n`);

@@ -1,9 +1,10 @@
 // Gate fixes from the close-round review (K37-K41), through the real tool path. The harness is copied from
 // test_hero_value_tool_path.mjs (same fixtures, same loader). Offline.
-// (copied header follows) H1b: the hero value gate through the real tool path. With the gate on (the default; NEWSROOM_HERO_VALUE_GATE=0 turns it
+// (copied header follows) H1b: the hero value gate through the real tool path. With the gate on (always; no switch turns it
 // off) the newsroom_infographic_lint tool must read each hero_stat's claim computation (refs are written as "computations/<hash>.json") and block a
 // value that is not in those rows. test_hero_value_gate.mjs covers the pure lint; this covers the newsroom.ts wiring,
 // on a temp artifact root with a system-verified claim whose computation record has real rows. Offline.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
@@ -12,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chartSvgText, checkReaderText } from "../runtime/pi/infographic.mjs";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
+const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT"];
 const INVIS = [["zwsp", "\u200b", "亿美元"], ["wj", "\u2060", "亿美元"], ["shy", "\u00ad", "亿美元"], ["bom", "\ufeff", "亿美元"], ["mvs", "\u180e", "亿美元"], ["nel", "\u0085", "亿美元"], ["vs16", "\ufe0f", "亿美元"], ["mn", "\u0301", "亿美元"], ["inyi", "", "亿\u200b美元"],
     ["mixed", "\u200b\u2060\u00ad\ufeff\u180e", "亿美元"], ["spmixed", " \u200b \u2060", "亿美元"], ["en-zwsp", "\u200b", "million tonnes"], ["inword", " ", "mil\u00adlion tonnes"], ["inword2", " ", "mil\u200blion tonnes"], ["pct", "\u200b", "%"]];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -32,7 +33,7 @@ export const Type = {
   Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
-const TREE = mkdtempSync(join(tmpdir(), "speed-gates-tree-"));
+const TREE = makeTestTmp("speed-gates-tree-");
 cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
 stub(TREE, "typebox", TYPEBOX);
@@ -60,7 +61,7 @@ const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect 
 const VIZ = [["map", "geo_flow_map", "c-map"], ["sankey", "sankey", "c-flow"], ["trend", "line", "c-trend"]];
 // verbatim from test_plan_edit_runtime.mjs: a full artifact root with verified claims, a computation, charts and editorial files
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, verifiedOnly = null } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `planedit-${label}-`)), "run");
+  const art = join(makeTestTmp(`planedit-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -176,7 +177,7 @@ const keyOrder = (tools, plan) => { const keys = Object.keys(tools.get("newsroom
 
 const results = [];
 // Runs plan + lint with a hero module; returns what the plan tool said (or threw) and the lint's hero blockers.
-const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, claimsEdit = null, extraEnv = {} } = {}) => {
+const heroRun = async (hero, { verifiedOnly = null, claim_id = "c-bound", emptyAfterPlan = false, dropRows = false, manifestClaim = {}, inline = false, mutateRows = null, claimsEdit = null, extraEnv = {} } = {}) => {
   const art = freshRun("hero", { verifiedOnly, manifestClaim });
   if (claimsEdit) writeFileSync(join(art, "claims.jsonl"), `${claimsEdit(readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean)).join("\n")}\n`);
   const claimRecord = () => readFileSync(join(art, "claims.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)).find((c) => c.claim_id === claim_id);
@@ -185,8 +186,8 @@ const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", 
   const plan = pagePlan({ withQuestion: true });
   plan.modules.push({ id: "hero", type: "hero_stat", span: "third", label: "Largest regional value", claim_id, story_node_ids: ["n-change"], story_role: "evidence", ...hero });
   plan.mobile_module_order = [...plan.mobile_module_order, "hero"];
-  // Gate on is the default: no switch is set. The old path (typed hero values) is asked for with NEWSROOM_HERO_VALUE_GATE=0.
-  const tools = await registerFor({ env: { ...(gate ? { NEWSROOM_MOBILE_PAGES: "0" } : { NEWSROOM_HERO_VALUE_GATE: "0" }), ...extraEnv, ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
+  // The gate is always on: no switch is set, and none turns it off.
+  const tools = await registerFor({ env: { NEWSROOM_MOBILE_PAGES: "0", ...extraEnv, ...(inline ? { NEWSROOM_SPEED_INLINE_CLAIM: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1" } : {}) } });
   let planned;
   try { planned = await tools.get("newsroom_infographic_plan").execute("p", keyOrder(tools, plan)); } catch (error) { return { refused: String(error.message), art, tools }; }
   const planRef = refOf(planned, "planRef");
@@ -198,7 +199,7 @@ const heroRun = async (gate, hero, { verifiedOnly = null, claim_id = "c-bound", 
 const ok = async (name, f) => { await f(); results.push(name); console.log(`  ok  ${name}`); };
 const refOf = (res, name) => { must(res?.details?.[name], `no ${name} in the result`); return res.details[name]; };
 const refused = async (name, hero, re, opts) => ok(`refused: ${name}`, async () => {
-  const r = await heroRun(true, hero, opts);
+  const r = await heroRun(hero, opts);
   must(r.refused && re.test(r.refused), `expected a refusal matching ${re}, got ${JSON.stringify(r.refused ?? r.blockers)}`);
 });
 
@@ -209,11 +210,11 @@ const verifiedLine = (lines, id) => lines.find((l) => asRecord(l).claim_id === i
 
 // ---- K38: the latest record per claim_id decides ----
 await ok("K38 a later non-verified record revokes: a hero citing it gets HERO_CLAIM_NOT_VERIFIED", async () => {
-  const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound", claimsEdit: (lines) => [...lines, revoked("c-bound")] });
+  const r = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-bound", claimsEdit: (lines) => [...lines, revoked("c-bound")] });
   must(r.refused && /HERO_CLAIM_NOT_VERIFIED/.test(r.refused), `got ${JSON.stringify(r.refused ?? r.blockers)}`);
 });
 await ok("K38 control: verified once, the hero passes", async () => {
-  const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound" });
+  const r = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-bound" });
   must(!r.refused, r.refused);
 });
 await ok("K38 verified then non-verified is not verified in both functions; order and duplicates", async () => {
@@ -232,7 +233,7 @@ await ok("K38 verified then non-verified is not verified in both functions; orde
   must(JSON.stringify(await mod.verifiedClaimIds()) === JSON.stringify(["c-bound", "c-map"]), JSON.stringify(await mod.verifiedClaimIds()));
 });
 await ok("K38 a plan citing a revoked claim fails the render check", async () => {
-  const r = await heroRun(false, { value: "2", unit: "" });
+  const r = await heroRun({ value_from: "{max.value}" });
   writeFileSync(join(r.art, "claims.jsonl"), `${readFileSync(join(r.art, "claims.jsonl"), "utf8")}${revoked("c-map")}\n`);
   const lintRef = `infographics/lints/${"e".repeat(64)}.json`;
   writeFileSync(join(r.art, lintRef), JSON.stringify({ passed: true, blockers: [], warnings: [], plan_ref: r.planRef, asset_hashes: {} }));
@@ -268,7 +269,7 @@ await ok("K38 a line that does not parse closes the registry (after, before, not
 const PRE = { NEWSROOM_SPEED_PREFLIGHT: "1" };
 const renderWith = async (r) => { try { return { ok: true, out: await r.tools.get("newsroom_infographic_render").execute("r", { plan_ref: r.planRef, lint_ref: r.lint.details.lintRef }) }; } catch (error) { return { ok: false, msg: String(error.message) }; } };
 const k39 = async (edit) => {
-  const r = await heroRun(false, { value: "2", unit: "" }, { extraEnv: PRE });
+  const r = await heroRun({ value_from: "{max.value}" }, { extraEnv: PRE });
   must(!r.refused && r.lint.details.passed === true, `lint should pass: ${r.refused ?? JSON.stringify(r.lint.details.blockers)}`);
   const t0 = performance.now();
   const out = await renderWith({ ...r });
@@ -298,9 +299,9 @@ for (const [name, , word] of INVIS) {
   await refused(`K37 ${name}: hidden character after the number, unit ${unit}`, { value_from: "{max.value}", unit }, /HERO_LITERAL_HIDDEN_CHAR.*U\+[0-9A-F]{4}.*without it/, { claim_id: `c-inv-${name}` });
 }
 await ok("K37 control: without a hidden character a correct unit passes, an empty unit is dropped, and whitespace is as before", async () => {
-  const r = await heroRun(true, { value_from: "{max.value}", unit: "亿美元" }, { claim_id: "c-yi" });
+  const r = await heroRun({ value_from: "{max.value}", unit: "亿美元" }, { claim_id: "c-yi" });
   must(!r.refused && r.stored.unit === "亿美元", JSON.stringify(r.refused ?? r.stored));
-  const m = await heroRun(true, { value_from: "{max.value}", unit: "million" }, { claim_id: "c-million" });
+  const m = await heroRun({ value_from: "{max.value}", unit: "million" }, { claim_id: "c-million" });
   must(!m.refused && m.stored.unit === "million", JSON.stringify(m.refused ?? m.stored));
 });
 await refused("K37 control: {v}亿美元 with an empty unit is still HERO_UNIT_DROPPED", { value_from: "{max.value}" }, /HERO_UNIT_DROPPED.*'亿'/, { claim_id: "c-yi" });
@@ -312,12 +313,12 @@ for (const field of ["label", "detail"]) {
   const hero = { value_from: "{max.value}", [field]: "Largest in B", [`${field}_template`]: "Largest in {max.value.region}" };
   await refused(`K41 ${field}_template: bound field changed, value unchanged`, hero, /HERO_BINDING_STALE.*\{max\.value\.region\}/, { claim_id: "c-bound", mutateRows: regionChanged });
   await ok(`K41 ${field}_template: unchanged rows pass`, async () => {
-    const r = await heroRun(true, hero, { claim_id: "c-bound" });
+    const r = await heroRun(hero, { claim_id: "c-bound" });
     must(!r.refused && r.stored[field] === "Largest in B", JSON.stringify(r.refused ?? r.stored));
   });
 }
 await ok("K41 control: the value alone with a changed region still passes", async () => {
-  const r = await heroRun(true, { value_from: "{max.value}" }, { claim_id: "c-bound", mutateRows: regionChanged });
+  const r = await heroRun({ value_from: "{max.value}" }, { claim_id: "c-bound", mutateRows: regionChanged });
   must(!r.refused, JSON.stringify(r.refused));
 });
 

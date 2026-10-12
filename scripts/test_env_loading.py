@@ -36,6 +36,7 @@ def run_env_case(cwd: Path) -> subprocess.CompletedProcess[str]:
         env.pop(key, None)
     env.update(
         {
+            "NEWSROOM_AGENT": "pi",
             "PERF_MOCK_MODE": "normal",
             "NEWSROOM_RPC_STARTUP_MS": "300",
             "NEWSROOM_RPC_IDLE_MS": "300",

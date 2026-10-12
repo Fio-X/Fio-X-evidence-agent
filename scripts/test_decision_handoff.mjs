@@ -42,7 +42,7 @@ writeFileSync(join(tree, "runtime/pi/newsroom.test-copy.mjs"), stripTypeScriptTy
 const mod = await import(pathToFileURL(join(tree, "runtime/pi/newsroom.test-copy.mjs")).href);
 const groups = await import(pathToFileURL(join(tree, "runtime/pi/groups.mjs")).href);
 
-const BASE_ENV = { NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
 function register(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_GROUP_")) delete process.env[key];
   Object.assign(process.env, BASE_ENV, env);
@@ -126,7 +126,7 @@ check("hand-off and review switch on: program-computed status, records ok and ta
 {
   register({ NEWSROOM_GROUP_HANDOFF: "1" });
   investigation();
-  for (const ref of ["claims.jsonl", "computations/x.json", "editorial/discovery/x.json", "editorial/preferences/../x.json", "infographics/vision-critics/x.json"]) {
+  for (const ref of ["claims.jsonl", "computations/x.json", "editorial/discovery/x.json", "editorial/preferences/../x.json", "infographics/plan-rejections/x.json"]) {
     assert.throws(() => mod.__saveDecisionForTest(ref, {}), /DECISION_WRITER_REF/, ref);
   }
 }

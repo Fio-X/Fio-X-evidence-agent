@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { CLEAN_HERO_CHECKS } from './lib_hero_checks.mjs';
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { lintVizSpec, renderVizBundle, critiqueViz } from '../runtime/pi/viz.mjs';
@@ -7,7 +8,7 @@ import { validateInfographicSpec, lintInfographicSpec, composeInfographicBundle,
 import { runRenderQa } from '../runtime/pi/render_qa.mjs';
 
 const claim='claim-infographic';
-const context={verified_claim_ids:[claim]};
+const context={hero_checks:CLEAN_HERO_CHECKS,verified_claim_ids:[claim]};
 
 const barRows=[
   {category:'A',value:42},{category:'B',value:31},{category:'C',value:18},{category:'D',value:9}
@@ -149,7 +150,13 @@ assert.equal(flatCritic.passed,false,'award-target page without a strong anchor 
 const awardSnapshot={desktop:createHash('sha256').update(awardBundle.desktop.svg).digest('hex'),mobile:createHash('sha256').update(awardBundle.mobile.svg).digest('hex')};
 
 const snapshot={desktop:createHash('sha256').update(bundle.desktop.svg).digest('hex'),mobile:createHash('sha256').update(bundle.mobile.svg).digest('hex')};
-if(process.argv.includes('--write-fixtures')){
+// NEWSROOM_PAGE_POLISH=1 compares against its own snapshot files (the off snapshots stay as they are); `--write-fixtures` with the switch on writes only those two.
+const polishOn=process.env.NEWSROOM_PAGE_POLISH==='1';
+const snapName=(base)=>polishOn?`../fixtures/${base}.polish.json`:`../fixtures/${base}.json`;
+if(process.argv.includes('--write-fixtures')&&polishOn){
+  await writeFile(new URL(snapName('infographic-snapshots'),import.meta.url),JSON.stringify(snapshot,null,2)+'\n');
+  await writeFile(new URL(snapName('infographic-award-snapshots'),import.meta.url),JSON.stringify(awardSnapshot,null,2)+'\n');
+} else if(process.argv.includes('--write-fixtures')){
   await mkdir(new URL('../fixtures/infographic/',import.meta.url),{recursive:true});
   await writeFile(new URL('../fixtures/infographic/magazine-regression.svg',import.meta.url),bundle.desktop.svg);
   await writeFile(new URL('../fixtures/infographic/magazine-regression.mobile.svg',import.meta.url),bundle.mobile.svg);
@@ -160,9 +167,9 @@ if(process.argv.includes('--write-fixtures')){
   await writeFile(new URL('../fixtures/infographic/award-regression.json',import.meta.url),JSON.stringify({spec:awardSpec,lint:awardLint,critic:awardCritic},null,2)+'\n');
   await writeFile(new URL('../fixtures/infographic-award-snapshots.json',import.meta.url),JSON.stringify(awardSnapshot,null,2)+'\n');
 } else {
-  const expected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../fixtures/infographic-snapshots.json',import.meta.url),'utf8'));
+  const expected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL(snapName('infographic-snapshots'),import.meta.url),'utf8'));
   assert.deepEqual(snapshot,expected,'infographic SVG snapshot changed; review visual output and refresh intentionally');
-  const awardExpected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../fixtures/infographic-award-snapshots.json',import.meta.url),'utf8'));
+  const awardExpected=JSON.parse(await (await import('node:fs/promises')).readFile(new URL(snapName('infographic-award-snapshots'),import.meta.url),'utf8'));
   assert.deepEqual(awardSnapshot,awardExpected,'award infographic SVG snapshot changed; review visual output and refresh intentionally');
 }
 console.log('infographic composer tests: PASS');

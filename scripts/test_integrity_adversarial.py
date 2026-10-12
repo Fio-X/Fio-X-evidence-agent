@@ -489,6 +489,19 @@ def check_portable_publication_with_passing_qa_verifies():
         print("PASS control: portable-publication-with-passing-qa-verifies")
 
 
+def editorial_plan_refs(root: Path) -> dict:
+    # The refs a 1.4+ plan names (K258: verify now requires the concept set, the selected concept and the asset plan unless the page manifest
+    # records the lean gates). They point at real, content-hashed, replayable editorial artifacts written by the editorial verifier's own
+    # fixture, not at invented paths. Its award run and preference record are dropped: they name a page this fixture does not have.
+    from test_editorial_verifier_v14 import install
+    refs = install(root)
+    selected = load_json(refs["c"])["selected_concept_id"]
+    for key in ("r", "p"):
+        refs[key].unlink()
+    rel = lambda key: refs[key].relative_to(root).as_posix()
+    return {"editorial_discovery_ref": rel("d"), "visual_concept_ref": rel("c"), "selected_concept_id": selected, "novelty_ref": rel("n"), "asset_plan_ref": rel("a")}
+
+
 def add_clean_1_4_0_infographic(root: Path) -> None:
     add_clean_1_4_0_infographic_with_language(root)
 
@@ -532,7 +545,7 @@ def add_clean_1_4_0_infographic_with_language(root: Path, language=None, strip: 
     (root / "infographics").mkdir(parents=True, exist_ok=True)
     (root / "infographics/x.svg").write_bytes(svg_desktop)
     desktop_sha = hashlib.sha256(svg_desktop).hexdigest()
-    plan = {"schema_version": "1.4.0"}
+    plan = {"schema_version": "1.4.0", **editorial_plan_refs(root)}
     if language is not None:
         plan["language"] = language
     write_json(root / "infographics/plans/x.json", plan)

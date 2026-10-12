@@ -223,6 +223,84 @@ VISION_PATCH_FIELDS = {"span", "emphasis", "priority", "move_before", "mobile_mo
 # Mirrors runtime/pi/vision.mjs PLAN_EDIT_MODULE_FIELDS / PLAN_EDIT_SCENE_FIELDS / PLAN_EDIT_MAX_OPS.
 PLAN_EDIT_MODULE_FIELDS = VISION_PATCH_FIELDS
 PLAN_EDIT_SCENE_FIELDS = ("pattern", "anchor_module_id", "sidecar_module_ids")
+
+# K258 lean gates: the scene graph of a storyboard page is derived from its panels. Mirrors runtime/pi/storyboard.mjs
+# deriveSceneGraphFromPanels (PANEL_SCENE_GOALS, hero_with_rail, one sidecar); scripts/test_lean_gates_verify.py runs both on the
+# same fixture and they must agree.
+PANEL_SCENE_GOALS = {"lead_in": "ORIENT", "scale": "MEASURE", "cause": "EXPLAIN", "space": "COMPARE", "compare": "COMPARE", "basis": "MEASURE"}
+# EXPLAIN only for a mechanism chart body; other bodies fall back by visual grammar (mirrors storyboard.mjs panelSceneGoal).
+EXPLAIN_EVIDENCE_GRAMMARS = ("mechanism",)
+EXPLAIN_FALLBACK_GOALS = {"composition": "COMPARE", "rank": "COMPARE", "benchmark": "COMPARE", "distribution": "COMPARE", "spatial": "COMPARE", "change": "MEASURE", "trend": "MEASURE", "sequence": "MEASURE", "flow": "MEASURE"}
+EXPLAIN_FALLBACK_DEFAULT = "MEASURE"
+
+
+def panel_scene_goal(panel_kind, body: dict) -> str:
+    goal = PANEL_SCENE_GOALS.get(panel_kind, "EXPLAIN")
+    grammar = str(body.get("visual_grammar"))
+    if goal != "EXPLAIN" or grammar in EXPLAIN_EVIDENCE_GRAMMARS:
+        return goal
+    return EXPLAIN_FALLBACK_GOALS.get(grammar, EXPLAIN_FALLBACK_DEFAULT)
+
+
+def _module_claim_ids(module: dict) -> list[str]:
+    seen: list[str] = []
+    for value in [module.get("claim_id"), *(module.get("claim_ids") or []), *(module.get("claim_set") or [])]:
+        if value and str(value) not in seen:
+            seen.append(str(value))
+    return seen
+
+
+def derive_scene_graph(plan: dict) -> tuple[dict | None, list[str]]:
+    errors: list[str] = []
+    modules = plan.get("modules") or []
+    by_id = {str(m.get("id")): m for m in modules}
+    panels = sorted((m for m in modules if m.get("type") == "panel"), key=lambda m: (m.get("panel_no") or 0, str(m.get("id"))))
+    scenes = []
+    for panel in panels:
+        body, note = by_id.get(str(panel.get("body_module_id") or "")), by_id.get(str(panel.get("note_module_id") or ""))
+        if body is None or note is None:
+            errors.append(f"panel '{panel.get('id')}' body_module_id or note_module_id is not a module of the page")
+            continue
+        if body.get("type") not in ("visual", "illustration"):
+            continue
+        claims: list[str] = []
+        for member in (body, note):
+            for claim in _module_claim_ids(member):
+                if claim not in claims:
+                    claims.append(claim)
+        scenes.append({
+            "id": f"scene-{panel.get('id')}",
+            "pattern": "hero_with_rail",
+            "anchor_module_id": str(body.get("id")),
+            "sidecar_module_ids": [str(note.get("id"))],
+            "primary_cognitive_goal": panel_scene_goal(panel.get("panel_kind"), body),
+            "hero_object_id": str(body.get("id")),
+            "supporting_claim_ids": _module_claim_ids(body),
+            "scene_budget": {
+                "max_supporting_objects": 1,
+                "max_annotations": min(8, sum(len(m.get("annotations") or []) for m in (body, note))),
+                "max_claims": min(12, max(1, len(claims))),
+            },
+        })
+    if not errors and not scenes:
+        errors.append("no panel has a visual or illustration body, so there is no scene to derive")
+    if len(scenes) > 6:
+        errors.append(f"{len(scenes)} panels have a visual or illustration body; a scene graph holds at most 6 scenes")
+    return (None, errors) if errors else ({"schema_version": "0.2.0", "scenes": scenes}, errors)
+
+
+def lean_scene_graph_issues(plan: dict) -> list[str]:
+    """Lean page with panels: the plan's scene graph must be the one the panels give. pattern, anchor and sidecars are the three
+    fields a recorded plan edit may change (PLAN_EDIT_SCENE_FIELDS), so they are left out of the comparison; the edit chain checks them."""
+    derived, errors = derive_scene_graph(plan)
+    if derived is None:
+        return [f"scene graph cannot be derived from the panels: {'; '.join(errors)}"]
+    given = plan.get("scene_graph")
+    if not isinstance(given, dict) or not isinstance(given.get("scenes"), list):
+        return ["lean page plan has no scene_graph to match the panels"]
+    def strip(graph: dict) -> dict:
+        return {**graph, "scenes": [{k: v for k, v in scene.items() if k not in PLAN_EDIT_SCENE_FIELDS} for scene in graph["scenes"]]}
+    return [] if strip(given) == strip(derived) else ["scene_graph does not match the one the panels derive (lean gates: it is generated from the panels, not written)"]
 PLAN_EDIT_MAX_OPS = 12
 COMPETITION_POLICY_FLOORS = {
     "editorial": {
@@ -619,6 +697,11 @@ def verify_infographic_source_quotes(root: Path, manifest_ref: str, plan: dict, 
             report.check("译述" in desktop_svg_text, f"infographic {manifest_ref} text module '{module_id}' has a translation but the rendered page has no 译述 label")
 
 
+def concept_min_count() -> int:
+    # NEWSROOM_CONCEPT_COUNT_3=1 (exact) relaxes only the lower bound of the concept count, 8 -> 3; runtime/pi/newsroom.ts conceptMinCount() is the same rule.
+    return 3 if os.environ.get("NEWSROOM_CONCEPT_COUNT_3") == "1" else 8
+
+
 def replay_award_mode_status(item: dict) -> tuple[str, list[str]]:
     refs = item.get("refs") or {}
     metrics = item.get("metrics") or {}
@@ -626,7 +709,7 @@ def replay_award_mode_status(item: dict) -> tuple[str, list[str]]:
     missing_refs = [key for key in required_refs if not str(refs.get(key) or "").strip()]
     concepts_generated = int(metrics.get("concepts_generated") or 0)
     concepts_killed = int(metrics.get("concepts_killed") or 0)
-    concept_ok = 8 <= concepts_generated <= 20 and concepts_killed >= ((concepts_generated + 1) // 2)
+    concept_ok = concept_min_count() <= concepts_generated <= 20 and concepts_killed >= ((concepts_generated + 1) // 2)
     prototype_ok = int(metrics.get("prototype_count") or 0) >= 2
     raster_ok = int(metrics.get("raster_revision_count") or 0) >= 1
     blockers = []
@@ -840,6 +923,53 @@ def _choropleth_leading_number_with_scale(text: str) -> float | None:
     return number * scale
 
 
+_ZH_SCALE_SUFFIXES = (("万亿", 12), ("亿", 8), ("万", 4))
+_ZH_PLAIN_UNIT_LABEL_RE = re.compile(r"^(-?\d+\.\d) (.+)$")
+_ZH_UNIT_SCALE_RE = re.compile(r"[万亿千]|百万")
+_ZH_INTEGER_LABEL_RE = re.compile(r"^[£$€¥]?(-?\d+)(?![\d.])")
+_ZH_LABEL_RE = re.compile(r"^(-?\d+\.\d)(万亿|亿|万)(?![\u4e00-\u9fff])")
+
+
+def _choropleth_zh_scaled_label_failure(text: str, expected: float, wan_context: bool = False) -> str | None:
+    # Exact check of a Chinese 万 / 亿 / 万亿 label (runtime/pi/viz.mjs choroplethValueText with the typeset switch on).
+    # The renderer picks the suffix by the raw magnitude of the value and prints value / 10^power to one decimal, rounded
+    # half up on the shortest decimal spelling of the value. This re-derives that exact text from data-value with
+    # decimal arithmetic and requires the number and suffix to equal it - no tolerance. Returns None when the label
+    # carries no 万 / 亿 suffix (the ordinary reader applies), "" when it matches, else a mismatch description.
+    from decimal import Decimal, ROUND_HALF_UP
+    # A unit that already says 万 / 亿 / 千 / 百万 gets no second scale: the label is the plain one-decimal number, then the unit.
+    plain = _ZH_PLAIN_UNIT_LABEL_RE.match(text)
+    if plain and _ZH_UNIT_SCALE_RE.search(plain.group(2)):
+        want = format(Decimal(repr(abs(expected))).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP), "f")
+        want = ("-" if expected < 0 else "") + want
+        return "" if plain.group(1) == want else f"expected '{want}'"
+    # An integer-form label: on a map that has a value of 1万 or more, a value under 1万 is its half-up integer; otherwise the
+    # integer must be the (integer) value itself.
+    whole = _ZH_INTEGER_LABEL_RE.match(text)
+    if whole:
+        magnitude = Decimal(repr(abs(expected)))
+        if not math.isfinite(expected):
+            return f"expected a finite value, got {expected}"
+        if expected != int(expected):
+            if not (wan_context and abs(expected) < 10_000):
+                return f"expected a one-decimal label for {expected}"
+            magnitude = magnitude.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        want = ("-" if expected < 0 and magnitude != 0 else "") + format(magnitude, "f").split(".")[0]
+        return "" if whole.group(1) == want else f"expected '{want}'"
+    m = _ZH_LABEL_RE.match(text)
+    if not m:
+        return None
+    magnitude = abs(expected)
+    suffix, power = next(((sfx, pw) for sfx, pw in _ZH_SCALE_SUFFIXES if magnitude >= 10 ** pw), (None, 0))
+    if suffix is None:
+        return f"label '{text}' scales a value that is under 1万"
+    scaled = (Decimal(repr(magnitude)) / (Decimal(10) ** power)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    want = ("-" if expected < 0 else "") + format(scaled, "f")
+    if m.group(1) != want or m.group(2) != suffix:
+        return f"expected '{want}{suffix}'"
+    return ""
+
+
 def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
     # Independently re-derives the choropleth value-labels proof straight
     # from one rendered viewport's SVG markup - every choropleth-data
@@ -886,6 +1016,7 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
         if iso3:
             values.setdefault(iso3, []).append(_choropleth_label_body_text(body))
 
+    wan_context = any(abs(vals[0]) >= 10_000 for vals in data_values.values() if len(vals) == 1)
     for iso3, vals in data_values.items():
         if len(vals) != 1:
             failures.append(f"{iso3} has {len(vals)} choropleth-data regions with conflicting data-value attributes")
@@ -899,6 +1030,11 @@ def verify_choropleth_labels_from_svg(svg_text: str) -> list[str]:
             failures.append(f"{iso3} has {len(value_texts)} rendered value labels in the SVG (expected exactly 1)")
             continue
         text = value_texts[0]
+        zh_failure = _choropleth_zh_scaled_label_failure(text, expected, wan_context)
+        if zh_failure is not None:
+            if zh_failure:
+                failures.append(f"{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}")
+            continue
         shown = _choropleth_leading_number_with_scale(text)
         if shown is None:
             failures.append(f"{iso3}'s rendered value label '{text}' has no readable number (missing, truncated, or malformed)")
@@ -986,6 +1122,345 @@ def verify_heatmap_labels_from_svg(svg_text: str) -> list[str]:
     return sorted(set(failures))
 
 
+# --- NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back (K198, K200, K202) ---
+# Independently re-derives, from one rendered SVG plus the data rows it was drawn from, that (T1) every axis tick's
+# text read through its suffix or the unit line's data-scale equals its data-tick-value to half a displayed digit,
+# (T2) every tick sits where that value falls on the scale fitted from the bars, (V1/V2) every value label reads as
+# its data-value and names a bar carrying the same value, and (anchor) every bar's data-value equals its data row.
+# Written fresh - it shares nothing with runtime/pi/render_qa_ticks.mjs or Rust's verify_tick_readback_from_svg.
+TICK_READBACK_COVERED = ("horizontal_bar", "mirrored_bar")
+_TICK_POSITION_TOLERANCE = 1.0  # SVG units: ~50x the coordinate rounding, 1/80 of the narrowest grid step
+_TICK_LABEL_SLIDE_MAX = 40.0
+_TICK_REL = 1e-9
+_TICK_ATTR_RE = re.compile(r"""([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+_TICK_NUMBER_RE = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
+_TICK_SHOWN_RE = re.compile(r"^([-−]?)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?")
+
+
+def _tick_attrs(tag: str) -> dict:
+    return {m.group(1): (m.group(2) if m.group(2) is not None else m.group(3)) for m in _TICK_ATTR_RE.finditer(tag)}
+
+
+def _tick_body(body: str) -> str:
+    text = re.sub(r"<[^>]*>", "", body)
+    for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&#39;", "'"), ("&amp;", "&")):
+        text = text.replace(entity, char)
+    return text.strip()
+
+
+def _tick_num(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if math.isfinite(value) else None
+    if not isinstance(value, str) or not _TICK_NUMBER_RE.match(value.strip()):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _tick_read_shown(text: str):
+    text = text.strip()
+    m = _TICK_SHOWN_RE.match(text)
+    if not m:
+        return None
+    mantissa = float(("-" if m.group(1) else "") + m.group(2).replace(",", "") + ("." + m.group(3) if m.group(3) else ""))
+    rest = text[m.end():]
+    suffix = None
+    if rest.startswith("万亿"):
+        suffix = 1e12
+    elif rest.startswith("亿"):
+        suffix = 1e8
+    elif rest.startswith("万"):
+        suffix = 1e4
+    else:
+        en = re.match(r"(bn|m|k)(?![A-Za-z])", rest)
+        if en:
+            suffix = {"bn": 1e9, "m": 1e6, "k": 1e3}[en.group(1)]
+        # a label that names its own unit (1683%, 9541.8 元) is read as written, the unit line's scale is not applied to it
+        elif rest.strip() != "":
+            suffix = 1.0
+    return mantissa, len(m.group(3) or ""), suffix
+
+
+def _tick_unit_word_scale(text: str) -> float:
+    if "万亿" in text:
+        return 1e12
+    if "亿" in text:
+        return 1e8
+    if "万" in text:
+        return 1e4
+    en = re.search(r"\b(thousand|million|billion|trillion)s?\b", text, re.I)
+    if en:
+        return {"thousand": 1e3, "million": 1e6, "billion": 1e9, "trillion": 1e12}[en.group(1).lower()]
+    return 1.0
+
+
+def _tick_close(a: float, b: float) -> bool:
+    return abs(a - b) <= _TICK_REL * max(1.0, abs(a), abs(b))
+
+
+def _tick_shown_value(text: str, unit_scale: float):
+    shown = _tick_read_shown(text)
+    if shown is None:
+        return None
+    mantissa, decimals, suffix = shown
+    mult = suffix if suffix is not None else unit_scale
+    return mantissa * mult, 0.5 * 10 ** -decimals * mult
+
+
+def _tick_key(category, series, period) -> str:
+    return json.dumps([str(category if category is not None else ""), str(series if series is not None else ""), str(period if period is not None else "")], ensure_ascii=False, separators=(",", ":"))
+
+
+def verify_tick_readback_from_svg(svg_text: str, ctx: dict) -> tuple[str, list[tuple[str, str]]]:
+    """Returns (status, [(rule, message)]); status is "covered" or "uncovered". Uncovered is never a pass."""
+    chart_type = ctx.get("chart_type")
+    # zh pages write $B as 亿美元 (x10): the text no longer equals the data unit, the read-back does not cover it yet
+    if chart_type not in TICK_READBACK_COVERED or (ctx.get("language") == "zh" and ctx.get("unit") == "$B"):
+        return "uncovered", []
+    failures: list[tuple[str, str]] = []
+
+    def fail(rule: str, message: str):
+        failures.append((rule, message))
+
+    mirrored = chart_type == "mirrored_bar"
+    ticks, units, labels, bars = [], [], [], []
+    for m in re.finditer(r"<text\b([^>]*)>([\s\S]*?)</text>", svg_text):
+        attrs = _tick_attrs(m.group(1))
+        role = attrs.get("data-role")
+        item = (attrs, _tick_body(m.group(2)))
+        if role == "axis-tick-label":
+            ticks.append(item)
+        elif role == "axis-unit-line":
+            units.append(item)
+        elif role == "value-label":
+            labels.append(item)
+    for m in re.finditer(r"<rect\b([^>]*?)/?>", svg_text):
+        attrs = _tick_attrs(m.group(1))
+        if attrs.get("data-role") == "data-bar":
+            bars.append(attrs)
+
+    unit_scale = 1.0
+    if len(units) > 1:
+        fail("unit_line", f"{len(units)} axis unit lines (expected at most 1)")
+    for attrs, text in units[:1]:
+        scale = _tick_num(attrs.get("data-scale"))
+        if scale is None or scale <= 0:
+            fail("unit_line", f"axis unit line '{text}' has no readable positive data-scale")
+        elif scale != 1 and not _tick_close(scale, _tick_unit_word_scale(text)):
+            fail("unit_line", f"axis unit line '{text}' says scale {_tick_unit_word_scale(text)} but data-scale is {scale}")
+        else:
+            unit_scale = scale
+
+    bar_value: dict[str, float] = {}
+    geo = []
+    if not bars:
+        fail("bar_attrs", "the chart has no data-bar to read back against")
+    for attrs in bars:
+        if attrs.get("data-category") is None:
+            fail("bar_attrs", "a data-bar has no data-category")
+            continue
+        key = _tick_key(attrs.get("data-category"), attrs.get("data-series"), attrs.get("data-period"))
+        value, x, width = _tick_num(attrs.get("data-value")), _tick_num(attrs.get("x")), _tick_num(attrs.get("width"))
+        if value is None:
+            fail("bar_attrs", f"bar {key} has no readable data-value")
+            continue
+        if x is None or width is None:
+            fail("bar_attrs", f"bar {key} has no numeric x/width")
+            continue
+        side = attrs.get("data-side")
+        if mirrored and side not in ("left", "right"):
+            fail("bar_attrs", f"bar {key} has no data-side left/right")
+            continue
+        if key in bar_value:
+            fail("bar_attrs", f"bar {key} appears twice")
+            continue
+        bar_value[key] = value
+        geo.append((key, value, x, width, side))
+
+    rows = ctx.get("rows")
+    category_field, value_field = ctx.get("category_field"), ctx.get("value_field")
+    if not isinstance(rows, list) or not category_field or not value_field:
+        fail("data_anchor", "no data rows or field names to anchor the bars to")
+    else:
+        row_value: dict[str, float] = {}
+        for row in rows:
+            row = row if isinstance(row, dict) else {}
+            key = _tick_key(row.get(category_field), row.get(ctx["series_field"]) if ctx.get("series_field") else "", row.get(ctx["period_field"]) if ctx.get("period_field") else "")
+            value = _tick_num(row.get(value_field))
+            if value is None:
+                fail("data_anchor", f"data row {key} has no numeric {value_field}")
+            elif key in row_value:
+                fail("data_anchor", f"data row key {key} is not unique")
+            else:
+                row_value[key] = value
+        for key, value in bar_value.items():
+            if key not in row_value:
+                fail("data_anchor", f"bar {key} has no data row")
+            elif not _tick_close(value, row_value[key]):
+                fail("data_anchor", f"bar {key} data-value {value} differs from its data row {row_value[key]}")
+        # a chart draws the current period only (the other may be an outline or absent): rows of a period no bar carries are not drawn
+        drawn = {json.loads(key)[2] for key in bar_value}
+        for key in row_value:
+            if key not in bar_value and not (ctx.get("period_field") and drawn and json.loads(key)[2] not in drawn):
+                fail("data_anchor", f"data row {key} has no bar")
+
+    k = None
+    origin: dict[str, float] = {}
+    usable = [g for g in geo if g[1] != 0]
+    if not usable:
+        fail("tick_position", "no non-zero bar to fit the scale from")
+    else:
+        ref = max(usable, key=lambda g: abs(g[1]))
+        k = ref[3] / abs(ref[1])
+        for key, value, x, width, side in geo:
+            if abs(width - k * abs(value)) > _TICK_POSITION_TOLERANCE:
+                fail("tick_position", f"bar {key} is {width} wide but its data-value {value} implies {k * abs(value):.2f}")
+            if value == 0 and not mirrored:
+                continue
+            if mirrored:
+                zero, slot = (x + width if side == "left" else x), side
+            else:
+                zero, slot = (x + width if value < 0 else x), "bar"
+            if slot not in origin:
+                origin[slot] = zero
+            elif abs(origin[slot] - zero) > _TICK_POSITION_TOLERANCE:
+                fail("tick_position", f"bar {key} starts at {zero}, the others at {origin[slot]}")
+
+    if not ticks:
+        fail("tick_attrs", "the chart has no axis-tick-label to read back")
+    for attrs, text in ticks:
+        tv = _tick_num(attrs.get("data-tick-value"))
+        if tv is None:
+            fail("tick_attrs", f"tick '{text}' has no readable data-tick-value")
+            continue
+        shown = _tick_shown_value(text, unit_scale)
+        if shown is None:
+            fail("tick_text", f"tick '{text}' has no readable number")
+            continue
+        if abs(shown[0] - tv) > shown[1] * (1 + _TICK_REL) + _TICK_REL * abs(tv):
+            fail("tick_text", f"tick '{text}' reads {shown[0]} but data-tick-value is {tv}")
+        x = _tick_num(attrs.get("x"))
+        tick_x = x if attrs.get("data-tick-x") is None else _tick_num(attrs.get("data-tick-x"))
+        if x is None or tick_x is None:
+            fail("tick_position", f"tick '{text}' has no numeric position")
+            continue
+        if abs(x - tick_x) > _TICK_LABEL_SLIDE_MAX:
+            fail("tick_position", f"tick '{text}' text sits {abs(x - tick_x):.1f} from its tick")
+        side = attrs.get("data-side")
+        if mirrored and side not in ("left", "right"):
+            fail("tick_attrs", f"tick '{text}' has no data-side left/right")
+            continue
+        zero = origin.get(side if mirrored else "bar")
+        if k is None or zero is None:
+            fail("tick_position", f"tick '{text}' position cannot be computed (no bar scale)")
+            continue
+        expected = zero - k * tv if (mirrored and side == "left") else zero + k * tv
+        if abs(tick_x - expected) > _TICK_POSITION_TOLERANCE:
+            fail("tick_position", f"tick '{text}' is at {tick_x} but its data-tick-value {tv} belongs at {expected:.2f}")
+
+    for attrs, text in labels:
+        if attrs.get("data-category") is None:
+            fail("value_label_attrs", f"value label '{text}' has no data-category")
+            continue
+        key = _tick_key(attrs.get("data-category"), attrs.get("data-series"), attrs.get("data-period"))
+        value = _tick_num(attrs.get("data-value"))
+        if value is None:
+            fail("value_label_attrs", f"value label '{text}' has no readable data-value")
+            continue
+        shown = _tick_shown_value(text, unit_scale)
+        if shown is None:
+            fail("value_label_text", f"value label '{text}' has no readable number")
+        elif abs(shown[0] - value) > shown[1] * (1 + _TICK_REL) + _TICK_REL * abs(value):
+            fail("value_label_text", f"value label '{text}' reads {shown[0]} but data-value is {value}")
+        if key not in bar_value:
+            fail("value_label_key", f"value label '{text}' names {key}, which is not a bar")
+        elif not _tick_close(value, bar_value[key]):
+            fail("value_label_key", f"value label '{text}' carries {value} but its bar {key} is {bar_value[key]}")
+    return "covered", failures
+
+
+def verify_tick_readback_for_manifest(root: Path, manifest: dict, manifest_ref: str, computation_map: dict, report: "Report") -> None:
+    # NEWSROOM_QA_TICK_READBACK=1 only. Data anchor: the rows come from the computation record the manifest names
+    # (its result_hash is bound to the lint and to the manifest.data_hash, and re-hashed against the rows by the
+    # computation checks), the field names from the plan the manifest names (content-addressed spec).
+    chart_type = manifest.get("chart_type")
+    if chart_type not in TICK_READBACK_COVERED:
+        report.warnings.append(f"visualization {manifest_ref}: tick read-back not covered for chart type {chart_type}")
+        return
+    try:
+        comp_ref, plan_ref = manifest.get("computation_ref"), manifest.get("plan_ref")
+        comp = computation_map.get(comp_ref) or load_json(safe_ref(root, comp_ref))
+        plan = load_json(safe_ref(root, plan_ref))
+        report.check(comp.get("result_hash") == manifest.get("data_hash"), f"visualization {manifest_ref} tick read-back: computation rows are not the manifest's data")
+        ctx = {"chart_type": chart_type, "rows": comp.get("rows"), "category_field": plan.get("category_field"), "value_field": plan.get("value_field"), "series_field": plan.get("series_field"), "period_field": plan.get("period_field"), "unit": plan.get("unit"), "language": plan.get("language")}
+        for viewport, ref in (manifest.get("variants") or {}).items():
+            svg_path = safe_ref(root, ref)
+            if not svg_path.is_file():
+                continue
+            _status, failures = verify_tick_readback_from_svg(svg_path.read_text(encoding="utf-8"), ctx)
+            for rule, message in failures:
+                report.check(False, f"visualization {manifest_ref} {viewport} tick read-back {rule}: {message}")
+    except Exception as exc:
+        report.check(False, f"visualization {manifest_ref} tick read-back could not run: {exc}")
+
+
+def model_pass_selfreport_enabled() -> bool:
+    # NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): mirrors src/verify.rs model_pass_selfreport_enabled.
+    return os.environ.get("NEWSROOM_MODEL_PASS_SELFREPORT") == "1"
+
+
+def review_split_enabled() -> bool:
+    """NEWSROOM_REVIEW_SPLIT=1 (exact value): a draw tool writes no render-QA record; a passing critic carries it."""
+    return os.environ.get("NEWSROOM_REVIEW_SPLIT") == "1"
+
+
+def split_render_qa_ref(critics: list, manifest_ref: str, manifest: dict, label: str, report: "Report"):
+    """With the review split on: the manifest must carry no render_qa_ref/render_qa (that would be a draw tool writing a review record), and the
+    render-QA report ref comes from a passing critic linked to the manifest. None when there is no such critic, so the callers' missing-ref checks fail closed."""
+    report.check("render_qa_ref" not in manifest and "render_qa" not in manifest, f"{label} carries a render-QA record written by the draw step; with the review split only the critic writes it")
+    for critic in critics:
+        if critic.get("manifest_ref") == manifest_ref and critic.get("passed") is True and isinstance(critic.get("render_qa_ref"), str) and critic["render_qa_ref"]:
+            return critic["render_qa_ref"]
+    return None
+
+
+def vision_critic_vetoes(critic: dict) -> bool:
+    # Mirrors src/verify.rs vision_critic_vetoes: failed, score below 80 (or none) or a blocker issue.
+    score = critic.get("score")
+    if critic.get("passed") is not True or isinstance(score, bool) or not isinstance(score, (int, float)) or score < 80:
+        return True
+    return any(isinstance(issue, dict) and issue.get("severity") == "blocker" for issue in (critic.get("issues") or []))
+
+
+VISION_RUBRIC_KEYS = ("hierarchy", "legibility", "composition", "visual_coherence", "typography", "source_legibility", "responsive_quality", "illustration_integration", "color_contrast", "editorial_distinctiveness")
+
+
+def vision_veto_only_enabled() -> bool:
+    # NEWSROOM_VISION_VETO_ONLY (default on; only the exact "0" turns it off): mirrors src/verify.rs vision_veto_only_enabled.
+    return os.environ.get("NEWSROOM_VISION_VETO_ONLY") != "0"
+
+
+def _vision_number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def vision_critic_fails(critic: dict) -> bool:
+    # Mirrors src/verify.rs vision_critic_fails: re-derived from the record, not from its passed (only passed=false also counts).
+    if critic.get("passed") is False:
+        return True
+    score = _vision_number(critic.get("score"))
+    if score is None or score < 80:
+        return True
+    rubric = critic.get("rubric") if isinstance(critic.get("rubric"), dict) else {}
+    for key in VISION_RUBRIC_KEYS:
+        value = _vision_number(rubric.get(key))
+        if value is None or value < 60:
+            return True
+    return any(isinstance(issue, dict) and issue.get("severity") == "blocker" for issue in (critic.get("issues") or []))
+
+
 def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infographic_plan_ref: str, infographic_critics: list, infographic_vision_critics: list, report: "Report") -> None:
     # The gate this worktree adds: a top-level publication's
     # infographic_plan_ref (already confirmed by the caller to resolve to an
@@ -1026,7 +1501,13 @@ def verify_publication_infographic_lineage(root: Path, manifest_ref: str, infogr
     report.check(any(c.get("passed") is True for c in linked_critics), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing critic")
     if infographic_manifest.get("visual_review_required") is True:
         linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == infographic_ref]
+        if vision_veto_only_enabled():
+            report.check(bool(linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic")
+            report.check(not any(vision_critic_fails(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic")
+            return
         report.check(any(c.get("passed") is True for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic")
+        if model_pass_selfreport_enabled():
+            report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic")
 
 
 def verify(root: Path) -> Report:
@@ -1260,6 +1741,7 @@ def verify(root: Path) -> Report:
                 report.check(False, f"visualization {manifest_path.relative_to(root).as_posix()} is not a gated visualization manifest (no plan_ref/variants), e.g. output of the legacy newsroom_chart tool")
                 continue
             manifest_ref = manifest_path.relative_to(root).as_posix()
+            viz_qa_ref = split_render_qa_ref(critics, manifest_ref, manifest, f"visualization {manifest_ref}", report) if review_split_enabled() else manifest.get("render_qa_ref")
             claim_id = str(manifest.get("claim_id") or "")
             verification_mode = str(manifest.get("verification_mode") or "verified")
             draft = verification_mode == "draft" or manifest.get("artifact_status") == "DRAFT" or manifest.get("publishable") is False
@@ -1327,7 +1809,7 @@ def verify(root: Path) -> Report:
             # existing QA report, and viewports.compact.svg_sha256 - each missing
             # piece is a failure, never a silent skip.
             if "compact" in viz_variants:
-                compact_qa_ref = manifest.get("render_qa_ref")
+                compact_qa_ref = viz_qa_ref
                 compact_qa_ok = isinstance(compact_qa_ref, str) and compact_qa_ref.startswith("visualizations/qa/")
                 report.check(compact_qa_ok, f"visualization {manifest_ref} lists a compact variant without a valid render_qa_ref")
                 if compact_qa_ok:
@@ -1344,7 +1826,7 @@ def verify(root: Path) -> Report:
                     except Exception as exc:
                         report.check(False, f"visualization {manifest_ref} unsafe compact render_qa binding: {exc}")
             if manifest.get("chart_type") == "choropleth":
-                render_qa_ref = manifest.get("render_qa_ref")
+                render_qa_ref = viz_qa_ref
                 if draft and not isinstance(render_qa_ref, str):
                     pass
                 elif not isinstance(render_qa_ref, str) or not render_qa_ref.startswith("visualizations/qa/"):
@@ -1390,7 +1872,7 @@ def verify(root: Path) -> Report:
             # report CLAIMS a passing value_labels proof is re-derived from the SVG bytes on disk and bound to
             # them by sha256 - the JS lint's exemption is never the only gate. Adds strictness only.
             if manifest.get("chart_type") == "heatmap" and os.environ.get("NEWSROOM_HEATMAP_VALUE_LABELS") == "1":
-                heat_qa_ref = manifest.get("render_qa_ref")
+                heat_qa_ref = viz_qa_ref
                 if isinstance(heat_qa_ref, str) and heat_qa_ref.startswith("visualizations/qa/"):
                     try:
                         heat_qa_path = safe_ref(root, heat_qa_ref)
@@ -1411,6 +1893,8 @@ def verify(root: Path) -> Report:
                                     report.check(False, f"heatmap visualization {manifest_ref} {viewport} independent value-labels re-derivation failed: {failure}")
                     except Exception as exc:
                         report.check(False, f"heatmap visualization {manifest_ref} value-labels re-derivation failed: {exc}")
+            if os.environ.get("NEWSROOM_QA_TICK_READBACK") == "1":
+                verify_tick_readback_for_manifest(root, manifest, manifest_ref, computation_map, report)
             if isinstance(lint_ref, str):
                 try:
                     lint_path = safe_ref(root, lint_ref)
@@ -1455,7 +1939,7 @@ def verify(root: Path) -> Report:
                 concepts = item.get("concepts") or []
                 report.check(item.get("schema_version") == VISUAL_CONCEPT_SET_VERSION, f"visual concepts {rel} schema_version mismatch")
                 report.check(item.get("content_hash") == editorial_hash(item), f"visual concepts {rel} content hash mismatch")
-                report.check(8 <= len(concepts) <= 20, f"visual concepts {rel} must contain 8..20 candidates")
+                report.check(concept_min_count() <= len(concepts) <= 20, f"visual concepts {rel} must contain 8..20 candidates" if concept_min_count() == 8 else f"visual concepts {rel} must contain {concept_min_count()}..20 candidates")
                 report.check(len({str(c.get('framing')) for c in concepts}) >= 3, f"visual concepts {rel} insufficient framing diversity")
                 finalists = replay_concept_finalists(concepts)
                 report.check(item.get("finalists") == finalists, f"visual concepts {rel} finalists are not independently replayable")
@@ -1647,6 +2131,31 @@ def verify(root: Path) -> Report:
                                 module_ids = [str(module.get("id")) for module in plan.get("modules") or []]
                                 mobile_order = [str(item) for item in plan.get("mobile_module_order") or []]
                                 report.check(len(mobile_order) == len(module_ids) and len(set(mobile_order)) == len(module_ids) and set(mobile_order) == set(module_ids), f"infographic {manifest_ref} mobile_module_order must be an exact module permutation")
+                        if infographic_version in {"1.4.0", "1.5.0"}:
+                            # K258: the concept set and selected concept may be missing only when the page manifest records the lean gates
+                            # (written by the renderer when NEWSROOM_LEAN_GATES=1); a manifest without that record needs them as before.
+                            lean_page = manifest.get("lean_gates") is True
+                            for field, prefix in [("visual_concept_ref", "editorial/concepts/")]:
+                                ref = plan.get(field)
+                                if ref is None and lean_page:
+                                    continue
+                                report.check(isinstance(ref, str) and ref.startswith(prefix), f"infographic {manifest_ref} {infographic_version} plan invalid {field}")
+                                if isinstance(ref, str):
+                                    try: report.check(safe_ref(root, ref).is_file(), f"infographic {manifest_ref} missing {field}: {ref}")
+                                    except Exception as exc: report.check(False, f"infographic {manifest_ref} unsafe {field}: {exc}")
+                            for field, prefix in [("asset_plan_ref", "editorial/assets/"), ("novelty_ref", "editorial/novelty/")]:
+                                ref = plan.get(field)
+                                if ref is None and lean_page:
+                                    continue
+                                report.check(isinstance(ref, str) and ref.startswith(prefix), f"infographic {manifest_ref} {infographic_version} plan invalid {field}")
+                                if isinstance(ref, str):
+                                    try: report.check(safe_ref(root, ref).is_file(), f"infographic {manifest_ref} missing {field}: {ref}")
+                                    except Exception as exc: report.check(False, f"infographic {manifest_ref} unsafe {field}: {exc}")
+                            if lean_page and any(isinstance(m, dict) and m.get("type") == "panel" for m in plan.get("modules") or []):
+                                for message in lean_scene_graph_issues(plan):
+                                    report.check(False, f"infographic {manifest_ref} {message}")
+                            if not (plan.get("selected_concept_id") is None and lean_page):
+                                report.check(isinstance(plan.get("selected_concept_id"), str) and bool(str(plan.get("selected_concept_id")).strip()), f"infographic {manifest_ref} {infographic_version} plan missing selected_concept_id")
                         if infographic_version == "1.3.0" and plan.get("quality_target") == "award":
                             for field, prefix in [("editorial_discovery_ref", "editorial/discovery/"), ("visual_concept_ref", "editorial/concepts/"), ("novelty_ref", "editorial/novelty/"), ("asset_plan_ref", "editorial/assets/")]:
                                 ref = plan.get(field)
@@ -1811,8 +2320,16 @@ def verify(root: Path) -> Report:
                 linked_vision = [c for c in infographic_vision_critics if c.get("manifest_ref") == manifest_ref]
                 report.check(bool(linked_vision), f"infographic {manifest_ref} requires image-aware vision critic")
                 passing_vision = [c for c in linked_vision if c.get("passed") is True]
-                report.check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic")
-                for vision in passing_vision[:1]:
+                if vision_veto_only_enabled():
+                    # NEWSROOM_VISION_VETO_ONLY=1: the model's passed releases nothing; every record is re-derived and gets the chain checks.
+                    report.check(not any(vision_critic_fails(c) for c in linked_vision), f"infographic {manifest_ref} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)")
+                    checked_vision = linked_vision
+                else:
+                    report.check(bool(passing_vision), f"infographic {manifest_ref} has no passing image-aware vision critic")
+                    if model_pass_selfreport_enabled():
+                        report.check(not any(vision_critic_vetoes(c) for c in linked_vision), f"infographic {manifest_ref} vetoed by an image-aware vision critic (failed, score below 80 or blocker)")
+                    checked_vision = passing_vision[:1]
+                for vision in checked_vision:
                     report.check(vision.get("schema_version") in {"0.1.0", "0.2.0"} and vision.get("kind") == "image_aware_model", f"infographic {manifest_ref} vision critic schema/kind mismatch")
                     report.check(float(vision.get("score") or 0) >= 80, f"infographic {manifest_ref} vision critic score below 80")
                     report.check(not any(i.get("severity") == "blocker" for i in vision.get("issues") or []), f"infographic {manifest_ref} vision critic contains blocker")

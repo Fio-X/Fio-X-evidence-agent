@@ -10,6 +10,7 @@
 //
 // Add a switch: add ONE line to SWITCHES. Run: node scripts/test_speed_switch_gates.mjs
 // Options: --only=<case-number> --config=<name> (substring)  --json=<file>
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -52,12 +53,12 @@ const SWITCHES = [
   { name: "PAGE_QA_NESTED_CLIP", env: "NEWSROOM_PAGE_QA_NESTED_CLIP" }, // page check: refuses only (text clipped by a nested svg)
   { name: "PAGE_MODULE_ORDER_CHECK", env: "NEWSROOM_PAGE_MODULE_ORDER_CHECK" }, // page check: refuses only (module numbers out of reading order)
   { name: "SCATTER_PAIRED", env: "NEWSROOM_SCATTER_PAIRED_MEASURES" }, // refuses only; scatter calls are checked per axis, every forged case must still be refused with it on
-  { name: "PLAN_RESTRUCTURE", env: "NEWSROOM_SPEED_PLAN_RESTRUCTURE", pending: true },
 ];
-const PROPOSED_16 = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
+// (The hero value gate was the first of these; it has no switch any more and is always on.)
+const PROPOSED_16 = ["NEWSROOM_HIDE_LIEFLAT", "NEWSROOM_SHADOW_CHECKS", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_COMPACT_SETUP", "NEWSROOM_SPEED_COMPUTE_BATCH", "NEWSROOM_SPEED_EDITORIAL_HINTS", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_PARALLEL_HINTS", "NEWSROOM_SPEED_PLAN_EDIT", "NEWSROOM_SPEED_PREFLIGHT", "NEWSROOM_SPEED_RULE_HINTS", "NEWSROOM_SPEED_CONTRACT_TEXT", "NEWSROOM_SPEED_PRECHECK_ALL"];
 const CONFIGS = [
   { name: "off", env: {} },
-  ...SWITCHES.map((s) => ({ name: s.name + (s.pending ? "(pending)" : ""), env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
+  ...SWITCHES.map((s) => ({ name: s.name, env: Object.fromEntries([s.env, ...(s.requires ?? [])].map((k) => [k, "1"])), profile: s.profile })),
   { name: "all-on", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])) },
   { name: "all-on@visual-story", env: Object.fromEntries(SWITCHES.map((s) => [s.env, "1"])), profile: "visual-story" },
   // The proposed sets for the in-session simulation (14 from the 2b allow list + contract text + precheck-all, then + the three checks).
@@ -91,7 +92,7 @@ export const Type = {
   Record: () => ({ type: "object" }),
   Object: (props = {}, opts = {}) => ({ type: "object", properties: props, required: Object.keys(props).filter((k) => !props[k][OPT]), ...opts }),
 };`;
-const TREE = mkdtempSync(join(tmpdir(), "speed-gates-tree-"));
+const TREE = makeTestTmp("speed-gates-tree-");
 cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
 stub(TREE, "typebox", TYPEBOX);
@@ -104,7 +105,7 @@ const { toolEnabled, VALID_TOOL_PHASES } = await import(join(ROOT, "runtime/pi/t
 
 // One stub for python: the page rasterizer (writes a fixed PNG) and browser_qa.py (writes the report named by
 // NEWSROOM_TEST_QA_MODE). Only these two processes are replaced; every gate that reads their output runs for real.
-const STUB_DIR = mkdtempSync(join(tmpdir(), "speed-gates-stub-"));
+const STUB_DIR = makeTestTmp("speed-gates-stub-");
 writeFileSync(join(STUB_DIR, "fixed.png"), Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(256, 7)]));
 writeFileSync(join(STUB_DIR, "python-stub.sh"), `#!/bin/sh
 case "$1" in
@@ -168,7 +169,7 @@ async function refuse(art, tool, params, label, expect) {
 }
 
 function newArt(label) {
-  const art = join(mkdtempSync(join(tmpdir(), `speed-gates-${label}-`)), "run");
+  const art = join(makeTestTmp(`speed-gates-${label}-`), "run");
   for (const d of ["data", "sources", "computations", "runtime/query-rows", "visualizations/plans", "visualizations/lints", "visualizations/critics", "infographics/plans", "infographics/lints", "infographics/previews", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -209,7 +210,7 @@ const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect 
 const VIZ = [["map", "geo_flow_map", "c-map"], ["sankey", "sankey", "c-flow"], ["trend", "line", "c-trend"]];
 // verbatim from test_plan_edit_runtime.mjs: a full artifact root with verified claims, a computation, charts and editorial files
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {} } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `planedit-${label}-`)), "run");
+  const art = join(makeTestTmp(`planedit-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));
@@ -694,7 +695,7 @@ for (const c of CASES) {
 const cell = (r) => (!r ? "." : r.status === "PASS" ? (r.subskips ? "p" :"P") : r.status === "SKIP" ? "s" : "F");
 const names = CONFIGS.map((c) => c.name);
 console.log(`\nspeed-switch gate matrix (P pass, p pass with a skipped sub-case, F fail, s skip, . not run); configurations in column order:`);
-names.forEach((n, i) => console.log(`  ${String(i + 1).padStart(2)}  ${n}${SWITCHES.find((s) => n.startsWith(s.name))?.pending ? "  [switch not implemented: ignored today]" : ""}`));
+names.forEach((n, i) => console.log(`  ${String(i + 1).padStart(2)}  ${n}`));
 console.log(`\n  case  ${names.map((_, i) => String(i + 1).padStart(2)).join(" ")}   title`);
 let failures = 0;
 for (const c of CASES) {

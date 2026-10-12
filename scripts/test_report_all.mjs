@@ -2,6 +2,7 @@
 // Real plan tool on a temp artifact root (fixtures from test_hero_value_tool_path.mjs). Offline.
 // (the typebox/compile stub below is only used by the shared tree builder: of the real
 // Compile cannot be checked here (see the report); the wiring, the order of the checks and the fail-closed path are.
+import { makeTestTmp } from "./tmp_helper.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENV_KEYS = ["NEWSROOM_HERO_VALUE_GATE", "NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
+const ENV_KEYS = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_PHASE", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_SPEED_INLINE_CLAIM", "NEWSROOM_SPEED_CHAIN_VIZ", "NEWSROOM_SPEED_ATOMIC_ARTIFACT", "NEWSROOM_SPEED_CHAIN_INFOGRAPHIC", "NEWSROOM_SPEED_PLAN_PATCH", "NEWSROOM_SPEED_CHAIN_PATCH", "NEWSROOM_SPEED_REPORT_ALL"];
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 const { applyJsonPatch, PatchError, combinedError, sha256Of } = await import(join(ROOT, "runtime/pi/patch_retry.mjs"));
 const { checkSchema } = await import(join(ROOT, "runtime/pi/tool_chain.mjs"));
@@ -35,7 +36,7 @@ export const Type = {
 };`;
 // One type-stripped copy of the runtime per tree. withCompile=false leaves typebox/compile out (it can only be missing there).
 function makeTree(withCompile) {
-  const TREE = mkdtempSync(join(tmpdir(), "patch-tree-"));
+  const TREE = makeTestTmp("patch-tree-");
   cpSync(join(ROOT, "runtime"), join(TREE, "runtime"), { recursive: true });
   cpSync(join(ROOT, "config"), join(TREE, "config"), { recursive: true });
   stub(TREE, "typebox", TYPEBOX);
@@ -71,7 +72,7 @@ const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect 
 const VIZ = [["map", "geo_flow_map", "c-map"], ["sankey", "sankey", "c-flow"], ["trend", "line", "c-trend"]];
 // verbatim from test_plan_edit_runtime.mjs: a full artifact root with verified claims, a computation, charts and editorial files
 function freshRun(label, { manifestClaim = {}, criticPassed = {}, draft = {}, verifiedOnly = null } = {}) {
-  const art = join(mkdtempSync(join(tmpdir(), `planedit-${label}-`)), "run");
+  const art = join(makeTestTmp(`planedit-${label}-`), "run");
   for (const d of ["visualizations/critics", "editorial/story-graphs", "editorial/discovery", "editorial/concepts", "editorial/novelty", "editorial/assets", "infographics/plans", "infographics/lints", "infographics/previews", "runtime"]) mkdirSync(join(art, d), { recursive: true });
   cpSync(join(ROOT, "config"), join(art, "config"), { recursive: true });
   cpSync(join(ROOT, "runtime", "pi", "rasterize_svg.py"), join(art, "runtime", "rasterize_svg.py"));

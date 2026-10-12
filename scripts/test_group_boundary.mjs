@@ -1,4 +1,4 @@
-// NEWSROOM_GROUP_BOUNDARY=1 (exact value, report-only; there is no blocking mode): every artifact write made through newsroom.ts is recorded as (initiating tool, its group, artifact
+// NEWSROOM_GROUP_BOUNDARY=1 (exact value; this switch only reports, NEWSROOM_GROUP_ENFORCE does the refusing): every artifact write made through newsroom.ts is recorded as (initiating tool, its group, artifact
 // kind, owning group) in runtime/group-boundary-report.json. It only reports: nothing is refused and nothing else changes.
 //
 //  1. Switch off (or any value but "report"): no report file, and a write does exactly what it did.
@@ -48,7 +48,7 @@ writeFileSync(join(tree, "runtime/pi/newsroom.test-copy.mjs"), stripTypeScriptTy
 const mod = await import(pathToFileURL(join(tree, "runtime/pi/newsroom.test-copy.mjs")).href);
 const groups = await import(pathToFileURL(join(tree, "runtime/pi/groups.mjs")).href);
 
-const BASE_ENV = { NEWSROOM_HERO_VALUE_GATE: "0", NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
+const BASE_ENV = { NEWSROOM_TOOL_PROFILE: "full", NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1", NEWSROOM_SPEED_INLINE_CLAIM: "1" };
 function register(env = {}) {
   for (const key of Object.keys(process.env)) if (key.startsWith("NEWSROOM_GROUP_")) delete process.env[key];
   Object.assign(process.env, BASE_ENV, env);

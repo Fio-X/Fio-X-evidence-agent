@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory(prefix="news-interactive-") as temp:
     )
     env = {
         **os.environ,
+        "NEWSROOM_AGENT": "pi",
         "NEWSROOM_ENV_FILE": str(env_file),
         "NEWSROOM_PI_BIN": str(mock),
         "PERF_MOCK_MODE": "normal",

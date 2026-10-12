@@ -2,6 +2,7 @@
 // temporal basis; units may differ). Off (anything but exactly "1") every call, refusal and tool definition is unchanged.
 // Offline: the real newsroom.ts is loaded from a type-stripped copy and run on an empty artifact root in draft mode; the lint
 // tests call lintVizSpec with literal rows. Run: node scripts/test_scatter_paired.mjs
+import { makeTestTmp } from "./tmp_helper.mjs";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
@@ -17,7 +18,7 @@ const must = (cond, msg) => { if (!cond) throw new Error(msg); passed += 1; };
 const eq = (a, b, msg) => must(JSON.stringify(a) === JSON.stringify(b), `${msg}\n  got:  ${JSON.stringify(a)}\n  want: ${JSON.stringify(b)}`);
 
 // ---- loader -------------------------------------------------------------------------------------------
-const tree = mkdtempSync(join(tmpdir(), "scatter-paired-"));
+const tree = makeTestTmp("scatter-paired-");
 cpSync(join(ROOT, "runtime"), join(tree, "runtime"), { recursive: true });
 cpSync(join(ROOT, "config"), join(tree, "config"), { recursive: true });
 const stub = (name, source) => {
@@ -34,7 +35,7 @@ export const Type = { String: mk({ type: "string" }), Number: mk({ type: "number
 stub("@earendil-works/pi-ai", "export const StringEnum = (values, opts = {}) => ({ type: 'string', enum: [...values], ...opts });\n");
 const COPY = join(tree, "runtime/pi/newsroom.test-copy.mjs");
 writeFileSync(COPY, stripTypeScriptTypes(readFileSync(join(ROOT, "runtime/pi/newsroom.ts"), "utf8"), { mode: "strip" }));
-const artifacts = mkdtempSync(join(tmpdir(), "scatter-paired-root-"));
+const artifacts = makeTestTmp("scatter-paired-root-");
 let instance = 0;
 const CHAIN_ENV = { NEWSROOM_SPEED_ATOMIC_ARTIFACT: "1", NEWSROOM_SPEED_CHAIN_VIZ: "1" }; // the chain tool exists only with these two
 
