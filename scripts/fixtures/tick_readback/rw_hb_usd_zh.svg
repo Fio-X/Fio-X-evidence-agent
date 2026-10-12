@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 376" role="img" aria-labelledby="viz-title viz-desc" data-viewport="desktop">
+<title id="viz-title">各国投资</title>
+<desc id="viz-desc">图。</desc>
+<rect width="1040" height="376" fill="#FFFFFF"/>
+<text x="54" y="38" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1A1A1A">各国投资</text>
+<text x="54" y="74" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#666666">十亿美元</text>
+<text data-role="axis-tick-label" data-tick-value="0" x="95" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">0</text>
+<text data-role="axis-tick-label" data-tick-value="2" x="271.59574468085106" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">20</text>
+<text data-role="axis-tick-label" data-tick-value="4" x="448.1914893617021" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">40</text>
+<text data-role="axis-tick-label" data-tick-value="6" x="624.7872340425531" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">60</text>
+<text data-role="axis-tick-label" data-tick-value="8" x="801.3829787234042" y="293" text-anchor="middle" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#666666">80亿美元</text>
+<text x="80" y="135.125" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">中国</text>
+<rect data-role="data-bar" data-category="中国" data-value="9.4" x="95" y="123.125" width="830" height="16" fill="#9E9E9E"/>
+<text data-role="value-label" data-category="中国" data-value="9.4" x="934" y="135.125" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">94亿美元</text>
+<text x="80" y="175.375" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">美国</text>
+<rect data-role="data-bar" data-category="美国" data-value="6.1" x="95" y="163.375" width="538.6170212765958" height="16" fill="#9E9E9E"/>
+<text data-role="value-label" data-category="美国" data-value="6.1" x="642.6170212765958" y="175.375" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">61</text>
+<text x="80" y="215.625" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">日本</text>
+<rect data-role="data-bar" data-category="日本" data-value="2.2" x="95" y="203.625" width="194.25531914893617" height="16" fill="#9E9E9E"/>
+<text data-role="value-label" data-category="日本" data-value="2.2" x="298.25531914893617" y="215.625" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">22</text>
+<text x="80" y="255.875" text-anchor="end" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" fill="#1A1A1A">德国</text>
+<rect data-role="data-bar" data-category="德国" data-value="1.9" x="95" y="243.875" width="167.7659574468085" height="16" fill="#9E9E9E"/>
+<text data-role="value-label" data-category="德国" data-value="1.9" x="271.7659574468085" y="255.875" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="600" fill="#1A1A1A">19</text>
+<line x1="54" y1="305" x2="986" y2="305" stroke="#E5E5E5" stroke-width="1"/>
+<text x="54" y="324" text-anchor="start" font-family="'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#666666">数据来源：fixture</text>
+</svg>
