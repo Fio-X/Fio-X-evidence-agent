@@ -135,10 +135,10 @@ def main() -> None:
     source = (ROOT / "src" / "cli.rs").read_text()
     block = source[source.index("pub const COMMAND_GROUPS"):]
     block = block[:block.index("];")]
-    cli_map = dict(re.findall(r'\("([a-z0-9-]+)",\s*"([a-z]+)"\)', block))
+    cli_map = dict(re.findall(r'\(\s*"([a-z0-9-]+)"\s*,\s*"([a-z]+)"\s*,?\s*\)', block))
     groups_json = json.loads((ROOT / "runtime" / "pi" / "groups.json").read_text())["commands"]
     check("CLI group mapping equals groups.json commands", cli_map == {k: v["group"] for k, v in groups_json.items()}, f"{cli_map}\n{groups_json}")
-    names = re.findall(r'^\s+\("([a-z]+)",\s*"', source[source.index("pub const GROUPS"):].split("];")[0], re.M)
+    names = re.findall(r'\(\s*"([a-z]+)"\s*,\s*"', source[source.index("pub const GROUPS"):].split("];")[0], re.M)
     check("CLI group names equal the four groups with the visual group last-but-one", names == ["agent", "knowledge", "visual", "system"], str(names))
 
     print(f"group command checks: {len(results)} passed")
