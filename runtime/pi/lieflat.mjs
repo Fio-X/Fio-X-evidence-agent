@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { isSystemVerifiedClaim } from "./evidence_gate.mjs";
 import { recordBoundaryWrite } from "./groups.mjs";
 import { LIEFLAT_BUNDLE, VISUAL_SKILL_INDEX, VISUAL_SKILLS } from "./visual_skill_bundle.mjs";
 
@@ -477,31 +476,13 @@ async function validateEvidenceRefs(root, refs, allowedPrefixes = ["sources/", "
   return normalized;
 }
 
-// A claim counts as verified only while its latest record in claims.jsonl is system-verified, as in the runtime
-// (a later non-verified record with the same claim_id revokes it). A line that is not a JSON object with a claim_id
-// closes the registry: it could have been a revoking record.
-async function verifiedClaims(root) {
-  const canonical = await canonicalRoot(root);
-  const path = join(canonical, "claims.jsonl");
-  const latest = new Map();
-  let raw = "";
-  try {
-    raw = await readFile(path, "utf8");
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    return latest;
-  }
-  const lines = raw.split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!lines[index].trim()) continue;
-    let record;
-    try { record = JSON.parse(lines[index]); } catch { record = undefined; }
-    if (!record || typeof record !== "object" || Array.isArray(record) || typeof record.claim_id !== "string" || !record.claim_id) {
-      throw new Error(`CLAIMS_REGISTRY_CORRUPT: claims.jsonl line ${index + 1} is not a claim record with a claim_id, so the verified-claim list cannot be trusted; this run's claims file is damaged, so stop and report it instead of continuing`);
-    }
-    latest.set(record.claim_id, record);
-  }
-  return new Map([...latest].filter(([, record]) => isSystemVerifiedClaim(record)));
+// The verified claims are not read here: the calling tool passes them in as `verified_claims`, a Map of claim_id -> record that the knowledge
+// group computed from claims.jsonl (the latest record of each claim, system-verified only). Without it nothing counts as verified, and the
+// render refuses rather than reading the registry itself.
+function verifiedClaims(input) {
+  const claims = input?.verified_claims;
+  if (!(claims instanceof Map)) throw new Error("verified_claims is required: the calling tool passes the system-verified claim records, this module does not read the claim registry");
+  return claims;
 }
 
 function claimSet(module) { return unique(module.claim_ids).sort(); }
@@ -1050,7 +1031,7 @@ async function renderLieflatChart(input = {}) {
   if (!claimIds.length) throw new Error("Lieflat publication chart requires claim_ids; call newsroom_viz_plan without claim_id for exploratory SVG rendering");
   if (!sourceRefs.length) throw new Error("chart rendering requires source_refs");
   if (!dataRef) throw new Error("chart rendering requires data_ref pointing to a computation");
-  const claims = await verifiedClaims(root);
+  const claims = verifiedClaims(input);
   for (const claimId of claimIds) {
     const claim = claims.get(claimId);
     if (!claim) throw new Error(`chart references unverified claim '${claimId}'`);
@@ -1164,7 +1145,7 @@ export async function renderLieflatPublication(input = {}) {
   if (!text(input.story_graph_ref)) throw new Error("story_graph_ref is required");
   const storyGraph = await readArtifactJson(root, input.story_graph_ref);
   if (storyGraph.passed !== true) throw new Error("story_graph_ref is not a passing Story Graph");
-  const claims = await verifiedClaims(root);
+  const claims = verifiedClaims(input);
   const modules = Array.isArray(input.modules) ? input.modules : [];
   if (modules.length < 4 || modules.length > 9) throw new Error("an infographic report requires 4–9 ordered modules");
   if (unique(modules.map((module) => module.id)).length !== modules.length) throw new Error("infographic modules require unique ids and stable order");

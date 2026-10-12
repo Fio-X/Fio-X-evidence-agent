@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
-import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, COMPACT_VIEW_W } from "./viz.mjs";
+import { isWideChar, wrapText, wrapHeadline, HOUSE_FONT_SANS, houseFontSans, tabularRootAttrs, COMPACT_VIEW_W } from "./viz.mjs";
 import { COMPETITION_PROFILE_IDS } from "./competition.mjs";
+import { storyboardEnabled, isPanel, hasPanels, panelFieldErrors, storyboardPageErrors, storyboardBlockers, pageStyleBlockers, expandPanels, STORYBOARD_MODULE_CAP, PANEL_NOTE_LINES } from "./storyboard.mjs";
 import { evaluateQuestionClosure, STORY_DIMENSIONS, unsupportedDimensionError } from "./story_graph.mjs";
 import { COGNITIVE_GOALS, runEditorialValidators } from "./editorial_validators.mjs";
 import { evaluateClaimSupport } from "./evidence_gate.mjs";
+import { scoreSemanticNovelty } from "./editorial.mjs";
 import { buildCandidates, extractNumbers, matchNumber } from "./number_shadow.mjs";
 
 // Fix 7 (house style wiring): page chrome - header/footer rules, kickers,
@@ -103,7 +105,7 @@ function applyInfographicStyle(spec) {
     // Fix 12: all sans under house style - SERIF collapses onto the same CJK
     // stack as SANS instead of keeping its own (formerly Georgia-only) face,
     // so every page-chrome text element reads one typeface family.
-    SANS = HOUSE_FONT_SANS; SERIF = HOUSE_FONT_SANS;
+    SANS = houseFontSans(); SERIF = houseFontSans();
   }
   INFOGRAPHIC_HOUSE_STYLE_ACTIVE = style !== "legacy";
   return style;
@@ -119,12 +121,20 @@ export const INFOGRAPHIC_QUALITY_TARGETS = ["publishable", "award"];
 export const INFOGRAPHIC_STORY_ROLES = ["hook", "context", "evidence", "turn", "explanation", "resolution", "method"];
 export const INFOGRAPHIC_EMPHASIS = ["hero", "primary", "secondary", "support"];
 export const INFOGRAPHIC_LAYOUT_STRATEGIES = ["balanced", "anchor", "rhythm"];
+// NEWSROOM_GUIDE_ERRORS=1 (exact "1", default off): the two width blockers below say which layout can hold the module. Only the text changes; what is blocked does not.
+const guideErrors = () => process.env.NEWSROOM_GUIDE_ERRORS === "1";
+const NARROW_HINT = (kind, chartType, compact, cols) => compact
+  ? `this ${chartType} chart has an 8-column variant, but only as the anchor of a 'hero_sidecar_stack' scene (anchor 8 of 12 columns, sidecar 4, the scene sets the width and the module span stays 'full'); ${cols ? `here it gets ${cols}` : "anywhere else"} it must be full width (a 'hero_with_rail' anchor draws its rail below the chart, not beside it)`
+  : `this ${chartType || kind} has no 8-column variant, so it cannot sit beside a sidecar: use it as the anchor of a 'hero_with_rail' scene (its rail is drawn below the chart, not beside it) or on a row of its own`;
 export const INFOGRAPHIC_SCENE_PATTERNS = ["hero_sidecar_stack", "hero_with_rail"];
 // Same vocabulary as the story graph (see story_graph.mjs).
 export const INFOGRAPHIC_EXPLANATORY_DIMENSIONS = [...STORY_DIMENSIONS];
 export const INFOGRAPHIC_VISUAL_GRAMMARS = ["rank", "change", "trend", "anomaly", "benchmark", "composition", "distribution", "relationship", "uncertainty", "flow", "spatial", "network", "mechanism", "sequence"];
 
-export const VISUAL_GRAMMAR_FORMS = Object.freeze({
+// The forms that exist only behind a switch travel with the table as pure data, `VISUAL_GRAMMAR_FORMS.gatedForms` (not enumerable, so nothing that walks the table
+// sees it): { grammar: { form: "NEWSROOM_SWITCH" } }. The table itself holds only the always-on forms, so a reader that forgets the filter sees fewer forms, never more.
+// Each group builds what its run allows by reading its own environment, exact "1" per switch (scripts/test_switch_read_sites.mjs scans these reads).
+export const VISUAL_GRAMMAR_FORMS = Object.freeze(Object.defineProperty({
   rank: new Set(["horizontal_bar", "dot"]),
   change: new Set(["dumbbell", "slope"]),
   trend: new Set(["line", "multi_line", "small_multiples", "streamgraph"]),
@@ -139,7 +149,35 @@ export const VISUAL_GRAMMAR_FORMS = Object.freeze({
   network: new Set(["node_link", "adjacency_matrix", "chord"]),
   mechanism: new Set(["process_schematic"]),
   sequence: new Set(["timeline", "trajectory_profile", "line"]),
-});
+}, "gatedForms", { enumerable: false, value: Object.freeze({
+  composition: Object.freeze({ people_dots: "NEWSROOM_STORY_FORMS" }),
+  spatial: Object.freeze({ tile_map: "NEWSROOM_TILE_MAP" }),
+  sequence: Object.freeze({ clock_dial: "NEWSROOM_STORY_FORMS" }),
+}) }));
+const ACTIVE_GRAMMAR_FORMS = Object.freeze(Object.fromEntries(Object.entries(VISUAL_GRAMMAR_FORMS).map(([grammar, forms]) => [grammar, new Set([...forms, ...Object.entries(VISUAL_GRAMMAR_FORMS.gatedForms[grammar] ?? {}).filter(([, name]) => process.env[name] === "1").map(([form]) => form)])])));
+
+// NEWSROOM_LEAN_GATES=1 (exact "1", default off): the lean legacy-gate path (K258). Off: nothing changes.
+export function leanGatesEnabled(env = process.env) { return env.NEWSROOM_LEAN_GATES === "1"; }
+
+// Lean gates (K258): the semantic-novelty check lives in lint and only warns. The page's own modules carry what it compares
+// (reader_question_id, claim set, new_information, explanatory_dimension); a module without them is left out and counted in a note.
+export function semanticNoveltyFindings(modules) {
+  const candidates = [];
+  for (const m of modules ?? []) {
+    if (!m || m.type === "section_header" || m.type === "panel") continue;
+    const claim_set = Array.isArray(m.claim_set) && m.claim_set.length ? m.claim_set : [m.claim_id, ...(m.claim_ids ?? [])].filter(Boolean);
+    if (!m.reader_question_id || !claim_set.length || !m.new_information || !m.explanatory_dimension) continue;
+    candidates.push({ id: String(m.id), reader_question_id: m.reader_question_id, claim_set, new_information: m.new_information, explanatory_dimension: m.explanatory_dimension, dependency_on: m.dependency_on ?? [], justification: m.justification });
+  }
+  const skipped = (modules ?? []).filter((m) => m && m.type !== "section_header" && m.type !== "panel").length - candidates.length;
+  const note = skipped > 0 ? [`semantic_novelty: ${skipped} module(s) have no reader_question_id, claim set, new_information or explanatory_dimension and were not compared`] : [];
+  if (candidates.length < 2) return { warnings: [], notes: note.length ? note : [] };
+  let report;
+  try { report = scoreSemanticNovelty({ modules: candidates }); } catch (error) { return { warnings: [], notes: [...note, `semantic_novelty: not computed (${String(error?.message ?? error).slice(0, 160)})`] }; }
+  const warnings = report.decisions.filter((d) => d.redundancy === "medium" || (d.redundancy === "high" && d.action !== "KEEP_WITH_JUSTIFICATION"))
+    .map((d) => `semantic_novelty: module '${d.module_id}' overlaps '${d.overlaps_most_with}' (${d.max_overlap}, ${d.redundancy}); ${d.redundancy === "high" ? "remove it, demote it or justify it" : "consider demoting it"}`);
+  return { warnings, notes: note };
+}
 
 function esc(value) {
   return String(value ?? "")
@@ -224,6 +262,95 @@ const INFOGRAPHIC_STRINGS = {
 function hasSourcesMethodsLabel(svg, spec) {
   const t = INFOGRAPHIC_STRINGS[pageLang(spec)];
   return pageLang(spec) === "zh" ? svg.includes(t.sourcesMethods) : (svg.includes("SOURCES &amp; METHODS") || svg.includes("SOURCES & METHODS"));
+}
+
+// ---- K267 page polish (NEWSROOM_PAGE_POLISH=1, exact, default off) ---------------------------------------------------------------
+// 1. A chart whose own title (drawn inside the chart SVG; it comes from the chart plan's `title`, not from the module `heading`) says nearly
+//    the same sentence as the section title right above it is embedded without that title line. 2. A big number is not paired into a narrow
+//    4-column cell: it becomes the full-width bar, and a chart narrower than its box (height-limited) is centred on a backing of its own paper
+//    colour. 3. A big number takes the color_legend colour of its own meaning_id, or plain ink when it names none (never the house red, never another meaning's colour). 4. The rule above a short note and the stat bar label use the full column.
+export function pagePolishEnabled(env = process.env) { return env.NEWSROOM_PAGE_POLISH === "1"; }
+
+// Desktop only: the phone page is composed with the switch treated as off, so it is byte-identical either way.
+let polishSuppressed = false;
+const polishActive = () => !polishSuppressed && pagePolishEnabled();
+
+const NEAR_SAME_TITLE_DICE = 0.7;
+
+export function titlesNearlySame(a, b) {
+  const norm = (v) => Array.from(String(v ?? "").replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase());
+  const x = norm(a), y = norm(b);
+  if (x.length < 4 || y.length < 4) return x.length > 0 && x.join("") === y.join("");
+  const grams = (chars) => { const m = new Map(); for (let i = 0; i + 1 < chars.length; i++) { const g = chars[i] + chars[i + 1]; m.set(g, (m.get(g) ?? 0) + 1); } return m; };
+  const gx = grams(x), gy = grams(y);
+  let shared = 0;
+  for (const [g, n] of gx) shared += Math.min(n, gy.get(g) ?? 0);
+  return (2 * shared) / (Math.max(1, x.length - 1) + Math.max(1, y.length - 1)) >= NEAR_SAME_TITLE_DICE;
+}
+
+function unescapeXml(v) { return String(v).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&"); }
+
+// The chart SVG without its own title line (and the blank above the next line), or the SVG itself when there is nothing safe to cut.
+export function withoutChartTitle(svg, heading) {
+  const source = String(svg ?? "");
+  const named = source.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  if (!named || !titlesNearlySame(unescapeXml(named[1]), heading)) return source;
+  const title = unescapeXml(named[1]).trim();
+  const vb = source.match(/<svg\b[^>]*viewBox=["']([^"']+)["']/i);
+  if (!vb) return source;
+  const box = vb[1].trim().split(/\s+/).map(Number);
+  if (box.length !== 4 || box.some((n) => !Number.isFinite(n))) return source;
+  const num = (tag, name) => { const m = tag.match(new RegExp(`(?:^|\\s)${name}=["']\\s*(-?[\\d.]+)`)); return m ? Number(m[1]) : null; };
+  const texts = [...source.matchAll(/<text\b([^>]*)>([^<]*)<\/text>/gi)];
+  const at = texts.findIndex((m) => unescapeXml(m[2]).trim() === title && num(m[1], "y") !== null);
+  if (at < 0) return source;
+  const ty = num(texts[at][1], "y"), tsize = num(texts[at][1], "font-size") ?? 28;
+  const next = texts[at + 1];
+  const cropTo = next && num(next[1], "y") !== null ? num(next[1], "y") - 1.05 * (num(next[1], "font-size") ?? 15) - 8 : ty + 10;
+  if (!(cropTo > box[1] + tsize * 0.5) || cropTo >= box[1] + box[3]) return source;
+  // nothing else may be drawn above the crop line except the full-page paper rect
+  const body = source.replace(/<defs\b[\s\S]*?<\/defs>/gi, "").replace(/<(?:title|desc)\b[\s\S]*?<\/(?:title|desc)>/gi, "");
+  for (const m of body.matchAll(/<(text)\b([^>]*)>([^<]*)<\/text>|<(line|rect|circle)\b([^>]*?)\/?>/gi)) {
+    const kind = (m[1] ?? m[4]).toLowerCase(), tag = ` ${m[2] ?? m[5]}`;
+    if (kind === "text" && unescapeXml(m[3]).trim() === title) continue;
+    if (kind === "rect" && (num(tag, "y") ?? 0) <= box[1] && (num(tag, "height") ?? 0) >= box[3] - 1) continue;
+    const y = kind === "text" ? num(tag, "y") : kind === "line" ? Math.min(num(tag, "y1") ?? Infinity, num(tag, "y2") ?? Infinity) : kind === "circle" ? (num(tag, "cy") ?? Infinity) - (num(tag, "r") ?? 0) : num(tag, "y");
+    if (y !== null && y < cropTo) return source;
+  }
+  const cut = source.slice(0, texts[at].index) + source.slice(texts[at].index + texts[at][0].length);
+  const crop = Math.floor(cropTo - box[1]);
+  return cut.replace(/(<svg\b[^>]*viewBox=["'])[^"']+(["'])/i, `$1${box[0]} ${box[1] + crop} ${box[2]} ${box[3] - crop}$2`);
+}
+
+// Assets for this page with each chart's duplicate title line removed; the layout and the drawing both see the same trimmed SVGs.
+function polishAssets(spec, assets) {
+  const out = { ...assets };
+  let heading = "";
+  for (const module of spec.modules ?? []) {
+    if (module.type === "section_header") { heading = String(module.heading ?? ""); continue; }
+    if (module.type !== "visual") continue;
+    const asset = assets[module.manifest_ref];
+    if (heading && asset) {
+      const next = { ...asset };
+      let changed = false;
+      for (const key of ["desktopSvg", "mobileSvg", "compactSvg"]) {
+        if (typeof asset[key] !== "string") continue;
+        const trimmed = withoutChartTitle(asset[key], heading);
+        if (trimmed !== asset[key]) { next[key] = trimmed; changed = true; }
+      }
+      if (changed) out[module.manifest_ref] = next;
+    }
+    heading = "";
+  }
+  return out;
+}
+
+// The accent for a big number under page polish: the colour color_legend registers for the number's own meaning_id; a number that names no registered meaning gets null (drawn in plain ink, never in a colour that means something else).
+export function legendAccent(spec, module) {
+  const meaning = String(module?.meaning_id ?? "").trim();
+  if (!meaning) return null;
+  const hit = (Array.isArray(spec?.color_legend) ? spec.color_legend : []).find((e) => String(e?.meaning_id ?? "").trim() === meaning && /^#[0-9a-f]{6}$/i.test(String(e?.color ?? "").trim()));
+  return hit ? String(hit.color).trim() : null;
 }
 
 export function svgInfo(svg) {
@@ -446,13 +573,17 @@ export function validateInfographicSpec(spec) {
     if (["1.2.0", "1.3.0", "1.4.0", "1.5.0"].includes(spec.schema_version) && !COMPETITION_PROFILE_IDS.includes(spec.competition_profile ?? "editorial")) errors.push(`competition_profile must be one of ${COMPETITION_PROFILE_IDS.join(", ")}`);
   }
   if (!Array.isArray(spec.modules) || spec.modules.length < 3) errors.push("modules must contain at least 3 items");
-  if (Array.isArray(spec.modules) && spec.modules.length > 12) errors.push("modules cannot exceed 12 items in v1.0");
+  if (storyboardEnabled() && hasPanels(spec)) {
+    if (spec.modules.length > STORYBOARD_MODULE_CAP) errors.push(`modules cannot exceed ${STORYBOARD_MODULE_CAP} items on a storyboard page`);
+  } else if (Array.isArray(spec.modules) && spec.modules.length > 12) errors.push("modules cannot exceed 12 items in v1.0");
+  errors.push(...storyboardPageErrors(spec));
   const seen = new Set();
   for (const module of spec.modules ?? []) {
     if (!String(module?.id ?? "").trim()) errors.push("every module requires id");
     else if (seen.has(module.id)) errors.push(`duplicate module id '${module.id}'`);
     else seen.add(module.id);
-    if (!INFOGRAPHIC_MODULE_TYPES.includes(module?.type)) errors.push(`module '${module?.id ?? "?"}' has unsupported type '${module?.type}'`);
+    if (isPanel(module)) errors.push(...panelFieldErrors(module));
+    else if (!INFOGRAPHIC_MODULE_TYPES.includes(module?.type)) errors.push(`module '${module?.id ?? "?"}' has unsupported type '${module?.type}'`);
     if (module?.source_quote !== undefined && module?.type !== "text") errors.push(`module '${module?.id ?? "?"}' source_quote is only supported on 'text' modules`);
     if (!INFOGRAPHIC_SPANS.includes(module?.span ?? "full")) errors.push(`module '${module?.id ?? "?"}' has unsupported span '${module?.span}'`);
     if (module?.story_role !== undefined && !INFOGRAPHIC_STORY_ROLES.includes(module.story_role)) errors.push(`module '${module?.id ?? "?"}' has unsupported story_role '${module.story_role}'`);
@@ -524,7 +655,9 @@ export function validateInfographicSpec(spec) {
   if (["1.4.0", "1.5.0"].includes(spec.schema_version)) {
     if (!String(spec.reader_question ?? "").trim()) errors.push("reader_question is required for InfographicSpec 1.4+");
     if (!String(spec.visual_thesis ?? "").trim()) errors.push("visual_thesis is required for InfographicSpec 1.4+");
-    for (const field of ["story_graph_ref", "editorial_discovery_ref", "visual_concept_ref", "selected_concept_id", "novelty_ref", "asset_plan_ref"]) if (!String(spec[field] ?? "").trim()) errors.push(`${field} is required for InfographicSpec 1.4+`);
+    // Lean gates: the concept tournament, the asset plan and the novelty report are gone, so the concept set, the selected concept, the asset plan and the novelty report are not required (a value given is still checked).
+    const requiredRefs = ["story_graph_ref", "editorial_discovery_ref", "visual_concept_ref", "selected_concept_id", "novelty_ref", "asset_plan_ref"].filter((field) => !(leanGatesEnabled() && (field === "visual_concept_ref" || field === "selected_concept_id" || field === "asset_plan_ref" || field === "novelty_ref")));
+    for (const field of requiredRefs) if (!String(spec[field] ?? "").trim()) errors.push(`${field} is required for InfographicSpec 1.4+`);
     if (!spec.scene_graph) errors.push("scene_graph is required for InfographicSpec 1.4+");
     if (spec.schema_version === "1.5.0" && (!spec.editorial_grammar || typeof spec.editorial_grammar !== "object")) errors.push("editorial_grammar is required for InfographicSpec 1.5");
   }
@@ -543,6 +676,7 @@ export function validateInfographicSpec(spec) {
         if (spec.schema_version === "1.5.0" && graphVersion !== "0.2.0") errors.push("InfographicSpec 1.5 requires SceneGraph 0.2.0");
         const moduleById = new Map((spec.modules ?? []).map((module) => [String(module.id), module]));
         const memberIds = new Set();
+        const memberScene = new Map();
         const sceneIds = new Set();
         for (const scene of graph.scenes) {
           if (!String(scene?.id ?? "").trim() || sceneIds.has(String(scene.id))) errors.push(`scene '${scene?.id ?? "?"}' requires a unique id`);
@@ -561,8 +695,14 @@ export function validateInfographicSpec(spec) {
           }
           for (const id of [anchor, ...sidecars]) {
             if (!moduleById.has(id)) errors.push(`scene '${scene?.id ?? "?"}' references missing module '${id}'`);
-            if (memberIds.has(id)) errors.push(`module '${id}' cannot belong to more than one scene`);
+            if (memberIds.has(id)) {
+              // NEWSROOM_SCENE_DUPLICATE_WORDING=1 (default off): only the wording differs. A module listed twice in the
+              // SAME scene (anchor and sidecar) gets its own text; the check and the refusal are unchanged.
+              if (process.env.NEWSROOM_SCENE_DUPLICATE_WORDING === "1" && memberScene.get(id) === scene) errors.push(`module '${id}' is written twice in scene '${scene?.id ?? "?"}' (as anchor and as sidecar); list it once`);
+              else errors.push(`module '${id}' cannot belong to more than one scene`);
+            }
             memberIds.add(id);
+            if (!memberScene.has(id)) memberScene.set(id, scene);
           }
         }
       }
@@ -611,18 +751,18 @@ export function evaluateInfographicSynthesis(spec, assets = {}, storyGraph = nul
       const asset = assets[module.manifest_ref];
       const chartType = String(asset?.manifest?.chart_type ?? "");
       if (chartType) visualKinds.add(chartType);
-      const allowed = VISUAL_GRAMMAR_FORMS[module.visual_grammar];
+      const allowed = ACTIVE_GRAMMAR_FORMS[module.visual_grammar];
       if (!allowed) blockers.push(`visual '${module.id}' has unsupported module visual_grammar '${module.visual_grammar ?? ""}'`);
       else if (chartType && !allowed.has(chartType)) blockers.push(`visual '${module.id}' grammar '${module.visual_grammar}' is incompatible with chart_type '${chartType}'`);
     }
   }
 
-  const closure = evaluateQuestionClosure(storyGraph, mappedNodeIds, resolutionNodeIds);
+  const closure = evaluateQuestionClosure(storyGraph, mappedNodeIds, resolutionNodeIds, { lean: leanGatesEnabled() });
   if (closure.unknown_node_ids.length) blockers.push(`modules reference unknown story nodes: ${closure.unknown_node_ids.join(", ")}`);
   if (closure.covered_entry_node_ids.length !== (storyGraph.entry_node_ids ?? []).length) blockers.push("reader_question_closure_missing_entry_coverage");
   if (closure.covered_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push("reader_question_closure_missing_answer_coverage");
   if (closure.resolved_answer_node_ids.length !== (storyGraph.answer_node_ids ?? []).length) blockers.push("reader_question_closure_missing_resolution_module");
-  if (closure.node_coverage < 0.6) blockers.push(`story_graph_module_coverage_too_low:${closure.node_coverage}`);
+  if (!leanGatesEnabled() && closure.node_coverage < 0.6) blockers.push(`story_graph_module_coverage_too_low:${closure.node_coverage}`);
 
   const nonSupportRelations = new Set((storyGraph.edges ?? []).map((edge) => String(edge.relation)).filter((relation) => relation && relation !== "supports"));
   const defaultChartEquivalent = visualModules.length <= 1 && illustrationModules.length === 0;
@@ -754,9 +894,7 @@ export function evaluateSubjectSets(spec, assets = {}, context = {}) {
   return { blockers, warnings, notes };
 }
 
-// Hero value gate (on by default in the runtime, off with NEWSROOM_HERO_VALUE_GATE=0; the runtime
-// passes it in as context.hero_value_gate, and this pure lint applies it only when the
-// caller does). Each hero_stat is re-filled from its own claim's
+// Hero value gate (always on; the lint takes no parameter that turns it off). Each hero_stat is re-filled from its own claim's
 // bindings by the runtime (newsroom.ts fillHeroModule: value from value_from,
 // label and detail placeholders, unit only as the claim shows it); context.hero_checks
 // ({ module_id: [blocker, ...] }) carries what that re-check refused, so the stored
@@ -1095,8 +1233,29 @@ function boundClaimTexts(spec, assets, records, verified) {
     .map((record) => String(record?.claim ?? ""));
 }
 
-export function lintInfographicSpec(spec, assets = {}, context = {}) {
-  const blockers = validateInfographicSpec(spec);
+// The chart's own SVG height when it fills a full-span slot (plus the label strip moduleHeight reserves), or null when the asset is missing.
+function storyboardNativeHeight(module, assets) {
+  const asset = assets?.[module.manifest_ref];
+  if (typeof asset?.desktopSvg !== "string") return null;
+  const info = trimmedSvgInfo(asset.desktopSvg);
+  return info.width > 0 && info.height > 0 ? Math.ceil(DESKTOP_CONTENT_W * info.height / info.width) + 36 : null;
+}
+
+// The room a panel note gets: a text module of PANEL_NOTE_LINES body lines, measured by moduleHeight at the page width.
+function storyboardNoteAllowance(assets) {
+  const chars = Math.max(44, Math.round(DESKTOP_CONTENT_W / 10));
+  let body = "字";
+  while (lines(body, chars, 12).length < PANEL_NOTE_LINES) body += "字";
+  return moduleHeight({ type: "text", body }, DESKTOP_CONTENT_W, assets);
+}
+
+export function lintInfographicSpec(specIn, assets = {}, context = {}) {
+  // NEWSROOM_STORYBOARD: the panel rules read the page as written; every other gate then reads the expanded, ordinary modules.
+  const board = storyboardEnabled() && hasPanels(specIn);
+  const spec = board ? expandPanels(specIn) : specIn;
+  const blockers = validateInfographicSpec(specIn);
+  if (board) blockers.push(...storyboardBlockers(specIn, context.story_graph ?? null, (m) => moduleHeight(m, DESKTOP_CONTENT_W, assets), (m) => storyboardNativeHeight(m, assets), storyboardNoteAllowance(assets)));
+  if (storyboardEnabled() && Array.isArray(context.chart_page_styles)) blockers.push(...pageStyleBlockers(specIn.render_style, context.chart_page_styles));
   const warnings = [];
   const notes = [];
   const verified = new Set((context.verified_claim_ids ?? []).map(String));
@@ -1144,9 +1303,9 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       const asset = assets[module.manifest_ref];
       if (!asset) { blockers.push(`visual '${module.id}' references missing asset '${module.manifest_ref}'`); continue; }
       if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`visual '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
-      if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`visual '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
+      if (!mobilePages && spanColumns(module.span) < 12) blockers.push(guideErrors() ? `visual '${module.id}' must use span 'full' with mobile pages off, because a narrower module would shrink chart text below the 12px floor; ${NARROW_HINT("chart", String(asset.manifest?.chart_type ?? ""), typeof asset.compactSvg === "string", 0)}` : `visual '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
       const visualSlot = sceneSlots.get(String(module.id));
-      if (visualSlot && visualSlot.cols < 12 && !(visualSlot.cols === 8 && typeof asset.compactSvg === "string")) blockers.push(`visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
+      if (visualSlot && visualSlot.cols < 12 && !(visualSlot.cols === 8 && typeof asset.compactSvg === "string")) blockers.push(guideErrors() ? `visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: ${NARROW_HINT("chart", String(asset.manifest?.chart_type ?? ""), typeof asset.compactSvg === "string", visualSlot.cols)}` : `visual '${module.id}' gets only ${visualSlot.cols} of 12 columns in scene '${visualSlot.scene_id}' with mobile pages off: there is no compact chart variant, so a scene may hold a visual only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`visual '${module.id}' is missing visualization manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`visual '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`visual '${module.id}' has no upstream critic metadata`);
@@ -1186,7 +1345,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
         if (chartLanguage !== pageLanguage) blockers.push(`visual '${module.id}' chart language '${chartLanguage}' differs from page language '${pageLanguage}'`);
       }
       if (["1.4.0", "1.5.0"].includes(spec.schema_version) && module.visual_grammar) {
-        const allowed = VISUAL_GRAMMAR_FORMS[module.visual_grammar];
+        const allowed = ACTIVE_GRAMMAR_FORMS[module.visual_grammar];
         const chartType = String(asset.manifest?.chart_type ?? "");
         if (allowed && chartType && !allowed.has(chartType)) blockers.push(`visual '${module.id}' grammar '${module.visual_grammar}' is incompatible with chart_type '${chartType}'`);
       }
@@ -1196,9 +1355,9 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
       const asset = assets[module.asset_ref];
       if (!asset) { blockers.push(`illustration '${module.id}' references missing asset '${module.asset_ref}'`); continue; }
       if (!asset.desktopSvg || (mobilePages && !asset.mobileSvg)) blockers.push(`illustration '${module.id}' requires desktop${mobilePages ? " and mobile" : ""} SVG variant${mobilePages ? "s" : ""}`);
-      if (!mobilePages && spanColumns(module.span) < 12) blockers.push(`illustration '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
+      if (!mobilePages && spanColumns(module.span) < 12) blockers.push(guideErrors() ? `illustration '${module.id}' must use span 'full' with mobile pages off, because a narrower module would shrink chart text below the 12px floor; an illustration has no 8-column variant, so use it as the anchor of a 'hero_with_rail' scene (its rail is drawn below it, not beside it) or on a row of its own` : `illustration '${module.id}' must use span 'full' with mobile pages off: there is no compact chart variant, and a narrower module would shrink chart text below the 12px floor`);
       const illustrationSlot = sceneSlots.get(String(module.id));
-      if (illustrationSlot && illustrationSlot.cols < 12) blockers.push(`illustration '${module.id}' gets only ${illustrationSlot.cols} of 12 columns in scene '${illustrationSlot.scene_id}' with mobile pages off: there is no compact illustration variant, so a scene may hold an illustration only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
+      if (illustrationSlot && illustrationSlot.cols < 12) blockers.push(guideErrors() ? `illustration '${module.id}' gets only ${illustrationSlot.cols} of 12 columns in scene '${illustrationSlot.scene_id}' with mobile pages off: an illustration has no 8-column variant, so it cannot sit beside a sidecar in a 'hero_sidecar_stack' scene; use it as the anchor of a 'hero_with_rail' scene (its rail is drawn below it, not beside it), as that scene's only sidecar, or on a row of its own` : `illustration '${module.id}' gets only ${illustrationSlot.cols} of 12 columns in scene '${illustrationSlot.scene_id}' with mobile pages off: there is no compact illustration variant, so a scene may hold an illustration only as the anchor of a 'hero_with_rail' scene or as that scene's only sidecar`);
       if (!asset.manifest) blockers.push(`illustration '${module.id}' is missing illustration manifest metadata`);
       if (asset.critic && asset.critic.passed === false) blockers.push(`illustration '${module.id}' upstream critic did not pass`);
       if (!asset.critic) warnings.push(`illustration '${module.id}' has no upstream critic metadata`);
@@ -1221,7 +1380,7 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     if (module.type === "hero_stat") {
       claimCount += 1;
       if (!verified.has(String(module.claim_id))) blockers.push(`hero_stat '${module.id}' references unverified claim '${module.claim_id}'`);
-      if (context.hero_value_gate === true) blockers.push(...heroValueBlockers(module, verified, context.hero_checks));
+      blockers.push(...heroValueBlockers(module, verified, context.hero_checks));
       if (String(module.label ?? "").length > 120) warnings.push(`hero_stat '${module.id}' label is long for magazine display`);
     }
     if (module.type === "text") {
@@ -1267,6 +1426,11 @@ export function lintInfographicSpec(spec, assets = {}, context = {}) {
     }
     const missingRoles = (spec.modules ?? []).filter((m) => m.type !== "section_header" && !m.story_role).length;
     if (missingRoles) warnings.push(`${missingRoles} non-section modules have no story_role`);
+  }
+  if (leanGatesEnabled() && ["1.4.0", "1.5.0"].includes(spec.schema_version)) {
+    const novelty = semanticNoveltyFindings(spec.modules);
+    warnings.push(...novelty.warnings);
+    notes.push(...novelty.notes);
   }
   // Page top (warning only) and the words readers see. A process term, field name or template brace in reader text
   // blocks; broader review terms, quantifiers no bound claim states and relative times with no period only warn. The
@@ -1332,6 +1496,9 @@ function visualAspect(asset, mobilePreferred, trim = false) {
   return info.height / info.width;
 }
 
+// NEWSROOM_HEADER_BOX_INK=1 (exact "1", default off): a deck-less desktop section header box ends where the layout puts the next module, on every page; storyboard pages always do.
+const headerBoxInkEnabled = () => process.env.NEWSROOM_HEADER_BOX_INK === "1";
+
 function moduleHeight(module, width, assets, mobile = false) {
   const type = module.type;
   if (type === "hero_stat") {
@@ -1348,7 +1515,9 @@ function moduleHeight(module, width, assets, mobile = false) {
     const headingLines = lines(module.heading ?? "", headingChars, 3).length;
     const deckLines = module.deck ? lines(module.deck, deckChars, 3).length : 0;
     // Desktop: the last deck baseline plus its 4px descender allowance (inkBottomSlack) ended 6px below the box bottom; grow the box so that ink stays inside it.
-    return (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23) + (!mobile && deckLines ? 6 : 0);
+    // Storyboard (K261) or NEWSROOM_HEADER_BOX_INK=1 (K266, the same fix for any page): the layout puts the next module's ink RHYTHM_AFTER_HEADING below this heading's ink, so a deck-less box ends where that module's box starts (its ink top is BODY_INK_TOP) - from the same ink-bottom the layout uses, never below the plain height. Off: unchanged.
+    const plain = (mobile ? 72 : 70) + headingLines * (mobile ? 37 : 42) + deckLines * (mobile ? 22 : 23) + (!mobile && deckLines ? 6 : 0);
+    return !mobile && !deckLines && (storyboardEnabled() || headerBoxInkEnabled()) ? Math.min(plain, sectionHeaderInkBottom(headingLines, 0) + RHYTHM_AFTER_HEADING - BODY_INK_TOP) : plain;
   }
   if (type === "pull_quote") {
     if (!mobile) return 78 + lines(`“${module.text}”`, pullQuoteChars(width), 7).length * 38;
@@ -1373,7 +1542,11 @@ function moduleHeight(module, width, assets, mobile = false) {
     // The compact chart embeds 1:1, so its slot must hold the full top pad (see
     // embedVisual) or the chart shrinks below the 12px text floor.
     const compact = type === "visual" && compactFits(asset, width, mobile);
-    const reserve = compact ? (module.emphasis === "hero" ? 30 : module.label ? 32 : 20) + 6 : module.label ? 36 : 12;
+    // K259 (desktop): the full-size slot reserved 12 (36 with a label), short of the topPad + 6 that embedVisual spends (20/32/30 + 6), so an
+    // unlabeled chart was drawn 14px under its native height, below scale 1, and its 12px text under the floor. Desktop reserves what is spent;
+    // the phone page keeps its old reserve (it is byte-pinned against the parent in test_page_rhythm and not part of this fix).
+    const spent = (module.emphasis === "hero" ? 30 : module.label ? 32 : 20) + 6;
+    const reserve = compact || !mobile ? spent : module.label ? 36 : 12;
     const captionH = outOfSetCaptionHeight(asset, module, mobile);
     let maxHeight = mobile ? 980 : 900;
     if (type === "visual" && !mobile) {
@@ -1444,16 +1617,20 @@ function normalizedScenes(spec) {
 // from how it is drawn (inkTop/inkBottom below), so no module carries a spare
 // minimum height.
 const RHYTHM_AFTER_HEADING = 28;
+// Ink top of an ordinary chart/text module (see inkTop).
+const BODY_INK_TOP = 10;
 const RHYTHM_WITHIN = 28;
 const RHYTHM_BETWEEN = 44;
 const TEXT_BOTTOM_PAD = 6;
+// The desktop page is 1440 wide with 96 margins, so a full-span module is 1248 wide; the layout and the storyboard height estimate both use these.
+const DESKTOP_PAGE_W = 1440, DESKTOP_MARGIN = 96, DESKTOP_CONTENT_W = DESKTOP_PAGE_W - DESKTOP_MARGIN * 2;
 
 // Top of the ink, measured from a module box's top edge.
 function inkTop(module, bar) {
   if (module.type === "hero_stat") return bar || INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? 0 : 28;
   if (module.type === "section_header") return 33;
   // Text, chart, illustration and pull-quote modules open with a hairline (too light to count as ink) and a small ordinal, which is their first ink.
-  return module.emphasis === "hero" ? 8 : 10;
+  return module.emphasis === "hero" ? 8 : BODY_INK_TOP;
 }
 
 // Ink bottom of a desktop text module, measured from its box top (drawTextModule).
@@ -1465,6 +1642,11 @@ function textInkBottom(module, width) {
   let bottom = bodyLines ? bodyTop + (bodyLines - 1) * 23 + 4 : 48 + Math.max(0, headLines - 1) * 32 + 7;
   if (module.source_quote) bottom = bodyTop + bodyLines * 23 + 14 + sourceQuoteBlockHeight(module.source_quote, width, false);
   return bottom;
+}
+
+// Lowest ink of a desktop section header, measured from its box top (drawn by the section_header renderer); inkBottomSlack and the storyboard box height share it.
+function sectionHeaderInkBottom(headingLines, deckLines) {
+  return deckLines ? 95 + headingLines * 42 + (deckLines - 1) * 23 + 4 : 91 + (headingLines - 1) * 42;
 }
 
 // Blank space between the lowest ink and a module box's bottom edge.
@@ -1479,7 +1661,7 @@ function inkBottomSlack(box, assets) {
   if (module.type === "section_header") {
     const headingLines = lines(module.heading ?? "", 48, 3).length;
     const deckLines = module.deck ? lines(module.deck, 86, 3).length : 0;
-    return h - (deckLines ? 95 + headingLines * 42 + (deckLines - 1) * 23 + 4 : 91 + (headingLines - 1) * 42);
+    return h - sectionHeaderInkBottom(headingLines, deckLines);
   }
   if (module.type === "visual") {
     const asset = assets?.[module.manifest_ref];
@@ -1582,7 +1764,7 @@ function buildDesktopScene(scene, spec, assets, y, rowIndex, margin, contentW, g
 }
 
 function layoutDesktopWithStrategy(spec, assets, strategy) {
-  const width = 1440, margin = 96, contentW = width - margin * 2, gap = 28;
+  const width = DESKTOP_PAGE_W, margin = DESKTOP_MARGIN, contentW = DESKTOP_CONTENT_W, gap = 28;
   const col = (contentW - gap * 11) / 12;
   const boxes = [];
   const scenes = [];
@@ -1645,7 +1827,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
         const nextScened = next ? sceneByMember.has(String(next.id)) : false;
         const nextCols = next ? (statColsOverride.get(String(next.id)) ?? effectiveColumns(next, strategy)) : 0;
         if (statIsAlone(own, next, nextCols, nextScened, previousDensities, module)) {
-          if (statPairsWithText(module, next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
+          if (!polishActive() && statPairsWithText(module, next, nextScened, col, gap) && !forceBreakFor(next, STAT_PAIR_STAT_COLS, [...previousDensities, moduleDensity(module)])) { statColsOverride.set(String(module.id), STAT_PAIR_STAT_COLS); statColsOverride.set(String(next.id), 12 - STAT_PAIR_STAT_COLS); }
           else statBars.add(String(module.id));
         }
       }
@@ -1655,7 +1837,7 @@ function layoutDesktopWithStrategy(spec, assets, strategy) {
       const next = ordered[index + 1];
       const nextScened = next ? sceneByMember.has(String(next.id)) : false;
       const startsRow = !rowCols || forceBreakFor(module, rowCols, previousDensities) || own === 12 || rowCols + own > 12;
-      if (startsRow && own === 12 && textPairsWithStat(module, next, nextScened, col, gap)
+      if (!polishActive() && startsRow && own === 12 && textPairsWithStat(module, next, nextScened, col, gap)
         && !forceBreakFor(next, 8, [...previousDensities, moduleDensity(module)])) {
         statColsOverride.set(String(module.id), 12 - STAT_PAIR_STAT_COLS);
         statColsOverride.set(String(next.id), STAT_PAIR_STAT_COLS);
@@ -1780,7 +1962,7 @@ function drawHeader(parts, spec, width, margin, mobile) {
   const t = INFOGRAPHIC_STRINGS[pageLang(spec)];
   parts.push(`<line x1="${margin}" y1="${h.top - 18}" x2="${width - margin}" y2="${h.top - 18}" stroke="${INK}" stroke-width="${mobile ? 5 : 6}"/>`);
   parts.push(`<text x="${margin}" y="${h.top}" font-family="${SANS}" font-size="${mobile ? 13 : 14}" font-weight="700" letter-spacing="2" fill="${ACCENT}">${esc(String(spec.kicker ?? t.kicker).toUpperCase())}</text>`);
-  if (!mobile) parts.push(`<text x="${width - margin}" y="${h.top}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.5" fill="${MUTED}">AGENTIC DATA NEWSROOM · 01</text>`);
+  if (!mobile && process.env.NEWSROOM_TYPESET_FOOTER !== "1") parts.push(`<text x="${width - margin}" y="${h.top}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.5" fill="${MUTED}">AGENTIC DATA NEWSROOM · 01</text>`);
   let y = h.top + h.kicker;
   textBlock(parts, spec.title, margin, y, { family: SERIF, size: h.titleSize, lineHeight: h.titleLH, weight: 700, maxChars: mobile ? 19 : 31, maxLines: mobile ? 6 : 4, headline: true });
   y += h.titleLines * h.titleLH + (mobile ? 18 : 22);
@@ -1906,7 +2088,11 @@ function embedVisual(parts, asset, box, module, mobile) {
   const targetH = Math.min(availableH, naturalH);
   const y = box.y + topPad;
   const inner = namespaceSvgInner(info.inner, `embed-${hash(module.id).slice(0, 8)}-${mobile ? "m" : "d"}`);
-  parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="${mobile ? "xMidYMin" : "xMinYMin"} meet">${inner}</svg>`);
+  // K267: a chart held narrower than its box by the height limit sits centred on a backing of its own paper colour across the whole box
+  const narrowed = polishActive() && !mobile && targetH < naturalH - 0.5;
+  const paper = narrowed ? String(info.inner).match(/<rect\b[^>]*\bwidth=["'][\d.]+["'][^>]*\bheight=["'][\d.]+["'][^>]*\bfill=["'](#[0-9a-f]{3,8})["']/i)?.[1] : null;
+  if (paper) parts.push(`<rect data-role="infographic-visual-backing" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" fill="${paper}"/>`);
+  parts.push(`<svg data-role="infographic-visual" data-module-id="${esc(module.id)}" x="${box.x}" y="${y}" width="${targetW}" height="${targetH}" viewBox="${info.minX} ${info.minY} ${info.width} ${info.height}" preserveAspectRatio="${mobile || paper ? "xMidYMin" : "xMinYMin"} meet">${inner}</svg>`);
   if (captionH) {
     // D1: the chart goes beyond the page subject set, so the runtime restyles it
     // (dashed frame) and prints the model's caption where readers see it.
@@ -1972,6 +2158,7 @@ function textIsShortFullRow(module, width) {
 // Box width for a short text that has a whole 12-column row to itself: the
 // readable measure, not the row. Anything else keeps the width it was given.
 function shortTextWidth(module, width) {
+  if (polishActive()) return width; // the rule above a short note runs the whole column like every other row
   return module.type === "text" && textIsShortFullRow(module, width) ? Math.min(width, TEXT_MEASURE_MAX_UNITS * 10) : width;
 }
 
@@ -2022,26 +2209,28 @@ function heroStatBarMetrics(module, width) {
   const labelLines = lines(module.label ?? "", Math.max(20, Math.floor(avail / 10.5)));
   const detailLines = module.detail ? lines(module.detail, Math.max(24, Math.floor(avail / 8.2))) : [];
   const textH = 22 + (labelLines.length - 1) * 20 + (detailLines.length ? 10 + detailLines.length * 16 : 0);
+  // Page polish: the label starts on the numeral's own baseline instead of floating at the bar's top right.
+  if (polishActive()) return { pad, textX, labelLines, detailLines, labelBase: 58, h: 58 + 6 + (labelLines.length - 1) * 20 + (detailLines.length ? 10 + 16 * detailLines.length : 0) + TEXT_BOTTOM_PAD };
   return { pad, textX, labelLines, detailLines, h: Math.max(59, detailLines.length ? 36 + (labelLines.length - 1) * 20 + 16 * detailLines.length : 31 + (labelLines.length - 1) * 20) + TEXT_BOTTOM_PAD };
 }
 
-function drawHeroStatBar(parts, box, module) {
+function drawHeroStatBar(parts, box, module, accent = ACCENT) {
   const m = heroStatBarMetrics(module, box.w);
   // The row gap above (40px) or the rail gap (14px) already separates the band
   // from the module above, so its rule sits on the box edge.
   const top = box.y;
-  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${ACCENT}"/>`);
-  parts.push(`<text x="${box.x + m.pad}" y="${top + 58}" font-family="${SERIF}" font-size="58" font-weight="700" fill="${ACCENT}">${esc(module.value)}${module.unit ? `<tspan font-size="24" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${accent}"/>`);
+  parts.push(`<text x="${box.x + m.pad}" y="${top + 58}" font-family="${SERIF}" font-size="58" font-weight="700" fill="${accent}">${esc(module.value)}${module.unit ? `<tspan font-size="24" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
   const x = box.x + m.textX;
-  const labelY = top + 3 + 6 + 18;
+  const labelY = m.labelBase !== undefined ? top + m.labelBase : top + 3 + 6 + 18;
   m.labelLines.forEach((line, i) => parts.push(`<text x="${x}" y="${labelY + i * 20}" font-family="${SANS}" font-size="15.5" font-weight="700" fill="${INK}">${esc(line)}</text>`));
   const detailY = labelY + (m.labelLines.length - 1) * 20 + 10 + 12;
   m.detailLines.forEach((line, i) => parts.push(`<text x="${x}" y="${detailY + i * 16}" font-family="${SANS}" font-size="12" fill="${MUTED}">${esc(line)}</text>`));
   parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${box.y + box.h - 1}" width="1" height="1" fill="none"/>`);
 }
 
-function drawHeroStat(parts, box, module, mobile) {
-  if (box.stat_bar && !mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) return drawHeroStatBar(parts, box, module);
+function drawHeroStat(parts, box, module, mobile, accent = ACCENT) {
+  if (box.stat_bar && !mobile && INFOGRAPHIC_HOUSE_STYLE_ACTIVE) return drawHeroStatBar(parts, box, module, accent);
   const pad = mobile ? 28 : 30;
   // Desktop house style: the red rule sits at box.y, the same y as the hairline drawModuleChrome draws for neighbouring modules.
   const top = box.y + (INFOGRAPHIC_HOUSE_STYLE_ACTIVE ? (mobile ? 14 : 0) : 28);
@@ -2076,8 +2265,8 @@ function drawHeroStat(parts, box, module, mobile) {
   // replaces the three-tone card palette (contrast is unaffected: ACCENT
   // and INK/MUTED on white are already the combinations used throughout the
   // rest of this file).
-  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${ACCENT}"/>`);
-  parts.push(`<text x="${box.x + pad}" y="${top + (mobile ? 69 : 66)}" font-family="${SERIF}" font-size="${mobile ? 54 : 58}" font-weight="700" fill="${ACCENT}">${esc(module.value)}${module.unit ? `<tspan font-size="${mobile ? 22 : 24}" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
+  parts.push(`<rect data-role="hero-stat" data-module-id="${esc(module.id)}" x="${box.x}" y="${top}" width="${box.w}" height="3" fill="${accent}"/>`);
+  parts.push(`<text x="${box.x + pad}" y="${top + (mobile ? 69 : 66)}" font-family="${SERIF}" font-size="${mobile ? 54 : 58}" font-weight="700" fill="${accent}">${esc(module.value)}${module.unit ? `<tspan font-size="${mobile ? 22 : 24}" dx="7" fill="${INK}">${esc(module.unit)}</tspan>` : ""}</text>`);
   textBlock(parts, module.label, box.x + pad, top + (mobile ? 106 : 102), { size: mobile ? 15 : 15.5, lineHeight: mobile ? 20 : 20, weight: 700, fill: INK, maxChars: mobile ? 48 : Math.max(28, Math.round(box.w / 10)), maxLines: 2 });
   if (module.detail) textBlock(parts, module.detail, box.x + pad, box.y + box.h - 20, { size: 12, lineHeight: 16, fill: MUTED, maxChars: mobile ? 70 : Math.max(38, Math.round(box.w / 8)), maxLines: 2 });
   // Invisible end marker - see the matching comment in the legacy branch above.
@@ -2182,14 +2371,23 @@ function sourceList(spec, assets) {
   return kept;
 }
 
+// NEWSROOM_DATA_NOTES: a chart whose one-line source-flag note was too long for its line said only 「详见数据说明」; the program-written full
+// sentence (manifest.data_note_full) is printed once here, under the sources. Empty when no chart carries one, so the page is unchanged.
+function dataNoteText(spec, assets) {
+  const full = uniq((spec.modules ?? []).filter((m) => m.type === "visual").map((m) => assets[m.manifest_ref]?.manifest?.data_note_full).filter((x) => typeof x === "string" && x !== ""));
+  return full.length ? `数据说明：${full.join("；")}` : "";
+}
+
 function composeOne(spec, assets, mobile) {
   applyInfographicStyle(spec);
   const header = headerMetrics(spec, mobile);
   const layout = mobile ? layoutMobile(spec, assets) : layoutDesktop(spec, assets);
-  const footerH = mobile ? 150 : 128;
+  const dataNoteBlock = dataNoteText(spec, assets);
+  const dataNoteMaxChars = mobile ? 92 : 172;
+  const footerH = (mobile ? 150 : 128) + (dataNoteBlock ? lines(dataNoteBlock, dataNoteMaxChars, 3).length * (mobile ? 16 : 17) + 6 : 0);
   const startY = header.height;
   const pageHeight = startY + layout.contentHeight + footerH + (mobile ? 34 : 42);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${layout.width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="${mobile ? "mobile" : "desktop"}" data-layout-strategy="${esc(layout.strategy ?? (mobile ? "single_column" : "balanced"))}">`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${layout.width} ${pageHeight}" role="img" aria-labelledby="info-title info-desc" data-infographic-version="${esc(spec.schema_version)}" data-viewport="${mobile ? "mobile" : "desktop"}" data-layout-strategy="${esc(layout.strategy ?? (mobile ? "single_column" : "balanced"))}"${tabularRootAttrs()}>`];
   parts.push(`<title id="info-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="info-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${layout.width}" height="${pageHeight}" fill="${PAPER}"/>`);
@@ -2197,10 +2395,11 @@ function composeOne(spec, assets, mobile) {
   const shiftedBoxes = layout.boxes.map((box) => ({ ...box, y: box.y + startY }));
   for (const scene of layout.scenes ?? []) drawSceneChrome(parts, scene, startY, mobile);
   const ordinals = editorialOrdinalMap(spec, assets);
+  const polish = polishActive();
   shiftedBoxes.forEach((box) => {
     const module = box.module;
     if (module.type !== "section_header" && !isDecorativeIllustration(module, assets)) drawModuleChrome(parts, box, ordinals.get(String(module.id)), mobile, spec);
-    if (module.type === "hero_stat") drawHeroStat(parts, box, module, mobile);
+    if (module.type === "hero_stat") drawHeroStat(parts, box, module, mobile, polish ? (legendAccent(spec, module) ?? INK) : ACCENT);
     else if (module.type === "visual") embedVisual(parts, assets[module.manifest_ref], box, module, mobile);
     else if (module.type === "illustration") embedIllustration(parts, assets[module.asset_ref], box, module, mobile);
     else if (module.type === "text") drawTextModule(parts, box, module, mobile, spec);
@@ -2211,8 +2410,13 @@ function composeOne(spec, assets, mobile) {
   parts.push(`<line x1="${layout.margin}" y1="${footerY}" x2="${layout.width - layout.margin}" y2="${footerY}" stroke="${INK}" stroke-width="2"/>`);
   parts.push(`<text x="${layout.margin}" y="${footerY + 30}" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.3" fill="${INK}">${INFOGRAPHIC_STRINGS[pageLang(spec)].sourcesMethods}</text>`);
   const sources = sourceList(spec, assets);
-  textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
-  parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY</text>`);
+  const sourcesHeight = textBlock(parts, sources.join(" · "), layout.margin, footerY + 57, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: mobile ? 92 : 172, maxLines: mobile ? 5 : 4 });
+  if (dataNoteBlock) textBlock(parts, dataNoteBlock, layout.margin, footerY + 57 + sourcesHeight + 6, { size: mobile ? 12 : 12.5, lineHeight: mobile ? 16 : 17, fill: MUTED, maxChars: dataNoteMaxChars, maxLines: 3 });
+  // NEWSROOM_TYPESET_FOOTER=1 (exact): a zh page prints no English footer line, and an en page prints the brand without a
+  // verification claim - the page is rendered before verification runs and nothing re-renders it afterwards, so the word
+  // "VERIFIED" is never earned at render time.
+  const footerLine = process.env.NEWSROOM_TYPESET_FOOTER === "1" ? (pageLang(spec) === "zh" ? null : "AGENTIC DATA NEWSROOM") : "AGENTIC DATA NEWSROOM · VERIFIED VISUAL STORY";
+  if (footerLine) parts.push(`<text x="${layout.width - layout.margin}" y="${pageHeight - 26}" text-anchor="end" font-family="${SANS}" font-size="12" font-weight="700" letter-spacing="1.2" fill="${MUTED}">${footerLine}</text>`);
   for (const box of shiftedBoxes) parts.push(`<rect data-role="module-boundary" data-module-id="${esc(box.id)}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="none"/>`);
   parts.push("</svg>");
   const visualKinds = uniq((spec.modules ?? []).flatMap((m) => {
@@ -2243,15 +2447,20 @@ function composeOne(spec, assets, mobile) {
   };
 }
 
-export function composeInfographicBundle(spec, assets = {}, { mobilePages = true } = {}) {
-  const errors = validateInfographicSpec(spec);
+export function composeInfographicBundle(specIn, assets = {}, { mobilePages = true } = {}) {
+  const errors = validateInfographicSpec(specIn);
   if (errors.length) throw new Error(errors.join("; "));
+  const spec = expandPanels(specIn);
+  const phoneAssets = assets;
+  if (pagePolishEnabled()) assets = polishAssets(spec, assets);
   const desktop = composeOne(spec, assets, false);
   // Off, composeOne(..., true) is never called at all: it would otherwise
   // unconditionally read asset.mobileSvg while building the phone-facing
   // page (embedVisual/embedIllustration), which loadInfographicAssets no
   // longer populates once the switch is off.
-  return mobilePages ? { desktop, mobile: composeOne(spec, assets, true) } : { desktop };
+  if (!mobilePages) return { desktop };
+  polishSuppressed = true;
+  try { return { desktop, mobile: composeOne(spec, phoneAssets, true) }; } finally { polishSuppressed = false; }
 }
 
 function boxesOverlap(a, b, padding = 0) {
@@ -2582,4 +2791,23 @@ export function critiqueInfographic(spec, bundle) {
       ...mobile.issues.map((issue) => ({ ...issue, viewport: "mobile" })),
     ],
   };
+}
+
+// Opt-in plan preflight (NEWSROOM_LAYOUT_IGNORED_FIELDS=exactly "1"): reports
+// layout fields the renderer ignores and what to use instead. Reports only.
+export function layoutIgnoredFieldsEnabled(env = process.env) { return env.NEWSROOM_LAYOUT_IGNORED_FIELDS === "1"; }
+
+export function layoutIgnoredFieldIssues(spec) {
+  const issues = [];
+  const slots = desktopSceneSlots(spec ?? {});
+  for (const module of spec?.modules ?? []) {
+    const id = String(module?.id ?? "");
+    const slot = slots.get(id);
+    if (slot && module.span && module.span !== "full" && spanColumns(module.span) !== slot.cols) {
+      issues.push(`module '${id}' span '${module.span}' is ignored: its scene '${slot.scene_id}' sets the width to ${slot.cols} of 12 columns (hero_with_rail takes 12, 6 or 4 by rail count and draws the rail below the anchor; use hero_sidecar_stack for side by side)`);
+    }
+    if (module?.tone !== undefined && module.type !== "hero_stat") issues.push(`module '${id}' tone is ignored: tone only applies to hero_stat`);
+    if (module?.type === "visual" && module.heading !== undefined && String(module.heading) !== "") issues.push(`module '${id}' heading is not drawn on a visual: the chart's own title is shown; put the wording in the chart title`);
+  }
+  return issues;
 }

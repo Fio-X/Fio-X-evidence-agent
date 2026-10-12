@@ -31,6 +31,19 @@ const DEFINITIONS = [
     label: 'Natural Earth Admin 0, 1:50m',
   },
   {
+    id: 'naturalearth_admin1_us_110m',
+    file: 'naturalearth-admin1-us-110m.geojson',
+    source_url: 'https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-1-states-provinces/',
+    license: 'Public domain (Natural Earth terms of use)',
+    resolution: '110m',
+    nominal_scale: 110_000_000,
+    detail_class: 'regional',
+    // Only ever chosen by id (US state maps); a task no inferred extent maps to keeps it out of selectBasemap's automatic pick.
+    valid_tasks: ['us_states'],
+    extent: { west: -172, east: -66, south: 18, north: 72 },
+    label: 'Natural Earth Admin 1 (US states and DC), 1:110m',
+  },
+  {
     id: 'gshhg_syros_i_local',
     file: 'gshhs-i-syros-local.geojson',
     source_url: 'https://www.soest.hawaii.edu/pwessel/gshhg/',

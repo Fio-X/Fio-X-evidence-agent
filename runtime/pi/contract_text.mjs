@@ -27,7 +27,7 @@ export function loadGrammarRegistrySync(baseUrl) {
 }
 
 // inputs: { readerTasks: Set (SEMANTIC_REQUIRED_READER_TASKS), visualGrammarForms: map of Set (VISUAL_GRAMMAR_FORMS), registry }
-export function contractStatements({ readerTasks, visualGrammarForms, registry, literals = CONTRACT_LITERALS }) {
+export function contractStatements({ readerTasks, visualGrammarForms, registry, literals = CONTRACT_LITERALS, lean = false }) {
   const out = {};
   out.planAlt = `Page alt text, at least ${literals.planAltMin} characters.`;
   out.moduleAlt = `Illustration modules only: at least ${literals.illustrationAltMin} characters.`;
@@ -38,7 +38,7 @@ export function contractStatements({ readerTasks, visualGrammarForms, registry, 
     out.visualGrammar = `Visual modules only. The module's chart_type must be one of these for its grammar (${rows.join("; ")}).`;
   }
   out.modules = `The page needs at least ${literals.minContentModules} claim-bearing content modules, at least ${literals.minVisualModules} visual or illustration modules together, modules covering at least ${literals.minStoryDimensions} story dimensions, and at least ${literals.minNonSupportRelations} story-graph edge whose relation is not 'supports'.`;
-  out.modules += ` Story-graph closure: every story_node_ids entry must be a node of the story graph; every entry node and every answer node must appear in some module's story_node_ids; every answer node must appear in a module whose story_role is resolution or explanation; and the modules together must cover at least ${Math.round(literals.minNodeCoverage * 100)}% of the story-graph nodes.`;
+  out.modules += ` Story-graph closure: every story_node_ids entry must be a node of the story graph; every entry node and every answer node must appear in some module's story_node_ids; every answer node must appear in a module whose story_role is resolution or explanation${lean ? "" : `; and the modules together must cover at least ${Math.round(literals.minNodeCoverage * 100)}% of the story-graph nodes`}.`;
   out.sceneAnchor = `Must be a visual or illustration module; sidecar_module_ids holds 1 to ${literals.maxSidecars} unique module ids.`;
   out.deliveryRole = "infographic_module also needs story_graph_ref and story_node_ids.";
   out.heroUnit = "hero_stat only: empty, or a unit the hero's claim itself shows; the refusal lists the allowed ones.";

@@ -211,10 +211,17 @@ const DEFAULT_OPTIONS = Object.freeze({
 // not, strictly, "CJK" - a documented, deliberate widening of the bucket.
 const WIDE_CHAR_RE = /[　-〿぀-ヿㇰ-ㇿ㐀-䶿一-鿿ꥠ-꥿가-힣豈-﫿＀-￯]/;
 
+// NEWSROOM_QA_SHARED_WIDTH=1 (exact "1", default off): combining marks, variation selectors and zero-width joiners add no advance, and the
+// label-proof estimator uses this same function (see render_qa.mjs), so Hangul and the rest count the same way in both.
+const ZERO_ADVANCE_RE = /[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE00-\uFE0F\uFE20-\uFE2F\u200B-\u200F\u2060]/;
+export const sharedWidthEnabled = () => process.env.NEWSROOM_QA_SHARED_WIDTH === "1";
+
 export function estimateTextWidth(text, fontSize, bold) {
   const table = bold ? LATIN_BOLD_ADVANCE_WIDTHS : LATIN_ADVANCE_WIDTHS;
+  const shared = sharedWidthEnabled();
   let units = 0;
   for (const ch of Array.from(String(text))) {
+    if (shared && ZERO_ADVANCE_RE.test(ch)) continue;
     if (/\s/.test(ch)) units += TEXT_WIDTH_FACTORS.space;
     else if (WIDE_CHAR_RE.test(ch)) units += TEXT_WIDTH_FACTORS.cjk;
     else units += table[ch] ?? FALLBACK_LATIN_WIDTH;
@@ -360,6 +367,13 @@ function isOwnMarkerDigit(node, box, mark) {
   return Math.hypot(box.x + box.w / 2 - mark.cx, box.y + box.h / 2 - mark.cy) <= mark.r;
 }
 
+// opt-in (chartTileMarks): rects these renderers tag with a role of their own rather than "data-..."; they are marks, so a label over one reports
+const CHART_TILE_ROLES = new Set(["waffle-cell", "treemap-tile", "stacked-segment", "matrix-cell"]);
+// text a tile or segment carries inside itself by design (a treemap tile's name/share/value, a 100% bar's in-bar value); only fully inside it is exempt
+const INSIDE_MARK_TEXT_ROLES = new Map([["treemap-tile-label", "treemap-tile"], ["treemap-tile-share", "treemap-tile"], ["treemap-tile-value", "treemap-tile"], ["stacked-value", "stacked-segment"]]);
+function boxInside(inner, outer) {
+  return inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
+}
 function isDataRole(role) {
   return typeof role === "string" && role.startsWith("data-");
 }
@@ -615,6 +629,15 @@ function circleIntersectsBox(cx, cy, r, box) {
   return dx * dx + dy * dy <= r * r + 1e-6;
 }
 
+function pointInPolygon(x, y, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 function boxesIntersect(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }
@@ -826,7 +849,7 @@ const ANNOTATION_STROKE_ROLES = new Set([
   "range-bracket",
 ]);
 
-function walkSvgTree(svgText, styleRules) {
+function walkSvgTree(svgText, styleRules, walkOpts = {}) {
   const texts = [];
   const rects = [];
   const marks = [];
@@ -911,6 +934,8 @@ function walkSvgTree(svgText, styleRules) {
       matrix,
       unresolved,
       role: (node.attrs || {})["data-role"] ?? null,
+      // opt-in (heatmapCellMarks): a heatmap value label names the cell it belongs to
+      cellKey: walkOpts.heatmapCellMarks && ["heatmap-cell-value", "tile-map-name"].includes((node.attrs || {})["data-role"]) && (node.attrs || {})["data-x"] !== undefined ? `${node.attrs["data-x"]}\u0000${node.attrs["data-y"]}` : null,
       // P4: optional "x0,y0,x1,y1" box (in the text's own user space) of the
       // chart panel this text belongs to; see ruleTextOutsidePanel.
       panelBox: parsePanelBox((node.attrs || {})["data-panel-box"]),
@@ -989,6 +1014,14 @@ function walkSvgTree(svgText, styleRules) {
       if (pts.length >= 2) marks.push({ id: elementId, kind: "segments", points: pts });
       return;
     }
+    if (node.tag === "polygon") {
+      // A filled area drawn as data (the story-form wave's line-area): text must stay out of it like out of any other data mark.
+      // Only <polygon data-role="line-area"> is taken; no other renderer draws a <polygon>.
+      if (role !== "line-area") return;
+      const pts = parsePointsAttr(attrs.points).map((p) => apply(matrix, p.x, p.y));
+      if (pts.length >= 3) marks.push({ id: elementId, kind: "polygon", points: pts });
+      return;
+    }
     if (node.tag === "path") {
       // A <path> only counts as a "line/curve" data mark - the thing text
       // must not cross - when it is explicitly unfilled (fill="none"): that
@@ -1018,13 +1051,13 @@ function walkSvgTree(svgText, styleRules) {
       marks.push({ id: elementId, kind: "segments", points: [p1, p2] });
       return;
     }
-    if (node.tag === "rect" && isDataRole(role)) {
+    if (node.tag === "rect" && (isDataRole(role) || (walkOpts.heatmapCellMarks && role === "heatmap-cell") || (walkOpts.chartTileMarks && CHART_TILE_ROLES.has(role)))) {
       const w = parseFloat(attrs.width ?? "0"), h = parseFloat(attrs.height ?? "0");
       if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
       const x0 = parseFloat(attrs.x ?? "0"), y0 = parseFloat(attrs.y ?? "0");
       if (!Number.isFinite(x0) || !Number.isFinite(y0)) return;
       const box = transformedBox({ x: x0, y: y0, w, h }, matrix);
-      marks.push({ id: elementId, kind: "rect", box });
+      marks.push({ id: elementId, kind: "rect", role, box, cellKey: walkOpts.heatmapCellMarks && role === "heatmap-cell" ? `${attrs["data-x"]}\u0000${attrs["data-y"]}` : null });
     }
   }
 
@@ -1163,7 +1196,7 @@ function walkSvgTree(svgText, styleRules) {
     // extractLeaderSegments' old scope: it regexed the whole document text, so
     // a leader nested under a decoration-container role was never excluded.
     if (node.tag === "line" || node.tag === "path") recordLeaderNode(node, selfMatrix, elementId);
-    if (!insideDefs && !insideDecoration && (node.tag === "circle" || node.tag === "polyline" || node.tag === "path" || node.tag === "line" || node.tag === "rect")) {
+    if (!insideDefs && !insideDecoration && (node.tag === "circle" || node.tag === "polyline" || node.tag === "polygon" || node.tag === "path" || node.tag === "line" || node.tag === "rect")) {
       recordMarkNode(node, selfMatrix, elementId);
     }
 
@@ -1414,6 +1447,8 @@ function ruleTextCrossesDataMark(texts, marks) {
   for (const { node, box } of measurable) {
     for (const mark of marks) {
       if (isOwnMarkerDigit(node, box, mark)) continue;
+      if (mark.role && INSIDE_MARK_TEXT_ROLES.get(node.role) === mark.role && boxInside(box, mark.box)) continue; // inside its own kind of mark; across its edge or on a neighbour still reports
+      if (node.cellKey && mark.cellKey === node.cellKey) continue; // a heatmap value label inside its own cell; over a neighbour it still reports
       let hit = false;
       if (mark.kind === "circle") {
         hit = circleIntersectsBox(mark.cx, mark.cy, mark.r, box);
@@ -1424,6 +1459,14 @@ function ruleTextCrossesDataMark(texts, marks) {
           const a = mark.points[k], b = mark.points[k + 1];
           if (segmentIntersectsBox(a.x, a.y, b.x, b.y, box)) hit = true;
         }
+      } else if (mark.kind === "polygon") {
+        const pts = mark.points;
+        for (let k = 0; k < pts.length && !hit; k++) {
+          const a = pts[k], b = pts[(k + 1) % pts.length];
+          if (segmentIntersectsBox(a.x, a.y, b.x, b.y, box)) hit = true;
+        }
+        // a box wholly inside the area touches none of its edges: test its centre
+        if (!hit) hit = pointInPolygon(box.x + box.w / 2, box.y + box.h / 2, pts);
       }
       if (hit) {
         failures.push({
@@ -1712,7 +1755,7 @@ export function checkSvgGeometry(svgText, options = {}) {
   const opts = { ...DEFAULT_OPTIONS, checkStrokeZOrder: false, ...options };
 
   const { rules: styleRules, strippedSvgText } = extractStyleRules(text);
-  const { texts, rects, marks, lines, circles, leaders, notes, viewBox } = walkSvgTree(strippedSvgText, styleRules);
+  const { texts, rects, marks, lines, circles, leaders, notes, viewBox } = walkSvgTree(strippedSvgText, styleRules, { heatmapCellMarks: opts.heatmapCellMarks === true, chartTileMarks: opts.chartTileMarks === true });
   if (!viewBox) notes.push({ element: "svg", reason: "no parsable viewBox (and no numeric width/height fallback) on the root <svg>; text_outside_viewbox skipped entirely" });
 
   const failures = [

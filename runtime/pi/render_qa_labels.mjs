@@ -156,7 +156,8 @@ function ringsCrossBox(rings, box) {
 // helpers use (a full-width CJK code point measures as one em, everything
 // else as 0.56em) - kept in sync by convention, not by import, per this
 // file's independence rule (see module doc comment).
-function glyphWidth(text, size) {
+function glyphWidth(text, size, textWidth) {
+  if (textWidth) return textWidth(text, size, false); // NEWSROOM_QA_SHARED_WIDTH=1: render_qa.mjs injects the geometry estimator
   return Array.from(text).reduce((sum, ch) => sum + (/[　-鿿＀-￯]/u.test(ch) ? size : size * 0.56), 0);
 }
 
@@ -183,13 +184,13 @@ function glyphWidth(text, size) {
  *   PALETTE.grid through.
  */
 export function checkChoroplethValueLabels(svgText, options, deps) {
-  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s } = deps;
+  const { parseXml, joinChoroplethRows, fmt, noDataFill, worldLabelIso3s, worldListEnabled, worldListText } = deps;
   const expectedNoDataFill = String(noDataFill ?? "").toLowerCase();
   const rows = Array.isArray(options?.rows) ? options.rows : [];
   const spec = { category_field: options?.category_field, category_names: options?.category_names };
   const unit = options?.unit ?? "";
   // measure kind/semantics (P2) so the expected label text is spelled the same way the renderer spelled it
-  const kindSpec = { unit, value_field: options?.value_field, measure_kind: options?.measure_kind, measure_semantics: options?.measure_semantics };
+  const kindSpec = { unit, value_field: options?.value_field, measure_kind: options?.measure_kind, measure_semantics: options?.measure_semantics, language: options?.language };
   const value_field = options?.value_field;
 
   const root = parseXml(svgText);
@@ -248,16 +249,31 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[value_field])),
   );
 
+  const wanContext = joined.some((item) => Math.abs(Number(item.row[value_field])) >= 10_000);
+
   // World mode (map_extent: "world") labels only the range ends and highlight_values;
   // the set is re-derived from the rows here, and every other region must carry no text.
   const worldLabelled = options?.map_extent === "world" && typeof worldLabelIso3s === "function"
     ? worldLabelIso3s(joined, { value_field, category_field: options?.category_field, highlight_values: options?.highlight_values })
     : null;
 
+  // World list mode (the program's own NEWSROOM_MAP_WORLD_LIST switch, passed in as deps.worldListEnabled; never read
+  // from the chart spec): every country with data carries exactly one name and one value, on the map or in the list
+  // under it, so the "labelled although world mode labels only..." rule gives way to the same exactly-one rule below.
+  // The expected set is the rows' own iso3s, not anything read from the SVG; a label for a country with no data row fails.
+  const worldList = Boolean(worldLabelled) && typeof worldListEnabled === "function" && worldListEnabled() === true;
+  if (worldList) {
+    const dataIso3 = new Set(joined.map((item) => item.iso3));
+    for (const iso3 of new Set([...namesByIso3.keys(), ...valuesByIso3.keys()])) {
+      if (!dataIso3.has(iso3)) failures.push({ rule: "value_label_unexpected", message: `${iso3} is labelled although it has no data row` });
+    }
+  }
+
+  const joinedValues = joined.map((item) => Number(item.row[value_field]));
   for (const item of joined) {
     const iso3 = item.iso3;
     const value = Number(item.row[value_field]);
-    const expectedValueText = fmt(value, unit, kindSpec);
+    const expectedValueText = worldList && typeof worldListText === "function" && !worldLabelled.has(iso3) ? worldListText(value, unit, kindSpec, joinedValues, wanContext) : fmt(value, unit, kindSpec, wanContext);
     if (!dataIso3ByRegion.has(iso3)) {
       failures.push({ rule: "value_label_missing_region", message: `${iso3} has a data row but no rendered choropleth-data region` });
       continue;
@@ -266,7 +282,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
     if (Number.isFinite(renderedValue) && Math.abs(renderedValue - value) > 1e-9) {
       failures.push({ rule: "region_value_mismatch", message: `${iso3} region data-value is ${renderedValue}, row value is ${value}` });
     }
-    if (worldLabelled && !worldLabelled.has(iso3)) {
+    if (worldLabelled && !worldList && !worldLabelled.has(iso3)) {
       if ((namesByIso3.get(iso3) ?? []).length || (valuesByIso3.get(iso3) ?? []).length) {
         failures.push({ rule: "value_label_unexpected", message: `${iso3} is labelled although world mode labels only the range ends and highlight_values` });
       }
@@ -411,7 +427,7 @@ export function checkChoroplethValueLabels(svgText, options, deps) {
         const x = Number(node.attrs.x);
         const y = Number(node.attrs.y);
         const size = Number(node.attrs["font-size"]) || 12;
-        const w = glyphWidth(labelText(node), size);
+        const w = glyphWidth(labelText(node), size, deps.textWidth);
         const anchor = node.attrs["text-anchor"] === "end" ? "end" : node.attrs["text-anchor"] === "middle" ? "middle" : "start";
         const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
         return { x0, x1: x0 + w, y0: y - size * 0.9, y1: y + size * 0.25 };
@@ -516,10 +532,159 @@ export function checkHeatmapValueLabels(svgText, options, deps) {
     const size = Number(label.attrs["font-size"]);
     if (!(size >= 12)) failures.push({ rule: "value_label_font_below_floor", message: `${name} label is ${label.attrs["font-size"] ?? "unsized"}px, below 12px` });
     const cx = Number(rect[0].attrs.x), cy = Number(rect[0].attrs.y), cw = Number(rect[0].attrs.width), ch = Number(rect[0].attrs.height);
-    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), half = glyphWidth(shown, size) / 2;
-    const inside = tx - half >= cx - 0.01 && tx + half <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
+    // the text's x is its anchor point: centre by default (heatmap cells); a text-anchor of start/end (tile_map corner numbers) puts the box to one side of it
+    const tx = Number(label.attrs.x), ty = Number(label.attrs.y), width = glyphWidth(shown, size, deps.textWidth);
+    const anchor = label.attrs["text-anchor"];
+    const left = anchor === "end" ? tx - width : anchor === "start" ? tx : tx - width / 2;
+    const inside = left >= cx - 0.01 && left + width <= cx + cw + 0.01 && ty - size * 0.8 >= cy - 0.01 && ty + size * 0.25 <= cy + ch + 0.01;
     if (!inside) failures.push({ rule: "value_label_outside_cell", message: `${name} label does not fit inside its cell` });
   }
   if (seen.size === 0) failures.push({ rule: "value_label_missing", message: "the heatmap has no cell with a value to prove" });
+  return { passed: failures.length === 0, failures };
+}
+
+// NEWSROOM_QA_HEATMAP_MONOTONE=1 (exact "1", default off): a heatmap's fill must get darker as the cell value grows, equal values must share a
+// fill, and the grid must be complete. Reads only the values the cell proof already carries (data-value, rows); it computes no new numbers.
+const parseFillRgb = (fill) => {
+  const f = String(fill ?? "").trim();
+  let m = f.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  m = f.match(/^#([0-9a-f]{6})$/i);
+  if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  return null;
+};
+const relLuminance = ([r, g, b]) => {
+  const lin = (v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
+export function checkHeatmapFillMonotone(svgText, options, deps) {
+  const { parseXml } = deps;
+  const rows = Array.isArray(options?.rows) ? options.rows : [];
+  const nodes = walk(parseXml(svgText), []);
+  const key = (x, y) => `${x}\u0000${y}`;
+  const cells = new Map();
+  for (const n of nodes.filter((c) => c.tag === "rect" && c.attrs["data-role"] === "heatmap-cell")) {
+    const k = key(n.attrs["data-x"], n.attrs["data-y"]);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(n);
+  }
+  const failures = [];
+  const xs = [...new Set(rows.map((r) => String(r?.[options?.x_field])))];
+  const ys = [...new Set(rows.map((r) => String(r?.[options?.y_field])))];
+  const present = new Set();
+  for (const row of rows) {
+    const raw = row?.[options?.value_field];
+    if (raw !== null && raw !== undefined && raw !== "" && Number.isFinite(Number(raw))) present.add(key(String(row[options.x_field]), String(row[options.y_field])));
+  }
+  for (const y of ys) for (const x of xs) {
+    if (!present.has(key(x, y))) failures.push({ rule: "heatmap_grid_incomplete", message: `${y} / ${x} has no value, so the grid is not complete` });
+  }
+  const measured = [];
+  for (const [k, list] of cells) {
+    if (list.length !== 1) continue;
+    const a = list[0].attrs;
+    const value = Number(a["data-value"]);
+    const name = `${a["data-y"]} / ${a["data-x"]}`;
+    const rgb = parseFillRgb(a.fill);
+    if (!Number.isFinite(value)) { failures.push({ rule: "heatmap_fill_unreadable", message: `${name} has no readable value` }); continue; }
+    if (!rgb) { failures.push({ rule: "heatmap_fill_unreadable", message: `${name} has a fill the check cannot read` }); continue; }
+    measured.push({ name, value, fill: rgb.join(","), lum: relLuminance(rgb) });
+  }
+  measured.sort((p, q) => p.value - q.value);
+  const EPS = 1e-4;
+  for (let i = 1; i < measured.length; i++) {
+    const lo = measured[i - 1], hi = measured[i];
+    if (hi.value === lo.value) {
+      if (hi.fill !== lo.fill) failures.push({ rule: "heatmap_equal_values_different_fill", message: `${lo.name} and ${hi.name} have the same value but different fills` });
+    } else if (hi.lum > lo.lum + EPS) {
+      failures.push({ rule: "heatmap_fill_not_monotone", message: `${hi.name} has a larger value than ${lo.name} but a lighter fill` });
+    }
+  }
+  return { passed: failures.length === 0, failures, cells_checked: measured.length };
+}
+
+/**
+ * chart_type tile_map (NEWSROOM_TILE_MAP=1) tile proof, run next to the heatmap value-label proof (which proves every printed
+ * number). From the rendered SVG and the rows: every state that has rows has exactly one tile and one name (the table's
+ * short name), no tile exists for a state without rows, tiles sit in the table's grid order (same column -> same x, same row
+ * -> same y, both increasing), highlighted states (and only those) carry one highlight outline, and for the line mark every
+ * line vertex, the peak dot and the last-point dot sit where the rows put them. The scale is re-derived here from the rows
+ * (zero baseline unless a value is negative, top = the state's own peak), not read back from the SVG.
+ * @param {string} svgText
+ * @param {{rows: object[], category_field: string, x_field: string, value_field: string, cell_mark: "line"|"strip", language?: string, highlight_values?: string[], provisional_values?: string[]}} options
+ * @param {{parseXml: Function, resolveUsState: Function, usStateShortName: Function, usStates: Function, orderedPoints: Function}} deps
+ */
+export function checkTileMapProof(svgText, options, deps) {
+  const { parseXml, resolveUsState, usStateShortName, usStates, orderedPoints } = deps;
+  const nodes = walk(parseXml(svgText), []);
+  const failures = [];
+  const rows = Array.isArray(options?.rows) ? options.rows : [];
+  const points = orderedPoints(rows, options.x_field);
+  const zh = options.language === "zh";
+  const byState = new Map();
+  for (const row of rows) {
+    const st = resolveUsState(row?.[options.category_field]);
+    if (!st) continue;
+    if (!byState.has(st.usps)) byState.set(st.usps, { st, values: new Map(), raws: [] });
+    const v = row[options.value_field] === null || row[options.value_field] === undefined || row[options.value_field] === "" ? NaN : Number(row[options.value_field]);
+    const entry = byState.get(st.usps);
+    if (Number.isFinite(v)) entry.values.set(String(row[options.x_field]), v);
+    entry.raws.push(String(row[options.category_field]));
+  }
+  const of = (role) => nodes.filter((c) => c.attrs?.["data-role"] === role);
+  const group = (list) => { const m = new Map(); for (const n of list) { const k = n.attrs["data-state"]; if (!m.has(k)) m.set(k, []); m.get(k).push(n); } return m; };
+  const tiles = group(nodes.filter((c) => c.tag === "rect" && c.attrs?.["data-tile-state"] !== undefined).map((c) => ({ ...c, attrs: { ...c.attrs, "data-state": c.attrs["data-tile-state"] } }))), names = group(of("tile-map-name"));
+  for (const usps of tiles.keys()) if (!byState.has(usps)) failures.push({ rule: "tile_map_extra_tile", message: `a tile is drawn for ${usps}, which has no row` });
+  for (const [usps, { st }] of byState) {
+    if ((tiles.get(usps) ?? []).length !== 1) { failures.push({ rule: "tile_map_tile_missing", message: `${usps} has ${(tiles.get(usps) ?? []).length} tiles, expected one` }); continue; }
+    const nm = names.get(usps) ?? [];
+    if (nm.length !== 1) { failures.push({ rule: "tile_map_name_missing", message: `${usps} has ${nm.length} names, expected one` }); continue; }
+    const expected = usStateShortName(st, zh ? "zh" : "en");
+    if (labelText(nm[0]) !== expected) failures.push({ rule: "tile_map_name_mismatch", message: `${usps} shows '${labelText(nm[0])}', the table says '${expected}'` });
+  }
+  const placed = [...byState.keys()].filter((k) => (tiles.get(k) ?? []).length === 1).map((k) => ({ st: byState.get(k).st, x: Number(tiles.get(k)[0].attrs.x), y: Number(tiles.get(k)[0].attrs.y) }));
+  for (const a of placed) for (const b of placed) {
+    if (a.st.tile_col === b.st.tile_col && Math.abs(a.x - b.x) > 0.01) failures.push({ rule: "tile_map_position", message: `${a.st.usps} and ${b.st.usps} share a tile column but sit at different x` });
+    if (a.st.tile_row === b.st.tile_row && Math.abs(a.y - b.y) > 0.01) failures.push({ rule: "tile_map_position", message: `${a.st.usps} and ${b.st.usps} share a tile row but sit at different y` });
+    if (a.st.tile_col < b.st.tile_col && !(a.x < b.x)) failures.push({ rule: "tile_map_position", message: `${a.st.usps} is not left of ${b.st.usps}` });
+    if (a.st.tile_row < b.st.tile_row && !(a.y < b.y)) failures.push({ rule: "tile_map_position", message: `${a.st.usps} is not above ${b.st.usps}` });
+  }
+  const hot = new Set((options.highlight_values ?? []).map(String));
+  const wantHot = [...byState.values()].filter(({ st, raws }) => hot.has(st.usps) || hot.has(st.en) || hot.has(st.zh) || raws.some((r) => hot.has(r))).map(({ st }) => st.usps).sort();
+  const gotHot = of("tile-map-highlight").map((n) => n.attrs["data-state"]).sort();
+  if (JSON.stringify(wantHot) !== JSON.stringify(gotHot)) failures.push({ rule: "tile_map_highlight", message: `highlight outlines are on [${gotHot}], the highlighted states are [${wantHot}]` });
+  if (options.cell_mark === "line") {
+    const lines = group(of("tile-map-line")), dashed = group(of("tile-map-line-provisional")), dots = group(of("tile-map-point"));
+    const prov = new Set((options.provisional_values ?? []).map(String));
+    const parse = (n) => String(n.attrs.points ?? "").trim().split(/\s+/).filter(Boolean).map((p) => p.split(",").map(Number));
+    for (const [usps, { st, values }] of byState) {
+      const series = points.map((p) => values.get(p));
+      if (series.some((v) => v === undefined)) { failures.push({ rule: "tile_map_line_data", message: `${usps} has no row for every time point` }); continue; }
+      const solid = lines.get(usps) ?? [];
+      if (solid.length !== 1) { failures.push({ rule: "tile_map_line_missing", message: `${usps} has ${solid.length} lines, expected one` }); continue; }
+      const y0 = Number(solid[0].attrs["data-y0"]), y1 = Number(solid[0].attrs["data-y1"]);
+      const lo = Math.min(0, ...series), hi = Math.max(...series);
+      const wantY = (v) => (hi === lo ? y1 : y1 - ((v - lo) / (hi - lo)) * (y1 - y0));
+      const verts = [...parse(solid[0]), ...((dashed.get(usps) ?? []).length ? parse(dashed.get(usps)[0]).slice(1) : [])];
+      if (verts.length !== points.length) { failures.push({ rule: "tile_map_line_vertices", message: `${usps} line has ${verts.length} vertices for ${points.length} time points` }); continue; }
+      verts.forEach(([x, y], i) => {
+        if (!(Math.abs(y - wantY(series[i])) <= 0.02)) failures.push({ rule: "tile_map_line_value", message: `${usps} ${points[i]}: the line is at y=${y}, the row puts it at ${wantY(series[i]).toFixed(2)}` });
+        if (i > 0 && !(x > verts[i - 1][0])) failures.push({ rule: "tile_map_line_order", message: `${usps} line does not run left to right in time order` });
+      });
+      const mine = dots.get(usps) ?? [];
+      const peak = series.indexOf(hi), last = points.length - 1;
+      const dot = (kind, i) => mine.find((d) => d.attrs["data-kind"] === kind && d.attrs["data-x"] === points[i]);
+      const peakDot = dot("peak", peak);
+      if (!peakDot) failures.push({ rule: "tile_map_peak_dot", message: `${usps} has no peak dot at ${points[peak]}` });
+      else if (!(Math.abs(Number(peakDot.attrs.cy) - verts[peak][1]) <= 0.02 && Math.abs(Number(peakDot.attrs.cx) - verts[peak][0]) <= 0.02 && Number(peakDot.attrs["data-value"]) === series[peak])) failures.push({ rule: "tile_map_peak_dot", message: `${usps} peak dot is not on the peak vertex` });
+      if (peak !== last) {
+        const lastDot = dot("last", last) ?? dot("provisional", last);
+        if (!lastDot) failures.push({ rule: "tile_map_last_dot", message: `${usps} has no hollow dot at ${points[last]}` });
+        else if (!(Math.abs(Number(lastDot.attrs.cy) - verts[last][1]) <= 0.02 && Number(lastDot.attrs["data-value"]) === series[last])) failures.push({ rule: "tile_map_last_dot", message: `${usps} last dot is not on the last vertex` });
+      }
+      points.forEach((p, i) => { if (prov.has(p) && i !== peak && i !== last && !dot("provisional", i)) failures.push({ rule: "tile_map_provisional_dot", message: `${usps} ${p} is provisional but has no hollow dot` }); });
+    }
+  }
+  if (byState.size === 0) failures.push({ rule: "tile_map_no_states", message: "the tile map has no state to prove" });
   return { passed: failures.length === 0, failures };
 }

@@ -13,13 +13,13 @@
   "system": "系统"
  },
  "commands": {
+  "interactive": {
+   "group": "agent"
+  },
   "doctor": {
    "group": "system"
   },
   "ask": {
-   "group": "agent"
-  },
-  "chat": {
    "group": "agent"
   },
   "investigate": {
@@ -44,199 +44,315 @@
  "tools": {
   "artifact_inventory": {
    "group": "agent",
+   "registered_as": "agent.artifact_inventory",
+   "cli_entry": null,
    "note": "Reads artifacts of every group but only to help the model navigate; writes nothing."
   },
   "newsroom_update_plan": {
-   "group": "agent"
+   "group": "agent",
+   "registered_as": "agent.update_plan",
+   "cli_entry": null
   },
   "news_search": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.news_search",
+   "cli_entry": null
   },
   "fetch_url": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.fetch_url",
+   "cli_entry": null
   },
   "download_data": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.download_data",
+   "cli_entry": null
   },
   "duckdb_query": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.duckdb_query",
+   "cli_entry": null
   },
   "newsroom_parallel_tasks": {
-   "group": "agent"
+   "group": "agent",
+   "registered_as": "agent.parallel_tasks",
+   "cli_entry": null
   },
   "newsroom_visual_backend_status": {
-   "group": "system"
+   "group": "system",
+   "registered_as": "system.visual_backend_status",
+   "cli_entry": null
   },
   "newsroom_graph_extraction_status": {
-   "group": "system"
+   "group": "system",
+   "registered_as": "system.graph_extraction_status",
+   "cli_entry": null
   },
   "newsroom_visual_skill": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.visual_skill",
+   "cli_entry": null
   },
   "newsroom_lieflat_catalog": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.lieflat_catalog",
+   "cli_entry": null
   },
   "newsroom_lieflat_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.lieflat_render",
+   "cli_entry": null
   },
   "newsroom_visual_backend_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.visual_backend_plan",
+   "cli_entry": null
   },
   "newsroom_viz_plan": {
    "group": "visual",
+   "registered_as": "visual.viz_plan",
+   "cli_entry": null,
    "note": "Cross-group write: records the chart claim and its computation record."
   },
   "newsroom_viz_lint": {
    "group": "visual",
+   "registered_as": "visual.viz_lint",
+   "cli_entry": null,
    "note": "Cross-group write: writes a computation record."
   },
   "newsroom_viz_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.viz_render",
+   "cli_entry": null
   },
   "newsroom_viz_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.viz_critic",
+   "cli_entry": null
   },
   "newsroom_explainer_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_plan",
+   "cli_entry": null
   },
   "newsroom_explainer_lint": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_lint",
+   "cli_entry": null
   },
   "newsroom_explainer_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_render",
+   "cli_entry": null
   },
   "newsroom_explainer_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.explainer_critic",
+   "cli_entry": null
   },
   "newsroom_illustration_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_plan",
+   "cli_entry": null
   },
   "newsroom_illustration_lint": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_lint",
+   "cli_entry": null
   },
   "newsroom_illustration_generate": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_generate",
+   "cli_entry": null
   },
   "newsroom_illustration_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.illustration_critic",
+   "cli_entry": null
   },
   "newsroom_editorial_discovery": {
    "group": "visual",
+   "registered_as": "visual.editorial_discovery",
+   "cli_entry": null,
    "note": "Editorial research could be knowledge; kept with the page it feeds."
   },
   "newsroom_story_graph": {
    "group": "visual",
+   "registered_as": "visual.story_graph",
+   "cli_entry": null,
    "note": "Story nodes cite claims, but the graph is a page-design record."
   },
   "newsroom_visual_concepts": {
    "group": "visual",
+   "registered_as": "visual.visual_concepts",
+   "cli_entry": null,
    "note": "Also appends a tool-chain telemetry line (an agent artifact) from a visual tool."
   },
   "newsroom_semantic_novelty": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.semantic_novelty",
+   "cli_entry": null
   },
   "newsroom_asset_requirements": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.asset_requirements",
+   "cli_entry": null
   },
   "newsroom_reference_patterns": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.reference_patterns",
+   "cli_entry": null
   },
   "newsroom_expert_preference_record": {
    "group": "visual",
+   "registered_as": "visual.expert_preference_record",
+   "cli_entry": null,
    "note": "Write site where the model supplies a pass status. A review outcome, not drawing; stays visual for now, so the boundary check reports its pass record as cross-group.",
    "model_supplied_pass": true
   },
   "newsroom_award_mode_status": {
    "group": "visual",
+   "registered_as": "visual.award_mode_status",
+   "cli_entry": null,
    "note": "Write site where the model supplies a pass status. Same call as newsroom_expert_preference_record.",
    "model_supplied_pass": true
   },
   "newsroom_infographic_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_plan",
+   "cli_entry": null
   },
   "newsroom_infographic_lint": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_lint",
+   "cli_entry": null
   },
   "newsroom_infographic_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_render",
+   "cli_entry": null
   },
   "newsroom_infographic_critic": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_critic",
+   "cli_entry": null
   },
   "newsroom_model_validate": {
    "group": "visual",
+   "registered_as": "visual.model_validate",
+   "cli_entry": null,
    "note": "Could be knowledge; decided visual because the record it gates is the spec the page draws."
   },
   "newsroom_basemap_prepare": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.basemap_prepare",
+   "cli_entry": null
   },
   "newsroom_map_validate": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.map_validate",
+   "cli_entry": null
   },
   "newsroom_style_map": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.style_map",
+   "cli_entry": null
   },
   "newsroom_publication_plan": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.publication_plan",
+   "cli_entry": null
   },
   "newsroom_portable_publication": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.portable_publication",
+   "cli_entry": null
   },
   "newsroom_publication_render": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.publication_render",
+   "cli_entry": null
   },
   "newsroom_publication_qa": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.publication_qa",
+   "cli_entry": null
   },
   "newsroom_network_analyze": {
    "group": "knowledge",
+   "registered_as": "knowledge.network_analyze",
+   "cli_entry": null,
    "note": "A computation (knowledge) that only serves drawing; the output path is under visualizations/."
   },
   "newsroom_network_reduce": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.network_reduce",
+   "cli_entry": null
   },
   "newsroom_infographic_preview": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_preview",
+   "cli_entry": null
   },
   "newsroom_infographic_vision_critic": {
    "group": "visual",
+   "registered_as": "visual.infographic_vision_critic",
+   "cli_entry": null,
    "note": "The model supplies passed and score: its own quality judgment of the rendered page, which is the product's design.",
    "model_quality_verdict": true,
    "verdict_reason": "The publication decision is computed by the program from this verdict, so the critic itself writes a QA record and not the decision."
   },
   "newsroom_infographic_revise": {
-   "group": "visual"
+   "group": "visual",
+   "registered_as": "visual.infographic_revise",
+   "cli_entry": null
   },
   "newsroom_competition_preflight": {
    "group": "visual",
+   "registered_as": "visual.competition_preflight",
+   "cli_entry": null,
    "note": "Machine preflight over the critics; the program computes machine_passed from the critics (the model passes only references), so no model-supplied pass is stored; it reads the model-supplied vision verdict as an input and writes a pass record."
   },
   "newsroom_chart": {
    "group": "visual",
+   "registered_as": "visual.chart",
+   "cli_entry": null,
    "hidden": true,
    "note": "In the registry but never registered; not model-visible."
   },
   "record_claim": {
-   "group": "knowledge"
+   "group": "knowledge",
+   "registered_as": "knowledge.record_claim",
+   "cli_entry": null
   },
   "newsroom_viz_chain": {
    "group": "agent",
+   "registered_as": "agent.viz_chain",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_chain": {
    "group": "agent",
+   "registered_as": "agent.infographic_chain",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_chain_patch": {
    "group": "agent",
+   "registered_as": "agent.infographic_chain_patch",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_plan_patch": {
    "group": "agent",
+   "registered_as": "agent.infographic_plan_patch",
+   "cli_entry": null,
    "conditional": true
   },
   "newsroom_infographic_edit": {
    "group": "visual",
+   "registered_as": "visual.infographic_edit",
+   "cli_entry": null,
    "conditional": true,
    "note": "Edits a visual plan though it is an agent-speed tool; decided visual because it writes a visual plan revision."
   }
@@ -280,6 +396,14 @@
    "group": "agent",
    "note": "Decides which tools the model sees; generated from runtime/pi/tool_registry.mjs."
   },
+  "src/tool_host.rs": {
+   "group": "agent",
+   "note": "1011ab step 1: client of the Node tool host (test-only until step 2 wires the Rust loop)."
+  },
+  "src/tool_schema.rs": {
+   "group": "agent",
+   "note": "1011ab step 1: argument re-check (test-only until step 2 wires the Rust loop)."
+  },
   "src/pi.rs": {
    "group": "agent",
    "also_used_by": [
@@ -292,6 +416,10 @@
   },
   "src/recipes.rs": {
    "group": "agent"
+  },
+  "src/repeat_failure.rs": {
+   "group": "agent",
+   "note": "V398: decides when a run stops after the same tool fails the same way five times (NEWSROOM_REPEAT_FAILURE_STOP, default off); changes no check."
   },
   "src/step_lines.rs": {
    "group": "system",
@@ -338,9 +466,6 @@
   "src/commands/ask.rs": {
    "group": "agent"
   },
-  "src/commands/chat.rs": {
-   "group": "agent"
-  },
   "src/commands/investigate.rs": {
    "group": "agent"
   },
@@ -368,27 +493,8 @@
   "src/agent/mod.rs": {
    "group": "agent"
   },
-  "src/agent/core.rs": {
+  "src/agent/intent.rs": {
    "group": "agent"
-  },
-  "src/agent/tools/mod.rs": {
-   "group": "agent"
-  },
-  "src/agent/tools/calculate.rs": {
-   "group": "knowledge",
-   "note": "A calculator that writes no artifact."
-  },
-  "src/agent/tools/web_search.rs": {
-   "group": "knowledge"
-  },
-  "src/agent/tools/create_chart.rs": {
-   "group": "visual"
-  },
-  "src/agent/tools/modern_chart.rs": {
-   "group": "visual"
-  },
-  "src/agent/tools/pi_visualization.rs": {
-   "group": "visual"
   },
   "runtime/pi/newsroom.ts": {
    "group": "agent",
@@ -430,6 +536,22 @@
   "runtime/pi/process.mjs": {
    "group": "system"
   },
+  "runtime/pi/tool_api.ts": {
+   "group": "agent",
+   "note": "1011y: the one seam through which tool code reaches the Pi packages (pure re-export). It belongs to the agent loop that would replace Pi."
+  },
+  "runtime/pi/tool_host.mjs": {
+   "group": "agent",
+   "note": "1011ab step 1: Node tool host (JSONL protocol, tools stay in Node); the Rust agent layer spawns it."
+  },
+  "runtime/pi/tool_host_api.mjs": {
+   "group": "agent",
+   "note": "1011ab step 1: Node tool host (JSONL protocol, tools stay in Node); the Rust agent layer spawns it."
+  },
+  "runtime/pi/tool_host_schema.mjs": {
+   "group": "agent",
+   "note": "1011ab step 1: Node tool host (JSONL protocol, tools stay in Node); the Rust agent layer spawns it."
+  },
   "runtime/pi/net.mjs": {
    "group": "knowledge"
   },
@@ -447,6 +569,10 @@
   },
   "runtime/pi/evidence_gate.mjs": {
    "group": "knowledge"
+  },
+  "runtime/pi/fetch_split_probe.mjs": {
+   "group": "knowledge",
+   "note": "Report-only planner for splitting slow downloads (NEWSROOM_FETCH_SPLIT_PROBE); its diagnostic is written under runtime/, which the boundary report counts as agent-owned (cross_group)."
   },
   "runtime/pi/claim_binding.mjs": {
    "group": "knowledge",
@@ -467,6 +593,9 @@
   "runtime/pi/number_words.mjs": {
    "group": "knowledge"
   },
+  "runtime/pi/data_notes.mjs": {
+   "group": "knowledge"
+  },
   "runtime/pi/number_shadow.mjs": {
    "group": "knowledge"
   },
@@ -483,9 +612,6 @@
    ],
    "note": "Name tables used by claims and by maps."
   },
-  "runtime/pi/domain_layers.mjs": {
-   "group": "knowledge"
-  },
   "runtime/pi/model_spec.mjs": {
    "group": "knowledge",
    "also_used_by": [
@@ -495,10 +621,6 @@
   },
   "runtime/pi/networkx_analyze.py": {
    "group": "knowledge"
-  },
-  "runtime/pi/quality.mjs": {
-   "group": "agent",
-   "note": "Placed in agent: its only logic is assertNoAutonomousAwardPass, a guard on pass state, which only the agent group may own. No caller found."
   },
   "runtime/pi/competition.mjs": {
    "group": "visual"
@@ -552,9 +674,6 @@
   "runtime/pi/backend_policy.mjs": {
    "group": "visual"
   },
-  "runtime/pi/render_router.mjs": {
-   "group": "visual"
-  },
   "runtime/pi/render_qa.mjs": {
    "group": "visual"
   },
@@ -565,6 +684,9 @@
    "group": "visual"
   },
   "runtime/pi/render_qa_labels.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_ticks.mjs": {
    "group": "visual"
   },
   "runtime/pi/render_qa_svg.mjs": {
@@ -591,19 +713,10 @@
   "runtime/pi/adapters/geometric_cover.mjs": {
    "group": "visual"
   },
-  "runtime/pi/scene.mjs": {
-   "group": "visual"
-  },
-  "runtime/pi/scene_solver.mjs": {
-   "group": "visual"
-  },
   "runtime/pi/label_layout.mjs": {
    "group": "visual"
   },
   "runtime/pi/style_mapping.mjs": {
-   "group": "visual"
-  },
-  "runtime/pi/pro_export.mjs": {
    "group": "visual"
   },
   "runtime/pi/d3_editorial.mjs": {
@@ -640,10 +753,13 @@
   "runtime/pi/geo_flow_layers.mjs": {
    "group": "visual"
   },
-  "runtime/pi/flow_aggregation.mjs": {
+  "runtime/pi/flow_layout.mjs": {
    "group": "visual"
   },
-  "runtime/pi/flow_layout.mjs": {
+  "runtime/pi/flow_map_labels.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/flow_styles.mjs": {
    "group": "visual"
   },
   "runtime/pi/movement_track.mjs": {
@@ -669,13 +785,2816 @@
    "group": "knowledge",
    "note": "Writes the claim record, computation records and query-row tables on behalf of visual tools (hand-off switch)."
   },
+  "runtime/pi/shadow_writer.mjs": {
+   "group": "knowledge",
+   "note": "Writes the shadow-check side files (shadow/, kind observation) on behalf of the visual-side tools (hand-off switch)."
+  },
+  "runtime/pi/review_reject_writer.mjs": {
+   "group": "visual",
+   "note": "Moves a failed manifest to rejected/ on behalf of the critics (review split switch)."
+  },
+  "runtime/pi/probe_writer.mjs": {
+   "group": "agent",
+   "note": "Writes the fetch-split diagnostic files under runtime/fetch-split-probe/ on behalf of download_data (probe switch)."
+  },
   "runtime/pi/decision_writer.mjs": {
    "group": "agent",
-   "note": "Writes the expert-preference record, the award-mode status and the competition preflight on behalf of the visual-side tools (hand-off switch)."
+   "note": "Writes the expert-preference record, the award-mode status and the competition preflight, plus the vision-critic record (infographics/vision-critics/), on behalf of the visual-side tools (hand-off switch)."
+  },
+  "runtime/pi/agent_record_writer.mjs": {
+   "group": "agent",
+   "note": "Writes the refused-call store of the plan tool and the tool-chain event log on behalf of the visual-side tools (hand-off switch)."
+  },
+  "runtime/pi/extreme_probe.mjs": {
+   "group": "visual",
+   "note": "Report-only extreme-value probe of a drawn chart (NEWSROOM_EXTREME_PROBE=1); hands its diagnosis record to the agent-group writer. Also holds the caption note behind NEWSROOM_EXTREME_NOTE=1 (visual group, board item K117; delete when the note is installed as the default or K117 is dropped; writes no file)."
+  },
+  "runtime/pi/extreme_probe_writer.mjs": {
+   "group": "agent",
+   "note": "Writes the K117 diagnosis record under runtime/extreme-probe/ on behalf of the chart render tool."
   },
   "runtime/pi/groups.mjs": {
    "group": "system",
    "note": "Loader, boundary report and tool-order helpers for the group list."
+  },
+  "src/group_guard.rs": {
+   "group": "system"
+  },
+  "src/agent_serve.rs": {
+   "group": "agent",
+   "note": "1011ak step 9a: hidden child mode that speaks the Pi RPC protocol with the Rust agent (NEWSROOM_AGENT=rust, default off, local stand-in only)."
+  },
+  "src/agent_loop.rs": {
+   "group": "agent",
+   "note": "1011ab step 2: Rust agent loop with replay model (test-only; NEWSROOM_AGENT=rust, default off)."
+  },
+  "src/anthropic_model.rs": {
+   "group": "agent",
+   "note": "1011ad step 3: Anthropic Messages streaming model for the Rust loop (test-only; talks to a fake server on 127.0.0.1)."
+  },
+  "src/model_fake.rs": {
+   "group": "agent",
+   "note": "1011ae step 4: fake 127.0.0.1 model server shared by the model tests (test-only)."
+  },
+  "src/openai_model.rs": {
+   "group": "agent",
+   "note": "1011ae step 4: openai-completions streaming model for the Rust loop (test-only; talks to a fake server on 127.0.0.1)."
+  },
+  "src/agent_watch.rs": {
+   "group": "agent",
+   "note": "1011af step 5: run-time limits (the NEWSROOM_RPC_* waits) for the Rust loop (test-only)."
+  },
+  "src/session_store.rs": {
+   "group": "agent",
+   "note": "1011af step 5: the Rust agent's own linear session file in agent-session/ (test-only; writes through group_guard)."
+  },
+  "src/agent_prompt.rs": {
+   "group": "agent",
+   "note": "1011ag step 6: the Rust agent's own system prompt, built from the host's tool list, the allow list and the run folder (test-only)."
+  },
+  "src/staging.rs": {
+   "group": "agent",
+   "note": "1011ah step 7a: per-call staging folders and the Rust check of what a tool call wrote there (test-only; moves and removals go through group_guard)."
+  },
+  "runtime/pi/storyboard.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/form_selection.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/palette_theme.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_qa_story.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/render_styles.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/story_forms.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/us_projection.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/us_states.mjs": {
+   "group": "visual"
+  },
+  "runtime/pi/assets/naturalearth-admin1-us-110m-attributes.json": {
+   "group": "visual"
+  },
+  "runtime/pi/assets/us-state-names.json": {
+   "group": "knowledge",
+   "also_used_by": [
+    "visual"
+   ],
+   "note": "US state name table read by economy_names.mjs (knowledge) and by the tile map (us_states.mjs, visual)."
   }
+ },
+ "artifact_kinds": {
+  "ownership": {
+   "evidence": {
+    "owner": "knowledge",
+    "what": "claims, computation records, sources, searches, data files and origins, query-row tables"
+   },
+   "project_state": {
+    "owner": "agent",
+    "what": "plan, run telemetry, rejected-call and patch stores, the run manifest (story.json)"
+   },
+   "visual_spec": {
+    "owner": "visual",
+    "what": "chart, page, illustration, map, model-spec and publication specs, renders, critics, QA"
+   },
+   "observation": {
+    "owner": "knowledge",
+    "what": "shadow-check side files: observations of the evidence that never become evidence themselves"
+   },
+   "pass_decision": {
+    "owner": "agent",
+    "what": "review and award records, vision verdicts, competition preflight, chain-reuse records"
+   },
+   "rules": {
+    "owner": "system",
+    "what": "config and the registry"
+   },
+   "run_record": {
+    "owner": "system",
+    "what": "run bundle bookkeeping the program writes: transcripts, event and metric logs, progress and the folder skeleton"
+   },
+   "verification_record": {
+    "owner": "knowledge",
+    "what": "the program-computed result of the independent evidence check (verification.json)"
+   },
+   "materialized_runtime": {
+    "owner": "system",
+    "what": "the program's own code and assets copied into the run folder at start (runtime.rs materialize_extension): fixed names only, no Pi tool writes any of them"
+   }
+  },
+  "rules": [
+   {
+    "kind": "run_record",
+    "exact": "",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "data/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "data/origins/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "computations/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "visualizations/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "infographics/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "session/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/",
+    "note": "Created by the Rust agent loop (session_store.rs) under an agent command: the folder of its own session file. Not the old session/ folder, which the Rust loop never writes or reads for a follow-up."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "sources/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "searches/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/assets/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "run_record",
+    "exact": "runtime/vendor/",
+    "note": "The run folder and its fixed subfolders are created by the program (artifact.rs, output.rs, investigate-v2): the skeleton of the run bundle, no content. Listed first so the folder itself is not read as the evidence or page folder it holds."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/process.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_api.ts",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_host.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_host_api.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_host_schema.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/newsroom.ts",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/viz.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/cartography.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/economy_names.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/choropleth.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/net.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/provenance.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/pdf_extract.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/evidence_gate.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/claim_lint.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/infographic.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/explanatory.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/illustration.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/vision.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/competition.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/story_graph.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/fact_graph.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_grammar.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_validators.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/art_direction.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/visual_backends.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/backend_policy.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/measure_semantics.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_semantics.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/contract_text.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/visual_skill_bundle.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/editorial_design_system_bundle.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/rasterize_svg.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/publication.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/plotly_editorial.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/d3_editorial.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/vendor",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/browser_qa.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/computation_rows.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/networkx_analyze.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/networkx_reduce.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/scientific_basemap_prepare.py",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/model_spec.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/style_mapping.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/map_spec.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/scientific_map.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/basemap_registry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/flow_layout.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/map_reference_layers.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/publication_binding.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/svg_security.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/asof_probe.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/claim_binding.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/number_shadow.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/compact_setup.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/number_words.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/data_notes.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/preflight.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/patch_retry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/shadow.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/extreme_probe.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/extreme_probe_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_chain.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_phase_policy.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/tool_registry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/parallel_scheduler.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/local_backend.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/lieflat.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_geometry.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_contrast.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_svg.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_labels.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_ticks.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/flow_map_labels.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/flow_styles.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/groups.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/knowledge_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/decision_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/shadow_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/review_reject_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/agent_record_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/probe_writer.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/fetch_split_probe.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/groups.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin0-110m.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin0-50m.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/gshhs-i-syros-local.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/economy-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/currency-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin0-50m-attributes.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/vendor/plotly-3.3.1.min.js",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin1-us-110m-attributes.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/naturalearth-admin1-us-110m.geojson",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/assets/us-state-names.json",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/form_selection.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/palette_theme.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_qa_story.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/render_styles.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/story_forms.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/storyboard.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/us_projection.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "materialized_runtime",
+    "exact": "runtime/us_states.mjs",
+    "note": "Written only by runtime.rs materialize_extension (a build copy of the same name under runtime/pi/ or assets/); no Pi tool writes this name. Listed as a fixed name, not a folder rule, so the rest of runtime/ stays the agent group's."
+   },
+   {
+    "kind": "evidence",
+    "exact": "claims.jsonl"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "computations/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "sources/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "searches/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "data/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "runtime/query-rows/"
+   },
+   {
+    "kind": "observation",
+    "prefix": "shadow/"
+   },
+   {
+    "kind": "evidence",
+    "prefix": "visualizations/graph-analysis/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "editorial/preferences/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "editorial/award-runs/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "infographics/vision-critics/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "infographics/competition-preflight/"
+   },
+   {
+    "kind": "pass_decision",
+    "prefix": "verification-rounds/"
+   },
+   {
+    "kind": "project_state",
+    "exact": "plan.json"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "runtime/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/plan-rejections/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/plan-patches/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/chain-rejections/"
+   },
+   {
+    "kind": "project_state",
+    "prefix": "infographics/chain-patches/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "visualizations/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "infographics/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "editorial/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "maps/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "models/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "publications/"
+   },
+   {
+    "kind": "visual_spec",
+    "prefix": "lieflat/"
+   },
+   {
+    "kind": "rules",
+    "prefix": "config/"
+   },
+   {
+    "kind": "project_state",
+    "exact": "story.json",
+    "note": "Written by the program (artifact.rs write_manifest) under an agent command: the run manifest. It lists the files and carries the delivery.primary_artifact the program found on disk, so it is run state of the agent group, not bookkeeping."
+   },
+   {
+    "kind": "project_state",
+    "exact": "plan-progress.json",
+    "note": "Written by the program (pi.rs) under an agent command, one line per finished tool call taken from the Pi tool_execution_end event: progress of the agent's plan."
+   },
+   {
+    "kind": "verification_record",
+    "exact": "verification.json",
+    "note": "Written by the program under verify (knowledge); continue (agent) also writes round status into it, but only a value the program computed with the verify calculation, never one the model supplies."
+   },
+   {
+    "kind": "run_record",
+    "exact": "prompt.md",
+    "tag": "transcript",
+    "note": "Written by the program (artifact.rs) under an agent command: the user's prompt copied as it was typed. System because the program copies it; nothing verifies against it."
+   },
+   {
+    "kind": "run_record",
+    "exact": "answer.md",
+    "tag": "transcript",
+    "note": "Written by the program under an agent command: the model's final text copied to disk. A transcript the program stores (system); no check treats it as evidence."
+   },
+   {
+    "kind": "run_record",
+    "exact": "assistant-answer.md",
+    "tag": "transcript",
+    "note": "Written by the program under investigate-v2: the model's final text copied to disk. A transcript (system), never evidence."
+   },
+   {
+    "kind": "run_record",
+    "exact": "conversation.md",
+    "tag": "transcript",
+    "note": "Written by the program under continue: the turns copied to disk. A transcript (system), never evidence."
+   },
+   {
+    "kind": "run_record",
+    "exact": "events.jsonl",
+    "note": "Written by the program (pi.rs) under an agent command: the Pi event log. The program records it, it grants nothing."
+   },
+   {
+    "kind": "run_record",
+    "exact": "tools.json",
+    "note": "Written by the program (audit.rs) under an agent command: the tool-call audit the program counts from the event log."
+   },
+   {
+    "kind": "run_record",
+    "exact": "session-stats.json",
+    "note": "Written by the program under an agent command: token and message counts from Pi."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: the linear session, one record appended per message and flushed. It holds messages only, no key and no request header."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-1",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-2",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-3",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-4",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "project_state",
+    "exact": "agent-session/session.jsonl.torn-5",
+    "note": "Written by the Rust agent loop (session_store.rs) under an agent command: a whole copy of the session file as a crash left it (a half last line), made before the file is rewritten without it; kept for good, never overwritten."
+   },
+   {
+    "kind": "run_record",
+    "exact": "run-metrics.jsonl",
+    "note": "Written by the program under an agent command: timing and token lines."
+   },
+   {
+    "kind": "run_record",
+    "exact": "visual-metrics.json",
+    "note": "Written by the program under investigate-v2: measured timings of a visual story run."
+   },
+   {
+    "kind": "project_state",
+    "prefix": "staging/"
+   }
+  ]
+ },
+ "handoffs": {
+  "note": "Who may ask a hand-off writer to write, listed by tool or command name, no wildcards. A write by a writer is refused when its path is not in a row of that writer or the current tool is not in that row's requesters. 'not_measured' lists requesters derived from the code but not seen in any test run (10-11 census of 45 tests): a row there is a static inference, and the test for it only proves the table lets it in and lets no other tool in.",
+  "writers": {
+   "knowledge_writer": {
+    "group": "knowledge",
+    "kinds": [
+     "evidence"
+    ]
+   },
+   "shadow_writer": {
+    "group": "knowledge",
+    "kinds": [
+     "observation"
+    ]
+   },
+   "decision_writer": {
+    "group": "agent",
+    "kinds": [
+     "pass_decision"
+    ]
+   },
+   "agent_record_writer": {
+    "group": "agent",
+    "kinds": [
+     "project_state"
+    ]
+   },
+   "probe_writer": {
+    "group": "agent",
+    "kinds": [
+     "project_state"
+    ]
+   },
+   "extreme_probe_writer": {
+    "group": "agent",
+    "kinds": [
+     "project_state"
+    ]
+   },
+   "review_reject_writer": {
+    "group": "visual",
+    "kinds": [
+     "visual_spec"
+    ]
+   }
+  },
+  "rows": [
+   {
+    "writer": "knowledge_writer",
+    "paths": [
+     "computations/"
+    ],
+    "requesters": [
+     "newsroom_viz_lint",
+     "newsroom_viz_plan"
+    ],
+    "not_measured": [],
+    "why": "inline-claim computation records saved for the plan and lint tools",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "knowledge_writer",
+    "paths": [
+     "claims.jsonl"
+    ],
+    "requesters": [
+     "newsroom_viz_plan"
+    ],
+    "not_measured": [],
+    "why": "the inline claim ledger line saved for the plan tool",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "knowledge_writer",
+    "paths": [
+     "runtime/query-rows/"
+    ],
+    "requesters": [
+     "newsroom_viz_lint",
+     "newsroom_viz_render",
+     "newsroom_viz_chain",
+     "duckdb_query",
+     "record_claim",
+     "newsroom_viz_plan",
+     "newsroom_chart",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "not_measured": [
+     "newsroom_viz_plan",
+     "newsroom_chart",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "why": "query-row tables written when a SQL text names a computation record; every tool that reaches queryDuckDb can trigger it (the shadow-check ones only with NEWSROOM_SHADOW_CHECKS=1)",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "shadow_writer",
+    "paths": [
+     "shadow/"
+    ],
+    "requesters": [
+     "newsroom_viz_lint",
+     "newsroom_infographic_lint",
+     "newsroom_infographic_edit",
+     "newsroom_infographic_plan",
+     "newsroom_infographic_chain",
+     "newsroom_infographic_render",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_preview",
+     "newsroom_award_mode_status",
+     "newsroom_infographic_vision_critic",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "not_measured": [
+     "newsroom_award_mode_status",
+     "newsroom_competition_preflight",
+     "newsroom_publication_plan"
+    ],
+    "why": "shadow-check side files saved for the visual tools that run the checks",
+    "remove_when": "when the evidence store is a function the visual tools call through the knowledge group's own tool (the cross_calls table shrinks with it)"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "editorial/preferences/"
+    ],
+    "requesters": [
+     "newsroom_expert_preference_record"
+    ],
+    "not_measured": [],
+    "why": "expert-preference decision record",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "editorial/award-runs/"
+    ],
+    "requesters": [
+     "newsroom_award_mode_status"
+    ],
+    "not_measured": [],
+    "why": "award-mode status decision record",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "infographics/competition-preflight/"
+    ],
+    "requesters": [
+     "newsroom_competition_preflight"
+    ],
+    "not_measured": [],
+    "why": "competition preflight decision record",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "decision_writer",
+    "paths": [
+     "infographics/vision-critics/"
+    ],
+    "requesters": [
+     "newsroom_infographic_vision_critic"
+    ],
+    "not_measured": [],
+    "why": "vision critic decision record (a model quality verdict, never a pass)",
+    "remove_when": "when the decision store is owned by a tool in the agent group"
+   },
+   {
+    "writer": "agent_record_writer",
+    "paths": [
+     "runtime/tool-chain-events.jsonl"
+    ],
+    "requesters": [
+     "newsroom_viz_chain",
+     "newsroom_infographic_chain",
+     "newsroom_visual_concepts",
+     "newsroom_infographic_chain_patch"
+    ],
+    "not_measured": [],
+    "why": "the event log of the chain tools; newsroom_visual_concepts is a visual tool that logs through it",
+    "remove_when": "when the visual-concepts tool stops using the chain log"
+   },
+   {
+    "writer": "agent_record_writer",
+    "paths": [
+     "infographics/plan-rejections/"
+    ],
+    "requesters": [
+     "newsroom_infographic_plan",
+     "newsroom_infographic_plan_patch"
+    ],
+    "not_measured": [],
+    "why": "refused-call store of the plan tool (needs NEWSROOM_SPEED_PLAN_PATCH and the atomic write)",
+    "remove_when": "when the plan tool's refused-call store moves into the agent group"
+   },
+   {
+    "writer": "agent_record_writer",
+    "paths": [
+     "infographics/chain-rejections/"
+    ],
+    "requesters": [
+     "newsroom_infographic_chain",
+     "newsroom_infographic_chain_patch"
+    ],
+    "not_measured": [],
+    "why": "refused-call store of the infographic chain (needs NEWSROOM_SPEED_CHAIN_PATCH)",
+    "remove_when": "none: the chain is an agent-group tool writing its own folder through the writer"
+   },
+   {
+    "writer": "probe_writer",
+    "paths": [
+     "runtime/fetch-split-probe/"
+    ],
+    "requesters": [
+     "download_data"
+    ],
+    "not_measured": [],
+    "why": "fetch-split diagnostics: download_data (knowledge) leaves a record in a run folder the agent group owns",
+    "remove_when": "when the diagnostic moves out of runtime/ or is dropped"
+   },
+   {
+    "writer": "extreme_probe_writer",
+    "paths": [
+     "runtime/extreme-probe/"
+    ],
+    "requesters": [
+     "newsroom_viz_render"
+    ],
+    "not_measured": [],
+    "why": "extreme-value diagnosis record written when a chart renders",
+    "remove_when": "when the diagnostic moves out of runtime/ or is dropped"
+   },
+   {
+    "writer": "review_reject_writer",
+    "paths": [
+     "visualizations/",
+     "infographics/"
+    ],
+    "requesters": [
+     "newsroom_viz_critic",
+     "newsroom_explainer_critic",
+     "newsroom_illustration_critic",
+     "newsroom_infographic_critic",
+     "newsroom_infographic_vision_critic"
+    ],
+    "not_measured": [],
+    "why": "moves a manifest a review tool rejected into rejected/ (NEWSROOM_REVIEW_SPLIT=1); the review tool itself only writes its critic record",
+    "remove_when": "when rejection moves into the program layer"
+   }
+  ],
+  "rust": [
+   {
+    "as": "as_data_import",
+    "writer": "knowledge_writer",
+    "group": "knowledge",
+    "commands": [
+     "investigate",
+     "interactive"
+    ],
+    "not_measured": [
+     "interactive"
+    ],
+    "why": "data files copied into the run folder with their origin notes (artifact.rs import_data; investigate.rs:390, interactive.rs:165)",
+    "remove_when": "when importing data is a command of the knowledge group"
+   },
+   {
+    "as": "as_verification_record",
+    "writer": "verification_writer",
+    "group": "knowledge",
+    "commands": [
+     "continue",
+     "investigate"
+    ],
+    "not_measured": [],
+    "why": "continue leaves only the program-computed not-passed record (continue_investigation.rs:114, write_not_passed_record); investigate runs verify at its end (commands/verify.rs verify_and_record), which writes through write_verification_record and only with a VerifiedOutcome that module alone can make (a passed record cannot exist without it); verify itself is a knowledge command and writes directly",
+    "remove_when": "when continue asks verify for the record and investigate calls the verify command"
+   },
+   {
+    "as": "as_materialize",
+    "writer": "materialize_writer",
+    "group": "system",
+    "commands": [
+     "investigate",
+     "continue",
+     "investigate-v2"
+    ],
+    "not_measured": [
+     "investigate-v2"
+    ],
+    "why": "copying the program's own runtime into the run folder (runtime.rs:116; investigate.rs:436, continue_investigation.rs:316, investigate_v2.rs:367)",
+    "remove_when": "when the run folder is prepared by a system command"
+   },
+   {
+    "as": "as_run_bundle",
+    "writer": "run_bundle_writer",
+    "group": "system",
+    "commands": [
+     "investigate",
+     "continue",
+     "investigate-v2",
+     "inspect",
+     "ask",
+     "interactive"
+    ],
+    "not_measured": [
+     "investigate-v2",
+     "ask",
+     "interactive"
+    ],
+    "why": "run bookkeeping (prompt, answer, stats, event and metric logs, tools.json, the folder skeleton) written by the agent commands and by inspect (audit.rs:517)",
+    "remove_when": "when run bookkeeping is a system service the commands call through a command"
+   }
+  ]
+ },
+ "cross_calls": {
+  "note": "Which tool groups may reach which functions of newsroom.ts that another group also uses, as of 10-11 (K214 part C). One table: scripts/test_group_cross_calls.mjs reads it (a new reference, a new group on a line, or a line that no longer holds turns the test red) and, with NEWSROOM_GROUP_ENFORCE=1, the functions listed in gated refuse a calling tool whose group is neither knowledge nor listed on that function line. It may only get shorter: a line or a group added by hand needs fe sign-off and a why. write=true marks a function that reaches an artifact write; write=false lines that are reads or pure computation are listed too. Imported lines are modules assigned to a group in files, used by another group.",
+  "gated": [
+   "queryDuckDb",
+   "validateSourceEvidence",
+   "replayComputationEvidence",
+   "recordClaimArtifact",
+   "saveQueryRows",
+   "knowledgeSide",
+   "verifiedClaimFor",
+   "chartPlanStamp",
+   "chartRenderStatus",
+   "chartLintStatus",
+   "verifiedClaimIds",
+   "verifiedClaimRecords"
+  ],
+  "functions": {
+   "agentRecordSide": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "appendArtifact": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "artifactRoot": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "artifactTmpDir": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "assertDataBytesMatchRecord": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "assertHeroBindingHolds": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "assertInfographicLintHolds": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "assertLintCurrent": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "atomicArtifactWritesEnabled": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "buildComputationRecord": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "chartLintStatus": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
+   },
+   "chartPlanStamp": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
+   },
+   "chartRenderStatus": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
+   },
+   "claimBindingDeps": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "claimIdFor": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "claimSqlLintEnabled": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "clampInt": {
+    "groups": [
+     "agent",
+     "knowledge"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "computationSql": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "createViaLink": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "currentLintPolicy": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "deriveInputsForSql": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "ensureParent": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "evidenceSnapshot": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "fillCopiedEnabled": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "fillHeroModule": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "fillStoryGraphRef": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "firstTry": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "firstTryTextEnabled": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "heroClaimContext": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "heroLiteralsAfter": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "heroMagnitudeStart": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "heroPlanUnits": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "heroUnitAwareSpelling": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "claimTemplateNumber": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用（只读，数值解析）"
+   },
+   "heroTextRefusal": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "heroTokenOffsets": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "heroUnbound": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "heroUnitStartsWith": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "inlineClaimEnabled": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "inlineClaimConfiguredForRun": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "knowledgeSide": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "latestClaimRecords": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "lintClaimSql": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "lintInfographicPlan": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "lintIsCurrent": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "literalNumberIn": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "loadEditorialGrammarRegistry": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "loadInfographicAssets": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "loadSourceQuoteText": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "mobilePagesEnabled": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "modelResultBudget": {
+    "groups": [
+     "agent",
+     "knowledge"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "normalizeArtifactRefs": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "normalizedNewsroomPhase": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "numeric": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "onlyArtifactRef": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "precheckAllEnabled": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "queryDuckDb": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "readArtifactJson": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "readArtifactText": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "readManifestOrRejected": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "recordClaimArtifact": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "refusedOption": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "refusedOptionsFixOn": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "registryDateFor": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "replayComputationEvidence": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "replayRecordedComputation": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "K214 件 B 修订，待 fe 签字：从 replayComputationEvidence 抽出的唯一一份复算，说法复算和知识写入器都调它；和 replayComputationEvidence 同一批调用方，拆法跟着它走"
+   },
+   "resolveHeroPlaceholder": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "resolveSubjectSets": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "resolveSubjectSetsCore": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "saveChainEvent": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "saveQueryRows": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "serializeSqlAst": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "stableId": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "textResult": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "system",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "validateReadOnlySql": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
+   },
+   "validateSourceEvidence": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "verifiedClaimFor": {
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011w: the stamp is made in the knowledge group; visual tools embed what it returns"
+   },
+   "verifiedClaimIds": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "视觉只读、经受控入口"
+   },
+   "verifiedClaimRecords": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "视觉只读、经受控入口"
+   },
+   "verifyComputationForWrite": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "K214 件 B 新增，待 fe 签字：知识写入器在写计算记录前重算（经 knowledgeSide，和它同一批调用方）；随 knowledgeSide 的拆法一起拆"
+   },
+   "verifyQueryRowsForWrite": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "K214 件 B 新增，待 fe 签字：知识写入器在写查询行前核对地址和哈希（经 knowledgeSide，和它同一批调用方）；随 knowledgeSide 的拆法一起拆"
+   },
+   "vizClaimBindings": {
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "withRefusedOption": {
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "writeArtifactIfAbsent": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "readRunFile": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011aj 第 8 步：证据校验链的读入口，暂存里的文件先看；设计上共用"
+   },
+   "statRunFile": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011aj 第 8 步：证据校验链的读入口，暂存里的文件先看；设计上共用"
+   }
+  },
+  "imported": {
+   "agent_record_writer.mjs::agentRecordWriter": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "asof_probe.mjs::REGISTRY_DATE_FIELDS": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "claim_binding.mjs::bindClaimsToChart": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "claim_binding.mjs::computationInputState": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "claim_binding.mjs::numericFieldsOfSpec": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "claim_lint.mjs::lintClaimSqlAst": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "claim_lint.mjs::lintClaimTemplate": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "compact_setup.mjs::checkExpandedConcepts": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "compact_setup.mjs::expandSharedConcepts": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "compact_setup.mjs::fillSetupRefs": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "compact_setup.mjs::setupRefError": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "computation_rows.mjs::DERIVED_ROWS_PATH": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "computation_rows.mjs::deriveComputationInputs": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "computation_rows.mjs::materializeComputationRowTables": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "computation_rows.mjs::recordedInputState": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "computation_rows.mjs::duckdbBundledExtensionArgs": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "computation_rows.mjs::safeDuckDbDiagnostic": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "contract_text.mjs::allowedValueHints": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "contract_text.mjs::contractStatements": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "contract_text.mjs::loadGrammarRegistrySync": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "data_notes.mjs::composeDataNote": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "data_notes.mjs::flagCellsFromFile": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "decision_writer.mjs::decisionWriter": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "evidence_gate.mjs::assertComputationBoundToSources": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
+   },
+   "evidence_gate.mjs::assertDatasetPayload": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
+   },
+   "evidence_gate.mjs::assertEvidenceBackedStatus": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
+   },
+   "evidence_gate.mjs::assertInlineRowsHaveEvidence": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
+   },
+   "evidence_gate.mjs::assertUsableSourceRecord": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "evidence_gate.mjs::deriveClaimVerification": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "只有知识组直接调用；视觉组经受控函数到达"
+   },
+   "evidence_gate.mjs::evaluateClaimSupport": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
+   },
+   "evidence_gate.mjs::isSystemVerifiedClaim": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "视觉只读、经受控入口（只经 verifiedClaimIds／verifiedClaimRecords 调用）"
+   },
+   "evidence_gate.mjs::requireVerifiedClaim": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用（视觉组只用它拒绝或复制内容）"
+   },
+   "groups.mjs::assertCrossCall": {
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "owner": "system",
+    "write": false,
+    "why": "K214 件 C 新增，待 fe 签字：运行时闸门本身，每个会碰知识入口函数的组都要调它；不拆，它就是共用的检查"
+   },
+   "groups.mjs::groupToolsEnabled": {
+    "owner": "system",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "groups.mjs::recordBoundaryWrite": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "groups.mjs::runDeclared": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "infographic.mjs::INFOGRAPHIC_VISUAL_GRAMMARS": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "infographic.mjs::VISUAL_GRAMMAR_FORMS": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "infographic.mjs::annotateSubjectSets": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "infographic.mjs::distinctSubjects": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "infographic.mjs::lintInfographicSpec": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "knowledge_writer.mjs::handoffEnabled": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "knowledge_writer.mjs::knowledgeWriter": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "local_backend.mjs::localHash": {
+    "owner": "knowledge",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "local_backend.mjs::localImageInfo": {
+    "owner": "knowledge",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "local_backend.mjs::localMetadata": {
+    "owner": "knowledge",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "local_backend.mjs::localSpotlight": {
+    "owner": "knowledge",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "local_backend.mjs::localSqliteQuery": {
+    "owner": "knowledge",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "local_backend.mjs::localText": {
+    "owner": "knowledge",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "model_spec.mjs::validateModelSpec": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "number_words.mjs::numberWordIn": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "patch_retry.mjs::combinedError": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "preflight.mjs::candidates": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "preflight.mjs::fillPlanRefs": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "preflight.mjs::fillStageRefs": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "preflight.mjs::inSchemaOrder": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "preflight.mjs::planPrerequisiteIssues": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "preflight.mjs::preflightError": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "preflight.mjs::renderPrerequisiteIssues": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "probe_writer.mjs::probeWriter": {
+    "owner": "agent",
+    "groups": [
+     "knowledge"
+    ],
+    "write": true,
+    "why": "10-11 现状，待拆（写）"
+   },
+   "process.mjs::runProcess": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "provenance.mjs::computationRelativePath": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "provenance.mjs::sha256Hex": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "provenance.mjs::sourceContentHash": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "shadow.mjs::runShadow": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "shadow.mjs::shadowAsOf": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "shadow.mjs::shadowChecksEnabled": {
+    "owner": "knowledge",
+    "groups": [
+     "agent",
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "shadow.mjs::shadowInfographicNumbers": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "shadow.mjs::shadowVizNumbers": {
+    "owner": "knowledge",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "tool_phase_policy.mjs::VALID_TOOL_PHASES": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "tool_phase_policy.mjs::toolEnabled": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "visual_backends.mjs::VISUAL_BACKEND_PROFILES": {
+    "owner": "visual",
+    "groups": [
+     "system"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "visual_backends.mjs::detectGraphExtractionRuntimeHealth": {
+    "owner": "visual",
+    "groups": [
+     "system"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "visual_backends.mjs::detectVisualRuntimeHealth": {
+    "owner": "visual",
+    "groups": [
+     "system"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "viz.mjs::unitAwareText": {
+    "owner": "visual",
+    "groups": [
+     "agent"
+    ],
+    "write": false,
+    "why": "10-11 现状，待拆"
+   },
+   "viz.mjs::hashRows": {
+    "owner": "visual",
+    "groups": [
+     "agent",
+     "knowledge"
+    ],
+    "write": false,
+    "why": "设计上共用"
+   },
+   "tool_api.ts::StringEnum": {
+    "owner": "agent",
+    "groups": [
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "替代原有的 Pi 包导入，无新耦合；Rust 工具宿主（1011ab 第 1 步）落地后重评，目标删除"
+   },
+   "tool_api.ts::Type": {
+    "owner": "agent",
+    "groups": [
+     "knowledge",
+     "system",
+     "visual"
+    ],
+    "write": false,
+    "why": "替代原有的 Pi 包导入，无新耦合；Rust 工具宿主（1011ab 第 1 步）落地后重评，目标删除"
+   },
+   "tool_api.ts::importTypeboxCompile": {
+    "owner": "agent",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "替代原有的 Pi 包导入，无新耦合；Rust 工具宿主（1011ab 第 1 步）落地后重评，目标删除"
+   },
+   "groups.mjs::stagedWriteRoot": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": true,
+    "why": "1011ah 7a：写点公共入口换根到调用的暂存目录，调用之外原样返回（写）"
+   },
+   "groups.mjs::readThroughStaging": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011ai 7b：调用里读文件先看自己暂存的，再看运行目录（只读）"
+   },
+   "groups.mjs::countedByRust": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1011ai 7b：写点问 Rust 主机是否替它记报告计数，避免重复计数（不改文件）"
+   },
+   "groups.mjs::stagedFilePath": {
+    "owner": "system",
+    "groups": [
+     "agent",
+     "knowledge",
+     "visual"
+    ],
+    "write": false,
+    "why": "1012h：暂存调用里给 DuckDB 指出这次调用刚写、还没移进运行目录的整文件（只读，不写）"
+   },
+   "groups.mjs::stageOp": {
+    "owner": "system",
+    "groups": [
+     "visual"
+    ],
+    "write": false,
+    "why": "1011ai 7b：删除或改名交给 Rust 主机先判目标路径再执行（只写一行记录，不直接改文件）"
+   }
+  }
+ },
+ "boundary_report": {
+  "note": "This report only reports and refuses nothing; a refusal under NEWSROOM_GROUP_ENFORCE=1 is made at write time and logged in runtime/boundary-refusals.jsonl, not here. 待查 writes could not be classified and are not counted as fine. not_traced lists write sites this report cannot see, so it does not show zero violations.",
+  "not_traced": [
+   "Rust-side writes (src/artifact.rs, audit.rs, commands/*, verify.rs): not in this report; with NEWSROOM_GROUP_TOOLS=1 src/group_guard.rs judges them by the same table and a refusal goes to runtime/boundary-refusals.jsonl",
+   "directory creation (mkdir): only file writes, appends, renames and unlinks are recorded",
+   "files written by child processes (networkx_analyze.py, networkx_reduce.py, rasterize_svg.py, browser_qa.py) and the duckdb process; with NEWSROOM_GROUP_TOOLS=1 runDeclared compares the watched folders (recursively) for new, rewritten and removed files (other than the program's own bookkeeping files), but a rewrite that keeps size and modification time is only seen for evidence files (by content hash), so a non-evidence file rewritten with the same size and modification time is not seen; rewrites and removals are only refused, never rolled back; and a file a call running at the same time wrote without a judged write is refused but not deleted; the Pi process's own session files (<run>/session/, started by src/pi.rs with --session-dir) are not judged either",
+   "hand-off writers (asHandoffWriter here, as_writer in src/group_guard.rs): with NEWSROOM_GROUP_ENFORCE=1 the path, the artifact kind and the asking tool (requested_by) are checked against the groups.json handoffs table; the content is checked by the writers themselves (knowledge_writer: computation replay and query-rows equality; agent_record_writer and decision_writer: fixed fields), and a requester kept there as not_measured is a static inference no test run has seen, so any requester not measured is refused until a run measures it; all of this is off by default and only applies with NEWSROOM_GROUP_ENFORCE=1 (NEWSROOM_GROUP_HANDOFF=1)",
+   "the phase-metrics file (NEWSROOM_PHASE_METRICS_FILE, outside the run folder), the fault-injection marker (test harness only) and atomic temp files",
+   "writes made through closures, callbacks or a chain or edit tool that calls another tool's execute: these are attributed to the tool that was running, or counted 待查 when none was",
+   "reads of any kind"
+  ]
+ },
+ "review_split": {
+  "note": "NEWSROOM_REVIEW_SPLIT=1 only: draw tools never write review records, review tools never write or move draw products (a rejected manifest is moved by review_reject_writer).",
+  "draw_tools": [
+   "newsroom_visual_backend_plan",
+   "newsroom_viz_plan",
+   "newsroom_viz_render",
+   "newsroom_explainer_plan",
+   "newsroom_explainer_render",
+   "newsroom_illustration_plan",
+   "newsroom_illustration_generate",
+   "newsroom_editorial_discovery",
+   "newsroom_story_graph",
+   "newsroom_visual_concepts",
+   "newsroom_semantic_novelty",
+   "newsroom_asset_requirements",
+   "newsroom_reference_patterns",
+   "newsroom_infographic_plan",
+   "newsroom_infographic_render",
+   "newsroom_infographic_revise",
+   "newsroom_infographic_edit",
+   "newsroom_style_map",
+   "newsroom_basemap_prepare",
+   "newsroom_network_reduce",
+   "newsroom_publication_plan",
+   "newsroom_publication_render",
+   "newsroom_portable_publication",
+   "newsroom_chart"
+  ],
+  "review_tools": [
+   "newsroom_viz_lint",
+   "newsroom_explainer_lint",
+   "newsroom_illustration_lint",
+   "newsroom_infographic_lint",
+   "newsroom_viz_critic",
+   "newsroom_explainer_critic",
+   "newsroom_illustration_critic",
+   "newsroom_infographic_critic",
+   "newsroom_infographic_preview",
+   "newsroom_publication_qa",
+   "newsroom_model_validate",
+   "newsroom_map_validate",
+   "newsroom_expert_preference_record",
+   "newsroom_award_mode_status",
+   "newsroom_competition_preflight",
+   "newsroom_infographic_vision_critic"
+  ],
+  "review_path_prefixes": [
+   "visualizations/qa/",
+   "visualizations/critics/",
+   "visualizations/lints/",
+   "visualizations/illustrations/critics/",
+   "visualizations/illustrations/lints/",
+   "infographics/qa/",
+   "infographics/critics/",
+   "infographics/lints/",
+   "infographics/vision-critics/",
+   "infographics/previews/",
+   "infographics/competition-preflight/",
+   "publications/qa/",
+   "editorial/preferences/",
+   "editorial/award-runs/"
+  ],
+  "reject_writer": "review_reject_writer"
  }
 }

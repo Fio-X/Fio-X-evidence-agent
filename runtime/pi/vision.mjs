@@ -6,7 +6,23 @@ export const VISION_RUBRIC_KEYS = [
   'source_legibility', 'responsive_quality', 'illustration_integration',
   'color_contrast', 'editorial_distinctiveness',
 ];
-export const VISION_PATCH_FIELDS = ['span', 'emphasis', 'priority', 'move_before', 'mobile_move_before'];
+// NEWSROOM_VISION_VETO_ONLY (default on; only the exact "0" turns it off): the image-aware critic can only veto. Release rests on the program evidence
+// (deterministic critic, render checks, lint, preview hashes, browser QA); a model passed=true is never read as proof. A record fails when it is
+// re-derived as failing: score missing or below 80, any rubric item missing or below 60, or a blocker issue (an explicit passed=false, the
+// model's own veto, fails too). Mirrors src/verify.rs vision_critic_fails and scripts/verify_artifact.py vision_critic_fails.
+export const visionVetoOnlyEnabled = () => process.env.NEWSROOM_VISION_VETO_ONLY !== '0';
+export const VISION_SCORE_FLOOR = 80;
+export const VISION_RUBRIC_FLOOR = 60;
+const plainNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+export function visionCriticFails(critic) {
+  if (critic?.passed === false) return true;
+  const score = plainNumber(critic?.score);
+  if (score === null || score < VISION_SCORE_FLOOR) return true;
+  const rubric = critic?.rubric && typeof critic.rubric === 'object' ? critic.rubric : {};
+  if (VISION_RUBRIC_KEYS.some((key) => { const value = plainNumber(rubric[key]); return value === null || value < VISION_RUBRIC_FLOOR; })) return true;
+  return Array.isArray(critic?.issues) && critic.issues.some((issue) => issue?.severity === 'blocker');
+}
+export const VISION_PATCH_FIELDS =['span', 'emphasis', 'priority', 'move_before', 'mobile_move_before'];
 
 function numberInRange(value, min, max) { return Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max; }
 function text(value) { return String(value ?? '').trim(); }

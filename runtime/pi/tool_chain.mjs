@@ -111,7 +111,7 @@ export async function runToolChain({ steps, call, enabled, schemaOf, record = ()
     if (signal?.aborted) return cancelled(index, "before " + step.name);
     let result;
     try {
-      result = await call(step.name, params);
+      result = await call(step.name, params, done.map((d) => d.tool));
       if (result?.isError === true) throw new Error(textOf(result) || `${step.name} returned an error result`);
     } catch (error) {
       await record({ phase: "end", step: index, tool: step.name, isError: true, error: String(error?.message ?? error) });

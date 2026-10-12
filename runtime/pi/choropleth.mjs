@@ -15,7 +15,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getBasemap } from "./basemap_registry.mjs";
-import { ECONOMY_NAME_MODES, economyEntryFor } from "./economy_names.mjs";
+import { fitUsProjection } from "./us_projection.mjs";
+import { ECONOMY_NAME_MODES, economyEntryFor, usStatesEnabled } from "./economy_names.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -43,13 +44,47 @@ export function neAttributesAsset() {
   return ATTRIBUTES.asset;
 }
 
-/** Basemap feature indices (into both the sidecar and the vendored geometry) carrying this iso3. Empty when none. */
-export function featureIndicesForIso3(iso3) {
-  return ATTRIBUTES.byIso3.get(iso3) ?? [];
+// US state maps (NEWSROOM_US_STATES=1, category_names 'us_state'): the 51 features of the registered state basemap live in
+// the same feature-index space as the world basemap, shifted by US_INDEX_BASE (a world index is < 1000 and never reaches it),
+// so every renderer path that walks `featureIndices` works on states unchanged. Each state's region id is "US-<USPS>".
+export const US_INDEX_BASE = 1000;
+export const CHOROPLETH_US_BASEMAP_ID = "naturalearth_admin1_us_110m";
+
+function loadUsAttributes() {
+  const asset = JSON.parse(readFileSync(join(HERE, "assets", "naturalearth-admin1-us-110m-attributes.json"), "utf8"));
+  const byId = new Map(asset.features.map((feature) => [`US-${feature.usps}`, [US_INDEX_BASE + feature.index]]));
+  return { asset, byId };
+}
+const US_ATTRIBUTES = loadUsAttributes();
+
+export { usStatesEnabled };
+
+/** True for a choropleth that draws US states: the switch is on and the spec says category_names 'us_state'. */
+export function isUsStateMap(spec) {
+  return usStatesEnabled() && spec?.category_names === "us_state";
 }
 
-/** Sidecar attribute entry for basemap feature `index`, or null. */
+/** Feature indices of one US state map, in basemap order. */
+export function usFeatureIndexList() {
+  return US_ATTRIBUTES.asset.features.map((feature) => US_INDEX_BASE + feature.index);
+}
+
+/** Feature indices to draw for a choropleth spec: every world feature, or the 51 states for a US state map. */
+export function choroplethFeatureIndexList(spec) {
+  return isUsStateMap(spec) ? usFeatureIndexList() : Array.from({ length: neFeatureCount() }, (_, index) => index);
+}
+
+/** Basemap feature indices (into both the sidecar and the vendored geometry) carrying this iso3. Empty when none. */
+export function featureIndicesForIso3(iso3) {
+  return ATTRIBUTES.byIso3.get(iso3) ?? US_ATTRIBUTES.byId.get(iso3) ?? [];
+}
+
+/** Sidecar attribute entry for basemap feature `index`, or null. A US state entry carries name and label point only. */
 export function neFeatureAttributes(index) {
+  if (index >= US_INDEX_BASE) {
+    const feature = US_ATTRIBUTES.asset.features[index - US_INDEX_BASE];
+    return feature ? { index, iso3: `US-${feature.usps}`, name: feature.name, label: feature.label } : null;
+  }
   return ATTRIBUTES.asset.features[index] ?? null;
 }
 
@@ -59,6 +94,7 @@ function basemapFeatureList() {
 
 /** GeoJSON geometry of basemap feature `index` from the registered basemap, or null. */
 export function neFeatureGeometry(index) {
+  if (index >= US_INDEX_BASE) return getBasemap(CHOROPLETH_US_BASEMAP_ID)?.data?.features?.[index - US_INDEX_BASE]?.geometry ?? null;
   return basemapFeatureList()[index]?.geometry ?? null;
 }
 
@@ -120,6 +156,19 @@ export function isWorldExtent(spec) {
   return mapWorldEnabled() && spec?.map_extent === "world";
 }
 
+/**
+ * World list mode (NEWSROOM_MAP_WORLD_LIST, off by default; only the exact string "1" turns it on, and only with
+ * world mode): the countries the map does not label are each printed once in a grouped list under the map. The
+ * switch is the program's own - no chart spec can turn it on.
+ */
+export function mapWorldListEnabled() {
+  return process.env.NEWSROOM_MAP_WORLD_LIST === "1";
+}
+
+export function isWorldListMode(spec) {
+  return mapWorldListEnabled() && isWorldExtent(spec);
+}
+
 /** World mode draws at most this many text labels on the map. */
 export const WORLD_LABEL_MAX = 8;
 
@@ -148,6 +197,20 @@ export function worldLabelIso3s(items, spec) {
   out.add(byValue.find((item) => val(item) === top).iso3);
   const highlights = new Set((spec?.highlight_values ?? []).map(String));
   for (const item of list) if (highlights.has(String(item.row[spec.category_field]))) out.add(item.iso3);
+  return out;
+}
+
+/**
+ * World list mode: the iso3 codes that are printed in the list under the map - every plotted country that
+ * worldLabelIso3s does not label on the map. `items` are joined, plottable rows; the renderer and render QA both
+ * call this, QA with items it re-derived from the rows.
+ */
+export function worldListIso3s(items, spec) {
+  const labelled = worldLabelIso3s(items, spec);
+  const out = new Set();
+  for (const item of items ?? []) {
+    if (item?.iso3 && Number.isFinite(Number(item.row?.[spec?.value_field])) && !labelled.has(item.iso3)) out.add(item.iso3);
+  }
   return out;
 }
 
@@ -189,6 +252,14 @@ export function lintChoroplethSpec(spec, rows) {
   if (duplicates.length) {
     const detail = duplicates.slice(0, 5).map(([iso3, raws]) => `${iso3} (${raws.join(", ")})`).join("; ");
     blockers.push(`choropleth category_field '${spec.category_field}' has ${duplicates.length} duplicate economy/economies mapping to the same map feature(s): ${detail}`);
+  }
+  if (isUsStateMap(spec)) {
+    // A US state map is the whole of the United States: a state with no row would be an unexplained blank on it.
+    const have = new Set(joined.filter((item) => item.entry?.kind === "economy" && item.iso3).map((item) => item.iso3));
+    const missing = usFeatureIndexList().map((index) => neFeatureAttributes(index)).filter((attrs) => attrs && !have.has(attrs.iso3)).map((attrs) => attrs.name);
+    if (missing.length) {
+      blockers.push(`choropleth category_names 'us_state' needs a row for every state and DC, but ${missing.length} of 51 ${missing.length === 1 ? "has" : "have"} none: ${missing.slice(0, 8).join(", ")}`);
+    }
   }
   if (world) {
     const labelled = worldLabelIso3s(joined.filter((item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(Number(item.row?.[spec.value_field]))), spec);
@@ -421,6 +492,7 @@ export function fitWorldProjection(points, left, right, top, bottom, paddingRati
 
 /** Fit whichever projection chooseMapProjection picked to a pixel rect. */
 export function fitMapProjection(choice, points, left, right, top, bottom, paddingRatio = 0.08) {
+  if (choice.kind === "us") return fitUsProjection(points, left, right, top, bottom, paddingRatio);
   return choice.kind === "world"
     ? fitWorldProjection(points, left, right, top, bottom, paddingRatio)
     : fitAzimuthalProjection(choice.lon0, choice.lat0, points, left, right, top, bottom, paddingRatio);

@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
+import { FLOW_MAP_LABEL_STYLES, LEDGER_MAP_RIGHT, arrowSize, flowMapLabelsEnabled, flowMapStyleFor, flowNumberTexts, flowNumberTies, flowWidth, layoutFlowMapLabels, ledgerGeometry, widthSamples } from "./flow_map_labels.mjs";
+import { circleLegendValues, circleRadius, planTrunk, resolveFlowStyle } from "./flow_styles.mjs";
 import { BASEMAP_CONTENT_HASH, BASEMAP_ID, BASEMAP_LICENSE, BASEMAP_SOURCE_URL, GEOMETRY_SEMANTICS, basemapAdequacy, getBasemap, MAP_PROJECTIONS, coordinateExtent, createProjection, createProjectionForExtent, geometryDisclosure, greatCirclePoints, optimizeAbstractOdRoutes, parseRouteGeometry, parseTrajectoryPoints, projectedPolylinePath, renderBasemapPaths, selectRoutes, trajectoryLines, validRouteGeometry } from "./cartography.mjs";
 import { CATEGORY_NAME_MODES, CURRENCY_NAME_MODES, ECONOMY_NAME_MODES, economyEntryFor, resolveEconomyDisplayName, unmappedEconomyNameValues } from "./economy_names.mjs";
 import { ASCENT_RATIO, ASCENT_RATIO as QA_ASCENT_RATIO, BOLD_WEIGHT_THRESHOLD as QA_BOLD_WEIGHT_THRESHOLD, DESCENT_RATIO, DESCENT_RATIO as QA_DESCENT_RATIO, LATIN_ADVANCE_WIDTHS as QA_LATIN_ADVANCE_WIDTHS, LATIN_BOLD_ADVANCE_WIDTHS as QA_LATIN_BOLD_ADVANCE_WIDTHS, TEXT_WIDTH_FACTORS as QA_TEXT_WIDTH_FACTORS, checkSvgGeometry, estimateTextWidth } from "./render_qa_geometry.mjs";
 import { checkSvgContrast } from "./render_qa_contrast.mjs";
 import { checkChoroplethValueLabels } from "./render_qa_labels.mjs";
 import { parseXml } from "./render_qa_svg.mjs";
-import { CHOROPLETH_BASEMAP_ID, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, mapWorldEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
+import { chartTextWordsEnabled, storyTextBlockers, storyFormsEnabled, waveFieldErrors, waveBlockers, provisionalMap, hasWaveFields, STORY_CHART_TYPES, storyChartErrors, dotBlockers, dotPlan, dotAlgorithmText, clockBlockers, clockPlan, clockCaptionLines, dayClockNote, plainNum, STORY_COLORS, storyTone, toneErrors, storyStrokeAttrs } from "./story_forms.mjs";
+import { renderStyleErrors, renderStylesEnabled, restyleSvg, specRenderAccent, specRenderStyle, STYLED_FRAME_NAME, STYLED_FRAME_NAME_EN } from "./render_styles.mjs";
+import { TILE_MAP_MAX_ROWS, lintTileMapRows, tileMapMark, orderedPoints, resolveUsState, tileMapEnabled, usStateShortName, usStates } from "./us_states.mjs";
+import { CHOROPLETH_BASEMAP_ID, CHOROPLETH_US_BASEMAP_ID, isUsStateMap, usFeatureIndexList, choroplethFeatureIndexList, bboxCenter, chooseMapProjection, enclosingCap, classBreaks, isRowSlice, classifyValue, featurePath, fitAzimuthalProjection, fitMapProjection, framingRings, geometryRings, clippedFramingRings, joinChoroplethRows, lintChoroplethSpec, isAntarcticaFeature, isWorldExtent, isWorldListMode, mapWorldEnabled, mapWorldListEnabled, WORLD_FRAME_POINTS, worldLabelIso3s, worldListIso3s, neFeatureAttributes, neFeatureCount, neFeatureGeometry, niceBreaks, projectedFeatureBBox, ringWithinHorizon } from "./choropleth.mjs";
 
 export const CHART_TYPES = [
   "horizontal_bar",
@@ -113,6 +118,18 @@ const DEFAULT_FONT_SANS = "Arial, Helvetica, sans-serif";
 // produce invalid SVG - CSS accepts either quote style for a font-family
 // name, so single quotes sidestep the clash without touching every call site.
 export const HOUSE_FONT_SANS = "'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Arial, Helvetica, sans-serif";
+// NEWSROOM_TYPESET_TABULAR_DIGITS=1 (exact): PingFang's digits are proportional ("111111" is far narrower than "666666")
+// and font-variant-numeric does nothing on it. This stack leads with faces whose digits all have one width (Helvetica
+// Neue on macOS, Arial, Liberation Sans on Linux). They hold no CJK glyphs, so Chinese text still falls through to the
+// CJK faces character by character; only Latin letters and digits change face.
+export const HOUSE_FONT_SANS_TABULAR = "'Helvetica Neue', Arial, 'Liberation Sans', 'PingFang SC', 'Heiti SC', 'Noto Sans SC', 'Microsoft YaHei', Helvetica, sans-serif";
+// Pair kerning (Arial kerns "11") would still make "111111" narrower than "666666", so the same switch turns it off.
+export function tabularRootAttrs() {
+  return process.env.NEWSROOM_TYPESET_TABULAR_DIGITS === "1" ? ' font-kerning="none"' : "";
+}
+export function houseFontSans() {
+  return process.env.NEWSROOM_TYPESET_TABULAR_DIGITS === "1" ? HOUSE_FONT_SANS_TABULAR : HOUSE_FONT_SANS;
+}
 
 // House style (now the DEFAULT - see styleFor/applyStyle below; "legacy" is
 // the only opt-out): one white paper, one reserved accent red, and the rest
@@ -247,13 +264,13 @@ function applyStyle(spec) {
     const house = HOUSE_PALETTES.house;
     PALETTE = house;
     PAPER = house.paper;
-    FONT_SANS = HOUSE_FONT_SANS;
+    FONT_SANS = houseFontSans();
     // Fix 12: all sans - the title face collapses onto the same stack as
     // everything else under house style (was HOUSE_FONT_TITLE, a Songti-led
     // serif stack, now removed). Legacy is unaffected: its FONT_TITLE already
     // equalled FONT_SANS (both DEFAULT_FONT_SANS) before this fix, and still
     // does - see the "legacy" branch above, untouched.
-    FONT_TITLE = HOUSE_FONT_SANS;
+    FONT_TITLE = houseFontSans();
     CHOROPLETH_RAMP = house.choroplethRamp;
     WAFFLE_GREYS = house.waffleGreySteps;
     // accent and accent2 are both already >=4.5:1 on white (see the palette
@@ -340,8 +357,15 @@ function treemapZhOkuFromBillions(value) {
   return fracPart ? `${withCommas}.${fracPart}` : withCommas;
 }
 
+// NEWSROOM_TYPESET_TREEMAP_ZH=1 (exact): a Chinese treemap writes 万 / 亿 / 万亿 like the axes do, not k / m / bn. A unit
+// that already carries its own scale ("$M" = 百万美元) is not scaled a second time: it keeps the plain grouped number.
 function treemapValueLabel(value, unit, lang) {
-  const raw = fmt(value, unit);
+  const zhScaled = lang === "zh" && process.env.NEWSROOM_TYPESET_TREEMAP_ZH === "1";
+  if (zhScaled && unit === "$M" && Number.isFinite(value) && Math.abs(value) >= 1000) {
+    const [intPart, fracPart] = halfUpFixed(value, 0, 0).replace("-", "").split(".");
+    return `${value < 0 ? "-" : ""}${intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fracPart ? `.${fracPart}` : ""}百万美元`;
+  }
+  const raw = zhScaled ? fmt(value, unit, null, "zh") : fmt(value, unit);
   if (lang !== "zh" || !unit || unit === "%") return raw;
   if (unit === "$B") return `${treemapZhOkuFromBillions(value)}亿美元`;
   const zhUnit = TREEMAP_ZH_UNIT[unit];
@@ -745,7 +769,7 @@ function solveLaneAssignment(events, plotLeft, labelRight) {
 // markers, plus an ordered caption list, only when the search proves no
 // such placement exists - never a forced overlapping placement, never a
 // silently dropped label.
-function layoutEventAnnotations(spec, rows, xScale, plotLeft, plotRight, maxChars = 16, labelRight = plotRight) {
+function layoutEventAnnotations(spec, rows, xScale, plotLeft, plotRight, maxChars = 16, labelRight = plotRight, forceFallback = false) {
   const events = [];
   // A multi-series line shares one x axis across every series, so a point
   // annotation's match_field/match_value can match one row per series at
@@ -761,6 +785,7 @@ function layoutEventAnnotations(spec, rows, xScale, plotLeft, plotRight, maxChar
   }
   events.sort((a, b) => a.x - b.x);
   if (!events.length) return { events, fallback: false };
+  if (forceFallback) return { events, fallback: true }; // numbered_notes (story forms): numbered badges, leaders and the ordered caption list
   // A label whose full text would need annotationLabel()'s own "…" ellipsis
   // to fit the lane's per-row budget reads better as a caption - the
   // fallback path shows every annotation's complete text, via its own more
@@ -1147,6 +1172,31 @@ export function chartValueFormatter(spec, values) {
   return (value, unit = spec?.unit) => fmtSpec(spec, value, unit, decimals);
 }
 
+// NEWSROOM_TYPESET_HALF_UP=1 (exact): round half up on the exact decimal value a reader would see, not on its binary
+// float. 11500 / 10000 is 1.15 in text but sits just under it in binary, so toFixed(1) printed 1.1万 beside 12500 -> 1.3万.
+// halfUpFixed(value, power, digits) is round-half-away-from-zero of value / 10^power to `digits` decimals, computed on
+// the shortest decimal spelling of `value` with integer arithmetic. Off, it is exactly (value / 10**power).toFixed(digits).
+function halfUpOn() {
+  return process.env.NEWSROOM_TYPESET_HALF_UP === "1";
+}
+export function halfUpFixed(value, power, digits, force = false) {
+  if (!(force || halfUpOn()) || !Number.isFinite(value)) return (value / 10 ** power).toFixed(digits);
+  const [mantissa, exponent = "0"] = String(Math.abs(value)).toLowerCase().split("e");
+  const [whole, fraction = ""] = mantissa.split(".");
+  const coefficient = BigInt(whole + fraction);
+  // |value| = coefficient * 10^(exp10); we want round(|value| / 10^power * 10^digits)
+  const shift = Number(exponent) - fraction.length - power + digits;
+  let scaled;
+  if (shift >= 0) scaled = coefficient * 10n ** BigInt(shift);
+  else {
+    const divisor = 10n ** BigInt(-shift);
+    scaled = (coefficient * 2n + divisor) / (divisor * 2n); // floor(c / d + 1/2)
+  }
+  const text = scaled.toString().padStart(digits + 1, "0");
+  const body = digits > 0 ? `${text.slice(0, text.length - digits)}.${text.slice(text.length - digits)}` : text;
+  return value < 0 ? `-${body}` : body;
+}
+
 // zh value labels at or above 1万 use 万 / 亿 / 万亿 like the axis does, with
 // four significant digits (161.1万, -325.6万, 1.611亿, 1611万), never a trailing
 // zero. Exported so a hero number can print through the same formatter.
@@ -1156,7 +1206,7 @@ export function zhScaleText(value, minDecimals = 0) {
   const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : [1e4, "万"];
   const v = abs / div;
   const d = v >= 1000 ? 0 : v >= 100 ? 1 : v >= 10 ? 2 : 3;
-  let digits = String(Number(v.toFixed(d)));
+  let digits = String(Number(halfUpFixed(abs, Math.round(Math.log10(div)), d)));
   const have = digits.includes(".") ? digits.split(".")[1].length : 0;
   const want = Math.min(3, Math.max(0, minDecimals));
   if (have < want) digits = v.toFixed(want); // from the value: never pad a rounded string
@@ -1187,7 +1237,7 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
     // magnitude-branch guess below, and - unlike every branch below - never
     // strips trailing zeros: every label in the chart must show exactly the
     // same number of decimal places (0.720 must stay "0.720", not "0.72").
-    text = value.toFixed(decimals);
+    text = halfUpFixed(value, 0, decimals);
     if (lang === "zh" && abs >= 10_000) {
       text = zhScaleText(value, decimals);
     } else if (value !== 0 && Number(text) === 0) {
@@ -1209,14 +1259,14 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
   else if (lang === "zh" && abs >= 1_000) {
     // zh readers count in 万 and 亿, not k/m/bn: same one-decimal-below-10 rule per unit;
     // 1,000-9,999 is the plain integer. Only a zh caller (fmtSpec, tick sites) passes lang.
-    if (abs >= 1_000_000_000_000) text = `${(value / 1_000_000_000_000).toFixed(abs >= 10_000_000_000_000 ? 0 : 1)}万亿`;
-    else if (abs >= 100_000_000) text = `${(value / 100_000_000).toFixed(abs >= 1_000_000_000 ? 0 : 1)}亿`;
-    else if (abs >= 10_000) text = `${(value / 10_000).toFixed(abs >= 100_000 ? 0 : 1)}万`;
+    if (abs >= 1_000_000_000_000) text = `${halfUpFixed(value, 12, abs >= 10_000_000_000_000 ? 0 : 1)}万亿`;
+    else if (abs >= 100_000_000) text = `${halfUpFixed(value, 8, abs >= 1_000_000_000 ? 0 : 1)}亿`;
+    else if (abs >= 10_000) text = `${halfUpFixed(value, 4, abs >= 100_000 ? 0 : 1)}万`;
     else text = value.toFixed(0);
   }
-  else if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1)}bn`;
-  else if (abs >= 1_000_000) text = `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
-  else if (abs >= 1_000) text = `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
+  else if (abs >= 1_000_000_000) text = `${halfUpFixed(value, 9, abs >= 10_000_000_000 ? 0 : 1)}bn`;
+  else if (abs >= 1_000_000) text = `${halfUpFixed(value, 6, abs >= 10_000_000 ? 0 : 1)}m`;
+  else if (abs >= 1_000) text = `${halfUpFixed(value, 3, abs >= 10_000 ? 0 : 1)}k`;
   else if (abs >= 100) text = value.toFixed(0);
   else if (abs >= 10) text = value.toFixed(1).replace(/\.0$/, "");
   else text = value.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
@@ -1230,7 +1280,12 @@ export function fmt(value, unit = "", decimals = null, lang = "en") {
 // `abs>=10` stripping of a trailing ".0"/".00". Only choropleth per-region
 // labels (on-map, overflow and inset) use this; fmt() itself is untouched so
 // every other chart type's own formatting/snapshot tests are unaffected.
-export function choroplethValueText(value, unit = "", spec = null) {
+// Whether any value on a choropleth is 1万 or more: the context the zh label rule below needs. Callers pass every value
+// of the regions they draw (the verifiers re-derive the same set from the regions' data-value).
+export function choroplethWanContext(values) {
+  return values.some((v) => Number.isFinite(v) && Math.abs(v) >= 10_000);
+}
+export function choroplethValueText(value, unit = "", spec = null, wanContext = false) {
   if (!Number.isFinite(value)) return "";
   // P2: a calendar year or an integer count is spelled as the integer it is
   // ("2017", "3"), never "2.0k" / "3.0". No thousands separator and no zh
@@ -1243,6 +1298,22 @@ export function choroplethValueText(value, unit = "", spec = null) {
   }
   const abs = Math.abs(value);
   let text;
+  // NEWSROOM_TYPESET_CHOROPLETH_ZH=1 (exact): a Chinese page spells a non-integer value from 1万 up in 万 / 亿 / 万亿, one
+  // decimal, rounded half up on the exact decimal value (halfUpFixed), the suffix chosen by the raw magnitude. Below 1万 it is
+  // the plain one-decimal number (no k). Both verifiers re-derive this exact text from data-value, so there is no tolerance.
+  if (process.env.NEWSROOM_TYPESET_CHOROPLETH_ZH === "1" && spec && vizLang(spec) === "zh") {
+    // A unit that already says 万 / 亿 / 千 / 百万 gets no second scale: the plain one-decimal number (12000.0 万人, not 1.2万 万人).
+    // On a map that has a value of 1万 or more, a value under 1万 is an integer (8765.5 人 -> 8766 人); on a map with none, one decimal.
+    if (/[万亿千]|百万/.test(unit)) text = halfUpFixed(value, 0, 1, true);
+    else if (abs < 10_000 && wanContext) text = halfUpFixed(value, 0, 0, true).replace(/^-0$/, "0");
+    else if (abs >= 1_000_000_000_000) text = `${halfUpFixed(value, 12, 1, true)}万亿`;
+    else if (abs >= 100_000_000) text = `${halfUpFixed(value, 8, 1, true)}亿`;
+    else if (abs >= 10_000) text = `${halfUpFixed(value, 4, 1, true)}万`;
+    else text = halfUpFixed(value, 0, 1, true);
+    if (unit === "%") return `${text}%`;
+    if (unit && /^[£$€¥]$/.test(unit)) return `${unit}${text}`;
+    return unit ? `${text} ${unit}` : text;
+  }
   if (abs >= 1_000_000_000) text = `${(value / 1_000_000_000).toFixed(1)}bn`;
   else if (abs >= 1_000_000) text = `${(value / 1_000_000).toFixed(1)}m`;
   else if (abs >= 1_000) text = `${(value / 1_000).toFixed(1)}k`;
@@ -1250,6 +1321,27 @@ export function choroplethValueText(value, unit = "", spec = null) {
   if (unit === "%") return `${text}%`;
   if (unit && /^[£$€¥]$/.test(unit)) return `${unit}${text}`;
   return unit ? `${text} ${unit}` : text;
+}
+
+// World list rows (NEWSROOM_MAP_WORLD_LIST=1 only; the map's own labels keep choroplethValueText untouched): a value
+// just below a class boundary whose one-decimal text equals the boundary's text (1.952 -> "2.0" beside a 2 boundary)
+// would read as the next class, so that row alone gets a second decimal. Values on or above the boundary are unchanged.
+export function worldListValueText(value, unit = "", spec = null, breaks = [], wanContext = false) {
+  const base = choroplethValueText(value, unit, spec, wanContext);
+  if (!Number.isFinite(value) || Number.isInteger(value) || Math.abs(value) >= 1000 || !base) return base;
+  // On a typeset zh page the label's own digits are rounded half up (halfUpFixed); the extra digit must follow the same rule.
+  const typesetZh = process.env.NEWSROOM_TYPESET_CHOROPLETH_ZH === "1" && spec && vizLang(spec) === "zh";
+  const text1 = typesetZh ? halfUpFixed(value, 0, 1, true) : value.toFixed(1);
+  for (const edge of (breaks ?? []).slice(1, -1)) {
+    if (value < edge && choroplethValueText(edge, unit, spec, wanContext) === base) return base.replace(text1, typesetZh ? halfUpFixed(value, 0, 2, true) : value.toFixed(2));
+  }
+  return base;
+}
+
+// The same class breaks the renderer draws with, derived from the values alone (render QA calls this).
+export function worldListBreaksFor(values, spec = null) {
+  const nums = (values ?? []).map(Number).filter(Number.isFinite);
+  return classBreaks(nums, 5, { integer: Boolean(spec && specValueKind(spec)) && nums.every(Number.isInteger) }).breaks;
 }
 
 // Follow-up fix (4): a zh-language page must never print the raw English
@@ -1322,6 +1414,48 @@ function zhBillionsActive(spec, unit) {
   return vizLang(spec) === "zh" && spec?.unit === "$B" && (unit === "$B" || unit === "");
 }
 
+// NEWSROOM_UNIT_AWARE_LABELS=1 (exact "1", default off): a unit that already starts with a magnitude (百万吨, 千万人, 亿元, million
+// tonnes) is converted, not stacked: the number is rescaled to the page language's own units (GB/T 15835-2011 8.3.2: 万 and 亿
+// only) and the magnitude leaves the unit text: 4835.3 百万吨 -> 48.4 亿吨; en: 4.8bn tonnes (fixed m / bn). One function, so
+// Sankey nodes, heatmap cells, legends and any caller that wants the same spelling agree. Bare-number mode (unit "": the unit is
+// said once elsewhere) never rescales, so one chart keeps one scale and the single unit line stays true.
+function unitAwareLabelsEnabled() { return process.env.NEWSROOM_UNIT_AWARE_LABELS === "1"; }
+const UNIT_MAGNITUDE_ZH = { 万亿: 1e12, 千亿: 1e11, 十亿: 1e9, 千万: 1e7, 百万: 1e6, 亿: 1e8, 万: 1e4 };
+// 千克 / 千米 / 千瓦 / 千焦 / 千卡 are SI prefixes on a base unit, not a magnitude word.
+const UNIT_MAGNITUDE_RE = /^\s*(万亿|千亿|十亿|千万|百万|亿|万|千(?![克米瓦焦卡])|thousand|million|billion|trillion)\s*(.*)$/i;
+const UNIT_MAGNITUDE_EN = { thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12, 千: 1e3 };
+function unitMagnitude(unit) {
+  const m = typeof unit === "string" ? UNIT_MAGNITUDE_RE.exec(unit) : null;
+  if (!m) return null;
+  const word = m[1].toLowerCase();
+  return { factor: UNIT_MAGNITUDE_ZH[word] ?? UNIT_MAGNITUDE_EN[word], rest: m[2] };
+}
+function unitCarriesScale(unit) { return unitMagnitude(unit) !== null; }
+function unitAwareNumber(n, decimals) {
+  const abs = Math.abs(n);
+  let text;
+  if (Number.isInteger(decimals)) text = halfUpFixed(n, 0, decimals, true);
+  else if (abs >= 100) text = halfUpFixed(n, 0, 0, true);
+  else if (abs >= 10) text = halfUpFixed(n, 0, 1, true).replace(/\.0$/, "");
+  else text = halfUpFixed(n, 0, 2, true).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  if (/^-0(\.0+)?$/.test(text)) text = text.slice(1);
+  const [whole, frac] = text.replace("-", "").split(".");
+  return (text.startsWith("-") ? "-" : "") + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (frac !== undefined ? `.${frac}` : "");
+}
+// value in `unit` (which carries a magnitude) as the page language writes it. Exported: the one spelling for chart labels.
+export function unitAwareText(value, unit, lang = "zh", decimals = null) {
+  const mag = unitMagnitude(unit);
+  if (!mag || !Number.isFinite(value)) return null;
+  const actual = value * mag.factor, abs = Math.abs(actual);
+  if (lang === "zh") {
+    const [div, suffix] = abs >= 1e12 ? [1e12, "万亿"] : abs >= 1e8 ? [1e8, "亿"] : abs >= 1e4 ? [1e4, "万"] : [1, ""];
+    const tail = `${suffix}${mag.rest}`;
+    return `${unitAwareNumber(actual / div, decimals)}${tail ? ` ${tail}` : ""}`;
+  }
+  const [div, suffix] = abs >= 1e9 ? [1e9, "bn"] : abs >= 1e6 ? [1e6, "m"] : [1, ""];
+  return `${unitAwareNumber(actual / div, decimals)}${suffix}${mag.rest ? ` ${mag.rest}` : ""}`;
+}
+
 // Value-label formatter shared by every chart type that has a spec.
 // `unit` is what this particular label should carry ("" for a bare number
 // on a house-style row that shows the unit once elsewhere).
@@ -1332,6 +1466,11 @@ export function fmtSpec(spec, value, unit = spec?.unit, decimals = null) {
     if (kind === "year") return String(value);
     const text = Math.abs(value) >= 10_000 ? value.toLocaleString("en-US") : String(value);
     return unit ? `${text} ${unit}` : text;
+  }
+  if (unitAwareLabelsEnabled()) {
+    const converted = unit ? unitAwareText(value, unit, vizLang(spec), decimals) : null;
+    if (converted !== null) return converted;
+    if (!unit && unitCarriesScale(spec?.unit)) return unitAwareNumber(value, decimals); // bare number: the unit line carries the scale
   }
   if (zhBillionsActive(spec, unit)) {
     const num = treemapZhOkuFromBillions(value);
@@ -1381,12 +1520,12 @@ export function hashRows(rows) {
   return createHash("sha256").update(JSON.stringify(canonicalizeRows(rows))).digest("hex");
 }
 
-function inferVisualFamily(chartType) {
+export function inferVisualFamily(chartType) {
   if (["sankey", "alluvial", "parallel_sets"].includes(chartType)) return "flow";
   if (["node_link", "adjacency_matrix", "chord"].includes(chartType)) return "relationship";
   if (chartType === "hierarchy_tree") return "hierarchy";
   if (["timeline", "streamgraph", "trajectory_profile"].includes(chartType)) return "temporal";
-  if (["geo_flow_map", "cartographic_flow_map", "choropleth"].includes(chartType)) return "spatial";
+  if (["geo_flow_map", "cartographic_flow_map", "choropleth"].includes(chartType) || (chartType === "tile_map" && tileMapEnabled())) return "spatial";
   if (chartType === "process_schematic") return "explanatory";
   return "statistical";
 }
@@ -1527,6 +1666,8 @@ function requiredFields(spec) {
     choropleth: ["category_field", "value_field", "category_names", "basemap_id", "basemap_source_url", "basemap_license", "basemap_content_hash"],
     treemap: ["category_field", "value_field"],
     stacked_bar_100: ["category_field", "series_field", "value_field"],
+    ...(storyFormsEnabled() ? { people_dots: ["value_field", "part_field", "per_dot_field"], clock_dial: ["category_field", spec.clock_span === "day" ? "per_day_field" : "minutes_field"] } : {}),
+    ...(tileMapEnabled() ? { tile_map: ["category_field", "x_field", "value_field"] } : {}),
   };
   return [...common, ...(byType[spec.chart_type] ?? [])];
 }
@@ -1589,18 +1730,27 @@ export function validateVizSpec(spec) {
   if (!spec || typeof spec !== "object") return ["Visualization spec must be an object"];
   if (spec.verification_mode !== undefined && !["verified", "draft"].includes(spec.verification_mode)) errors.push("verification_mode must be 'verified' or 'draft'");
   if (spec.language !== undefined && !["en", "zh"].includes(spec.language)) errors.push("language must be 'en' or 'zh'");
+  if (renderStylesEnabled()) errors.push(...renderStyleErrors(spec));
   if (spec.category_names !== undefined && !CATEGORY_NAME_MODES.includes(spec.category_names)) errors.push(`category_names must be one of ${CATEGORY_NAME_MODES.join(", ")}`);
-  if (!CHART_TYPES.includes(spec.chart_type)) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
+  if (!CHART_TYPES.includes(spec.chart_type) && !(storyFormsEnabled() && STORY_CHART_TYPES.includes(spec.chart_type)) && !(spec.chart_type === "tile_map" && tileMapEnabled())) errors.push(`Unsupported chart_type '${spec.chart_type}'`);
   if (!READER_TASKS.includes(spec.reader_task)) errors.push(`Unsupported reader_task '${spec.reader_task}'`);
   if (spec.visual_family !== undefined && !VISUAL_FAMILIES.includes(spec.visual_family)) errors.push(`Unsupported visual_family '${spec.visual_family}'`);
   if (spec.visual_family && spec.visual_family !== inferVisualFamily(spec.chart_type) && !(spec.visual_family === "temporal" && spec.chart_type === "line")) errors.push(`visual_family '${spec.visual_family}' does not match chart_type '${spec.chart_type}'`);
   if (spec.x_scale !== undefined && !["linear", "log"].includes(spec.x_scale)) errors.push("x_scale must be linear or log");
   if (spec.y_scale !== undefined && !["linear", "log"].includes(spec.y_scale)) errors.push("y_scale must be linear or log");
+  if (spec.color_scale !== undefined) {
+    if (!heatmapLogColorEnabled()) errors.push("color_scale is not available");
+    else if (!["linear", "log"].includes(spec.color_scale)) errors.push("color_scale must be linear or log");
+    else if (spec.chart_type !== "heatmap") errors.push("color_scale only applies to chart_type heatmap");
+  }
   if (spec.decimals !== undefined && (!Number.isInteger(spec.decimals) || spec.decimals < 0 || spec.decimals > 3)) errors.push("decimals must be an integer between 0 and 3");
   if (spec.data_topology !== undefined && !["tabular", "flow_edges", "graph_edges", "hierarchy", "events", "categorical_flow", "geo_edges", "process_graph"].includes(spec.data_topology)) errors.push(`Unsupported data_topology '${spec.data_topology}'`);
   if (spec.data_topology && spec.data_topology !== inferDataTopology(spec.chart_type)) errors.push(`data_topology '${spec.data_topology}' does not match chart_type '${spec.chart_type}'`);
   // world mode is behind NEWSROOM_MAP_WORLD (off by default): a spec that sets map_extent is refused on any chart
   if (spec.map_extent !== undefined && !mapWorldEnabled()) errors.push("MAP_EXTENT_DISABLED: map_extent (world mode) is switched off; draw the economies on the default map, or use a ranked bar");
+  errors.push(...storyChartErrors(spec));
+  errors.push(...toneErrors(spec));
+  errors.push(...waveFieldErrors(spec)); // NEWSROOM_STORY_FORMS: refused on every chart while the switch is off
   if (spec.index_base !== undefined) {
     if (spec.chart_type !== "small_multiples" || spec.panel_mark !== "line") errors.push("INDEX_BASE_NOT_APPLICABLE: index_base only applies to chart_type small_multiples with panel_mark 'line'; drop index_base for this chart");
     else if (!(Number.isFinite(spec.index_base) && spec.index_base > 0)) errors.push("INDEX_BASE_NOT_APPLICABLE: index_base must be a positive number");
@@ -1642,6 +1792,8 @@ export function validateVizSpec(spec) {
       }
     }
     if (spec.extent_mode !== undefined && !["world","data"].includes(spec.extent_mode)) errors.push('extent_mode must be world or data');
+    if (flowMapLabelsEnabled() && spec.flow_map_labels !== undefined && !FLOW_MAP_LABEL_STYLES.includes(spec.flow_map_labels)) errors.push('flow_map_labels must be leader or ledger');
+    if (flowMapLabelsEnabled() && spec.flow_map_labels !== undefined && spec.geometry_semantics !== 'abstract_od') errors.push('flow_map_labels is supported only with geometry_semantics=abstract_od');
     if (spec.map_task !== undefined && !['global_context','regional_route','local_context','local_port','airport_detail','infrastructure_detail'].includes(spec.map_task)) errors.push('unsupported map_task');
     if (spec.extent_min_span_deg !== undefined && (!(Number(spec.extent_min_span_deg) >= 0) || Number(spec.extent_min_span_deg) > 60)) errors.push('extent_min_span_deg must be between 0 and 60');
     if (spec.reference_path !== undefined && !["none","great_circle"].includes(spec.reference_path)) errors.push('reference_path must be none or great_circle');
@@ -1657,11 +1809,13 @@ export function validateVizSpec(spec) {
     // was built against, and is index-aligned with, exactly one registered
     // basemap: unlike cartographic_flow_map (any registered basemap),
     // choropleth requires that exact basemap_id, not merely a known one.
-    if (spec.basemap_id !== CHOROPLETH_BASEMAP_ID) {
-      errors.push(`choropleth requires basemap_id '${CHOROPLETH_BASEMAP_ID}' (the only basemap with a matching attribute sidecar)`);
+    // A US state map (NEWSROOM_US_STATES=1, category_names 'us_state') requires the state basemap, by the same rule.
+    const choroplethBasemapId = isUsStateMap(spec) ? CHOROPLETH_US_BASEMAP_ID : CHOROPLETH_BASEMAP_ID;
+    if (spec.basemap_id !== choroplethBasemapId) {
+      errors.push(`choropleth requires basemap_id '${choroplethBasemapId}' (the only basemap with a matching attribute sidecar)`);
     } else {
-      const basemap = getBasemap(CHOROPLETH_BASEMAP_ID);
-      if (!basemap) errors.push(`Unknown basemap_id '${CHOROPLETH_BASEMAP_ID}'`);
+      const basemap = getBasemap(choroplethBasemapId);
+      if (!basemap) errors.push(`Unknown basemap_id '${choroplethBasemapId}'`);
       else {
         if (spec.basemap_source_url !== basemap.source_url) errors.push('basemap_source_url does not match the registered basemap provenance');
         if (spec.basemap_license !== basemap.license) errors.push('basemap_license does not match the registered basemap provenance');
@@ -1769,6 +1923,15 @@ function numericCount(rows, field) {
   return rows.reduce((count, row) => count + (n(row[field]) === null ? 0 : 1), 0);
 }
 
+// NEWSROOM_FLOW_MAP_AUTO_EXTENT=1: a flow map with no extent_mode fits the data when every endpoint lies in one region
+// (at most 90 degrees of longitude and 60 of latitude, about a quarter of the globe's width). Otherwise it stays on the world extent.
+const autoExtentEnabled=()=>process.env.NEWSROOM_FLOW_MAP_AUTO_EXTENT==='1';
+const AUTO_EXTENT_MAX_LON=90, AUTO_EXTENT_MAX_LAT=60;
+const endpointsRegional=(ex)=>!!ex&&(ex.east-ex.west)<=AUTO_EXTENT_MAX_LON&&(ex.north-ex.south)<=AUTO_EXTENT_MAX_LAT;
+function effectiveExtentMode(spec,rowsOrExtent,isExtent=false){
+  if(spec.extent_mode!==undefined||!autoExtentEnabled()||spec.geometry_semantics!=='abstract_od')return spec.extent_mode;
+  return endpointsRegional(isExtent?rowsOrExtent:cartographicDataExtent(spec,rowsOrExtent))?'data':spec.extent_mode;
+}
 function cartographicDataExtent(spec,rows){
   const lines=[];for(const row of selectRoutes(rows,spec)){
     if(spec.geometry_semantics==='observed_trajectory'&&spec.trajectory_points_field){const pts=parseTrajectoryPoints(row[spec.trajectory_points_field]),ls=trajectoryLines(pts);if(ls)lines.push(...ls);}
@@ -1842,6 +2005,10 @@ function emphasisHint(spec, named) {
   return `The title names ${names} but highlight_values is empty; suggest ${values}`;
 }
 
+// NEWSROOM_ZH_ROUTE_DISCLOSURE=1 (exact "1", default off): a negated route statement in Chinese counts as the abstract-OD disclosure
+// ("不是实际资金路线", "并非……路线", "不代表……路线"; 路径 too). A bare 关系 does not count, and an affirmative statement still warns.
+const ZH_ROUTE_DISCLOSURE = /(?:不是|并不是|并非|不代表|不等于)[^，。；、！？,.;!?\s而但却是]{0,6}?(?:实际|真实|具体|地理)[^，。；、！？,.;!?\s而但却是]{0,6}?(?:路线|路径)(?=[，。；、！？,.;!?\s]|$)(?![，,]\s*(?:而是|而|但是|但|却))/;
+function zhRouteDisclosure(note) { return process.env.NEWSROOM_ZH_ROUTE_DISCLOSURE === "1" && ZH_ROUTE_DISCLOSURE.test(String(note ?? "")); }
 export function lintVizSpec(spec, rows, context = {}) {
   const autoCategoryNames = resolveAutoCategoryNames(spec, rows);
   const unsignaledWarning = autoCategoryNames ? null : unsignaledEconomyWarning(spec, rows);
@@ -1864,7 +2031,9 @@ export function lintVizSpec(spec, rows, context = {}) {
   // strip_plot draws one dot per row (many units per group), so it carries its
   // own point cap (STRIP_MAX_POINTS, checked in lintStripPlotSpec) instead of
   // this general row cap; every other chart type keeps the 240-row limit.
-  if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
+  if (spec.chart_type === "tile_map" && tileMapEnabled()) {
+    if (rows.length > TILE_MAP_MAX_ROWS) blockers.push(`Visualization query returned ${rows.length} rows; maximum is ${TILE_MAP_MAX_ROWS} for a tile_map`);
+  } else if (rows.length > 240 && spec.chart_type !== "strip_plot") blockers.push(`Visualization query returned ${rows.length} rows; maximum is 240`);
 
   const requiredDataFields = [
     spec.category_field,
@@ -1915,6 +2084,10 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (spec.chart_type === "scatter" && spec.semantic_gate?.scatter_pair) blockers.push(...scatterPairBlockers(spec, rows));
   if (spec.x_scale === "log" && spec.x_field && rows.some((row) => (n(row[spec.x_field]) ?? 0) <= 0)) blockers.push(`Log x_scale requires positive values in '${spec.x_field}'`);
   if (spec.y_scale === "log" && spec.y_field && rows.some((row) => (n(row[spec.y_field]) ?? 0) <= 0)) blockers.push(`Log y_scale requires positive values in '${spec.y_field}'`);
+  if (heatmapLogColor(spec)) {
+    const bad = rows.filter((row) => { const v = n(row[spec.value_field]); return v !== null && v <= 0; }).length;
+    if (bad) blockers.push(`Log color_scale requires every value in '${spec.value_field}' to be above 0 (${bad} cell${bad === 1 ? "" : "s"} at or below zero); use the linear colour scale`);
+  }
 
   const verifiedClaimIds = new Set(context.verified_claim_ids ?? []);
   if (spec.claim_id && !verifiedClaimIds.has(spec.claim_id)) {
@@ -2057,6 +2230,12 @@ export function lintVizSpec(spec, rows, context = {}) {
       }
     }
   }
+
+  // K245: the number-word refusal for the older chart types (the story forms already carry it); default off
+  if (chartTextWordsEnabled() && !(storyFormsEnabled() && (STORY_CHART_TYPES.includes(spec.chart_type) || (spec.chart_type === "multi_line" && hasWaveFields(spec))))) blockers.push(...storyTextBlockers(spec));
+  if (storyFormsEnabled() && spec.chart_type === "people_dots") blockers.push(...dotBlockers(spec, rows));
+  if (storyFormsEnabled() && spec.chart_type === "clock_dial") blockers.push(...clockBlockers(spec, rows));
+  if (spec.chart_type === "multi_line" && hasWaveFields(spec)) blockers.push(...waveBlockers(spec, rows, sortX(unique(rows.map((r) => r[spec.x_field])))));
 
   if (spec.chart_type === "choropleth") {
     const cl = lintChoroplethSpec(spec, rows);
@@ -2238,7 +2417,7 @@ export function lintVizSpec(spec, rows, context = {}) {
     sequence: new Set(["timeline"]),
     process: new Set(["sankey", "alluvial", "hierarchy_tree", "timeline", "process_schematic"]),
   };
-  if (taskFit[spec.reader_task] && !taskFit[spec.reader_task].has(spec.chart_type)) {
+  if (taskFit[spec.reader_task] && !taskFit[spec.reader_task].has(spec.chart_type) && !(spec.chart_type === "tile_map" && tileMapEnabled() && ["comparison", "change", "distribution", "spatial"].includes(spec.reader_task))) {
     warnings.push(`Chart type '${spec.chart_type}' is an unusual fit for reader task '${spec.reader_task}'`);
   }
 
@@ -2308,7 +2487,7 @@ export function lintVizSpec(spec, rows, context = {}) {
   }
   if (spec.chart_type === "cartographic_flow_map") {
     if (rows.some((row) => (n(row[spec.value_field]) ?? -1) < 0)) blockers.push('cartographic_flow_map does not allow negative flow weights');
-    const selected = selectRoutes(rows, spec);
+    const selected = selectRoutes(rows, spec, flowMapLabelsEnabled() && spec.geometry_semantics === 'abstract_od');
     if (spec.flow_layer_field) {
       const layerValues = selected.map((row) => String(row[spec.flow_layer_field] ?? '').trim()).filter(Boolean);
       const layerSet = [...new Set(layerValues)];
@@ -2339,6 +2518,21 @@ export function lintVizSpec(spec, rows, context = {}) {
     }
     if (spec.aggregation_policy !== 'top_n' && rows.length > 80) blockers.push(`cartographic_flow_map has ${rows.length} routes; set aggregation_policy=top_n or split the story`);
     if (selected.length > 45) warnings.push(`cartographic_flow_map renders ${selected.length} routes; route density may exceed a static editorial frame`);
+    if (spec.geometry_semantics === 'abstract_od' && flowMapLabelsEnabled()) {
+      const style = resolveFlowMapStyle(spec, selected);
+      if (style.reason) warnings.push(style.reason);
+      const seenPairs = new Map();
+      for (const row of selected) { const k = `${row[spec.source_field] ?? ''}→${row[spec.target_field] ?? ''}`; seenPairs.set(k, (seenPairs.get(k) ?? 0) + 1); }
+      for (const [k, c] of seenPairs) if (c > 1) warnings.push(`duplicate route ${k} appears ${c} times; the rows are drawn separately and never merged, so check whether the data double-counts this flow`);
+      const ties = flowNumberTies(spec, selected.map((row) => n(row[spec.value_field]) ?? 0).filter((v) => v > 0), fmtSpec);
+      if (ties.length) warnings.push(`flow map prints the same text (${[...new Set(ties.map((t) => t[2]))].join(', ')}) for ${ties.length} pair(s) of adjacent ranks even at the decimals cap; do not claim an order between those ranks in the title, subtitle or note`);
+      const unit = String(spec.unit ?? '');
+      if (vizLang(spec) === 'zh' && unit) {
+        const peak = Math.max(0, ...selected.map((row) => n(row[spec.value_field]) ?? 0));
+        if (/千|百万|十亿/.test(unit)) warnings.push(`zh flow map unit '${unit}' carries a magnitude (千/百万/十亿) that Chinese readers do not use; pick a 万/亿-based unit in the SQL (for example 万吨, 万桶/日, 亿美元)`);
+        else if (/万|亿/.test(unit) && peak >= 10000) warnings.push(`zh flow map unit '${unit}' already carries 万/亿, but values of 10,000 or more print with a 万/亿 prefix of their own (X万 ${unit}); scale the values in the SQL so they stay below 10,000`);
+      }
+    }
     if (["abstract_od","great_circle_reference"].includes(spec.geometry_semantics)) {
       for (const row of selected) {
         const coords=[n(row[spec.source_lon_field]),n(row[spec.source_lat_field]),n(row[spec.target_lon_field]),n(row[spec.target_lat_field])];
@@ -2364,7 +2558,8 @@ export function lintVizSpec(spec, rows, context = {}) {
     if (spec.geometry_semantics === 'great_circle_reference') notes.push('great_circle_reference is a geodesic baseline, not a filed or observed route');
     const selectedBasemap = getBasemap(spec.basemap_id);
     notes.push(`cartographic basemap=${spec.basemap_id ?? BASEMAP_ID}; crs=${spec.geometry_crs}; projection=${spec.projection}; geometry_semantics=${spec.geometry_semantics}`);
-    if(spec.extent_mode==='data'){const ex=cartographicDataExtent(spec,selected);if(ex){const span=Math.max(ex.east-ex.west,ex.north-ex.south);if(span<1)warnings.push(`cartographic extent spans only ${span.toFixed(3)} degrees; ${selectedBasemap?.label ?? spec.basemap_id} is too coarse for harbour/street-scale geographic context`);}}
+    if(autoExtentEnabled()&&spec.geometry_semantics==='abstract_od'&&spec.extent_mode==='world'&&endpointsRegional(cartographicDataExtent(spec,selected)))warnings.push(`extent_mode is 'world' but every endpoint lies within one region (at most ${AUTO_EXTENT_MAX_LON}° of longitude and ${AUTO_EXTENT_MAX_LAT}° of latitude); extent_mode 'data' (or leaving it unset) would fill the frame with the flows`);
+    if(effectiveExtentMode(spec,selected)==='data'){const ex=cartographicDataExtent(spec,selected);if(ex){const span=Math.max(ex.east-ex.west,ex.north-ex.south);if(span<1)warnings.push(`cartographic extent spans only ${span.toFixed(3)} degrees; ${selectedBasemap?.label ?? spec.basemap_id} is too coarse for harbour/street-scale geographic context`);}}
   }
   if (spec.chart_type === "process_schematic") {
     const topo = topologyStats(rows, spec.source_field, spec.target_field);
@@ -2400,6 +2595,7 @@ export function lintVizSpec(spec, rows, context = {}) {
   if (["horizontal_bar", "dot", "dumbbell", "slope", "diverging_bar"].includes(spec.chart_type) && rows.length > 30) {
     warnings.push(`${spec.chart_type} has ${rows.length} rows; consider filtering to a defensible top/bottom set or small multiples`);
   }
+  if (spec.chart_type === "tile_map" && tileMapEnabled()) blockers.push(...lintTileMapRows(spec, rows));
   if (spec.chart_type === "heatmap") {
     const xs = unique(rows.map((r) => r[spec.x_field]));
     const ys = unique(rows.map((r) => r[spec.y_field]));
@@ -2488,9 +2684,9 @@ export function critiqueViz(spec, rows, lint = {}, svg = "") {
   if (spec.chart_type === "cartographic_flow_map") {
     const selected=selectRoutes(rows,spec);
     if (selected.length > 35) add("warning","cartographic_route_density",`${selected.length} routes compete on the same cartographic frame.`,8,"Aggregate to top routes, facet by category, or separate overview from detail.");
-    if (spec.geometry_semantics === "abstract_od" && !/(physical|tanker|pipeline|relationship|not\s+(?:actual\s+)?(?:ship\s+)?routes?)/i.test(String(spec.note ?? ""))) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
+    if (spec.geometry_semantics === "abstract_od" && !(/(physical|tanker|pipeline|relationship|not\s+(?:actual\s+)?(?:ship\s+)?routes?)/i.test(String(spec.note ?? "")) || zhRouteDisclosure(spec.note)) ) add("warning","od_route_disclosure","Abstract OD arcs require an explicit note that they are not physical routes.",8,"State that arcs encode relationships and do not trace physical movement.");
     if (["verified_route","observed_trajectory","network_constrained"].includes(spec.geometry_semantics) && !String(spec.route_provenance_note ?? "").trim()) add("blocker","route_provenance_missing","Physical or observed route geometry has no route provenance note.",100,"Bind route geometry to an explicit source and measurement description.");
-    if(spec.extent_mode==="data"){const ex=cartographicDataExtent(spec,selected);if(ex){const adequacy=basemapAdequacy(spec.basemap_id,ex,spec.map_task??null);if(!adequacy.adequate)add("warning","basemap_detail_mismatch",`Basemap ${spec.basemap_id} is not qualified for ${adequacy.task}-scale interpretation (${adequacy.reason}).`,14,"Use a provenance-bound basemap whose registered detail class and extent cover this geographic task.");}}
+    if(effectiveExtentMode(spec,selected)==="data"){const ex=cartographicDataExtent(spec,selected);if(ex){const adequacy=basemapAdequacy(spec.basemap_id,ex,spec.map_task??null);if(!adequacy.adequate)add("warning","basemap_detail_mismatch",`Basemap ${spec.basemap_id} is not qualified for ${adequacy.task}-scale interpretation (${adequacy.reason}).`,14,"Use a provenance-bound basemap whose registered detail class and extent cover this geographic task.");}}
   }
   if (spec.chart_type === "process_schematic") {
     const topo = topologyStats(rows, spec.source_field, spec.target_field);
@@ -2807,7 +3003,7 @@ function svgTextLines(parts, text, x, y, opts = {}) {
   const anchor = opts.anchor ?? "start";
   const font = opts.font ?? FONT_SANS;
   lines.forEach((line, index) => {
-    parts.push(`<text x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" font-family="${font}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(line)}</text>`);
+    parts.push(`<text${opts.role ? ` data-role="${opts.role}"` : ""} x="${x}" y="${y + index * lineHeight}" text-anchor="${anchor}" font-family="${font}" font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(line)}</text>`);
   });
   return lines.length * lineHeight;
 }
@@ -2822,14 +3018,107 @@ let LAYOUT_W = DESKTOP_VIEW_W;
 // Characters per wrapped line, scaled to the plot's text width (932 at desktop).
 const wrapChars = (chars) => (LAYOUT_W === DESKTOP_VIEW_W ? chars : Math.max(16, Math.floor((chars * (LAYOUT_W - 108)) / 932)));
 
-function frame(spec, bodyHeight, minHeight = 420) {
+const noteUrlLineEnabled = () => process.env.NEWSROOM_NOTE_URL_LINE === "1";
+const FOOTER_URL_RE = /https?:\/\/[^\s，。；、）)」]+/;
+// Greedy wrap by measured width that never breaks inside a run of digits, Latin letters or a URL: breaks only at spaces or between CJK characters.
+const KINSOKU_OPEN = /^[（「『《【〔〈(\[]$/u, KINSOKU_CLOSE = /^[）」』》】〕〉，。、；：！？…)\]!?,.;:]$/u;
+function wrapUnbreakable(text, size = 12) {
+  const maxW = LAYOUT_W - 108, lines = [], toks = String(text).match(/https?:\/\/\S+|[A-Za-z0-9][A-Za-z0-9.,%:/_+'\-]*|\s+|[\s\S]/gu) ?? [];
+  if (noteUrlLineEnabled()) return wrapKinsoku(toks, maxW, size);
+  let cur = "";
+  for (const tok of toks) {
+    if (/^\s+$/.test(tok)) { if (cur) cur += " "; continue; }
+    if (cur && textUnits(cur + tok) * size * 0.56 > maxW) { lines.push(cur.trimEnd()); cur = ""; }
+    cur += tok;
+  }
+  if (cur.trim()) lines.push(cur.trimEnd());
+  return lines;
+}
+// Same wrap, plus the line-start / line-end rules of W3C clreq and GB/T 15834: no line starts with closing punctuation or ends with an opening bracket; the neighbouring token moves with it.
+function wrapKinsoku(toks, maxW, size) {
+  const lines = [], width = (arr) => textUnits(arr.join("")) * size * 0.56, flush = (arr) => { const t = arr.join("").trim(); if (t) lines.push(t); };
+  let cur = [];
+  for (const tok of toks) {
+    if (/^\s+$/.test(tok)) { if (cur.length) cur.push(" "); continue; }
+    if (!cur.length || width([...cur, tok]) <= maxW) { cur.push(tok); continue; }
+    const carry = [];
+    if (KINSOKU_CLOSE.test(tok)) {
+      while (cur.length > 1 && (cur.at(-1) === " " || KINSOKU_CLOSE.test(cur.at(-1)))) carry.unshift(cur.pop());
+      if (cur.length > 1) carry.unshift(cur.pop());
+    }
+    while (cur.length > 1 && (cur.at(-1) === " " || KINSOKU_OPEN.test(cur.at(-1)))) carry.unshift(cur.pop());
+    flush(cur);
+    cur = carry.length && carry.join("").trim() ? carry : [];
+    while (cur[0] === " ") cur.shift();
+    cur.push(tok);
+  }
+  flush(cur);
+  return lines;
+}
+// Footer lines as {t, size}. With urlLine on, each URL sits on a line of its own and the sentence around it is wrapped without splitting it. (Render QA's 12px font floor stops it being any smaller.)
+function footerBlock(text, urlLine) {
+  const out = [];
+  if (!urlLine || !FOOTER_URL_RE.test(text)) { for (const t of wrapUnbreakable(text)) out.push({ t, size: 12 }); return out; }
+  const parts = String(text).split(new RegExp(`(${FOOTER_URL_RE.source})`)), isUrl = (x) => FOOTER_URL_RE.test(x) && x.match(FOOTER_URL_RE)[0] === x;
+  const bound = parts.map(() => ["", ""]);
+  parts.forEach((part, i) => {
+    if (!isUrl(part)) return;
+    // clreq / GB/T 15834: an opening bracket before the URL and the closing punctuation after it stay on the URL's line.
+    const before = i > 0 && !isUrl(parts[i - 1]) ? parts[i - 1].match(/[（「『《【〔〈(\[]+\s*$/u)?.[0] ?? "" : "", after = i + 1 < parts.length && !isUrl(parts[i + 1]) ? parts[i + 1].match(/^[）」』》】〕〉，。、；：！？…)\]!?,.;:]+/u)?.[0] ?? "" : "";
+    bound[i] = [before.trim(), after];
+    if (before) parts[i - 1] = parts[i - 1].slice(0, parts[i - 1].length - before.length);
+    if (after) parts[i + 1] = parts[i + 1].slice(after.length);
+  });
+  parts.forEach((part, i) => {
+    if (isUrl(part)) out.push({ t: `${bound[i][0]}${part}${bound[i][1]}`, size: 12 });
+    else if (part.trim()) for (const t of wrapUnbreakable(part.trim())) out.push({ t, size: 12 });
+  });
+  return out;
+}
+// Only a URL-bearing note or source takes the new block path; every other footer keeps the old wrapText path unchanged.
+const footerUrlBlock = (text) => (noteUrlLineEnabled() && FOOTER_URL_RE.test(text) ? footerBlock(text, true) : null);
+function emitFooterBlock(parts, block, y, x = 54) {
+  block.forEach((l, i) => parts.push(`<text x="${x}" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
+  return block.length * 16;
+}
+
+function dataNoteLines(spec) {
+  return footerNoteEntries(spec).filter((e) => e.kind === "data_note").reduce((n, e) => n + e.lines, 0);
+}
+
+// The note lines under the chart, in print order (the program's data-flag line, the model's note, the extreme-value
+// line). As in Eurostat's footnotes, the block carries one "注：" / "Note: ": only the first entry has the prefix, each
+// later entry starts where the first entry's text starts, and every entry ends with a full stop. With one entry the line
+// is the old one plus the full stop.
+const NOTE_END_RE = /[。．.!！?？]\s*$/u;
+function noteSentence(text, lang) {
+  const body = String(text).trimEnd();
+  return NOTE_END_RE.test(body) ? body : `${body}${lang === "zh" ? "\u3002" : "."}`;
+}
+function footerNoteEntries(spec, { x0 = 54, maxChars = wrapChars(120), dataNote = true } = {}) {
+  const lang = vizLang(spec), prefix = VIZ_STRINGS[lang].note;
+  const raw = [];
+  if (dataNote && typeof spec.data_note === "string" && spec.data_note !== "") raw.push(["data_note", spec.data_note]);
+  if (spec.note) raw.push(["note", spec.note]);
+  if (spec.extreme_note) raw.push(["extreme_note", spec.extreme_note]);
+  const indentUnits = textUnits(prefix);
+  return raw.map(([kind, text], i) => i === 0
+    // lines: the footer height this entry reserves; the first entry is counted as before this rule (the model's note and the
+    // extreme line without the prefix), only with the full stop
+    ? { kind, text: `${prefix}${noteSentence(text, lang)}`, x: x0, maxChars, lines: wrapText(`${kind === "data_note" ? prefix : ""}${noteSentence(text, lang)}`, maxChars).length }
+    : { kind, text: noteSentence(text, lang), x: x0 + Math.round(indentUnits * 12 * 0.56), maxChars: maxChars - indentUnits, lines: wrapText(noteSentence(text, lang), maxChars - indentUnits).length });
+}
+
+function frame(spec, bodyHeight, minHeight = 420, extraFooterLines = 0) {
   const width = LAYOUT_W;
   const titleLines = headlineWrap(spec.title, wrapChars(62), true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, wrapChars(105)).length : 0;
   const header = 32 + titleLines * 34 + dekLines * 21 + 22;
-  const footer = 70 + (spec.note ? wrapText(spec.note, wrapChars(120)).length * 16 : 0);
+  const lang = vizLang(spec), notes = footerNoteEntries(spec), modelNote = notes.find((e) => e.kind === "note"), noteBlock = modelNote ? footerUrlBlock(modelNote.text) : null, srcBlock = footerUrlBlock(sourceAttribution(spec.source_note, lang));
+  const footer = 70 + (noteBlock ? noteBlock.length * 16 : modelNote ? modelNote.lines * 16 : 0) + (srcBlock ? Math.max(0, srcBlock.length - 1) * 16 : 0) + extraFooterLines * 16 + dataNoteLines(spec) * 16
+    + notes.filter((e) => e.kind === "extreme_note").reduce((n, e) => n + e.lines * 16, 0);
   const height = Math.max(minHeight, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === DESKTOP_VIEW_W ? "desktop" : "compact"}">`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title viz-desc" data-viewport="${width === COMPACT_VIEW_W ? "compact" : "desktop"}"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
@@ -2850,12 +3139,21 @@ function frame(spec, bodyHeight, minHeight = 420) {
   };
 }
 
-function addFooter(parts, spec, footerTop) {
-  const t = VIZ_STRINGS[vizLang(spec)];
+function addFooter(parts, spec, footerTop, extraBlock = []) {
   parts.push(`<line x1="54" y1="${footerTop - 16}" x2="${LAYOUT_W - 54}" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
-  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 54, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
-  svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
+  const notes = footerNoteEntries(spec), noteLine = (e) => svgTextLines(parts, e.text, e.x, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: e.maxChars });
+  // NEWSROOM_DATA_NOTES: the program-written source-flag line, its own line before the model's note (spec.data_note is set only by the render tool).
+  for (const e of notes.filter((n) => n.kind === "data_note")) y += noteLine(e);
+  for (const e of notes.filter((n) => n.kind === "note")) { const nb = footerUrlBlock(e.text); y += nb ? emitFooterBlock(parts, nb, y, e.x) : noteLine(e); }
+  // The flow map's route_provenance_note: under the chart beside the note, never inside the map panel.
+  extraBlock.forEach((l, i) => parts.push(`<text data-role="cartographic-provenance-note" x="54" y="${y + i * 16}" text-anchor="start" font-family="${FONT_SANS}" font-size="${l.size}" font-weight="400" fill="${PALETTE.muted}">${esc(l.t)}</text>`));
+  y += extraBlock.length * 16;
+  // K117: its own line, set by the runtime, after the data-source notes
+  for (const e of notes.filter((n) => n.kind === "extreme_note")) y += noteLine(e);
+  const attr = sourceAttribution(spec.source_note, vizLang(spec)), sb = footerUrlBlock(attr);
+  if (sb) emitFooterBlock(parts, sb, y + 3);
+  else svgTextLines(parts, attr, 54, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: wrapChars(120) });
 }
 
 // Strips any leading source-label prefix the input data already carries
@@ -2896,6 +3194,7 @@ const UNMAPPED_NAME_GUIDANCE = {
   iso3: "the exact ISO3 economy/aggregate code (filter other aggregate rows such as OWID_* regions and income groups out in SQL)",
   iso2: "the exact ISO 3166-1 alpha-2 economy code (filter aggregate rows such as EU27_2020 or EA20 out in SQL)",
   iso4217: "the exact ISO 4217 currency code",
+  us_state: "the exact USPS two-letter state code, English state name or the table's Chinese state name (50 states and DC)",
 };
 
 // Zh-naming-policy rule 7: the chart types whose marks are peers of one another
@@ -3359,6 +3658,106 @@ function axisTickUnit(unit, index, count) {
   return HOUSE_STYLE_ACTIVE && index < count - 1 ? "" : unit;
 }
 
+// NEWSROOM_TYPESET_AXIS_NOTATION=1 (exact): one axis, one notation. The ticks of a value axis are spelled one by one, so a
+// zh axis could read 2000 | 4000 | 1万 | 1.2万, a unit that already says 万 / 亿 got a second one (1万 万吨), and an English bar
+// axis said 2k where its value labels said 2000. axisTickTexts spells a whole tick list at once:
+//   - zh, unit already carries 万 / 亿 / 千 / 百万: every tick is the plain integer, no scale suffix;
+//   - zh or en, ticks that fall into different scale classes (plain / 万 / 亿 / 万亿, or plain / k / m / bn): every tick takes the
+//     class of the largest tick, with as many decimals as it takes to print each tick exactly;
+//   - en, a chart whose value labels print the full number (labelDecimals): the ticks print the same way, not as k / m / bn.
+// An axis that already has a single class, and no unit clash, is returned exactly as tickLabelSpec spelled it.
+const SCALE_UNIT_RE = /[万亿千]|百万|thousand|million|billion/i;
+function scaleClass(text) {
+  const m = /(万亿|亿|万|bn|k|m)$/.exec(text.replace(/\s.*$/, ""));
+  return m ? m[1] : "";
+}
+function attachAxisUnit(text, unit) {
+  if (!unit) return text;
+  if (unit === "%") return `${text}%`;
+  return /^[£$€¥]$/.test(unit) ? `${unit}${text}` : `${text} ${unit}`;
+}
+// NEWSROOM_TYPESET_AXIS_NOTATION=1, option B (zh only): the ticks are bare numbers and the unit is written once above the axis
+// ("单位：万人"). The whole axis takes one scale, chosen by its largest tick: below 1万 none, 1万 up to 1亿 万, 1亿 and above 亿.
+// A unit that already carries a scale (万吨, 亿元) is not given a second one. Returns null when B does not apply.
+// Room for the unit line above a bar chart whose axis takes notation B (one row, only when the switch is on and the page is zh).
+function axisUnitRowH(spec) {
+  return process.env.NEWSROOM_TYPESET_AXIS_NOTATION === "1" && spec && vizLang(spec) === "zh" ? 18 : 0;
+}
+export function axisNotationB(spec, ticks, unit) {
+  if (process.env.NEWSROOM_TYPESET_AXIS_NOTATION !== "1" || !spec || !ticks.length) return null;
+  if (vizLang(spec) !== "zh" || !ticks.every((t) => Number.isFinite(t)) || specValueKind(spec) || zhBillionsActive(spec, unit)) return null;
+  const top = Math.max(...ticks.map((t) => Math.abs(t)));
+  const unitHasScale = Boolean(unit) && SCALE_UNIT_RE.test(unit);
+  const [power, suffix] = unitHasScale || top < 1e4 ? [0, ""] : top < 1e8 ? [4, "万"] : [8, "亿"];
+  const texts = ticks.map((t) => (t === 0 || power === 0 ? String(Number(t.toFixed(6))) : halfUpFixed(t, power, 3, true).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")));
+  const unitName = unit === "%" ? "%" : (unit ?? "");
+  const line = `${suffix}${unitName}`;
+  return { texts, unitLine: line ? `单位：${line}` : null, scale: { power, suffix } };
+}
+// NEWSROOM_AXIS_NICE_MAX=1 (exact): the value axis ends on a whole tick. The domain's top moves up to the next multiple of the
+// tick step (a negative bottom moves down likewise), so the last gridline sits at the end of the axis and the longest bar no
+// longer stops between two ticks. Off, the domain is returned untouched.
+export function niceAxisDomain(domain) {
+  if (process.env.NEWSROOM_AXIS_NICE_MAX !== "1" || !domain.every((d) => Number.isFinite(d))) return domain;
+  let [lo, hi] = domain;
+  const clean = (x) => Number(x.toPrecision(12));
+  for (let pass = 0; pass < 3; pass++) {
+    const ticks = tickValues([lo, hi], 4);
+    if (ticks.length < 2) break;
+    const step = ticks[1] - ticks[0];
+    if (!(step > 0)) break;
+    const nhi = clean(Math.ceil(hi / step - 1e-9) * step);
+    const nlo = lo < 0 ? clean(Math.floor(lo / step + 1e-9) * step) : lo;
+    if (nhi === hi && nlo === lo) break;
+    hi = nhi; lo = nlo;
+  }
+  return [lo, hi];
+}
+// NEWSROOM_TYPESET_VALUE_LABEL_AXIS=1 (exact, with notation B, zh only): the bar-side value labels are written in the axis's
+// own scale (axis 万 -> labels in 万), without a unit: the unit line above the axis says it once. One shared decimal count
+// from the labelled values (spec.decimals wins), never lower than what keeps two different values apart (raiseSharedDecimals).
+// Returns null when it does not apply; callers then draw the label they always drew.
+export function axisLabelPlan(spec, values, ticks, unit) {
+  if (process.env.NEWSROOM_TYPESET_VALUE_LABEL_AXIS !== "1") return null;
+  const b = axisNotationB(spec, ticks, unit);
+  if (!b) return null;
+  const { power } = b.scale;
+  const div = 10 ** power;
+  const finite = values.filter((v) => Number.isFinite(v));
+  const explicit = spec?.decimals;
+  const smallest = Math.min(...finite.map((v) => Math.abs(v) / div).filter((v) => v > 0), Infinity);
+  const auto = Number.isFinite(smallest) ? Math.min(2, Math.max(0, 1 - Math.floor(Math.log10(smallest)))) : 1;
+  const start = Number.isInteger(explicit) && explicit >= 0 && explicit <= 3 ? explicit : auto;
+  const decimals = raiseSharedDecimals(finite, start, div);
+  return { scale: b.scale, decimals, text: (v) => halfUpFixed(v, power, decimals, true) };
+}
+export function axisTickTexts(spec, ticks, unit, labelDecimals = null, { unitOnEvery = false, spelled = null } = {}) {
+  const unitAt = (i) => (unitOnEvery ? unit : axisTickUnit(unit, i, ticks.length));
+  const plain = ticks.map((tick, i) => (spelled ? spelled(tick, i) : tickLabelSpec(spec, tick, unitAt(i))));
+  if (process.env.NEWSROOM_TYPESET_AXIS_NOTATION !== "1" || !spec || !ticks.length) return plain;
+  const finite = ticks.every((t) => Number.isFinite(t));
+  if (!finite || specValueKind(spec) || zhBillionsActive(spec, unit)) return plain;
+  const lang = vizLang(spec);
+  const bare = ticks.map((t) => tickLabel(t, "", lang));
+  const classes = new Set(ticks.map((t, i) => (t === 0 ? null : scaleClass(bare[i]))).filter((c) => c !== null));
+  const scaled = [...classes].some((c) => c !== "");
+  if (unit && SCALE_UNIT_RE.test(unit) && scaled && lang === "zh") {
+    return ticks.map((t, i) => attachAxisUnit(String(Number(t.toFixed(6))), unitAt(i)));
+  }
+  if (lang === "en" && Number.isInteger(labelDecimals) && scaled) {
+    return ticks.map((t, i) => fmt(t, unitAt(i), Number.isInteger(t) ? 0 : labelDecimals, "en"));
+  }
+  if (classes.size < 2) return plain;
+  const top = Math.max(...ticks.map((t) => Math.abs(t)));
+  const [power, suffix] = lang === "zh"
+    ? (top >= 1e12 ? [12, "万亿"] : top >= 1e8 ? [8, "亿"] : [4, "万"])
+    : (top >= 1e9 ? [9, "bn"] : top >= 1e6 ? [6, "m"] : [3, "k"]);
+  return ticks.map((t, i) => {
+    const body = t === 0 ? "0" : `${halfUpFixed(t, power, 3, true).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}${suffix}`;
+    return attachAxisUnit(body, unitAt(i));
+  });
+}
+
 // Line-chart-only value-axis domain/ticks (task B: "the lowest and highest
 // ticks must bracket the data"). tickValues() above rounds its step to a
 // nice {1,2,5}x10^k number and then only keeps ticks that land strictly
@@ -3530,7 +3929,11 @@ function assignPointAnnotations(spec, rows, valueField) {
 // that calls this already draws a direct value label per mark, so the
 // gridline is redundant) but keeps the tick label - it's what showed through
 // the gaps between bars/dots looking like stray strokes crossing the marks.
-function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null) {
+// NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick, unit-line and value-label text carry the data they were written
+// from (data-tick-value, data-scale, data-value, data-category ...), so render QA can read each number back. Off, nothing is added.
+const tickReadbackOn = () => process.env.NEWSROOM_QA_TICK_READBACK === "1";
+const trAttr = (name, value) => ` ${name}="${esc(String(value))}"`;
+function horizontalAxisTicks(domain, frameW = null) {
   let ticks = tickValues(domain, 4);
   // Desktop callers pass frameW. Two axis-frame rules then apply: a side of a
   // zero-straddling axis that holds at least a quarter of the span gets at
@@ -3556,7 +3959,23 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
     }
     ticks = [...ticks].sort((a, b) => a - b);
   }
+  return ticks;
+}
+// NEWSROOM_TYPESET_VALUE_LABEL_AXIS=1 (with notation B): the unit line is 13px, flush left with the start of the axis, a little closer to
+// the first bar. Off, it stays the 12px line at the axis's right end.
+function unitLineLeft(spec) {
+  return process.env.NEWSROOM_TYPESET_VALUE_LABEL_AXIS === "1" && process.env.NEWSROOM_TYPESET_AXIS_NOTATION === "1" && spec && vizLang(spec) === "zh";
+}
+function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec = null, frameW = null, labelDecimals = null, unitY = null, unitAtLeft = false) {
+  const ticks = horizontalAxisTicks(domain, frameW);
   const scaleX = horizontalScale(domain, left, right);
+  const notationB = unitY === null ? null : axisNotationB(spec, ticks, unit);
+  const tickTexts = notationB ? notationB.texts : axisTickTexts(spec, ticks, unit, labelDecimals);
+  if (notationB?.unitLine) {
+    const unitRole = tickReadbackOn() ? ` data-role="axis-unit-line"${trAttr("data-scale", 10 ** notationB.scale.power)}` : ` data-role="axis-unit"`;
+    if (unitAtLeft && unitLineLeft(spec)) parts.push(`<text x="${left}" y="${unitY + 4}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}"${unitRole}>${esc(notationB.unitLine)}</text>`);
+    else parts.push(`<text x="${right}" y="${unitY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}"${unitRole}>${esc(notationB.unitLine)}</text>`);
+  }
   ticks.forEach((tick, i) => {
     const x = scaleX(tick);
     if (!LAYERING_FIX) {
@@ -3564,13 +3983,14 @@ function addHorizontalAxis(parts, domain, left, right, top, bottom, unit, spec =
     }
     // Fix 3: the unit shows once, on the last (right-most) tick, not on
     // every one - see axisTickUnit.
-    const label = tickLabelSpec(spec, tick, axisTickUnit(unit, i, ticks.length));
+    const label = tickTexts[i];
     let labelX = x;
     if (frameW !== null) {
       const half = (textUnits(label) * 12 * 0.56) / 2 + 2;
       labelX = Math.min(Math.max(x, 8 + half), frameW - 8 - half);
     }
-    parts.push(`<text x="${labelX}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(label)}</text>`);
+    const tickRole = tickReadbackOn() ? ` data-role="axis-tick-label"${trAttr("data-tick-value", tick)}${labelX !== x ? trAttr("data-tick-x", x) : ""}` : "";
+    parts.push(`<text${tickRole} x="${labelX}" y="${bottom + 21}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(label)}</text>`);
   });
 }
 
@@ -3595,7 +4015,8 @@ function renderGroupedDots(spec, rows) {
   const base = f.bodyTop + 34;
   const left = 250, right = 955, top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = rows.map((row) => n(row[valueField])).filter((value) => value !== null);
-  const domain = extent(values, true);
+  const domain = niceAxisDomain(extent(values, true));
+  const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, null), spec.unit);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
   const renderedAnnotations = new Set();
@@ -3612,7 +4033,7 @@ function renderGroupedDots(spec, rows) {
     f.parts.push(`<text x="${legendX + 10}" y="${legendY}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(name)}</text>`);
     legendX += Math.max(68, String(name).length * 12 + 30);
   });
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, null, null, base - 6, true);
   f.parts.push(`<line x1="${zero}" y1="${top}" x2="${zero}" y2="${bottom}" stroke="${PALETTE.ink}" stroke-width="1.2"/>`);
   const step = (bottom - top) / Math.max(categories.length, 1);
   const offsets = series.length <= 1
@@ -3631,7 +4052,7 @@ function renderGroupedDots(spec, rows) {
       const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5.5" fill="${color}"/>`);
-      const label = fmtSpec(spec, value, spec.label_unit ?? "");
+      const label = labelPlan ? labelPlan.text(value) : fmtSpec(spec, value, spec.label_unit ?? "");
       const labelWidth = Math.max(24, textUnits(label) * 6.8);
       const canPlaceRight = x + 9 + labelWidth <= right;
       const canPlaceLeft = x - 9 - labelWidth >= left;
@@ -3662,11 +4083,11 @@ function renderGroupedDots(spec, rows) {
 // (negative bars) and right (positive bars) edge for the widest such label plus
 // its `gap` from the bar, measured on the label texts as they are drawn, so a
 // label never has to move inside a bar that reaches the plot edge.
-function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap) {
+function divergingLabelMargins(spec, sorted, valueField, labelDecimals, gap, labelPlan = null) {
   const PX = 7.5; // per text unit; bold 12px digits and "%" run wider than the 6.4 the label column uses
   const widest = (pred) => Math.ceil(Math.max(0, ...sorted.map((row, i) => {
     const v = n(row[valueField]);
-    return v === null || !pred(v) ? 0 : textUnits(fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
+    return v === null || !pred(v) ? 0 : textUnits(labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit, labelDecimals)) * PX;
   })));
   const neg = widest((v) => v < 0), pos = widest((v) => v >= 0);
   return { neg: neg ? neg + gap : 0, pos: pos ? pos + gap : 0 };
@@ -3689,9 +4110,10 @@ function renderHorizontal(spec, rows, mode) {
   // diverging_bar takes the same label column sized from the drawn names (house style); its
   // value-label room stays with divergingLabelMargins below, so negW/posW are not added for it.
   const tightColumn = tight || (HOUSE_STYLE_ACTIVE && spec.chart_type === "diverging_bar");
-  const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin;
+  const unitRow = axisUnitRowH(spec);
+  const bodyHeight = Math.max(tight ? 150 : 230, sorted.length * 38 + 45) + refMargin + unitRow;
   const f = frame(spec, bodyHeight, tight ? 300 : 420);
-  const base = f.bodyTop + 4;
+  const base = f.bodyTop + 4 + unitRow;
   let left = 250, right = 955 - bracketMargin, catX = 235;
   const top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.map((r) => n(r[valueField])).filter((v) => v !== null);
@@ -3699,6 +4121,9 @@ function renderHorizontal(spec, rows, mode) {
   // count (see resolveChartDecimals) - resolved once, up front, from every
   // value the chart will actually display, not per-label.
   const labelDecimals = resolveChartDecimals(spec, values);
+  const domain = niceAxisDomain(extent(values, true));
+  const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
+  const labelText = (v, unit) => (labelPlan ? labelPlan.text(v) : fmtSpec(spec, v, unit, labelDecimals));
   let categoryLabels = null;
   if (tightColumn) {
     const PX = 6.4; // generous per-unit width of 12px text (Latin ~6, CJK 12 per 2 units)
@@ -3715,7 +4140,7 @@ function renderHorizontal(spec, rows, mode) {
       const cut = space > head.length * 0.4 ? space : head.length;
       return [name.slice(0, cut).trimEnd(), name.slice(cut).trimStart()];
     });
-    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: fmtSpec(spec, v, i > 0 ? "" : spec.unit, labelDecimals) }; });
+    const valueTexts = sorted.map((row, i) => { const v = n(row[valueField]); return v === null ? null : { v, text: labelText(v, i > 0 ? "" : spec.unit) }; });
     const widest = (pred) => Math.ceil(Math.max(0, ...valueTexts.filter((t) => t && pred(t.v)).map((t) => textUnits(t.text) * PX)));
     const catW = Math.ceil(Math.min(maxCatUnits, Math.max(1, ...categoryLabels.flat().map(textUnits))) * PX);
     catX = 54 + catW;
@@ -3726,13 +4151,12 @@ function renderHorizontal(spec, rows, mode) {
     } else left = catX + 15;
   }
   if (spec.chart_type === "diverging_bar") {
-    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9);
+    const margins = divergingLabelMargins(spec, sorted, valueField, labelDecimals, 9, labelPlan);
     left += margins.neg; right -= margins.pos;
   }
-  const domain = extent(values, true);
   const scale = horizontalScale(domain, left, right);
   const zero = scale(0);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, labelDecimals, base - 6, true);
   // LAYERING_FIX: every "bar" mode mark already starts at zero (rx below is
   // always Math.min(x, zero)), so the 0 baseline is redundant ink that only
   // showed, full weight, in the gaps between bars. Drop it for bars; "dot"
@@ -3767,7 +4191,8 @@ function renderHorizontal(spec, rows, mode) {
     const rowUnit = HOUSE_STYLE_ACTIVE && i > 0 ? "" : spec.unit;
     if (mode === "bar") {
       const rx = Math.min(x, zero), width = Math.max(1, Math.abs(x - zero));
-      f.parts.push(`<rect data-role="data-bar" x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
+      const barKey = tickReadbackOn() ? `${trAttr("data-category", row[spec.category_field])}${trAttr("data-value", value)}` : "";
+      f.parts.push(`<rect data-role="data-bar"${barKey} x="${rx}" y="${y - 8}" width="${width}" height="16" fill="${fill}"${barOpacity}/>`);
     } else {
       f.parts.push(`<line x1="${zero}" y1="${y}" x2="${x}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="2"/>`);
       f.parts.push(`<circle cx="${x}" cy="${y}" r="5" fill="${fill}"/>`);
@@ -3776,11 +4201,12 @@ function renderHorizontal(spec, rows, mode) {
       // Always outside the bar's end, on the bar's own side (divergingLabelMargins keeps room for it).
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${anyHighlight && highlighted ? 700 : 600}" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      f.parts.push(`<text data-role="bar-value-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="${anyHighlight && highlighted ? 700 : 600}" fill="${PALETTE.ink}">${esc(labelText(value, rowUnit))}</text>`);
     } else {
       const anchor = value >= 0 ? "start" : "end";
       const labelX = x + (value >= 0 ? 9 : -9);
-      f.parts.push(`<text x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, rowUnit, labelDecimals))}</text>`);
+      const labelKey = tickReadbackOn() && mode === "bar" ? ` data-role="value-label"${trAttr("data-category", row[spec.category_field])}${trAttr("data-value", value)}` : "";
+      f.parts.push(`<text${labelKey} x="${labelX}" y="${y + 4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(labelText(value, rowUnit))}</text>`);
     }
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x, y, { side: value >= 0 ? "right" : "left", layout: f.annotationLayout }));
   });
@@ -3815,9 +4241,10 @@ function renderDumbbell(spec, rows) {
   const base = f.bodyTop + 4 + DUMBBELL_KEY_H;
   const left = 250, right = 945, top = base + refMargin, bottom = f.bodyBottom - 34;
   const values = sorted.flatMap((r) => [n(r[spec.start_field]), n(r[spec.end_field])]).filter((v) => v !== null);
-  const domain = extent(values, false);
+  const domain = niceAxisDomain(extent(values, false));
+  const labelPlan = axisLabelPlan(spec, values, horizontalAxisTicks(domain, LAYOUT_W), spec.unit);
   const scale = horizontalScale(domain, left, right);
-  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W);
+  addHorizontalAxis(f.parts, domain, left, right, top, bottom, spec.unit, spec, LAYOUT_W, null, base - 6);
   {
     // Key: which dot is which period (start colour first, then end colour).
     const keyY = f.bodyTop + 4 + 12, KEY_PX = 6.4;
@@ -3839,7 +4266,7 @@ function renderDumbbell(spec, rows) {
     f.parts.push(`<text x="235" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(resolveEconomyDisplayName(row[spec.category_field], spec.category_names, vizLang(spec)))}</text>`);
     f.parts.push(`<line data-role="data-bar" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${PALETTE.context}" stroke-width="3"/>`);
     f.parts.push(`<circle cx="${x1}" cy="${y}" r="5" fill="${PALETTE.accent2}"/><circle cx="${x2}" cy="${y}" r="5" fill="${PALETTE.accent}"/>`);
-    dumbbellValueLabels(x1, x2, a, b, fmtSpec(spec, a, spec.unit), fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
+    dumbbellValueLabels(x1, x2, a, b, labelPlan ? labelPlan.text(a) : fmtSpec(spec, a, spec.unit), labelPlan ? labelPlan.text(b) : fmtSpec(spec, b, spec.unit), 7).forEach((label) => f.parts.push(`<text x="${label.x}" y="${y - 9}" text-anchor="${label.anchor}" font-family="${FONT_SANS}" font-size="12" fill="${label.fill}">${esc(label.text)}</text>`));
     pointAnnotations(spec, row).forEach((annotation) => addPointAnnotation(f.parts, annotation, x2, y, { side: "right", layout: f.annotationLayout }));
   });
   if (!LAYERING_FIX) drawHorizontalValueReferenceLines(f.parts, refLines, { scale, top, base, bottom, left, right });
@@ -4004,9 +4431,10 @@ function renderMirroredBar(spec, rows) {
   // Vertical layout: [panel titles | period key] row, series names, rows, ticks.
   const pitch = Math.max(17, Math.min(32, Math.round(440 / Math.max(total, 1))));
   const headRow = overlay || sideBySide;
-  const headerH = (headRow ? 24 : 0) + 28;
+  const unitRow = axisUnitRowH(spec);
+  const headerH = (headRow ? 24 : 0) + 28 + unitRow;
   const f = frame(spec, headerH + total * pitch + 32);
-  const rowY = f.bodyTop + 16;
+  const rowY = f.bodyTop + 16 + unitRow;
   const namesY = rowY + (headRow ? 24 : 0);
   const plotTop = namesY + 12;
   const plotBottom = plotTop + total * pitch;
@@ -4024,6 +4452,11 @@ function renderMirroredBar(spec, rows) {
   const widestCategory = Math.max(0, ...categoryText.map((text, i) => (gutterShown(i) ? textPx(text) : 0)));
   // [value the label sits beyond, its width, its width without the unit]
   const labelBars = [];
+  // K202: the labels are written in the axis's scale. The first estimate (for the label room) uses the unthinned ticks; the
+  // drawn labels use the final axis (below), whose top tick can differ only at a 万/亿 boundary.
+  const labelPlan0 = axisLabelPlan(spec, printed, mirroredAxis(m.maxValue, Infinity, () => []).ticks, spec.unit);
+  const mirrorKey = (category, series, period, value, sk) => (tickReadbackOn() ? `${trAttr("data-category", category)}${trAttr("data-series", series)}${period !== "" ? trAttr("data-period", period) : ""}${trAttr("data-value", value)}${trAttr("data-side", sk === 0 ? "left" : "right")}` : "");
+  const mirrorLabel = (plan, value, pk, sk, i, bare = false) => (plan ? plan.text(value) : fmtSpec(spec, value, bare ? "" : labelUnit(pk, sk, i), decimals));
   panelPeriods.forEach((period, pk) => {
     m.categories.forEach((category, i) => {
       if (!labelled(category)) return;
@@ -4031,22 +4464,24 @@ function renderMirroredBar(spec, rows) {
         const value = m.valueAt(category, series, period);
         if (value === null) return;
         const otherValue = overlay ? m.valueAt(category, series, m.other) : null;
-        labelBars.push([Math.max(value, otherValue ?? 0), textPx(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals)), textPx(fmtSpec(spec, value, "", decimals))]);
+        labelBars.push([Math.max(value, otherValue ?? 0), textPx(mirrorLabel(labelPlan0, value, pk, sk, i)), textPx(mirrorLabel(labelPlan0, value, pk, sk, i, true))]);
       });
     });
   });
-  const tickLabelWidths = (ticks) => ticks.map((tick, ti) => textPx(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, ticks.length))));
+  // Tick spellings of one candidate list: under notation B (zh) bare numbers on one scale, else as always.
+  const mirrorTickTexts = (ticks, unit) => axisNotationB(spec, ticks, spec.unit)?.texts ?? ticks.map((tick, ti) => tickLabelSpec(spec, tick, axisTickUnit(unit, ti, ticks.length)));
+  const tickLabelWidths = (ticks) => mirrorTickTexts(ticks, spec.unit).map(textPx);
   const fullTicks = mirroredAxis(m.maxValue, Infinity, () => []).ticks; // before any thinning
   // Room a half needs past its axis end: the widest tick label is centred on it.
   const tickRoom = Math.ceil((Math.max(...tickLabelWidths(fullTicks)) + 8) / 2);
   // The gutter may take whatever leaves each half 80px plus that room. The room
   // is measured without the unit, so a long unit shortens bars (below), never
   // the category labels.
-  const tickRoomBare = Math.ceil((Math.max(...fullTicks.map((tick) => textPx(tickLabelSpec(spec, tick, "")))) + 8) / 2);
+  const tickRoomBare = Math.ceil((Math.max(...mirrorTickTexts(fullTicks, "").map(textPx)) + 8) / 2);
   const labelRoomBare = labelBars.length ? Math.max(...labelBars.map(([, , bare]) => bare)) + 9 : 0;
   // The two "0" labels sit on the gutter's two edges; where the style puts the
   // unit on every tick (legacy) the gutter must hold both side by side.
-  const zeroLabelPx = textPx(tickLabelSpec(spec, 0, axisTickUnit(spec.unit, 0, fullTicks.length)));
+  const zeroLabelPx = textPx(mirrorTickTexts(fullTicks, spec.unit)[0]);
   let gutterW = Math.max(56, widestCategory + 24, zeroLabelPx + 8);
   let gutterText = categoryText;
   const gutterCap = Math.max(56, panelW - 2 * (80 + Math.max(labelRoomBare, tickRoomBare)));
@@ -4076,6 +4511,14 @@ function renderMirroredBar(spec, rows) {
   // Layers are collected, then painted: gridlines under bars, outlines over
   // bars, text last (text never sits on a bar: labels go beyond the bar ends).
   const heads = [], grid = [], bars = [], outlines = [], valueTexts = [], gutterLabels = [], tickLabels = [];
+  const axisTickLabelTexts = mirrorTickTexts(axis.ticks, spec.unit);
+  const unitLine = axisNotationB(spec, axis.ticks, spec.unit)?.unitLine;
+  const labelPlan = axisLabelPlan(spec, printed, axis.ticks, spec.unit);
+  if (unitLine) {
+    const mUnitRole = tickReadbackOn() ? ` data-role="axis-unit-line"${trAttr("data-scale", 10 ** axisNotationB(spec, axis.ticks, spec.unit).scale.power)}` : ` data-role="axis-unit"`;
+    if (unitLineLeft(spec)) heads.push(`<text${mUnitRole} x="54" y="${px(f.bodyTop + 12)}" text-anchor="start" font-family="${FONT_SANS}" font-size="13" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+    else heads.push(`<text${mUnitRole} x="${px(f.width - 54)}" y="${px(f.bodyTop + 12)}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(unitLine)}</text>`);
+  }
   panelPeriods.forEach((period, pk) => {
     const cx = 54 + pk * (panelW + panelGap) + panelW / 2;
     const gl = cx - gutterW / 2, gr = cx + gutterW / 2;
@@ -4089,7 +4532,7 @@ function renderMirroredBar(spec, rows) {
       for (const sk of [0, 1]) {
         const x = sk === 0 ? gl - tick * k : gr + tick * k;
         grid.push(`<line data-role="grid-line" x1="${px(x)}" y1="${px(plotTop)}" x2="${px(x)}" y2="${px(plotBottom)}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-        tickLabels.push(`<text data-role="axis-tick-label" x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, ti, axis.ticks.length)))}</text>`);
+        tickLabels.push(`<text data-role="axis-tick-label"${tickReadbackOn() ? `${trAttr("data-tick-value", tick)}${trAttr("data-side", sk === 0 ? "left" : "right")}` : ""} x="${px(x)}" y="${px(tickY)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(axisTickLabelTexts[ti])}</text>`);
       }
     });
     m.categories.forEach((category, i) => {
@@ -4106,7 +4549,7 @@ function renderMirroredBar(spec, rows) {
         const fill = highlighted ? PALETTE.accent : sk === 0 ? PALETTE.accent2 : PALETTE.series3;
         if (length > 0) {
           const w = Math.max(1, length);
-          bars.push(`<rect data-role="data-bar" x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
+          bars.push(`<rect data-role="data-bar"${mirrorKey(category, series, period, value, sk)} x="${px(sk === 0 ? gl - w : gr)}" y="${px(barY)}" width="${px(w)}" height="${px(barH)}" fill="${fill}"/>`);
         }
         // The other period: a stroke with no fill, inset so its outer edge
         // lands on the value and neighbouring rows' strokes keep a gap.
@@ -4115,7 +4558,7 @@ function renderMirroredBar(spec, rows) {
         }
         if (value !== null && labelled(category)) {
           const reach = Math.max(length, otherLength);
-          valueTexts.push(`<text data-role="bar-value-label" x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(fmtSpec(spec, value, labelUnit(pk, sk, i), decimals))}</text>`);
+          valueTexts.push(`<text${tickReadbackOn() ? ` data-role="value-label"${mirrorKey(category, series, period, value, sk)}` : ` data-role="bar-value-label"`} x="${px(sk === 0 ? gl - reach - 5 : gr + reach + 5)}" y="${px(baseline)}" text-anchor="${sk === 0 ? "end" : "start"}" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.ink}">${esc(mirrorLabel(labelPlan, value, pk, sk, i))}</text>`);
         }
       });
     });
@@ -4378,6 +4821,7 @@ function fitLineEndLabel(text, x, trueEdge) {
 }
 
 function renderLine(spec, rows, multi = false) {
+  const wave = multi && storyFormsEnabled() && hasWaveFields(spec);
   let left = 100, right = LAYOUT_W - 100;
   const seriesField = multi ? spec.series_field : null;
   const seriesNames = seriesField ? unique(rows.map((r) => r[seriesField])) : ["series"];
@@ -4392,6 +4836,10 @@ function renderLine(spec, rows, multi = false) {
   const lineSeriesGroup = (series) => rows.filter((r) => !seriesField || String(r[seriesField]) === series).sort((a, b) => xIndex.get(String(a[spec.x_field])) - xIndex.get(String(b[spec.x_field])));
   const lineEndValues = seriesNames.map((series) => { const g = lineSeriesGroup(series); const last = g[g.length - 1]; return last ? n(last[spec.value_field]) : null; }).filter((v) => v !== null);
   const labelDecimals = resolveChartDecimals(spec, lineEndValues);
+  // wave notes: "{value}" in a note's text is replaced by the renderer with the note's own row value in the axis style (unit-labelled), never typed by the model
+  if (wave && Array.isArray(spec.annotations) && spec.annotations.some((a) => typeof a?.text === "string" && a.text.includes("{value}"))) {
+    spec = { ...spec, annotations: spec.annotations.map((a) => (typeof a?.text === "string" && a.text.includes("{value}") && n(a.value) !== null ? { ...a, text: a.text.split("{value}").join(fmtSpec(spec, n(a.value), spec.unit, labelDecimals)) } : a)) };
+  }
   if (tight) {
     const PX = 6.8;
     const earlyValues = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
@@ -4418,6 +4866,10 @@ function renderLine(spec, rows, multi = false) {
     right = LAYOUT_W - 54 - band;
   }
   const xScale = (value) => xValues.length <= 1 ? (left + right) / 2 : left + (xIndex.get(String(value)) / (xValues.length - 1)) * (right - left);
+  // Story-form wave: the rows the SQL flagged provisional, per series. Program-derived; the model never types a flag.
+  const provisional = wave && spec.provisional_field ? provisionalMap(spec, rows, xValues).flagged : new Map();
+  const provisionalXs = new Set([...provisional.values()].flatMap((set) => [...set]));
+  if (provisionalXs.size) spec = { ...spec, source_note: [spec.source_note, vizLang(spec) === "zh" ? "* 为暂定数" : "* provisional"].filter(Boolean).join(vizLang(spec) === "zh" ? "；" : "; ") };
   // Decide the event-annotation layout (lane vs. numbered-marker fallback)
   // before choosing a frame height: it only needs x positions and text
   // width, and the fallback's caption list needs extra body height the
@@ -4425,7 +4877,7 @@ function renderLine(spec, rows, multi = false) {
   // 986 is the frame's own established safe-text right margin (see frame()'s
   // annotationLayout/footer rule) - wider than the plot's own right edge
   // (`right`, 940), which otherwise-empty margin a lane label may use.
-  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, LAYOUT_W - 54);
+  const eventLayout = layoutEventAnnotations(spec, rows, xScale, left, right, 16, LAYOUT_W - 54, wave && spec.numbered_notes === true);
   const captionExtra = eventLayout.fallback && eventLayout.events.length ? eventLayout.events.length * 16 + 22 : 0;
   const f = frame(spec, 380 + captionExtra);
   const bottom = f.bodyBottom - (tight ? 40 : 48) - captionExtra;
@@ -4469,10 +4921,11 @@ function renderLine(spec, rows, multi = false) {
   }
   // Fix 3: the unit shows once, on the top-most tick, not on every one -
   // see axisTickUnit.
+  const yTickTexts = axisTickTexts(spec, yTicks, spec.unit, labelDecimals);
   yTicks.forEach((tick, i) => {
     const y = yScale(tick);
     f.parts.push(`<line data-role="value-axis-tick" x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, axisTickUnit(spec.unit, i, yTicks.length)))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(yTickTexts[i])}</text>`);
   });
   const labelEvery = Math.max(1, Math.ceil(xValues.length / 8));
   const directLabels = [];
@@ -4495,7 +4948,7 @@ function renderLine(spec, rows, multi = false) {
   }
   xValues.forEach((xv, i) => {
     if (avoidTickOverlap ? !tickLabelKept.has(i) : (i % labelEvery !== 0 && i !== xValues.length - 1)) return;
-    f.parts.push(`<text x="${xScale(xv)}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}</text>`);
+    f.parts.push(`<text x="${xScale(xv)}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(xv)}${provisionalXs.has(String(xv)) ? "*" : ""}</text>`);
   });
   // Fix 2: every end label in this chart (one per series) shares one
   // decimal count - resolved once, up front, from every series' final
@@ -4517,14 +4970,32 @@ function renderLine(spec, rows, multi = false) {
     // "de-emphasised context series" colour (accent2) it used to hardcode
     // regardless of highlight_values.
     const singleSeriesHasAccent = HOUSE_STYLE_ACTIVE && !multi && (spec.highlight_values ?? []).map(String).some((v) => group.some((r) => String(r[spec.x_field]) === v));
-    const stroke = multi ? (highlighted ? PALETTE.accent : PALETTE.context) : (HOUSE_STYLE_ACTIVE ? (singleSeriesHasAccent ? PALETTE.accent : PALETTE.ink) : PALETTE.accent2);
+    const stroke = multi ? (highlighted ? (wave ? storyTone(spec) : PALETTE.accent) : PALETTE.context) : (HOUSE_STYLE_ACTIVE ? (singleSeriesHasAccent ? PALETTE.accent : PALETTE.ink) : PALETTE.accent2);
     const width = highlighted ? 2.5 : 1.5;
     const points = group.map((r) => ({ x: xScale(r[spec.x_field]), y: yScale(n(r[spec.value_field])) }));
+    // Story-form wave: the settled part is the ordinary line (tagged with its series so render QA can find it), the provisional tail
+    // is a separate dashed polyline from the last settled point through the flagged years, and the filled area under area_series
+    // is one polygon whose top edge visits every plotted point.
+    const flagSet = wave ? provisional.get(String(series)) : null;
+    const flagged = flagSet && flagSet.size ? group.map((r) => flagSet.has(String(r[spec.x_field]))) : null;
+    const solidCount = flagged ? flagged.indexOf(true) : points.length;
+    const solidPoints = flagged ? points.slice(0, solidCount) : points;
+    const seriesAttr = wave ? ` data-series="${esc(String(series))}"` : "";
+    const roundStroke = wave ? storyStrokeAttrs("wave-line", { stroke, width, cap: "round", join: "round" }) : `stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`;
+    if (wave && spec.area_series !== undefined && String(series) === String(spec.area_series) && points.length >= 2) {
+      const baseY = bottom;
+      const edge = points.map((p) => `${p.x},${p.y}`);
+      f.parts.push(`<polygon data-role="line-area"${seriesAttr} points="${[...edge, `${points[points.length - 1].x},${baseY}`, `${points[0].x},${baseY}`].join(" ")}" fill="${stroke}" fill-opacity="0.14" stroke="none"/>`);
+    }
     if (useMonotone) {
-      f.parts.push(`<path data-role="line-path" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" d="${monotoneCubicPath(points)}" opacity="${highlighted ? 1 : 0.72}"/>`);
+      f.parts.push(`<path data-role="line-path"${seriesAttr} fill="none" ${roundStroke} d="${monotoneCubicPath(solidPoints)}" opacity="${highlighted ? 1 : 0.72}"/>`);
     } else {
-      const coords = points.map((p) => `${p.x},${p.y}`).join(" ");
-      f.parts.push(`<polyline data-role="line-path" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" points="${coords}" opacity="${highlighted ? 1 : 0.72}"/>`);
+      const coords = solidPoints.map((p) => `${p.x},${p.y}`).join(" ");
+      f.parts.push(`<polyline data-role="line-path"${seriesAttr} fill="none" ${roundStroke} points="${coords}" opacity="${highlighted ? 1 : 0.72}"/>`);
+    }
+    if (flagged && solidCount >= 1) {
+      const tail = points.slice(solidCount - 1);
+      f.parts.push(`<polyline data-role="line-path-provisional"${seriesAttr} fill="none" ${storyStrokeAttrs("wave-tail", { stroke, width, cap: "butt", dash: "5 4" })} points="${tail.map((p) => `${p.x},${p.y}`).join(" ")}" opacity="${highlighted ? 1 : 0.72}"/>`);
     }
     {
       // Marker restriction (Task A, extended by follow-up fix 5): a
@@ -4937,12 +5408,14 @@ function renderScatter(spec, rows) {
   const yLinear = verticalScale(yDomainRaw, top, bottom);
   const yScale = (value) => yLinear(spec.y_scale === "log" ? Math.log10(value) : value);
   const yTicks = spec.y_scale === "log" ? logTickValues(yDomainRaw) : tickValues(yDomainRaw, 4);
-  yTicks.forEach((tick) => {
+  const scatterYTexts = axisTickTexts(spec, yTicks, spec.y_unit ?? spec.unit, null, { unitOnEvery: true });
+  const scatterXTexts = axisTickTexts(spec, xInfo.ticks, spec.x_unit ?? "", null, { unitOnEvery: true, spelled: (tick) => tickLabel(tick, spec.x_unit ?? "", vizLang(spec)) });
+  yTicks.forEach((tick, i) => {
     const y = yScale(tick); f.parts.push(`<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${PALETTE.grid}"/>`);
-    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabelSpec(spec, tick, spec.y_unit ?? spec.unit))}</text>`);
+    f.parts.push(`<text x="${left - 12}" y="${y + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(scatterYTexts[i])}</text>`);
   });
-  xInfo.ticks.forEach((tick) => {
-    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(tickLabel(tick, spec.x_unit ?? "", vizLang(spec)))}</text>`);
+  xInfo.ticks.forEach((tick, i) => {
+    const x = xInfo.scale(tick); f.parts.push(`<text x="${x}" y="${bottom + 24}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(scatterXTexts[i])}</text>`);
   });
   if (spec.x_label) f.parts.push(`<text x="${(left + right) / 2}" y="${bottom + 50}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.x_label)}</text>`);
   if (spec.y_label) f.parts.push(`<text x="18" y="${(top + bottom) / 2}" transform="rotate(-90 18 ${(top + bottom) / 2})" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" font-weight="600" fill="${PALETTE.muted}">${esc(spec.y_label)}</text>`);
@@ -5045,12 +5518,39 @@ function heatmapBaseDecimals(spec, vals){
 // What a heatmap cell prints for a value, exactly as renderHeatmap spells it (render QA proves it against the SVG).
 export function heatmapCellText(spec, rows, value){
   const vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null);
+  if (spec.chart_type === "tile_map") return tileMapMark(spec) === "line" ? tileMapNumberText(spec, value) : fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals));
   return heatmapTidyEnabled() ? fmtSpec(spec, value, "", heatmapTidyDecimals(spec, vals)) : fmtSpec(spec, value, spec.unit);
 }
 // NEWSROOM_HEATMAP_VALUE_LABELS=1 (exact "1"): desktop cells carry data-role/data-x/data-y/data-value so render QA can prove
 // every cell shows its value (editorial_validators.mjs heatmapValueLabelsProven).
 function heatmapValueLabelsEnabled(){ return process.env.NEWSROOM_HEATMAP_VALUE_LABELS==="1"; }
 
+// NEWSROOM_HEATMAP_LOG_COLOR=1 (exact "1", default off): spec.color_scale "log" maps cell colour on the log of the value.
+// The program computes it from the data; cell numbers and the data are unchanged.
+function heatmapLogColorEnabled() { return process.env.NEWSROOM_HEATMAP_LOG_COLOR === "1"; }
+function heatmapLogColor(spec) { return heatmapLogColorEnabled() && spec?.chart_type === "heatmap" && spec.color_scale === "log"; }
+// Colour position 0..1 of a value; the linear branch is the expression the renderers always used.
+function heatmapColorT(spec, min, max) {
+  if (!heatmapLogColor(spec)) return (value) => (value - min) / (max - min || 1);
+  const lo = Math.log(min), hi = Math.log(max);
+  return (value) => (value > 0 ? (Math.log(value) - lo) / (hi - lo || 1) : 0);
+}
+// Domain of a log colour scale: the smallest and largest positive value, so the first and last colours are real cells.
+function heatmapLogDomain(vals) {
+  const positive = vals.filter((v) => v > 0);
+  return positive.length ? [Math.min(...positive), Math.max(...positive)] : [1, 10];
+}
+// Legend of the log scale: a tick at every power of ten inside the domain (clear of the end labels) and the scale named.
+function heatmapLogLegend(spec, parts, left, legendW, legendY, min, max) {
+  const lo = Math.log10(min), hi = Math.log10(max), span = hi - lo || 1;
+  for (let power = Math.ceil(lo); power <= Math.floor(hi); power += 1) {
+    const x = left + ((power - lo) / span) * legendW;
+    if (x - left < 28 || left + legendW - x < 28) continue;
+    parts.push(`<rect x="${x - 0.5}" y="${legendY}" width="1" height="11" fill="${PALETTE.muted}"/>`);
+    parts.push(`<text x="${x}" y="${legendY + 22}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, 10 ** power, spec.unit))}</text>`);
+  }
+  parts.push(`<text x="${left + legendW + 16}" y="${legendY + 22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(vizLang(spec) === "zh" ? "对数色阶" : "Log colour scale")}</text>`);
+}
 function renderHeatmap(spec, rows) {
   const xs = unique(rows.map((r) => r[spec.x_field]));
   const ys = unique(rows.map((r) => r[spec.y_field]));
@@ -5058,9 +5558,19 @@ function renderHeatmap(spec, rows) {
   const f = frame(spec, bodyHeight);
   const left = 190, right = 950, top = f.bodyTop + 35, bottom = f.bodyBottom - 40;
   const cellW = (right - left) / Math.max(1, xs.length), cellH = (bottom - top) / Math.max(1, ys.length);
+  // unit-aware + value-labels proof: cells too small for their number are an error here, at the single chart, not a page lint later
+  if (unitAwareLabelsEnabled() && heatmapValueLabelsEnabled() && (cellW <= 48 || cellH <= 30)) {
+    const zh = vizLang(spec) === "zh", wide = cellW <= 48;
+    const count = wide ? xs.length : ys.length, px = Math.floor(wide ? cellW : cellH);
+    throw new Error(zh
+      ? `热力图${wide ? "列" : "行"}数 ${count} 太多：格子${wide ? "宽" : "高"} ${px}px，放不下逐格数字（需要大于 ${wide ? 48 : 30}px）。请转置为${wide ? "行×列（把多的一维放到行上）" : "列×行"}，或减少${wide ? "列" : "行"}数`
+      : `heatmap has ${count} ${wide ? "columns" : "rows"}: each cell is ${px}px ${wide ? "wide" : "high"}, too small for its number (needs more than ${wide ? 48 : 30}px). Transpose so the longer dimension runs down the rows, or reduce the ${wide ? "columns" : "rows"}`);
+  }
   const vals = rows.map((r) => n(r[spec.value_field])).filter((v) => v !== null);
   const tidy = heatmapTidyEnabled();
-  const [min, max] = tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const logColor = heatmapLogColor(spec);
+  const [min, max] = logColor ? heatmapLogDomain(vals) : tidy ? [Math.min(...vals), Math.max(...vals)] : extent(vals, false);
+  const colorT = heatmapColorT(spec, min, max);
   const tidyDecimals = tidy ? heatmapTidyDecimals(spec, vals) : null;
   const proofOn = heatmapValueLabelsEnabled();
   const index = new Map(rows.map((r) => [`${r[spec.x_field]}\u0000${r[spec.y_field]}`, n(r[spec.value_field])]));
@@ -5077,14 +5587,24 @@ function renderHeatmap(spec, rows) {
     f.parts.push(`<text x="${left - 10}" y="${top + (yi + 0.5) * cellH + 4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(yv)}</text>`);
     xs.forEach((xv, xi) => {
       const value = index.get(`${xv}\u0000${yv}`); if (value === null || value === undefined) return;
-      const t = (value - min) / (max - min || 1);
+      const t = colorT(value);
       const x = left + xi * cellW, y = top + yi * cellH;
       const cellAttrs = proofOn ? ` data-role="heatmap-cell" data-x="${esc(xv)}" data-y="${esc(yv)}" data-value="${value}"` : "";
       f.parts.push(`<rect${cellAttrs} x="${x + 1}" y="${y + 1}" width="${Math.max(1, cellW - 2)}" height="${Math.max(1, cellH - 2)}" fill="${mix(t)}"/>`);
       if (cellW > 48 && cellH > 30) {
         const style = labelStyleOnFill(mixChannels(t));
+        // unit-aware: pure black or white, whichever has the higher contrast on this cell, never an outline; colours are unchanged.
+        // (PALETTE.ink leaves a dead zone below 4.5:1 on the mid reds; #000000 does not.) Neither reaching 4.5:1 marks the text
+        // for a render QA warning.
+        let lowContrast = "";
+        if (unitAwareLabelsEnabled()) {
+          const rgb = mixChannels(t), white = contrastRatioRgb(LABEL_ON_FILL_WHITE, rgb), black = contrastRatioRgb([0, 0, 0], rgb);
+          style.fill = white >= black ? "#ffffff" : "#000000";
+          style.halo = null;
+          if (Math.max(white, black) < LABEL_ON_FILL_REQUIRED_RATIO) lowContrast = ' data-contrast-low="1"';
+        }
         const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
-        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
+        f.parts.push(`<text${proofOn ? ` data-role="heatmap-cell-value" data-x="${esc(xv)}" data-y="${esc(yv)}"` : ""}${lowContrast} x="${x + cellW / 2}" y="${y + cellH / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(tidy ? fmtSpec(spec, value, "", tidyDecimals) : fmtSpec(spec, value, spec.unit))}</text>`);
       }
     });
   });
@@ -5099,9 +5619,219 @@ function renderHeatmap(spec, rows) {
   f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
   f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
   }
+  if (logColor) heatmapLogLegend(spec, f.parts, left, legendW, legendY, min, max);
   addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
 }
 
+
+// ===========================================================================
+// tile_map (NEWSROOM_TILE_MAP=1, exact "1", default off): one square tile per US state (and DC) at the (tile_col, tile_row) the
+// state table gives (runtime/pi/assets/us-state-names.json). Names (short Chinese name) and positions come only from the table.
+// Drawn on the 1248px width of a 12-column slot, so the page embeds it at scale 1 (no compact variant, see COMPACT_CHART_TYPES).
+//   cell_mark "line" (default): the tile background is one of four classes of color_field (a column of the query result, one
+//     value per state), that value is printed top-right, and a small line draws the state's own series over x_field (2..12
+//     time points, each state scaled to its own peak); a solid dot marks the peak, a hollow dot the last point, and the
+//     points named in provisional_values are hollow with a dashed segment. Render QA proves the printed number with the
+//     heatmap value-label proof and each line vertex against the rows (checkTileMapProof).
+//   cell_mark "strip": a row of small cells per time point (2..6) on one shared colour scale, each cell printing its value
+//     (the heatmap proof, cell by cell).
+// ===========================================================================
+export const TILE_MAP_VIEW_W = 1248;
+const TILE_LINE_H = 16, TILE_PAD = 4, TILE_CELL_GAP = 2, TILE_GAP = 6, TILE_SPARK_H = 36, TILE_STRIP_CELL_H = 17;
+const TILE_CLASS_T = [0.12, 0.38, 0.64, 0.9];
+export function withTileMapWidth(render) {
+  const previous = LAYOUT_W;
+  LAYOUT_W = TILE_MAP_VIEW_W;
+  try { return render(); } finally { LAYOUT_W = previous; }
+}
+// The number printed in a tile's corner: the colour column's value, spelled once for the renderer and for render QA.
+// Render-QA options for a tile_map: the heatmap value-label proof (hard-failing, see render_qa.mjs) plus the tile proof. Line mark: the
+// corner numbers are the colour column, one synthetic row per state keyed like the tile's data-x/data-y; strip mark: the cells are the rows.
+export function tileMapQaOptions(spec, rows) {
+  const mark = tileMapMark(spec);
+  const tile_map = { rows, category_field: spec.category_field, x_field: spec.x_field, value_field: spec.value_field, cell_mark: mark, language: spec.language, highlight_values: spec.highlight_values, provisional_values: spec.provisional_values };
+  if (mark === "strip") return { heatmap: { rows, spec, x_field: spec.x_field, y_field: spec.category_field, value_field: spec.value_field, tile_map } };
+  const seen = new Set();
+  const proofRows = [];
+  for (const row of rows) {
+    const st = resolveUsState(row[spec.category_field]);
+    if (!st || seen.has(st.usps)) continue;
+    seen.add(st.usps);
+    proofRows.push({ X: spec.color_field, Y: String(row[spec.category_field]), V: row[spec.color_field] });
+  }
+  return { heatmap: { rows: proofRows, text_rows: rows, spec, x_field: "X", y_field: "Y", value_field: "V", tile_map } };
+}
+
+export function tileMapNumberText(spec, value) {
+  return fmtSpec(spec, value, spec.color_unit ?? "");
+}
+// Per-state series scale of the line mark: zero baseline when nothing is negative, else the series minimum; top = the peak.
+export function tileMapLineScale(values) {
+  const lo = Math.min(0, ...values), hi = Math.max(...values);
+  return { lo, hi, y: (v, y0, y1) => (hi === lo ? y1 : y1 - ((v - lo) / (hi - lo)) * (y1 - y0)) };
+}
+export function tileMapPeakIndex(values) { return values.indexOf(Math.max(...values)); }
+// Class edges of the line mark's background: three explicit ascending thresholds, else four classes from the data.
+export function tileMapBreaks(spec, colorValues) {
+  if (Array.isArray(spec.color_breaks) && spec.color_breaks.length === 3) return [-Infinity, ...spec.color_breaks.map(Number), Infinity];
+  const nb = niceBreaks(Math.min(...colorValues), Math.max(...colorValues), 4);
+  const inner = nb.length >= 5 ? nb.slice(1, 4) : nb.slice(1, -1);
+  return [-Infinity, ...inner, Infinity];
+}
+export function tileMapClassOf(value, edges) {
+  for (let i = 0; i < edges.length - 1; i += 1) if (value < edges[i + 1]) return i;
+  return edges.length - 2;
+}
+function tileMapMix(t) {
+  const a = [242, 243, 244], b = [209, 73, 63], c = a.map((v, i) => Math.round(v + (b[i] - v) * clamp(t, 0, 1)));
+  return { channels: c, css: `rgb(${c[0]},${c[1]},${c[2]})` };
+}
+function tileMapLabelStyle(rgb) {
+  const style = labelStyleOnFill(rgb);
+  let lowContrast = "";
+  if (unitAwareLabelsEnabled()) {
+    const white = contrastRatioRgb(LABEL_ON_FILL_WHITE, rgb), black = contrastRatioRgb([0, 0, 0], rgb);
+    style.fill = white >= black ? "#ffffff" : "#000000";
+    style.halo = null;
+    if (Math.max(white, black) < LABEL_ON_FILL_REQUIRED_RATIO) lowContrast = ' data-contrast-low="1"';
+  }
+  const halo = style.halo ? ` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"` : "";
+  return { fill: style.fill, halo, lowContrast };
+}
+function renderTileMap(spec, rows) {
+  const zh = vizLang(spec) === "zh", mark = tileMapMark(spec), line = mark === "line";
+  const points = orderedPoints(rows, spec.x_field), N = points.length, cat = spec.category_field;
+  const cells = new Map(), colorOf = new Map();
+  for (const row of rows) {
+    const state = resolveUsState(row[cat]);
+    const value = n(row[spec.value_field]);
+    if (!state || value === null) continue;
+    cells.set(`${state.usps}\u0000${String(row[spec.x_field])}`, { value, raw: String(row[cat]) });
+    if (line && !colorOf.has(state.usps)) colorOf.set(state.usps, n(row[spec.color_field]));
+  }
+  const present = usStates().filter((st) => points.some((p) => cells.has(`${st.usps}\u0000${p}`)));
+  const pitch = (LAYOUT_W - 108) / 12, tileW = pitch - TILE_GAP, left = 54;
+  const highlight = new Set((spec.highlight_values ?? []).map(String));
+  const isHot = (st, raws) => highlight.has(st.usps) || highlight.has(st.en) || highlight.has(st.zh) || raws.some((r) => highlight.has(r));
+  const rowsOf = (st) => points.map((p) => cells.get(`${st.usps}\u0000${p}`));
+  let tileH, headerLines = 1, cols = 0, cellW = 0, edges = null, vals = [], min = 0, max = 0, decimals = null;
+  const nameW = Math.max(...present.map((st) => estimateTextWidth(usStateShortName(st, zh ? "zh" : "en"), 12, true)));
+  if (line) {
+    const cvals = [...colorOf.values()];
+    edges = tileMapBreaks(spec, cvals);
+    const numW = Math.max(...cvals.map((v) => estimateTextWidth(tileMapNumberText(spec, v), 12, false)));
+    headerLines = nameW + numW + 8 <= tileW - 2 * TILE_PAD ? 1 : 2;
+    if (numW > tileW - 2 * TILE_PAD || nameW > tileW - 2 * TILE_PAD) throw new Error(zh ? "格子地图：州名或角上的数字比格子还宽" : "tile_map: a state name or corner number is wider than its tile");
+    tileH = headerLines * TILE_LINE_H + TILE_SPARK_H + TILE_PAD * 2;
+  } else {
+    vals = [...cells.values()].map((c) => c.value);
+    [min, max] = [Math.min(...vals), Math.max(...vals)];
+    decimals = heatmapTidyDecimals(spec, vals);
+    const maxTextW = Math.max(...vals.map((v) => estimateTextWidth(heatmapCellText(spec, rows, v), 12, false)));
+    for (let c = N; c >= 1; c -= 1) if ((tileW - 2 * TILE_PAD - (c - 1) * TILE_CELL_GAP) / c >= maxTextW + 4) { cols = c; break; }
+    if (!cols) throw new Error(zh
+      ? `格子地图：每个州格宽 ${Math.floor(tileW)}px，放不下数字 ${Math.ceil(maxTextW)}px（写成更短的数字，例如减少小数位或换单位）`
+      : `tile_map: each tile is ${Math.floor(tileW)}px wide, too narrow for a ${Math.ceil(maxTextW)}px value (use shorter numbers: fewer decimals or a larger unit)`);
+    cellW = (tileW - 2 * TILE_PAD - (cols - 1) * TILE_CELL_GAP) / cols;
+    tileH = TILE_LINE_H + Math.ceil(N / cols) * (TILE_STRIP_CELL_H + TILE_CELL_GAP) + TILE_PAD;
+  }
+  const styled = renderStylesEnabled() && specRenderStyle(spec, spec?.page_render_style) !== "house";
+  const headerH = (line ? headerLines : 1) * TILE_LINE_H; // styled pens print a paper-coloured title strip this tall on every tile
+  const rowPitch = tileH + TILE_GAP;
+  const gridRows = Math.max(...usStates().map((st) => st.tile_row));
+  const f = frame(spec, gridRows * rowPitch + (line ? 112 : 96));
+  const top = f.bodyTop + 8;
+  const classCss = TILE_CLASS_T.map((t) => tileMapMix(t));
+  const darkT = spec.color_dark === "low";
+  const classColor = (i) => classCss[darkT ? 3 - i : i];
+  for (const st of present) {
+    const tx = left + (st.tile_col - 1) * pitch, ty = top + (st.tile_row - 1) * rowPitch;
+    const series = rowsOf(st), raws = series.filter(Boolean).map((c) => c.raw), hot = isHot(st, raws);
+    const label = usStateShortName(st, zh ? "zh" : "en");
+    let fill = PALETTE.faint, rgb = [242, 242, 242];
+    if (line) { const k = classColor(tileMapClassOf(colorOf.get(st.usps), edges)); fill = k.css; rgb = k.channels; }
+    const style = line ? tileMapLabelStyle(rgb) : { fill: PALETTE.ink, halo: "", lowContrast: "" };
+    const tileKeyAttrs = line ? ` data-x="${esc(spec.color_field)}" data-y="${esc(raws[0])}"` : "";
+    const tileAttrs = line ? ` data-x="${esc(spec.color_field)}" data-y="${esc(raws[0])}" data-value="${colorOf.get(st.usps)}"` : "";
+    f.parts.push(`<rect data-role="${line ? "heatmap-cell" : "tile-map-tile"}" data-tile-state="${st.usps}"${tileAttrs} x="${tx}" y="${ty}" width="${tileW}" height="${tileH}" rx="2" fill="${fill}" stroke="${PALETTE.grid}" stroke-width="1"${styled ? ` data-header-h="${headerH}"` : ""}/>`);
+    if (hot) f.parts.push(`<rect data-role="tile-map-highlight" data-state="${st.usps}" x="${tx - 2}" y="${ty - 2}" width="${tileW + 4}" height="${tileH + 4}" rx="3" fill="none" stroke="${PALETTE.accent}" stroke-width="2.5"/>`);
+    f.parts.push(`<text data-role="tile-map-name" data-state="${st.usps}"${tileKeyAttrs} x="${tx + TILE_PAD}" y="${ty + 13}" font-family="${FONT_SANS}" font-size="12"${hot ? ' font-weight="700"' : ""} fill="${style.fill}"${style.halo}>${esc(label)}</text>`);
+    if (!line) {
+      points.forEach((p, i) => {
+        const cell = cells.get(`${st.usps}\u0000${p}`);
+        if (!cell) return;
+        const cx = tx + TILE_PAD + (i % cols) * (cellW + TILE_CELL_GAP), cy = ty + TILE_LINE_H + Math.floor(i / cols) * (TILE_STRIP_CELL_H + TILE_CELL_GAP);
+        const m = tileMapMix((cell.value - min) / (max - min || 1)), cs = tileMapLabelStyle(m.channels);
+        f.parts.push(`<rect data-role="heatmap-cell" data-x="${esc(p)}" data-y="${esc(cell.raw)}" data-value="${cell.value}" x="${cx}" y="${cy}" width="${cellW}" height="${TILE_STRIP_CELL_H}" fill="${m.css}"/>`);
+        f.parts.push(`<text data-role="heatmap-cell-value" data-x="${esc(p)}" data-y="${esc(cell.raw)}"${cs.lowContrast} x="${cx + cellW / 2}" y="${cy + TILE_STRIP_CELL_H / 2 + 4}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${cs.fill}"${cs.halo}>${esc(heatmapCellText(spec, rows, cell.value))}</text>`);
+      });
+      continue;
+    }
+    const numY = headerLines === 1 ? ty + 13 : ty + TILE_LINE_H + 13;
+    f.parts.push(`<text data-role="heatmap-cell-value" data-x="${esc(spec.color_field)}" data-y="${esc(raws[0])}"${style.lowContrast} x="${tx + tileW - TILE_PAD}" y="${numY}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${style.halo}>${esc(tileMapNumberText(spec, colorOf.get(st.usps)))}</text>`);
+    const values = series.map((c) => c.value), sc = tileMapLineScale(values);
+    const sx0 = tx + TILE_PAD + 4, sx1 = tx + tileW - TILE_PAD - 4;
+    const sy0 = ty + headerLines * TILE_LINE_H + 5, sy1 = ty + tileH - TILE_PAD - 3;
+    const px = (i) => sx0 + (N === 1 ? 0 : (i / (N - 1)) * (sx1 - sx0));
+    const prov = new Set((spec.provisional_values ?? []).map(String));
+    const pt = (i) => `${px(i).toFixed(2)},${sc.y(values[i], sy0, sy1).toFixed(2)}`;
+    const solidEnd = points.findIndex((p, i) => i > 0 && prov.has(p));
+    const solidTo = solidEnd === -1 ? N - 1 : solidEnd - 1;
+    f.parts.push(`<polyline data-role="tile-map-line" data-state="${st.usps}" data-y0="${sy0}" data-y1="${sy1}" fill="none" stroke="${style.fill}" stroke-width="1.4" stroke-linejoin="round" points="${points.map((_, i) => pt(i)).slice(0, solidTo + 1).join(" ")}"/>`);
+    if (solidTo < N - 1) f.parts.push(`<polyline data-role="tile-map-line-provisional" data-state="${st.usps}" fill="none" stroke="${style.fill}" stroke-width="1.4" stroke-dasharray="3 2" points="${points.map((_, i) => pt(i)).slice(solidTo).join(" ")}"/>`);
+    const peak = tileMapPeakIndex(values);
+    points.forEach((p, i) => {
+      const [cx, cy] = pt(i).split(",");
+      const last = i === N - 1, hollow = last || prov.has(p), isPeak = i === peak;
+      if (!hollow && !isPeak) return;
+      if (isPeak && last) f.parts.push(`<circle data-role="tile-map-point" data-kind="peak" data-state="${st.usps}" data-x="${esc(p)}" data-value="${values[i]}" cx="${cx}" cy="${cy}" r="2.6" fill="${style.fill}"/><circle data-role="tile-map-point-ring" cx="${cx}" cy="${cy}" r="4.4" fill="none" stroke="${style.fill}" stroke-width="1"/>`);
+      else if (isPeak) f.parts.push(`<circle data-role="tile-map-point" data-kind="peak" data-state="${st.usps}" data-x="${esc(p)}" data-value="${values[i]}" cx="${cx}" cy="${cy}" r="2.8" fill="${PALETTE.accent}"/>`);
+      else f.parts.push(`<circle data-role="tile-map-point" data-kind="${last ? "last" : "provisional"}" data-state="${st.usps}" data-x="${esc(p)}" data-value="${values[i]}" cx="${cx}" cy="${cy}" r="2.6" fill="${fill}" stroke="${style.fill}" stroke-width="1.3"/>`);
+    });
+  }
+  const legendY = top + gridRows * rowPitch + 14;
+  const outlineKey = (y) => {
+    if (!highlight.size) return;
+    if (styled) {
+      // Styled pens draw the outline as a thick dark ink frame, never in the accent colour; the key names it and says what it marks (spec.highlight_label, from the query's own column).
+      const mark = spec.highlight_label ?? (zh ? "重点标注的州" : "the states the story highlights");
+      f.parts.push(`<rect data-role="tile-map-highlight-key" x="${left}" y="${y}" width="14" height="10" rx="2" fill="none" stroke="${PALETTE.accent}" stroke-width="2.5"/>`);
+      f.parts.push(`<text data-role="tile-map-highlight-key-label" x="${left + 22}" y="${y + 9}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? `${STYLED_FRAME_NAME[specRenderStyle(spec, spec?.page_render_style)]}粗框＝${mark}` : `Thick ${STYLED_FRAME_NAME_EN[specRenderStyle(spec, spec?.page_render_style)]} frame = ${mark}`)}</text>`);
+      return;
+    }
+    f.parts.push(`<rect x="${left}" y="${y}" width="14" height="10" rx="2" fill="none" stroke="${PALETTE.accent}" stroke-width="2.5"/>`);
+    f.parts.push(`<text x="${left + 22}" y="${y + 9}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? "红框为重点标注的州" : "Outlined tiles are the states the story highlights")}</text>`);
+  };
+  if (line) {
+    const label = spec.color_label ?? spec.color_field;
+    // riso prints no tile colour: the dot size is the class, so the legend says so and its swatches are big enough to show the dots
+    const dotKey = styled && specRenderStyle(spec, spec?.page_render_style) === "riso";
+    const swatchW = dotKey ? 34 : 14, swatchH = dotKey ? 18 : 12;
+    f.parts.push(`<text data-role="tile-map-legend-title" x="${left}" y="${legendY + 11}" font-family="${FONT_SANS}" font-size="12" font-weight="700" fill="${PALETTE.ink}">${esc(dotKey ? (zh ? `网点大小：${label}` : `Dot size: ${label}`) : (zh ? `格子底色：${label}` : `Tile colour: ${label}`))}</text>`);
+    const fmt = (v) => tileMapNumberText(spec, v);
+    let x = left;
+    for (let i = 0; i < 4; i += 1) {
+      const text = i === 0 ? (zh ? `${fmt(edges[1])} 以下` : `below ${fmt(edges[1])}`) : i === 3 ? (zh ? `${fmt(edges[3])} 及以上` : `${fmt(edges[3])} and above`) : `${fmt(edges[i])} ~ ${fmt(edges[i + 1])}`;
+      f.parts.push(`<rect data-role="tile-map-legend-class" data-class="${i}" x="${x}" y="${legendY + 20}" width="${swatchW}" height="${swatchH}" rx="2" fill="${classColor(i).css}" stroke="${PALETTE.grid}"/>`);
+      f.parts.push(`<text x="${x + swatchW + 6}" y="${legendY + (dotKey ? 33 : 31)}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(text)}</text>`);
+      x += swatchW + 6 + Math.ceil(estimateTextWidth(text, 12, false)) + 22;
+    }
+    const first = points[0], last = points[N - 1];
+    const provNote = (spec.provisional_values ?? []).length ? (zh ? "；虚线＝暂定" : "; dashed = provisional") : "";
+    f.parts.push(`<text data-role="tile-map-order" x="${left}" y="${legendY + 52}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? `格内折线：${first}–${last}，各州按自己的最高值缩放；实心点＝峰值，空心点＝${last}${provNote}；右上角数字＝${label}` : `Line in each tile: ${first}–${last}, each state scaled to its own peak; solid dot = peak, hollow dot = ${last}${provNote}; corner number = ${label}`)}</text>`);
+    outlineKey(legendY + 64);
+  } else {
+    const legendW = 150;
+    f.parts.push(`<defs><linearGradient id="tile-map-grad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${tileMapMix(0).css}"/><stop offset="100%" stop-color="${tileMapMix(1).css}"/></linearGradient></defs>`);
+    f.parts.push(`<rect data-role="tile-map-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#tile-map-grad)"/>`);
+    const legendText = (x, anchor, v) => `<text x="${x}" y="${legendY + 24}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, v, "", decimals))}</text>`;
+    f.parts.push(legendText(left, "start", min), legendText(left + legendW, "end", max));
+    if (spec.unit) f.parts.push(`<text data-role="tile-map-unit" x="${left + legendW + 16}" y="${legendY + 9}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(`${zh ? "单位：" : "Unit: "}${spec.unit}`)}</text>`);
+    f.parts.push(`<text data-role="tile-map-order" x="${left + legendW + 16}" y="${legendY + 24}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(zh ? `每格内自左向右、自上而下依次为：${points.join(" → ")}` : `Cells in each tile, left to right then top to bottom: ${points.join(" → ")}`)}</text>`);
+    outlineKey(legendY + 40);
+  }
+  addFooter(f.parts, spec, f.footerTop); f.parts.push("</svg>"); return f.parts.join("\n") + "\n";
+}
 
 // ===========================================================================
 // strip_plot: a dot strip plot. One row per group on one shared linear value
@@ -5602,9 +6332,10 @@ function mobileFrame(spec, bodyHeight) {
   const titleLines = headlineWrap(spec.title, 38, true).length;
   const dekLines = spec.subtitle ? wrapText(spec.subtitle, 58).length : 0;
   const header = 26 + titleLines * 31 + dekLines * 20 + 20;
-  const footer = 78 + (spec.note ? wrapText(spec.note, 70).length * 16 : 0);
+  const mobileNotes = footerNoteEntries(spec, { x0: 32, maxChars: 70, dataNote: false });
+  const footer = 78 + mobileNotes.reduce((n, e) => n + e.lines * 16, 0);
   const height = Math.max(440, header + bodyHeight + footer);
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile">`];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="viz-title-mobile viz-desc-mobile" data-viewport="mobile"${tabularRootAttrs()}>`];
   parts.push(`<title id="viz-title-mobile">${esc(spec.title)}</title>`);
   parts.push(`<desc id="viz-desc-mobile">${esc(spec.alt)}</desc>`);
   parts.push(`<rect width="${width}" height="${height}" fill="${PAPER}"/>`);
@@ -5627,10 +6358,9 @@ function mobileFrame(spec, bodyHeight) {
 }
 
 function addMobileFooter(parts, spec, footerTop) {
-  const t = VIZ_STRINGS[vizLang(spec)];
   parts.push(`<line x1="32" y1="${footerTop - 16}" x2="608" y2="${footerTop - 16}" stroke="${PALETTE.grid}" stroke-width="1"/>`);
   let y = footerTop;
-  if (spec.note) y += svgTextLines(parts, `${t.note}${spec.note}`, 32, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
+  for (const e of footerNoteEntries(spec, { x0: 32, maxChars: 70, dataNote: false })) y += svgTextLines(parts, e.text, e.x, y, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: e.maxChars });
   svgTextLines(parts, sourceAttribution(spec.source_note, vizLang(spec)), 32, y + 3, { size: 12, lineHeight: 16, fill: PALETTE.muted, maxChars: 70 });
 }
 
@@ -5967,14 +6697,15 @@ function renderMobileScatter(spec, rows) {
 }
 
 function renderMobileHeatmap(spec, rows) {
-  const xs=unique(rows.map((r)=>r[spec.x_field])),ys=unique(rows.map((r)=>r[spec.y_field])),f=mobileFrame(spec,Math.max(330,ys.length*34+102)),left=145,right=606,top=f.bodyTop+40,bottom=f.bodyBottom-62,cellW=(right-left)/Math.max(1,xs.length),cellH=(bottom-top)/Math.max(1,ys.length),vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null),[min,max]=extent(vals,false),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\u0000${r[spec.y_field]}`,n(r[spec.value_field])])),mixChannels=(t)=>{const a=[242,243,244],b=[209,73,63];return a.map((v,i)=>Math.round(v+(b[i]-v)*clamp(t,0,1)));},mix=(t)=>{const c=mixChannels(t);return `rgb(${c[0]},${c[1]},${c[2]})`;};
+  const xs=unique(rows.map((r)=>r[spec.x_field])),ys=unique(rows.map((r)=>r[spec.y_field])),f=mobileFrame(spec,Math.max(330,ys.length*34+102)),left=145,right=606,top=f.bodyTop+40,bottom=f.bodyBottom-62,cellW=(right-left)/Math.max(1,xs.length),cellH=(bottom-top)/Math.max(1,ys.length),vals=rows.map((r)=>n(r[spec.value_field])).filter((v)=>v!==null),[min,max]=heatmapLogColor(spec)?heatmapLogDomain(vals):extent(vals,false),colorT=heatmapColorT(spec,min,max),index=new Map(rows.map((r)=>[`${r[spec.x_field]}\u0000${r[spec.y_field]}`,n(r[spec.value_field])])),mixChannels=(t)=>{const a=[242,243,244],b=[209,73,63];return a.map((v,i)=>Math.round(v+(b[i]-v)*clamp(t,0,1)));},mix=(t)=>{const c=mixChannels(t);return `rgb(${c[0]},${c[1]},${c[2]})`;};
   xs.forEach((xv,xi)=>f.parts.push(`<text x="${left+(xi+.5)*cellW}" y="${top-10}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(textUnits(String(xv))>10?sliceUnits(String(xv),9)+"…":xv)}</text>`));
-  ys.forEach((yv,yi)=>{f.parts.push(`<text x="${left-8}" y="${top+(yi+.5)*cellH+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(String(yv))>18?sliceUnits(String(yv),17)+"…":yv)}</text>`);xs.forEach((xv,xi)=>{const value=index.get(`${xv}\u0000${yv}`);if(value===null||value===undefined)return;const t=(value-min)/(max-min||1),x=left+xi*cellW,y=top+yi*cellH;f.parts.push(`<rect x="${x+1}" y="${y+1}" width="${Math.max(1,cellW-2)}" height="${Math.max(1,cellH-2)}" fill="${mix(t)}"/>`);if(cellW>34&&cellH>30){const style=labelStyleOnFill(mixChannels(t));const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"`:"";f.parts.push(`<text x="${x+cellW/2}" y="${y+cellH/2+3}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value,spec.unit))}</text>`);}});});
+  ys.forEach((yv,yi)=>{f.parts.push(`<text x="${left-8}" y="${top+(yi+.5)*cellH+4}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.ink}">${esc(textUnits(String(yv))>18?sliceUnits(String(yv),17)+"…":yv)}</text>`);xs.forEach((xv,xi)=>{const value=index.get(`${xv}\u0000${yv}`);if(value===null||value===undefined)return;const t=colorT(value),x=left+xi*cellW,y=top+yi*cellH;f.parts.push(`<rect x="${x+1}" y="${y+1}" width="${Math.max(1,cellW-2)}" height="${Math.max(1,cellH-2)}" fill="${mix(t)}"/>`);if(cellW>34&&cellH>30){const style=labelStyleOnFill(mixChannels(t));const halo=style.halo?` stroke="${style.halo}" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"`:"";f.parts.push(`<text x="${x+cellW/2}" y="${y+cellH/2+3}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${style.fill}"${halo}>${esc(fmt(value,spec.unit))}</text>`);}});});
   const legendY=bottom+13,legendW=140;
   f.parts.push(`<defs><linearGradient id="heatmap-grad-m" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="${mix(0)}"/><stop offset="100%" stop-color="${mix(1)}"/></linearGradient></defs>`);
   f.parts.push(`<rect data-role="heatmap-legend" x="${left}" y="${legendY}" width="${legendW}" height="8" fill="url(#heatmap-grad-m)"/>`);
   f.parts.push(`<text x="${left}" y="${legendY+22}" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, min,spec.unit))}</text>`);
   f.parts.push(`<text x="${left+legendW}" y="${legendY+22}" text-anchor="end" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${esc(fmtSpec(spec, max,spec.unit))}</text>`);
+  if(heatmapLogColor(spec))heatmapLogLegend(spec,f.parts,left,legendW,legendY,min,max);
   addMobileFooter(f.parts,spec,f.footerTop);f.parts.push("</svg>");return f.parts.join("\n")+"\n";
 }
 
@@ -6193,7 +6924,8 @@ function renderSankey(spec, rows, mobile=false) {
   // never clips against the canvas edge and a short one doesn't waste
   // margin space.
   const nameFont=mobile?13:14, valueFont=mobile?12:12.5;
-  const nameCharBudget=mobile?9:14;
+  const nameCharBudget=mobile?9:unitAwareLabelsEnabled()?24:14; // unit-aware: a wider label column before any cut
+  const truncAttr=(name)=>unitAwareLabelsEnabled()&&textUnits(name)>nameCharBudget?` data-truncated="1" data-full="${esc(name)}"`:"";
   let maxLeftWidth=0, maxRightWidth=0;
   layout.levels.forEach((level,li)=>{
     const side = li <= layout.maxLevel/2 ? "left" : "right";
@@ -6477,13 +7209,13 @@ function renderSankey(spec, rows, mobile=false) {
       if (isThrough && aboveClear) {
         const cx = p.x + nodeW/2;
         const nameY2 = p.y - valueFont - 8, valueY2 = p.y - 4;
-        f.parts.push(`<text data-role="flow-node-label" x="${cx}" y="${nameY2}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
+        f.parts.push(`<text data-role="flow-node-label"${truncAttr(name)} x="${cx}" y="${nameY2}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
         f.parts.push(`<text data-role="flow-node-value" x="${cx}" y="${valueY2}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${valueFont}" fill="${PALETTE.muted}">${esc(value)}</text>`);
       } else {
         const anchor = side === "left" ? "end" : "start";
         const labelX = side === "left" ? p.x - 8 : p.x + nodeW + 8;
         const nameY = p.y + p.h/2 - 3, valueY = p.y + p.h/2 + 13;
-        f.parts.push(`<text data-role="flow-node-label" x="${labelX}" y="${nameY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
+        f.parts.push(`<text data-role="flow-node-label"${truncAttr(name)} x="${labelX}" y="${nameY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${nameFont}" font-weight="700" fill="${PALETTE.ink}">${esc(textUnits(name)>nameCharBudget?sliceUnits(name,nameCharBudget-1)+"…":name)}</text>`);
         f.parts.push(`<text data-role="flow-node-value" x="${labelX}" y="${valueY}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${valueFont}" fill="${PALETTE.muted}">${esc(value)}</text>`);
       }
       if(isOther){
@@ -6598,11 +7330,35 @@ function parallelSetsLayout(spec, rows, mobile=false) {
   return {dims,weight,total,axisCats};
 }
 
-function renderCartographicFlowMap(spec, rows, mobile=false) {
+// flow_map_labels: the style a map gets, or null when the layer is off. NEWSROOM_FLOW_MAP_LABELS=1 is the only way on: a spec field alone does nothing.
+function resolveFlowMapStyle(spec, routeRows) {
+  if (!flowMapLabelsEnabled()) return { style: null, reason: null };
+  const pairs = routeRows.filter((row) => (n(row[spec.value_field]) ?? 0) > 0).map((row) => [String(row[spec.source_field] ?? ''), String(row[spec.target_field] ?? '')]);
+  return flowMapStyleFor(pairs, spec.flow_map_labels);
+}
+function renderCartographicFlowMap(spec, rows, mobile=false, keepTop=null) {
   const bodyH = mobile ? 470 : 540;
-  const f = mobile ? mobileFrame(spec, bodyH) : frame(spec, bodyH);
-  const left = mobile ? 36 : 60, right = mobile ? 610 : 980, top = f.bodyTop + 20, bottom = f.bodyBottom - 74;
-  const routeRows=selectRoutes(rows,spec);
+  // route_provenance_note (flow-map labels only) moves to the note block under the chart, so the map height never depends on it.
+  const provBlock = !mobile && flowMapLabelsEnabled() && spec.geometry_semantics === 'abstract_od' ? footerBlock(String(spec.route_provenance_note ?? '').trim(), noteUrlLineEnabled()).filter((l) => l.t) : [];
+  const f = mobile ? mobileFrame(spec, bodyH) : frame(spec, bodyH, 420, provBlock.length);
+  let routeRows=selectRoutes(rows,spec,flowMapLabelsEnabled()&&spec.geometry_semantics==='abstract_od');
+  const flowLabels = !mobile && spec.geometry_semantics === 'abstract_od' ? resolveFlowMapStyle(spec, routeRows).style : null;
+  const left = mobile ? 36 : 60, right = mobile ? 610 : (flowLabels === 'ledger' ? LEDGER_MAP_RIGHT : 980), top = f.bodyTop + 20;
+  // Default-off flow styles (flow_styles.mjs): C circles / D trunk. Only with the label layer; both switches unset = default.
+  const flowStyle = flowLabels ? resolveFlowStyle(routeRows.filter((r) => (n(r[spec.value_field]) ?? 0) > 0).map((r) => `${r[spec.target_field]}|${r[spec.target_lat_field]}|${r[spec.target_lon_field]}`)) : { style: 'default', reason: null };
+  const bottom = f.bodyBottom - (flowLabels ? 90 : 74) - (flowStyle.style === 'circles' ? 24 : 0);
+  // No silent drop: when even two ledger columns cannot list every flow, draw only the listed ones and say how many were left out.
+  let flowCut=null;
+  if(flowLabels==='ledger'){
+    const pos=routeRows.filter(r=>(n(r[spec.value_field])??0)>0);
+    const geo=ledgerGeometry({spec,routes:pos.map(r=>({value:n(r[spec.value_field])??0,sourceName:String(r[spec.source_field]??''),targetName:String(r[spec.target_field]??'')})),bounds:{left,right,top,bottom},textUnits,fmtSpec,zh:vizLang(spec)==='zh'});
+    const keepN=Math.min(geo.rows.length,keepTop??Infinity);
+    if(keepN<pos.length){
+      const keep=new Set(geo.order.slice(0,keepN).map(o=>o.i)), left_=pos.filter((_,i)=>!keep.has(i));
+      flowCut={count:left_.length};
+      routeRows=routeRows.filter(r=>!left_.includes(r));
+    }
+  }
   const trajectoryCache=new Map();
   const extentLines=[];
   for(const row of routeRows){
@@ -6614,22 +7370,39 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
     }else{const lines=parseRouteGeometry(row[spec.route_geometry_field]);if(lines)extentLines.push(...lines);}
   }
   const dataExtent=coordinateExtent(extentLines);
-  const project=spec.extent_mode==='data'&&dataExtent?createProjectionForExtent(spec.projection??'natural_earth_1',dataExtent,left,right,top,bottom,Number(spec.extent_padding_ratio??.12),Number(spec.extent_min_span_deg??0)):createProjection(spec.projection??'natural_earth_1',left,right,top,bottom);
+  const extMode=effectiveExtentMode(spec,dataExtent,true);
+  const project=extMode==='data'&&dataExtent?createProjectionForExtent(spec.projection??'natural_earth_1',dataExtent,left,right,top,bottom,Number(spec.extent_padding_ratio??.12),Number(spec.extent_min_span_deg??0)):createProjection(spec.projection??'natural_earth_1',left,right,top,bottom);
   const mapPath=renderBasemapPaths(project,spec.basemap_id), mapMeta=getBasemap(spec.basemap_id), mapFill=mapMeta?.detail_class==='local'?'#e6e9e6':'#d9dedb', markerId=`carto-arrow-${mobile?'m':'d'}`, clipId=`carto-clip-${mobile?'m':'d'}`;
   f.parts.push(`<defs><clipPath id="${clipId}"><rect x="${left}" y="${top}" width="${right-left}" height="${bottom-top}" rx="3"/></clipPath><marker id="${markerId}" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3.5 L0,7 z" fill="${PALETTE.muted}"/></marker></defs>`);
   f.parts.push(`<rect data-role="cartographic-ocean" x="${left}" y="${top}" width="${right-left}" height="${bottom-top}" rx="3" fill="#eef2f3" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})"><path data-role="cartographic-basemap" d="${mapPath}" fill="${mapFill}" stroke="#ffffff" stroke-width="${mobile?.55:.7}" stroke-linejoin="round"/>`);
   const max=Math.max(...routeRows.map(row=>n(row[spec.value_field])??0),1),sourceFrequency=new Map(); for(const row of routeRows){if(spec.source_field&&row[spec.source_field]!==undefined){const k=String(row[spec.source_field]);sourceFrequency.set(k,(sourceFrequency.get(k)??0)+1);}}
   const odLayout=spec.geometry_semantics==='abstract_od'?optimizeAbstractOdRoutes(routeRows.map((row,i)=>({index:i,key:`${row[spec.source_field]??''}|${row[spec.target_field]??''}|${i}`,a:project(n(row[spec.source_lon_field]),n(row[spec.source_lat_field])),b:project(n(row[spec.target_lon_field]),n(row[spec.target_lat_field])),value:n(row[spec.value_field])??0})),{left,right,top,bottom}):null;
-  const pointLabels=new Map(), categoryIndex=new Map(); let nextCategory=0; const routeInfos=[];
+  let trunkPlan=null; const flowCircles=[]; const flowPartsStart=f.parts.length;
+  if(flowStyle.style==='trunk'){const items=[];routeRows.forEach((row,i)=>{const v=n(row[spec.value_field])??0;if(v>0)items.push({i,a:odLayout[i].item.a,b:odLayout[i].item.b,value:v});});trunkPlan=planTrunk(items);}
+  const pointLabels=new Map(), categoryIndex=new Map(); let nextCategory=0; const routeInfos=[], flowRoutes=[]; let flowAccentUsed=false;
+  const flowHl=(spec.highlight_values??[]).map(String);
   routeRows.forEach((row,i)=>{
     const value=n(row[spec.value_field])??0;if(value<=0)return; const cat=spec.category_field?String(row[spec.category_field]??'Other'):'flow'; if(!categoryIndex.has(cat))categoryIndex.set(cat,nextCategory++); const color=SERIES_COLORS[categoryIndex.get(cat)%SERIES_COLORS.length];
-    let sw=Math.max(1.05,Math.sqrt(value/max)*(mobile?8.5:12.5)),d='',a=null,b=null,mid=null,lines=null,points=null;
+    let sw=flowLabels?flowWidth(value,max):Math.max(1.05,Math.sqrt(value/max)*(mobile?8.5:12.5)),d='',a=null,b=null,mid=null,lines=null,points=null;
     if(spec.geometry_semantics==='abstract_od'){const layout=odLayout[i];a=layout.item.a;b=layout.item.b;d=layout.d;mid=layout.mid;}
     else if(spec.geometry_semantics==='great_circle_reference'){lines=[greatCirclePoints(n(row[spec.source_lon_field]),n(row[spec.source_lat_field]),n(row[spec.target_lon_field]),n(row[spec.target_lat_field]),mobile?20:32)];d=projectedPolylinePath(lines,project,(right-left)*.55);a=project(lines[0][0][0],lines[0][0][1]);const last=lines[0][lines[0].length-1];b=project(last[0],last[1]);const m=lines[0][Math.floor(lines[0].length/2)];mid=project(m[0],m[1]);}
     else {points=spec.geometry_semantics==='observed_trajectory'&&spec.trajectory_points_field?trajectoryCache.get(row):null;lines=points?trajectoryLines(points):parseRouteGeometry(row[spec.route_geometry_field]);if(!validRouteGeometry(lines))return;d=projectedPolylinePath(lines,project,(right-left)*.55);const first=lines[0][0],lastLine=lines[lines.length-1],last=lastLine[lastLine.length-1];a=project(first[0],first[1]);b=project(last[0],last[1]);const line=lines[Math.floor(lines.length/2)],m=line[Math.floor(line.length/2)];mid=project(m[0],m[1]);if(spec.geometry_semantics==='observed_trajectory')sw=mobile?2.8:3.4;}
     if(spec.geometry_semantics==='observed_trajectory'&&spec.reference_path==='great_circle'&&lines){const first=lines[0][0],lastLine=lines[lines.length-1],last=lastLine[lastLine.length-1],ref=[greatCirclePoints(first[0],first[1],last[0],last[1],40)],rd=projectedPolylinePath(ref,project,(right-left)*.55);f.parts.push(`<path data-role="cartographic-reference" d="${rd}" fill="none" stroke="${PALETTE.ink}" stroke-width="${mobile?1:1.25}" stroke-opacity=".42" stroke-dasharray="5 5"/>`);}
-    const opacity=spec.geometry_semantics==='observed_trajectory'?.88:spec.geometry_semantics==='verified_route'?.7:.6;
+    let branchCurve=null,flowCircle=null;
+    if(flowStyle.style==='circles'){sw=1;}
+    else if(trunkPlan){const it=trunkPlan.byIndex.get(i);sw=it.w;if(it.branch){branchCurve=it.branch;d=`M${a.x.toFixed(1)},${a.y.toFixed(1)} Q${it.branch.control.x.toFixed(1)},${it.branch.control.y.toFixed(1)} ${it.branch.b.x.toFixed(1)},${it.branch.b.y.toFixed(1)}`;}}
+    let opacity=spec.geometry_semantics==='observed_trajectory'?.88:spec.geometry_semantics==='verified_route'?.7:.6,flowColor=color,flowMarker=markerId,flowHighlight=false;
+    if(flowLabels){
+      const sName=String(row[spec.source_field]??''),tName=String(row[spec.target_field]??'');
+      flowHighlight=!flowAccentUsed&&flowHl.length>0&&flowHl[0]===sName&&(flowHl.length<2||flowHl[1]===tName);
+      if(flowHighlight)flowAccentUsed=true;
+      flowColor=flowHighlight?PALETTE.accent:'#8a9096';opacity=flowHighlight?.92:.62;
+      const L=flowStyle.style==='circles'?8:trunkPlan?8.5:arrowSize(sw);flowMarker=trunkPlan?'':`${markerId}-${i}`;
+      if(flowStyle.style==='circles'){flowCircle={x:a.x,y:a.y,r:circleRadius(value,max),value,highlight:flowHighlight,color:flowColor};flowCircles.push(flowCircle);}
+      if(!trunkPlan)f.parts.push(`<defs><marker id="${flowMarker}" markerWidth="${L.toFixed(1)}" markerHeight="${L.toFixed(1)}" refX="${(L-1).toFixed(1)}" refY="${(L/2).toFixed(1)}" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L${L.toFixed(1)},${(L/2).toFixed(1)} L0,${L.toFixed(1)} z" fill="${flowColor}"/></marker></defs>`);
+      flowRoutes.push({a,b,control:odLayout[i].control,sw,arrow:L,value,highlight:flowHighlight,sourceName:sName,targetName:tName,...(flowCircle?{circle:flowCircle}:{}),...(branchCurve?{curve:branchCurve}:{})});
+    }
     const flowKey = spec.flow_id_field && row[spec.flow_id_field] !== undefined
       ? String(row[spec.flow_id_field])
       : `${String(row[spec.source_field] ?? '')}→${String(row[spec.target_field] ?? '')}`;
@@ -6637,21 +7410,55 @@ function renderCartographicFlowMap(spec, rows, mobile=false) {
     const flowAttrs = `data-flow-key="${esc(flowKey)}"${layerKey ? ` data-flow-layer="${esc(layerKey)}"` : ''}`;
     // Keep the visible stroke editorially thin while giving pointer/touch users
     // a generous target, following the B3 big-threads interaction contract.
-    f.parts.push(`<path data-role="cartographic-flow" ${flowAttrs} data-geometry-semantics="${esc(spec.geometry_semantics)}" d="${d}" fill="none" stroke="${color}" stroke-width="${sw.toFixed(2)}" stroke-opacity="${opacity}" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" marker-end="url(#${markerId})"/>`);
+    f.parts.push(`<path data-role="cartographic-flow" ${flowAttrs} data-geometry-semantics="${esc(spec.geometry_semantics)}" d="${d}" fill="none" stroke="${flowColor}" stroke-width="${sw.toFixed(2)}" stroke-opacity="${opacity}" stroke-linecap="${trunkPlan?'butt':'round'}" stroke-linejoin="round" pointer-events="none"${flowMarker?` marker-end="url(#${flowMarker})"`:''}/>`);
     f.parts.push(`<path data-role="cartographic-hit" ${flowAttrs} d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(12, sw * 3).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" pointer-events="stroke"/>`);
     if(points&&points.length){const markerPoints=[{p:points[0],label:'coverage starts'},...points.filter((p,j)=>j>0&&p.segment!==points[j-1].segment).map(p=>({p,label:'coverage resumes'})),{p:points[points.length-1],label:points[points.length-1].altitude_ft===0?'ground / coverage ends':'coverage ends'}];const maxAlt=points.reduce((best,p)=>Number(p.altitude_ft)>Number(best.altitude_ft)?p:best,points[0]);if(maxAlt&&Number(maxAlt.altitude_ft)>0)markerPoints.splice(markerPoints.length-1,0,{p:maxAlt,label:`${Math.round(Number(maxAlt.altitude_ft)).toLocaleString('en-US')} ft`});for(const [mi,item] of markerPoints.entries()){const q=project(item.p.lon,item.p.lat),anchor=q.x>(left+right)/2?'end':'start',tx=q.x+(anchor==='end'?-7:7),ty=q.y+(mi%2?12:-8);f.parts.push(`<circle data-role="trajectory-marker" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${mobile?2.4:2.8}" fill="#fff" stroke="${color}" stroke-width="1.5"/><text data-role="trajectory-marker-label" x="${tx.toFixed(1)}" y="${clamp(ty,top+10,bottom-4).toFixed(1)}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="700" fill="${PALETTE.ink}">${esc(item.label)}</text>`);}}
     if(a)f.parts.push(`<circle data-role="cartographic-origin" cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="${mobile?2.6:3.2}" fill="${PALETTE.ink}"/>`); if(b)f.parts.push(`<circle data-role="cartographic-destination" cx="${b.x.toFixed(1)}" cy="${b.y.toFixed(1)}" r="${mobile?2.9:3.5}" fill="${PALETTE.accent}"/>`);
     const routeLength=a&&b?Math.hypot(b.x-a.x,b.y-a.y):Infinity,sourceKey=spec.source_field&&row[spec.source_field]!==undefined?String(row[spec.source_field]):'',valueAtSource=routeLength<(mobile?105:145)&&sourceKey&&(sourceFrequency.get(sourceKey)??0)===1;
     if(spec.source_field&&a&&row[spec.source_field]!==undefined){const text=valueAtSource?`${sourceKey} · ${fmtSpec(spec, value,'')}`:sourceKey;pointLabels.set(`s:${sourceKey}`,{...a,text,anchor:a.x>(left+right)/2?'end':'start'});} if(spec.target_field&&b&&row[spec.target_field]!==undefined)pointLabels.set(`t:${row[spec.target_field]}`,{...b,text:String(row[spec.target_field]),anchor:b.x>(left+right)/2?'end':'start'}); routeInfos.push({row,value,color,mid,routeLength,valueAtSource});
   });
+  if(flowCircles.length){// C: circles first (largest at the back) so every line and dot stays on top
+    const circ=flowCircles.slice().sort((p,q)=>q.value-p.value).map(c=>`<circle data-role="cartographic-flow-circle" cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${c.r.toFixed(2)}" fill="${c.highlight?PALETTE.accent:'#8a9096'}" fill-opacity=".3" stroke="${c.highlight?PALETTE.accent:'#6b7177'}" stroke-width=".8" pointer-events="none"/>`);
+    f.parts.splice(flowPartsStart,0,...circ);}
+  if(trunkPlan){for(const t of trunkPlan.trunks)f.parts.push(`<path data-role="cartographic-flow-trunk" data-trunk-members="${t.members.length}" d="M${t.a.x.toFixed(1)},${t.a.y.toFixed(1)} Q${t.control.x.toFixed(1)},${t.control.y.toFixed(1)} ${t.b.x.toFixed(1)},${t.b.y.toFixed(1)}" fill="none" stroke="#8a9096" stroke-width="${t.sw.toFixed(2)}" stroke-opacity=".62" stroke-linecap="butt" pointer-events="none"/>`);
+    if(trunkPlan.trunks.length)f.parts.push(`<circle data-role="cartographic-destination" cx="${trunkPlan.B.x.toFixed(1)}" cy="${trunkPlan.B.y.toFixed(1)}" r="5" fill="${PALETTE.accent}" stroke="#fff" stroke-width="1.5"/>`);}
   f.parts.push('</g>');
-  if(spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
-  if(pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
+  let flowOut=null;
+  if(flowLabels){flowOut=layoutFlowMapLabels({spec,style:flowLabels,routes:flowRoutes,bounds:{left,right,top,bottom},esc,textUnits,fmtSpec,PALETTE,FONT_SANS,zh:vizLang(spec)==='zh',...(trunkPlan?{extraArcs:trunkPlan.trunks}:{})});f.parts.push(...flowOut.parts);
+    // Badge placement can add a 「图上未标」 line to some rows; if that pushes a flow off the ledger, draw again with only the flows that are listed.
+    if(flowLabels==='ledger'&&flowOut.diag.ledger_cut>0)return renderCartographicFlowMap(spec,rows,mobile,flowOut.diag.ledger_rows);}
+  if(!flowLabels&&spec.direct_labels!==false&&spec.geometry_semantics!=='observed_trajectory'){routeInfos.slice().sort((a,b)=>b.value-a.value).filter(info=>!info.valueAtSource).slice(0,mobile?2:3).forEach(info=>{if(!info.mid)return;const label=fmtSpec(spec, info.value,spec.unit),font=mobile?12:12.5,w=Math.max(30,textUnits(label)*font*.56+9),x=clamp(info.mid.x,left+w/2+2,right-w/2-2),y=clamp(info.mid.y,top+font+5,bottom-4);f.parts.push(`<rect data-role="cartographic-value-bg" pointer-events="none" x="${(x-w/2).toFixed(1)}" y="${(y-font-4).toFixed(1)}" width="${w.toFixed(1)}" height="${(font+7).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".88"/><text data-role="cartographic-value" pointer-events="none" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);});}
+  if(!flowLabels&&pointLabels.size<= (mobile?10:16)){const labels=[...pointLabels.values()].map(p=>({...p,side:p.anchor==='end'?'left':'right'}));for(const side of ['left','right']){const placed=separateLabelBaselines(labels.filter(p=>p.side===side),top+10,bottom-8,mobile?20:21);for(const p of placed){const label=textUnits(p.text)>(mobile?11:21)?sliceUnits(p.text,mobile?10:20)+'…':p.text,tx=p.x+(side==='left'?-7:7),anchor=side==='left'?'end':'start',font=mobile?12:12.5,w=Math.max(25,textUnits(label)*font*.56+8),rx=side==='left'?tx-w:tx-3,ry=p.labelY-font-6;if(Math.abs(p.labelY-p.y)>5)f.parts.push(`<line data-role="cartographic-label-leader" pointer-events="none" x1="${p.x}" y1="${p.y}" x2="${tx+(side==='left'?3:-3)}" y2="${p.labelY-3}" stroke="${PALETTE.muted}" stroke-width=".7"/>`);f.parts.push(`<rect data-role="cartographic-label-bg" pointer-events="none" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${w.toFixed(1)}" height="${(font+8).toFixed(1)}" rx="2" fill="#fff" fill-opacity=".82"/><text data-role="cartographic-label" pointer-events="none" x="${tx}" y="${p.labelY-4}" text-anchor="${anchor}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);}}}
   if(spec.locator_inset&&dataExtent){const iw=mobile?112:150,ih=mobile?66:88,ix=right-iw-8,iy=top+8,ip=createProjection(spec.projection??'natural_earth_1',ix+4,ix+iw-4,iy+4,iy+ih-4),world=renderBasemapPaths(ip,spec.basemap_id),nw=ip(dataExtent.west,dataExtent.north),se=ip(dataExtent.east,dataExtent.south);f.parts.push(`<g data-role="cartographic-locator"><rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="3" fill="#fff" fill-opacity=".92" stroke="${PALETTE.grid}"/><path d="${world}" fill="#e3e7e5" stroke="#fff" stroke-width=".25"/><rect x="${Math.min(nw.x,se.x).toFixed(1)}" y="${Math.min(nw.y,se.y).toFixed(1)}" width="${Math.max(3,Math.abs(se.x-nw.x)).toFixed(1)}" height="${Math.max(3,Math.abs(se.y-nw.y)).toFixed(1)}" fill="none" stroke="${PALETTE.accent}" stroke-width="1.2"/></g>`);}
-  const keyY=bottom+18; f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
+  const keyY=bottom+(flowStyle.style==='circles'?26:18); if(flowLabels){renderFlowMapChrome(f.parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,flowStyle,trunkPlan,total:rows.filter(r=>(n(r[spec.value_field])??0)>0).length,flowCut,extMode,zh:vizLang(spec)==='zh'});(mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop,provBlock);f.parts.push('</svg>');return f.parts.join('\n')+'\n';}
+  f.parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">origin / observed start</text><text x="${left+(mobile?165:170)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">→</text><circle cx="${left+(mobile?185:190)}" cy="${keyY-3}" r="3" fill="${PALETTE.accent}"/><text x="${left+(mobile?192:197)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">destination / observed end</text></g>`);
   const disclosure=geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??''); f.parts.push(`<text data-role="cartographic-disclosure" x="${right}" y="${bottom+40}" text-anchor="end" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" font-weight="600" fill="${PALETTE.muted}">${esc(textUnits(disclosure)>(mobile?92:132)?sliceUnits(disclosure,mobile?91:131)+'…':disclosure)}</text>`);
-  f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${spec.extent_mode==='data'?'data-fitted extent':'world extent'}</text>`);
+  f.parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+40}" text-anchor="start" font-family="${FONT_SANS}" font-size="${mobile?12:12.5}" fill="${PALETTE.muted}">${esc(getBasemap(spec.basemap_id)?.label??spec.basemap_id)} · ${extMode==='data'?'data-fitted extent':'world extent'}</text>`);
   (mobile?addMobileFooter:addFooter)(f.parts,spec,f.footerTop);f.parts.push('</svg>');return f.parts.join('\n')+'\n';
+}
+
+// Chinese-first key, width legend, disclosure and credit line for the
+// flow_map_labels layer (viz.mjs renderCartographicFlowMap).
+function renderFlowMapChrome(parts,{spec,left,right,bottom,keyY,max,flowRoutes,flowOut,flowStyle={style:'default'},trunkPlan=null,total,flowCut,extMode,zh}){
+  const font=12.5,w=(t)=>textUnits(t)*font*.56;
+  const circ=flowStyle.style==='circles';
+  const widthT=circ?(zh?`圆面积${spec.unit?`（${spec.unit}）`:''}：`:`circle area${spec.unit?` (${spec.unit})`:''}: `):(zh?`线宽${spec.unit?`（${spec.unit}）`:''}：`:`width${spec.unit?` (${spec.unit})`:''}: `);
+  let x=left+(zh?112:150)+w(widthT)+10;const sw=[];
+  const dy=circ?14:0;
+  if(circ){// C: circle-size legend, values taken from the drawn flows' own rows; lines are all 1 px so there is no width legend
+    const uniq=[...new Set(flowRoutes.map(r=>r.value))].sort((p,q)=>q-p),txt=new Map(uniq.map((v,k)=>[v,flowNumberTexts(spec,uniq,fmtSpec)[k]]));// same decimals as the ledger
+    for(const v of circleLegendValues(flowRoutes.map(r=>r.value))){const r=circleRadius(v,max),label=txt.get(v);sw.push(`<circle data-role="legend-swatch" cx="${(x+r).toFixed(1)}" cy="${(keyY-4).toFixed(1)}" r="${r.toFixed(2)}" fill="#8a9096" fill-opacity=".3" stroke="#6b7177" stroke-width=".8"/><text data-role="legend-tick" x="${(x+2*r+6).toFixed(1)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(label)}</text>`);x+=2*r+6+w(label)+22;}
+    sw.push(`<text data-role="legend-note" x="${x.toFixed(1)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${zh?'连线粗细不表示数值':'line width does not encode value'}</text>`);}
+  for(const v of (circ?[]:widthSamples(max))){const h=trunkPlan?trunkPlan.widthOf(v):flowWidth(v,max),label=fmtSpec(spec,v,'');sw.push(`<rect data-role="legend-swatch" x="${x}" y="${(keyY-4-h/2).toFixed(1)}" width="26" height="${h.toFixed(1)}" fill="#8a9096" fill-opacity=".62"/><text data-role="legend-tick" x="${x+32}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(label)}</text>`);x+=32+w(label)+22;}
+  if(trunkPlan&&trunkPlan.trunks.length)sw.push(`<text data-role="legend-note" x="${x.toFixed(1)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${zh?'干线宽度是支线之和':'trunk width is the sum of its branches'}</text>`);
+  const startT=zh?'起点':'origin',endT=zh?'终点':'destination';
+  parts.push(`<g data-role="cartographic-direction-key"><circle cx="${left}" cy="${keyY-3}" r="3" fill="${PALETTE.ink}"/><text x="${left+7}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${startT}</text><text x="${left+(zh?42:62)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">→</text><circle cx="${left+(zh?64:82)}" cy="${keyY-3}" r="3.5" fill="${PALETTE.accent}"/><text x="${left+(zh?71:89)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${endT}</text><text x="${left+(zh?112:150)}" y="${keyY}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${widthT}</text>${sw.join('')}</g>`);
+  const disclosure=zh?'弧线表示起点与终点之间的关系，不代表实际运输路线。':geometryDisclosure(spec.geometry_semantics,spec.route_provenance_note??'');
+  parts.push(`<text data-role="cartographic-disclosure" x="${left}" y="${bottom+40+dy}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" font-weight="600" fill="${PALETTE.muted}">${esc(disclosure)}</text>`);
+  const n=flowRoutes.length,cutT=flowCut?(zh?`；另有 ${flowCut.count} 条放不下未画`:`; ${flowCut.count} more do not fit and are not drawn`):'',drawn=(zh?(n<total?`图中仅画数值最大的 ${n} 条`:`图中共 ${n} 条`):(n<total?`Only the top ${n} flows are drawn`:`${n} flows drawn`))+cutT;
+  const bm=getBasemap(spec.basemap_id),credit=zh?`底图：${bm?.label??spec.basemap_id} · ${extMode==='data'?'按数据范围':'世界范围'}`:`${bm?.label??spec.basemap_id} · ${extMode==='data'?'data-fitted extent':'world extent'}`;
+  parts.push(`<text data-role="cartographic-projection" x="${left}" y="${bottom+58+dy}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(drawn)} · ${esc(credit)}</text>`);
+  if(flowOut?.overflow)parts.push(`<text x="${left}" y="${bottom+76+dy}" text-anchor="start" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.muted}">${esc(flowOut.overflow)}</text>`);
 }
 
 function renderTrajectoryProfile(spec,rows,mobile=false){
@@ -7460,6 +8267,108 @@ function stackedFoldName(name, maxWidth, bold = false) {
   return lines;
 }
 
+// ---- NEWSROOM_STORY_FORMS: person dot matrix and clock (story_forms.mjs holds every number the drawing uses) ----------------------
+const sectorPath = (cx, cy, r, deg0, deg1) => {
+  const pt = (deg) => [cx + r * Math.sin((deg * Math.PI) / 180), cy - r * Math.cos((deg * Math.PI) / 180)].map((v) => Math.round(v * 100) / 100);
+  const [x0, y0] = pt(deg0), [x1, y1] = pt(deg1);
+  return `M${cx},${cy} L${x0},${y0} A${r},${r} 0 ${deg1 - deg0 > 180 ? 1 : 0} 1 ${x1},${y1} Z`;
+};
+
+// One dot = N people. Part colour first, rest colour after it, never overlapping; a dot split between them or cut short at the
+// end is drawn as pie sectors over a light track, so every drawn fraction can be read back from the sector angles.
+function renderPeopleDots(spec, rows) {
+  const plan = dotPlan(spec, rows), lang = vizLang(spec);
+  const textX = 54 + 640 + 40, cols = Math.max(5, Math.min(60, Math.ceil(Math.sqrt(plan.drawn * 1.7))));
+  const step = Math.min(26, Math.floor(620 / cols)), r = Math.round(step * 0.36 * 100) / 100;
+  const dotRows = Math.ceil(plan.drawn / cols), gridH = dotRows * step;
+  const f = frame(spec, Math.max(gridH + 30, 300));
+  const gx = 54 + step / 2, gy = f.bodyTop + 16 + step / 2;
+  plan.dots.forEach((dot, i) => {
+    const cx = Math.round((gx + (i % cols) * step) * 100) / 100, cy = Math.round((gy + Math.floor(i / cols) * step) * 100) / 100;
+    const attrs = `data-role="people-dot" data-index="${i}" data-accent="${Math.round(dot.accent * 10000) / 10000}" data-rest="${Math.round(dot.rest * 10000) / 10000}" cx="${cx}" cy="${cy}" r="${r}"`;
+    if (dot.accent >= 1 - 1e-9) f.parts.push(`<circle ${attrs} fill="${storyTone(spec)}"/>`);
+    else if (dot.rest >= 1 - 1e-9) f.parts.push(`<circle ${attrs} fill="${STORY_COLORS.pencil}"/>`);
+    else {
+      f.parts.push(`<circle ${attrs} fill="${PALETTE.track}"/>`);
+      if (dot.accent > 1e-9) f.parts.push(`<path data-role="people-dot-sector" data-index="${i}" data-kind="accent" d="${sectorPath(cx, cy, r, 0, dot.accent * 360)}" fill="${storyTone(spec)}"/>`);
+      if (dot.rest > 1e-9) f.parts.push(`<path data-role="people-dot-sector" data-index="${i}" data-kind="rest" d="${sectorPath(cx, cy, r, dot.accent * 360, (dot.accent + dot.rest) * 360)}" fill="${STORY_COLORS.pencil}"/>`);
+      // a split or cut-short dot gets one outline ring, so a thin part still reads as a piece of one whole dot
+      f.parts.push(`<circle data-role="people-dot-outline" data-index="${i}" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${PALETTE.muted}" stroke-width="1.2"/>`);
+    }
+  });
+  let y = f.bodyTop + 30;
+  const legend = [[spec.part_label, plan.part, storyTone(spec), "part"], [spec.rest_label, plan.rest, STORY_COLORS.pencil, "rest"]];
+  for (const [label, count, color, kind] of legend) {
+    f.parts.push(`<circle data-role="legend-swatch" cx="${textX + 8}" cy="${y - 5}" r="7" fill="${color}"/>`);
+    f.parts.push(`<text data-role="people-dots-legend" data-kind="${kind}" x="${textX + 24}" y="${y}" font-family="${FONT_SANS}" font-size="15" font-weight="700" fill="${PALETTE.ink}">${esc(label)}</text>`);
+    f.parts.push(`<text data-role="people-dots-legend-count" data-kind="${kind}" x="${textX + 24}" y="${y + 24}" font-family="${FONT_SANS}" font-size="14" fill="${PALETTE.muted}">${esc(`${plainNum(count)} ${spec.unit}（${plainNum((count / plan.total) * 100, 1)}%）`)}</text>`);
+    y += 62;
+  }
+  y += 6;
+  svgTextLines(f.parts, dotAlgorithmText(spec, plan, lang), textX, y, { size: 13, lineHeight: 19, fill: PALETTE.muted, maxChars: lang === "en" ? 44 : 22, role: "people-dots-algorithm" });
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
+}
+
+// Line-drawn clock faces: one big clock (first row) and up to three small comparison clocks. 60 minute ticks, a dot at every minute
+// a person passes (floor(60/N) of them), a sector for the first person's N minutes, numbered leader notes from the annotations.
+function renderClockDial(spec, rows) {
+  const plans = clockPlan(spec, rows), lang = vizLang(spec);
+  const notes = (spec.annotations ?? []).filter((a) => a?.type === "point" && plans.some((p) => p.name === String(a.match_value)));
+  const bigR = plans[0].day ? 200 : 150, smallR = 62, top = 46;
+  const bigC = { x: plans[0].day ? Math.round(LAYOUT_W / 2) : 54 + bigR + 34, y: 0 };
+  const rimLeft = 54 + 2 * bigR + 34 + 70;
+  const f = frame(spec, top + 2 * bigR + 40 + 70 + (plans[0].day ? 26 : 0) + (notes.length ? notes.length * 26 + 26 : 0));
+  const base = f.bodyTop + top;
+  bigC.y = base + bigR;
+  const drawClock = (plan, cx, cy, R, big) => {
+    const tag = `data-name="${esc(plan.name)}"`;
+    if (!plan.day) f.parts.push(`<path data-role="clock-sector" ${tag} data-deg="${Math.round(plan.sectorDeg * 1000) / 1000}" d="${sectorPath(cx, cy, R, 0, plan.sectorDeg)}" fill="${STORY_COLORS.pencil}" fill-opacity="0.16" stroke="none"/>`);
+    f.parts.push(`<circle data-role="clock-face" ${tag} cx="${cx}" cy="${cy}" r="${R}" fill="none" ${storyStrokeAttrs("clock-face", { stroke: PALETTE.ink, width: big ? 2 : 1.5 })}/>`);
+    const nTicks = plan.day ? 24 : 60, tickDeg = 360 / nTicks, majorEvery = plan.day ? 6 : 5;
+    for (let m = 0; m < nTicks; m++) {
+      const major = m % majorEvery === 0, len = (major ? 0.09 : 0.045) * R * (big ? 1 : 1.1), a = (m * tickDeg * Math.PI) / 180;
+      const x1 = cx + R * Math.sin(a), y1 = cy - R * Math.cos(a), x2 = cx + (R - len) * Math.sin(a), y2 = cy - (R - len) * Math.cos(a);
+      f.parts.push(`<line data-role="clock-tick" x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" ${storyStrokeAttrs("clock-tick", { stroke: PALETTE.ink, width: major ? 1.4 : 0.8 })}/>`);
+    }
+    if (big) for (const m of plan.day ? [0, 6, 12, 18] : [0, 15, 30, 45]) {
+      const a = (m * (plan.day ? 15 : 6) * Math.PI) / 180, tx = cx + (R + 15) * Math.sin(a), ty = cy - (R + 15) * Math.cos(a) + 4;
+      f.parts.push(`<text data-role="clock-minute-label" x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="middle" font-family="${FONT_SANS}" font-size="12" fill="${PALETTE.muted}">${m === 0 ? (plan.day ? "0/24" : "0/60") : m}</text>`);
+    }
+    const ringR = R - (big ? 28 : 15), spacing = ringR * 2 * Math.PI * (plan.day ? 1 / plan.count : plan.minutes / 60), dotR = Math.round(Math.max(plan.day ? 1.6 : 1.6, Math.min(big ? 8 : 5, spacing * (plan.day ? 0.45 : 0.34))) * 100) / 100;
+    plan.angles.forEach((deg, k) => {
+      const a = (deg * Math.PI) / 180;
+      f.parts.push(`<circle data-role="clock-dot" ${tag} data-k="${k + 1}" data-angle="${Math.round(deg * 1000) / 1000}" cx="${(cx + ringR * Math.sin(a)).toFixed(2)}" cy="${(cy - ringR * Math.cos(a)).toFixed(2)}" r="${dotR}" fill="${STORY_COLORS.pencil}"/>`);
+    });
+    f.parts.push(`<circle data-role="clock-center" cx="${cx}" cy="${cy}" r="${big ? 3.5 : 2.5}" fill="${PALETTE.ink}"/>`);
+    const capY = cy + R + (big ? 38 : 24);
+    f.parts.push(`<text data-role="clock-name" x="${cx}" y="${capY}" text-anchor="middle" font-family="${FONT_SANS}" font-size="${big ? 16 : 14}" font-weight="700" fill="${PALETTE.ink}">${esc(plan.name)}</text>`);
+    clockCaptionLines(plan, lang).forEach((line, j) => svgTextLines(f.parts, line, cx, capY + (big ? 22 : 18) + j * (big ? 19 : 16), { size: big ? 14 : 12, lineHeight: 16, fill: PALETTE.muted, anchor: "middle", maxChars: 60, role: "clock-caption" }));
+    if (plan.day) svgTextLines(f.parts, dayClockNote(lang), cx, capY + 22 + 2 * 19 + 4, { size: 13, lineHeight: 16, fill: PALETTE.ink, anchor: "middle", maxChars: 60, role: "clock-day-note" });
+  };
+  const bigPlan = plans[0], smalls = plans.slice(1);
+  drawClock(bigPlan, bigC.x, bigC.y, bigR, true);
+  const gap = 40, slot = 2 * smallR + gap, smallY = base + smallR + 6;
+  smalls.forEach((plan, i) => drawClock(plan, rimLeft + smallR + i * slot, smallY, smallR, false));
+  // numbered notes: a badge just outside the rim at the end of the first person's sector, one short leader, and the list below
+  const listTop = base + 2 * bigR + 40 + 70 + (plans[0].day ? 26 : 0);
+  notes.forEach((note, i) => {
+    const plan = plans.find((p) => p.name === String(note.match_value));
+    const C = plan.big ? { x: bigC.x, y: bigC.y, R: bigR } : (() => { const j = smalls.indexOf(plan); return { x: rimLeft + smallR + j * slot, y: smallY, R: smallR }; })();
+    const noteDeg = plan.day ? plan.noteDeg : plan.sectorDeg <= 110 ? plan.sectorDeg : 90, a = (noteDeg * Math.PI) / 180, out = plan.big ? 34 : 20;
+    const sx = C.x + C.R * Math.sin(a), sy = C.y - C.R * Math.cos(a), bx = C.x + (C.R + out) * Math.sin(a), by = C.y - (C.R + out) * Math.cos(a);
+    f.parts.push(`<line data-role="annotation-leader" x1="${sx.toFixed(2)}" y1="${sy.toFixed(2)}" x2="${(C.x + (C.R + out - 9) * Math.sin(a)).toFixed(2)}" y2="${(C.y - (C.R + out - 9) * Math.cos(a)).toFixed(2)}" ${storyStrokeAttrs("clock-leader", { stroke: PALETTE.muted, width: 1 })}/>`);
+    drawMarkerBadge(f.parts, Math.round(bx * 100) / 100, Math.round(by * 100) / 100, 9, i + 1, 12);
+    const ly = listTop + i * 26;
+    drawMarkerBadge(f.parts, 54 + 9, ly, 9, i + 1, 12);
+    f.parts.push(`<text data-role="annotation" x="${54 + 26}" y="${ly + 5}" font-family="${FONT_SANS}" font-size="14" fill="${PALETTE.ink}">${esc(note.text)}</text>`);
+  });
+  addFooter(f.parts, spec, f.footerTop);
+  f.parts.push("</svg>");
+  return f.parts.join("\n") + "\n";
+}
+
 function renderStackedBar100(spec, rows) {
   const lang = vizLang(spec);
   const t = VIZ_STRINGS[lang];
@@ -7749,7 +8658,7 @@ const INSET_LADDER = [
 // could not run (never treated as "no failures").
 function insetRenderQaRules(svg, spec, rows) {
   try {
-    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s });
+    const labels = checkChoroplethValueLabels(svg, { rows, category_field: spec.category_field, value_field: spec.value_field, category_names: spec.category_names, unit: spec.unit, measure_kind: specValueKind(spec) ?? spec.measure_kind, measure_semantics: spec.measure_semantics, language: spec.language, ...(isWorldExtent(spec) ? { map_extent: "world", highlight_values: spec.highlight_values } : {}) }, { parseXml, joinChoroplethRows, fmt: choroplethValueText, noDataFill: PALETTE.grid, worldLabelIso3s, worldListEnabled: mapWorldListEnabled, worldListText: (value, unit, kindSpec, values, wan = false) => worldListValueText(value, unit, kindSpec, worldListBreaksFor(values, kindSpec), wan) });
     return [...checkSvgGeometry(svg).failures, ...checkSvgContrast(svg).failures, ...labels.failures].map((f) => f.rule);
   } catch {
     return null;
@@ -7801,6 +8710,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     (item) => item.entry?.kind === "economy" && item.iso3 && item.featureIndices.length && Number.isFinite(n(item.row[spec.value_field]))
   );
   const values = joined.map((item) => n(item.row[spec.value_field]));
+  const wanContext = choroplethWanContext(values);
   const classOpts = { integer: Boolean(specValueKind(spec)) && values.every(Number.isInteger) };
   const classPlan = mobile ? { breaks: niceBreaks(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1, 5, classOpts), skewed: false } : classBreaks(values, 5, classOpts);
   const breaks = classPlan.breaks;
@@ -7838,7 +8748,12 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // padding - fitAzimuthalProjection's own doc comment explains why this has
   // to fit the real projected geometry, not a resampled lon/lat bbox.
   const dataPoints = [];
-  for (const item of joined) {
+  // US state map: the frame is always the whole of the 51 states (lower 48 + the two boxes), never the data's own bbox.
+  const usMode = isUsStateMap(spec);
+  const featureIndexList = choroplethFeatureIndexList(spec);
+  if (usMode) {
+    for (const idx of featureIndexList) for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) dataPoints.push(pt);
+  } else for (const item of joined) {
     for (const idx of item.featureIndices) {
       for (const ring of framingRings(geometryRings(neFeatureGeometry(idx)))) for (const pt of ring) dataPoints.push(pt);
     }
@@ -7857,9 +8772,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // than one azimuthal hemisphere gets a world projection instead of silently
   // losing every ring beyond the horizon. horizonLat0 is lat0 for the
   // azimuthal projection and null for the world one (no horizon to filter on).
-  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : chooseMapProjection(dataPoints);
+  const mapChoice = worldMode ? { kind: "world", lon0: 0, lat0: 0 } : usMode ? { kind: "us", lon0: -96, lat0: 37.5 } : chooseMapProjection(dataPoints);
   const { lon0, lat0 } = mapChoice;
-  const horizonLat0 = mapChoice.kind === "world" ? null : lat0;
+  const horizonLat0 = mapChoice.kind === "world" || mapChoice.kind === "us" ? null : lat0;
   let proj = fitMapProjection(mapChoice, dataPoints, mapLeft, mapRight, top, bottom, 0.06);
   const project = (lon, lat) => proj.project(lon, lat);
 
@@ -7867,7 +8782,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // drive the frame, so when one lies wholly outside the map rect (and is big
   // enough to see, >= 1 deg^2) the chart note names the region instead of
   // clipping it silently.
-  const clippedTerritoryItems = joined.filter((item) => item.featureIndices.some((idx) =>
+  const clippedTerritoryItems = usMode ? [] : joined.filter((item) => item.featureIndices.some((idx) =>
     clippedFramingRings(geometryRings(neFeatureGeometry(idx)), project, { left: mapLeft, right: mapRight, top, bottom }).length));
 
   const dataByIndex = new Map();
@@ -7921,7 +8836,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
         const bbox = projectedFeatureBBox(item.featureIndices, project);
         const value = n(item.row[spec.value_field]) ?? 0;
         const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-        const valueText = choroplethValueText(value, spec.unit, spec);
+        const valueText = choroplethValueText(value, spec.unit, spec, wanContext);
         const neededW = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
         const neededH = lineH * 2 + 6;
         const tooSmall = !bbox || bbox.maxX - bbox.minX < neededW || bbox.maxY - bbox.minY < neededH;
@@ -8102,13 +9017,15 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   }
   // World mode: only the range ends and highlight_values carry text (at most 8); every other economy is colour only.
   const worldLabelled = worldMode ? worldLabelIso3s(joined, spec) : null;
+  // World list mode (NEWSROOM_MAP_WORLD_LIST=1): every other country is printed once in a grouped list under the map.
+  const worldListMode = worldMode && isWorldListMode(spec);
   const labelItemsAll = joined.filter((item) => !insetIso3Set.has(item.iso3) && (!worldLabelled || worldLabelled.has(item.iso3))).map((item) => {
     const idx = item.featureIndices[0];
     const point = neFeatureAttributes(idx)?.label ?? [lon0, lat0];
     const p = tinyDots.get(item.iso3) ?? project(point[0], point[1]);
     const value = n(item.row[spec.value_field]) ?? 0;
     const name = resolveEconomyDisplayName(item.raw, spec.category_names, lang);
-    const valueText = choroplethValueText(value, spec.unit, spec);
+    const valueText = choroplethValueText(value, spec.unit, spec, wanContext);
     const w = Math.max(choroplethLabelWidth(name, font), choroplethLabelWidth(valueText, font));
     return { item, x: p.x, y: p.y, fill: colorForValue(value), name, valueText, w, h: lineH * 2 + 6 };
   });
@@ -9037,7 +9954,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // only when at least one region was actually selected into it.
   const insetLabelItems = insetItems.map((item) => {
     const value = n(item.row[spec.value_field]) ?? 0;
-    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec), fill: colorForValue(value) };
+    return { item, name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: choroplethValueText(value, spec.unit, spec, wanContext), fill: colorForValue(value) };
   });
   const insetTitleH = 18;
 
@@ -9316,7 +10233,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // projected AABB, computed once - an approximation (not exact polygon
   // containment) but enough to keep the panel off the continent's landmass.
   const landBoxes = [];
-  for (let index = 0; index < featureCount; index++) {
+  for (const index of featureIndexList) {
     const bbox = projectedFeatureBBox([index], project);
     if (bbox) landBoxes.push({ x: bbox.minX, y: bbox.minY, w: bbox.maxX - bbox.minX, h: bbox.maxY - bbox.minY });
   }
@@ -9470,8 +10387,55 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     Math.max(1, Math.ceil(numberedFallbackItems.length / FOOTNOTE_ROWS_PER_COLUMN)),
   );
   const footnoteRows = Math.ceil(numberedFallbackItems.length / footnoteColumns);
-  const footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
-  const footnoteH = numberedFallbackItems.length ? Math.max(0, footnoteBlockBottom - baseSlotBottom) : 0;
+  let footnoteBlockBottom = footnoteListTop + footnoteRows * footnoteRowH + 10;
+  // World list mode: the countries the map does not label, once each, grouped by legend class under the map. Rows use
+  // the footnote name/value roles (data-iso3), so both verifiers read them back under NEWSROOM_VERIFY_MAP_FOOTNOTES=1.
+  const worldListParts = [];
+  if (worldListMode) {
+    const listIso3 = worldListIso3s(joined, spec);
+    const entries = joined.filter((item) => listIso3.has(item.iso3)).map((item) => {
+      const value = n(item.row[spec.value_field]) ?? 0;
+      return { item, value, cls: classifyValue(value, breaks), name: resolveEconomyDisplayName(item.raw, spec.category_names, lang), valueText: worldListValueText(value, spec.unit, spec, breaks, wanContext) };
+    });
+    if (entries.length) {
+      const swatchW = 10, listNameW = Math.max(...entries.map((e) => choroplethLabelWidth(e.name, font))), listValueW = Math.max(...entries.map((e) => choroplethLabelWidth(e.valueText, font)));
+      const listColumnW = swatchW + footnoteFieldGap + listNameW + footnoteFieldGap + listValueW;
+      const listColumns = Math.max(1, Math.floor((plotRight - plotLeft + footnoteColumnGap) / (listColumnW + footnoteColumnGap)));
+      const unitSuffix = spec.unit ? ` ${spec.unit}` : "";
+      const classCount = breaks.length - 1;
+      const classRange = (i) => {
+        if (classPlan.skewed && i === 0) return `<${fmtSpec(spec, breaks[1], "")}${unitSuffix}`;
+        if (classPlan.skewed && i === classCount - 1) return `\u2265${fmtSpec(spec, breaks[classCount - 1], "")}${unitSuffix}`;
+        return `${fmtSpec(spec, breaks[i], "")}\u2013${fmtSpec(spec, breaks[i + 1], "")}${unitSuffix}`;
+      };
+      let cursor = (numberedFallbackItems.length ? footnoteBlockBottom + 6 : footnoteListTop);
+      worldListParts.push(`<g data-role="choropleth-world-list">`);
+      for (let cls = 0; cls < classCount; cls++) {
+        const group = entries.filter((e) => e.cls === cls).sort((a, b) => b.value - a.value || String(a.item.iso3).localeCompare(String(b.item.iso3)));
+        if (!group.length) continue;
+        worldListParts.push(
+          `<rect data-role="choropleth-world-list-swatch" x="${plotLeft}" y="${(cursor - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${CHOROPLETH_RAMP[cls]}"/>`,
+          `<text data-role="choropleth-world-list-group" data-class="${cls}" x="${plotLeft + swatchW + footnoteFieldGap}" y="${cursor.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(classRange(cls))}</text>`
+        );
+        const groupRows = Math.ceil(group.length / listColumns);
+        group.forEach((e, i) => {
+          const rowY = cursor + footnoteRowH + (i % groupRows) * footnoteRowH;
+          const columnX = plotLeft + Math.floor(i / groupRows) * (listColumnW + footnoteColumnGap);
+          const nameX = columnX + swatchW + footnoteFieldGap;
+          const valueX = nameX + listNameW + footnoteFieldGap + listValueW;
+          worldListParts.push(
+            `<rect data-role="choropleth-world-list-swatch" x="${columnX.toFixed(1)}" y="${(rowY - 9).toFixed(1)}" width="${swatchW}" height="10" fill="${CHOROPLETH_RAMP[cls]}"/>`,
+            `<text data-role="choropleth-footnote-name" data-iso3="${esc(e.item.iso3)}" x="${nameX.toFixed(1)}" y="${rowY.toFixed(1)}" font-family="${FONT_SANS}" font-size="${font}" fill="${PALETTE.ink}">${esc(e.name)}</text>`,
+            `<text data-role="choropleth-footnote-value" data-iso3="${esc(e.item.iso3)}" x="${valueX.toFixed(1)}" y="${rowY.toFixed(1)}" text-anchor="end" font-family="${FONT_SANS}" font-size="${font}" font-weight="700" fill="${PALETTE.ink}">${esc(e.valueText)}</text>`
+          );
+        });
+        cursor += footnoteRowH + groupRows * footnoteRowH + 8;
+      }
+      worldListParts.push(`</g>`);
+      footnoteBlockBottom = Math.max(footnoteBlockBottom, cursor + 2);
+    }
+  }
+  const footnoteH = numberedFallbackItems.length || worldListParts.length ? Math.max(0, footnoteBlockBottom - baseSlotBottom) : 0;
   if (numberedFallbackItems.length) {
     // Split into three text runs so the name and value each land in their
     // own data-role="choropleth-label"/"choropleth-label-value" node (same
@@ -9514,6 +10478,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     });
     footnoteParts.push(`</g>`);
   }
+  footnoteParts.push(...worldListParts);
   if (footnoteH) {
     f = mobile ? mobileFrame(spec, bodyH + insetStripH + footnoteH) : frame(spec, bodyH + insetStripH + footnoteH);
   }
@@ -9606,7 +10571,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     }
   }
   const locatorIndices = [];
-  for (let index = 0; index < featureCount; index++) {
+  for (const index of featureIndexList) {
     const c = neFeatureAttributes(index)?.continent;
     if (c && dataContinents.has(c)) locatorIndices.push(index);
   }
@@ -9621,7 +10586,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   })();
   // A world projection already shows every region, so a locator would only repeat it
   // (and its bbox-centred azimuthal view breaks for data straddling the antimeridian).
-  let showLocator = mapChoice.kind === "world" ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
+  let showLocator = mapChoice.kind === "world" || usMode ? false : continentBBoxArea > 0 ? dataBBoxArea / continentBBoxArea < 0.25 : true;
 
   const locatorSize = mobile ? 104 : 150;
   // Review fix (mobile inset/locator collision): the zoom inset panel (if
@@ -9776,7 +10741,7 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
         }
       }
       const inInset = new Set(insetFeatureIndices);
-      for (let idx = 0; idx < featureCount; idx++) {
+      for (const idx of featureIndexList) {
         if (inInset.has(idx)) continue;
         let fMinLon = Infinity, fMaxLon = -Infinity, fMinLat = Infinity, fMaxLat = -Infinity;
         for (const ring of geometryRings(neFeatureGeometry(idx))) for (const pt of ring) {
@@ -9926,9 +10891,22 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   let noDataDrawn = false;
   f.parts.push(`<rect data-role="choropleth-ocean" x="${mapLeft}" y="${top}" width="${mapRight - mapLeft}" height="${bottom - top}" rx="3" fill="${PALETTE.faint}" stroke="${PALETTE.grid}"/>`);
   f.parts.push(`<g clip-path="url(#${clipId})">`);
-  for (let index = 0; index < featureCount; index++) {
+  const worldListDrawn = new Set();
+  for (const index of featureIndexList) {
     if (worldMode && isAntarcticaFeature(index)) continue;
-    const d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    const listItem = worldListMode ? dataByIndex.get(index) : null;
+    // A country the basemap draws in several pieces (Australia has three) is one choropleth-data path, so it carries
+    // one data-iso3/data-value pair for the verifiers' "exactly one region" count.
+    if (listItem && listItem.featureIndices.length > 1 && worldListDrawn.has(listItem.iso3)) continue;
+    let d = featurePath(neFeatureGeometry(index), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } });
+    if (listItem && listItem.featureIndices.length > 1) {
+      worldListDrawn.add(listItem.iso3);
+      d = listItem.featureIndices
+        .filter((idx) => !isAntarcticaFeature(idx))
+        .map((idx) => featurePath(neFeatureGeometry(idx), project, { lon0, lat0: horizonLat0, limitDeg: 90, precision: 1, minDist: 0.5, clipRect: { left: mapLeft, right: mapRight, top, bottom } }))
+        .filter(Boolean)
+        .join(" ");
+    }
     if (!d) continue;
     const item = dataByIndex.get(index);
     if (!item) noDataDrawn = true;
@@ -9942,12 +10920,19 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
     const dataAttrs = item ? ` data-iso3="${esc(item.iso3)}" data-value="${value}"` : "";
     f.parts.push(`<path data-role="${item ? "choropleth-data" : "choropleth-context"}"${dataAttrs} d="${d}" fill="${fill}" stroke="${PAPER}" stroke-width="${mobile ? 0.5 : 0.7}" stroke-linejoin="round"/>`);
   }
+  // US state map: Alaska and Hawaii sit in their own thin-bordered boxes (not to scale, not in their true positions; the chart note says so).
+  if (usMode && proj.boxes) {
+    for (const [piece, box] of Object.entries(proj.boxes)) {
+      f.parts.push(`<rect data-role="choropleth-us-box" data-box="${piece === "AK" ? "US-AK" : "US-HI"}" x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${box.w.toFixed(1)}" height="${box.h.toFixed(1)}" fill="none" stroke="${PALETTE.muted}" stroke-width="0.8"/>`);
+    }
+  }
   // World mode: a numbered marker sitting exactly on its region's dot already marks it, and its digit would cross the dot circle.
   const dotCoveredByMarker = new Set();
   if (worldMode) footnoteItems.forEach((li, i) => { const mk = footnoteMarkerPositions[i], dot = tinyDots.get(li.item.iso3); if (mk && dot && Math.hypot(mk.x - dot.x, mk.y - dot.y) < 1) dotCoveredByMarker.add(li.item.iso3); });
   for (const item of joined) {
     const dot = tinyDots.get(item.iso3);
-    if (!dot || dotCoveredByMarker.has(item.iso3)) continue;
+    // World list mode: every country is in the list under the map, so a small country is not also drawn as a dot.
+    if (!dot || dotCoveredByMarker.has(item.iso3) || worldListMode) continue;
     const value = n(item.row[spec.value_field]) ?? 0;
     f.parts.push(`<circle data-role="choropleth-data-dot" data-iso3="${esc(item.iso3)}" data-value="${value}" cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${mobile ? 3 : 3.5}" fill="${colorForValue(value)}" stroke="${PALETTE.ink}" stroke-width=".8"/>`);
   }
@@ -10112,7 +11097,9 @@ function renderChoroplethOnce(spec, rows, mobile, tune, meta) {
   // under the legend into the footer's own source line, rather than sitting
   // as a second, disconnected attribution line on the map body.
   const basemapCredit = lang === "zh" ? "底图：Natural Earth" : "Basemap: Natural Earth";
-  let framingNote = "";
+  let framingNote = usMode
+    ? (lang === "zh" ? "阿拉斯加、夏威夷不按比例、不按实际位置。" : "Alaska and Hawaii are not to scale and not in their true positions.")
+    : "";
   if (clippedTerritoryItems.length) {
     const shownNames = clippedTerritoryItems.slice(0, 3).map((item) => resolveEconomyDisplayName(item.raw, spec.category_names, lang));
     const more = clippedTerritoryItems.length > shownNames.length;
@@ -10153,6 +11140,7 @@ export function renderVizMobileSvg(spec, rows) {
     case "scatter": return renderMobileScatter(spec,rows);
     case "strip_plot": return renderStripPlot(spec,rows);
     case "heatmap": return renderMobileHeatmap(spec,rows);
+    case "tile_map": return withTileMapWidth(() => renderTileMap(spec, rows));
     case "sankey": return renderSankey(spec,rows,true);
     case "alluvial": return renderSankey(spec,rows,true);
     case "node_link": return renderNodeLink(spec,rows,true);
@@ -10170,6 +11158,8 @@ export function renderVizMobileSvg(spec, rows) {
     case "choropleth": return renderChoropleth(spec, rows, true);
     case "treemap": return renderTreemap(spec, rows, true);
     case "stacked_bar_100": return renderStackedBar100(spec, rows);
+    case "people_dots": if (storyFormsEnabled()) return renderPeopleDots(spec, rows); throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
+    case "clock_dial": if (storyFormsEnabled()) return renderClockDial(spec, rows); throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
     default: throw new Error(`Mobile renderer does not support '${spec.chart_type}'`);
   }
 }
@@ -10183,6 +11173,7 @@ export const COMPACT_VIEW_W = 822;
 export const COMPACT_CHART_TYPES = new Set(["horizontal_bar", "line", "multi_line"]);
 
 export function hasCompactVariant(spec) {
+  if (hasWaveFields(spec)) return false; // story forms are registered at full width only
   return COMPACT_CHART_TYPES.has(spec?.chart_type);
 }
 
@@ -10207,7 +11198,16 @@ export function renderVizBundle(spec, rows, { mobilePages = true, compact = fals
   return bundle;
 }
 
+// NEWSROOM_RENDER_STYLES=1 (exact "1", default off): the last layer re-draws the finished SVG in the spec's render_style (house, riso, pencil).
+// Off, or house: the SVG is returned untouched, byte for byte.
 export function renderVizSvg(spec, rows) {
+  const svg = renderVizSvgBase(spec, rows);
+  if (!renderStylesEnabled()) return svg;
+  const style = specRenderStyle(spec, spec?.page_render_style);
+  return style === "house" ? svg : restyleSvg(svg, style, { accent: specRenderAccent(spec) });
+}
+
+function renderVizSvgBase(spec, rows) {
   spec = resolveAutoCategoryNames(spec, rows)?.spec ?? spec;
   const errors = validateVizSpec(spec);
   if (errors.length) throw new Error(errors.join("; "));
@@ -10225,6 +11225,7 @@ export function renderVizSvg(spec, rows) {
     case "scatter": return renderScatter(spec, rows);
     case "strip_plot": return renderStripPlot(spec, rows);
     case "heatmap": return renderHeatmap(spec, rows);
+    case "tile_map": return withTileMapWidth(() => renderTileMap(spec, rows));
     case "sankey": return renderSankey(spec, rows, false);
     case "alluvial": return renderSankey(spec, rows, false);
     case "node_link": return renderNodeLink(spec, rows, false);
@@ -10242,6 +11243,8 @@ export function renderVizSvg(spec, rows) {
     case "choropleth": return renderChoropleth(spec, rows, false);
     case "treemap": return renderTreemap(spec, rows, false);
     case "stacked_bar_100": return renderStackedBar100(spec, rows);
+    case "people_dots": if (storyFormsEnabled()) return renderPeopleDots(spec, rows); throw new Error(`Renderer does not support '${spec.chart_type}'`);
+    case "clock_dial": if (storyFormsEnabled()) return renderClockDial(spec, rows); throw new Error(`Renderer does not support '${spec.chart_type}'`);
     default: throw new Error(`Renderer does not support '${spec.chart_type}'`);
   }
 }
