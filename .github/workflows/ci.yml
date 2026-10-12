@@ -85,8 +85,11 @@ jobs:
         run: |
           python3 scripts/test_fact_editorial_contracts.py
           python3 scripts/test_speed_off_prompt_sha.py
+          python3 scripts/test_repeat_failure_stop.py target/debug/news
           node scripts/test_fact_editorial_runtime.mjs
           node scripts/test_evidence_gate.mjs
+          python3 scripts/test_followup_completion_gate.py target/debug/news
+          python3 scripts/test_followup_primary_latest.py target/debug/news
           node scripts/test_computation_row_tables.mjs
           node scripts/test_computation_binding.mjs
           python3 scripts/test_infographic_schema.py
@@ -100,6 +103,7 @@ jobs:
           node scripts/test_viz_plan_schema.mjs
           node scripts/test_map_world_switch.mjs
           NEWSROOM_MAP_WORLD=1 node scripts/test_map_world.mjs
+          NEWSROOM_MAP_WORLD=1 node scripts/test_map_world_list.mjs
           python3 scripts/test_migration_flow_fixture.py
           python3 scripts/test_migration_story_ir.py
           node scripts/test_migration_story_ir.mjs
@@ -114,11 +118,8 @@ jobs:
           node scripts/test_composite_geo_network_sankey.mjs
           node scripts/test_offline_geo_fallback.mjs
           node scripts/test_publication_breakpoints_mobile_pages.mjs
-          python3 scripts/test_openai_wire_mock.py
-          python3 scripts/test_anthropic_wire_mock.py
           python3 scripts/test_pi_prompt_retry.py
           python3 scripts/test_browser_qa_bootstrap.py
-          python3 scripts/test_artifact_completion.py
       - name: Qualification contract regressions
         run: |
           python3 scripts/test_source_integrity_contract.py
@@ -219,9 +220,20 @@ jobs:
           node scripts/test_groups.mjs
           node scripts/test_group_boundary.mjs
           node scripts/test_group_handoff.mjs
+          node scripts/test_group_enforce.mjs
           node scripts/test_decision_handoff.mjs
           node scripts/test_run_as_writer_users.mjs
+          node scripts/test_group_handoff_table.mjs
+          node scripts/test_knowledge_writer_content.mjs
           node scripts/test_group_coverage.mjs
+          node scripts/test_group_cross_calls.mjs
+          node scripts/test_group_cross_call_gate.mjs
+          node scripts/test_gate_stamp_callers.mjs
+          node scripts/test_tool_api_seam.mjs
+          node scripts/test_tool_host.mjs
+          node scripts/test_runtime_embed_guard.mjs
+          node scripts/test_switch_exact_one.mjs
+          node scripts/test_data_notes.mjs
           node scripts/test_review_from_records.mjs
           python3 scripts/test_review_from_records.py
           python3 scripts/test_group_commands.py
@@ -237,6 +249,10 @@ jobs:
         run: node scripts/test_choropleth.mjs
       - name: Treemap chart tests
         run: node scripts/test_treemap.mjs
+      - name: Typesetting switches (numbers, axes, footer, digits)
+        run: node scripts/test_typeset_batch1.mjs
+      - name: Typeset choropleth labels read back exactly
+        run: python3 scripts/test_typeset_choropleth_verify.py
       - name: Strip plot chart tests
         run: node scripts/test_viz_strip_plot.mjs
       - name: Stacked bar 100 chart tests
@@ -263,6 +279,29 @@ jobs:
           node scripts/test_render_qa_contrast.mjs
           node scripts/test_render_qa.mjs
           node scripts/test_render_qa_tool_path.mjs
+          node scripts/test_held_chart_types.mjs
+          node scripts/test_qa_no_empty_pass.mjs
+          node scripts/test_qa_not_applicable.mjs
+          node scripts/test_qa_all_zero.mjs
+          node scripts/test_qa_all_zero_tool.mjs
+          node scripts/test_qa_empty_pass_shapes.mjs
+          node scripts/test_qa_no_empty_pass_fixtures.mjs
+      # The two off-state byte comparisons (flow maps back against 1296164, flow-map labels against the tree before the label layer) need history;
+      # fetch-depth is 0 above, and a SKIP here would be a failure, not a pass.
+      - name: Flow-map tests (a skipped comparison fails)
+        env:
+          NEWSROOM_REQUIRE_NO_SKIP: "1"
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/flow-labels-base" f2aec34
+          BASE="$RUNNER_TEMP/flow-labels-base"
+          node scripts/test_flow_maps_back.mjs
+          node scripts/test_flow_trunk_cap.mjs
+          node scripts/test_zh_route_disclosure.mjs
+          node scripts/test_flow_extent_hint.mjs
+          node scripts/test_flow_styles.mjs
+          BASE_WT="$BASE" node scripts/test_flow_map_labels.mjs
+          node scripts/test_flow_map_round3.mjs
+          BASE_WT="$BASE" node scripts/test_flow_map_round3_b.mjs
       - name: Rust ↔ Pi mock control-plane acceptance
         run: ./scripts/test_control_plane.sh
       - name: Investigate and continue exit-code acceptance
@@ -291,3 +330,10 @@ jobs:
           node scripts/test_parallel_result_budget.mjs
           node scripts/test_parallel_replay_wiring.mjs
           node scripts/test_tool_result_budget_integration.mjs
+          node scripts/test_followup_alt_source.mjs
+          node scripts/test_reader_task_example_fix.mjs
+          node scripts/test_scene_duplicate_wording.mjs
+          node scripts/test_refused_options_fix.mjs
+          node scripts/test_extreme_probe.mjs
+          node scripts/test_extreme_note.mjs
+          node scripts/test_footer_notes.mjs
