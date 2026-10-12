@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::path::{Component, Path};
 use std::time::Instant;
 
-fn complex_visual_routing_ab_enabled() -> bool {
+pub(crate) fn complex_visual_routing_ab_enabled() -> bool {
     matches!(
         std::env::var("NEWSROOM_COMPLEX_VISUAL_ROUTING_AB")
             .ok()
@@ -30,7 +30,7 @@ fn mobile_pages_enabled() -> bool {
     std::env::var("NEWSROOM_MOBILE_PAGES").ok().as_deref() == Some("1")
 }
 
-fn is_complex_visual_request(topic: &str, split_classifier: bool) -> bool {
+pub(crate) fn is_complex_visual_request(topic: &str, split_classifier: bool) -> bool {
     if split_classifier {
         prompt::is_complex_visual_request_split(topic)
     } else {
@@ -63,7 +63,11 @@ fn lieflat_hidden_for(requested: &str, topic: &str, split_classifier: bool) -> b
 /// Whether completion must go through the measured infographic, publication
 /// and browser-QA chain. The goal text can only add this requirement; an
 /// explicit visual-story tool profile adds it regardless of the wording.
-fn completion_chain_required(topic: &str, split_classifier: bool, profile: Option<&str>) -> bool {
+pub(crate) fn completion_chain_required(
+    topic: &str,
+    split_classifier: bool,
+    profile: Option<&str>,
+) -> bool {
     is_complex_visual_request(topic, split_classifier) || profile == Some("visual-story")
 }
 
@@ -91,7 +95,7 @@ fn visual_completion_gaps(
     visual_completion_gaps_for_profile(bundle, topic, audit, split_classifier, profile.as_deref())
 }
 
-fn visual_completion_gaps_for_profile(
+pub(crate) fn visual_completion_gaps_for_profile(
     bundle: &InvestigationBundle,
     topic: &str,
     audit: &audit::AuditSummary,
@@ -196,13 +200,90 @@ fn missing_visual_modes(topic: &str, plan: &Value) -> Vec<String> {
         .collect()
 }
 
+/// NEWSROOM_COMPLETION_GAP_HINTS=1 (exact "1", default off): the correction names, for each missing item, the
+/// tool that supplies it, and says what comes next once a chart has passed. Only the text sent to the model
+/// changes; which gaps exist and what ends the run are untouched.
+pub const COMPLETION_GAP_HINTS_ENV: &str = "NEWSROOM_COMPLETION_GAP_HINTS";
+
+fn completion_gap_hints_on() -> bool {
+    std::env::var(COMPLETION_GAP_HINTS_ENV).ok().as_deref() == Some("1")
+}
+
+fn gap_supplier(gap: &str) -> Option<&str> {
+    if let Some(tool) = gap.strip_prefix("required complex-visual gate did not pass: ") {
+        return Some(tool);
+    }
+    match gap {
+        g if g.starts_with("requested self-contained HTML") => Some("newsroom_publication_render"),
+        g if g.starts_with("requested desktop") || g.starts_with("no measured publication") => {
+            Some("newsroom_publication_qa")
+        }
+        g if g.starts_with("explicitly requested visual mode") => Some("newsroom_infographic_plan"),
+        g if g.starts_with("rendered infographic") => Some("newsroom_infographic_render"),
+        _ => None,
+    }
+}
+
+/// Whether the program's own critic record says a chart passed: any
+/// `visualizations/critics/*.json` with `passed: true`. A REVISE result is a normal result, not an error,
+/// so a successful call alone does not show a pass; model text is never read.
+fn chart_critic_record_passed(artifact: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(artifact.join("visualizations").join("critics")) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        std::fs::read_to_string(entry.path())
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|record| record.get("passed").and_then(Value::as_bool))
+            == Some(true)
+    })
+}
+
+/// The text of one completion-gate retry. `hints` is `Some((audit, critic_record_passed))` only with the
+/// switch on; `None` is byte-identical to the message that was always sent.
+fn completion_correction(
+    attempt: usize,
+    gaps: &[String],
+    mode_contract: &str,
+    hints: Option<(&audit::AuditSummary, bool)>,
+) -> String {
+    let listed = match hints {
+        None => gaps.join("\n- "),
+        Some(_) => gaps
+            .iter()
+            .map(|gap| match gap_supplier(gap) {
+                Some(tool) => format!("{gap} (supplied by {tool})"),
+                None => gap.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n- "),
+    };
+    let next = hints
+        .and_then(|(audit, record_passed)| {
+            let chart_passed = record_passed
+                && audit
+                    .calls
+                    .iter()
+                    .any(|call| call.tool == "newsroom_viz_critic" && call.is_error != Some(true));
+            let first = gaps.iter().find_map(|gap| gap_supplier(gap))?;
+            chart_passed.then(|| {
+                format!("A chart already passed its checks; do not redo it. Next call {first}.\n")
+            })
+        })
+        .unwrap_or_default();
+    format!(
+        "System completion gate attempt {attempt}/2 found unfinished required work:\n- {listed}\n{next}{mode_contract}Continue the same session and repair only these gaps using the real visual-story tools. Do not weaken, remove, relabel, or replace requested visuals with prose or illustrations. Complete every required infographic and publication gate, then write the self-contained HTML and requested desktop/mobile PNG files under NEWSROOM_ARTIFACT_DIR. Do not invent evidence or quantitative claims."
+    )
+}
+
 fn is_transient_completion_provider_error(error: &anyhow::Error) -> bool {
     error
         .to_string()
         .contains("Pi returned an empty final answer")
 }
 
-async fn run_prompt_with_empty_recovery(
+pub(crate) async fn run_prompt_with_empty_recovery(
     config: &PiConfig,
     prompt: &str,
     recovery_prompt: &str,
@@ -413,10 +494,12 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
                         &completion_gaps,
                     )?;
                     let mode_contract = prompt::visual_mode_contract(&topic);
-                    let correction = format!(
-                        "System completion gate attempt {attempt}/2 found unfinished required work:\n- {}\n{}Continue the same session and repair only these gaps using the real visual-story tools. Do not weaken, remove, relabel, or replace requested visuals with prose or illustrations. Complete every required infographic and publication gate, then write the self-contained HTML and requested desktop/mobile PNG files under NEWSROOM_ARTIFACT_DIR. Do not invent evidence or quantitative claims.",
-                        completion_gaps.join("\n- "),
-                        mode_contract,
+                    let correction = completion_correction(
+                        attempt,
+                        &completion_gaps,
+                        &mode_contract,
+                        completion_gap_hints_on()
+                            .then(|| (&audit, chart_critic_record_passed(&bundle.dir))),
                     );
                     config.continue_session = true;
                     let recovery = "The provider returned an empty response before completing the previous system completion-gate instruction. Continue the same session now. Do not restart research or weaken any requested visual; finish the outstanding infographic and publication gates.";
@@ -556,8 +639,10 @@ async fn run_inner(args: InvestigateArgs) -> Result<(PathBuf, bool)> {
 #[cfg(test)]
 mod completion_tests {
     use super::{
-        completion_chain_required, compose_allowed, is_transient_completion_provider_error,
+        chart_critic_record_passed, completion_chain_required, completion_correction,
+        completion_gap_hints_on, compose_allowed, is_transient_completion_provider_error,
         lieflat_hidden_for, missing_visual_modes, visual_completion_gaps_for_profile,
+        COMPLETION_GAP_HINTS_ENV,
     };
     use crate::artifact::InvestigationBundle;
     use crate::audit;
@@ -777,6 +862,194 @@ mod completion_tests {
             {"type": "visual", "visual_grammar": "trend"}
         ]});
         assert!(missing_visual_modes("地图、Sankey、网络图和趋势", &plan).is_empty());
+    }
+
+    /// The correction message exactly as it was sent before the hints existed.
+    fn legacy_correction(attempt: usize, gaps: &[String], mode_contract: &str) -> String {
+        format!(
+            "System completion gate attempt {attempt}/2 found unfinished required work:\n- {}\n{}Continue the same session and repair only these gaps using the real visual-story tools. Do not weaken, remove, relabel, or replace requested visuals with prose or illustrations. Complete every required infographic and publication gate, then write the self-contained HTML and requested desktop/mobile PNG files under NEWSROOM_ARTIFACT_DIR. Do not invent evidence or quantitative claims.",
+            gaps.join("\n- "),
+            mode_contract,
+        )
+    }
+
+    /// A run that stopped after one chart: the viz critic passed, nothing else was called.
+    fn one_chart_run(root: &std::path::Path) -> (InvestigationBundle, audit::AuditSummary) {
+        let bundle = InvestigationBundle::create(root, SCMP_LONG_IMAGE_GOAL).unwrap();
+        fs::write(
+            &bundle.events_path,
+            concat!(
+                "{\"type\":\"tool_execution_start\",\"toolCallId\":\"c1\",\"toolName\":\"newsroom_viz_critic\",\"args\":{}}\n",
+                "{\"type\":\"tool_execution_end\",\"toolCallId\":\"c1\",\"isError\":false}\n"
+            ),
+        )
+        .unwrap();
+        let audit = audit::build(&bundle.events_path, &bundle.tools_path).unwrap();
+        (bundle, audit)
+    }
+
+    #[test]
+    fn completion_gap_hints_switch_takes_only_the_exact_value_one() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for (value, expected) in [
+            (None, false),
+            (Some(""), false),
+            (Some("0"), false),
+            (Some("true"), false),
+            (Some(" 1"), false),
+            (Some("01"), false),
+            (Some("1"), true),
+        ] {
+            match value {
+                Some(v) => std::env::set_var(COMPLETION_GAP_HINTS_ENV, v),
+                None => std::env::remove_var(COMPLETION_GAP_HINTS_ENV),
+            }
+            assert_eq!(completion_gap_hints_on(), expected, "{value:?}");
+        }
+        std::env::remove_var(COMPLETION_GAP_HINTS_ENV);
+    }
+
+    #[test]
+    fn completion_correction_without_hints_is_byte_identical_to_the_old_message() {
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = one_chart_run(root.path());
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        assert!(!gaps.is_empty());
+        let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
+        for attempt in [1, 2] {
+            assert_eq!(
+                completion_correction(attempt, &gaps, &contract, None),
+                legacy_correction(attempt, &gaps, &contract)
+            );
+        }
+        assert!(legacy_correction(1, &gaps, &contract).contains("attempt 1/2"));
+    }
+
+    #[test]
+    fn completion_correction_with_hints_names_the_supplier_and_the_next_call() {
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = one_chart_run(root.path());
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
+        let plain = completion_correction(1, &gaps, &contract, None);
+        let hinted = completion_correction(1, &gaps, &contract, Some((&audit, true)));
+        // The wording and the attempt counter stay.
+        assert!(
+            hinted.contains("System completion gate attempt 1/2 found unfinished required work:")
+        );
+        // Every required-gate gap says which tool supplies it.
+        for tool in [
+            "newsroom_infographic_plan",
+            "newsroom_publication_qa",
+            "newsroom_publication_render",
+        ] {
+            assert!(
+                hinted.contains(&format!(
+                    "required complex-visual gate did not pass: {tool} (supplied by {tool})"
+                )),
+                "{tool}\n{hinted}"
+            );
+        }
+        assert!(
+            hinted.contains("no measured publication:")
+                && hinted.contains("(supplied by newsroom_publication_qa)")
+        );
+        // A chart passed, so the message says what comes next: the first missing gate.
+        assert!(hinted.contains("A chart already passed its checks; do not redo it. Next call newsroom_infographic_plan.\n"), "{hinted}");
+        // Nothing but the added text differs: removing it and the supplier marks gives the old message back.
+        let mut rebuilt = hinted.replace(
+            "A chart already passed its checks; do not redo it. Next call newsroom_infographic_plan.\n",
+            "",
+        );
+        while let Some(start) = rebuilt.find(" (supplied by ") {
+            let end = rebuilt[start..].find(')').unwrap() + start + 1;
+            rebuilt.replace_range(start..end, "");
+        }
+        assert_eq!(rebuilt, plain);
+        assert!(plain.len() < hinted.len());
+        // Gaps that name no tool of their own stay as they were.
+        let odd = vec!["some gap nobody maps".to_string()];
+        assert_eq!(
+            completion_correction(2, &odd, &contract, Some((&audit, true))),
+            legacy_correction(2, &odd, &contract)
+        );
+    }
+
+    #[test]
+    fn a_revise_result_is_not_a_pass_even_though_the_call_succeeded() {
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = one_chart_run(root.path());
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
+        // The critic call succeeded (is_error false) but its record says REVISE.
+        let critics = bundle.dir.join("visualizations").join("critics");
+        fs::create_dir_all(&critics).unwrap();
+        fs::write(critics.join("a.json"), "{\"passed\": false, \"score\": 61}").unwrap();
+        assert!(!chart_critic_record_passed(&bundle.dir));
+        let revise = completion_correction(
+            1,
+            &gaps,
+            &contract,
+            Some((&audit, chart_critic_record_passed(&bundle.dir))),
+        );
+        assert!(!revise.contains("A chart already passed"), "{revise}");
+        assert!(revise.contains("(supplied by"));
+        // A record with passed:true says so; a text-only claim or a missing field does not.
+        fs::write(critics.join("b.json"), "{\"passed\": \"true\"}").unwrap();
+        fs::write(critics.join("c.json"), "not json").unwrap();
+        assert!(!chart_critic_record_passed(&bundle.dir));
+        fs::write(critics.join("d.json"), "{\"passed\": true}").unwrap();
+        assert!(chart_critic_record_passed(&bundle.dir));
+        let pass = completion_correction(
+            1,
+            &gaps,
+            &contract,
+            Some((&audit, chart_critic_record_passed(&bundle.dir))),
+        );
+        assert!(pass.contains("A chart already passed its checks"), "{pass}");
+        // No critics folder at all: not passed.
+        assert!(!chart_critic_record_passed(root.path()));
+    }
+
+    #[test]
+    fn completion_correction_says_no_next_step_when_no_chart_passed() {
+        let root = tempfile::tempdir().unwrap();
+        let (bundle, audit) = lieflat_only_run(root.path(), SCMP_LONG_IMAGE_GOAL);
+        let gaps = visual_completion_gaps_for_profile(
+            &bundle,
+            SCMP_LONG_IMAGE_GOAL,
+            &audit,
+            false,
+            Some("visual-story"),
+        )
+        .unwrap();
+        let contract = crate::prompt::visual_mode_contract(SCMP_LONG_IMAGE_GOAL);
+        let hinted = completion_correction(1, &gaps, &contract, Some((&audit, true)));
+        assert!(hinted.contains("(supplied by"));
+        assert!(!hinted.contains("A chart already passed"), "{hinted}");
     }
 
     #[test]

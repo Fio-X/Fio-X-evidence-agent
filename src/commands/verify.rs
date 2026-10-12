@@ -3,7 +3,6 @@ use crate::verify::{recompute_artifact, verify_artifact, RecomputeReport, Verifi
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde_json::json;
-use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,6 +17,25 @@ static INTERACTIVE_SESSION: AtomicBool = AtomicBool::new(false);
 
 pub fn mark_interactive_session() {
     INTERACTIVE_SESSION.store(true, Ordering::SeqCst);
+}
+
+/// What only this module can make: the verdict `verify_and_record` computed. A "passed" verification record is written only with one in
+/// hand (group_guard::write_verification_record), so neither a command that asks nor another module can produce a pass the checks did
+/// not compute. The field is private on purpose: no other module can build the struct.
+pub struct VerifiedOutcome {
+    passed: bool,
+}
+
+impl VerifiedOutcome {
+    pub fn passed(&self) -> bool {
+        self.passed
+    }
+
+    /// Tests of other modules need a credential; this exists only in test builds.
+    #[cfg(test)]
+    pub fn for_test(passed: bool) -> Self {
+        Self { passed }
+    }
 }
 
 /// Result of integrity verification plus optional SQL recompute, already
@@ -65,9 +83,11 @@ pub async fn verify_and_record(
         })),
     });
     let path = artifact.join("verification.json");
-    fs::write(
+    crate::group_guard::write_verification_record(
+        artifact,
         &path,
-        format!("{}\n", serde_json::to_string_pretty(&output)?),
+        &output,
+        &VerifiedOutcome { passed },
     )
     .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(Verification {

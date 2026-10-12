@@ -14,6 +14,19 @@ const ECONOMY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/economy-nam
 const CURRENCY_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/currency-names.json");
 const ECONOMY_NAMES_RUNTIME: &str = include_str!("../runtime/pi/economy_names.mjs");
 const CHOROPLETH_RUNTIME: &str = include_str!("../runtime/pi/choropleth.mjs");
+const US_PROJECTION_RUNTIME: &str = include_str!("../runtime/pi/us_projection.mjs");
+const US_STATES_RUNTIME: &str = include_str!("../runtime/pi/us_states.mjs");
+const RENDER_STYLES_RUNTIME: &str = include_str!("../runtime/pi/render_styles.mjs");
+const STORY_FORMS_RUNTIME: &str = include_str!("../runtime/pi/story_forms.mjs");
+const STORYBOARD_RUNTIME: &str = include_str!("../runtime/pi/storyboard.mjs");
+const FORM_SELECTION_RUNTIME: &str = include_str!("../runtime/pi/form_selection.mjs");
+const PALETTE_THEME_RUNTIME: &str = include_str!("../runtime/pi/palette_theme.mjs");
+const RENDER_QA_STORY_RUNTIME: &str = include_str!("../runtime/pi/render_qa_story.mjs");
+const US_STATE_NAMES_ASSET: &str = include_str!("../runtime/pi/assets/us-state-names.json");
+const US_STATES_BASEMAP: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin1-us-110m.geojson");
+const US_STATES_ATTRIBUTES_ASSET: &str =
+    include_str!("../runtime/pi/assets/naturalearth-admin1-us-110m-attributes.json");
 const CHOROPLETH_ATTRIBUTES_ASSET: &str =
     include_str!("../runtime/pi/assets/naturalearth-admin0-50m-attributes.json");
 const NET_RUNTIME: &str = include_str!("../runtime/pi/net.mjs");
@@ -57,6 +70,8 @@ const MAP_SPEC_RUNTIME: &str = include_str!("../runtime/pi/map_spec.mjs");
 const SCIENTIFIC_MAP_RUNTIME: &str = include_str!("../runtime/pi/scientific_map.mjs");
 const BASEMAP_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/basemap_registry.mjs");
 const FLOW_LAYOUT_RUNTIME: &str = include_str!("../runtime/pi/flow_layout.mjs");
+const FLOW_MAP_LABELS_RUNTIME: &str = include_str!("../runtime/pi/flow_map_labels.mjs");
+const FLOW_STYLES_RUNTIME: &str = include_str!("../runtime/pi/flow_styles.mjs");
 const MAP_REFERENCE_LAYERS_RUNTIME: &str = include_str!("../runtime/pi/map_reference_layers.mjs");
 const PUBLICATION_BINDING_RUNTIME: &str = include_str!("../runtime/pi/publication_binding.mjs");
 const SVG_SECURITY_RUNTIME: &str = include_str!("../runtime/pi/svg_security.mjs");
@@ -65,9 +80,12 @@ const CLAIM_BINDING_RUNTIME: &str = include_str!("../runtime/pi/claim_binding.mj
 const NUMBER_SHADOW_RUNTIME: &str = include_str!("../runtime/pi/number_shadow.mjs");
 const COMPACT_SETUP_RUNTIME: &str = include_str!("../runtime/pi/compact_setup.mjs");
 const NUMBER_WORDS_RUNTIME: &str = include_str!("../runtime/pi/number_words.mjs");
+const DATA_NOTES_RUNTIME: &str = include_str!("../runtime/pi/data_notes.mjs");
 const PREFLIGHT_RUNTIME: &str = include_str!("../runtime/pi/preflight.mjs");
 const PATCH_RETRY_RUNTIME: &str = include_str!("../runtime/pi/patch_retry.mjs");
 const SHADOW_RUNTIME: &str = include_str!("../runtime/pi/shadow.mjs");
+const EXTREME_PROBE_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe.mjs");
+const EXTREME_PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/extreme_probe_writer.mjs");
 const TOOL_CHAIN_RUNTIME: &str = include_str!("../runtime/pi/tool_chain.mjs");
 const TOOL_PHASE_POLICY_RUNTIME: &str = include_str!("../runtime/pi/tool_phase_policy.mjs");
 const TOOL_REGISTRY_RUNTIME: &str = include_str!("../runtime/pi/tool_registry.mjs");
@@ -82,27 +100,39 @@ const RENDER_QA_LABELS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_lab
 const GROUPS_RUNTIME: &str = include_str!("../runtime/pi/groups.mjs");
 const KNOWLEDGE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/knowledge_writer.mjs");
 const DECISION_WRITER_RUNTIME: &str = include_str!("../runtime/pi/decision_writer.mjs");
+const SHADOW_WRITER_RUNTIME: &str = include_str!("../runtime/pi/shadow_writer.mjs");
+const REVIEW_REJECT_WRITER_RUNTIME: &str = include_str!("../runtime/pi/review_reject_writer.mjs");
+const AGENT_RECORD_WRITER_RUNTIME: &str = include_str!("../runtime/pi/agent_record_writer.mjs");
+const PROBE_WRITER_RUNTIME: &str = include_str!("../runtime/pi/probe_writer.mjs");
+const FETCH_SPLIT_PROBE_RUNTIME: &str = include_str!("../runtime/pi/fetch_split_probe.mjs");
 const GROUPS_LIST: &str = include_str!("../runtime/pi/groups.json");
+const RENDER_QA_TICKS_RUNTIME: &str = include_str!("../runtime/pi/render_qa_ticks.mjs");
 const EDITORIAL_STYLE_MAPPING_CONFIG: &str =
     include_str!("../config/editorial-style-mappings.json");
 const EDITORIAL_GRAMMAR_REGISTRY_CONFIG: &str =
     include_str!("../config/editorial-grammar-registry.json");
 
-fn write_if_changed(path: &Path, content: &str) -> Result<()> {
+fn write_if_changed(root: &Path, path: &Path, content: &str) -> Result<()> {
     let should_write = match fs::read_to_string(path) {
         Ok(current) => current != content,
         Err(_) => true,
     };
     if should_write {
-        fs::write(path, content)
+        crate::group_guard::write(root, path, content)
             .with_context(|| format!("failed to materialize runtime file: {}", path.display()))?;
     }
     Ok(())
 }
 
+/// Copies the program's own runtime and config into the run folder. These are the only writes made as the system group's materialize
+/// writer (requested_by=materialize); the writes are judged like any other, so only the fixed file names of the materialized_runtime rows pass.
 pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
+    crate::group_guard::as_materialize(|| materialize_extension_unguarded(artifact_dir))
+}
+
+fn materialize_extension_unguarded(artifact_dir: &Path) -> Result<PathBuf> {
     let runtime_dir = artifact_dir.join("runtime");
-    fs::create_dir_all(&runtime_dir).with_context(|| {
+    crate::group_guard::create_dir_all(artifact_dir, &runtime_dir).with_context(|| {
         format!(
             "failed to create runtime directory: {}",
             runtime_dir.display()
@@ -110,14 +140,35 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     })?;
 
     write_if_changed(
+        artifact_dir,
         &runtime_dir.join("process.mjs"),
         include_str!("../runtime/pi/process.mjs"),
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_api.ts"),
+        include_str!("../runtime/pi/tool_api.ts"),
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_host.mjs"),
+        include_str!("../runtime/pi/tool_host.mjs"),
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_host_api.mjs"),
+        include_str!("../runtime/pi/tool_host_api.mjs"),
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("tool_host_schema.mjs"),
+        include_str!("../runtime/pi/tool_host_schema.mjs"),
     )?;
     let extension_path = runtime_dir.join("newsroom.ts");
     let viz_path = runtime_dir.join("viz.mjs");
     let cartography_path = runtime_dir.join("cartography.mjs");
     let assets_dir = runtime_dir.join("assets");
-    fs::create_dir_all(&assets_dir).with_context(|| {
+    crate::group_guard::create_dir_all(artifact_dir, &assets_dir).with_context(|| {
         format!(
             "failed to create runtime assets directory: {}",
             assets_dir.display()
@@ -130,6 +181,18 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let currency_names_asset_path = assets_dir.join("currency-names.json");
     let economy_names_path = runtime_dir.join("economy_names.mjs");
     let choropleth_path = runtime_dir.join("choropleth.mjs");
+    let us_projection_path = runtime_dir.join("us_projection.mjs");
+    let us_states_path = runtime_dir.join("us_states.mjs");
+    let render_styles_path = runtime_dir.join("render_styles.mjs");
+    let story_forms_path = runtime_dir.join("story_forms.mjs");
+    let storyboard_path = runtime_dir.join("storyboard.mjs");
+    let form_selection_path = runtime_dir.join("form_selection.mjs");
+    let palette_theme_path = runtime_dir.join("palette_theme.mjs");
+    let render_qa_story_path = runtime_dir.join("render_qa_story.mjs");
+    let us_state_names_asset_path = assets_dir.join("us-state-names.json");
+    let us_states_basemap_path = assets_dir.join("naturalearth-admin1-us-110m.geojson");
+    let us_states_attributes_asset_path =
+        assets_dir.join("naturalearth-admin1-us-110m-attributes.json");
     let choropleth_attributes_asset_path =
         assets_dir.join("naturalearth-admin0-50m-attributes.json");
     let net_path = runtime_dir.join("net.mjs");
@@ -161,7 +224,7 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let plotly_editorial_path = runtime_dir.join("plotly_editorial.mjs");
     let d3_editorial_path = runtime_dir.join("d3_editorial.mjs");
     let vendor_dir = runtime_dir.join("vendor");
-    fs::create_dir_all(&vendor_dir).with_context(|| {
+    crate::group_guard::create_dir_all(artifact_dir, &vendor_dir).with_context(|| {
         format!(
             "failed to create runtime vendor directory: {}",
             vendor_dir.display()
@@ -187,9 +250,12 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let number_shadow_path = runtime_dir.join("number_shadow.mjs");
     let compact_setup_path = runtime_dir.join("compact_setup.mjs");
     let number_words_path = runtime_dir.join("number_words.mjs");
+    let data_notes_path = runtime_dir.join("data_notes.mjs");
     let preflight_path = runtime_dir.join("preflight.mjs");
     let patch_retry_path = runtime_dir.join("patch_retry.mjs");
     let shadow_path = runtime_dir.join("shadow.mjs");
+    let extreme_probe_path = runtime_dir.join("extreme_probe.mjs");
+    let extreme_probe_writer_path = runtime_dir.join("extreme_probe_writer.mjs");
     let tool_chain_path = runtime_dir.join("tool_chain.mjs");
     let tool_phase_policy_path = runtime_dir.join("tool_phase_policy.mjs");
     let tool_registry_path = runtime_dir.join("tool_registry.mjs");
@@ -201,8 +267,9 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     let render_qa_contrast_path = runtime_dir.join("render_qa_contrast.mjs");
     let render_qa_svg_path = runtime_dir.join("render_qa_svg.mjs");
     let render_qa_labels_path = runtime_dir.join("render_qa_labels.mjs");
+    let render_qa_ticks_path = runtime_dir.join("render_qa_ticks.mjs");
     let config_dir = artifact_dir.join("config");
-    fs::create_dir_all(&config_dir).with_context(|| {
+    crate::group_guard::create_dir_all(artifact_dir, &config_dir).with_context(|| {
         format!(
             "failed to create materialized config directory: {}",
             config_dir.display()
@@ -210,93 +277,247 @@ pub fn materialize_extension(artifact_dir: &Path) -> Result<PathBuf> {
     })?;
     let style_mapping_config_path = config_dir.join("editorial-style-mappings.json");
     let editorial_grammar_registry_path = config_dir.join("editorial-grammar-registry.json");
-    write_if_changed(&extension_path, NEWSROOM_EXTENSION)?;
-    write_if_changed(&viz_path, VIZ_RUNTIME)?;
-    write_if_changed(&cartography_path, CARTOGRAPHY_RUNTIME)?;
-    write_if_changed(&cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;
-    write_if_changed(&cartography_basemap_50m_path, CARTOGRAPHY_BASEMAP_50M)?;
-    write_if_changed(&gshhs_basemap_path, GSHHS_BASEMAP)?;
-    write_if_changed(&economy_names_asset_path, ECONOMY_NAMES_ASSET)?;
-    write_if_changed(&currency_names_asset_path, CURRENCY_NAMES_ASSET)?;
-    write_if_changed(&economy_names_path, ECONOMY_NAMES_RUNTIME)?;
+    write_if_changed(artifact_dir, &extension_path, NEWSROOM_EXTENSION)?;
+    write_if_changed(artifact_dir, &viz_path, VIZ_RUNTIME)?;
+    write_if_changed(artifact_dir, &cartography_path, CARTOGRAPHY_RUNTIME)?;
+    write_if_changed(artifact_dir, &cartography_basemap_path, CARTOGRAPHY_BASEMAP)?;
     write_if_changed(
+        artifact_dir,
+        &cartography_basemap_50m_path,
+        CARTOGRAPHY_BASEMAP_50M,
+    )?;
+    write_if_changed(artifact_dir, &gshhs_basemap_path, GSHHS_BASEMAP)?;
+    write_if_changed(artifact_dir, &economy_names_asset_path, ECONOMY_NAMES_ASSET)?;
+    write_if_changed(
+        artifact_dir,
+        &currency_names_asset_path,
+        CURRENCY_NAMES_ASSET,
+    )?;
+    write_if_changed(artifact_dir, &economy_names_path, ECONOMY_NAMES_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
         &choropleth_attributes_asset_path,
         CHOROPLETH_ATTRIBUTES_ASSET,
     )?;
-    write_if_changed(&choropleth_path, CHOROPLETH_RUNTIME)?;
-    write_if_changed(&net_path, NET_RUNTIME)?;
-    write_if_changed(&provenance_path, PROVENANCE_RUNTIME)?;
-    write_if_changed(&pdf_extract_path, PDF_EXTRACT_RUNTIME)?;
-    write_if_changed(&evidence_gate_path, EVIDENCE_GATE_RUNTIME)?;
-    write_if_changed(&claim_lint_path, CLAIM_LINT_RUNTIME)?;
-    write_if_changed(&infographic_path, INFOGRAPHIC_RUNTIME)?;
-    write_if_changed(&explanatory_path, EXPLANATORY_RUNTIME)?;
-    write_if_changed(&illustration_path, ILLUSTRATION_RUNTIME)?;
-    write_if_changed(&vision_path, VISION_RUNTIME)?;
-    write_if_changed(&competition_path, COMPETITION_RUNTIME)?;
-    write_if_changed(&editorial_path, EDITORIAL_RUNTIME)?;
-    write_if_changed(&story_graph_path, STORY_GRAPH_RUNTIME)?;
-    write_if_changed(&fact_graph_path, FACT_GRAPH_RUNTIME)?;
-    write_if_changed(&editorial_grammar_path, EDITORIAL_GRAMMAR_RUNTIME)?;
-    write_if_changed(&editorial_validators_path, EDITORIAL_VALIDATORS_RUNTIME)?;
-    write_if_changed(&art_direction_path, ART_DIRECTION_RUNTIME)?;
-    write_if_changed(&visual_backends_path, VISUAL_BACKENDS_RUNTIME)?;
-    write_if_changed(&backend_policy_path, BACKEND_POLICY_RUNTIME)?;
-    write_if_changed(&measure_semantics_path, MEASURE_SEMANTICS_RUNTIME)?;
-    write_if_changed(&editorial_semantics_path, EDITORIAL_SEMANTICS_RUNTIME)?;
-    write_if_changed(&contract_text_path, CONTRACT_TEXT_RUNTIME)?;
-    write_if_changed(&visual_skill_bundle_path, VISUAL_SKILL_BUNDLE_RUNTIME)?;
+    write_if_changed(artifact_dir, &choropleth_path, CHOROPLETH_RUNTIME)?;
+    write_if_changed(artifact_dir, &us_projection_path, US_PROJECTION_RUNTIME)?;
+    write_if_changed(artifact_dir, &us_states_path, US_STATES_RUNTIME)?;
+    write_if_changed(artifact_dir, &render_styles_path, RENDER_STYLES_RUNTIME)?;
+    write_if_changed(artifact_dir, &story_forms_path, STORY_FORMS_RUNTIME)?;
+    write_if_changed(artifact_dir, &storyboard_path, STORYBOARD_RUNTIME)?;
+    write_if_changed(artifact_dir, &form_selection_path, FORM_SELECTION_RUNTIME)?;
+    write_if_changed(artifact_dir, &palette_theme_path, PALETTE_THEME_RUNTIME)?;
+    write_if_changed(artifact_dir, &render_qa_story_path, RENDER_QA_STORY_RUNTIME)?;
     write_if_changed(
+        artifact_dir,
+        &us_state_names_asset_path,
+        US_STATE_NAMES_ASSET,
+    )?;
+    write_if_changed(artifact_dir, &us_states_basemap_path, US_STATES_BASEMAP)?;
+    write_if_changed(
+        artifact_dir,
+        &us_states_attributes_asset_path,
+        US_STATES_ATTRIBUTES_ASSET,
+    )?;
+    write_if_changed(artifact_dir, &net_path, NET_RUNTIME)?;
+    write_if_changed(artifact_dir, &provenance_path, PROVENANCE_RUNTIME)?;
+    write_if_changed(artifact_dir, &pdf_extract_path, PDF_EXTRACT_RUNTIME)?;
+    write_if_changed(artifact_dir, &evidence_gate_path, EVIDENCE_GATE_RUNTIME)?;
+    write_if_changed(artifact_dir, &claim_lint_path, CLAIM_LINT_RUNTIME)?;
+    write_if_changed(artifact_dir, &infographic_path, INFOGRAPHIC_RUNTIME)?;
+    write_if_changed(artifact_dir, &explanatory_path, EXPLANATORY_RUNTIME)?;
+    write_if_changed(artifact_dir, &illustration_path, ILLUSTRATION_RUNTIME)?;
+    write_if_changed(artifact_dir, &vision_path, VISION_RUNTIME)?;
+    write_if_changed(artifact_dir, &competition_path, COMPETITION_RUNTIME)?;
+    write_if_changed(artifact_dir, &editorial_path, EDITORIAL_RUNTIME)?;
+    write_if_changed(artifact_dir, &story_graph_path, STORY_GRAPH_RUNTIME)?;
+    write_if_changed(artifact_dir, &fact_graph_path, FACT_GRAPH_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &editorial_grammar_path,
+        EDITORIAL_GRAMMAR_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &editorial_validators_path,
+        EDITORIAL_VALIDATORS_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &art_direction_path, ART_DIRECTION_RUNTIME)?;
+    write_if_changed(artifact_dir, &visual_backends_path, VISUAL_BACKENDS_RUNTIME)?;
+    write_if_changed(artifact_dir, &backend_policy_path, BACKEND_POLICY_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &measure_semantics_path,
+        MEASURE_SEMANTICS_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &editorial_semantics_path,
+        EDITORIAL_SEMANTICS_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &contract_text_path, CONTRACT_TEXT_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &visual_skill_bundle_path,
+        VISUAL_SKILL_BUNDLE_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
         &editorial_design_system_bundle_path,
         EDITORIAL_DESIGN_SYSTEM_BUNDLE_RUNTIME,
     )?;
-    write_if_changed(&rasterize_path, RASTERIZE_RUNTIME)?;
-    write_if_changed(&publication_path, PUBLICATION_RUNTIME)?;
-    write_if_changed(&plotly_editorial_path, PLOTLY_EDITORIAL_RUNTIME)?;
-    write_if_changed(&d3_editorial_path, D3_EDITORIAL_RUNTIME)?;
-    write_if_changed(&plotly_vendor_path, PLOTLY_VENDOR_RUNTIME)?;
-    write_if_changed(&browser_qa_path, BROWSER_QA_RUNTIME)?;
-    write_if_changed(&computation_rows_path, COMPUTATION_ROWS_RUNTIME)?;
-    write_if_changed(&networkx_analyze_path, NETWORKX_ANALYZE_RUNTIME)?;
-    write_if_changed(&networkx_reduce_path, NETWORKX_REDUCE_RUNTIME)?;
+    write_if_changed(artifact_dir, &rasterize_path, RASTERIZE_RUNTIME)?;
+    write_if_changed(artifact_dir, &publication_path, PUBLICATION_RUNTIME)?;
     write_if_changed(
+        artifact_dir,
+        &plotly_editorial_path,
+        PLOTLY_EDITORIAL_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &d3_editorial_path, D3_EDITORIAL_RUNTIME)?;
+    write_if_changed(artifact_dir, &plotly_vendor_path, PLOTLY_VENDOR_RUNTIME)?;
+    write_if_changed(artifact_dir, &browser_qa_path, BROWSER_QA_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &computation_rows_path,
+        COMPUTATION_ROWS_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &networkx_analyze_path,
+        NETWORKX_ANALYZE_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &networkx_reduce_path, NETWORKX_REDUCE_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
         &scientific_basemap_prepare_path,
         SCIENTIFIC_BASEMAP_PREPARE_RUNTIME,
     )?;
-    write_if_changed(&model_spec_path, MODEL_SPEC_RUNTIME)?;
-    write_if_changed(&style_mapping_path, STYLE_MAPPING_RUNTIME)?;
-    write_if_changed(&map_spec_path, MAP_SPEC_RUNTIME)?;
-    write_if_changed(&scientific_map_path, SCIENTIFIC_MAP_RUNTIME)?;
-    write_if_changed(&basemap_registry_path, BASEMAP_REGISTRY_RUNTIME)?;
-    write_if_changed(&flow_layout_path, FLOW_LAYOUT_RUNTIME)?;
-    write_if_changed(&map_reference_layers_path, MAP_REFERENCE_LAYERS_RUNTIME)?;
-    write_if_changed(&publication_binding_path, PUBLICATION_BINDING_RUNTIME)?;
-    write_if_changed(&svg_security_path, SVG_SECURITY_RUNTIME)?;
-    write_if_changed(&asof_probe_path, ASOF_PROBE_RUNTIME)?;
-    write_if_changed(&claim_binding_path, CLAIM_BINDING_RUNTIME)?;
-    write_if_changed(&number_shadow_path, NUMBER_SHADOW_RUNTIME)?;
-    write_if_changed(&compact_setup_path, COMPACT_SETUP_RUNTIME)?;
-    write_if_changed(&number_words_path, NUMBER_WORDS_RUNTIME)?;
-    write_if_changed(&preflight_path, PREFLIGHT_RUNTIME)?;
-    write_if_changed(&patch_retry_path, PATCH_RETRY_RUNTIME)?;
-    write_if_changed(&shadow_path, SHADOW_RUNTIME)?;
-    write_if_changed(&tool_chain_path, TOOL_CHAIN_RUNTIME)?;
-    write_if_changed(&tool_phase_policy_path, TOOL_PHASE_POLICY_RUNTIME)?;
-    write_if_changed(&tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
-    write_if_changed(&parallel_scheduler_path, PARALLEL_SCHEDULER_RUNTIME)?;
-    write_if_changed(&local_backend_path, LOCAL_BACKEND_RUNTIME)?;
-    write_if_changed(&lieflat_path, LIEFLAT_RUNTIME)?;
-    write_if_changed(&render_qa_path, RENDER_QA_RUNTIME)?;
-    write_if_changed(&render_qa_geometry_path, RENDER_QA_GEOMETRY_RUNTIME)?;
-    write_if_changed(&render_qa_contrast_path, RENDER_QA_CONTRAST_RUNTIME)?;
-    write_if_changed(&render_qa_svg_path, RENDER_QA_SVG_RUNTIME)?;
-    write_if_changed(&render_qa_labels_path, RENDER_QA_LABELS_RUNTIME)?;
-    write_if_changed(&runtime_dir.join("groups.mjs"), GROUPS_RUNTIME)?;
-    write_if_changed(&runtime_dir.join("knowledge_writer.mjs"), KNOWLEDGE_WRITER_RUNTIME)?;
-    write_if_changed(&runtime_dir.join("decision_writer.mjs"), DECISION_WRITER_RUNTIME)?;
-    write_if_changed(&runtime_dir.join("groups.json"), GROUPS_LIST)?;
-    write_if_changed(&style_mapping_config_path, EDITORIAL_STYLE_MAPPING_CONFIG)?;
+    write_if_changed(artifact_dir, &model_spec_path, MODEL_SPEC_RUNTIME)?;
+    write_if_changed(artifact_dir, &style_mapping_path, STYLE_MAPPING_RUNTIME)?;
+    write_if_changed(artifact_dir, &map_spec_path, MAP_SPEC_RUNTIME)?;
+    write_if_changed(artifact_dir, &scientific_map_path, SCIENTIFIC_MAP_RUNTIME)?;
     write_if_changed(
+        artifact_dir,
+        &basemap_registry_path,
+        BASEMAP_REGISTRY_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &flow_layout_path, FLOW_LAYOUT_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("flow_map_labels.mjs"),
+        FLOW_MAP_LABELS_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("flow_styles.mjs"),
+        FLOW_STYLES_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &map_reference_layers_path,
+        MAP_REFERENCE_LAYERS_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &publication_binding_path,
+        PUBLICATION_BINDING_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &svg_security_path, SVG_SECURITY_RUNTIME)?;
+    write_if_changed(artifact_dir, &asof_probe_path, ASOF_PROBE_RUNTIME)?;
+    write_if_changed(artifact_dir, &claim_binding_path, CLAIM_BINDING_RUNTIME)?;
+    write_if_changed(artifact_dir, &number_shadow_path, NUMBER_SHADOW_RUNTIME)?;
+    write_if_changed(artifact_dir, &compact_setup_path, COMPACT_SETUP_RUNTIME)?;
+    write_if_changed(artifact_dir, &number_words_path, NUMBER_WORDS_RUNTIME)?;
+    write_if_changed(artifact_dir, &data_notes_path, DATA_NOTES_RUNTIME)?;
+    write_if_changed(artifact_dir, &preflight_path, PREFLIGHT_RUNTIME)?;
+    write_if_changed(artifact_dir, &patch_retry_path, PATCH_RETRY_RUNTIME)?;
+    write_if_changed(artifact_dir, &shadow_path, SHADOW_RUNTIME)?;
+    write_if_changed(artifact_dir, &extreme_probe_path, EXTREME_PROBE_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &extreme_probe_writer_path,
+        EXTREME_PROBE_WRITER_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &tool_chain_path, TOOL_CHAIN_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &tool_phase_policy_path,
+        TOOL_PHASE_POLICY_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &tool_registry_path, TOOL_REGISTRY_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &parallel_scheduler_path,
+        PARALLEL_SCHEDULER_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &local_backend_path, LOCAL_BACKEND_RUNTIME)?;
+    write_if_changed(artifact_dir, &lieflat_path, LIEFLAT_RUNTIME)?;
+    write_if_changed(artifact_dir, &render_qa_path, RENDER_QA_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &render_qa_geometry_path,
+        RENDER_QA_GEOMETRY_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &render_qa_contrast_path,
+        RENDER_QA_CONTRAST_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &render_qa_svg_path, RENDER_QA_SVG_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &render_qa_labels_path,
+        RENDER_QA_LABELS_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("groups.mjs"),
+        GROUPS_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("knowledge_writer.mjs"),
+        KNOWLEDGE_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("decision_writer.mjs"),
+        DECISION_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("shadow_writer.mjs"),
+        SHADOW_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("review_reject_writer.mjs"),
+        REVIEW_REJECT_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("agent_record_writer.mjs"),
+        AGENT_RECORD_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("probe_writer.mjs"),
+        PROBE_WRITER_RUNTIME,
+    )?;
+    write_if_changed(
+        artifact_dir,
+        &runtime_dir.join("fetch_split_probe.mjs"),
+        FETCH_SPLIT_PROBE_RUNTIME,
+    )?;
+    write_if_changed(artifact_dir, &runtime_dir.join("groups.json"), GROUPS_LIST)?;
+    write_if_changed(artifact_dir, &render_qa_ticks_path, RENDER_QA_TICKS_RUNTIME)?;
+    write_if_changed(
+        artifact_dir,
+        &style_mapping_config_path,
+        EDITORIAL_STYLE_MAPPING_CONFIG,
+    )?;
+    write_if_changed(
+        artifact_dir,
         &editorial_grammar_registry_path,
         EDITORIAL_GRAMMAR_REGISTRY_CONFIG,
     )?;
@@ -339,6 +560,9 @@ mod tests {
             "asof_probe.mjs",
             "claim_binding.mjs",
             "compact_setup.mjs",
+            "extreme_probe.mjs",
+            "extreme_probe_writer.mjs",
+            "data_notes.mjs",
             "number_shadow.mjs",
             "number_words.mjs",
             "patch_retry.mjs",

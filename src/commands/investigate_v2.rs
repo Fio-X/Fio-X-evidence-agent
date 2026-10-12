@@ -1,10 +1,7 @@
-use crate::agent::{
-    create_default_registry, create_default_registry_with_visual_config,
-    determine_visual_deliverable_intent, NewsroomAgent,
-};
+use crate::agent::determine_visual_deliverable_intent;
 use crate::audit;
 use crate::cli::InvestigateV2Args;
-use crate::llm::{LLMClient, Provider};
+use crate::llm::Provider;
 use crate::output;
 use crate::pi::{run_prompt, PiConfig};
 use crate::runtime;
@@ -305,10 +302,13 @@ fn write_visual_metrics(
     if path.exists() {
         anyhow::bail!("visual metrics path already exists: {}", path.display());
     }
-    fs::write(
-        &path,
-        format!("{}\n", serde_json::to_string_pretty(&metrics)?),
-    )
+    crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::write(
+            &canonical_root,
+            &path,
+            format!("{}\n", serde_json::to_string_pretty(&metrics)?),
+        )
+    })
     .with_context(|| format!("failed to write visual metrics: {}", path.display()))?;
     let canonical_path = fs::canonicalize(&path)?;
     if !canonical_path.starts_with(&canonical_root)
@@ -347,7 +347,7 @@ fn visual_story_pi_config(
         continue_session: false,
         tool_profile: "visual-story".to_string(),
         hide_lieflat: false,
-        speed: Default::default(),
+        speed: crate::pi::speed_switches_from_env(),
         compose: None,
     }
 }
@@ -361,7 +361,9 @@ async fn run_visual_story(
     goal: String,
     preferred_method: &'static str,
 ) -> Result<()> {
-    fs::create_dir_all(run_dir.join("session"))?;
+    crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::create_dir_all(&run_dir, &run_dir.join("session"))
+    })?;
     let extension = runtime::materialize_extension(&run_dir)?;
     let provider_text = provider_name(&provider).to_string();
     let binary = std::env::var_os("NEWSROOM_PI_BIN")
@@ -413,10 +415,13 @@ async fn run_visual_story(
         pi_runs,
         &events,
     )?;
-    fs::write(
-        run_dir.join("assistant-answer.md"),
-        format!("{final_text}\n"),
-    )?;
+    crate::group_guard::as_run_bundle(|| {
+        crate::group_guard::write(
+            &run_dir,
+            &run_dir.join("assistant-answer.md"),
+            format!("{final_text}\n"),
+        )
+    })?;
 
     println!("\n{}", "=".repeat(80));
     println!("{final_text}");
@@ -445,6 +450,20 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
         ),
     };
 
+    // The Rust-side agent loop was removed: everything that is not a visual
+    // story must go through Pi (`news investigate`), where the evidence,
+    // verification and publication gates live. Refuse before any key lookup
+    // or run directory is created.
+    let goal = args.topic.join(" ");
+    let intent = determine_visual_deliverable_intent(&goal);
+    if !intent.requires_story() {
+        anyhow::bail!(
+            "investigate-v2 only runs visual-story requests (data report, explainer, visual essay, browser publication). \
+             This goal was classified as {}; use `news investigate` instead.",
+            intent.as_str()
+        );
+    }
+
     // 2. 获取 API key
     let api_key = args
         .api_key
@@ -472,8 +491,6 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
     // user-visible destination without adding paths to model prompts.
     std::env::set_var("NEWSROOM_OUTPUT_DIR", &run_dir);
 
-    let goal = args.topic.join(" ");
-    let intent = determine_visual_deliverable_intent(&goal);
     let base_url = args.base_url.clone().or_else(|| match provider {
         Provider::DragonCode => std::env::var("DRAGONCODE_BASE_URL")
             .ok()
@@ -482,66 +499,20 @@ pub async fn run(args: InvestigateV2Args) -> Result<()> {
         Provider::OpenAI => std::env::var("OPENAI_BASE_URL").ok(),
         Provider::Anthropic => None,
     });
-    if intent.requires_story() {
-        eprintln!("🎯 Goal: {goal}");
-        eprintln!("🧭 Deterministic visual intent: {}", intent.as_str());
-        eprintln!("🚀 Starting direct visual-story runner...\n");
-        let preferred_method = preferred_visual_method(intent, &goal);
-        return run_visual_story(
-            provider,
-            api_key,
-            args.model,
-            base_url,
-            run_dir,
-            goal,
-            preferred_method,
-        )
-        .await;
-    }
-
-    // 3. 创建轻量 LLM 客户端；普通文字和单图路径保持原有回合数。
-    let mut client = LLMClient::new(provider.clone(), api_key.clone(), args.model.clone());
-    if let Some(ref base_url) = base_url {
-        client = client.with_base_url(base_url.clone());
-    }
-
-    // 4. 创建工具注册表
-    let tools = if intent == crate::agent::VisualDeliverableIntent::SingleChart {
-        create_default_registry_with_visual_config(
-            provider_name(&provider).to_string(),
-            args.model.clone(),
-            Some(api_key.clone()),
-            base_url.clone(),
-        )
-    } else {
-        create_default_registry()
-    };
-    eprintln!(
-        "🔧 Loaded {} tools: {}",
-        tools.list_tools().len(),
-        tools.list_tools().join(", ")
-    );
-
-    // 5. 创建 agent
-    eprintln!("🎯 Goal: {}\n", goal);
-
-    let mut agent = NewsroomAgent::new(client, tools, goal).with_run_root(run_dir.clone());
-
-    // 6. 执行调查
-    eprintln!("🚀 Starting investigation...\n");
-    let report = agent.investigate().await?;
-
-    let report_path = run_dir.join("report.md");
-    fs::write(&report_path, format!("{report}\n"))
-        .with_context(|| format!("failed to write {}", report_path.display()))?;
-
-    // 7. 输出报告
-    println!("\n{}", "=".repeat(80));
-    println!("{}", report);
-    println!("{}", "=".repeat(80));
-    eprintln!("report: {}", report_path.display());
-
-    Ok(())
+    eprintln!("🎯 Goal: {goal}");
+    eprintln!("🧭 Deterministic visual intent: {}", intent.as_str());
+    eprintln!("🚀 Starting direct visual-story runner...\n");
+    let preferred_method = preferred_visual_method(intent, &goal);
+    run_visual_story(
+        provider,
+        api_key,
+        args.model,
+        base_url,
+        run_dir,
+        goal,
+        preferred_method,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -564,7 +535,7 @@ mod tests {
             PathBuf::from("ext.ts"),
             Path::new("/tmp/run"),
         );
-        let command = config.command();
+        let command = config.pi_command();
         std::env::remove_var(crate::pi::HIDE_LIEFLAT_ENV);
         let args: Vec<String> = command
             .as_std()
@@ -583,5 +554,45 @@ mod tests {
             matches!(marker, Some((_, None))),
             "child must not inherit the switch: {marker:?}"
         );
+    }
+    fn v2_config() -> PiConfig {
+        visual_story_pi_config(
+            PathBuf::from("pi"),
+            "anthropic".into(),
+            "m".into(),
+            "k".into(),
+            None,
+            None,
+            PathBuf::from("ext.ts"),
+            Path::new("/tmp/run"),
+        )
+    }
+
+    #[test]
+    fn v2_speed_is_the_default_with_no_switch_and_follows_the_environment_when_set() {
+        let _guard = crate::pi::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        use crate::pi::{ATOMIC_ARTIFACT_ENV, CHAIN_VIZ_ENV, INLINE_CLAIM_ENV};
+        let names = [ATOMIC_ARTIFACT_ENV, CHAIN_VIZ_ENV, INLINE_CLAIM_ENV];
+        for name in names {
+            std::env::remove_var(name);
+        }
+        let off = v2_config();
+        assert_eq!(off.speed, crate::prompt::PromptSpeed::default());
+        let off_tools = off.tools_arg();
+        assert!(!off_tools.split(',').any(|t| t == crate::pi::VIZ_CHAIN_TOOL));
+        for name in names {
+            std::env::set_var(name, "1");
+        }
+        let on = v2_config();
+        for name in names {
+            std::env::remove_var(name);
+        }
+        assert!(on.speed.chain_viz && on.speed.inline_claim);
+        assert!(!on.speed.chain_infographic && !on.speed.preflight);
+        assert!(on.tools_arg().split(',').any(|t| t == crate::pi::VIZ_CHAIN_TOOL));
+        assert_eq!(on.tool_profile, "visual-story");
+        assert!(!on.hide_lieflat && on.compose.is_none());
     }
 }

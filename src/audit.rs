@@ -1,10 +1,11 @@
+use crate::group_guard;
 use crate::tool_registry::{capability_class, is_capability_class};
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{self, File, OpenOptions};
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
@@ -246,11 +247,10 @@ impl AuditSummary {
 }
 
 pub fn append_user_goal_event(events_path: &Path, mode: &str) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(events_path)
-        .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    let mut file = group_guard::as_run_bundle(|| {
+        group_guard::open_append(events_path.parent().unwrap_or(Path::new("")), events_path)
+    })
+    .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
     let event = json!({
         "type": "newsroom_user_goal",
         "mode": mode,
@@ -265,11 +265,10 @@ pub fn append_completion_retry_event(
     attempt: usize,
     gaps: &[String],
 ) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(events_path)
-        .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
+    let mut file = group_guard::as_run_bundle(|| {
+        group_guard::open_append(events_path.parent().unwrap_or(Path::new("")), events_path)
+    })
+    .with_context(|| format!("failed to open event log: {}", events_path.display()))?;
     let event = json!({
         "type": "auto_retry_start",
         "reason": "visual_completion_gate",
@@ -515,14 +514,21 @@ pub fn build(events_path: &Path, output_path: &Path) -> Result<AuditSummary> {
     };
 
     let json = serde_json::to_string_pretty(&summary)?;
-    fs::write(output_path, format!("{json}\n"))
-        .with_context(|| format!("failed to write audit: {}", output_path.display()))?;
+    group_guard::as_run_bundle(|| {
+        group_guard::write(
+            output_path.parent().unwrap_or(Path::new("")),
+            output_path,
+            format!("{json}\n"),
+        )
+    })
+    .with_context(|| format!("failed to write audit: {}", output_path.display()))?;
     Ok(summary)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);

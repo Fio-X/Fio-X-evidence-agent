@@ -1,4 +1,16 @@
 mod agent;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod agent_loop;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod agent_prompt;
+mod agent_serve;
+#[cfg(test)]
+mod agent_watch;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod anthropic_model;
 mod artifact;
 mod audit;
 mod cli;
@@ -6,16 +18,34 @@ mod commands;
 mod compose_answer;
 mod config;
 mod data_profile;
+mod group_guard;
 mod hash;
 mod interactive;
 mod llm;
+#[cfg(test)]
+mod model_fake;
+#[cfg(test)]
+mod openai_model;
 mod output;
 mod pi;
 mod prompt;
 mod recipes;
+mod repeat_failure;
 mod runtime;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod session_store;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod staging;
 mod step_lines;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod tool_host;
 mod tool_registry;
+#[allow(dead_code)]
+// 1011ak 9a: only the Rust agent child (NEWSROOM_AGENT=rust) uses it; unused parts are trimmed later
+mod tool_schema;
 mod verify;
 
 use anyhow::Result;
@@ -24,17 +54,43 @@ use cli::{Cli, Commands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    config::load_project_env()?;
+    // NEWSROOM_AGENT=rust (exactly): the Rust agent child of a run. It reads no configuration, `.env` file or key (1011ak 9a).
+    if agent_loop::agent_rust_enabled() {
+        let mut args = std::env::args().skip(1);
+        if args.next().as_deref() == Some(agent_serve::SERVE_ARG) {
+            return agent_serve::serve(args.collect()).await;
+        }
+        // gate A (NEWSROOM_AGENT_REAL=1): the parent of a real-model run reads the configuration as on the Pi path, to hand the key over
+        if agent_serve::real_enabled() {
+            config::load_project_env()?;
+        }
+    } else {
+        config::load_project_env()?;
+    }
     let args = match cli::launch(std::env::args_os().collect()) {
         cli::Launch::Parse(args) => args,
         cli::Launch::Done(code) => std::process::exit(code),
     };
     let cli = Cli::parse_from(args);
+    group_guard::startup_check()?;
+    let command_name: &'static str = match &cli.command {
+        Some(Commands::Doctor(_)) => "doctor",
+        Some(Commands::Ask(_)) => "ask",
+        Some(Commands::Investigate(_)) => "investigate",
+        Some(Commands::InvestigateV2(_)) => "investigate-v2",
+        Some(Commands::Continue(_)) => "continue",
+        Some(Commands::Inspect(_)) => "inspect",
+        Some(Commands::Verify(_)) => "verify",
+        None => "interactive",
+    };
+    group_guard::enter_command(command_name, cli::group_of(command_name));
+    if agent_loop::agent_rust_enabled() {
+        std::env::set_var(agent_serve::COMMAND_ENV, command_name);
+    }
 
     match cli.command {
         Some(Commands::Doctor(args)) => commands::doctor::run(args).await,
         Some(Commands::Ask(args)) => commands::ask::run(args).await,
-        Some(Commands::Chat(args)) => commands::chat::run(args).await,
         Some(Commands::Investigate(args)) => commands::investigate::run(args).await,
         Some(Commands::InvestigateV2(args)) => commands::investigate_v2::run(args).await,
         Some(Commands::Continue(args)) => commands::continue_investigation::run(args).await,

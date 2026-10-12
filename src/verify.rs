@@ -1430,10 +1430,28 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                 .and_then(|v| v.get("compact"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let render_qa_ref = manifest
-                .get("render_qa_ref")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let split_qa_ref;
+            let render_qa_ref = if review_split_enabled() {
+                let manifest_rel = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                split_qa_ref = split_render_qa_ref(
+                    root,
+                    "visualizations/critics",
+                    &manifest_rel,
+                    &manifest,
+                    &format!("visualization {name}"),
+                    report,
+                )?;
+                split_qa_ref.as_str()
+            } else {
+                manifest
+                    .get("render_qa_ref")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            };
             // A choropleth's color channel can only be exempted from the
             // color_only_quantity lint blocker (editorial_validators.mjs)
             // when its render_qa report proves every plotted region's value
@@ -1495,6 +1513,10 @@ fn verify_visualizations(root: &Path, report: &mut VerificationReport) -> Result
                     );
                 }
             }
+        }
+
+        if std::env::var("NEWSROOM_QA_TICK_READBACK").as_deref() == Ok("1") {
+            verify_tick_readback_for_manifest(root, name, &manifest, report);
         }
 
         if !lint_ref.is_empty() {
@@ -1720,6 +1742,149 @@ fn leading_number_with_scale(text: &str) -> Option<f64> {
     Some(number * scale)
 }
 
+/// Exact check of a Chinese 万 / 亿 / 万亿 value label (the renderer's typeset form for a Chinese page). The renderer picks
+/// the suffix by the raw magnitude of the value and prints value / 10^power to one decimal, rounded half up on the shortest
+/// decimal spelling of the value. This re-derives that text from data-value with integer arithmetic and requires the
+/// number and the suffix to equal it - no tolerance. None: the label carries no such suffix (the ordinary reader
+/// applies). Some(true): exact match. Some(false): mismatch, including any arithmetic that does not fit.
+fn zh_scaled_label_matches(text: &str, expected: f64) -> Option<bool> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    if i < bytes.len() && bytes[i] == b'-' {
+        i += 1;
+    }
+    let digits_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == digits_start
+        || i + 1 >= bytes.len()
+        || bytes[i] != b'.'
+        || !bytes[i + 1].is_ascii_digit()
+    {
+        return None;
+    }
+    let number_end = i + 2;
+    let rest = &text[number_end..];
+    let (suffix, power): (&str, u32) = if rest.starts_with("万亿") {
+        ("万亿", 12)
+    } else if rest.starts_with('亿') {
+        ("亿", 8)
+    } else if rest.starts_with('万') {
+        ("万", 4)
+    } else {
+        return None;
+    };
+    if rest[suffix.len()..]
+        .chars()
+        .next()
+        .is_some_and(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+    {
+        return None;
+    }
+    let magnitude = expected.abs();
+    let (want_suffix, want_power): (&str, u32) = if magnitude >= 1e12 {
+        ("万亿", 12)
+    } else if magnitude >= 1e8 {
+        ("亿", 8)
+    } else if magnitude >= 1e4 {
+        ("万", 4)
+    } else {
+        return Some(false);
+    };
+    if suffix != want_suffix || power != want_power {
+        return Some(false);
+    }
+    let shortest = format!("{magnitude}");
+    let (int_part, frac_part) = shortest.split_once('.').unwrap_or((shortest.as_str(), ""));
+    let Ok(coefficient) = format!("{int_part}{frac_part}").parse::<u128>() else {
+        return Some(false);
+    };
+    let Some(numerator) = coefficient.checked_mul(10) else {
+        return Some(false);
+    };
+    let Some(denominator) = 10u128.checked_pow(frac_part.len() as u32 + want_power) else {
+        return Some(false);
+    };
+    let (Some(twice_numerator), Some(twice_denominator)) =
+        (numerator.checked_mul(2), denominator.checked_mul(2))
+    else {
+        return Some(false);
+    };
+    let Some(rounded) = twice_numerator
+        .checked_add(denominator)
+        .map(|v| v / twice_denominator)
+    else {
+        return Some(false);
+    };
+    let want = format!(
+        "{}{}.{}",
+        if expected < 0.0 { "-" } else { "" },
+        rounded / 10,
+        rounded % 10
+    );
+    Some(&text[..number_end] == want.as_str())
+}
+
+/// Half-up rounding of |value| to `digits` decimals on the shortest decimal spelling of the value, as integer arithmetic
+/// (the renderer's halfUpFixed). Returns the whole and the fractional digits of the result, None when it does not fit.
+fn half_up_parts(magnitude: f64, digits: u32) -> Option<(u128, u128)> {
+    let shortest = format!("{magnitude}");
+    let (int_part, frac_part) = shortest.split_once('.').unwrap_or((shortest.as_str(), ""));
+    let coefficient = format!("{int_part}{frac_part}").parse::<u128>().ok()?;
+    let numerator = coefficient.checked_mul(10u128.checked_pow(digits)?)?;
+    let denominator = 10u128.checked_pow(frac_part.len() as u32)?;
+    let rounded =
+        numerator.checked_mul(2)?.checked_add(denominator)? / denominator.checked_mul(2)?;
+    let scale = 10u128.pow(digits);
+    Some((rounded / scale, rounded % scale))
+}
+
+/// Exact check of the two plain Chinese choropleth label forms the typeset switch prints besides the 万 / 亿 ones:
+/// (1) a unit that already says 万 / 亿 / 千 / 百万 gets the plain one-decimal number and no second scale ("12000.0 万人");
+/// (2) an integer-form label ("8766 人"): on a map that has a value of 1万 or more, a value under 1万 prints as its half-up
+/// integer; otherwise an integer-form label must be the integer value itself. None: neither form (the ordinary reader
+/// applies). Some(true) exact match, Some(false) mismatch.
+fn zh_plain_label_matches(text: &str, expected: f64, wan_context: bool) -> Option<bool> {
+    let unit_scaled = |rest: &str| rest.chars().any(|c| matches!(c, '万' | '亿' | '千'));
+    let negative = expected < 0.0;
+    // (1) -?digits.digit<space>unit-with-a-scale-word
+    if let Some((number, rest)) = text.split_once(' ') {
+        let digits = number.strip_prefix('-').unwrap_or(number);
+        if let Some((whole, frac)) = digits.split_once('.') {
+            if !whole.is_empty()
+                && whole.bytes().all(|b| b.is_ascii_digit())
+                && frac.len() == 1
+                && frac.bytes().all(|b| b.is_ascii_digit())
+                && unit_scaled(rest)
+            {
+                let Some((w, f)) = half_up_parts(expected.abs(), 1) else {
+                    return Some(false);
+                };
+                let want = format!("{}{w}.{f}", if negative { "-" } else { "" });
+                return Some(number == want);
+            }
+        }
+    }
+    // (2) optional currency symbol, then -?digits not followed by a digit or a point
+    let body = text.strip_prefix(['£', '$', '€', '¥']).unwrap_or(text);
+    let signless = body.strip_prefix('-').unwrap_or(body);
+    let digit_count = signless.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digit_count == 0 || signless[digit_count..].starts_with('.') {
+        return None;
+    }
+    let shown = &body[..body.len() - signless.len() + digit_count];
+    let integer_valued = expected.fract() == 0.0;
+    if !integer_valued && !(wan_context && expected.abs() < 10_000.0) {
+        return Some(false);
+    }
+    let Some((w, _)) = half_up_parts(expected.abs(), 0) else {
+        return Some(false);
+    };
+    let want = format!("{}{w}", if negative && w != 0 { "-" } else { "" });
+    Some(shown == want)
+}
+
 /// Independently re-derives the choropleth value-labels proof straight from
 /// one rendered viewport's SVG markup: every `choropleth-data` region's own
 /// `data-iso3`/`data-value`, and every name/value label's `data-iso3` and
@@ -1734,12 +1899,20 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     // regions too small for an on-map label, the same roles render_qa_labels.mjs counts.
     let footnotes = std::env::var("NEWSROOM_VERIFY_MAP_FOOTNOTES").as_deref() == Ok("1");
     let name_roles: &[&str] = if footnotes {
-        &["choropleth-label", "choropleth-inset-label", "choropleth-footnote-name"]
+        &[
+            "choropleth-label",
+            "choropleth-inset-label",
+            "choropleth-footnote-name",
+        ]
     } else {
         &["choropleth-label", "choropleth-inset-label"]
     };
     let value_roles: &[&str] = if footnotes {
-        &["choropleth-label-value", "choropleth-inset-label-value", "choropleth-footnote-value"]
+        &[
+            "choropleth-label-value",
+            "choropleth-inset-label-value",
+            "choropleth-footnote-value",
+        ]
     } else {
         &["choropleth-label-value", "choropleth-inset-label-value"]
     };
@@ -1758,8 +1931,7 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
     }
 
     let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for node in find_text_nodes_with_role(svg_text, name_roles)
-    {
+    for node in find_text_nodes_with_role(svg_text, name_roles) {
         let Some(iso3) = attr_value(node.tag, "data-iso3") else {
             continue;
         };
@@ -1779,6 +1951,9 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             .push(label_body_text(node.body));
     }
 
+    let wan_context = data_values
+        .values()
+        .any(|vals| vals.len() == 1 && vals[0].abs() >= 10_000.0);
     for (iso3, vals) in &data_values {
         if vals.len() != 1 {
             failures.push(format!(
@@ -1803,6 +1978,16 @@ fn verify_choropleth_labels_from_svg(svg_text: &str) -> Vec<String> {
             continue;
         }
         let text = &value_texts[0];
+        if let Some(exact) = zh_plain_label_matches(text, expected, wan_context)
+            .or_else(|| zh_scaled_label_matches(text, expected))
+        {
+            if !exact {
+                failures.push(format!(
+                    "{iso3}'s rendered value label '{text}' does not match its region's data-value {expected}"
+                ));
+            }
+            continue;
+        }
         match leading_number_with_scale(text) {
             Some(shown) => {
                 let tolerance = (expected.abs() * 0.01).max(0.05);
@@ -1869,6 +2054,747 @@ fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
     Some(number * scale)
 }
 
+// --- NEWSROOM_QA_TICK_READBACK=1 (exact "1", default off): bar tick and value-label read-back (K198, K200, K202) ---
+//
+// Independently re-derives, from one rendered SVG plus the data rows it was drawn from, that (T1) every axis tick's
+// text read through its suffix or the unit line's data-scale equals its data-tick-value to half a displayed digit,
+// (T2) every tick sits where that value falls on the scale fitted from the bars, (V1/V2) every value label reads as
+// its data-value and names a bar carrying the same value, and (anchor) every bar's data-value equals its data row.
+// Written fresh: it shares nothing with runtime/pi/render_qa_ticks.mjs or the Python verify_tick_readback_from_svg.
+
+const TICK_READBACK_COVERED: [&str; 2] = ["horizontal_bar", "mirrored_bar"];
+/// SVG units: about 50x the coordinate rounding, 1/80 of the narrowest grid step.
+const TICK_POSITION_TOLERANCE: f64 = 1.0;
+const TICK_LABEL_SLIDE_MAX: f64 = 40.0;
+const TICK_REL: f64 = 1e-9;
+
+#[derive(Clone, Debug, Default)]
+struct TickReadbackContext {
+    chart_type: String,
+    rows: Option<Vec<Value>>,
+    category_field: Option<String>,
+    value_field: Option<String>,
+    series_field: Option<String>,
+    period_field: Option<String>,
+    unit: Option<String>,
+    language: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+enum TickReadbackStatus {
+    Covered,
+    Uncovered,
+}
+
+type TickAttrs = std::collections::BTreeMap<String, String>;
+
+fn tick_attrs(tag: &str) -> TickAttrs {
+    let bytes = tag.as_bytes();
+    let is_name = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b':';
+    let mut out = TickAttrs::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !is_name(bytes[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && is_name(bytes[i]) {
+            i += 1;
+        }
+        let name = &tag[start..i];
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'=' {
+            j += 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                let quote = bytes[j];
+                j += 1;
+                let value_start = j;
+                while j < bytes.len() && bytes[j] != quote {
+                    j += 1;
+                }
+                out.insert(
+                    name.to_string(),
+                    tag[value_start..j.min(bytes.len())].to_string(),
+                );
+                i = (j + 1).min(bytes.len());
+            }
+        }
+    }
+    out
+}
+
+fn tick_body_text(body: &str) -> String {
+    let mut stripped = String::new();
+    let mut in_tag = false;
+    for c in body.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => stripped.push(c),
+            _ => {}
+        }
+    }
+    stripped
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+        .trim()
+        .to_string()
+}
+
+/// A plain decimal number only: [+-] digits [. digits] [e[+-]digits]; never "inf", "nan", hex or empty.
+fn tick_num(value: Option<&str>) -> Option<f64> {
+    let s = value?.trim();
+    let b = s.as_bytes();
+    let mut i = 0;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        i += 1;
+    }
+    let int_start = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    let int_digits = i - int_start;
+    let mut frac_digits = 0;
+    if i < b.len() && b[i] == b'.' {
+        i += 1;
+        let frac_start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        frac_digits = i - frac_start;
+    }
+    if int_digits == 0 && frac_digits == 0 {
+        return None;
+    }
+    if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+        i += 1;
+        if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+            i += 1;
+        }
+        let exp_start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == exp_start {
+            return None;
+        }
+    }
+    if i != b.len() {
+        return None;
+    }
+    s.parse::<f64>().ok().filter(|n| n.is_finite())
+}
+
+/// What the text shows: (mantissa, displayed decimals, attached suffix multiplier).
+fn tick_read_shown(text: &str) -> Option<(f64, usize, Option<f64>)> {
+    let t = text.trim();
+    let b = t.as_bytes();
+    let mut i = 0;
+    let mut negative = false;
+    if t.starts_with('-') {
+        negative = true;
+        i = 1;
+    } else if t.starts_with('\u{2212}') {
+        negative = true;
+        i = '\u{2212}'.len_utf8();
+    }
+    let digits_start = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == digits_start {
+        return None;
+    }
+    let mut int_text = t[digits_start..i].to_string();
+    // thousands grouping: 1-3 digits then one or more ,ddd groups
+    if i - digits_start <= 3 {
+        let mut k = i;
+        let mut grouped = String::new();
+        while k + 3 < b.len() && b[k] == b',' && b[k + 1..k + 4].iter().all(|c| c.is_ascii_digit())
+        {
+            grouped.push_str(&t[k + 1..k + 4]);
+            k += 4;
+        }
+        if k > i {
+            int_text.push_str(&grouped);
+            i = k;
+        }
+    }
+    let mut frac = String::new();
+    if i + 1 < b.len() && b[i] == b'.' && b[i + 1].is_ascii_digit() {
+        let start = i + 1;
+        let mut j = start;
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        frac = t[start..j].to_string();
+        i = j;
+    }
+    let mantissa_text = format!(
+        "{}{}{}",
+        if negative { "-" } else { "" },
+        int_text,
+        if frac.is_empty() {
+            String::new()
+        } else {
+            format!(".{frac}")
+        }
+    );
+    let mantissa: f64 = mantissa_text.parse().ok()?;
+    let rest = &t[i..];
+    let suffix = if rest.starts_with("\u{4e07}\u{4ebf}") {
+        Some(1e12)
+    } else if rest.starts_with('\u{4ebf}') {
+        Some(1e8)
+    } else if rest.starts_with('\u{4e07}') {
+        Some(1e4)
+    } else {
+        let after = |n: usize| {
+            rest[n..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_ascii_alphabetic())
+        };
+        if rest.starts_with("bn") && after(2) {
+            Some(1e9)
+        } else if rest.starts_with('m') && after(1) {
+            Some(1e6)
+        } else if rest.starts_with('k') && after(1) {
+            Some(1e3)
+        } else if !rest.trim().is_empty() {
+            // a label that names its own unit (1683%, 9541.8 元) is read as written, the unit line's scale is not applied to it
+            Some(1.0)
+        } else {
+            None
+        }
+    };
+    Some((mantissa, frac.len(), suffix))
+}
+
+fn tick_unit_word_scale(text: &str) -> f64 {
+    if text.contains("\u{4e07}\u{4ebf}") {
+        return 1e12;
+    }
+    if text.contains('\u{4ebf}') {
+        return 1e8;
+    }
+    if text.contains('\u{4e07}') {
+        return 1e4;
+    }
+    let lower = text.to_ascii_lowercase();
+    for token in lower.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        match token.trim_end_matches('s') {
+            "thousand" if token.len() >= 8 => return 1e3,
+            "million" if token.len() >= 7 => return 1e6,
+            "billion" if token.len() >= 7 => return 1e9,
+            "trillion" if token.len() >= 8 => return 1e12,
+            _ => {}
+        }
+    }
+    1.0
+}
+
+fn tick_close(a: f64, b: f64) -> bool {
+    (a - b).abs() <= TICK_REL * 1f64.max(a.abs()).max(b.abs())
+}
+
+/// (value the text shows, half a unit of its last displayed digit), both in data units.
+fn tick_shown_value(text: &str, unit_scale: f64) -> Option<(f64, f64)> {
+    let (mantissa, decimals, suffix) = tick_read_shown(text)?;
+    let mult = suffix.unwrap_or(unit_scale);
+    Some((mantissa * mult, 0.5 * 10f64.powi(-(decimals as i32)) * mult))
+}
+
+fn tick_value_text(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    }
+}
+
+fn tick_key(category: &str, series: &str, period: &str) -> String {
+    serde_json::to_string(&serde_json::json!([category, series, period])).unwrap_or_default()
+}
+
+fn tick_attr_key(attrs: &TickAttrs) -> Option<String> {
+    let category = attrs.get("data-category")?;
+    Some(tick_key(
+        category,
+        attrs.get("data-series").map_or("", String::as_str),
+        attrs.get("data-period").map_or("", String::as_str),
+    ))
+}
+
+/// Every `<tag ...>` opening string (and, for text, its body) in document order.
+fn tick_elements<'a>(svg: &'a str, tag: &str, with_body: bool) -> Vec<(&'a str, &'a str)> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while let Some(rel) = svg[idx..].find(&open) {
+        let start = idx + rel;
+        let after = start + open.len();
+        idx = after;
+        if !svg[after..].starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/') {
+            continue;
+        }
+        let Some(gt) = svg[after..].find('>') else {
+            break;
+        };
+        let tag_end = after + gt + 1;
+        if with_body {
+            let Some(close_rel) = svg[tag_end..].find(&close) else {
+                break;
+            };
+            out.push((&svg[start..tag_end], &svg[tag_end..tag_end + close_rel]));
+            idx = tag_end + close_rel + close.len();
+        } else {
+            out.push((&svg[start..tag_end], ""));
+            idx = tag_end;
+        }
+    }
+    out
+}
+
+/// Returns the status and the (rule, message) failures. An uncovered chart type is never a pass.
+fn verify_tick_readback_from_svg(
+    svg: &str,
+    ctx: &TickReadbackContext,
+) -> (TickReadbackStatus, Vec<(String, String)>) {
+    // zh pages write $B as 亿美元 (x10): the text no longer equals the data unit, the read-back does not cover it yet
+    if !TICK_READBACK_COVERED.contains(&ctx.chart_type.as_str())
+        || (ctx.language.as_deref() == Some("zh") && ctx.unit.as_deref() == Some("$B"))
+    {
+        return (TickReadbackStatus::Uncovered, Vec::new());
+    }
+    let mut failures: Vec<(String, String)> = Vec::new();
+    let mut fail = |rule: &str, message: String| failures.push((rule.to_string(), message));
+    let mirrored = ctx.chart_type == "mirrored_bar";
+
+    let mut ticks: Vec<(TickAttrs, String)> = Vec::new();
+    let mut units: Vec<(TickAttrs, String)> = Vec::new();
+    let mut labels: Vec<(TickAttrs, String)> = Vec::new();
+    for (open_tag, body) in tick_elements(svg, "text", true) {
+        let attrs = tick_attrs(open_tag);
+        let item = (attrs.clone(), tick_body_text(body));
+        match attrs.get("data-role").map(String::as_str) {
+            Some("axis-tick-label") => ticks.push(item),
+            Some("axis-unit-line") => units.push(item),
+            Some("value-label") => labels.push(item),
+            _ => {}
+        }
+    }
+    let bars: Vec<TickAttrs> = tick_elements(svg, "rect", false)
+        .into_iter()
+        .map(|(open_tag, _)| tick_attrs(open_tag))
+        .filter(|a| a.get("data-role").map(String::as_str) == Some("data-bar"))
+        .collect();
+
+    let mut unit_scale = 1.0;
+    if units.len() > 1 {
+        fail(
+            "unit_line",
+            format!("{} axis unit lines (expected at most 1)", units.len()),
+        );
+    }
+    if let Some((attrs, text)) = units.first() {
+        match tick_num(attrs.get("data-scale").map(String::as_str)) {
+            Some(scale) if scale > 0.0 => {
+                let words = tick_unit_word_scale(text);
+                if scale == 1.0 || tick_close(scale, words) {
+                    unit_scale = scale;
+                } else {
+                    fail(
+                        "unit_line",
+                        format!(
+                            "axis unit line '{text}' says scale {words} but data-scale is {scale}"
+                        ),
+                    );
+                }
+            }
+            _ => fail(
+                "unit_line",
+                format!("axis unit line '{text}' has no readable positive data-scale"),
+            ),
+        }
+    }
+
+    let mut bar_value: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    // (key, value, x, width, side)
+    let mut geo: Vec<(String, f64, f64, f64, String)> = Vec::new();
+    if bars.is_empty() {
+        fail(
+            "bar_attrs",
+            "the chart has no data-bar to read back against".to_string(),
+        );
+    }
+    for attrs in &bars {
+        let Some(key) = tick_attr_key(attrs) else {
+            fail("bar_attrs", "a data-bar has no data-category".to_string());
+            continue;
+        };
+        let Some(value) = tick_num(attrs.get("data-value").map(String::as_str)) else {
+            fail("bar_attrs", format!("bar {key} has no readable data-value"));
+            continue;
+        };
+        let (Some(x), Some(width)) = (
+            tick_num(attrs.get("x").map(String::as_str)),
+            tick_num(attrs.get("width").map(String::as_str)),
+        ) else {
+            fail("bar_attrs", format!("bar {key} has no numeric x/width"));
+            continue;
+        };
+        let side = attrs.get("data-side").cloned().unwrap_or_default();
+        if mirrored && side != "left" && side != "right" {
+            fail(
+                "bar_attrs",
+                format!("bar {key} has no data-side left/right"),
+            );
+            continue;
+        }
+        if bar_value.contains_key(&key) {
+            fail("bar_attrs", format!("bar {key} appears twice"));
+            continue;
+        }
+        bar_value.insert(key.clone(), value);
+        geo.push((key, value, x, width, side));
+    }
+
+    match (&ctx.rows, &ctx.category_field, &ctx.value_field) {
+        (Some(rows), Some(category_field), Some(value_field)) => {
+            let mut row_value: std::collections::BTreeMap<String, f64> =
+                std::collections::BTreeMap::new();
+            for row in rows {
+                let series = ctx
+                    .series_field
+                    .as_ref()
+                    .map(|f| tick_value_text(row.get(f)))
+                    .unwrap_or_default();
+                let period = ctx
+                    .period_field
+                    .as_ref()
+                    .map(|f| tick_value_text(row.get(f)))
+                    .unwrap_or_default();
+                let key = tick_key(&tick_value_text(row.get(category_field)), &series, &period);
+                let value = match row.get(value_field) {
+                    Some(Value::Number(n)) => n.as_f64().filter(|v| v.is_finite()),
+                    Some(Value::String(s)) => tick_num(Some(s)),
+                    _ => None,
+                };
+                match value {
+                    None => fail(
+                        "data_anchor",
+                        format!("data row {key} has no numeric {value_field}"),
+                    ),
+                    Some(_) if row_value.contains_key(&key) => {
+                        fail("data_anchor", format!("data row key {key} is not unique"))
+                    }
+                    Some(v) => {
+                        row_value.insert(key, v);
+                    }
+                }
+            }
+            for (key, value) in &bar_value {
+                match row_value.get(key) {
+                    None => fail("data_anchor", format!("bar {key} has no data row")),
+                    Some(expected) if !tick_close(*value, *expected) => fail(
+                        "data_anchor",
+                        format!(
+                            "bar {key} data-value {value} differs from its data row {expected}"
+                        ),
+                    ),
+                    _ => {}
+                }
+            }
+            // a chart draws the current period only (the other may be an outline or absent): rows of a period no bar carries are not drawn
+            let period_of = |key: &str| {
+                serde_json::from_str::<Vec<String>>(key)
+                    .ok()
+                    .and_then(|parts| parts.get(2).cloned())
+                    .unwrap_or_default()
+            };
+            let drawn: std::collections::BTreeSet<String> =
+                bar_value.keys().map(|key| period_of(key)).collect();
+            for key in row_value.keys() {
+                if !bar_value.contains_key(key)
+                    && !(ctx.period_field.is_some()
+                        && !drawn.is_empty()
+                        && !drawn.contains(&period_of(key)))
+                {
+                    fail("data_anchor", format!("data row {key} has no bar"));
+                }
+            }
+        }
+        _ => fail(
+            "data_anchor",
+            "no data rows or field names to anchor the bars to".to_string(),
+        ),
+    }
+
+    let mut k: Option<f64> = None;
+    let mut origin: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    let reference = geo.iter().filter(|g| g.1 != 0.0).fold(
+        None::<&(String, f64, f64, f64, String)>,
+        |best, g| match best {
+            Some(b) if b.1.abs() >= g.1.abs() => Some(b),
+            _ => Some(g),
+        },
+    );
+    match reference {
+        None => fail(
+            "tick_position",
+            "no non-zero bar to fit the scale from".to_string(),
+        ),
+        Some(reference) => {
+            let scale = reference.3 / reference.1.abs();
+            k = Some(scale);
+            for (key, value, x, width, side) in &geo {
+                if (width - scale * value.abs()).abs() > TICK_POSITION_TOLERANCE {
+                    fail(
+                        "tick_position",
+                        format!(
+                            "bar {key} is {width} wide but its data-value {value} implies {:.2}",
+                            scale * value.abs()
+                        ),
+                    );
+                }
+                if *value == 0.0 && !mirrored {
+                    continue;
+                }
+                let (zero, slot) = if mirrored {
+                    (if side == "left" { x + width } else { *x }, side.clone())
+                } else {
+                    (if *value < 0.0 { x + width } else { *x }, "bar".to_string())
+                };
+                match origin.get(&slot) {
+                    None => {
+                        origin.insert(slot, zero);
+                    }
+                    Some(existing) if (existing - zero).abs() > TICK_POSITION_TOLERANCE => fail(
+                        "tick_position",
+                        format!("bar {key} starts at {zero}, the others at {existing}"),
+                    ),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if ticks.is_empty() {
+        fail(
+            "tick_attrs",
+            "the chart has no axis-tick-label to read back".to_string(),
+        );
+    }
+    for (attrs, text) in &ticks {
+        let Some(tv) = tick_num(attrs.get("data-tick-value").map(String::as_str)) else {
+            fail(
+                "tick_attrs",
+                format!("tick '{text}' has no readable data-tick-value"),
+            );
+            continue;
+        };
+        let Some((shown, half)) = tick_shown_value(text, unit_scale) else {
+            fail("tick_text", format!("tick '{text}' has no readable number"));
+            continue;
+        };
+        if (shown - tv).abs() > half * (1.0 + TICK_REL) + TICK_REL * tv.abs() {
+            fail(
+                "tick_text",
+                format!("tick '{text}' reads {shown} but data-tick-value is {tv}"),
+            );
+        }
+        let x = tick_num(attrs.get("x").map(String::as_str));
+        let tick_x = match attrs.get("data-tick-x") {
+            None => x,
+            Some(raw) => tick_num(Some(raw)),
+        };
+        let (Some(x), Some(tick_x)) = (x, tick_x) else {
+            fail(
+                "tick_position",
+                format!("tick '{text}' has no numeric position"),
+            );
+            continue;
+        };
+        if (x - tick_x).abs() > TICK_LABEL_SLIDE_MAX {
+            fail(
+                "tick_position",
+                format!(
+                    "tick '{text}' text sits {:.1} from its tick",
+                    (x - tick_x).abs()
+                ),
+            );
+        }
+        let side = attrs.get("data-side").cloned().unwrap_or_default();
+        if mirrored && side != "left" && side != "right" {
+            fail(
+                "tick_attrs",
+                format!("tick '{text}' has no data-side left/right"),
+            );
+            continue;
+        }
+        let slot = if mirrored {
+            side.clone()
+        } else {
+            "bar".to_string()
+        };
+        let (Some(scale), Some(zero)) = (k, origin.get(&slot).copied()) else {
+            fail(
+                "tick_position",
+                format!("tick '{text}' position cannot be computed (no bar scale)"),
+            );
+            continue;
+        };
+        let expected = if mirrored && side == "left" {
+            zero - scale * tv
+        } else {
+            zero + scale * tv
+        };
+        if (tick_x - expected).abs() > TICK_POSITION_TOLERANCE {
+            fail("tick_position", format!("tick '{text}' is at {tick_x} but its data-tick-value {tv} belongs at {expected:.2}"));
+        }
+    }
+
+    for (attrs, text) in &labels {
+        let Some(key) = tick_attr_key(attrs) else {
+            fail(
+                "value_label_attrs",
+                format!("value label '{text}' has no data-category"),
+            );
+            continue;
+        };
+        let Some(value) = tick_num(attrs.get("data-value").map(String::as_str)) else {
+            fail(
+                "value_label_attrs",
+                format!("value label '{text}' has no readable data-value"),
+            );
+            continue;
+        };
+        match tick_shown_value(text, unit_scale) {
+            None => fail(
+                "value_label_text",
+                format!("value label '{text}' has no readable number"),
+            ),
+            Some((shown, half))
+                if (shown - value).abs() > half * (1.0 + TICK_REL) + TICK_REL * value.abs() =>
+            {
+                fail(
+                    "value_label_text",
+                    format!("value label '{text}' reads {shown} but data-value is {value}"),
+                )
+            }
+            _ => {}
+        }
+        match bar_value.get(&key) {
+            None => fail(
+                "value_label_key",
+                format!("value label '{text}' names {key}, which is not a bar"),
+            ),
+            Some(bar) if !tick_close(value, *bar) => fail(
+                "value_label_key",
+                format!("value label '{text}' carries {value} but its bar {key} is {bar}"),
+            ),
+            _ => {}
+        }
+    }
+    (TickReadbackStatus::Covered, failures)
+}
+
+/// NEWSROOM_QA_TICK_READBACK=1 only. Data anchor: the rows come from the computation record the manifest names (its
+/// result_hash is bound to the lint and to manifest.data_hash, and re-hashed against the rows by the computation
+/// checks), the field names from the plan the manifest names (a content-addressed spec).
+fn verify_tick_readback_for_manifest(
+    root: &Path,
+    name: &str,
+    manifest: &Value,
+    report: &mut VerificationReport,
+) {
+    let chart_type = manifest
+        .get("chart_type")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if !TICK_READBACK_COVERED.contains(&chart_type) {
+        report.warnings.push(format!(
+            "visualization {name}: tick read-back not covered for chart type {chart_type}"
+        ));
+        return;
+    }
+    let text_of = |key: &str| {
+        manifest
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let loaded = (|| -> Result<(Value, Value)> {
+        let comp = read_json(&safe_ref(root, &text_of("computation_ref"))?)?;
+        let plan = read_json(&safe_ref(root, &text_of("plan_ref"))?)?;
+        Ok((comp, plan))
+    })();
+    let (comp, plan) = match loaded {
+        Ok(pair) => pair,
+        Err(error) => {
+            report.error(format!(
+                "visualization {name} tick read-back could not run: {error}"
+            ));
+            return;
+        }
+    };
+    report.check(
+        comp.get("result_hash").and_then(Value::as_str)
+            == manifest.get("data_hash").and_then(Value::as_str)
+            && comp.get("result_hash").is_some(),
+        format!(
+            "visualization {name} tick read-back: computation rows are not the manifest's data"
+        ),
+    );
+    let field = |key: &str| plan.get(key).and_then(Value::as_str).map(str::to_string);
+    let ctx = TickReadbackContext {
+        chart_type: chart_type.to_string(),
+        rows: comp.get("rows").and_then(Value::as_array).cloned(),
+        category_field: field("category_field"),
+        value_field: field("value_field"),
+        series_field: field("series_field"),
+        period_field: field("period_field"),
+        unit: field("unit"),
+        language: field("language"),
+    };
+    if let Some(variants) = manifest.get("variants").and_then(Value::as_object) {
+        for (viewport, reference) in variants {
+            let Some(reference) = reference.as_str() else {
+                continue;
+            };
+            let Ok(path) = safe_ref(root, reference) else {
+                continue;
+            };
+            let Ok(svg) = fs::read_to_string(&path) else {
+                continue;
+            };
+            for (rule, message) in verify_tick_readback_from_svg(&svg, &ctx).1 {
+                report.error(format!(
+                    "visualization {name} {viewport} tick read-back {rule}: {message}"
+                ));
+            }
+        }
+    }
+}
+
+type HeatmapCells = BTreeMap<(String, String), Vec<(f64, [Option<f64>; 4])>>;
+type HeatmapLabels =
+    BTreeMap<(String, String), Vec<(String, Option<f64>, Option<f64>, Option<f64>)>>;
+
 /// NEWSROOM_HEATMAP_VALUE_LABELS=1 only. Independently re-derives the heatmap value-labels proof from one rendered
 /// viewport's SVG: every `heatmap-cell` rect (data-x, data-y, data-value) has exactly one `heatmap-cell-value` text
 /// for the same (x, y) whose number matches the cell's own data-value, is at least 12px, and sits inside the cell;
@@ -1876,7 +2802,7 @@ fn heatmap_leading_number_with_scale(text: &str) -> Option<f64> {
 /// verifier's verify_heatmap_labels_from_svg. Returns the failure messages (empty means the proof holds).
 fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
     let mut failures = Vec::new();
-    let mut cells: BTreeMap<(String, String), Vec<(f64, [Option<f64>; 4])>> = BTreeMap::new();
+    let mut cells: HeatmapCells = BTreeMap::new();
     let mut idx = 0;
     while let Some(rel) = svg_text[idx..].find("<rect") {
         let start = idx + rel;
@@ -1908,8 +2834,7 @@ fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
             .or_default()
             .push((value, [num("x"), num("y"), num("width"), num("height")]));
     }
-    let mut labels: BTreeMap<(String, String), Vec<(String, Option<f64>, Option<f64>, Option<f64>)>> =
-        BTreeMap::new();
+    let mut labels: HeatmapLabels = BTreeMap::new();
     for node in find_text_nodes_with_role(svg_text, &["heatmap-cell-value"]) {
         let key = (
             attr_value(node.tag, "data-x").unwrap_or("").to_owned(),
@@ -1929,7 +2854,10 @@ fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
     for (key, found) in &cells {
         let name = format!("{} / {}", key.1, key.0);
         if found.len() != 1 {
-            failures.push(format!("{name} has {} heatmap cells (expected exactly 1)", found.len()));
+            failures.push(format!(
+                "{name} has {} heatmap cells (expected exactly 1)",
+                found.len()
+            ));
             continue;
         }
         let (expected, rect) = &found[0];
@@ -1957,7 +2885,9 @@ fn verify_heatmap_labels_from_svg(svg_text: &str) -> Vec<String> {
         let (Some(size), Some(tx), Some(ty), [Some(cx), Some(cy), Some(cw), Some(ch)]) =
             (size, tx, ty, rect)
         else {
-            failures.push(format!("{name}'s value label or cell is missing numeric geometry"));
+            failures.push(format!(
+                "{name}'s value label or cell is missing numeric geometry"
+            ));
             continue;
         };
         if *size < 12.0 {
@@ -2370,10 +3300,23 @@ fn verify_infographics(root: &Path, report: &mut VerificationReport) -> Result<(
             }
         }
 
-        let render_qa_ref = manifest
-            .get("render_qa_ref")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let split_qa_ref;
+        let render_qa_ref = if review_split_enabled() {
+            split_qa_ref = split_render_qa_ref(
+                root,
+                "infographics/critics",
+                &manifest_ref,
+                &manifest,
+                &format!("infographic {name}"),
+                report,
+            )?;
+            split_qa_ref.as_str()
+        } else {
+            manifest
+                .get("render_qa_ref")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        };
         report.check(
             !render_qa_ref.is_empty(),
             format!("infographic {name} missing render_qa_ref"),
@@ -2953,18 +3896,6 @@ fn verify_infographic_critics(
         "craft_geometry",
         "originality_variety",
     ];
-    const EXPECTED_VISION_RUBRIC: [&str; 10] = [
-        "hierarchy",
-        "legibility",
-        "composition",
-        "visual_coherence",
-        "typography",
-        "source_legibility",
-        "responsive_quality",
-        "illustration_integration",
-        "color_contrast",
-        "editorial_distinctiveness",
-    ];
 
     let schema_version = manifest
         .get("schema_version")
@@ -3020,6 +3951,18 @@ fn verify_infographic_critics(
         !vision_critics.is_empty(),
         format!("infographic {name} requires image-aware vision critic"),
     );
+    // NEWSROOM_VISION_VETO_ONLY (default on): the model's passed is no release evidence. Every linked record is re-derived from its score,
+    // rubric floor and blockers (a record that says passed=false is a failure too), and every record gets the full chain checks.
+    if vision_veto_only_enabled() {
+        report.check(
+            !vision_critics.iter().any(vision_critic_fails),
+            format!("infographic {name} failed by an image-aware vision critic (passed false, score below 80, a rubric item below 60 or a blocker)"),
+        );
+        for vision in &vision_critics {
+            verify_vision_critic_record(root, manifest_ref, name, manifest, vision, report)?;
+        }
+        return Ok(());
+    }
     let passing_vision: Vec<&Value> = vision_critics
         .iter()
         .filter(|critic| critic.get("passed").and_then(Value::as_bool) == Some(true))
@@ -3028,10 +3971,28 @@ fn verify_infographic_critics(
         !passing_vision.is_empty(),
         format!("infographic {name} has no passing image-aware vision critic"),
     );
+    if model_pass_selfreport_enabled() {
+        report.check(
+            !vision_critics.iter().any(vision_critic_vetoes),
+            format!("infographic {name} vetoed by an image-aware vision critic (failed, score below 80 or blocker)"),
+        );
+    }
     let Some(vision) = passing_vision.first() else {
         return Ok(());
     };
+    verify_vision_critic_record(root, manifest_ref, name, manifest, vision, report)
+}
 
+/// The per-record chain checks of one image-aware vision critic: schema and kind, score, blockers, rubric keys, its
+/// deterministic foundation and the preview with its hashes.
+fn verify_vision_critic_record(
+    root: &Path,
+    manifest_ref: &str,
+    name: &str,
+    manifest: &Value,
+    vision: &Value,
+    report: &mut VerificationReport,
+) -> Result<()> {
     report.check(
         matches!(
             vision.get("schema_version").and_then(Value::as_str),
@@ -3061,7 +4022,7 @@ fn verify_infographic_critics(
         .get("rubric")
         .and_then(Value::as_object)
         .map(|rubric| {
-            EXPECTED_VISION_RUBRIC
+            VISION_RUBRIC_KEYS
                 .iter()
                 .all(|key| rubric.contains_key(*key))
         })
@@ -3649,6 +4610,22 @@ fn verify_publication_infographic_lineage(
         == Some(true)
     {
         let vision_critics = find_critics(root, "infographics/vision-critics", &infographic_ref)?;
+        if vision_veto_only_enabled() {
+            // The review must exist; the model's passed releases nothing, any failing record vetoes.
+            report.check(
+                !vision_critics.is_empty(),
+                format!(
+                    "publication {manifest_ref} upstream infographic {infographic_ref} has no image-aware vision critic"
+                ),
+            );
+            report.check(
+                !vision_critics.iter().any(vision_critic_fails),
+                format!(
+                    "publication {manifest_ref} upstream infographic {infographic_ref} failed by an image-aware vision critic"
+                ),
+            );
+            return Ok(());
+        }
         let has_passing_vision = vision_critics
             .iter()
             .any(|critic| critic.get("passed").and_then(Value::as_bool) == Some(true));
@@ -3658,6 +4635,14 @@ fn verify_publication_infographic_lineage(
                 "publication {manifest_ref} upstream infographic {infographic_ref} has no passing image-aware vision critic"
             ),
         );
+        if model_pass_selfreport_enabled() {
+            report.check(
+                !vision_critics.iter().any(vision_critic_vetoes),
+                format!(
+                    "publication {manifest_ref} upstream infographic {infographic_ref} vetoed by an image-aware vision critic"
+                ),
+            );
+        }
     }
     Ok(())
 }
@@ -3752,6 +4737,156 @@ fn verify_delivered_artifact(
 /// visualizations/critics, infographics/critics, infographics/vision-critics
 /// and visualizations/illustrations/critics - the shape and matching rule
 /// are identical, only the directory and linked manifest kind differ.
+/// NEWSROOM_MODEL_PASS_SELFREPORT=1 (exact "1", default off; K98): an image-aware
+/// critic's verdict is the model's own, so it may only veto. Mirrors
+/// runtime/pi/newsroom.ts visionCriticVetoes and scripts/verify_artifact.py.
+fn model_pass_selfreport_enabled() -> bool {
+    // Tests set the switch per thread so parallel tests never see each other's value.
+    #[cfg(test)]
+    if let Some(value) = TEST_SELFREPORT.with(|cell| cell.borrow().clone()) {
+        return value.as_deref() == Some("1");
+    }
+    std::env::var("NEWSROOM_MODEL_PASS_SELFREPORT").as_deref() == Ok("1")
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SELFREPORT: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A linked vision critic vetoes when it failed, scored below 80 (or gave no
+/// score) or reports a blocker issue - the thresholds the passing critic is
+/// already held to below.
+fn vision_critic_vetoes(critic: &Value) -> bool {
+    critic.get("passed").and_then(Value::as_bool) != Some(true)
+        || critic
+            .get("score")
+            .and_then(Value::as_f64)
+            .is_none_or(|score| score < 80.0)
+        || critic
+            .get("issues")
+            .and_then(Value::as_array)
+            .map(|issues| {
+                issues
+                    .iter()
+                    .any(|issue| issue.get("severity").and_then(Value::as_str) == Some("blocker"))
+            })
+            .unwrap_or(false)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_REVIEW_SPLIT: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// NEWSROOM_REVIEW_SPLIT=1 switch: only the exact value "1" turns it on (a test sets it per thread, so the environment is never touched).
+fn review_split_enabled() -> bool {
+    #[cfg(test)]
+    if let Some(on) = TEST_REVIEW_SPLIT.with(|c| c.get()) {
+        return on;
+    }
+    std::env::var("NEWSROOM_REVIEW_SPLIT")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
+/// With the review/draw split on, a draw tool writes no render-QA record: the manifest must carry none
+/// (render_qa_ref / render_qa would be a draw tool writing a review record), and the render-QA report
+/// comes from a passing critic linked to the manifest. Returns that critic's `render_qa_ref`, or "" when
+/// there is no such critic, so the caller's "missing render_qa_ref" failure applies (fail closed).
+fn split_render_qa_ref(
+    root: &Path,
+    critics_dir: &str,
+    manifest_ref: &str,
+    manifest: &Value,
+    label: &str,
+    report: &mut VerificationReport,
+) -> Result<String> {
+    report.check(
+        manifest.get("render_qa_ref").is_none() && manifest.get("render_qa").is_none(),
+        format!(
+            "{label} carries a render-QA record written by the draw step; with the review split only the critic writes it"
+        ),
+    );
+    for critic in find_critics(root, critics_dir, manifest_ref)? {
+        if critic.get("passed").and_then(Value::as_bool) != Some(true) {
+            continue;
+        }
+        if let Some(qa_ref) = critic.get("render_qa_ref").and_then(Value::as_str) {
+            if !qa_ref.is_empty() {
+                return Ok(qa_ref.to_owned());
+            }
+        }
+    }
+    Ok(String::new())
+}
+
+/// The ten dimensions every image-aware vision critic carries (runtime/pi/vision.mjs VISION_RUBRIC_KEYS).
+const VISION_RUBRIC_KEYS: [&str; 10] = [
+    "hierarchy",
+    "legibility",
+    "composition",
+    "visual_coherence",
+    "typography",
+    "source_legibility",
+    "responsive_quality",
+    "illustration_integration",
+    "color_contrast",
+    "editorial_distinctiveness",
+];
+
+/// NEWSROOM_VISION_VETO_ONLY (default on; only the exact "0" turns it off): the image-aware critic can only veto. Release rests on the program
+/// evidence (deterministic critic, render checks, lint, preview hashes, browser QA); the model's passed=true is never read as proof.
+/// Mirrors runtime/pi/newsroom.ts visionCriticFails and scripts/verify_artifact.py vision_critic_fails.
+fn vision_veto_only_enabled() -> bool {
+    // Tests set the switch per thread so parallel tests never see each other's value.
+    #[cfg(test)]
+    if let Some(value) = TEST_VETO_ONLY.with(|cell| cell.borrow().clone()) {
+        return value.as_deref() != Some("0");
+    }
+    std::env::var("NEWSROOM_VISION_VETO_ONLY").as_deref() != Ok("0")
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_VETO_ONLY: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A vision critic record fails, re-derived from what it holds and not from its `passed` (only an explicit passed=false, the
+/// model's own veto, also counts): score below 80 or missing, any of the ten rubric items below 60 or missing, or a blocker issue.
+fn vision_critic_fails(critic: &Value) -> bool {
+    if critic.get("passed").and_then(Value::as_bool) == Some(false) {
+        return true;
+    }
+    if critic
+        .get("score")
+        .and_then(Value::as_f64)
+        .is_none_or(|score| score < 80.0)
+    {
+        return true;
+    }
+    let rubric = critic.get("rubric").and_then(Value::as_object);
+    if VISION_RUBRIC_KEYS.iter().any(|key| {
+        rubric
+            .and_then(|rubric| rubric.get(*key))
+            .and_then(Value::as_f64)
+            .is_none_or(|value| value < 60.0)
+    }) {
+        return true;
+    }
+    critic
+        .get("issues")
+        .and_then(Value::as_array)
+        .map(|issues| {
+            issues
+                .iter()
+                .any(|issue| issue.get("severity").and_then(Value::as_str) == Some("blocker"))
+        })
+        .unwrap_or(false)
+}
+
 fn find_critics(root: &Path, critics_dir: &str, manifest_ref: &str) -> Result<Vec<Value>> {
     let dir = root.join(critics_dir);
     let mut out = Vec::new();
@@ -3949,7 +5084,7 @@ impl RecomputeScratch {
     fn new() -> Result<Self> {
         let path =
             std::env::temp_dir().join(format!("newsroom-recompute-{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&path)
+        crate::group_guard::create_scratch_dir(&path)
             .with_context(|| format!("failed to create recompute scratch {}", path.display()))?;
         Ok(Self { path })
     }
@@ -3957,7 +5092,7 @@ impl RecomputeScratch {
 
 impl Drop for RecomputeScratch {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        crate::group_guard::remove_scratch_dir(&self.path);
     }
 }
 
@@ -4022,14 +5157,16 @@ fn materialize_recompute_rows(root: &Path, sql: &str, scratch: &Path) -> Result<
             .context("invalid chained computation filename")?;
         let rows_path = scratch.join(filename);
 
-        fs::write(&rows_path, format!("{}\n", serde_json::to_string(rows)?)).with_context(
-            || {
-                format!(
-                    "failed writing recompute row projection {}",
-                    rows_path.display()
-                )
-            },
-        )?;
+        crate::group_guard::write_scratch(
+            &rows_path,
+            format!("{}\n", serde_json::to_string(rows)?),
+        )
+        .with_context(|| {
+            format!(
+                "failed writing recompute row projection {}",
+                rows_path.display()
+            )
+        })?;
 
         let normalized = rows_path.to_string_lossy().replace('\\', "/");
         let single_quoted = normalized.replace('\'', "''");
@@ -4679,6 +5816,128 @@ mod tests {
         assert!(report.errors.is_empty(), "{:?}", report.errors);
     }
 
+    /// NEWSROOM_REVIEW_SPLIT=1 layout: the manifest carries no render-QA record; a passing critic names the report.
+    fn split_viz_fixture(critic_passed: bool, critic_names_report: bool) -> tempfile::TempDir {
+        let temp = build_viz_fixture(true, true);
+        let root = temp.path();
+        let manifest_path = root.join("visualizations/x.json");
+        let mut manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest.as_object_mut().unwrap().remove("render_qa_ref");
+        fs::write(&manifest_path, serde_json::to_string(&manifest).unwrap()).unwrap();
+        let mut critic =
+            serde_json::json!({"passed": critic_passed, "manifest_ref": "visualizations/x.json"});
+        if critic_names_report {
+            critic["render_qa_ref"] = Value::String("visualizations/qa/x.json".into());
+        }
+        fs::write(
+            root.join("visualizations/critics/x.json"),
+            serde_json::to_string(&critic).unwrap(),
+        )
+        .unwrap();
+        temp
+    }
+
+    fn verify_with_split(root: &Path) -> Vec<String> {
+        TEST_REVIEW_SPLIT.with(|c| c.set(Some(true)));
+        let mut report = VerificationReport::default();
+        let result = verify_visualizations(root, &mut report);
+        TEST_REVIEW_SPLIT.with(|c| c.set(None));
+        result.unwrap();
+        report.errors
+    }
+
+    #[test]
+    fn review_split_reads_the_render_qa_report_through_the_passing_critic() {
+        let temp = split_viz_fixture(true, true);
+        let errors = verify_with_split(temp.path());
+        assert!(errors.is_empty(), "{errors:?}");
+        // the report is still checked in full: a tampered desktop SVG no longer matches the report's hash
+        fs::write(
+            temp.path().join("visualizations/x.svg"),
+            render_qa_svg("tampered"),
+        )
+        .unwrap();
+        let errors = verify_with_split(temp.path());
+        assert!(
+            !errors.is_empty(),
+            "a changed SVG must still fail through the critic's report"
+        );
+    }
+
+    #[test]
+    fn review_split_fails_closed_without_a_passing_critic_that_names_the_report() {
+        for (passed, names) in [(true, false), (false, true), (false, false)] {
+            let temp = split_viz_fixture(passed, names);
+            let errors = verify_with_split(temp.path());
+            assert!(
+                errors.iter().any(|e| e.contains("missing render_qa_ref")),
+                "passed={passed} names={names}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_split_refuses_a_manifest_a_draw_tool_stamped_with_a_render_qa_record() {
+        let temp = build_viz_fixture(true, true); // the old layout: render_qa_ref on the manifest
+        let errors = verify_with_split(temp.path());
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("written by the draw step")),
+            "{errors:?}"
+        );
+        // off: the same run is the old layout and verifies as before
+        let mut report = VerificationReport::default();
+        verify_visualizations(temp.path(), &mut report).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+    }
+
+    // End to end with the review split on: scripts/test_review_split_infographic.mjs (K244_E2E_OUT=<dir>) runs the real plan, lint, render,
+    // critic, preview and vision-critic tools and leaves the run folders here; without that variable this test has nothing to read and passes.
+    #[test]
+    fn review_split_e2e_dir() {
+        let Some(base) = std::env::var_os("K244_E2E_DIR") else {
+            return;
+        };
+        let base = std::path::PathBuf::from(base);
+        let run = |name: &str| -> Vec<String> {
+            TEST_REVIEW_SPLIT.with(|c| c.set(Some(true)));
+            let mut report = VerificationReport::default();
+            let result = verify_infographics(&base.join(name), &mut report);
+            TEST_REVIEW_SPLIT.with(|c| c.set(None));
+            result.unwrap();
+            report.errors
+        };
+        let qa = |errors: &[String]| -> Vec<String> {
+            errors
+                .iter()
+                .filter(|e| e.to_lowercase().contains("render") && e.to_lowercase().contains("qa"))
+                .cloned()
+                .collect()
+        };
+        let pass = run("pass");
+        eprintln!("pass errors: {pass:?}");
+        assert!(qa(&pass).is_empty(), "{pass:?}");
+        let noref = run("noref");
+        eprintln!("noref errors: {noref:?}");
+        assert!(
+            noref.iter().any(|e| e.contains("missing render_qa_ref")),
+            "{noref:?}"
+        );
+        let stamped = run("stamped");
+        eprintln!("stamped errors: {stamped:?}");
+        assert!(
+            stamped
+                .iter()
+                .any(|e| e.contains("written by the draw step")),
+            "{stamped:?}"
+        );
+        let revised = run("revised");
+        eprintln!("revised errors: {revised:?}");
+        assert!(qa(&revised).is_empty(), "{revised:?}");
+    }
+
     #[test]
     fn render_qa_missing_ref_fails_non_draft_visualization() {
         let temp = build_viz_fixture(true, false);
@@ -5166,7 +6425,11 @@ mod tests {
         fs::write(root.join("visualizations/x.mobile.svg"), svg).unwrap();
         let sha = sha256_bytes(svg.as_bytes());
         let qa = render_qa_report_json_choropleth(&sha, &sha, claims_passed);
-        fs::write(root.join("visualizations/qa/x.json"), serde_json::to_string(&qa).unwrap()).unwrap();
+        fs::write(
+            root.join("visualizations/qa/x.json"),
+            serde_json::to_string(&qa).unwrap(),
+        )
+        .unwrap();
         let manifest_path = root.join("visualizations/x.json");
         let mut manifest: Value = read_json(&manifest_path).unwrap();
         manifest["chart_type"] = Value::String("heatmap".to_owned());
@@ -5197,26 +6460,54 @@ mod tests {
     #[test]
     fn heatmap_labels_from_svg_fails_each_way_a_cell_can_be_unproven() {
         let missing = verify_heatmap_labels_from_svg(&heatmap_cell_svg(None, "12", "30"));
-        assert!(missing.iter().any(|f| f.contains("0 rendered value labels")), "{missing:?}");
+        assert!(
+            missing
+                .iter()
+                .any(|f| f.contains("0 rendered value labels")),
+            "{missing:?}"
+        );
         let wrong = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("12.3"), "12", "30"));
-        assert!(wrong.iter().any(|f| f.contains("does not match")), "{wrong:?}");
+        assert!(
+            wrong.iter().any(|f| f.contains("does not match")),
+            "{wrong:?}"
+        );
         let small = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "9", "30"));
         assert!(small.iter().any(|f| f.contains("below 12px")), "{small:?}");
         let outside = verify_heatmap_labels_from_svg(&heatmap_cell_svg(Some("66.6"), "12", "90"));
-        assert!(outside.iter().any(|f| f.contains("outside its cell")), "{outside:?}");
-        let nothing = verify_heatmap_labels_from_svg("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-        assert!(nothing.iter().any(|f| f.contains("no cell with a value")), "{nothing:?}");
-        let orphan = heatmap_cell_svg(Some("66.6"), "12", "30").replace("data-x=\"2020\" data-y=\"A\" x=\"30\"", "data-x=\"2021\" data-y=\"A\" x=\"30\"");
-        assert!(verify_heatmap_labels_from_svg(&orphan).iter().any(|f| f.contains("no matching heatmap cell")));
+        assert!(
+            outside.iter().any(|f| f.contains("outside its cell")),
+            "{outside:?}"
+        );
+        let nothing =
+            verify_heatmap_labels_from_svg("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+        assert!(
+            nothing.iter().any(|f| f.contains("no cell with a value")),
+            "{nothing:?}"
+        );
+        let orphan = heatmap_cell_svg(Some("66.6"), "12", "30").replace(
+            "data-x=\"2020\" data-y=\"A\" x=\"30\"",
+            "data-x=\"2021\" data-y=\"A\" x=\"30\"",
+        );
+        assert!(verify_heatmap_labels_from_svg(&orphan)
+            .iter()
+            .any(|f| f.contains("no matching heatmap cell")));
     }
 
     #[test]
     fn heatmap_claim_over_a_label_missing_svg_fails_only_when_the_switch_is_on() {
         let svg = heatmap_cell_svg(None, "12", "30");
         let on = heatmap_errors(&svg, true, Some("1"));
-        assert!(on.iter().any(|e| e.contains("independent value-labels re-derivation failed")), "{on:?}");
+        assert!(
+            on.iter()
+                .any(|e| e.contains("independent value-labels re-derivation failed")),
+            "{on:?}"
+        );
         for off in [None, Some("0"), Some("true"), Some("")] {
-            assert_eq!(heatmap_errors(&svg, true, off), Vec::<String>::new(), "switch {off:?}");
+            assert_eq!(
+                heatmap_errors(&svg, true, off),
+                Vec::<String>::new(),
+                "switch {off:?}"
+            );
         }
     }
 
@@ -5226,19 +6517,29 @@ mod tests {
         assert_eq!(heatmap_errors(&good, true, Some("1")), Vec::<String>::new());
         // no claim of a proof: nothing to re-derive, the heatmap verifies as it always did
         let unlabelled = heatmap_cell_svg(None, "12", "30");
-        assert_eq!(heatmap_errors(&unlabelled, false, Some("1")), Vec::<String>::new());
+        assert_eq!(
+            heatmap_errors(&unlabelled, false, Some("1")),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
     fn heatmap_claim_bound_to_a_changed_svg_fails_with_the_switch_on() {
         let temp = build_heatmap_svg_fixture(&heatmap_cell_svg(Some("66.6"), "12", "30"), true);
-        fs::write(temp.path().join("visualizations/x.svg"), heatmap_cell_svg(Some("66.6"), "12", "31")).unwrap();
+        fs::write(
+            temp.path().join("visualizations/x.svg"),
+            heatmap_cell_svg(Some("66.6"), "12", "31"),
+        )
+        .unwrap();
         let errors = with_heatmap_switch(Some("1"), || {
             let mut report = VerificationReport::default();
             verify_visualizations(temp.path(), &mut report).unwrap();
             report.errors
         });
-        assert!(errors.iter().any(|e| e.contains("hash does not match")), "{errors:?}");
+        assert!(
+            errors.iter().any(|e| e.contains("hash does not match")),
+            "{errors:?}"
+        );
     }
 
     #[test]
@@ -5286,6 +6587,114 @@ mod tests {
         );
     }
 
+    #[test]
+    fn zh_plain_choropleth_labels_are_read_back_exactly() {
+        // a unit that already says 万: the plain one-decimal number, no second scale
+        assert_eq!(
+            zh_plain_label_matches("11500.5 万人", 11500.5, true),
+            Some(true)
+        );
+        assert_eq!(
+            zh_plain_label_matches("11500.6 万人", 11500.5, true),
+            Some(false)
+        );
+        assert_eq!(
+            zh_plain_label_matches("-12.5 万人", -12.5, false),
+            Some(true)
+        );
+        assert_eq!(zh_plain_label_matches("1.2 人", 1.2, true), None);
+        // below 1万 on a map that has a 万 value: the half-up integer
+        assert_eq!(zh_plain_label_matches("8766 人", 8765.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("8765 人", 8765.5, true), Some(false));
+        assert_eq!(zh_plain_label_matches("0 人", -0.4, true), Some(true));
+        assert_eq!(zh_plain_label_matches("¥8766", 8765.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("70%", 70.0, false), Some(true));
+        assert_eq!(zh_plain_label_matches("71%", 70.0, false), Some(false));
+        // an integer label for a non-integer value is wrong when no value reaches 1万, or for a value of 1万 or more
+        assert_eq!(
+            zh_plain_label_matches("8766 人", 8765.5, false),
+            Some(false)
+        );
+        assert_eq!(
+            zh_plain_label_matches("12346 人", 12345.5, true),
+            Some(false)
+        );
+        // a decimal label is left to the other readers
+        assert_eq!(zh_plain_label_matches("8765.5 人", 8765.5, true), None);
+        assert_eq!(zh_plain_label_matches("1.2万 人", 11500.0, true), None);
+    }
+
+    #[test]
+    fn zh_plain_choropleth_labels_round_a_half_up_not_to_even() {
+        // exact binary halves, so the tie is a real tie: half-up and round-half-even differ on every line below
+        // a unit that already says 万: one decimal (1.25 万 reads 1.3, 12.25 万 reads 12.3)
+        assert_eq!(zh_plain_label_matches("1.3 万人", 1.25, true), Some(true));
+        assert_eq!(zh_plain_label_matches("1.2 万人", 1.25, true), Some(false));
+        assert_eq!(zh_plain_label_matches("12.3 万人", 12.25, true), Some(true));
+        assert_eq!(
+            zh_plain_label_matches("12.2 万人", 12.25, true),
+            Some(false)
+        );
+        assert_eq!(
+            zh_plain_label_matches("-12.3 万人", -12.25, true),
+            Some(true)
+        );
+        // below 1万 on a map with a 万 value: the half-up integer (8764.5 reads 8765, not the even 8764)
+        assert_eq!(zh_plain_label_matches("8765 人", 8764.5, true), Some(true));
+        assert_eq!(zh_plain_label_matches("8764 人", 8764.5, true), Some(false));
+    }
+
+    #[test]
+    fn zh_scaled_choropleth_labels_are_read_back_exactly() {
+        // the renderer's own text for these values: suffix by raw magnitude, one decimal, half up on the decimal value
+        for (value, text) in [
+            (11500.0, "1.2万"),
+            (12500.0, "1.3万"),
+            (10800.0, "1.1万"),
+            (99950.0, "10.0万"),
+            (-11500.0, "-1.2万"),
+            (123456789.0, "1.2亿"),
+            (150000000.0, "1.5亿"),
+            (2.5e12, "2.5万亿"),
+            (10000.0, "1.0万"),
+        ] {
+            assert_eq!(
+                zh_scaled_label_matches(text, value),
+                Some(true),
+                "{text} for {value}"
+            );
+        }
+        // a neighbour one tenth off, the wrong scale, or a value under 1万 is a mismatch, never forgiven
+        assert_eq!(zh_scaled_label_matches("1.1万", 11500.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.3万", 11500.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.2亿", 11500.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.2万", 9000.0), Some(false));
+        assert_eq!(zh_scaled_label_matches("1.2万", -11500.0), Some(false));
+        // not a 万 / 亿 label: the ordinary reader applies
+        assert_eq!(zh_scaled_label_matches("66.6%", 66.6), None);
+        assert_eq!(zh_scaled_label_matches("1.2k", 1200.0), None);
+        assert_eq!(zh_scaled_label_matches("1.2万吨", 11500.0), None);
+    }
+
+    #[test]
+    fn choropleth_labels_from_svg_requires_the_exact_zh_scaled_text() {
+        let good = choropleth_region_svg(true, true)
+            .replace("data-value=\"66.6\"", "data-value=\"11500\"")
+            .replace("66.6%", "1.2万");
+        assert_eq!(
+            verify_choropleth_labels_from_svg(&good),
+            Vec::<String>::new()
+        );
+        let off_by_one_tenth = good.replace("1.2万", "1.1万");
+        let failures = verify_choropleth_labels_from_svg(&off_by_one_tenth);
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("does not match")),
+            "{failures:?}"
+        );
+    }
+
     static FOOTNOTE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_footnote_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
@@ -5303,7 +6712,11 @@ mod tests {
         out
     }
 
-    fn choropleth_footnote_svg(on_map_name: bool, footnote_name: bool, footnote_value: &str) -> String {
+    fn choropleth_footnote_svg(
+        on_map_name: bool,
+        footnote_name: bool,
+        footnote_value: &str,
+    ) -> String {
         let on_map = if on_map_name {
             r#"<text data-role="choropleth-label" data-iso3="GIN" x="5" y="5" font-size="12">Guinea</text>"#
         } else {
@@ -5317,7 +6730,9 @@ mod tests {
         let value = if footnote_value.is_empty() {
             String::new()
         } else {
-            format!(r#"<text data-role="choropleth-footnote-value" data-iso3="GIN" x="212" y="637" text-anchor="end" font-size="12.5">{footnote_value}</text>"#)
+            format!(
+                r#"<text data-role="choropleth-footnote-value" data-iso3="GIN" x="212" y="637" text-anchor="end" font-size="12.5">{footnote_value}</text>"#
+            )
         };
         format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><title>Fixture</title><desc>Fixture choropleth.</desc><path data-role=\"choropleth-data\" data-iso3=\"GIN\" data-value=\"66.6\" d=\"M0,0L10,0L10,10L0,10Z\"/>{on_map}{name}{value}</svg>"
@@ -5327,11 +6742,24 @@ mod tests {
     #[test]
     fn footnote_labelled_region_passes_only_with_the_switch_on() {
         let svg = choropleth_footnote_svg(false, true, "66.6%");
-        assert_eq!(with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg)), Vec::<String>::new());
+        assert_eq!(
+            with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg)),
+            Vec::<String>::new()
+        );
         for off in [None, Some("0"), Some("true"), Some("")] {
             let failures = with_footnote_switch(off, || verify_choropleth_labels_from_svg(&svg));
-            assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("name labels")), "{off:?} {failures:?}");
-            assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("value labels")), "{off:?} {failures:?}");
+            assert!(
+                failures
+                    .iter()
+                    .any(|f| f.contains("GIN") && f.contains("name labels")),
+                "{off:?} {failures:?}"
+            );
+            assert!(
+                failures
+                    .iter()
+                    .any(|f| f.contains("GIN") && f.contains("value labels")),
+                "{off:?} {failures:?}"
+            );
         }
     }
 
@@ -5339,22 +6767,42 @@ mod tests {
     fn footnote_value_that_disagrees_with_data_value_fails() {
         let svg = choropleth_footnote_svg(false, true, "12.3%");
         let failures = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("does not match")), "{failures:?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("does not match")),
+            "{failures:?}"
+        );
     }
 
     #[test]
     fn region_with_no_label_anywhere_still_fails_with_the_switch_on() {
         let svg = choropleth_footnote_svg(false, false, "");
         let failures = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("name labels")), "{failures:?}");
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("value labels")), "{failures:?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("name labels")),
+            "{failures:?}"
+        );
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("value labels")),
+            "{failures:?}"
+        );
     }
 
     #[test]
     fn region_named_on_the_map_and_in_the_footnote_fails_exactly_one() {
         let svg = choropleth_footnote_svg(true, true, "66.6%");
         let failures = with_footnote_switch(Some("1"), || verify_choropleth_labels_from_svg(&svg));
-        assert!(failures.iter().any(|f| f.contains("GIN") && f.contains("2 rendered name labels")), "{failures:?}");
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("GIN") && f.contains("2 rendered name labels")),
+            "{failures:?}"
+        );
     }
 
     #[test]
@@ -6404,6 +7852,252 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
     }
 
+    fn with_selfreport_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        TEST_SELFREPORT.with(|cell| *cell.borrow_mut() = Some(value.map(str::to_string)));
+        let out = f();
+        TEST_SELFREPORT.with(|cell| *cell.borrow_mut() = None);
+        out
+    }
+
+    /// A second vision critic for the same page next to the passing one:
+    /// `passed` false, or passed with a low score or a blocker.
+    fn add_second_vision_critic(root: &Path, manifest_ref: &str, name: &str, critic: Value) {
+        let mut critic = critic;
+        critic["manifest_ref"] = Value::String(manifest_ref.to_string());
+        fs::write(
+            root.join(format!("infographics/vision-critics/{name}.json")),
+            serde_json::to_string(&critic).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn infographic_selfreport_vision_veto_only() {
+        // These run the NEWSROOM_VISION_VETO_ONLY=0 path, where the K98 switch still applies.
+        // Off (unset and any value but exact "1"): a passing vision critic
+        // releases the page even next to a failing one, exactly as before.
+        for value in [None, Some("true"), Some("0"), Some(" 1")] {
+            let temp = build_infographic_fixture(true, true);
+            enable_vision_review(temp.path(), 95.0, false);
+            add_second_vision_critic(
+                temp.path(),
+                "infographics/x.json",
+                "y",
+                serde_json::json!({"passed": false, "score": 40}),
+            );
+            let errors = with_legacy_vision_switches(value, || infographic_errors(temp.path()));
+            assert!(errors.is_empty(), "off ({value:?}): {errors:?}");
+        }
+        // On: every linked vision critic counts; a failing, low-scoring or
+        // blocker one vetoes the page although another one passed.
+        for veto in [
+            serde_json::json!({"passed": false, "score": 95}),
+            serde_json::json!({"passed": true, "score": 60}),
+            serde_json::json!({"passed": true, "score": 95, "issues": [{"severity": "blocker"}]}),
+            serde_json::json!({"passed": true}),
+        ] {
+            let temp = build_infographic_fixture(true, true);
+            enable_vision_review(temp.path(), 95.0, false);
+            add_second_vision_critic(temp.path(), "infographics/x.json", "y", veto.clone());
+            let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
+            assert_error(&errors, "vetoed by an image-aware vision critic");
+        }
+        // On: a model pass alone still needs every program gate; the vision
+        // pass is unchanged as a requirement, never a release by itself.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
+        assert!(errors.is_empty(), "{errors:?}");
+        let temp = build_infographic_fixture(false, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_legacy_vision_switches(Some("1"), || infographic_errors(temp.path()));
+        assert!(
+            !errors.is_empty(),
+            "model pass must not release a page whose program gates fail"
+        );
+    }
+
+    fn with_veto_only_switch<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        TEST_VETO_ONLY.with(|cell| *cell.borrow_mut() = Some(value.map(str::to_string)));
+        let out = f();
+        TEST_VETO_ONLY.with(|cell| *cell.borrow_mut() = None);
+        out
+    }
+
+    /// Rewrites the fixture's vision critic record x.json with `edit`.
+    fn edit_vision_critic(root: &Path, edit: impl FnOnce(&mut Value)) {
+        let path = root.join("infographics/vision-critics/x.json");
+        let mut critic: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        edit(&mut critic);
+        fs::write(&path, serde_json::to_string(&critic).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_program_pass_and_model_pass_releases() {
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_program_pass_and_model_fail_rejects() {
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        edit_vision_critic(temp.path(), |critic| critic["passed"] = Value::Bool(false));
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "failed by an image-aware vision critic");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_program_fail_and_model_pass_rejects() {
+        let temp = build_infographic_fixture(false, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(
+            !errors.is_empty(),
+            "a model pass must not release a page whose program gates fail"
+        );
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_recomputes_instead_of_reading_passed() {
+        // Written to disk by hand: passed=true, score 80, every rubric key present, one item at 50.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 80.0, false);
+        edit_vision_critic(temp.path(), |critic| {
+            critic["rubric"]["typography"] = serde_json::json!(50)
+        });
+        let off = with_veto_only_switch(Some("0"), || infographic_errors(temp.path()));
+        assert!(
+            off.is_empty(),
+            "off: unchanged, the file's passed is read: {off:?}"
+        );
+        let on = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&on, "failed by an image-aware vision critic");
+        // A rubric key that is missing fails too.
+        edit_vision_critic(temp.path(), |critic| {
+            critic["rubric"]["typography"] = serde_json::json!(90);
+            critic["rubric"]
+                .as_object_mut()
+                .unwrap()
+                .remove("legibility");
+        });
+        let on = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&on, "failed by an image-aware vision critic");
+        // passed=true is not read: score and rubric are fine, and the file says nothing about passed.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        edit_vision_critic(temp.path(), |critic| {
+            critic.as_object_mut().unwrap().remove("passed");
+        });
+        let on = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert!(on.is_empty(), "{on:?}");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_two_records_one_failing_rejects() {
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let mut second: Value = serde_json::from_str(
+            &fs::read_to_string(temp.path().join("infographics/vision-critics/x.json")).unwrap(),
+        )
+        .unwrap();
+        second["score"] = serde_json::json!(40);
+        add_second_vision_critic(temp.path(), "infographics/x.json", "y", second);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "failed by an image-aware vision critic");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_without_any_record_rejects() {
+        let temp = build_infographic_fixture(true, true);
+        edit_infographic_fixture(temp.path(), |manifest, _qa| {
+            manifest["visual_review_required"] = Value::Bool(true);
+        });
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "requires image-aware vision critic");
+    }
+
+    #[test]
+    fn infographic_vision_veto_only_runs_the_chain_checks_on_every_record() {
+        // A second record whose score and rubric are fine but whose preview is gone still breaks the page.
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        let mut second: Value = serde_json::from_str(
+            &fs::read_to_string(temp.path().join("infographics/vision-critics/x.json")).unwrap(),
+        )
+        .unwrap();
+        second["preview_ref"] = serde_json::json!("infographics/previews/gone.json");
+        add_second_vision_critic(temp.path(), "infographics/x.json", "y", second);
+        let errors = with_veto_only_switch(Some("1"), || infographic_errors(temp.path()));
+        assert_error(&errors, "vision preview missing");
+    }
+
+    #[test]
+    fn publication_lineage_vision_veto_only() {
+        let rubric = serde_json::json!({
+            "hierarchy": 90, "legibility": 90, "composition": 90, "visual_coherence": 90,
+            "typography": 90, "source_legibility": 90, "responsive_quality": 90,
+            "illustration_integration": 90, "color_contrast": 90, "editorial_distinctiveness": 90,
+        });
+        let write = |root: &Path, name: &str, mut critic: Value| {
+            critic["manifest_ref"] = serde_json::json!("infographics/ig1.json");
+            fs::write(
+                root.join(format!("infographics/vision-critics/{name}.json")),
+                serde_json::to_string(&critic).unwrap(),
+            )
+            .unwrap();
+        };
+        let (temp, _key) = build_publication_fixture(true, true);
+        write(
+            temp.path(),
+            "v1",
+            serde_json::json!({"passed": true, "score": 95, "rubric": rubric}),
+        );
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert!(
+            on.iter().all(|e| !e.contains("upstream infographic")),
+            "{on:?}"
+        );
+        // The hand-written record: passed, score 80, keys complete, one item at 50.
+        let mut low = rubric.clone();
+        low["typography"] = serde_json::json!(50);
+        write(
+            temp.path(),
+            "v1",
+            serde_json::json!({"passed": true, "score": 80, "rubric": low}),
+        );
+        let off = with_veto_only_switch(Some("0"), || publication_errors(temp.path()));
+        assert!(
+            off.iter().all(|e| !e.contains("upstream infographic")),
+            "{off:?}"
+        );
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert_error(
+            &on,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        // One passes, one fails.
+        write(
+            temp.path(),
+            "v1",
+            serde_json::json!({"passed": true, "score": 95, "rubric": rubric}),
+        );
+        write(
+            temp.path(),
+            "v2",
+            serde_json::json!({"passed": false, "score": 95, "rubric": rubric}),
+        );
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert_error(&on, "failed by an image-aware vision critic");
+        // None at all.
+        fs::remove_file(temp.path().join("infographics/vision-critics/v1.json")).unwrap();
+        fs::remove_file(temp.path().join("infographics/vision-critics/v2.json")).unwrap();
+        let on = with_veto_only_switch(Some("1"), || publication_errors(temp.path()));
+        assert_error(&on, "has no image-aware vision critic");
+    }
+
     /// Attaches a passing visualizations/illustrations/y.json (0.1.0
     /// schematic explainer) to the infographic fixture's
     /// illustration_manifest_refs, mirroring what newsroom_explainer_render
@@ -6516,6 +8210,27 @@ mod tests {
     /// -> newsroom_publication_qa write together at runtime. Returns the
     /// temp root and the html content hash used to name the publication
     /// directory.
+    /// A vision critic record that passes on its content and not on `passed` alone (VISION_VETO_ONLY re-derives it): score 95,
+    /// all ten rubric items 90, no issues.
+    fn passing_vision_critic_record(manifest_ref: &str) -> Value {
+        serde_json::json!({
+            "manifest_ref": manifest_ref,
+            "passed": true,
+            "score": 95,
+            "rubric": {
+                "hierarchy": 90, "legibility": 90, "composition": 90, "visual_coherence": 90,
+                "typography": 90, "source_legibility": 90, "responsive_quality": 90,
+                "illustration_integration": 90, "color_contrast": 90, "editorial_distinctiveness": 90,
+            },
+            "issues": [],
+        })
+    }
+
+    /// The pre-K250 path: NEWSROOM_VISION_VETO_ONLY=0 with the K98 self-report switch set to `selfreport`.
+    fn with_legacy_vision_switches<T>(selfreport: Option<&str>, f: impl FnOnce() -> T) -> T {
+        with_veto_only_switch(Some("0"), || with_selfreport_switch(selfreport, f))
+    }
+
     fn build_publication_fixture(qa_passed: bool, include_qa: bool) -> (tempfile::TempDir, String) {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
@@ -6555,10 +8270,7 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("infographics/vision-critics/v1.json"),
-            serde_json::to_string(
-                &serde_json::json!({"manifest_ref": "infographics/ig1.json", "passed": true}),
-            )
-            .unwrap(),
+            serde_json::to_string(&passing_vision_critic_record("infographics/ig1.json")).unwrap(),
         )
         .unwrap();
 
@@ -6822,7 +8534,14 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        // Default (VISION_VETO_ONLY on): a record saying passed=false fails the page.
         let errors = publication_errors(temp.path());
+        assert_error(
+            &errors,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        // NEWSROOM_VISION_VETO_ONLY=0: the old behaviour, no passing record.
+        let errors = with_veto_only_switch(Some("0"), || publication_errors(temp.path()));
         assert_error(
             &errors,
             "upstream infographic infographics/ig1.json has no passing image-aware vision critic",
@@ -6841,6 +8560,82 @@ mod tests {
             errors.iter().all(|e| !e.contains("upstream infographic")),
             "{errors:?}"
         );
+    }
+
+    #[test]
+    fn publication_infographic_lineage_selfreport_vision_veto_only() {
+        // Each shape alone must veto: the score and blocker terms must not hide a missing passed term.
+        for veto in [
+            serde_json::json!({"passed": false, "score": 95}),
+            serde_json::json!({"passed": true, "score": 60}),
+            serde_json::json!({"passed": true, "score": 95, "issues": [{"severity": "blocker"}]}),
+            serde_json::json!({"passed": true}),
+        ] {
+            let mut failing = veto.clone();
+            failing["manifest_ref"] = serde_json::json!("infographics/ig1.json");
+            let (temp, _key) = build_publication_fixture(true, true);
+            // The fixture's own critic carries no score; give it a clean pass so only the added critic can veto.
+            fs::write(
+                temp.path().join("infographics/vision-critics/v1.json"),
+                serde_json::to_string(&serde_json::json!({
+                    "manifest_ref": "infographics/ig1.json", "passed": true, "score": 95
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let clean = with_legacy_vision_switches(Some("1"), || publication_errors(temp.path()));
+            assert!(
+                clean.iter().all(|e| !e.contains("vetoed")),
+                "{veto}: a clean pass alone must not veto: {clean:?}"
+            );
+            fs::write(
+                temp.path().join("infographics/vision-critics/v9.json"),
+                serde_json::to_string(&failing).unwrap(),
+            )
+            .unwrap();
+            let off = with_legacy_vision_switches(None, || publication_errors(temp.path()));
+            assert!(
+                off.iter().all(|e| !e.contains("upstream infographic")),
+                "{veto}: {off:?}"
+            );
+            let on = with_legacy_vision_switches(Some("1"), || publication_errors(temp.path()));
+            assert_error(
+                &on,
+                "upstream infographic infographics/ig1.json vetoed by an image-aware vision critic",
+            );
+        }
+    }
+
+    #[test]
+    fn default_on_veto_only_with_selfreport_on_never_releases_a_passed_only_page() {
+        // VISION_VETO_ONLY unset (default on) and the K98 self-report switch on: a record carrying only passed=true is not a pass.
+        let (temp, _key) = build_publication_fixture(true, true);
+        fs::write(
+            temp.path().join("infographics/vision-critics/v1.json"),
+            serde_json::to_string(
+                &serde_json::json!({"manifest_ref": "infographics/ig1.json", "passed": true}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let errors = with_veto_only_switch(None, || {
+            with_selfreport_switch(Some("1"), || publication_errors(temp.path()))
+        });
+        assert_error(
+            &errors,
+            "upstream infographic infographics/ig1.json failed by an image-aware vision critic",
+        );
+        let temp = build_infographic_fixture(true, true);
+        enable_vision_review(temp.path(), 95.0, false);
+        edit_vision_critic(temp.path(), |critic| {
+            *critic = serde_json::json!({
+                "manifest_ref": "infographics/x.json", "passed": true,
+            });
+        });
+        let errors = with_veto_only_switch(None, || {
+            with_selfreport_switch(Some("1"), || infographic_errors(temp.path()))
+        });
+        assert_error(&errors, "failed by an image-aware vision critic");
     }
 
     #[test]
@@ -7821,5 +9616,219 @@ mod tests {
         assert!(report.errors[0].contains(
             "failed its provenance chain: no download record binds this table to the PDF"
         ));
+    }
+
+    // --- NEWSROOM_QA_TICK_READBACK (K198, K200, K202): shared cases + manifest wiring ---
+
+    static TICK_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn tick_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/fixtures/tick_readback")
+    }
+
+    fn tick_json(name: &str) -> Value {
+        serde_json::from_str(&fs::read_to_string(tick_dir().join(name)).unwrap()).unwrap()
+    }
+
+    fn tick_build(case: &Value, fixtures: &Value) -> (String, TickReadbackContext) {
+        let f = &fixtures[case["fixture"].as_str().unwrap()];
+        let mut svg = fs::read_to_string(tick_dir().join(f["file"].as_str().unwrap())).unwrap();
+        for edit in case
+            .get("edits")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            let find = edit["find"].as_str().unwrap();
+            assert!(svg.contains(find), "edit target not found: {find}");
+            svg = svg.replacen(find, edit["replace"].as_str().unwrap(), 1);
+        }
+        let mut rows = f["rows"].as_array().unwrap().clone();
+        if let Some(extra) = case.get("rows_extra") {
+            rows.push(extra.clone());
+        }
+        let text = |v: &Value| v.as_str().map(str::to_string);
+        let mut ctx = TickReadbackContext {
+            chart_type: f["chart_type"].as_str().unwrap().to_string(),
+            rows: Some(rows),
+            category_field: text(&f["category_field"]),
+            value_field: text(&f["value_field"]),
+            series_field: text(&f["series_field"]),
+            period_field: text(&f["period_field"]),
+            unit: text(&f["unit"]),
+            language: text(&f["language"]),
+        };
+        if let Some(over) = case.get("ctx").and_then(Value::as_object) {
+            if let Some(t) = over.get("chart_type").and_then(Value::as_str) {
+                ctx.chart_type = t.to_string();
+            }
+        }
+        for key in case
+            .get("ctx_drop")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            if key.as_str() == Some("rows") {
+                ctx.rows = None;
+            }
+        }
+        (svg, ctx)
+    }
+
+    #[test]
+    fn tick_readback_shared_cases_match_expectation() {
+        let fixtures = tick_json("fixtures.json");
+        let cases = tick_json("cases.json");
+        let cases = cases.as_array().unwrap();
+        assert_eq!(cases.len(), 41);
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let (svg, ctx) = tick_build(case, &fixtures);
+            let (status, failures) = verify_tick_readback_from_svg(&svg, &ctx);
+            match case["expect"].as_str().unwrap() {
+                "green" => {
+                    assert_eq!(status, TickReadbackStatus::Covered, "{name}");
+                    assert!(failures.is_empty(), "{name}: {failures:?}");
+                }
+                "uncovered" => {
+                    assert_eq!(status, TickReadbackStatus::Uncovered, "{name}");
+                    assert!(failures.is_empty(), "{name}");
+                }
+                "red" => {
+                    let rule = case["rule"].as_str().unwrap();
+                    assert!(
+                        failures.iter().any(|(r, _)| r == rule),
+                        "{name}: wanted {rule}, got {failures:?}"
+                    );
+                }
+                other => panic!("{name}: unknown expectation {other}"),
+            }
+        }
+    }
+
+    /// Writes plan/computation/svg + a manifest into a temp root and returns it.
+    fn tick_tree(fixture_key: &str, edits: &[(&str, &str)]) -> tempfile::TempDir {
+        let fixtures = tick_json("fixtures.json");
+        let f = &fixtures[fixture_key];
+        let mut svg = fs::read_to_string(tick_dir().join(f["file"].as_str().unwrap())).unwrap();
+        for (find, replace) in edits {
+            assert!(svg.contains(find));
+            svg = svg.replacen(find, replace, 1);
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        for dir in ["visualizations/plans", "computations"] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        let mut plan = serde_json::json!({"category_field": f["category_field"], "value_field": f["value_field"]});
+        if f.get("series_field").is_some() {
+            plan["series_field"] = f["series_field"].clone();
+        }
+        if f.get("period_field").is_some() {
+            plan["period_field"] = f["period_field"].clone();
+        }
+        fs::write(root.join("visualizations/plans/x.json"), plan.to_string()).unwrap();
+        fs::write(
+            root.join("computations/x.json"),
+            serde_json::json!({"rows": f["rows"], "result_hash": "h1"}).to_string(),
+        )
+        .unwrap();
+        fs::write(root.join("visualizations/x.svg"), svg).unwrap();
+        fs::write(
+            root.join("visualizations/x.json"),
+            serde_json::json!({
+                "plan_ref": "visualizations/plans/x.json",
+                "computation_ref": "computations/x.json",
+                "data_hash": "h1",
+                "chart_type": f["chart_type"],
+                "variants": {"desktop": "visualizations/x.svg"},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        temp
+    }
+
+    fn tick_manifest(root: &Path) -> Value {
+        read_json(&root.join("visualizations/x.json")).unwrap()
+    }
+
+    #[test]
+    fn tick_readback_manifest_green_and_tampered() {
+        let green = tick_tree("hb_B", &[]);
+        let mut report = VerificationReport::default();
+        verify_tick_readback_from_svg_manifest_for_test(green.path(), &mut report);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let red = tick_tree("hb_B", &[(">71万<", ">7.1万<")]);
+        let mut report = VerificationReport::default();
+        verify_tick_readback_from_svg_manifest_for_test(red.path(), &mut report);
+        assert!(!report.errors.is_empty());
+        assert!(
+            report.errors.iter().any(|e| e.contains("tick read-back")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    fn verify_tick_readback_from_svg_manifest_for_test(
+        root: &Path,
+        report: &mut VerificationReport,
+    ) {
+        verify_tick_readback_for_manifest(root, "x.json", &tick_manifest(root), report);
+    }
+
+    #[test]
+    fn tick_readback_manifest_uncovered_type_warns_and_hash_mismatch_errors() {
+        let tree = tick_tree("hb_A", &[]);
+        let mut manifest = tick_manifest(tree.path());
+        manifest["chart_type"] = Value::String("line".into());
+        let mut report = VerificationReport::default();
+        verify_tick_readback_for_manifest(tree.path(), "x.json", &manifest, &mut report);
+        assert!(report.errors.is_empty());
+        assert!(report.warnings.iter().any(|w| w.contains("not covered")));
+
+        let mut manifest = tick_manifest(tree.path());
+        manifest["data_hash"] = Value::String("other".into());
+        let mut report = VerificationReport::default();
+        verify_tick_readback_for_manifest(tree.path(), "x.json", &manifest, &mut report);
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("not the manifest's data")),
+            "{:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn tick_readback_switch_gates_the_check_in_verify_visualizations() {
+        let _guard = TICK_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let run = |value: Option<&str>| {
+            match value {
+                Some(v) => std::env::set_var("NEWSROOM_QA_TICK_READBACK", v),
+                None => std::env::remove_var("NEWSROOM_QA_TICK_READBACK"),
+            }
+            let temp = build_viz_fixture(true, true);
+            let mut report = VerificationReport::default();
+            verify_visualizations(temp.path(), &mut report).unwrap();
+            std::env::remove_var("NEWSROOM_QA_TICK_READBACK");
+            (report.errors, report.warnings, report.checks)
+        };
+        let off = run(None);
+        for v in ["0", "", "yes", " 1", "on"] {
+            assert_eq!(run(Some(v)), off, "switch value {v:?} must equal unset");
+        }
+        let on = run(Some("1"));
+        assert_eq!(on.0, off.0);
+        assert!(
+            on.1.iter()
+                .any(|w| w.contains("tick read-back not covered")),
+            "{:?}",
+            on.1
+        );
+        assert!(!off.1.iter().any(|w| w.contains("tick read-back")));
     }
 }

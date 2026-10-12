@@ -65,7 +65,10 @@ pub struct Loaded {
 }
 
 fn column<'a>(shape: &'a TableShape, name: &str) -> Option<&'a crate::data_profile::ColumnShape> {
-    shape.columns.iter().find(|c| c.name.eq_ignore_ascii_case(name))
+    shape
+        .columns
+        .iter()
+        .find(|c| c.name.eq_ignore_ascii_case(name))
 }
 
 /// One year column (integers in a calendar range, at least ten distinct), exactly one other
@@ -74,12 +77,22 @@ fn is_year_value_table(shape: &TableShape) -> bool {
     let years: Vec<_> = shape
         .columns
         .iter()
-        .filter(|c| c.name.to_ascii_lowercase().contains("year") && c.integer && c.distinct >= 10 && c.min >= 1000.0 && c.max <= 2200.0)
+        .filter(|c| {
+            c.name.to_ascii_lowercase().contains("year")
+                && c.integer
+                && c.distinct >= 10
+                && c.min >= 1000.0
+                && c.max <= 2200.0
+        })
         .collect();
     if years.len() != 1 {
         return false;
     }
-    let numeric_others = shape.columns.iter().filter(|c| c.numeric && c.name != years[0].name).count();
+    let numeric_others = shape
+        .columns
+        .iter()
+        .filter(|c| c.numeric && c.name != years[0].name)
+        .count();
     let text = shape.columns.iter().filter(|c| !c.numeric).count();
     numeric_others == 1 && text <= 2
 }
@@ -90,7 +103,10 @@ fn is_edge_table(shape: &TableShape) -> bool {
     let (Some(source), Some(target)) = (column(shape, "source"), column(shape, "target")) else {
         return false;
     };
-    shape.rows >= 2 && !source.numeric && !target.numeric && shape.columns.iter().filter(|c| c.numeric).count() == 1
+    shape.rows >= 2
+        && !source.numeric
+        && !target.numeric
+        && shape.columns.iter().filter(|c| c.numeric).count() == 1
 }
 
 /// A partner table: a text column holding ISO country codes (name contains "iso3" or is "iso_code")
@@ -106,7 +122,11 @@ fn is_origin_table(shape: &TableShape) -> bool {
 /// One edge table and, in another table, country-coded partners with a value: a flow page that also needs a map.
 fn is_flow_with_origin(shapes: &[TableShape]) -> bool {
     shapes.iter().enumerate().any(|(i, edges)| {
-        is_edge_table(edges) && shapes.iter().enumerate().any(|(j, other)| i != j && is_origin_table(other))
+        is_edge_table(edges)
+            && shapes
+                .iter()
+                .enumerate()
+                .any(|(j, other)| i != j && is_origin_table(other))
     })
 }
 
@@ -117,24 +137,40 @@ fn is_entity_year_grid(shape: &TableShape) -> bool {
     let years: Vec<_> = shape
         .columns
         .iter()
-        .filter(|c| c.name.to_ascii_lowercase().contains("year") && c.integer && (3..=9).contains(&c.distinct) && c.min >= 1000.0 && c.max <= 2200.0)
+        .filter(|c| {
+            c.name.to_ascii_lowercase().contains("year")
+                && c.integer
+                && (3..=9).contains(&c.distinct)
+                && c.min >= 1000.0
+                && c.max <= 2200.0
+        })
         .collect();
     if years.len() != 1 {
         return false;
     }
-    let numeric_others = shape.columns.iter().filter(|c| c.numeric && c.name != years[0].name).count();
+    let numeric_others = shape
+        .columns
+        .iter()
+        .filter(|c| c.numeric && c.name != years[0].name)
+        .count();
     let coded = shape.columns.iter().any(|c| {
         let name = c.name.to_ascii_lowercase();
         !c.numeric && (name.contains("iso3") || name == "iso_code")
     });
     numeric_others == 1
         && !coded
-        && shape.columns.iter().any(|c| !c.numeric && (5..=40).contains(&c.distinct) && shape.rows == c.distinct * years[0].distinct)
+        && shape.columns.iter().any(|c| {
+            !c.numeric
+                && (5..=40).contains(&c.distinct)
+                && shape.rows == c.distinct * years[0].distinct
+        })
 }
 
 /// An edge table and a names-by-years grid with no country-coded table anywhere (else the map recipe takes it).
 fn is_flow_with_grid(shapes: &[TableShape]) -> bool {
-    shapes.iter().any(is_edge_table) && shapes.iter().any(is_entity_year_grid) && !shapes.iter().any(is_origin_table)
+    shapes.iter().any(is_edge_table)
+        && shapes.iter().any(is_entity_year_grid)
+        && !shapes.iter().any(is_origin_table)
 }
 
 /// The one recipe that matches, or `None` when none or more than one does (across all tables).
@@ -164,7 +200,10 @@ fn select_from<'r>(recipes: &'r [Recipe], shapes: &[TableShape]) -> Option<&'r R
 
 /// The multi-table recipe that matches, when exactly one does.
 fn select_multi(shapes: &[TableShape]) -> Option<&'static MultiRecipe> {
-    let hits: Vec<&'static MultiRecipe> = MULTI_RECIPES.iter().filter(|r| (r.matches)(shapes)).collect();
+    let hits: Vec<&'static MultiRecipe> = MULTI_RECIPES
+        .iter()
+        .filter(|r| (r.matches)(shapes))
+        .collect();
     if hits.len() == 1 {
         hits.first().copied()
     } else {
@@ -172,10 +211,46 @@ fn select_multi(shapes: &[TableShape]) -> Option<&'static MultiRecipe> {
     }
 }
 
+/// The two V580 comparison switches (exact "1", default off) change what the concept tool asks for, so a recipe that spells the
+/// old requirement out would pull the model back. With both off the body is returned untouched, byte for byte.
+fn follow_concept_switches(body: &str, count_three: bool, trim_unread: bool) -> String {
+    let mut text = body.to_string();
+    if count_three {
+        text = text.replace(
+            "一次写满八个方案（少于八个会被拒）",
+            "按工具要求的个数写方案",
+        );
+    }
+    if trim_unread {
+        text = text
+            .replace("、risk_flags、reporting_gaps，后四项没有内容就写空数组，risk_flags 和 reporting_gaps 的每一项都是一句字符串", "、risk_flags，后三项没有内容就写空数组，risk_flags 的每一项都是一句字符串");
+    }
+    text
+}
+
+/// The tools NEWSROOM_LEAN_GATES=1 removes. A recipe that walks the model through them (the two flow-with-* recipes, whose rounds three and four are
+/// those tools) would send it to tools that do not exist, so with the switch on those recipes are not loaded. Off: every recipe loads as before.
+const LEAN_REMOVED_TOOLS: [&str; 3] = [
+    "newsroom_visual_concepts",
+    "newsroom_semantic_novelty",
+    "newsroom_asset_requirements",
+];
+
+fn dropped_for_lean_gates(body: &str, lean: bool) -> bool {
+    lean && LEAN_REMOVED_TOOLS.iter().any(|tool| body.contains(tool))
+}
+
+fn switch_on(name: &str) -> bool {
+    std::env::var(name).map(|v| v == "1").unwrap_or(false)
+}
+
 /// Recipe text for the declared local files, from their measured shape only.
 /// Each pair is the path the model sees and the file to read it from.
 pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
-    let shapes: Vec<TableShape> = files.iter().filter_map(|(_, source)| shape_csv(source)).collect();
+    let shapes: Vec<TableShape> = files
+        .iter()
+        .filter_map(|(_, source)| shape_csv(source))
+        .collect();
     let (name, body) = match select_multi(&shapes) {
         Some(multi) => (multi.name, multi.body),
         None => {
@@ -183,6 +258,14 @@ pub fn section(files: &[(String, PathBuf)]) -> Option<Loaded> {
             (recipe.name, recipe.body)
         }
     };
+    if dropped_for_lean_gates(body, switch_on("NEWSROOM_LEAN_GATES")) {
+        return None;
+    }
+    let body = follow_concept_switches(
+        body,
+        switch_on("NEWSROOM_CONCEPT_COUNT_3"),
+        switch_on("NEWSROOM_TRIM_UNREAD_FIELDS"),
+    );
     let text = format!("{RECIPES_HEADING}{body}");
     Some(Loaded {
         name,
@@ -232,11 +315,17 @@ mod tests {
     fn no_match_loads_nothing() {
         let dir = tempfile::tempdir().unwrap();
         // Two numeric measures beside the year, and a table with no year at all.
-        let two = "year,a,b\n".to_string() + &(1990..2005).map(|y| format!("{y},1.5,2.5\n")).collect::<String>();
+        let two = "year,a,b\n".to_string()
+            + &(1990..2005)
+                .map(|y| format!("{y},1.5,2.5\n"))
+                .collect::<String>();
         assert!(section(&[write(dir.path(), "two.csv", &two)]).is_none());
         assert!(section(&[write(dir.path(), "plain.csv", "name,score\nx,1.5\ny,2.5\n")]).is_none());
         // Fewer than ten years.
-        let short = "year,rate\n".to_string() + &(2000..2005).map(|y| format!("{y},1.5\n")).collect::<String>();
+        let short = "year,rate\n".to_string()
+            + &(2000..2005)
+                .map(|y| format!("{y},1.5\n"))
+                .collect::<String>();
         assert!(section(&[write(dir.path(), "short.csv", &short)]).is_none());
         assert!(section(&[]).is_none());
         let json = dir.path().join("a.json");
@@ -251,35 +340,60 @@ mod tests {
         // the "more than one match" rule is checked with two recipes that both match.
         let shape = shape_csv(&write(dir.path(), "e.csv", EDGES).1).unwrap();
         let both = [
-            Recipe { name: "x", body: "", matches: |_| true },
-            Recipe { name: "y", body: "", matches: |_| true },
+            Recipe {
+                name: "x",
+                body: "",
+                matches: |_| true,
+            },
+            Recipe {
+                name: "y",
+                body: "",
+                matches: |_| true,
+            },
         ];
-        assert!(select_from(&both, &[shape.clone()]).is_none());
+        assert!(select_from(&both, std::slice::from_ref(&shape)).is_none());
         assert_eq!(select_from(&both[..1], &[shape]).unwrap().name, "x");
         // Two tables that each match a different recipe: ambiguous, nothing loads.
-        let files = [write(dir.path(), "t.csv", &years()), write(dir.path(), "e.csv", EDGES)];
+        let files = [
+            write(dir.path(), "t.csv", &years()),
+            write(dir.path(), "e.csv", EDGES),
+        ];
         assert!(section(&files).is_none());
         // Two tables that match the same recipe: still that one recipe.
-        let same = [write(dir.path(), "t1.csv", &years()), write(dir.path(), "t2.csv", &years())];
+        let same = [
+            write(dir.path(), "t1.csv", &years()),
+            write(dir.path(), "t2.csv", &years()),
+        ];
         assert_eq!(section(&same).unwrap().name, "line-over-years");
     }
 
     #[test]
     fn matching_reads_the_table_only_never_the_file_name_or_text() {
         let dir = tempfile::tempdir().unwrap();
-        let (_, path) = write(dir.path(), "sankey-flow-line-over-years.csv", "name,score\nx,1.5\ny,2.5\n");
+        let (_, path) = write(
+            dir.path(),
+            "sankey-flow-line-over-years.csv",
+            "name,score\nx,1.5\ny,2.5\n",
+        );
         assert!(section(&[("data/排名 sankey.csv".into(), path)]).is_none());
     }
 
     #[test]
     fn recipe_bodies_hold_no_digits_paths_or_ids() {
-        let bodies = RECIPES.iter().map(|r| (r.name, r.body)).chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body)));
+        let bodies = RECIPES
+            .iter()
+            .map(|r| (r.name, r.body))
+            .chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body)));
         for (name, body) in bodies {
             let recipe = (name, body);
             let all = format!("{RECIPES_HEADING}{}", recipe.1);
             // The code-system name "iso3" is the one allowed digit; any other digit could be copied as a number.
             let without_code_name = all.replace("iso3", "");
-            assert!(!without_code_name.chars().any(|c| c.is_ascii_digit()), "{}: digit in recipe text", recipe.0);
+            assert!(
+                !without_code_name.chars().any(|c| c.is_ascii_digit()),
+                "{}: digit in recipe text",
+                recipe.0
+            );
             for bad in ["/Users", "PJ004", "http", "README", ".md", "SKILL"] {
                 assert!(!all.contains(bad), "{}: contains {bad}", recipe.0);
             }
@@ -294,9 +408,15 @@ mod tests {
     #[test]
     fn an_edge_table_with_any_name_for_its_one_numeric_column_loads_the_sankey_recipe() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(section(&[write(dir.path(), "e.csv", ENERGY)]).unwrap().name, "sankey-flow");
+        assert_eq!(
+            section(&[write(dir.path(), "e.csv", ENERGY)]).unwrap().name,
+            "sankey-flow"
+        );
         let gtc = "source,target,value_GtC\nA,B,3.5\nB,C,1.5\n";
-        assert_eq!(section(&[write(dir.path(), "g.csv", gtc)]).unwrap().name, "sankey-flow");
+        assert_eq!(
+            section(&[write(dir.path(), "g.csv", gtc)]).unwrap().name,
+            "sankey-flow"
+        );
         // Two numeric columns, or a numeric source column: nothing.
         let two = "source,target,value_a,value_b\nA,B,3.5,1.5\nB,C,1.5,2.5\n";
         assert!(section(&[write(dir.path(), "two.csv", two)]).is_none());
@@ -307,7 +427,10 @@ mod tests {
     #[test]
     fn edges_plus_a_country_coded_partner_table_load_the_map_recipe_and_it_wins() {
         let dir = tempfile::tempdir().unwrap();
-        let files = [write(dir.path(), "e.csv", ENERGY), write(dir.path(), "oil.csv", OIL)];
+        let files = [
+            write(dir.path(), "e.csv", ENERGY),
+            write(dir.path(), "oil.csv", OIL),
+        ];
         assert_eq!(section(&files).unwrap().name, "flow-with-origin-map");
         let reversed = [files[1].clone(), files[0].clone()];
         assert_eq!(section(&reversed).unwrap().name, "flow-with-origin-map");
@@ -316,9 +439,19 @@ mod tests {
         assert!(section(&files[1..]).is_none());
         // A partner table whose code column is numeric, or has no iso name, is not a map source.
         let plain = "country,code,value\nUnited States,US,3.5\nNorway,NO,1.5\n";
-        assert_eq!(section(&[files[0].clone(), write(dir.path(), "p.csv", plain)]).unwrap().name, "sankey-flow");
+        assert_eq!(
+            section(&[files[0].clone(), write(dir.path(), "p.csv", plain)])
+                .unwrap()
+                .name,
+            "sankey-flow"
+        );
         let iso_code = "name,ISO_CODE,amount\nUnited States,USA,3.5\n";
-        assert_eq!(section(&[files[0].clone(), write(dir.path(), "q.csv", iso_code)]).unwrap().name, "flow-with-origin-map");
+        assert_eq!(
+            section(&[files[0].clone(), write(dir.path(), "q.csv", iso_code)])
+                .unwrap()
+                .name,
+            "flow-with-origin-map"
+        );
     }
 
     // Fifteen names by eight years in one numeric column: the heatmap grid; the line topic is not a grid.
@@ -338,12 +471,34 @@ mod tests {
         let grid = write(dir.path(), "grid.csv", &grid_csv(15, 8));
         assert_eq!(section(&[grid]).unwrap().name, "heatmap-grid");
         // Ten years is the line recipe's ground; a ragged grid, too few names or a code column load nothing.
-        let line = write(dir.path(), "line.csv", &grid_csv(1, 12).replace("country", "name"));
+        let line = write(
+            dir.path(),
+            "line.csv",
+            &grid_csv(1, 12).replace("country", "name"),
+        );
         assert_eq!(section(&[line]).unwrap().name, "line-over-years");
-        let ragged = grid_csv(15, 8).lines().take(100).collect::<Vec<_>>().join("\n") + "\n";
+        let ragged = grid_csv(15, 8)
+            .lines()
+            .take(100)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
         assert!(section(&[write(dir.path(), "ragged.csv", &ragged)]).is_none());
         assert!(section(&[write(dir.path(), "few.csv", &grid_csv(3, 8))]).is_none());
-        let coded = grid_csv(15, 8).replace("country,year", "country,iso3,year").lines().enumerate().map(|(i, l)| if i == 0 { l.to_string() } else { l.replacen(",", ",XXX,", 1) }).collect::<Vec<_>>().join("\n") + "\n";
+        let coded = grid_csv(15, 8)
+            .replace("country,year", "country,iso3,year")
+            .lines()
+            .enumerate()
+            .map(|(i, l)| {
+                if i == 0 {
+                    l.to_string()
+                } else {
+                    l.replacen(",", ",XXX,", 1)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
         assert!(section(&[write(dir.path(), "coded.csv", &coded)]).is_none());
     }
 
@@ -352,12 +507,104 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let edges = write(dir.path(), "e.csv", ENERGY);
         let grid = write(dir.path(), "g.csv", &grid_csv(15, 8));
-        assert_eq!(section(&[edges.clone(), grid.clone()]).unwrap().name, "flow-with-grid");
-        assert_eq!(section(&[grid.clone(), edges.clone()]).unwrap().name, "flow-with-grid");
+        assert_eq!(
+            section(&[edges.clone(), grid.clone()]).unwrap().name,
+            "flow-with-grid"
+        );
+        assert_eq!(
+            section(&[grid.clone(), edges.clone()]).unwrap().name,
+            "flow-with-grid"
+        );
         // The map recipe keeps winning when a country-coded table exists.
         let oil = write(dir.path(), "oil.csv", OIL);
-        assert_eq!(section(&[edges.clone(), grid.clone(), oil.clone()]).unwrap().name, "flow-with-origin-map");
+        assert_eq!(
+            section(&[edges.clone(), grid.clone(), oil.clone()])
+                .unwrap()
+                .name,
+            "flow-with-origin-map"
+        );
         assert_eq!(section(&[edges, oil]).unwrap().name, "flow-with-origin-map");
         // Case one's Germany tables are unchanged by the new recipes.
+    }
+
+    #[test]
+    fn lean_gates_drop_only_the_recipes_that_name_a_removed_tool() {
+        let mut dropped = Vec::new();
+        for recipe in RECIPES.iter().map(|r| (r.name, r.body)).chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body))) {
+            assert!(!dropped_for_lean_gates(recipe.1, false), "{}", recipe.0);
+            if dropped_for_lean_gates(recipe.1, true) {
+                dropped.push(recipe.0);
+            }
+        }
+        dropped.sort();
+        assert_eq!(dropped, ["flow-with-grid", "flow-with-origin-map"]);
+    }
+
+    #[test]
+    fn the_concept_switches_change_only_the_two_sentences_and_nothing_when_off() {
+        let bodies: Vec<&str> = RECIPES
+            .iter()
+            .map(|r| r.body)
+            .chain(MULTI_RECIPES.iter().map(|r| r.body))
+            .collect();
+        for body in &bodies {
+            assert_eq!(
+                follow_concept_switches(body, false, false),
+                *body,
+                "off must be byte-identical"
+            );
+        }
+        let map = MULTI_RECIPES
+            .iter()
+            .find(|r| r.name == "flow-with-origin-map")
+            .unwrap()
+            .body;
+        assert!(map.contains("八个") && map.contains("reporting_gaps"));
+        let count = follow_concept_switches(map, true, false);
+        assert!(
+            !count.contains("八个")
+                && count.contains("按工具要求的个数写方案")
+                && count.contains("reporting_gaps")
+        );
+        let trim = follow_concept_switches(map, false, true);
+        assert!(
+            trim.contains("八个")
+                && !trim.contains("reporting_gaps")
+                && trim.contains("后三项没有内容就写空数组")
+        );
+        let both = follow_concept_switches(map, true, true);
+        assert!(!both.contains("八个") && !both.contains("reporting_gaps"));
+        // Only that one recipe names the count or the field; the other recipes are untouched even with both on.
+        for body in bodies.iter().filter(|b| **b != map) {
+            assert_eq!(follow_concept_switches(body, true, true), *body);
+        }
+        // Everything outside the two sentences is the same text.
+        assert_eq!(
+            count.replace(
+                "按工具要求的个数写方案",
+                "一次写满八个方案（少于八个会被拒）"
+            ),
+            map
+        );
+        assert_eq!(trim.replace("、risk_flags，后三项没有内容就写空数组，risk_flags 的每一项都是一句字符串", "、risk_flags、reporting_gaps，后四项没有内容就写空数组，risk_flags 和 reporting_gaps 的每一项都是一句字符串"), map);
+    }
+
+    #[test]
+    fn the_global_carbon_tables_load_flow_with_grid_which_names_no_concept_count() {
+        // data-complex/14-global-carbon: gcb_2023_flows.csv (source,target,value_GtC) and owid_percap_top15_grid.csv (country,year,co2_per_capita; 15 x 8).
+        let dir = tempfile::tempdir().unwrap();
+        let flows = write(
+            dir.path(),
+            "gcb_2023_flows.csv",
+            "source,target,value_GtC\n其他,化石排放,0.1160\n化石排放,总排放,10.3968\n",
+        );
+        let grid = write(dir.path(), "owid_percap_top15_grid.csv", &grid_csv(15, 8));
+        let loaded = section(&[flows, grid]).unwrap();
+        assert_eq!(loaded.name, "flow-with-grid");
+        assert!(
+            loaded.text.contains("按工具要求的个数写方案")
+                && !loaded.text.contains("写满八个")
+                && !loaded.text.contains("reporting_gaps")
+        );
     }
 }
