@@ -58,7 +58,7 @@ let dirSeq = 0;
 const freshDir = () => { const dir = join(scratch, `art-${++dirSeq}`); mkdirSync(dir, { recursive: true }); return dir; };
 const treeDigest = (dir) => sha(walk(dir).map((f) => `${relative(dir, f)}:${sha(readFileSync(f))}`).sort().join("\n"));
 
-// ---- the off-state digest: the same writes, every switch unset, must leave the same files as the base commit (55b7327) ----------------------------------
+// ---- the off-state digest: the same writes, every switch unset, must leave the same files as the base commit (89e591e) ----------------------------------
 async function offDigest(loaded, enforceValue) {
   clearEnv();
   if (enforceValue !== undefined) process.env.NEWSROOM_GROUP_ENFORCE = enforceValue;

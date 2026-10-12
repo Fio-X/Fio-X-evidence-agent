@@ -11,6 +11,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # test_viz_round3_conventions compares against a base commit
+      - name: Commit ids in CI config and tests exist in this history
+        run: |
+          python3 scripts/check_reachable_ids.py
+          python3 scripts/test_check_reachable_ids.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
@@ -285,13 +289,13 @@ jobs:
           node scripts/test_qa_all_zero_tool.mjs
           node scripts/test_qa_empty_pass_shapes.mjs
           node scripts/test_qa_no_empty_pass_fixtures.mjs
-      # The two off-state byte comparisons (flow maps back against 1296164, flow-map labels against the tree before the label layer) need history;
+      # The two off-state byte comparisons (flow maps back against 46c3624, flow-map labels against the tree before the label layer) need history;
       # fetch-depth is 0 above, and a SKIP here would be a failure, not a pass.
       - name: Flow-map tests (a skipped comparison fails)
         env:
           NEWSROOM_REQUIRE_NO_SKIP: "1"
         run: |
-          git worktree add --detach "$RUNNER_TEMP/flow-labels-base" f2aec34
+          git worktree add --detach "$RUNNER_TEMP/flow-labels-base" 35cb1cf
           BASE="$RUNNER_TEMP/flow-labels-base"
           node scripts/test_flow_maps_back.mjs
           node scripts/test_flow_trunk_cap.mjs

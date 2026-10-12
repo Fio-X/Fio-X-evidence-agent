@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The 14 existing fixtures that went red with NEWSROOM_QA_NO_EMPTY_PASS=1 (cd's finding B on d36d7ff), run with the switch on.
+// The 14 existing fixtures that went red with NEWSROOM_QA_NO_EMPTY_PASS=1 (cd's finding B on dca367a), run with the switch on.
 // kind 1 = no chart shapes (now "not applicable"); kind 2 = chart marks without a data role (now counted); other = red for its own reason.
 // Off, all 14 pass (checked too). Needs no provider; a fixture that needs a tool missing here is reported, not skipped silently.
 import assert from "node:assert/strict";

@@ -4,7 +4,7 @@
 //  - the one width scale (trunk width = sum of its branch widths) still holds;
 //  - render QA fails a trunk path wider than 12 px (red test with an 18 px SVG) and leaves every SVG without trunks untouched;
 //  - the trunk cap is fixed: no environment variable sets a trunk width or maximum;
-//  - D off (default, C only, labels off): byte-identical to 1296164.
+//  - D off (default, C only, labels off): byte-identical to 46c3624.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -50,9 +50,9 @@ assert.equal(qa(withTrunk("12.01")).viewports.desktop.geometry.failures.some((f)
 assert.equal(qa(withTrunk("12.2")).viewports.desktop.geometry.failures.some((f) => f.rule === "flow_trunk_too_wide"), true, "12.2 px fails");
 assert.equal(qa(render(clusterRows)).viewports.desktop.geometry.failures.some((f) => f.rule === "flow_trunk_too_wide"), false, "the renderer's own 15-branch trunk passes");
 
-// D off: byte-identical to 1296164 (the default style, circles only, and the trunk fallback with one source each)
-const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "1296164", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-if (archive.status !== 0) { console.log("SKIP 1296164 history unavailable; the byte comparison with it is skipped"); if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error("1296164 history is missing and the run requires none to be skipped"); }
+// D off: byte-identical to 46c3624 (the default style, circles only, and the trunk fallback with one source each)
+const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "46c3624", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
+if (archive.status !== 0) { console.log("SKIP 46c3624 history unavailable; the byte comparison with it is skipped"); if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error("46c3624 history is missing and the run requires none to be skipped"); }
 else {
   const dir = mkdtempSync(join(tmpdir(), "trunk-cap-"));
   process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -61,7 +61,7 @@ else {
   const base = await import(pathToFileURL(join(dir, "runtime/pi/viz.mjs")).href);
   for (const env of [{}, { NEWSROOM_FLOW_STYLE_CIRCLES: "1" }, { NEWSROOM_FLOW_STYLE_TRUNK: "true" }, { NEWSROOM_FLOW_STYLE_TRUNK: "0" }]) {
     delete process.env.NEWSROOM_FLOW_STYLE_TRUNK; delete process.env.NEWSROOM_FLOW_STYLE_CIRCLES; Object.assign(process.env, env);
-    for (const r of [rows, clusterRows]) assert.equal(render(r), render(r, base), `D off ${JSON.stringify(env)} is byte-identical to 1296164`);
+    for (const r of [rows, clusterRows]) assert.equal(render(r), render(r, base), `D off ${JSON.stringify(env)} is byte-identical to 46c3624`);
   }
 }
 console.log("flow trunk cap: ok", { wFixture, wCluster });

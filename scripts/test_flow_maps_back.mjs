@@ -2,7 +2,7 @@
 // NEWSROOM_FLOW_MAPS_BACK=1 (default off; acts only with NEWSROOM_HELD_CHART_TYPES=1): cartographic_flow_map leaves the held list
 // everywhere it is read; geo_flow_map (fails render QA on all three flow topics), hierarchy_tree and trajectory_profile stay held.
 // geo_edges is offered again because cartographic_flow_map's default data_topology is geo_edges (newsroom.ts plan defaults).
-//  1. Off (unset, 0, true, yes, "", " 1", 01), and on without the hold: tool definitions of every profile are byte-identical to the base (1296164).
+//  1. Off (unset, 0, true, yes, "", " 1", 01), and on without the hold: tool definitions of every profile are byte-identical to the base (46c3624).
 //  2. On: cartographic_flow_map is in the plan and chain enums and accepted (no CHART_TYPE_HELD); geo_flow_map, hierarchy_tree and trajectory_profile
 //     are still refused by plan, lint, render.
 //  3. On: geo_edges is offered again, hierarchy values stay refused (PLAN_VALUE_HELD); the strict-grammar refusal lists cartographic_flow_map for flow
@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE = "1296164";
+const BASE = "46c3624";
 // read before tools() clears every NEWSROOM_ variable from the environment
 const REQUIRE_NO_SKIP = process.env.NEWSROOM_REQUIRE_NO_SKIP === "1";
 const scratch = mkdtempSync(join(tmpdir(), "flow-back-"));

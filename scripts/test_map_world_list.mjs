@@ -247,7 +247,7 @@ const on = render({ NEWSROOM_MAP_WORLD_LIST: "1" });
   } finally { if (prev === undefined) delete process.env.NEWSROOM_TYPESET_CHOROPLETH_ZH; else process.env.NEWSROOM_TYPESET_CHOROPLETH_ZH = prev; }
 }
 
-{ // pinned: the off-state output of this fixture is the pre-switch output (hash taken at 559f6ba, before this switch existed)
+{ // pinned: the off-state output of this fixture is the pre-switch output (hash taken at 66a92b2, before this switch existed)
   const sha = createHash("sha256").update(off).digest("hex");
   assert.equal(sha, "7c07d446e2becafe62522049c3fba2433aac875ec3c76ecc80619e11c06080a7", `off-state world map output changed (sha256 ${sha})`);
 }

@@ -5,7 +5,7 @@
 //    neither a pass nor a finding. The condition is read from the SVG, never from a fixture name or chart type.
 //  - anything that has marks, or shapes the check cannot place (unknown roles, gridlines and a legend, polygons), is never "not applicable".
 //  - a label over a waffle cell, or across a treemap tile's edge, is reported; a tile's own label inside it is not.
-//  - off (unset/0/true/""): the report is byte-identical to the one d36d7ff writes (compared through git archive when history exists).
+//  - off (unset/0/true/""): the report is byte-identical to the one dca367a writes (compared through git archive when history exists).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -96,10 +96,10 @@ const across = treemap.replace(lab[0], lab[0].replace(`x="${lab[1]}"`, `x="${Num
 assert.notEqual(across, treemap);
 assert.ok(crosses(across).length >= 1, "a tile label that leaves its tile is reported");
 
-// ---- off: byte-identical to d36d7ff ---------------------------------------------------------------------------------------------
-const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "d36d7ff", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
+// ---- off: byte-identical to dca367a ---------------------------------------------------------------------------------------------
+const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "dca367a", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
 if (archive.status !== 0) {
-  console.log("d36d7ff history unavailable; skipped the byte comparison with it");
+  console.log("dca367a history unavailable; skipped the byte comparison with it");
 } else {
   const dir = mkdtempSync(join(tmpdir(), "qa-na-base-"));
   process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -108,10 +108,10 @@ if (archive.status !== 0) {
   const base = await import(pathToFileURL(join(dir, "runtime/pi/render_qa.mjs")).href);
   for (const [name, svg] of [["hero page", heroPage], ["text only", textOnly], ["line", line], ["waffle", waffle], ["treemap", treemap], ["labelled waffle", labelled], ["moved treemap label", across], ["roleless bars", rolelessBars], ["roleless lines", rolelessLines], ["use only", useOnly], ["single quoted", singleQuoted], ["data attrs", dataAttrOnly], ["quoted page", quotedPage], ["mystery", mystery]]) {
     const was = JSON.stringify(qa(svg, undefined, base.runRenderQa));
-    for (const v of [undefined, "0", "true", "", " 1", "01"]) assert.equal(JSON.stringify(qa(svg, v)), was, `${name}: off (${JSON.stringify(v)}) is byte-identical to d36d7ff`);
+    for (const v of [undefined, "0", "true", "", " 1", "01"]) assert.equal(JSON.stringify(qa(svg, v)), was, `${name}: off (${JSON.stringify(v)}) is byte-identical to dca367a`);
   }
-  // on, a chart this change does not touch: the same report as d36d7ff with the switch on
+  // on, a chart this change does not touch: the same report as dca367a with the switch on
   assert.equal(JSON.stringify(qa(line, "1")), JSON.stringify(qa(line, "1", base.runRenderQa)), "a line chart reports the same with the switch on");
-  console.log("ok: off is byte-identical to d36d7ff (14 SVGs x 6 values)");
+  console.log("ok: off is byte-identical to dca367a (14 SVGs x 6 values)");
 }
 console.log("PASS qa not applicable");
