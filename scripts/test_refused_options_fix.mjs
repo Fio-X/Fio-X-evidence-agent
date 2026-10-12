@@ -19,8 +19,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-// The commit before the switch was added (7deb682); the hero value gate is already on by default there, as it is now and always.
-const BASELINE = "6a6a69a";
+// The commit before the switch was added (04d57e7); the hero value gate is already on by default there, as it is now and always.
+const BASELINE = "b56f219";
 const scratch = mkdtempSync(join(tmpdir(), "refused-options-fix-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 for (const name of Object.keys(process.env)) if (name.startsWith("NEWSROOM_SPEED_")) delete process.env[name];

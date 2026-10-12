@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// NEWSROOM_QA_NO_EMPTY_PASS=1, cd's review of 1a4ed66: charts drawn with shapes the old counters did not know are not empty passes,
+// NEWSROOM_QA_NO_EMPTY_PASS=1, cd's review of ed441e5: charts drawn with shapes the old counters did not know are not empty passes,
 // and a row of thin untagged bars is a chart, not furniture. All read from the SVG the renderer wrote, never from a fixture name.
 //  - adjacency matrix: matrix-cell rects are data marks; streamgraph: filled `stream` bands make the label rule "not applicable" (never a pass);
 //  - heatmap without NEWSROOM_HEATMAP_VALUE_LABELS: cells carry no role; with heatmapChart they are "not applicable", an empty one still fails;

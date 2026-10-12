@@ -52,7 +52,7 @@ function pageLints(files) {
 function withMaskedLints(run, { added }) {
   const lints = pageLints(run.files);
   const files = new Map([...run.files].filter(([path]) => !PAGE_LINT_PATH.test(path)));
-  // The head ends the first footer note with a full stop (c6914ec: one "Note: " per block, every entry ends with one);
+  // The head ends the first footer note with a full stop (fa2655c: one "Note: " per block, every entry ends with one);
   // the baseline's chart SVGs are held to exactly that one change, so any other byte difference still fails. The files that
   // record an SVG's sha256 (render QA reports) follow the SVG.
   let movedHashes = new Map();

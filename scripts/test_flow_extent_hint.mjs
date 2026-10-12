@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const BASE = "76f6b1b"; // the commit before this switch (it already holds NEWSROOM_FLOW_MAPS_BACK, which 1296164 lacks)
+const BASE = "aa76a4c"; // the commit before this switch (it already holds NEWSROOM_FLOW_MAPS_BACK, which 46c3624 lacks)
 const scratch = mkdtempSync(join(tmpdir(), "flow-back-"));
 process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const stub = (dir, name, source) => {

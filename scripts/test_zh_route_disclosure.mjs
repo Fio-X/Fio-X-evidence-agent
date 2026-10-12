@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // NEWSROOM_ZH_ROUTE_DISCLOSURE=1 (exact "1", default off): a negated Chinese route statement is the abstract-OD disclosure the critic asks for.
 // Passes: the sentence the remittance page prints, 并非 / 不代表 forms, 路径. Still warns: an affirmative route statement, 关系 alone, no note.
-// English is unchanged and off is byte-identical to 1296164 (the critic report for every note below).
+// English is unchanged and off is byte-identical to 46c3624 (the critic report for every note below).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -28,9 +28,9 @@ for (const v of [undefined, "0", "true", "yes", "", " 1", "11"]) withSwitch(v, (
   assert.equal(warns(PASS[0]), true, `switch ${JSON.stringify(v)}: the Chinese sentence still warns`);
   assert.equal(warns(PASS[4]), false, "English unchanged");
 });
-// off: the whole critic report is byte-identical to 1296164
-const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "1296164", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-if (archive.status !== 0) { console.log("SKIP 1296164 history unavailable; the byte comparison is skipped"); if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error("1296164 history is missing and the run requires none to be skipped"); }
+// off: the whole critic report is byte-identical to 46c3624
+const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "46c3624", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
+if (archive.status !== 0) { console.log("SKIP 46c3624 history unavailable; the byte comparison is skipped"); if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error("46c3624 history is missing and the run requires none to be skipped"); }
 else {
   const dir = mkdtempSync(join(tmpdir(), "zh-route-"));
   process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -38,6 +38,6 @@ else {
   assert.equal(spawnSync("tar", ["-xf", join(dir, "b.tar"), "-C", dir]).status, 0);
   const base = await import(pathToFileURL(join(dir, "runtime/pi/viz.mjs")).href);
   const report = (m, note) => JSON.stringify(m.critiqueViz({ ...spec, note }, rows, { score: 100, blockers: [], warnings: [] }, ""));
-  for (const n of [...PASS, ...WARN]) withSwitch(undefined, () => assert.equal(report({ critiqueViz }, n), report(base, n), `off: ${JSON.stringify(n)} identical to 1296164`));
+  for (const n of [...PASS, ...WARN]) withSwitch(undefined, () => assert.equal(report({ critiqueViz }, n), report(base, n), `off: ${JSON.stringify(n)} identical to 46c3624`));
 }
 console.log("zh route disclosure: ok");
