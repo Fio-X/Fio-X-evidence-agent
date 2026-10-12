@@ -44,7 +44,7 @@ assert.deepEqual(problems, [], problems.join("\n"));
   const doors = [...guard.matchAll(/^pub fn (as_[a-z_]+)</gm)].map((m) => m[1]).sort();
   assert.deepEqual(doors, table.rust.map((r) => r.as).sort(), "the as_* doors and handoffs.rust must list the same functions");
   assert.ok(!/^pub fn as_writer\b/m.test(guard), "as_writer must stay private");
-  const commands = new Set([...cli.slice(cli.indexOf("COMMAND_GROUPS")).split("];")[0].matchAll(/\("([a-z0-9-]+)", "[a-z]+"\)/g)].map((m) => m[1]));
+  const commands = new Set([...cli.slice(cli.indexOf("COMMAND_GROUPS")).split("];")[0].matchAll(/\(\s*"([a-z0-9-]+)"\s*,\s*"[a-z]+"\s*,?\s*\)/g)].map((m) => m[1]));
   for (const r of table.rust) {
     for (const c of r.commands) assert.ok(commands.has(c), `${r.as}: ${c} is not a command in COMMAND_GROUPS`);
     for (const c of r.not_measured) assert.ok(r.commands.includes(c), `${r.as}: not_measured ${c} is not a listed command`);
