@@ -1,0 +1,121 @@
+{
+ "trunk_cap": {
+  "source_commit": "1296164",
+  "inputs_sha256": "45bd5ddab15e1526cc35eaef6d588f84d28a8f328ab1b848d790daab5711faaf",
+  "outputs": {
+   "{}|rows": {
+    "sha256": "44a7bf1c5845b4fefd0e1a9cb245170fb84d5e783c1b84db949f2b649350b478",
+    "bytes": 105588
+   },
+   "{}|clusterRows": {
+    "sha256": "b462da4ed11a353f0d9c18d4029ddbd69be0a305edd8a37733591ede7edf2aea",
+    "bytes": 106004
+   },
+   "{\"NEWSROOM_FLOW_STYLE_CIRCLES\":\"1\"}|rows": {
+    "sha256": "2c4e69ae515fab08a3ebe07068c5ffc4b489ea82daa23240a51e858e31a89c95",
+    "bytes": 108256
+   },
+   "{\"NEWSROOM_FLOW_STYLE_CIRCLES\":\"1\"}|clusterRows": {
+    "sha256": "1cdd20becf8402b4e4cd4932de29ab042545925e19ddca5e05fcd1b35f30138d",
+    "bytes": 108815
+   },
+   "{\"NEWSROOM_FLOW_STYLE_TRUNK\":\"true\"}|rows": {
+    "sha256": "44a7bf1c5845b4fefd0e1a9cb245170fb84d5e783c1b84db949f2b649350b478",
+    "bytes": 105588
+   },
+   "{\"NEWSROOM_FLOW_STYLE_TRUNK\":\"true\"}|clusterRows": {
+    "sha256": "b462da4ed11a353f0d9c18d4029ddbd69be0a305edd8a37733591ede7edf2aea",
+    "bytes": 106004
+   },
+   "{\"NEWSROOM_FLOW_STYLE_TRUNK\":\"0\"}|rows": {
+    "sha256": "44a7bf1c5845b4fefd0e1a9cb245170fb84d5e783c1b84db949f2b649350b478",
+    "bytes": 105588
+   },
+   "{\"NEWSROOM_FLOW_STYLE_TRUNK\":\"0\"}|clusterRows": {
+    "sha256": "b462da4ed11a353f0d9c18d4029ddbd69be0a305edd8a37733591ede7edf2aea",
+    "bytes": 106004
+   }
+  }
+ },
+ "extent_hint": {
+  "source_commit": "76f6b1b",
+  "outputs": {
+   "investigate|{}": {
+    "sha256": "54f1d37feb0254cce99ad080aead15b11044376b7c577964ad017411fb9bbcfb",
+    "bytes": 52050
+   },
+   "investigate|{\"NEWSROOM_HELD_CHART_TYPES\":\"1\",\"NEWSROOM_FLOW_MAPS_BACK\":\"1\"}": {
+    "sha256": "8d694946bfad9672f68acbec7b09139f8daba096074ce099a3b2a4b13203c69b",
+    "bytes": 51886
+   },
+   "investigate|{\"NEWSROOM_SPEED_RULE_HINTS\":\"1\"}": {
+    "sha256": "356f774d4331ecee24a3c60fa50b934ab7e18087d319c7549653b981ac01b36c",
+    "bytes": 57034
+   },
+   "visual|{}": {
+    "sha256": "79901a2165c7a19f4057f6f5ecf092c8a681923126edde064a22ea0cae78c5e6",
+    "bytes": 97292
+   },
+   "visual|{\"NEWSROOM_HELD_CHART_TYPES\":\"1\",\"NEWSROOM_FLOW_MAPS_BACK\":\"1\"}": {
+    "sha256": "3158cd17547812c9bf9167e40d071db9c2f4b3f0834cb6a416df129906d68cf8",
+    "bytes": 97128
+   },
+   "visual|{\"NEWSROOM_SPEED_RULE_HINTS\":\"1\"}": {
+    "sha256": "00f351f23046b609267a638329c64c03c19d3224ac3cd766f21e7286493c81ed",
+    "bytes": 102484
+   },
+   "visual-story|{}": {
+    "sha256": "cbac95d0702d725023ba571e6ae6d26e776250f813696ba316583a59ef31a3f9",
+    "bytes": 112968
+   },
+   "visual-story|{\"NEWSROOM_HELD_CHART_TYPES\":\"1\",\"NEWSROOM_FLOW_MAPS_BACK\":\"1\"}": {
+    "sha256": "02ec3e59b9956cc3a8f005e9388f314290f0010cd9b3761bd97daa1ac549ab7e",
+    "bytes": 112804
+   },
+   "visual-story|{\"NEWSROOM_SPEED_RULE_HINTS\":\"1\"}": {
+    "sha256": "2675fe93cc646c10d851f3721581cc1a25d094e4561c704b6264e6bdc722f6a4",
+    "bytes": 118160
+   },
+   "publication|{}": {
+    "sha256": "f1c260eb1183101c25ac262a1a1a95c4d4403d7575316fbc30b2b21f01600a5b",
+    "bytes": 22605
+   },
+   "publication|{\"NEWSROOM_HELD_CHART_TYPES\":\"1\",\"NEWSROOM_FLOW_MAPS_BACK\":\"1\"}": {
+    "sha256": "f1c260eb1183101c25ac262a1a1a95c4d4403d7575316fbc30b2b21f01600a5b",
+    "bytes": 22605
+   },
+   "publication|{\"NEWSROOM_SPEED_RULE_HINTS\":\"1\"}": {
+    "sha256": "f1c260eb1183101c25ac262a1a1a95c4d4403d7575316fbc30b2b21f01600a5b",
+    "bytes": 22605
+   },
+   "competition|{}": {
+    "sha256": "be014922922ddbd2b6015fc4709b87f961ec233a5731c7bf0b1537690fcc803d",
+    "bytes": 121905
+   },
+   "competition|{\"NEWSROOM_HELD_CHART_TYPES\":\"1\",\"NEWSROOM_FLOW_MAPS_BACK\":\"1\"}": {
+    "sha256": "adc5415e19364461653e8e98355f7e8bca0a61ad2db0341c69c048f8ec82dfce",
+    "bytes": 121741
+   },
+   "competition|{\"NEWSROOM_SPEED_RULE_HINTS\":\"1\"}": {
+    "sha256": "743f858297444eae844bf41fe3158c55f88686c833bc64d9f96ffe718624db6c",
+    "bytes": 127097
+   },
+   "full|{}": {
+    "sha256": "be014922922ddbd2b6015fc4709b87f961ec233a5731c7bf0b1537690fcc803d",
+    "bytes": 121905
+   },
+   "full|{\"NEWSROOM_HELD_CHART_TYPES\":\"1\",\"NEWSROOM_FLOW_MAPS_BACK\":\"1\"}": {
+    "sha256": "adc5415e19364461653e8e98355f7e8bca0a61ad2db0341c69c048f8ec82dfce",
+    "bytes": 121741
+   },
+   "full|{\"NEWSROOM_SPEED_RULE_HINTS\":\"1\"}": {
+    "sha256": "743f858297444eae844bf41fe3158c55f88686c833bc64d9f96ffe718624db6c",
+    "bytes": 127097
+   }
+  },
+  "thresholds": {
+   "AUTO_EXTENT_MAX_LON": "AUTO_EXTENT_MAX_LON=90",
+   "AUTO_EXTENT_MAX_LAT": "AUTO_EXTENT_MAX_LAT=60"
+  }
+ }
+}
