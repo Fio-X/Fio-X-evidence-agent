@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791858916,
-  "source_commit": "ca16be684d4c2f128aeb4787a7ea8c02f7fa6f1d",
+  "created_at_epoch": 1791859314,
+  "source_commit": "70ce2dd837027b9b41f3fae9fcf9e44e5f84020a",
   "source_tree": {
-    "file_count": 1283,
-    "bytes": 72322277,
-    "sha256": "aa207d76b092f5c59e31b7c44355f35da93942b2b02cde0b27ee40767b5a2f04",
+    "file_count": 1289,
+    "bytes": 72443099,
+    "sha256": "28fd7e31e7fdcbd83f87b5dd1de55b17f9c444b529946c705f99b19197cb1e4b",
     "files": [
       {
         "path": ".env.example",
@@ -2794,6 +2794,31 @@
         "bytes": 13186
       },
       {
+        "path": "scripts/fixtures/base-output/qa_not_applicable.json",
+        "sha256": "cc70b0ec846283c78c3991db322f77165607932a97a99e0be2d0f2d35ecc4d22",
+        "bytes": 2659
+      },
+      {
+        "path": "scripts/fixtures/base-output/reader_task_example_fix.json",
+        "sha256": "4aa365a8cb82f42cdc4e3d5c33b6adaacea88fbda816a733a384d39aeee00a38",
+        "bytes": 6409
+      },
+      {
+        "path": "scripts/fixtures/base-output/recorder.mjs",
+        "sha256": "508b378e89f20c6b8a1a8d50d1c5512db5526393b423c4891d4c5c4ac62ab8f2",
+        "bytes": 2804
+      },
+      {
+        "path": "scripts/fixtures/base-output/refused_options_fix.json",
+        "sha256": "d957209998a3ea1e413449843c8a6b5f790088354dee28c70d7d05645a3784e3",
+        "bytes": 4281
+      },
+      {
+        "path": "scripts/fixtures/base-output/viz_round3.json",
+        "sha256": "f696e2863af6df7d94efc0bdd12e30b7a4d575b411ef36044ad98e4026344139",
+        "bytes": 103560
+      },
+      {
         "path": "scripts/fixtures/flow-base/flow-base.json",
         "sha256": "da7d17fdaa68a93efec301768a725373b90382b3dd058b8d3477b530a7c7cc33",
         "bytes": 4535
@@ -2927,6 +2952,11 @@
         "path": "scripts/fixtures/tick_readback/rw_mb_period.svg",
         "sha256": "ca94bd5fb0510b7250c6f7a7cc860714ddd00c0c096820e39907c70d5b599cfc",
         "bytes": 10390
+      },
+      {
+        "path": "scripts/gen_base_output_fixtures.mjs",
+        "sha256": "496200030c84ab6cb7ccda215ec3635df4fafd32c3225fbb14728b80140ca4a5",
+        "bytes": 1381
       },
       {
         "path": "scripts/gen_flow_base_fixture.mjs",
@@ -4635,8 +4665,8 @@
       },
       {
         "path": "scripts/test_qa_not_applicable.mjs",
-        "sha256": "0cb46b90600f334375c69fb975065e0f8107b349569d583ae1fbd21e8bdc450d",
-        "bytes": 11998
+        "sha256": "57682c71ceea0c79b46c6daa205698ae132d80370e89b9063ef8ce02dac4b415",
+        "bytes": 11862
       },
       {
         "path": "scripts/test_qa_shared_width.mjs",
@@ -4670,8 +4700,8 @@
       },
       {
         "path": "scripts/test_reader_task_example_fix.mjs",
-        "sha256": "15211576d1b7111736bfbb4e256c7ab9a390817a509d0da6ac04da86f63a3666",
-        "bytes": 10149
+        "sha256": "27731f08c37d970fccaf2175dd446f8e081053cbf7286f10d69ab6bbd72e2ace",
+        "bytes": 10202
       },
       {
         "path": "scripts/test_realdata_viz.mjs",
@@ -4695,8 +4725,8 @@
       },
       {
         "path": "scripts/test_refused_options_fix.mjs",
-        "sha256": "8771fd82ea5be3c2dc91143ee226f4718abf84f1566d04d9cffa6422aec993bd",
-        "bytes": 13078
+        "sha256": "ee19ee5b15ecd986624ea913eeba3e85770d555fcbd95377585a98eeddbddaf3",
+        "bytes": 13137
       },
       {
         "path": "scripts/test_rejection_budget.mjs",
@@ -5315,8 +5345,8 @@
       },
       {
         "path": "scripts/test_viz_round3_conventions.mjs",
-        "sha256": "fbf3d3da265021336b0a3644bd4acffec364ca6342f0449e74f1b0d25b239c8b",
-        "bytes": 31641
+        "sha256": "7553780cd6df8c92fdf0d9175e6382d9bf0c3f4742a975a946d5a39516650e9e",
+        "bytes": 31393
       },
       {
         "path": "scripts/test_viz_schema.py",
@@ -6508,5 +6538,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "c9692022bcbda90bb939d505eada9126e102178a24a0617604da315bdac6a355"
+  "manifest_sha256": "3ab032d504bbdd205b6c62c95ef71a41f5c7c17651af07293e50f09647826334"
 }
