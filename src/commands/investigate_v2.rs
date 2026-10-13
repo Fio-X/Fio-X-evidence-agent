@@ -591,7 +591,10 @@ mod tests {
         }
         assert!(on.speed.chain_viz && on.speed.inline_claim);
         assert!(!on.speed.chain_infographic && !on.speed.preflight);
-        assert!(on.tools_arg().split(',').any(|t| t == crate::pi::VIZ_CHAIN_TOOL));
+        assert!(on
+            .tools_arg()
+            .split(',')
+            .any(|t| t == crate::pi::VIZ_CHAIN_TOOL));
         assert_eq!(on.tool_profile, "visual-story");
         assert!(!on.hide_lieflat && on.compose.is_none());
     }

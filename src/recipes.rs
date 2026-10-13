@@ -530,7 +530,11 @@ mod tests {
     #[test]
     fn lean_gates_drop_only_the_recipes_that_name_a_removed_tool() {
         let mut dropped = Vec::new();
-        for recipe in RECIPES.iter().map(|r| (r.name, r.body)).chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body))) {
+        for recipe in RECIPES
+            .iter()
+            .map(|r| (r.name, r.body))
+            .chain(MULTI_RECIPES.iter().map(|r| (r.name, r.body)))
+        {
             assert!(!dropped_for_lean_gates(recipe.1, false), "{}", recipe.0);
             if dropped_for_lean_gates(recipe.1, true) {
                 dropped.push(recipe.0);

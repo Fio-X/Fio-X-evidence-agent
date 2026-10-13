@@ -256,7 +256,14 @@ mod tests {
     #[test]
     fn the_longform_switch_is_the_exact_value_one() {
         assert!(longform_switch_value(Some("1")));
-        for value in [None, Some(""), Some("0"), Some("true"), Some(" 1"), Some("01")] {
+        for value in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("true"),
+            Some(" 1"),
+            Some("01"),
+        ] {
             assert!(!longform_switch_value(value), "{value:?}");
         }
     }
