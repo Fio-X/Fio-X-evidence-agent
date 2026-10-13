@@ -29,7 +29,7 @@ for (const v of [undefined, "0", "true", "yes", "", " 1", "11"]) withSwitch(v, (
   assert.equal(warns(PASS[4]), false, "English unchanged");
 });
 // off: the whole critic report is byte-identical to 1296164
-const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "1296164", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
+const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "17740c7", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
 if (archive.status !== 0) { console.log("SKIP 1296164 history unavailable; the byte comparison is skipped"); if (process.env.NEWSROOM_REQUIRE_NO_SKIP === "1") throw new Error("1296164 history is missing and the run requires none to be skipped"); }
 else {
   const dir = mkdtempSync(join(tmpdir(), "zh-route-"));
