@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791855180,
-  "source_commit": "24c35782266416ea03207313148db70666d799d6",
+  "created_at_epoch": 1791856163,
+  "source_commit": "58acd28f152e136b2f372bac4d0522f81043bb4b",
   "source_tree": {
     "file_count": 1279,
-    "bytes": 72313258,
-    "sha256": "fbb973790755610d4364dbb72e8b227daa0098672de6fd3a889dbe03c4188ef8",
+    "bytes": 72313353,
+    "sha256": "63cfa98eee8a8f18723dfe3b1e750d27ad17a02eb4f11532a8a4ef9404ea5aa1",
     "files": [
       {
         "path": ".env.example",
@@ -4835,8 +4835,8 @@
       },
       {
         "path": "scripts/test_runtime_visual_synthesis_v18.mjs",
-        "sha256": "995790537d36ae98e14aaf9fff90f21a246f84314555fe27be3929b51ba8ed66",
-        "bytes": 2442
+        "sha256": "12c1423e01fca861f5d408602ae9988f08b0c07d0446ba9012edcc9dc8834b0d",
+        "bytes": 2537
       },
       {
         "path": "scripts/test_rust_followup.py",
@@ -6488,5 +6488,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "345ed4e646cb01537ac6ee8f682de9d8d1c715ef638fa58b286d1d5ece9dfe47"
+  "manifest_sha256": "af6e23ce4627cf650cc40f1fa9a17e13e2f02b9eb6cb53dfc36dc7afae2be583"
 }
