@@ -318,6 +318,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install the pinned DuckDB CLI
+        run: python3 -m pip install --disable-pip-version-check duckdb-cli==1.5.5
       - name: Verify macOS-native executables
         run: |
           test -x /usr/bin/sqlite3
