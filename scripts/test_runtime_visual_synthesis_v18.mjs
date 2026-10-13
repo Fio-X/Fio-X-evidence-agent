@@ -11,10 +11,10 @@ for(const marker of [
   'story_graph_ref: Type.String()',
   'reader_question: Type.String()',
   'visual_thesis: Type.String()',
-  'editorial_grammar: editorialGrammarParameters',
+  'editorial_grammar: leanGatesEnabled() ? Type.Optional(editorialGrammarParameters) : editorialGrammarParameters',
   'primary_cognitive_goal: StringEnum(["ORIENT", "ZOOM", "EXPLAIN", "MEASURE", "COMPARE", "CONSEQUENCE"] as const)',
   'schema_version: Type.Literal("0.2.0")',
-  'delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const))',
+  'delivery_role: Type.Optional(StringEnum(["standalone_visual", "infographic_module"] as const, contractHint("deliveryRole")))',
   'name: "newsroom_portable_publication"',
   'field_mapping_json',
   'portable_fallback'
