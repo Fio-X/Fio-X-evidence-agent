@@ -11,11 +11,10 @@
 //  6. axis frame: no tick text crosses the frame; a side holding >= 25% of the axis has >= 2 ticks.
 // Every chart type these rules do not touch renders byte-identical to the base commit.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { baseOutputs } from "./fixtures/base-output/recorder.mjs";
 import { checkSvgGeometry } from "../runtime/pi/render_qa_geometry.mjs";
 import { renderVizSvg, zhScaleText, fmtSpec, chartValueFormatter } from "../runtime/pi/viz.mjs";
 import { getBasemap } from "../runtime/pi/basemap_registry.mjs";
@@ -278,16 +277,12 @@ const roleTexts = (svg, role) => tags(svg, new RegExp(`<text [^>]*data-role="${r
 }
 
 // ---- other chart types are byte-identical to the base commit -----------------------------------------
-// No silent skips: if the base commit cannot be extracted, or the old renderer throws on a fixture, the test fails.
-const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", BASE_COMMIT, "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-assert.equal(archive.status, 0, `git archive ${BASE_COMMIT} failed (a shallow clone lacks it; fetch full history): ${String(archive.stderr ?? "").slice(0, 200)}`);
+// No silent skips: the old renderer's output comes from the recorded fixture (1296164-style: made by scripts/gen_base_output_fixtures.mjs from the base commit's own tree,
+// because that commit is not in the pushed history). A missing fixture, another source commit or an input that was not recorded fails the test.
+const baseFx = baseOutputs({ name: "viz_round3", commit: BASE_COMMIT, text: true });
+const oldViz = baseFx.recordWt ? await import(pathToFileURL(join(baseFx.recordWt, "runtime/pi/viz.mjs")).href) : null;
+const old = { renderVizSvg: (spec, data) => baseFx.get({ spec, data }, () => oldViz.renderVizSvg(spec, data)).text };
 {
-  const dir = mkdtempSync(join(tmpdir(), "round3-base-"));
-  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(join(dir, "b.tar"), archive.stdout);
-  const untar = spawnSync("tar", ["-xf", join(dir, "b.tar"), "-C", dir]);
-  assert.equal(untar.status, 0, "extracting the base commit failed");
-  const old = await import(pathToFileURL(join(dir, "runtime/pi/viz.mjs")).href);
   const names = ["华北", "华东", "华南", "西北", "东北", "西南"];
   const cats = names.map((region, i) => ({ region, v: 10 + i * 7, w: 5 + i * 3 }));
   const series = Array.from({ length: 6 }, (_, i) => ({ year: 2018 + i, v: 10 + i * 2 }));

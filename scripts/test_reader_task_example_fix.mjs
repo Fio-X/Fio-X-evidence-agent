@@ -10,15 +10,15 @@
 //  3. Big switch on: the output is what the big switch alone gives, whatever
 //     the small switch says; the old example appears nowhere.
 // Loads runtime/pi/newsroom.ts from a type-stripped copy. The f2aec34 side comes
-// from `git archive` and is skipped when history is unavailable; the literal
+// from a recorded fixture (a missing fixture fails); the literal
 // checks below it always run. No provider or network access.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { baseOutputs, sha256 } from "./fixtures/base-output/recorder.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const BASELINE = "f2aec34";
@@ -55,13 +55,6 @@ async function loadTree(label, source) {
   const pi = join(dir, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
   return await import(join(pi, "newsroom.test-copy.mjs"));
-}
-function baselineSource() {
-  const dir = mkdtempSync(join(scratch, "baseline-"));
-  const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", BASELINE, "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-  if (archive.status !== 0) return null;
-  writeFileSync(join(dir, "baseline.tar"), archive.stdout);
-  return spawnSync("tar", ["-xf", join(dir, "baseline.tar"), "-C", dir]).status === 0 ? dir : null;
 }
 // Tools read the environment when they register, so it is set right before.
 function definitions(mod, env) {
@@ -116,16 +109,18 @@ for (const profile of PROFILES) for (const other of OTHERS) {
 }
 
 // ---- 1 and 2. Against f2aec34 -----------------------------------------------
-const baselineDir = baselineSource();
-if (!baselineDir) {
-  console.log(`${BASELINE} history unavailable; skipped the byte comparison with it`);
-} else {
-  const baseline = await loadTree("baseline", baselineDir);
+// The baseline's definitions come from the recorded fixture (made by scripts/gen_base_output_fixtures.mjs from f2aec34's own tree, which is not in the pushed history).
+// A missing fixture, another source commit or an unrecorded combination fails the test; there is no skip path.
+{
+  const baseFx = baseOutputs({ name: "reader_task_example_fix", commit: BASELINE });
+  const baseline = baseFx.recordWt ? await loadTree("baseline", baseFx.recordWt) : null;
   let compared = 0;
   for (const profile of PROFILES) for (const other of OTHERS) {
     const env = { NEWSROOM_TOOL_PROFILE: profile, ...other };
-    const before = definitions(baseline, env);
-    assert.equal(JSON.stringify(definitions(current, env)), JSON.stringify(before), `${profile} ${JSON.stringify(other)}: off is byte-identical to ${BASELINE}`);
+    const recorded = baseFx.get({ profile, other }, () => JSON.stringify(definitions(baseline, env)));
+    const before = definitions(current, env);
+    // the current off definitions are shown byte-identical (sha256) to the baseline's, so they stand for the baseline's in the diff below
+    assert.equal(sha256(JSON.stringify(before)), recorded.sha256, `${profile} ${JSON.stringify(other)}: off is byte-identical to ${BASELINE}`);
     const changes = diff(before, definitions(current, { ...env, ...SWITCH }));
     if (!before.newsroom_viz_plan || other.NEWSROOM_SPEED_FIRST_TRY_ALL) {
       // No planning tool, or FIRST_TRY_ALL already replaced the example: nothing to change.

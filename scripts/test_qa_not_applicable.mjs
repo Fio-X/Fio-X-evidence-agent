@@ -5,13 +5,11 @@
 //    neither a pass nor a finding. The condition is read from the SVG, never from a fixture name or chart type.
 //  - anything that has marks, or shapes the check cannot place (unknown roles, gridlines and a legend, polygons), is never "not applicable".
 //  - a label over a waffle cell, or across a treemap tile's edge, is reported; a tile's own label inside it is not.
-//  - off (unset/0/true/""): the report is byte-identical to the one d36d7ff writes (compared through git archive when history exists).
+//  - off (unset/0/true/""): the report is byte-identical to the one d36d7ff writes (compared with the recorded output of that commit).
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { baseOutputs, sha256 } from "./fixtures/base-output/recorder.mjs";
 import { renderVizBundle } from "../runtime/pi/viz.mjs";
 import { runRenderQa } from "../runtime/pi/render_qa.mjs";
 
@@ -97,21 +95,18 @@ assert.notEqual(across, treemap);
 assert.ok(crosses(across).length >= 1, "a tile label that leaves its tile is reported");
 
 // ---- off: byte-identical to d36d7ff ---------------------------------------------------------------------------------------------
-const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", "d36d7ff", "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-if (archive.status !== 0) {
-  console.log("d36d7ff history unavailable; skipped the byte comparison with it");
-} else {
-  const dir = mkdtempSync(join(tmpdir(), "qa-na-base-"));
-  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(join(dir, "base.tar"), archive.stdout);
-  assert.equal(spawnSync("tar", ["-xf", join(dir, "base.tar"), "-C", dir]).status, 0);
-  const base = await import(pathToFileURL(join(dir, "runtime/pi/render_qa.mjs")).href);
+// The old report comes from the recorded fixture (made by scripts/gen_base_output_fixtures.mjs from d36d7ff's own tree, which is not in the pushed history).
+// A missing fixture, another source commit or an unrecorded input fails the test; there is no skip path.
+{
+  const baseFx = baseOutputs({ name: "qa_not_applicable", commit: "d36d7ff" });
+  const baseQa = baseFx.recordWt ? (await import(pathToFileURL(join(baseFx.recordWt, "runtime/pi/render_qa.mjs")).href)).runRenderQa : null;
+  const was = (svg, v) => baseFx.get({ svg, v: v ?? null }, () => JSON.stringify(qa(svg, v, baseQa)));
   for (const [name, svg] of [["hero page", heroPage], ["text only", textOnly], ["line", line], ["waffle", waffle], ["treemap", treemap], ["labelled waffle", labelled], ["moved treemap label", across], ["roleless bars", rolelessBars], ["roleless lines", rolelessLines], ["use only", useOnly], ["single quoted", singleQuoted], ["data attrs", dataAttrOnly], ["quoted page", quotedPage], ["mystery", mystery]]) {
-    const was = JSON.stringify(qa(svg, undefined, base.runRenderQa));
-    for (const v of [undefined, "0", "true", "", " 1", "01"]) assert.equal(JSON.stringify(qa(svg, v)), was, `${name}: off (${JSON.stringify(v)}) is byte-identical to d36d7ff`);
+    const base0 = was(svg, undefined);
+    for (const v of [undefined, "0", "true", "", " 1", "01"]) assert.equal(sha256(JSON.stringify(qa(svg, v))), base0.sha256, `${name}: off (${JSON.stringify(v)}) is byte-identical to d36d7ff`);
   }
   // on, a chart this change does not touch: the same report as d36d7ff with the switch on
-  assert.equal(JSON.stringify(qa(line, "1")), JSON.stringify(qa(line, "1", base.runRenderQa)), "a line chart reports the same with the switch on");
+  assert.equal(sha256(JSON.stringify(qa(line, "1"))), was(line, "1").sha256, "a line chart reports the same with the switch on");
   console.log("ok: off is byte-identical to d36d7ff (14 SVGs x 6 values)");
 }
 console.log("PASS qa not applicable");

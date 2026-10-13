@@ -11,12 +11,12 @@
 //     path by path, and printed).
 //  3. The causal-word and claim-kind sentences agree with the evidence gate.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { baseOutputs, sha256 } from "./fixtures/base-output/recorder.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 // The commit before the switch was added (7deb682); the hero value gate is already on by default there, as it is now and always.
@@ -55,13 +55,6 @@ async function loadTree(label, source) {
   const pi = join(dir, "runtime", "pi");
   writeFileSync(join(pi, "newsroom.test-copy.mjs"), stripTypeScriptTypes(readFileSync(join(pi, "newsroom.ts"), "utf8"), { mode: "strip" }));
   return await import(join(pi, "newsroom.test-copy.mjs"));
-}
-function baselineSource() {
-  const dir = mkdtempSync(join(scratch, "baseline-"));
-  const archive = spawnSync("git", ["-C", ROOT, "archive", "--format=tar", BASELINE, "runtime", "config"], { maxBuffer: 512 * 1024 * 1024 });
-  if (archive.status !== 0) return null;
-  writeFileSync(join(dir, "baseline.tar"), archive.stdout);
-  return spawnSync("tar", ["-xf", join(dir, "baseline.tar"), "-C", dir]).status === 0 ? dir : null;
 }
 // Tools read the environment when they register, so it is set right before.
 const CONTROLLED = ["NEWSROOM_TOOL_PROFILE", "NEWSROOM_REFUSED_OPTIONS_FIX", "NEWSROOM_MOBILE_PAGES", "NEWSROOM_ILLUSTRATION_ADAPTER"];
@@ -145,16 +138,18 @@ assert.equal(gate.evaluateClaimSupport({ requested_status: "hypothesis", claim_k
 assert.equal(gate.evaluateClaimSupport({ requested_status: "contested", claim_kind: "descriptive", claim: "x rose" }).passed, false, "contested cannot");
 
 // ---- 1 and 2. Against the commit before the switch -----------------------------------------------
-const baselineDir = baselineSource();
-if (!baselineDir) {
-  console.log(`${BASELINE} history unavailable; skipped the byte comparison with it`);
-} else {
-  const baseline = await loadTree("baseline", baselineDir);
+// The baseline's definitions come from the recorded fixture (made by scripts/gen_base_output_fixtures.mjs from 6a6a69a's own tree, which is not in the pushed history).
+// A missing fixture, another source commit or an unrecorded combination fails the test; there is no skip path.
+{
+  const baseFx = baseOutputs({ name: "refused_options_fix", commit: BASELINE });
+  const baseline = baseFx.recordWt ? await loadTree("baseline", baseFx.recordWt) : null;
   let compared = 0;
   let maxAdded = 0;
   for (const profile of PROFILES) for (const s of SETTINGS) {
-    const before = definitions(baseline, envOf(profile, s, false));
-    assert.equal(JSON.stringify(definitions(current, envOf(profile, s, false))), JSON.stringify(before), `${profile} ${JSON.stringify(s)}: off is byte-identical to ${BASELINE}`);
+    const recorded = baseFx.get({ profile, s }, () => JSON.stringify(definitions(baseline, envOf(profile, s, false))));
+    const before = definitions(current, envOf(profile, s, false));
+    // the current off definitions are shown byte-identical (sha256) to the baseline's, so they stand for the baseline's in the checks below
+    assert.equal(sha256(JSON.stringify(before)), recorded.sha256, `${profile} ${JSON.stringify(s)}: off is byte-identical to ${BASELINE}`);
     const after = definitions(current, envOf(profile, s, true));
     const kinds = expectedKinds(s);
     const { seen, removed } = classify(before, after, kinds);
