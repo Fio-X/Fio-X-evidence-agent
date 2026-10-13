@@ -1,12 +1,12 @@
 {
   "schema_version": "0.2.0",
   "release": "1.13.0-rc1",
-  "created_at_epoch": 1791858576,
-  "source_commit": "ff5540adae9bb18767e29ceb3e78a07eb1db40c1",
+  "created_at_epoch": 1791858916,
+  "source_commit": "ca16be684d4c2f128aeb4787a7ea8c02f7fa6f1d",
   "source_tree": {
-    "file_count": 1279,
-    "bytes": 72313363,
-    "sha256": "eb0cd0ff2aaa794baddfa8541eb67f1c4bbfd49c1821eaf7c0a0b17aea40e15d",
+    "file_count": 1283,
+    "bytes": 72322277,
+    "sha256": "aa207d76b092f5c59e31b7c44355f35da93942b2b02cde0b27ee40767b5a2f04",
     "files": [
       {
         "path": ".env.example",
@@ -2794,6 +2794,21 @@
         "bytes": 13186
       },
       {
+        "path": "scripts/fixtures/flow-base/flow-base.json",
+        "sha256": "da7d17fdaa68a93efec301768a725373b90382b3dd058b8d3477b530a7c7cc33",
+        "bytes": 4535
+      },
+      {
+        "path": "scripts/fixtures/flow-base/tool_defs.mjs",
+        "sha256": "2169d56ddb547f582ea30328962444bac8d874250428ec3068b02aa53d61808d",
+        "bytes": 2890
+      },
+      {
+        "path": "scripts/fixtures/flow-base/trunk_cap_inputs.mjs",
+        "sha256": "8af807074b392baafde42d3f6454febdc1e85f949bce5748e8976bf2ae8632b9",
+        "bytes": 1845
+      },
+      {
         "path": "scripts/fixtures/group_commands_off.json",
         "sha256": "00a9d8e3ec73cbe502c27f925543df954f5fefe82af2716b0c8f4d821c5ddb36",
         "bytes": 19930
@@ -2912,6 +2927,11 @@
         "path": "scripts/fixtures/tick_readback/rw_mb_period.svg",
         "sha256": "ca94bd5fb0510b7250c6f7a7cc860714ddd00c0c096820e39907c70d5b599cfc",
         "bytes": 10390
+      },
+      {
+        "path": "scripts/gen_flow_base_fixture.mjs",
+        "sha256": "9dc85a5e16a457cc81d3d61b6c002c99b25aed71ab1415330835cef4e59c5818",
+        "bytes": 3959
       },
       {
         "path": "scripts/gen_handoffs_rust.py",
@@ -3780,8 +3800,8 @@
       },
       {
         "path": "scripts/test_flow_extent_hint.mjs",
-        "sha256": "a94fe13144cb0e958c84142686e2ccea260e51e837ce0147ea6cab374c3170ff",
-        "bytes": 7335
+        "sha256": "5e1e79d45a223a2edc05a69a5c3871ef78b9da0d4d44ce9e56b79839d408e23f",
+        "bytes": 4631
       },
       {
         "path": "scripts/test_flow_ledger_grammar.mjs",
@@ -3815,8 +3835,8 @@
       },
       {
         "path": "scripts/test_flow_trunk_cap.mjs",
-        "sha256": "283874fa30d49f1f8525390b704f3934380c2f0aebcac966ee24a11ba71e0eea",
-        "bytes": 6995
+        "sha256": "0aedf0d5f8e128dfd338b4ac320a8be7b7b896a6fb9956868ba57a8f3563a745",
+        "bytes": 5384
       },
       {
         "path": "scripts/test_followup_alt_source.mjs",
@@ -6488,5 +6508,5 @@
     "browser_gpu": null,
     "final_dossier": null
   },
-  "manifest_sha256": "d5a2ab43542fc344aeebf3fd4281875630eb459a4ec4cfd050d64ddf685bf03f"
+  "manifest_sha256": "c9692022bcbda90bb939d505eada9126e102178a24a0617604da315bdac6a355"
 }
